@@ -1,3 +1,4 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import {
   publicRunOwner,
@@ -198,6 +199,7 @@ function mockTeamsConversationMembership(fixture: TeamsConnectFixture): void {
         return HttpResponse.json({
           id: fixture.teamsUserId,
           tenantId: fixture.teamsTenantId,
+          aadObjectId: fixture.teamsAadObjectId,
         });
       },
     ),
@@ -216,13 +218,6 @@ function botFixture(): TeamsConnectFixture {
 
 async function trackedBotFixture(): Promise<TeamsConnectFixture> {
   return await trackTeamsFixture(Promise.resolve(botFixture()));
-}
-
-function teamsInstallUrl(): string {
-  const url = new URL(`https://teams.microsoft.com/l/app/${BOT_APP_ID}`);
-  url.searchParams.set("installAppPackage", "true");
-  url.searchParams.set("appTenantId", TEAMS_APP_TENANT_ID);
-  return url.toString();
 }
 
 function botFrameworkHandlers(): string[] {
@@ -915,21 +910,7 @@ async function connectTeamsFixture(
   fixture: TeamsConnectFixture,
 ): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-  const client = setupApp({ context, routes: teamsConnectRoutes })(
-    teamsConnectContract,
-  );
-  await accept(
-    client.connect({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        tenantId: fixture.teamsTenantId,
-        teamsAadObjectId: fixture.teamsAadObjectId,
-        teamsUserDisplayName: "Ada Lovelace",
-        teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-      },
-    }),
-    [200],
-  );
+  await connectTeamsAccountForTest(context, fixture, { learnSender: false });
 }
 
 function teamsPersonalMessageActivity(args: {
@@ -1635,19 +1616,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const client = setupApp({ context, routes: teamsConnectRoutes })(
       teamsConnectContract,
     );
-    await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: fixture.teamsUserId,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-          teamsUserDisplayName: "Ada Lovelace",
-          teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-        },
-      }),
-      [200],
-    );
+    await connectTeamsAccountForTest(context, fixture, { learnSender: false });
     const status = await accept(
       client.getStatus({
         headers: { authorization: "Bearer clerk-session" },
@@ -1659,8 +1628,8 @@ describe("POST /api/webhooks/teams/bot", () => {
       isConnected: true,
       tenantId: fixture.teamsTenantId,
       tenantName: "Tenant One",
-      teamId: fixture.teamsTeamId,
-      teamName: "Team One",
+      teamId: null,
+      teamName: null,
     });
   });
 
@@ -3838,7 +3807,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("cleans up installation and dependent connections on Teams bot removal", async () => {
+  it("removes the bot installation while preserving the connected Teams identity", async () => {
     const fixture = await trackedBotFixture();
     botFrameworkHandlers();
     await postTeamsActivity({
@@ -3850,17 +3819,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const client = setupApp({ context, routes: teamsConnectRoutes })(
       teamsConnectContract,
     );
-    await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: fixture.teamsUserId,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-        },
-      }),
-      [200],
-    );
+    await connectTeamsAccountForTest(context, fixture, { learnSender: false });
 
     const response = await postTeamsActivity({
       activity: teamsBotRemovedActivity(fixture),
@@ -3874,16 +3833,14 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
       [200],
     );
-    expect(status.body).toStrictEqual({
+    expect(status.body).toMatchObject({
       isInstalled: false,
-      isConnected: false,
-      linkedAccounts: [],
+      isConnected: true,
+      linkedAccounts: [{ teamsAadObjectId: fixture.teamsAadObjectId }],
       pendingInstallation: false,
       isAdmin: true,
-      installUrl: teamsInstallUrl(),
-      connectUrl: expect.stringContaining(
-        "https://api.okou.test/api/teams/oauth/connect?connectState=teams-start.",
-      ),
+      installUrl: expect.any(String),
+      connectUrl: null,
     });
   });
 

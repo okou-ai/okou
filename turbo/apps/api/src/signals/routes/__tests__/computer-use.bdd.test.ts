@@ -1,6 +1,6 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { randomUUID } from "node:crypto";
 
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -13,11 +13,9 @@ import {
   withMockNowForTest,
   withNowScopeForTest,
 } from "../../../lib/time";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { teamsConnectRoutes } from "../teams-connect";
 import { computerUseRoutes } from "../computer-use";
 import {
   createBddApi,
@@ -966,20 +964,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
           actor.orgRole,
         );
         await scenario.run(() => {
-          return accept(
-            setupApp({ context, routes: teamsConnectRoutes })(
-              teamsConnectContract,
-            ).connect({
-              headers: { authorization: "Bearer clerk-session" },
-              body: {
-                tenantId: fixture.teamsTenantId,
-                teamsAadObjectId: fixture.teamsAadObjectId,
-                teamsUserDisplayName: "Ada Lovelace",
-                teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-              },
-            }),
-            [200],
-          );
+          return connectTeamsAccountForTest(context, fixture, {
+            learnSender: false,
+          });
         });
         const prompt = "Authorize this Teams thread to use my desktop";
         const message = await scenario.run(() => {

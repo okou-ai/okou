@@ -62,7 +62,6 @@ import {
 } from "../../signals/okou-page/telegram.ts";
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
@@ -589,27 +588,20 @@ function teamsCardConnection(data: TeamsConnectStatus | null) {
       connectUrl: null,
     };
   }
-  const independentIdentity = data.workspaceIdentity === true;
-  const isConnected =
-    data.isConnected === true &&
-    (data.workspaceIdentity === true ||
-      (data.isInstalled && data.pendingInstallation !== true));
+  const isConnected = data.isConnected;
   const isInstalled = data.isInstalled;
   const isAdmin = data.isAdmin;
-  const connectedDetail = independentIdentity
-    ? (data.linkedAccounts[0]?.displayName ?? data.tenantName)
-    : (data.teamName ?? data.tenantName);
-
-  const entryUrl = teamsEntryUrl(data);
+  const connectedDetail =
+    data.linkedAccounts[0]?.displayName ?? data.tenantName;
   return {
     isConnected,
     isInstalled,
     isAdmin,
     connectedDetail,
-    independentIdentity: independentIdentity,
-    descriptionInstalled: independentIdentity || isInstalled,
-    installUrl: independentIdentity ? data.installUrl : entryUrl,
-    connectUrl: independentIdentity ? data.connectUrl : entryUrl,
+    independentIdentity: true,
+    descriptionInstalled: true,
+    installUrl: data.installUrl,
+    connectUrl: data.connectUrl,
   };
 }
 

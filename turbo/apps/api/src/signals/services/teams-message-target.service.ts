@@ -1,10 +1,7 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { command, computed, type Computed } from "ccstate";
 
 import { db$ } from "../external/db";
@@ -67,24 +64,13 @@ export function teamsErrorResponse(result: {
 
 const resolveTeamsMessageConnection$ = command(
   async (
-    { get, set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly installation: TeamsInstallation;
     },
     signal: AbortSignal,
   ) => {
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    const identityEnabled = isFeatureEnabled(
-      FeatureSwitchKey.TeamsWorkspaceIdentity,
-      features,
-    );
     const connections = await get(db$)
       .select({
         teamsUserId: teamsOrgConnections.teamsUserId,
@@ -100,24 +86,11 @@ const resolveTeamsMessageConnection$ = command(
           teamsOrgConnections.teamsTenantId,
         ),
       )
-      .where(
-        and(
-          identityEnabled
-            ? teamsAccountOwnerCondition(args)
-            : and(
-                eq(
-                  teamsOrgConnections.teamsTenantId,
-                  args.installation.teamsTenantId,
-                ),
-                eq(teamsOrgConnections.userId, args.userId),
-                eq(teamsOrgInstallations.orgId, args.orgId),
-              ),
-        ),
-      )
+      .where(teamsAccountOwnerCondition(args))
       .limit(2);
     signal.throwIfAborted();
     const connection = connections.length === 1 ? connections[0] : undefined;
-    return { connection, identityEnabled };
+    return connection;
   },
 );
 
@@ -138,11 +111,7 @@ export const resolveTeamsMessageTarget$ = command(
     },
     signal: AbortSignal,
   ): Promise<TeamsMessageTarget | ReturnType<typeof routeError>> => {
-    const { connection, identityEnabled } = await set(
-      resolveTeamsMessageConnection$,
-      args,
-      signal,
-    );
+    const connection = await set(resolveTeamsMessageConnection$, args, signal);
     if (
       !connection?.teamsUserId ||
       connection.tenantId !== args.installation.teamsTenantId ||
@@ -197,9 +166,7 @@ export const resolveTeamsMessageTarget$ = command(
         tenantId: args.installation.teamsTenantId,
         conversationId,
         teamsUserId: memberId,
-        ...(identityEnabled &&
-        memberId === connection.teamsUserId &&
-        connection.teamsAadObjectId
+        ...(memberId === connection.teamsUserId && connection.teamsAadObjectId
           ? { aadObjectId: connection.teamsAadObjectId }
           : {}),
       },

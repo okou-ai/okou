@@ -3648,13 +3648,11 @@
         "install": "Teams에 설치",
         "invalidContext": "이 링크에 Teams 계정 정보가 부족합니다. Teams에서 새 연결 링크를 여세요.",
         "open": "Teams 열기",
-        "orgMismatch": "다른 조직의 링크입니다. 해당 조직으로 전환한 후 다시 시도하세요.",
         "pendingDescription": "Teams에 앱을 설치한 다음 이 페이지로 돌아와 연결을 완료하세요.",
         "pendingTitle": "Teams에 설치하여 완료",
         "providerName": "Microsoft Teams",
         "reinstall": "Teams에 다시 설치",
         "statusFailed": "Teams 연결을 확인할 수 없습니다.",
-        "successDescription": "{{team}}에 연결되었습니다. Teams에서 @{{botName}}를 언급하여 대화를 시작하세요.",
         "successTitle": "Microsoft Teams에 연결되었습니다",
         "unavailable": "Teams 설정을 사용할 수 없습니다. 조직 관리자에게 문의하세요."
       },

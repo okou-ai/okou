@@ -1,10 +1,10 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { randomUUID } from "node:crypto";
 
 import {
   integrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,7 +15,6 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
 import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upload-complete";
-import { teamsConnectRoutes } from "../teams-connect";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
@@ -72,6 +71,7 @@ function mockOutgoingTeams(
           ? HttpResponse.json({
               id: recipientId,
               tenantId: fixture.teamsTenantId,
+              aadObjectId: fixture.teamsAadObjectId,
             })
           : new HttpResponse(null, { status: 404 });
       },
@@ -130,21 +130,7 @@ async function seedConnectedTeams(fixture: TeamsConnectFixture): Promise<void> {
   await installTeamsForTest(context.signal, fixture);
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
-  const client = setupApp({ context, routes: teamsConnectRoutes })(
-    teamsConnectContract,
-  );
-  await accept(
-    client.connect({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        tenantId: fixture.teamsTenantId,
-        teamsUserId: fixture.teamsUserId,
-        teamsUserDisplayName: "Ada Lovelace",
-        teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-      },
-    }),
-    [200],
-  );
+  await connectTeamsAccountForTest(context, fixture);
 }
 
 describe("Microsoft Teams integration CLI routes", () => {

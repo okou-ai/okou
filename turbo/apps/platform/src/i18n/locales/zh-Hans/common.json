@@ -3648,13 +3648,11 @@
         "install": "在 Teams 中安装",
         "invalidContext": "此链接缺少 Teams 账号信息。请从 Teams 获取新的连接链接。",
         "open": "打开 Teams",
-        "orgMismatch": "此链接属于其他组织。请切换到该组织后重试此链接。",
         "pendingDescription": "在 Teams 中安装应用，然后返回此页面完成连接。",
         "pendingTitle": "在 Teams 中安装以完成连接",
         "providerName": "Microsoft Teams",
         "reinstall": "在 Teams 中重新安装",
         "statusFailed": "无法检查 Teams 连接。",
-        "successDescription": "你已连接到{{team}}。在 Teams 中@{{botName}}，即可开始对话。",
         "successTitle": "已连接到 Microsoft Teams",
         "unavailable": "Teams 设置暂不可用，请联系组织管理员。"
       },

@@ -1,6 +1,4 @@
 import { command, computed, type Computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { and, eq, exists, inArray, isNull, isNotNull, or } from "drizzle-orm";
@@ -8,33 +6,13 @@ import { and, eq, exists, inArray, isNull, isNotNull, or } from "drizzle-orm";
 import { db$, writeDb$ } from "../external/db";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
-import {
-  createUserFeatureSwitchContext,
-  loadUserFeatureSwitchContext$,
-} from "./feature-switches.service";
-
 interface TeamsAccountOwner {
   readonly orgId: string;
   readonly userId: string;
 }
 
-export function teamsWorkspaceIdentityEnabled(
-  identity$: Computed<TeamsAccountOwner | Promise<TeamsAccountOwner>>,
-) {
-  const resolved$ = computed(async (get) => {
-    return await get(identity$);
-  });
-  const context$ = createUserFeatureSwitchContext(resolved$);
-  return computed(async (get) => {
-    return isFeatureEnabled(
-      FeatureSwitchKey.TeamsWorkspaceIdentity,
-      await get(context$),
-    );
-  });
-}
-
-/** GA writers leave orgId null while the switch is off. Retire installation-
- * derived ownership only after the writer, row and rollback gates in #43729. */
+/** Persisted installation-owned connections have a null orgId. Retire this
+ * ownership lookup only after the row and rollback gates in #43729. */
 export function teamsAccountOwnerCondition(identity: TeamsAccountOwner) {
   return and(
     eq(teamsOrgConnections.userId, identity.userId),
@@ -207,57 +185,44 @@ export const removeTeamsInstallation$ = command(
         );
       signal.throwIfAborted();
       for (const connection of legacy) {
-        const features = await set(
-          loadUserFeatureSwitchContext$,
-          installation.orgId,
-          connection.userId,
+        const accounts = await db
+          .select({ id: teamsOrgConnections.id })
+          .from(teamsOrgConnections)
+          .leftJoin(
+            teamsOrgInstallations,
+            eq(
+              teamsOrgInstallations.teamsTenantId,
+              teamsOrgConnections.teamsTenantId,
+            ),
+          )
+          .where(
+            teamsAccountOwnerCondition({
+              orgId: installation.orgId,
+              userId: connection.userId,
+            }),
+          )
+          .limit(2);
+        signal.throwIfAborted();
+        if (accounts.length !== 1 || accounts[0]?.id !== connection.id) {
+          continue;
+        }
+        const promoted = await settle(
+          db
+            .update(teamsOrgConnections)
+            .set({ orgId: installation.orgId })
+            .where(
+              and(
+                eq(teamsOrgConnections.id, connection.id),
+                isNull(teamsOrgConnections.orgId),
+              ),
+            ),
           signal,
         );
         if (
-          isFeatureEnabled(FeatureSwitchKey.TeamsWorkspaceIdentity, features)
+          !promoted.ok &&
+          !isUniqueViolation(promoted.error, "idx_teams_org_connections_owner")
         ) {
-          const accounts = await db
-            .select({ id: teamsOrgConnections.id })
-            .from(teamsOrgConnections)
-            .leftJoin(
-              teamsOrgInstallations,
-              eq(
-                teamsOrgInstallations.teamsTenantId,
-                teamsOrgConnections.teamsTenantId,
-              ),
-            )
-            .where(
-              teamsAccountOwnerCondition({
-                orgId: installation.orgId,
-                userId: connection.userId,
-              }),
-            )
-            .limit(2);
-          signal.throwIfAborted();
-          if (accounts.length !== 1 || accounts[0]?.id !== connection.id) {
-            continue;
-          }
-          const promoted = await settle(
-            db
-              .update(teamsOrgConnections)
-              .set({ orgId: installation.orgId })
-              .where(
-                and(
-                  eq(teamsOrgConnections.id, connection.id),
-                  isNull(teamsOrgConnections.orgId),
-                ),
-              ),
-            signal,
-          );
-          if (
-            !promoted.ok &&
-            !isUniqueViolation(
-              promoted.error,
-              "idx_teams_org_connections_owner",
-            )
-          ) {
-            throw promoted.error;
-          }
+          throw promoted.error;
         }
       }
     }

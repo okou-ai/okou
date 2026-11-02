@@ -3663,13 +3663,11 @@
         "install": "Teams में इंस्टॉल करें",
         "invalidContext": "इस लिंक में Teams खाते की पूरी जानकारी नहीं है। Teams से नया कनेक्शन लिंक खोलें।",
         "open": "टीमें खोलें",
-        "orgMismatch": "यह लिंक दूसरे संगठन का है। उस संगठन में स्विच करके फिर प्रयास करें।",
         "pendingDescription": "Teams में ऐप इंस्टॉल करें, फिर कनेक्शन पूरा करने के लिए यहाँ लौटें।",
         "pendingTitle": "पूरा करने के लिए Teams में इंस्टॉल करें",
         "providerName": "Microsoft Teams",
         "reinstall": "Teams में फिर से इंस्टॉल करें",
         "statusFailed": "Teams कनेक्शन की जाँच नहीं हो सकी।",
-        "successDescription": "आप {{team}} से जुड़े हैं। चैटिंग शुरू करने के लिए Teams में @{{botName}} का उल्लेख करें।",
         "successTitle": "Microsoft Teams से जुड़ा",
         "unavailable": "Teams सेटअप उपलब्ध नहीं है। अपने संगठन के व्यवस्थापक से सहायता लें।"
       },

@@ -27,7 +27,6 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { teamsConnectRoutes } from "../teams-connect";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockNow, now } from "../../../lib/time";
 
 const context = testContext();
@@ -264,7 +263,7 @@ describe("Teams OAuth API routes", () => {
     const connected = await appRequest(path);
     expect(
       new URL(connected.headers.get("location")!).searchParams.get("status"),
-    ).toBe("pending");
+    ).toBe("connected");
     const replay = await appRequest(path);
     expect(
       new URL(replay.headers.get("location")!).searchParams.get("error"),
@@ -397,214 +396,6 @@ describe("Teams OAuth API routes", () => {
     expect(location.searchParams.get("error")).toBe("access_denied");
   });
 
-  it("connects and binds an unbound Teams installation using Microsoft OAuth", async () => {
-    const fixture = await seedTeamsInstallation(track);
-    await seedMembership(fixture.orgId, fixture.userId, "admin");
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    mockMicrosoftOAuth({
-      tenantId: fixture.teamsTenantId,
-      aadObjectId: fixture.teamsAadObjectId,
-      userPrincipalName: fixture.teamsUserPrincipalName,
-    });
-
-    const response = await appRequest(
-      await callbackPath({
-        code: "valid-code",
-        state: {
-          orgId: fixture.orgId,
-          userId: fixture.userId,
-          redirectUri: CALLBACK_REDIRECT_URI,
-        },
-      }),
-      { origin: API_ORIGIN },
-    );
-
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toContain(
-      `${APP_ORIGIN}/settings/teams?status=connected`,
-    );
-    expect(
-      new URL(response.headers.get("location")!).searchParams.get("botName"),
-    ).toBe("Nova");
-
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    const client = setupApp({ context, routes: teamsConnectRoutes })(
-      teamsConnectContract,
-    );
-    const status = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(status.body).toMatchObject({
-      isInstalled: true,
-      isConnected: true,
-      connectUrl: null,
-      tenantId: fixture.teamsTenantId,
-      botName: "Nova",
-    });
-  });
-
-  it("preserves a prepared account through a pending installation", async () => {
-    const fixture = await track(Promise.resolve(teamsConnectFixture()));
-    await seedMembership(fixture.orgId, fixture.userId, "admin");
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    mockMicrosoftOAuth({
-      tenantId: fixture.teamsTenantId,
-      aadObjectId: fixture.teamsAadObjectId,
-      userPrincipalName: fixture.teamsUserPrincipalName,
-    });
-    const statusClient = setupApp({ context, routes: teamsConnectRoutes })(
-      teamsConnectContract,
-    );
-    const before = await accept(
-      statusClient.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(before.body).toMatchObject({
-      isInstalled: false,
-      isConnected: false,
-      isAdmin: true,
-      linkedAccounts: [],
-      pendingInstallation: false,
-    });
-    expect(
-      new URL(before.body.installUrl!).searchParams.has("tenantId"),
-    ).toBeFalsy();
-
-    const oauthClient = setupApp({
-      context,
-      routes: teamsOauthRoutes,
-      baseUrl: API_ORIGIN,
-    })(teamsOauthContract);
-    const started = await accept(
-      oauthClient.connect({
-        extraHeaders: { authorization: "Bearer clerk-session" },
-        query: {
-          orgId: fixture.orgId,
-          userId: fixture.userId,
-        },
-      }),
-      [307],
-    );
-    const startedState = new URL(
-      started.headers.get("location")!,
-    ).searchParams.get("state")!;
-    const callback = await accept(
-      oauthClient.callback({
-        extraHeaders: { authorization: "Bearer clerk-session" },
-        query: {
-          code: "valid-code",
-          state: startedState,
-        },
-      }),
-      [307],
-    );
-    const installUrl = new URL(
-      "https://teams.microsoft.com/l/app/00000000-0000-0000-0000-000000000001",
-    );
-    installUrl.search = new URLSearchParams({
-      installAppPackage: "true",
-      appTenantId: "11111111-1111-1111-1111-111111111111",
-      tenantId: fixture.teamsTenantId,
-    }).toString();
-    // The callback finishes in settings while the installation is pending.
-    const target = new URL(callback.headers.get("location")!);
-    expect(target.origin + target.pathname).toBe(
-      `${APP_ORIGIN}/settings/teams`,
-    );
-    expect(Object.fromEntries(target.searchParams)).toStrictEqual({
-      status: "pending",
-      tenantId: fixture.teamsTenantId,
-    });
-    expect(callback.headers.get("cache-control")).toBe("no-store");
-    const prepared = await accept(
-      statusClient.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(prepared.body).toMatchObject({
-      isInstalled: false,
-      isConnected: false,
-      isAdmin: true,
-      installUrl: installUrl.toString(),
-      pendingInstallation: true,
-      linkedAccounts: [
-        {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: null,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-          displayName: "Ada Lovelace",
-          userPrincipalName: fixture.teamsUserPrincipalName,
-        },
-      ],
-    });
-    expect(
-      Object.fromEntries(new URL(prepared.body.connectUrl!).searchParams),
-    ).toMatchObject({ connectState: expect.stringMatching(/^teams-start\./) });
-
-    mocks.clerk.session(
-      `pending_other_${fixture.userId}`,
-      fixture.orgId,
-      "org:member",
-    );
-    const pendingOther = await accept(
-      statusClient.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(pendingOther.body).toMatchObject({
-      isInstalled: false,
-      isConnected: false,
-      linkedAccounts: [],
-      pendingInstallation: true,
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    await installTeamsForTest(context.signal, fixture);
-    await flushWaitUntilForTest();
-    const installed = await accept(
-      statusClient.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(installed.body).toMatchObject({
-      isInstalled: true,
-      isConnected: true,
-      isAdmin: true,
-      tenantId: fixture.teamsTenantId,
-      connectUrl: null,
-      linkedAccounts: prepared.body.linkedAccounts,
-      pendingInstallation: false,
-    });
-
-    const otherUserId = `user_other_${fixture.fixtureId}`;
-    await seedMembership(fixture.orgId, otherUserId, "member");
-    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
-    const otherMember = await accept(
-      statusClient.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(otherMember.body).toMatchObject({
-      isInstalled: true,
-      isConnected: false,
-      isAdmin: false,
-      linkedAccounts: [],
-      pendingInstallation: false,
-      tenantId: fixture.teamsTenantId,
-    });
-    expect(
-      Object.fromEntries(new URL(otherMember.body.connectUrl!).searchParams),
-    ).toMatchObject({ connectState: expect.stringMatching(/^teams-start\./) });
-  });
-
   it("exchanges the code with the redirect URI recorded in the connect state", async () => {
     const fixture = await seedTeamsInstallation(track);
     await seedMembership(fixture.orgId, fixture.userId, "admin");
@@ -636,52 +427,7 @@ describe("Teams OAuth API routes", () => {
     );
     expect(
       new URL(response.headers.get("location")!).searchParams.get("botName"),
-    ).toBe("Nova");
-  });
-
-  it("rejects OAuth users when the org is already bound to another Microsoft tenant", async () => {
-    const fixture = await seedTeamsInstallation(track);
-    await seedMembership(fixture.orgId, fixture.userId, "admin");
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    const client = setupApp({ context, routes: teamsConnectRoutes })(
-      teamsConnectContract,
-    );
-    await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: fixture.teamsUserId,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-        },
-      }),
-      [200],
-    );
-
-    mockMicrosoftOAuth({
-      tenantId: `other-${fixture.teamsTenantId}`,
-      aadObjectId: fixture.teamsAadObjectId,
-      userPrincipalName: fixture.teamsUserPrincipalName,
-    });
-
-    const response = await appRequest(
-      await callbackPath({
-        code: "valid-code",
-        state: {
-          orgId: fixture.orgId,
-          userId: fixture.userId,
-          redirectUri: CALLBACK_REDIRECT_URI,
-        },
-      }),
-      { origin: API_ORIGIN },
-    );
-
-    expect(response.status).toBe(307);
-    const location = response.headers.get("location");
-    expect(location).toContain(`${APP_ORIGIN}/settings/teams?error=`);
-    expect(new URL(location!).searchParams.get("error")).toContain(
-      "active organization doesn't match",
-    );
+    ).toBe("Okou");
   });
 
   it("rejects callback state when the internal user is not an org member", async () => {
@@ -766,7 +512,7 @@ describe("Teams OAuth API routes", () => {
       );
       expect(
         new URL(first.headers.get("location")!).searchParams.get("status"),
-      ).toBe(installed ? "connected" : "pending");
+      ).toBe("connected");
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
       const client = setupApp({ context, routes: teamsConnectRoutes })(
         teamsConnectContract,
@@ -796,7 +542,7 @@ describe("Teams OAuth API routes", () => {
       );
       expect(
         new URL(second.headers.get("location")!).searchParams.get("error"),
-      ).toContain("already connected");
+      ).toContain("Disconnect your current Teams account");
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
       const after = await accept(
         client.getStatus({
@@ -807,6 +553,7 @@ describe("Teams OAuth API routes", () => {
       expect(after.body).toMatchObject({
         ...before.body,
         connectUrl: before.body.connectUrl ? expect.any(String) : null,
+        installUrl: before.body.installUrl ? expect.any(String) : null,
       });
       mocks.clerk.session(otherUser, fixture.orgId, "org:admin");
       const other = await accept(
@@ -818,13 +565,13 @@ describe("Teams OAuth API routes", () => {
       expect(other.body).toMatchObject({
         isConnected: false,
         linkedAccounts: [],
-        pendingInstallation: !installed,
+        pendingInstallation: false,
       });
     },
   );
 
   it.each([false, true])(
-    "arbitrates concurrent first-install OAuth accounts (different org=%s)",
+    "arbitrates concurrent OAuth account connections (different org=%s)",
     async (differentOrg) => {
       const fixture = await track(Promise.resolve(teamsConnectFixture()));
       const otherUser = `other_${fixture.userId}`;
@@ -859,7 +606,7 @@ describe("Teams OAuth API routes", () => {
       });
       expect(
         outcomes.filter((params) => {
-          return params.get("status") === "pending";
+          return params.get("status") === "connected";
         }),
       ).toHaveLength(1);
       expect(
@@ -878,11 +625,11 @@ describe("Teams OAuth API routes", () => {
           }),
           [200],
         );
-        const accepted = outcomes[index]?.get("status") === "pending";
+        const accepted = outcomes[index]?.get("status") === "connected";
         expect(status.body).toMatchObject({
           isInstalled: false,
-          isConnected: false,
-          pendingInstallation: accepted || !differentOrg,
+          isConnected: accepted,
+          pendingInstallation: false,
         });
         expect(status.body.linkedAccounts).toHaveLength(accepted ? 1 : 0);
       }
@@ -957,7 +704,7 @@ describe("Teams OAuth API routes", () => {
       if (completion.status === 200) {
         const target = new URL(completion.body.redirectUrl);
         if (mode === "matching-cookie") {
-          expect(target.searchParams.get("status")).toBe("pending");
+          expect(target.searchParams.get("status")).toBe("connected");
         } else {
           expect(target.searchParams.get("error")).toContain(
             "active account or organization changed",
@@ -984,7 +731,7 @@ describe("Teams OAuth API routes", () => {
         );
         expect(
           new URL(resumed.headers.get("location")!).searchParams.get("status"),
-        ).toBe("pending");
+        ).toBe("connected");
         const linked = await accept(
           client.getStatus({
             headers: { authorization: "Bearer clerk-session" },

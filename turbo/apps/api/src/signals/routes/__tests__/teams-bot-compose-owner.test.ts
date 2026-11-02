@@ -157,13 +157,25 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       tenantId: fixture.installation.teamsTenantId,
       teamsUserId: fixture.installation.teamsUserId,
       teamsAadObjectId: fixture.installation.teamsAadObjectId,
-      displayName: "Teams User",
+      displayName: "Ada Lovelace",
       userPrincipalName: fixture.installation.teamsUserPrincipalName,
     };
     const before = await owner.status(fixture);
     expect(before.linkedAccounts).toStrictEqual([originalAccount]);
 
     const teamsUserId = `29:refreshed-${randomUUID()}`;
+    server.use(
+      http.get(
+        `${fixture.installation.serviceUrl}v3/conversations/:conversationId/members/:memberId`,
+        ({ params }) => {
+          return HttpResponse.json({
+            id: params.memberId,
+            tenantId: fixture.installation.teamsTenantId,
+            aadObjectId: fixture.installation.teamsAadObjectId,
+          });
+        },
+      ),
+    );
     const prompt = "Summarize the message from the refreshed Teams sender";
     await owner.dispatch(
       {
@@ -213,73 +225,6 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
   });
 });
 
-test("falls back to the connected Teams sender when the Aad identity is unknown", async () => {
-  const owner = createPublicTeamsDispatchFixture(context);
-  await owner.run(async () => {
-    const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
-    const fixture = await owner.create({ withDefaultAgent: true });
-    configurePersonalConversationMocks(fixture.installation.teamsTenantId);
-    const originalAccount = {
-      tenantId: fixture.installation.teamsTenantId,
-      teamsUserId: fixture.installation.teamsUserId,
-      teamsAadObjectId: fixture.installation.teamsAadObjectId,
-      displayName: "Teams User",
-      userPrincipalName: fixture.installation.teamsUserPrincipalName,
-    };
-    const before = await owner.status(fixture);
-    expect(before.linkedAccounts).toStrictEqual([originalAccount]);
-
-    const teamsAadObjectId = `unknown-aad-${randomUUID()}`;
-    const prompt = "Summarize the message with an unknown Teams Aad identity";
-    await owner.dispatch(
-      {
-        ...fixture,
-        installation: { ...fixture.installation, teamsAadObjectId },
-      },
-      prompt,
-    );
-    const after = await owner.status(fixture);
-    expect(after.linkedAccounts).toStrictEqual([originalAccount]);
-    const reads = createRunReadsApi(context);
-    const listed = await reads.requestListLogs(
-      fixture.actor,
-      { limit: 50 },
-      [200],
-    );
-    expect(fixture.defaultAgentId).toStrictEqual(expect.any(String));
-    expect(listed.body.data).toHaveLength(1);
-    const run = listed.body.data[0];
-    if (!run) {
-      throw new Error(
-        "Expected the connected Teams sender fallback to launch a Run",
-      );
-    }
-    expect(run).toMatchObject({
-      agentId: fixture.defaultAgentId,
-      prompt,
-      triggerSource: "teams",
-      status: "pending",
-      startedAt: null,
-    });
-
-    await runs.requestCancelRun(fixture.actor, run.id, [200]);
-    await flushWaitUntilForTest();
-    const cancelled = await reads.requestReadLogById(
-      fixture.actor,
-      run.id,
-      [200],
-    );
-    expect(cancelled.body).toMatchObject({
-      id: run.id,
-      agentId: fixture.defaultAgentId,
-      prompt,
-      status: "cancelled",
-      startedAt: null,
-    });
-  });
-});
-
 test("returns a connection notice without starting a Run when Teams sender identity is absent", async () => {
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
@@ -293,7 +238,7 @@ test("returns a connection notice without starting a Run when Teams sender ident
         tenantId: fixture.installation.teamsTenantId,
         teamsUserId: fixture.installation.teamsUserId,
         teamsAadObjectId: fixture.installation.teamsAadObjectId,
-        displayName: "Teams User",
+        displayName: "Ada Lovelace",
         userPrincipalName: fixture.installation.teamsUserPrincipalName,
       },
     ]);

@@ -1,3 +1,4 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -6,7 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { teamsBotIngressResponseSchema } from "@okouai/api-contracts/contracts/teams-bot";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -18,7 +18,6 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { onboardingStatusRoutes } from "../onboarding-status";
-import { teamsConnectRoutes } from "../teams-connect";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -148,19 +147,7 @@ async function connect(fixture: TeamsConnectFixture): Promise<void> {
     }),
     [200],
   );
-  await accept(
-    setupApp({ context, routes: teamsConnectRoutes })(
-      teamsConnectContract,
-    ).connect({
-      headers: authHeaders(),
-      body: {
-        tenantId: fixture.teamsTenantId,
-        teamsUserId: fixture.teamsUserId,
-        teamsAadObjectId: fixture.teamsAadObjectId,
-      },
-    }),
-    [200],
-  );
+  await connectTeamsAccountForTest(context, fixture, { learnSender: false });
 }
 
 async function setupTeamsRoute() {

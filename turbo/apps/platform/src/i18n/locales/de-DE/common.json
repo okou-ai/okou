@@ -3663,13 +3663,11 @@
         "install": "In Teams installieren",
         "invalidContext": "Diesem Link fehlen Teams-Kontodaten. Öffnen Sie einen neuen Verbindungslink aus Teams.",
         "open": "Offene Teams",
-        "orgMismatch": "Dieser Link gehört zu einer anderen Organisation. Wechseln Sie dorthin und versuchen Sie den Link erneut.",
         "pendingDescription": "Installiere die App in Teams und kehre dann hierher zurück, um die Verbindung abzuschließen.",
         "pendingTitle": "Zum Abschluss in Teams installieren",
         "providerName": "Microsoft Teams",
         "reinstall": "In Teams neu installieren",
         "statusFailed": "Die Teams-Verbindung konnte nicht geprüft werden.",
-        "successDescription": "Sie sind mit {{team}} verbunden. Erwähnen Sie @{{botName}} in Teams, um mit dem Chatten zu beginnen.",
         "successTitle": "Verbunden mit Microsoft Teams",
         "unavailable": "Die Teams-Einrichtung ist nicht verfügbar. Bitten Sie Ihren Organisationsadministrator um Hilfe."
       },

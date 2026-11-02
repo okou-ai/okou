@@ -3661,13 +3661,11 @@
         "install": "Install in Teams",
         "invalidContext": "This link has incomplete Teams account context. Open a new connect link from Teams.",
         "open": "Open Teams",
-        "orgMismatch": "This link is for another organization. Switch to that organization, then retry this link.",
         "pendingDescription": "Install the app in Teams, then return here to finish connecting.",
         "pendingTitle": "Install in Teams to finish",
         "providerName": "Microsoft Teams",
         "reinstall": "Reinstall in Teams",
         "statusFailed": "Unable to check your Teams connection.",
-        "successDescription": "You are connected to {{team}}. Mention @{{botName}} in Teams to start chatting.",
         "successTitle": "Connected to Microsoft Teams",
         "unavailable": "Teams setup is unavailable. Ask your organization administrator for help."
       },

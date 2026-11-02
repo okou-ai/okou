@@ -74,9 +74,6 @@ import {
 } from "./teams-connect.service";
 import type { TeamsFileTokenPayload } from "./teams-file-token";
 import { formatTeamsFileForContext } from "./teams-prompt";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT = "`help`, `connect`, `disconnect`";
@@ -1882,57 +1879,38 @@ const teamsExecutionInstallation$ = command(
     if (!executionOrgId) {
       return undefined;
     }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
+    const member = await set(
+      getMemberRoleAndUpdateCache$,
       executionOrgId,
       connection.userId,
       signal,
     );
-    const identityEnabled = isFeatureEnabled(
-      FeatureSwitchKey.TeamsWorkspaceIdentity,
-      features,
-    );
     if (
-      connection.orgId &&
-      !identityEnabled &&
-      connection.orgId !== installation.orgId
+      member.kind !== "member" ||
+      !installation.serviceUrl ||
+      (connection.orgId &&
+        (!connection.teamsAadObjectId ||
+          connection.teamsAadObjectId !== activity.sender.aadObjectId))
     ) {
       return undefined;
     }
-    if (identityEnabled) {
-      const member = await set(
-        getMemberRoleAndUpdateCache$,
-        executionOrgId,
-        connection.userId,
-        signal,
-      );
-      if (
-        member.kind !== "member" ||
-        !installation.serviceUrl ||
-        (connection.orgId &&
-          (!connection.teamsAadObjectId ||
-            connection.teamsAadObjectId !== activity.sender.aadObjectId))
-      ) {
-        return undefined;
-      }
-      const access = await checkTeamsConversationMember(
-        {
-          serviceUrl: activity.serviceUrl,
-          tenantId: activity.tenantId,
-          conversationId: activity.conversationId,
-          teamsUserId: activity.sender.id,
-          ...(connection.teamsAadObjectId
-            ? { aadObjectId: connection.teamsAadObjectId }
-            : {}),
-        },
-        signal,
-      );
-      if (access.kind === "teams-error") {
-        throw new Error(`Microsoft Teams API error: ${access.error}`);
-      }
-      if (access.kind === "denied") {
-        return undefined;
-      }
+    const access = await checkTeamsConversationMember(
+      {
+        serviceUrl: activity.serviceUrl,
+        tenantId: activity.tenantId,
+        conversationId: activity.conversationId,
+        teamsUserId: activity.sender.id,
+        ...(connection.teamsAadObjectId
+          ? { aadObjectId: connection.teamsAadObjectId }
+          : {}),
+      },
+      signal,
+    );
+    if (access.kind === "teams-error") {
+      throw new Error(`Microsoft Teams API error: ${access.error}`);
+    }
+    if (access.kind === "denied") {
+      return undefined;
     }
     return { ...installation, executionOrgId };
   },

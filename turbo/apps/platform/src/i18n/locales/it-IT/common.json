@@ -3717,13 +3717,11 @@
         "install": "Installa in Teams",
         "invalidContext": "Il link non contiene tutti i dati dell’account Teams. Apri un nuovo link di connessione da Teams.",
         "open": "Apri Microsoft Teams",
-        "orgMismatch": "Questo link appartiene a un’altra organizzazione. Passa a tale organizzazione e riprova.",
         "pendingDescription": "Installa l’app in Teams, poi torna qui per completare il collegamento.",
         "pendingTitle": "Installa in Teams per completare",
         "providerName": "Microsoft Teams",
         "reinstall": "Reinstalla in Teams",
         "statusFailed": "Impossibile verificare la connessione Teams.",
-        "successDescription": "Sei connesso a {{team}}. Menziona @{{botName}} in Teams per iniziare a chattare.",
         "successTitle": "Connesso a Microsoft Teams",
         "unavailable": "La configurazione Teams non è disponibile. Contatta l’amministratore della tua organizzazione."
       },

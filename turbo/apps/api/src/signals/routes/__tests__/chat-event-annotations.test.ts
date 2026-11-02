@@ -1,17 +1,15 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { randomUUID } from "node:crypto";
 
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { teamsConnectRoutes } from "../teams-connect";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -308,21 +306,7 @@ describe("chat event annotations", () => {
       rejectedActor.orgId,
       rejectedActor.orgRole,
     );
-    await accept(
-      setupApp({ context, routes: teamsConnectRoutes })(
-        teamsConnectContract,
-      ).connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: fixture.teamsUserId,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-          teamsUserDisplayName: "Ada Lovelace",
-          teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-        },
-      }),
-      [200],
-    );
+    await connectTeamsAccountForTest(context, fixture, { learnSender: false });
     await flushWaitUntilForTest();
     const rejectedText = `teams rejected replacement ${randomUUID()}`;
     const response = await postTeamsActivityForTest({

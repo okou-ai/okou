@@ -3717,13 +3717,11 @@
         "install": "Installer dans Teams",
         "invalidContext": "Ce lien ne contient pas toutes les informations du compte Teams. Ouvrez un nouveau lien de connexion depuis Teams.",
         "open": "Ouvrir Teams",
-        "orgMismatch": "Ce lien concerne une autre organisation. Basculez vers celle-ci, puis réessayez.",
         "pendingDescription": "Installez l’application dans Teams, puis revenez ici pour terminer la connexion.",
         "pendingTitle": "Installer dans Teams pour terminer",
         "providerName": "Microsoft Teams",
         "reinstall": "Réinstaller dans Teams",
         "statusFailed": "Impossible de vérifier votre connexion Teams.",
-        "successDescription": "Vous êtes connecté à {{team}}. Mentionnez @{{botName}} dans Teams pour commencer à discuter.",
         "successTitle": "Connecté à Microsoft Teams",
         "unavailable": "La configuration Teams est indisponible. Contactez l’administrateur de votre organisation."
       },

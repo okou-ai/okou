@@ -3648,13 +3648,11 @@
         "install": "Instal di Teams",
         "invalidContext": "Informasi akun Teams pada tautan ini tidak lengkap. Buka tautan koneksi baru dari Teams.",
         "open": "Buka Teams",
-        "orgMismatch": "Tautan ini untuk organisasi lain. Beralihlah ke organisasi tersebut, lalu coba lagi.",
         "pendingDescription": "Instal aplikasi di Teams, lalu kembali ke sini untuk menyelesaikan koneksi.",
         "pendingTitle": "Instal di Teams untuk menyelesaikan",
         "providerName": "Microsoft Teams",
         "reinstall": "Instal ulang di Teams",
         "statusFailed": "Tidak dapat memeriksa koneksi Teams.",
-        "successDescription": "Anda tersambung ke {{team}}. Sebut @{{botName}} di Teams untuk mulai mengobrol.",
         "successTitle": "Berhasil tersambung ke Microsoft Teams",
         "unavailable": "Pengaturan Teams tidak tersedia. Hubungi administrator organisasi Anda."
       },
