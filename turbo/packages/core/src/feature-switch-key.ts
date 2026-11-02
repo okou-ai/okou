@@ -44,7 +44,6 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
-  ArtifactDeletion = "artifactDeletion",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",

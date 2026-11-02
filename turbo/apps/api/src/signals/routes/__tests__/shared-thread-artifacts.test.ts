@@ -17,8 +17,6 @@ import { createDeferredPromise } from "../../utils";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
@@ -37,7 +35,6 @@ import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
 import { sharedThreadRoutes } from "../shared-threads";
 import { artifactCatalogRoutes } from "../artifact-catalog";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -69,7 +66,6 @@ function api(rethrowErrors = false, signal = context.signal) {
     routes: [
       ...sharedThreadRoutes,
       ...artifactCatalogRoutes,
-      ...featureSwitchesRoutes,
       ...artifactShareRoutes,
       ...artifactOgRoutes,
       ...artifactReferenceRoutes,
@@ -912,13 +908,6 @@ test.each(["share", "catalog"] as const)(
     );
     const reference = referenceName(shared.body.messages[0]!.content);
     if (surface === "catalog") {
-      await accept(
-        api()(featureSwitchesContract).update({
-          headers: headers(f.actor),
-          body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
-        }),
-        [200],
-      );
       const catalog = await chat.listArtifactCatalog(f.actor, {
         kind: "shared-thread",
       });

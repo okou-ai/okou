@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -120,69 +119,63 @@ test("An avatar card and its viewer share one private video URL", async () => {
   ).resolves.toHaveAttribute("src", firstUrl);
 });
 
-test.each([false, true])(
-  "A binary keeps download access when preview deletion is enabled (%s)",
-  async (enabled) => {
-    const browser = context.mocks.browser.blobDownload();
-    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-      return respond(200, {
-        artifacts: [artifact({ title: "release-bundle.zip" })],
-        nextCursor: null,
-      });
+test("A binary can be downloaded from its preview", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: [artifact({ title: "release-bundle.zip" })],
+      nextCursor: null,
     });
-    context.mocks.http.get(
-      "https://artifacts.example.com/release-bundle.zip",
-      () => {
-        return HttpResponse.text("archive bytes", {
-          headers: { "Content-Type": "application/zip" },
-        });
+  });
+  context.mocks.http.get(
+    "https://artifacts.example.com/release-bundle.zip",
+    () => {
+      return HttpResponse.text("archive bytes", {
+        headers: { "Content-Type": "application/zip" },
+      });
+    },
+  );
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      ...artifact({ title: "release-bundle.zip" }),
+      kind: "file",
+      file: {
+        id: "f0000000-0000-4000-a000-000000000002",
+        filename: "release-bundle.zip",
+        contentType: "application/zip",
+        size: 2048,
+        url: "https://artifacts.example.com/release-bundle.zip",
+        previewImageUrl: null,
       },
-    );
-    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...artifact({ title: "release-bundle.zip" }),
-        kind: "file",
-        file: {
-          id: "f0000000-0000-4000-a000-000000000002",
-          filename: "release-bundle.zip",
-          contentType: "application/zip",
-          size: 2048,
-          url: "https://artifacts.example.com/release-bundle.zip",
-          previewImageUrl: null,
-        },
-      });
     });
+  });
 
-    await setupPage({
-      context,
-      path: "/artifacts?tab=file",
-      featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: enabled },
-    });
+  await setupPage({
+    context,
+    path: "/artifacts?tab=file",
+  });
 
-    const archive = await findArtifactAction("release-bundle.zip");
-    click(archive);
-    if (enabled) {
-      const viewer = await screen.findByTestId("attachment-lightbox");
-      click(getButtonByName("Download options", viewer));
-      const menu = await screen.findByRole("menu");
-      const download = queryAllByRoleFast("menuitem", menu).find((item) => {
-        return item.textContent?.trim() === "Download";
-      });
-      if (!download) {
-        throw new Error("Expected the download action");
-      }
-      click(download);
-    }
+  const archive = await findArtifactAction("release-bundle.zip");
+  click(archive);
+  const viewer = await screen.findByTestId("attachment-lightbox");
+  click(getButtonByName("Download options", viewer));
+  const menu = await screen.findByRole("menu");
+  const download = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Download";
+  });
+  if (!download) {
+    throw new Error("Expected the download action");
+  }
+  click(download);
 
-    await waitFor(() => {
-      expect(browser.downloads).toHaveLength(1);
-    });
-    expect(browser.downloads[0]).toMatchObject({
-      filename: "release-bundle.zip",
-      url: "https://artifacts.example.com/release-bundle.zip",
-    });
-  },
-);
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  expect(browser.downloads[0]).toMatchObject({
+    filename: "release-bundle.zip",
+    url: "https://artifacts.example.com/release-bundle.zip",
+  });
+});
 
 test("Opening a text artifact shows its content on demand", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
