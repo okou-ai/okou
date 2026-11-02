@@ -1481,7 +1481,7 @@
         },
         "connector": {
           "action": "연결",
-          "description": "Gmail, Notion 등 100개 이상",
+          "description": "Gmail, Notion 등 4,000개 이상",
           "name": "도구 연결하기",
           "unit": "커넥터당"
         },

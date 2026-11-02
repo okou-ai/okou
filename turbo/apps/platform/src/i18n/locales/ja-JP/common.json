@@ -1481,7 +1481,7 @@
         },
         "connector": {
           "action": "接続",
-          "description": "Gmail、Notion など100以上",
+          "description": "Gmail、Notion など4,000以上",
           "name": "ツールを接続",
           "unit": "コネクタごと"
         },

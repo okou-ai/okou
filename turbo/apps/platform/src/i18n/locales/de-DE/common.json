@@ -1483,7 +1483,7 @@
         },
         "connector": {
           "action": "Verbinden",
-          "description": "Gmail, Notion und 100+ weitere",
+          "description": "Gmail, Notion und 4.000+ weitere",
           "name": "Tool verbinden",
           "unit": "pro Connector"
         },

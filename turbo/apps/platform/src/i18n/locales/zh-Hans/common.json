@@ -1481,7 +1481,7 @@
         },
         "connector": {
           "action": "连接",
-          "description": "Gmail、Notion 等 100 多个工具",
+          "description": "Gmail、Notion 等 4,000 多个工具",
           "name": "连接一个工具",
           "unit": "每个连接器"
         },
