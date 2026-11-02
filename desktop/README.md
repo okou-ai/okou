@@ -50,9 +50,15 @@ A forced 401 refresh retains both wire attempts with distinct request IDs.
 HTTP metadata is recorded before JSON decoding, so HTML edge errors remain
 attributable. Transport failures retain their error type and URL error code.
 Each failed attempt also identifies token lookup, forced token refresh, or HTTP
-as its last operation phase, with token-read durations and the deadline that
-actually ended the operation. An inner cancellation after a total deadline is
-not evidence of a user cancellation. Opt-in HTTP task metrics retain bounded
+as its last operation phase. `operation.phaseTimings` retains bounded token-read
+timings, and `operation.budgetScope` identifies the expired `operation` or
+`http_request` budget using fixed labels that do not match credential scrubbing.
+The full operation (including token reads and a forced refresh), each token-read
+phase, and each wire request report `durationMs`, `awakeElapsedMs`, and
+`systemSuspendedMs` from continuous and suspending clocks. Operation timing starts
+when the API call begins, excluding heartbeat interval/backoff waits, and ends
+on success or failure before its snapshot is read. An inner cancellation after a
+total deadline is not evidence of a user cancellation. Opt-in HTTP task metrics retain bounded
 DNS, connection, TLS, response timing, connection reuse/proxy flags, and protocol
 information. HTTP status and allowlisted headers survive a response-body failure
 when URLSession's task metrics retain them. Missing metrics remain unavailable.
