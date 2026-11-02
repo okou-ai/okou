@@ -16,6 +16,7 @@ from mitmproxy import http
 import connection_endpoints
 import connector_runtime_metadata
 import flow_metadata_keys as metadata_keys
+import http_header_syntax
 import public_destination
 from authority_utils import (
     IPV6_VERSION,
@@ -187,18 +188,15 @@ def _host_headers_within_budget(headers: http.Headers) -> bool:
     fields before addon hooks run. Separators match ``Headers`` folding so a
     bounded result also bounds duplicate-field decoding and diagnostics.
     """
-    host_header_bytes = 0
-    has_host_header = False
-    for name, value in headers.fields:
-        if name.lower() != _RAW_HOST_HEADER_NAME:
-            continue
-        if has_host_header:
-            host_header_bytes += _HOST_HEADER_FOLD_SEPARATOR_BYTES
-        host_header_bytes += len(value)
-        if host_header_bytes > _MAX_HOST_HEADER_BYTES:
-            return False
-        has_host_header = True
-    return True
+    return (
+        http_header_syntax.header_value_budget_status(
+            headers.fields,
+            _RAW_HOST_HEADER_NAME,
+            max_value_bytes=_MAX_HOST_HEADER_BYTES,
+            separator_bytes=_HOST_HEADER_FOLD_SEPARATOR_BYTES,
+        )
+        != "exceeded"
+    )
 
 
 def _parse_host_authority(authority: str) -> tuple[str, int | None]:

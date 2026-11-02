@@ -25,6 +25,7 @@ import connector_intent
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import gmail_send
+import http_header_syntax
 import http_network_log
 import matching
 import outlook_send
@@ -786,19 +787,15 @@ def is_browser_passthrough_heuristic(flow: http.HTTPFlow) -> bool:
     # This is not trusted browser provenance: any sandbox client can set this
     # header. The spoofable User-Agent heuristic is currently accepted as a
     # known tradeoff until runner-owned browser provenance is prioritized again.
-    user_agent_bytes = 0
-    has_user_agent = False
-    for name, value in flow.request.headers.fields:
-        if name.lower() != b"user-agent":
-            continue
-        if has_user_agent:
-            user_agent_bytes += len(b", ")
-        user_agent_bytes += len(value)
-        if user_agent_bytes > _MAX_BROWSER_USER_AGENT_BYTES:
-            return False
-        has_user_agent = True
-
-    if not has_user_agent:
+    if (
+        http_header_syntax.header_value_budget_status(
+            flow.request.headers.fields,
+            b"user-agent",
+            max_value_bytes=_MAX_BROWSER_USER_AGENT_BYTES,
+            separator_bytes=len(b", "),
+        )
+        != "within_budget"
+    ):
         return False
 
     user_agent = flow.request.headers.get("User-Agent")
