@@ -9,14 +9,13 @@ import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-te
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import {
   click,
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
@@ -399,80 +398,80 @@ test("Changing a recommendation after undo replaces the restored template in the
   const draft = "image of a cat";
   await fill(editor, draft);
   const panel = await suggestions();
-
-  // ProseMirror timestamps transactions with Date.now, not the app clock.
-  // Cross its 500 ms history-group boundary without sleeping or faking timers.
-  let transactionTime = now();
-  const clock = vi.spyOn(Date, "now").mockImplementation(() => {
-    return transactionTime;
+  await user.click(button(`Use template ${templateA.title}`, panel));
+  await waitFor(() => {
+    expect(composerInlineTemplates()).toHaveLength(1);
+    expect(composerInlineTemplates()[0]).toHaveTextContent(templateA.title);
   });
-  try {
-    await user.click(button(`Use template ${templateA.title}`, panel));
-    await waitFor(() => {
-      expect(composerInlineTemplates()).toHaveLength(1);
-      expect(composerInlineTemplates()[0]).toHaveTextContent(templateA.title);
-    });
 
-    transactionTime += 1000;
-    await user.click(button("Change generation settings"));
-    const changes = await suggestions();
-    await user.click(button(`Use template ${templateB.title}`, changes));
-    await waitFor(() => {
-      expect(composerInlineTemplates()).toHaveLength(1);
-      expect(composerInlineTemplates()[0]).toHaveTextContent(templateB.title);
-    });
-
-    await user.click(editor);
-    await user.keyboard("{Control>}z{/Control}");
-    await waitFor(() => {
-      expect(composerInlineTemplates()).toHaveLength(1);
-      expect(composerInlineTemplates()[0]).toHaveTextContent(templateA.title);
-    });
-
-    // A normal collapsed caret must not make insertion replace the restored chip.
-    const selection = window.getSelection();
-    if (!selection) {
-      throw new Error("Expected a composer selection");
-    }
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    fireEvent(document, new Event("selectionchange"));
-    expect(selection.isCollapsed).toBeTruthy();
-
-    await user.click(button("Change generation settings"));
-    const restoredChanges = await suggestions();
-    await user.click(
-      button(`Use template ${templateC.title}`, restoredChanges),
-    );
-    await waitFor(() => {
-      expect(editor).toHaveTextContent(templateC.title);
-    });
-
-    click(button("Send"));
-    await waitFor(() => {
-      expect(capture.sentMessages).toHaveLength(1);
-    });
-    expect(messageText(capture.sentMessages[0])).toBe(draft);
-    expect(
-      capture.sentMessages[0]?.parts.filter((part) => {
-        return part.type === "template";
-      }),
-    ).toStrictEqual([
-      {
-        type: "template",
-        titleSnapshot: templateC.title,
-        template: {
-          type: "illustration",
-          selection: { illustrationStyleId: templateC.illustrationStyleId },
-        },
-      },
-    ]);
-  } finally {
-    clock.mockRestore();
+  // Editing at the opposite end naturally separates the undo history groups.
+  await user.click(editor);
+  const text = editor.querySelector("p")?.firstChild;
+  const selection = window.getSelection();
+  if (!(text instanceof Text) || !selection) {
+    throw new Error("Expected selectable draft text");
   }
+  const range = document.createRange();
+  range.setStart(text, 0);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  const prefix = "For launch: ";
+  await user.keyboard(prefix);
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(`${prefix}${draft}`);
+  });
+
+  await user.click(button("Change generation settings"));
+  const changes = await suggestions();
+  await user.click(button(`Use template ${templateB.title}`, changes));
+  await waitFor(() => {
+    expect(composerInlineTemplates()).toHaveLength(1);
+    expect(composerInlineTemplates()[0]).toHaveTextContent(templateB.title);
+  });
+
+  await user.click(editor);
+  await user.keyboard("{Control>}z{/Control}");
+  await waitFor(() => {
+    expect(composerInlineTemplates()).toHaveLength(1);
+    expect(composerInlineTemplates()[0]).toHaveTextContent(templateA.title);
+  });
+
+  // A normal collapsed caret must not make insertion replace the restored chip.
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  expect(selection.isCollapsed).toBeTruthy();
+
+  await user.click(button("Change generation settings"));
+  const restoredChanges = await suggestions();
+  await user.click(button(`Use template ${templateC.title}`, restoredChanges));
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(templateC.title);
+  });
+
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(messageText(capture.sentMessages[0])).toBe(`${prefix}${draft}`);
+  expect(
+    capture.sentMessages[0]?.parts.filter((part) => {
+      return part.type === "template";
+    }),
+  ).toStrictEqual([
+    {
+      type: "template",
+      titleSnapshot: templateC.title,
+      template: {
+        type: "illustration",
+        selection: { illustrationStyleId: templateC.illustrationStyleId },
+      },
+    },
+  ]);
 });
 
 test("A rejected thread send retains the applied generation settings for retry", async () => {
