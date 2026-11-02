@@ -3643,6 +3643,7 @@
         "backToSettings": "Torna alle impostazioni",
         "checkingTitle": "Verifica dello stato dell'account in corso...",
         "connectionFailed": "Connessione non riuscita",
+        "invalidBotConnectLink": "Questo link di connessione non è valido o è scaduto. Torna su {{provider}} e invia un messaggio al bot per ottenere un nuovo link.",
         "invalidLink": "Collegamento non valido",
         "verifying": "Attendi mentre verifichiamo la connessione."
       },
