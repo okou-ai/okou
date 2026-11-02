@@ -111,11 +111,14 @@ class CreateCancellationTests(unittest.TestCase):
         self.validate()
 
     def test_missing_duplicate_identity_and_real_file_source_are_refused(self):
-        for index in range(len(self.witnesses)):
-            original=copy.deepcopy(self.witnesses); self.witnesses.pop(index)
+        original=self.witnesses
+        for index in range(len(original)):
+            self.witnesses=original.copy()
+            self.witnesses.pop(index)
             with self.assertRaises(ValueError): self.validate()
-            self.witnesses=original
-        self.witnesses.append(copy.deepcopy(self.witnesses[-1]))
+        self.witnesses=original.copy()
+        self.validate()
+        self.witnesses.append(copy.deepcopy(original[-1]))
         with self.assertRaises(ValueError): self.validate()
 
 
