@@ -30,5 +30,3 @@ pub mod operation_test_support;
 
 #[cfg(test)]
 mod test_fixtures;
-
-pub mod content_bundle_cache;

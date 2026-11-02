@@ -3,10 +3,11 @@ use crate::cleanup_directory::CleanupDirectory;
 use guest_telemetry::{log_info, log_warn};
 use std::fs;
 use std::io;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-/// Materialize verified bundle instructions after ordinary Storage reconciliation.
-/// The caller owns the private source file; only known framework files are replaced.
+/// Materialize the current Run's instruction file after ordinary Storage reconciliation.
+/// The caller pins the source directory; only known framework files are replaced.
 pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> bool {
     let (relative_home, filename) = match framework {
         "claude-code" => (".claude", InstructionFilename::Claude),
@@ -14,7 +15,7 @@ pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> 
         "pi" => (".pi/agent", InstructionFilename::Agents),
         _ => return false,
     };
-    // The source was written through the Runner's private-file transport.
+    // Storage delivered the source into the current Run's staging directory.
     if !matches!(
         lstat_instruction_path_state(source),
         InstructionPathState::RegularFile
@@ -260,7 +261,13 @@ fn copy_instruction_file_atomically(
     target_path: &Path,
     copy: impl FnOnce(&mut fs::File, &mut fs::File) -> io::Result<u64>,
 ) -> io::Result<()> {
-    let mut source = fs::File::open(source_path)?;
+    let mut source = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(source_path)?;
+    if !source.metadata()?.is_file() {
+        return Err(io::Error::other("Instruction source is not a regular file"));
+    }
     let source_permissions = source.metadata()?.permissions();
     let (mut temp_file, temp_path) = create_instruction_temp_file(target_path)?;
     let result = (|| {

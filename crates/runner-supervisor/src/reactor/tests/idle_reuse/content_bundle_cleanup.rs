@@ -41,10 +41,7 @@ async fn content_bundle_paths_are_cleaned_after_finalization_and_exact_reuse() {
         .unwrap();
     let archive = tar.into_inner().unwrap().finish().unwrap();
     let hash = hex::encode(Sha256::digest(&archive));
-    let cache = config
-        .exec_config
-        .home
-        .storage_cache_dir("content-bundle", &hash);
+    let cache = config.exec_config.home.storage_cache_dir("workflow", &hash);
     std::fs::create_dir_all(&cache).unwrap();
     std::fs::write(cache.join("archive.tar.gz"), &archive).unwrap();
     let idle_pool = Arc::clone(&config.shared.idle_pool);

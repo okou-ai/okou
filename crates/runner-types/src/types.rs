@@ -82,9 +82,6 @@ pub struct ExecutionContext {
     pub append_system_prompt: Option<String>,
     /// Immutable packages selected by the API, empty for agentless/local jobs.
     pub content_bundles: crate::content_bundle::ClaimedContentBundles,
-    /// Verified Agent instruction packages, never decoded from claim JSON.
-    #[serde(skip)]
-    pub prepared_bundles: Vec<crate::content_bundle::PreparedBundle>,
     // Vars are passed to the proxy registry for auth header template resolution.
     #[serde(default)]
     pub vars: Option<HashMap<String, String>>,
