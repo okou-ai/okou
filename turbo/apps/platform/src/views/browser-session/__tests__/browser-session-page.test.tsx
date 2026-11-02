@@ -742,7 +742,7 @@ function mockSharedViewer(liveUrl: string | null = null) {
   return { session, cdpUrl, browser };
 }
 
-test.each([502, 503, "network"] as const)(
+test.each([502, 503, "network", "gateway"] as const)(
   "A mounted panel renews after a transient %s lease failure and remains usable",
   async (failure) => {
     const failures = recordHeartbeatFailures();
@@ -761,7 +761,7 @@ test.each([502, 503, "network"] as const)(
       async ({ params, body, respond }) => {
         expect(params.threadId).toBe(THREAD_ID);
         expect(body).toStrictEqual({});
-        if (failure !== "network" && !failed) {
+        if (typeof failure === "number" && !failed) {
           failed = true;
           first.resolve();
           await fail.promise;
@@ -791,8 +791,8 @@ test.each([502, 503, "network"] as const)(
         return respond(200, { browser: session });
       },
     );
-    if (failure === "network") {
-      // A rejected transport has no typed HTTP response to return.
+    if (failure === "network" || failure === "gateway") {
+      // Transport and gateway failures do not have an application error body.
       context.mocks.http.post(
         `*/api/chat-threads/${THREAD_ID}/browser/lease`,
         async ({ signal }) => {
@@ -803,7 +803,11 @@ test.each([502, 503, "network"] as const)(
           first.resolve();
           await fail.promise;
           signal.throwIfAborted();
-          return HttpResponse.error();
+          return failure === "network"
+            ? HttpResponse.error()
+            : HttpResponse.html("<html><body>Bad Gateway</body></html>", {
+                status: 502,
+              });
         },
       );
     }
@@ -826,11 +830,7 @@ test.each([502, 503, "network"] as const)(
     expect(failures).toStrictEqual([
       {
         threadId: THREAD_ID,
-        status: failure,
-        code:
-          failure === "network"
-            ? undefined
-            : "BROWSER_USE_SHARED_OPERATION_FAILED",
+        status: failure === "gateway" ? 502 : failure,
       },
     ]);
     await userEvent.keyboard("{End}x");

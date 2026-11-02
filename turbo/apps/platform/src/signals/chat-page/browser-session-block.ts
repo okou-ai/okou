@@ -283,12 +283,12 @@ function createBrowserSessionKeepAliveSignals(
             // Only this idempotent renewal can continue at the normal interval.
             // An outage must not replay input or invalidate the mounted viewer.
             if (!reportedFailure) {
+              // Gateway failures need not have an application error body.
               L.error(
                 "Browser heartbeat failed; scheduled renewal will continue",
                 {
                   threadId: descriptor.threadId,
                   status: response?.status ?? "network",
-                  code: response?.body.error.code,
                 },
               );
               reportedFailure = true;
