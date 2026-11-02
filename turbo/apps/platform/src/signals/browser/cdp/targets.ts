@@ -86,7 +86,7 @@ export function createTargetDirectory(
     const { native, client } = resources;
     signal.throwIfAborted();
     if (native.signal.aborted || client.signal.aborted) {
-      throw nativeFault();
+      throw nativeFault(native.signal.reason);
     }
   });
   const assertWindow$ = command(async ({ get, set }, signal: AbortSignal) => {
