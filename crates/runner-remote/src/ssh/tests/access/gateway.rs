@@ -12,7 +12,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    task::{JoinHandle, JoinSet},
+    task::JoinSet,
 };
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::{
@@ -53,14 +53,9 @@ pub(super) struct Observed {
 }
 
 pub(super) struct Gateway {
+    // Request abort before releasing the remaining fixture fields.
+    _task: tokio_util::task::AbortOnDropHandle<()>,
     pub(super) observed: Arc<Observed>,
-    task: JoinHandle<()>,
-}
-
-impl Drop for Gateway {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
 }
 
 struct Connection(Arc<Observed>);
@@ -150,7 +145,13 @@ pub(super) async fn setup(reply: Reply, mode: Mode, cert_host: &str) -> (Harness
             }
         }
     });
-    (h, Gateway { observed, task })
+    (
+        h,
+        Gateway {
+            observed,
+            _task: tokio_util::task::AbortOnDropHandle::new(task),
+        },
+    )
 }
 
 async fn serve(

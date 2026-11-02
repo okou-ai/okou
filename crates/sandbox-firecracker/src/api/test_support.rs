@@ -7,7 +7,8 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
+use tokio_util::task::AbortOnDropHandle;
 
 pub(crate) const MOCK_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_MOCK_REQUEST_HEADER_BYTES: usize = 16 * 1024;
@@ -89,10 +90,11 @@ impl MockResponseMode {
 }
 
 pub(crate) struct MockFirecrackerApi {
+    // Request abort before releasing the socket directory and request receiver.
+    _server: AbortOnDropHandle<()>,
     _dir: tempfile::TempDir,
     sock_path: PathBuf,
     requests: mpsc::UnboundedReceiver<MockRequest>,
-    server: JoinHandle<()>,
 }
 
 impl MockFirecrackerApi {
@@ -135,7 +137,7 @@ impl MockFirecrackerApi {
             _dir: dir,
             sock_path,
             requests,
-            server,
+            _server: AbortOnDropHandle::new(server),
         }
     }
 
@@ -159,7 +161,7 @@ impl MockFirecrackerApi {
                 _dir: dir,
                 sock_path,
                 requests,
-                server,
+                _server: AbortOnDropHandle::new(server),
             },
             bind_tx,
         )
@@ -181,7 +183,7 @@ impl MockFirecrackerApi {
             _dir: dir,
             sock_path,
             requests,
-            server,
+            _server: AbortOnDropHandle::new(server),
         }
     }
 
@@ -207,12 +209,6 @@ impl MockFirecrackerApi {
             requests.push(request);
         }
         requests
-    }
-}
-
-impl Drop for MockFirecrackerApi {
-    fn drop(&mut self) {
-        self.server.abort();
     }
 }
 

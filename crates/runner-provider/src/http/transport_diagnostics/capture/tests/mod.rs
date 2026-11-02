@@ -219,7 +219,7 @@ async fn recorder_retains_packets_observed_between_failure_and_incident_admissio
     let owner = TransportDiagnostics(Arc::new(Owner {
         shared,
         faults,
-        task: Some(task),
+        _task: Some(AbortOnDropHandle::new(task)),
     }));
     // Model the real handoff: failure creates an incident, then the recorder
     // reads the queued RST before selecting the incident notification.
@@ -287,7 +287,7 @@ async fn recorder_bounds_fault_output_finishes_its_window_and_aborts_with_its_ow
     let owner = TransportDiagnostics(Arc::new(Owner {
         shared: Arc::clone(&shared),
         faults,
-        task: Some(task),
+        _task: Some(AbortOnDropHandle::new(task)),
     }));
     let make_fault = |name: &str| Fault {
         request_id: name.into(),

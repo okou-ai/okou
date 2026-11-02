@@ -19,6 +19,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 
 const RAW_HTTP_FIXTURE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REQUEST_HEADER_BYTES: usize = 64 * 1024;
@@ -50,9 +51,10 @@ pub enum RawHttpAction {
 /// Use an explicit finish or cancellation method to await task cleanup. Dropping
 /// an unfinished server aborts its task as a safety net.
 pub struct RawHttpTestServer {
+    // Request abort before releasing the request receiver.
+    task: Option<AbortOnDropHandle<io::Result<()>>>,
     address: SocketAddr,
     requests: mpsc::Receiver<String>,
-    task: Option<JoinHandle<io::Result<()>>>,
 }
 
 impl RawHttpTestServer {
@@ -66,7 +68,7 @@ impl RawHttpTestServer {
         Self {
             address,
             requests,
-            task: Some(task),
+            task: Some(AbortOnDropHandle::new(task)),
         }
     }
 
@@ -143,17 +145,9 @@ impl RawHttpTestServer {
             .task
             .take()
             .expect("raw HTTP fixture task should be present");
-        finish_task_with_timeout(task, timeout)
+        finish_task_with_timeout(task.detach(), timeout)
             .await?
             .map_err(|error| format!("server failed: {error}"))
-    }
-}
-
-impl Drop for RawHttpTestServer {
-    fn drop(&mut self) {
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
     }
 }
 

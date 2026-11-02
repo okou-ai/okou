@@ -1,5 +1,6 @@
 use super::*;
 use raw_http_test_support::clock::advance_timer_phase;
+use tokio_util::task::AbortOnDropHandle;
 
 #[derive(Clone)]
 struct Reply {
@@ -61,8 +62,9 @@ impl Reply {
 
 /// Real HTTP and peer-closure observations synchronize the production timers.
 struct RetryServer {
+    // Request abort before releasing the remaining fixture fields.
+    task: Option<AbortOnDropHandle<io::Result<usize>>>,
     url: String,
-    task: Option<JoinHandle<io::Result<usize>>>,
     requests: Arc<AtomicUsize>,
     response_sent: Arc<Notify>,
     client_closed: Arc<Notify>,
@@ -124,7 +126,7 @@ impl RetryServer {
         });
         Self {
             url,
-            task: Some(task),
+            task: Some(AbortOnDropHandle::new(task)),
             requests,
             response_sent,
             client_closed,
@@ -153,7 +155,7 @@ impl RetryServer {
     }
 
     async fn finish(mut self, expected: usize) {
-        let count = join_raw_http_task(self.task.take().unwrap(), "archive retry server")
+        let count = join_raw_http_task(self.task.take().unwrap().detach(), "archive retry server")
             .await
             .unwrap();
         assert_eq!(count, expected);
@@ -164,14 +166,6 @@ impl RetryServer {
         task.abort();
         let _ = task.await;
         assert_eq!(self.requests.load(Ordering::SeqCst), expected);
-    }
-}
-
-impl Drop for RetryServer {
-    fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
     }
 }
 

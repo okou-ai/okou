@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -80,7 +80,7 @@ enum Framing {
 }
 
 struct ErrorPeer {
-    task: Option<JoinHandle<io::Result<String>>>,
+    task: Option<AbortOnDropHandle<io::Result<String>>>,
 }
 
 impl ErrorPeer {
@@ -130,7 +130,12 @@ impl ErrorPeer {
             }
             Ok(request)
         });
-        Ok((url, Self { task: Some(task) }))
+        Ok((
+            url,
+            Self {
+                task: Some(AbortOnDropHandle::new(task)),
+            },
+        ))
     }
 
     async fn finish(mut self) -> io::Result<String> {
@@ -138,15 +143,7 @@ impl ErrorPeer {
             .task
             .take()
             .ok_or_else(|| io::Error::other("missing error peer task"))?;
-        join_raw_http_task(task, "API error peer").await
-    }
-}
-
-impl Drop for ErrorPeer {
-    fn drop(&mut self) {
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
+        join_raw_http_task(task.detach(), "API error peer").await
     }
 }
 

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use futures_util::future::{BoxFuture, FutureExt as _};
 use hyper_util::client::legacy::connect::{Connection, HttpInfo};
 use tokio::sync::{Notify, mpsc};
-use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 use tower_layer::Layer;
 use tower_service::Service;
 use tracing::{Dispatch, info};
@@ -50,17 +50,10 @@ struct RequestObservation {
 pub(super) struct TransportDiagnostics(Arc<Owner>);
 
 struct Owner {
+    // Request abort before releasing diagnostic state and the fault sender.
+    _task: Option<AbortOnDropHandle<()>>,
     shared: Arc<Shared>,
     faults: mpsc::Sender<Fault>,
-    task: Option<JoinHandle<()>>,
-}
-
-impl Drop for Owner {
-    fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
-    }
 }
 
 struct Shared {
@@ -266,7 +259,7 @@ impl TransportDiagnostics {
         Self(Arc::new(Owner {
             shared,
             faults,
-            task,
+            _task: task.map(AbortOnDropHandle::new),
         }))
     }
 

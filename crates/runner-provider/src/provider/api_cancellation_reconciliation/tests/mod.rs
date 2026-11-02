@@ -9,7 +9,7 @@ use std::future::Future;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::Level;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -72,9 +72,10 @@ impl Request {
 }
 
 struct Server {
+    // Request abort before releasing queued requests and their sockets.
+    task: AbortOnDropHandle<()>,
     url: String,
     requests: mpsc::Receiver<Request>,
-    task: JoinHandle<()>,
 }
 
 struct FirstRequestGate {
@@ -115,7 +116,7 @@ impl Server {
         Self {
             url,
             requests,
-            task,
+            task: AbortOnDropHandle::new(task),
         }
     }
 
@@ -159,12 +160,6 @@ fn request_context() -> ApiRequestContext {
         client_request_id: "request-test".into(),
         client_session_id: "session-test".into(),
         client_version: "runner-test".into(),
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        self.task.abort();
     }
 }
 
