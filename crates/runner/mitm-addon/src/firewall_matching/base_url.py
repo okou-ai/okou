@@ -301,15 +301,7 @@ def _normalize_authority_host(
         "*" in normalized and not (allow_host_params and _has_base_url_params(normalized))
     ):
         return normalized.lower(), True
-    if raw_host.bracketed:
-        try:
-            parsed_ip = ipaddress.ip_address(normalized)
-        except ValueError:
-            return normalized.lower(), True
-        if parsed_ip.version != IPV6_VERSION:
-            return normalized.lower(), True
-        return f"[{parsed_ip.compressed.lower()}]", False
-    if ":" in normalized:
+    if raw_host.bracketed or ":" in normalized:
         try:
             parsed_ip = ipaddress.ip_address(normalized)
         except ValueError:
