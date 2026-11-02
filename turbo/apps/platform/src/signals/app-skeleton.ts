@@ -16,7 +16,6 @@ export const appContentReady$ = computed((get) => {
 });
 
 const APP_BOOTSTRAP_SKELETON_ID = "app-bootstrap-skeleton";
-const APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS = "app-bootstrap-skeleton--hidden";
 
 export const mainStylesheetLoaded$ = computed(async () => {
   return (await window.__mainStylesheetLoaded) !== "failed";
@@ -48,15 +47,8 @@ export async function hideBootstrapSkeleton(
   if (!skeleton) {
     return true;
   }
-  skeleton.setAttribute("aria-hidden", "true");
-  skeleton.addEventListener(
-    "transitionend",
-    () => {
-      skeleton.remove();
-    },
-    { once: true },
-  );
-  skeleton.classList.add(APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS);
+  // This diagnostic preview disables transitions, so transitionend cannot clean up.
+  skeleton.remove();
   return true;
 }
 
