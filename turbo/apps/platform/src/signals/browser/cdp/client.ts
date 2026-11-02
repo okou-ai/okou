@@ -8,6 +8,7 @@ import {
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import { addBreadcrumb } from "@sentry/browser";
 import { CdpFault, isRecord, type CdpConnectionObservation } from "./errors.ts";
+import { maximumCdpMessageLength } from "../display/limits.ts";
 
 type Method = keyof ProtocolMapping.Commands;
 type Params<M extends Method> =
@@ -313,7 +314,10 @@ function receiveMessage(
   wire: Wire,
   event: MessageEvent<unknown>,
 ): void {
-  if (typeof event.data !== "string" || event.data.length > 16 * 1024 * 1024) {
+  if (
+    typeof event.data !== "string" ||
+    event.data.length > maximumCdpMessageLength
+  ) {
     wire.close(new CdpFault("protocol", "Invalid or oversized CDP message."));
     return;
   }
