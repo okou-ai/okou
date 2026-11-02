@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { object, string } from "zod";
+import { checkIosConsumption } from "./ios-consumption";
 import { iosResponseTransforms } from "../client-transforms/ios";
 import { desktopResponseTransforms } from "../client-transforms/desktop";
 import { compareRuntimeApiSchemas } from "./compat";
@@ -42,6 +44,7 @@ type ParsedOptions = ReadonlyMap<string, readonly string[]>;
 
 const USAGE = `Usage:
   tsx src/runtime-api-schema/cli.ts build --out runtime-api-schema.json
+  tsx src/runtime-api-schema/cli.ts lint-ios-consumption [--root repository-root]
   tsx src/runtime-api-schema/cli.ts lint --against online-schema.json
     [--current current-schema.json] [--base-schema base-schema.json]
     [--report-out report.json] [--block-owner <owner>]...
@@ -66,6 +69,26 @@ export async function runRuntimeApiSchemaCli(
 ): Promise<number> {
   const [command, ...rest] = argv;
   try {
+    if (command === "lint-ios-consumption") {
+      const options = parseOptions(rest, { root: "single" });
+      const root =
+        single(options, "root") ??
+        fileURLToPath(new URL("../../../../../", import.meta.url));
+      const findings = await checkIosConsumption(resolve(root));
+      for (const finding of findings) {
+        console.error(
+          "::error file=" +
+            finding.file +
+            ",line=" +
+            finding.line +
+            ",title=iOS API consumption::" +
+            finding.problem,
+        );
+      }
+      if (findings.length > 0) return 1;
+      console.log("iOS API consumption inventory covers all Swift API calls.");
+      return 0;
+    }
     if (command === "build") {
       await buildCommand(parseOptions(rest, BUILD_OPTIONS));
       return 0;

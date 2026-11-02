@@ -48,6 +48,7 @@ import {
   customConnectorsContract,
 } from "../contracts/custom-connectors";
 import { featureSwitchesContract } from "../contracts/feature-switches";
+import { hostContract } from "../contracts/host";
 import { iosNotificationsContract } from "../contracts/ios-notifications";
 import { iosPushRegistrationsContract } from "../contracts/ios-push-registrations";
 import { mcpChatSearchContract } from "../contracts/mcp-chat-search";
@@ -148,6 +149,10 @@ const iosContracts: readonly {
   {
     id: "ios.chatThreadConnectorSelectionContract.update",
     route: chatThreadConnectorSelectionContract.update,
+  },
+  {
+    id: "ios.chatThreadConnectorSelectionContract.clear",
+    route: chatThreadConnectorSelectionContract.clear,
   },
   { id: "ios.chatThreadDraftContract.get", route: chatThreadDraftContract.get },
   {
@@ -315,6 +320,7 @@ const iosContracts: readonly {
     route: customConnectorsContract.list,
   },
   { id: "ios.featureSwitchesContract.get", route: featureSwitchesContract.get },
+  { id: "ios.hostContract.sitePreview", route: hostContract.sitePreview },
   {
     id: "ios.iosNotificationsContract.prefetch",
     route: iosNotificationsContract.prefetch,

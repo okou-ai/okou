@@ -108,22 +108,41 @@ public struct PersonalSubscriptionService: Sendable {
   {
     var body = ["scope": "personal", "mode": accountID == nil ? "add" : "reconnect"]
     body["modelProviderId"] = accountID
-    return try await client.request(
-      "/api/model-providers/\(type.authPath)/device-auth/sessions",
-      method: "POST", body: JSONEncoder().encode(body))
+    let data = try JSONEncoder().encode(body)
+    switch type {
+    case .codex:
+      return try await client.request(
+        "/api/model-providers/codex/device-auth/sessions", method: "POST", body: data)
+    case .claude:
+      return try await client.request(
+        "/api/model-providers/claude-code/device-auth/sessions", method: "POST", body: data)
+    }
   }
   public func complete(type: PersonalSubscriptionType, token: String, code: String? = nil)
     async throws -> SubscriptionAuthCompletion
   {
     var body = ["sessionToken": token]
     body["authorizationCode"] = code
-    return try await client.request(
-      "/api/model-providers/\(type.authPath)/device-auth/sessions/complete",
-      method: "POST", body: JSONEncoder().encode(body))
+    let data = try JSONEncoder().encode(body)
+    switch type {
+    case .codex:
+      return try await client.request(
+        "/api/model-providers/codex/device-auth/sessions/complete", method: "POST", body: data)
+    case .claude:
+      return try await client.request(
+        "/api/model-providers/claude-code/device-auth/sessions/complete",
+        method: "POST", body: data)
+    }
   }
   public func cancel(type: PersonalSubscriptionType, token: String) async throws {
-    try await client.data(
-      "/api/model-providers/\(type.authPath)/device-auth/sessions/cancel",
-      method: "POST", body: JSONEncoder().encode(["sessionToken": token]))
+    let body = try JSONEncoder().encode(["sessionToken": token])
+    switch type {
+    case .codex:
+      try await client.data(
+        "/api/model-providers/codex/device-auth/sessions/cancel", method: "POST", body: body)
+    case .claude:
+      try await client.data(
+        "/api/model-providers/claude-code/device-auth/sessions/cancel", method: "POST", body: body)
+    }
   }
 }

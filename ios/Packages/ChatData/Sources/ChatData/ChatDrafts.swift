@@ -14,20 +14,6 @@ public enum ChatDraftTarget: Equatable, Sendable {
     case .thread(let id): "thread/" + id
     }
   }
-  var readPath: String? {
-    switch self {
-    case .unassigned: nil
-    case .agent(let id): "/api/agents/\(id)/draft"
-    case .thread(let id): "/api/chat-threads/\(id)/draft"
-    }
-  }
-  var writePath: String? {
-    switch self {
-    case .unassigned: nil
-    case .agent: readPath
-    case .thread(let id): "/api/chat-threads/\(id)"
-    }
-  }
 }
 
 public struct ComposerDraft: Codable, Equatable, Sendable {
@@ -77,12 +63,22 @@ public struct ChatDraftRepository: Sendable {
   public init(client: APIClient) { self.client = client }
 
   public func load(_ target: ChatDraftTarget) async throws -> ComposerDraft {
-    guard let path = target.readPath else { throw ChatError.noDefaultAgent }
-    return try await client.request(path)
+    switch target {
+    case .unassigned: throw ChatError.noDefaultAgent
+    case .agent(let id): return try await client.request("/api/agents/\(id)/draft")
+    case .thread(let id): return try await client.request("/api/chat-threads/\(id)/draft")
+    }
   }
   public func save(_ draft: ComposerDraft, to target: ChatDraftTarget) async throws {
-    guard let path = target.writePath else { throw ChatError.noDefaultAgent }
-    try await client.data(path, method: "PATCH", body: JSONEncoder().encode(draft))
+    switch target {
+    case .unassigned: throw ChatError.noDefaultAgent
+    case .agent(let id):
+      try await client.data(
+        "/api/agents/\(id)/draft", method: "PATCH", body: JSONEncoder().encode(draft))
+    case .thread(let id):
+      try await client.data(
+        "/api/chat-threads/\(id)", method: "PATCH", body: JSONEncoder().encode(draft))
+    }
   }
 }
 
