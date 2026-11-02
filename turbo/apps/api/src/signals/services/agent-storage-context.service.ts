@@ -1,10 +1,8 @@
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
 import {
   SYSTEM_ORG_ID,
   MEMORY_ARTIFACT_NAME,
   VOLUME_ORG_USER_ID,
-  getSkillStorageName,
   getCustomConnectorSkillStorageName,
 } from "@okouai/core/storage-names";
 import {
@@ -55,14 +53,6 @@ function agentStorageRequests(
       version,
     });
   };
-  for (const skill of SEED_SKILLS) {
-    const parsed = parseGitHubTreeUrl(resolveSkillRef(skill));
-    if (parsed) {
-      const name = getSkillStorageName(parsed.fullPath);
-      add(SYSTEM_ORG_ID, name);
-      add(orgId, name);
-    }
-  }
   for (const workflow of workflows) {
     if (SEED_SKILLS.includes(workflow.name)) {
       continue;
