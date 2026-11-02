@@ -7,7 +7,7 @@
 use std::io::IoSlice;
 #[cfg(test)]
 use std::num::NonZeroUsize;
-use std::os::unix::io::{FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::io::OwnedFd;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -179,8 +179,7 @@ async fn dispatch_with_observers(
     read_observer: DispatchReadObserver,
     write_limit: DispatchWriteLimit,
 ) -> Result<()> {
-    let raw_fd = socket_fd.into_raw_fd();
-    let std_stream = unsafe { std::os::unix::net::UnixStream::from_raw_fd(raw_fd) };
+    let std_stream = std::os::unix::net::UnixStream::from(socket_fd);
     std_stream.set_nonblocking(true)?;
     let stream = UnixStream::from_std(std_stream)?;
 
