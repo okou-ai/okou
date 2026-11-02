@@ -66,11 +66,12 @@ export async function sendWhatsappTextWithTaskFallback(
 }> {
   const sent = await settle(
     sendAgentPhoneMessage({ ...args, channel: "whatsapp" }, signal),
-    signal,
   );
   if (sent.ok) {
+    // Return accepted receipts for caller-owned durable recording.
     return { message: sent.value, body: args.body, template: undefined };
   }
+  signal.throwIfAborted();
   if (!args.completedTask || !isAgentPhoneWhatsappWindowClosed(sent.error)) {
     throw sent.error;
   }

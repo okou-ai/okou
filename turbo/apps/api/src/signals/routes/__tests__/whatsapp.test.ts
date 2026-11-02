@@ -962,6 +962,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
   });
 
   it.each([
+    "open",
     "closed",
     "other-rejection",
     "lost",
@@ -979,6 +980,13 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         http.post(`${providerUrl}/v1/messages`, async ({ request }) => {
           const body = (await request.json()) as Record<string, unknown>;
           requests.push(body);
+          if (scenario === "open") {
+            return HttpResponse.json({
+              id: `normal-part-${requests.length}`,
+              channel: "whatsapp",
+              to_number: task.phone,
+            });
+          }
           if (
             scenario === "lost" ||
             (scenario === "template-lost" && body.template)
@@ -1044,7 +1052,22 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         }),
         [200, 400, 502],
       );
-      if (scenario === "closed") {
+      if (scenario === "open") {
+        expect(response.status).toBe(200);
+        expect(response.body).toStrictEqual({
+          channel: "whatsapp",
+          toNumber: task.phone,
+          messages: [{ id: "normal-part-1" }, { id: "normal-part-2" }],
+        });
+        expect(requests).toHaveLength(2);
+        expect(
+          requests
+            .map((request) => {
+              return request.body;
+            })
+            .join(""),
+        ).toBe("Your completed report. ".repeat(300));
+      } else if (scenario === "closed") {
         expect(response.status).toBe(200);
         expect(response.body).toStrictEqual({
           channel: "whatsapp",
