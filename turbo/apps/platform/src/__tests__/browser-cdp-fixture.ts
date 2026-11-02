@@ -31,6 +31,7 @@ export function mockBrowserCdp(
   context: TestContext,
   cdpUrl: string,
   options: {
+    readonly autoOpen?: boolean;
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
     readonly unavailableTargets?: readonly string[];
@@ -546,7 +547,7 @@ export function mockBrowserCdp(
       return null;
     }
     return response;
-  });
+  }, options);
 
   return {
     event,
@@ -557,6 +558,15 @@ export function mockBrowserCdp(
     captures,
     viewport,
     connections: socket.connections,
+    openConnection() {
+      socket.open(cdpUrl);
+    },
+    failConnection() {
+      socket.fail(cdpUrl);
+    },
+    disconnect(event: CloseEventInit) {
+      socket.disconnect(cdpUrl, event);
+    },
     failNext(method: string, message: string, code = -32_000) {
       nextResponses.set(method, () => {
         return { error: { code, message } };

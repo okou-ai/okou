@@ -405,8 +405,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
     browser: {
       webSocket: (
         respond: (data: string, url: string) => string | null,
+        options?: { readonly autoOpen?: boolean },
       ): ReturnType<typeof mockBrowserWebSocket> => {
-        return mockBrowserWebSocket(getSignal(), respond);
+        return mockBrowserWebSocket(getSignal(), respond, options);
       },
       url: (url: string, options: BrowserUrlOptions = {}): void => {
         if (originalBrowserUrl === null) {
@@ -1502,6 +1503,7 @@ function mockImageDimensions(
 function mockBrowserWebSocket(
   signal: AbortSignal,
   respond: (data: string, url: string) => string | null,
+  options: { readonly autoOpen?: boolean } = {},
 ) {
   const sockets = new Set<TestWebSocket>();
   let connectionCount = 0;
@@ -1516,13 +1518,19 @@ function mockBrowserWebSocket(
       super();
       connectionCount += 1;
       sockets.add(this);
-      queueMicrotask(() => {
-        if (this.readyState !== TestWebSocket.CONNECTING) {
-          return;
-        }
-        this.readyState = TestWebSocket.OPEN;
-        this.dispatchEvent(new Event("open"));
-      });
+      if (options.autoOpen !== false) {
+        queueMicrotask(() => {
+          this.open();
+        });
+      }
+    }
+
+    open(): void {
+      if (this.readyState !== TestWebSocket.CONNECTING) {
+        return;
+      }
+      this.readyState = TestWebSocket.OPEN;
+      this.dispatchEvent(new Event("open"));
     }
 
     send(data: string): void {
@@ -1538,12 +1546,19 @@ function mockBrowserWebSocket(
     }
 
     close(): void {
+      this.terminate({ code: 1000, wasClean: true });
+    }
+
+    terminate(event: CloseEventInit, error = false): void {
       if (this.readyState === TestWebSocket.CLOSED) {
         return;
       }
       this.readyState = TestWebSocket.CLOSED;
       sockets.delete(this);
-      this.dispatchEvent(new Event("close"));
+      if (error) {
+        this.dispatchEvent(new Event("error"));
+      }
+      this.dispatchEvent(new CloseEvent("close", event));
     }
   }
   const descriptor = defineWindowProperty(
@@ -1560,6 +1575,27 @@ function mockBrowserWebSocket(
   return {
     connections(): number {
       return connectionCount;
+    },
+    open(url: string): void {
+      for (const socket of sockets) {
+        if (socket.url === url) {
+          socket.open();
+        }
+      }
+    },
+    fail(url: string): void {
+      for (const socket of sockets) {
+        if (socket.url === url) {
+          socket.terminate({ code: 1006, wasClean: false }, true);
+        }
+      }
+    },
+    disconnect(url: string, event: CloseEventInit): void {
+      for (const socket of sockets) {
+        if (socket.url === url) {
+          socket.terminate(event);
+        }
+      }
     },
     receive(url: string, data: string): void {
       for (const socket of sockets) {
