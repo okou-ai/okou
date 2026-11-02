@@ -32,7 +32,8 @@ final class ProjectReadingTests: XCTestCase {
       }
     }
     let directory = CacheTestDirectory(owner: self)
-    let scope = ChatCacheScope(apiBaseURL: fixture.baseURL, userID: "project-reader", workspaceID: "project-workspace")
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "project-reader", workspaceID: "project-workspace")
     let service = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
     let members = try await service.threads()
     XCTAssertEqual(members.first?.projectId, project)
