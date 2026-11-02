@@ -27,6 +27,24 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("keeps home task discovery off by default and honors explicit overrides", () => {
+    const key = FeatureSwitchKey.HomeTaskDiscovery;
+    for (const context of [
+      {},
+      { userId: "external-user", orgId: "external-org" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { email: "BINGJIE@OKOU.AI" },
+    ]) {
+      expect(isFeatureEnabled(key, context)).toBe(false);
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+      for (const enabled of [true, false]) {
+        const overridden = { ...context, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, overridden)).toBe(enabled);
+        expect(getAllFeatureStates(overridden)[key]).toBe(enabled);
+      }
+    }
+  });
+
   it("defaults CJK emphasis to staff and honors explicit overrides", () => {
     const key = FeatureSwitchKey.MarkdownCjkEmphasis;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };

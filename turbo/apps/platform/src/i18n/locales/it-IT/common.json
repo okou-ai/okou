@@ -2140,6 +2140,81 @@
       "threads": "Chat",
       "title": "Inoltra a"
     },
+    "homeDiscovery": {
+      "allEntries": "Tutte le opzioni",
+      "create": {
+        "document": "Documento",
+        "image": "Immagine",
+        "presentation": "PPT",
+        "visualization": "Grafico",
+        "website": "Sito web"
+      },
+      "entries": {
+        "briefs": {
+          "examples": {
+            "first": "Aiutami a impostare un riepilogo mattutino delle email che richiedono la mia attenzione; prima conferma la casella di posta e l'orario di invio",
+            "second": "Aiutami a impostare un riepilogo settimanale sui concorrenti; prima conferma le aziende, le fonti e la programmazione",
+            "third": "Aiutami a impostare un riepilogo giornaliero delle vendite; prima conferma la fonte dei dati, le metriche e l'orario di invio"
+          },
+          "label": "Riepiloghi",
+          "placeholder": "Descrivi cosa vorresti nel riepilogo e con quale frequenza riceverlo…",
+          "title": "Quale riepilogo vorresti ricevere?"
+        },
+        "general": {
+          "examples": {
+            "first": "Trova agenzie di brand design adatte a un team agli inizi",
+            "second": "Confronta gli strumenti di gestione clienti per funzionalità e prezzo",
+            "third": "Cerca le tendenze recenti e le aziende leader di un settore"
+          },
+          "label": "Ricerca generale",
+          "placeholder": "Descrivi la tua domanda o cosa vorresti sapere…",
+          "title": "Cosa vorresti scoprire?"
+        },
+        "information": {
+          "examples": {
+            "first": "Trova studi recenti sull'adozione dell'IA nelle piccole imprese, con le fonti originali",
+            "second": "Raccogli esempi pubblici di lanci di prodotto di successo e spiega cosa ha funzionato",
+            "third": "Trova dati di settore affidabili per una presentazione, con date e link alle fonti"
+          },
+          "label": "Cerca informazioni",
+          "placeholder": "Descrivi l'argomento, il periodo o a cosa ti servono le informazioni…",
+          "title": "Su cosa vorresti fare una ricerca?"
+        },
+        "monitor": {
+          "examples": {
+            "first": "Aiutami a seguire le variazioni dei prezzi dei concorrenti; prima conferma le aziende, le fonti e quando avvisarmi",
+            "second": "Aiutami a tenere d'occhio la risposta a un'email inviata a un cliente; prima conferma l'email e come avvisarmi",
+            "third": "Aiutami a seguire gli aggiornamenti importanti di un settore; concordiamo prima le fonti, la frequenza e gli aspetti rilevanti"
+          },
+          "label": "Monitora",
+          "placeholder": "Descrivi cosa vuoi seguire e quali cambiamenti sono importanti…",
+          "title": "Quali cambiamenti vorresti seguire?"
+        },
+        "people": {
+          "examples": {
+            "first": "Trova 5 relatori per un evento sul marketing con l'IA, con i motivi per cui sono adatti e fonti pubbliche",
+            "second": "Trova creator che raggiungono i titolari d'impresa e spiega perché il loro pubblico è adatto",
+            "third": "Trova potenziali clienti per i miei servizi di consulenza, con informazioni pubbliche pertinenti sul loro profilo"
+          },
+          "label": "Cerca persone",
+          "placeholder": "Descrivi il ruolo, il settore, l'azienda o la località…",
+          "title": "Chi stai cercando?"
+        }
+      },
+      "groups": {
+        "automate": "Automatizza",
+        "create": "Crea",
+        "search": "Cerca"
+      },
+      "label": "Scopri cosa può fare Okou",
+      "placeholder": "Descrivi cosa vuoi fare…",
+      "sources": {
+        "accountScope": "Le modifiche si applicano al tuo account. I costi previsti per gli strumenti continuano ad applicarsi.",
+        "description": "Scegli le fonti che Okou può usare per le ricerche.",
+        "label": "Fonti di ricerca"
+      },
+      "workflows": "Flussi di lavoro"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

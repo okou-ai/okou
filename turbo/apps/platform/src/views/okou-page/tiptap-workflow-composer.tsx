@@ -141,8 +141,10 @@ function WorkflowComposerPlaceholder({
 }: {
   composer: ComposerSignals;
 }) {
-  useTranslation();
+  const { t } = useTranslation();
   const sending = useLastResolved(composer.submission.sending$);
+  const homeDiscoveryEnabled = useGet(composer.homeDiscovery.enabled$);
+  const homeView = useGet(composer.homeDiscovery.view$);
   const createMode = useGet(composer.create.mode$);
   const hasInput = useGet(composer.editor.hasInput$);
   const hasEditorContent = useEditorState({
@@ -164,9 +166,17 @@ function WorkflowComposerPlaceholder({
       }`}
       aria-hidden="true"
     >
-      {createMode
-        ? composerCreatePlaceholder(createMode)
-        : workflowComposerPlaceholder(sending)}
+      {homeDiscoveryEnabled && homeView !== "directory" && homeView !== "task"
+        ? t(($) => {
+            return $.chat.homeDiscovery.entries[homeView].placeholder;
+          })
+        : createMode
+          ? composerCreatePlaceholder(createMode)
+          : homeDiscoveryEnabled
+            ? t(($) => {
+                return $.chat.homeDiscovery.placeholder;
+              })
+            : workflowComposerPlaceholder(sending)}
     </div>
   );
 }

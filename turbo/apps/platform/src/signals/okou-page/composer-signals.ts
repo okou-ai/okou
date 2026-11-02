@@ -3,6 +3,10 @@ import {
   type ComposerTaskChipsSignals,
 } from "./composer-task-chips.ts";
 import {
+  createComposerHomeDiscoverySignals,
+  type ComposerHomeDiscoverySignals,
+} from "./composer-home-discovery.ts";
+import {
   createComposerVoiceInputSignals,
   type ComposerVoiceInputOwner,
   type ComposerVoiceInputSignals,
@@ -252,6 +256,7 @@ export interface ComposerSignals {
   readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
+  readonly homeDiscovery: ComposerHomeDiscoverySignals;
   readonly agentId: string;
   readonly threadId?: string;
   readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
@@ -605,6 +610,12 @@ export function createComposerSignals(
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
+    homeDiscovery: createComposerHomeDiscoverySignals(
+      taskChips,
+      workflowComposer,
+      options.draft.save$,
+      options.threadId === undefined && !options.forwardComposer,
+    ),
     editor: composerEditorSignals(workflowComposer, options),
     voice,
     feedback: workflowComposer.feedback,
