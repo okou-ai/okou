@@ -27,20 +27,20 @@ export function projectChatEventRows(
     if (event === null) {
       return [];
     }
-    const serialized = JSON.stringify(event);
-    if (serialized === undefined) {
-      throw new Error(`Failed to serialize chat event ${row.id}`);
-    }
     const document =
       "userMessage" in event && event.userMessage !== undefined
         ? projectMessageDocumentSchema.parse(event.userMessage)
         : null;
-    const parsed = chatEventSchema.parse({
+    const serialized = JSON.stringify({
       ...event,
       ...(document
         ? { userMessage: projectAwareUserMessageDocumentSchema.parse(document) }
         : {}),
     });
+    if (serialized === undefined) {
+      throw new Error(`Failed to serialize chat event ${row.id}`);
+    }
+    const parsed = chatEventSchema.parse(JSON.parse(serialized));
     return [{ ...parsed, ...(document ? { userMessage: document } : {}) }];
   });
 }

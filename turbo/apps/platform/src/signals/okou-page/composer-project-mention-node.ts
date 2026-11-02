@@ -1,3 +1,4 @@
+import { inlineReferenceVariants } from "@okouai/ui";
 import { Node } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { PROJECT_MENTION_NODE_NAME } from "./user-message-document-codec.ts";
@@ -38,7 +39,10 @@ export function createProjectMentionNode() {
         {
           "data-project-mention": node.attrs.projectId,
           "data-project-name": node.attrs.name,
-          class: "rounded bg-muted px-1 font-medium text-primary",
+          class: inlineReferenceVariants({
+            selectable: true,
+            className: "max-w-full select-none whitespace-nowrap",
+          }),
         },
         node.attrs.name,
       ];

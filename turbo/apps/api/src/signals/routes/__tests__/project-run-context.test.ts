@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { it, expect } from "vitest";
+import { test, expect } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
