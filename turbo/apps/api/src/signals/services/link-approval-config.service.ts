@@ -1,37 +1,14 @@
 import { accept } from "@okouai/connectors/accept";
-import { command } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { LinkApprovalWorkflowParams } from "@okouai/api-contracts/contracts/link-approval-workflow";
 import { env } from "../../lib/env";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
-export const linkApprovalEnabled$ = command(
-  async (
-    { set },
-    owner: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
-  ) => {
-    if (
-      !env("LINK_APPROVAL_WORKER_URL") ||
-      !env("LINK_APPROVAL_WORKER_SECRET") ||
-      !env("LINK_APPROVAL_CONTROL_SECRET")
-    ) {
-      return false;
-    }
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      owner.orgId,
-      owner.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return isFeatureEnabled(
-      FeatureSwitchKey.LinkWalletApprovalContinuation,
-      context,
-    );
-  },
-);
+export function isLinkApprovalConfigured() {
+  return Boolean(
+    env("LINK_APPROVAL_WORKER_URL") &&
+    env("LINK_APPROVAL_WORKER_SECRET") &&
+    env("LINK_APPROVAL_CONTROL_SECRET"),
+  );
+}
 
 export async function startLinkApprovalWorkflow(
   params: LinkApprovalWorkflowParams,

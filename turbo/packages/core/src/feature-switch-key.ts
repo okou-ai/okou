@@ -34,7 +34,6 @@ export enum FeatureSwitchKey {
   SpotifyConnector = "spotifyConnector",
   OkouDebug = "_debug",
   Banking = "banking",
-  LinkWalletApprovalContinuation = "linkWalletApprovalContinuation",
   Lab = "_lab",
   TestOauthConnector = "_testOauthConnector",
   FreshdeskConnector = "freshdeskConnector",

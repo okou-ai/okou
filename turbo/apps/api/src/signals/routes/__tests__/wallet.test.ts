@@ -6,7 +6,6 @@ import {
   type WalletCreateSpend,
   walletSpendCredentialsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, onTestFinished } from "vitest";
 
@@ -28,7 +27,6 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   channelsPublishedTo,
   countPublishedTo,
@@ -3038,9 +3036,6 @@ async function trackedPurchase(startFails = false, expiresIn = 3600) {
     "LINK_APPROVAL_CONTROL_SECRET",
     "link-approval-control-test-secret-0002",
   );
-  await updateFeatureSwitchesForUser(context, fixture.actor, {
-    [FeatureSwitchKey.LinkWalletApprovalContinuation]: true,
-  });
   const starts: unknown[] = [];
   server.use(
     tokenHandler({ expiresIn }),
@@ -3333,7 +3328,7 @@ test("an approved purchase waiting for its active chat notifies the card when au
   expect((await approvalCard(fixture)).body.status).toBe("stopped");
 });
 
-test("approval callbacks authenticate exact bodies and stop after the feature is disabled", async () => {
+test("approval callbacks authenticate exact bodies", async () => {
   const fixture = await trackedPurchase();
   expect(
     (await pollPurchase(fixture.spend.id, { signature: "0".repeat(64) }))
@@ -3346,29 +3341,6 @@ test("approval callbacks authenticate exact bodies and stop after the feature is
       })
     ).status,
   ).toBe(401);
-  await updateFeatureSwitchesForUser(context, fixture.actor, {
-    [FeatureSwitchKey.LinkWalletApprovalContinuation]: false,
-  });
-  const pending = await accept(
-    client().getSpend({
-      headers: fixture.headers,
-      params: { id: fixture.spend.id },
-    }),
-    [200],
-  );
-  expect(pending.body.autoContinue).toBeFalsy();
-  const repeated = await accept(
-    client().createSpend({ headers: fixture.headers, body: fixture.input }),
-    [200],
-  );
-  expect(repeated.body.autoContinue).toBeFalsy();
-  await flushWaitUntilForTest();
-  expect(fixture.starts).toHaveLength(1);
-  fixture.provider.approve();
-  await fixture.complete();
-  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
-    state: "done",
-  });
 });
 
 test("cron repairs a failed durable approval Workflow start without querying Link", async () => {
