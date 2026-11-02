@@ -14,6 +14,7 @@ import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
 import { iso } from "zod";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Button, cn } from "@okouai/ui";
 import { quoteChatEmail$ } from "../../signals/chat-page/chat-thread-feedback.ts";
 
@@ -26,6 +27,7 @@ import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts"
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type {
   ArtifactKind,
@@ -918,10 +920,11 @@ export function Markdown({
   readonly mediaPreview?: boolean;
   readonly escapeHtml?: boolean;
 }) {
-  const tree = parseMarkdownTree(
-    escapeHtml ? escapeHtmlTags(source) : source,
-    {},
-  );
+  const cjkEmphasis =
+    useGet(featureSwitch$)[FeatureSwitchKey.MarkdownCjkEmphasis] === true;
+  const tree = parseMarkdownTree(escapeHtml ? escapeHtmlTags(source) : source, {
+    cjkEmphasis,
+  });
   return (
     <MarkdownTreeFrame
       className={className}

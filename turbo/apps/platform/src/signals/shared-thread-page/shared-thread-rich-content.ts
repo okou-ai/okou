@@ -1,4 +1,5 @@
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, type Command, type Computed } from "ccstate";
 import type { Root } from "hast";
 import { visit } from "unist-util-visit";
@@ -24,6 +25,7 @@ import {
   embedMermaidSignals,
 } from "../mermaid-diagram.ts";
 import type { PublicArtifactPreviewSignals } from "../public-artifact-preview.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 export interface SharedThreadRichContentSignals {
   readonly trees$: Computed<Promise<ReadonlyMap<number, Root>>>;
@@ -73,7 +75,9 @@ export function createSharedThreadRichContentSignals(
   messages: readonly SharedMessage[],
   viewer: PublicArtifactPreviewSignals,
 ): SharedThreadRichContentSignals {
-  const trees$ = computed(async (): Promise<ReadonlyMap<number, Root>> => {
+  const trees$ = computed(async (get): Promise<ReadonlyMap<number, Root>> => {
+    const cjkEmphasis =
+      get(featureSwitch$)[FeatureSwitchKey.MarkdownCjkEmphasis] === true;
     // Let the page shell and plain bodies render before rich parsing begins.
     await Promise.resolve();
     const diagrams = createMermaidDiagramRegistry(viewer.openDiagram$);
@@ -92,6 +96,7 @@ export function createSharedThreadRichContentSignals(
       const tree = parseMarkdownTree(message.content, {
         math: true,
         mermaid: true,
+        cjkEmphasis,
       });
       embedMermaidSignals(tree, diagrams.register);
       embedHostedSiteCards(tree);
