@@ -353,6 +353,54 @@ async fn ensure_generates_valid_ca_and_is_idempotent() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn ensure_migrates_permissions_without_changing_valid_identity() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let original = &test_ca_identities().await.first;
+    let dir = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(dir.path().to_path_buf());
+    let ca_dir = home.ca_dir();
+    write_ca(
+        &ca_dir,
+        &original.cert,
+        &original.key,
+        Some(&original.combined),
+    );
+
+    // Normalize the valid fixture so the next ensure only repairs permissions.
+    ensure(&home).await.unwrap();
+    let normalized = read_ca(&ca_dir);
+
+    std::fs::set_permissions(&ca_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for name in [CA_KEY, CA_COMBINED] {
+        std::fs::set_permissions(ca_dir.join(name), std::fs::Permissions::from_mode(0o644))
+            .unwrap();
+    }
+    std::fs::set_permissions(ca_dir.join(CA_CERT), std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    ensure(&home).await.unwrap();
+
+    assert_ca_eq(&read_ca(&ca_dir), &normalized);
+    assert_eq!(mode_of(&ca_dir), 0o700, "ca_dir should be migrated to 0700");
+    assert_eq!(
+        mode_of(&ca_dir.join(CA_KEY)),
+        0o600,
+        "key should be migrated to 0600"
+    );
+    assert_eq!(
+        mode_of(&ca_dir.join(CA_COMBINED)),
+        0o600,
+        "combined should be migrated to 0600"
+    );
+    assert_eq!(
+        mode_of(&ca_dir.join(CA_CERT)),
+        0o644,
+        "cert should be migrated to 0644"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn ensure_regenerates_invalid_legacy_files_and_migrates_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
