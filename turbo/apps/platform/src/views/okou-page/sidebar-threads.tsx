@@ -1005,38 +1005,48 @@ function useSelectChatThreadFilter() {
   };
 }
 
-// Switching filters is a secondary action, so it reads as neutral text rather
-// than the brand link colour.
-const CHAT_THREAD_FILTER_ACTION_CLASS_NAME =
-  "font-normal text-nav-copy hover:text-nav-copy active:text-nav-copy/80 focus-visible:ring-inset focus-visible:ring-offset-0";
-
-function ShowAllChatsRow() {
-  const { t } = useTranslation();
+function ChatThreadFilterAction({
+  filter,
+  label,
+}: {
+  readonly filter: ChatThreadFilter;
+  readonly label: string;
+}) {
   const selectFilter = useSelectChatThreadFilter();
 
   return (
-    <div data-testid="sidebar-chat-show-all-row" className="pb-1">
+    <div className="flex flex-col gap-2.5 pb-1 pt-2.5">
+      <div aria-hidden="true" className="mx-2 h-px bg-divider" />
       <Button
         type="button"
-        variant="link"
+        variant="quiet"
         size="sm"
-        className={cn(
-          "w-full justify-start px-2 leading-5",
-          CHAT_THREAD_FILTER_ACTION_CLASS_NAME,
-        )}
+        className="w-full justify-start px-2 font-normal leading-5 pointer-coarse:min-h-11 text-nav-copy-muted hover:text-nav-copy active:text-nav-copy/80 focus-visible:ring-inset focus-visible:ring-offset-0"
         onClick={() => {
-          selectFilter("all");
+          selectFilter(filter);
         }}
       >
-        {t(($) => {
-          return $.chat.sidebar.showAllChats;
-        })}
+        {label}
       </Button>
     </div>
   );
 }
 
-// An empty list is one centred group: what is missing, then the way back.
+function ShowAllChatsRow() {
+  const { t } = useTranslation();
+
+  return (
+    <div data-testid="sidebar-chat-show-all-row">
+      <ChatThreadFilterAction
+        filter="all"
+        label={t(($) => {
+          return $.chat.sidebar.showAllChats;
+        })}
+      />
+    </div>
+  );
+}
+
 function ChatThreadListEmptyState({
   message,
   action,
@@ -1044,26 +1054,12 @@ function ChatThreadListEmptyState({
   message: string;
   action?: { readonly filter: ChatThreadFilter; readonly label: string };
 }) {
-  const selectFilter = useSelectChatThreadFilter();
-
   return (
-    <div className="flex w-full flex-col items-center gap-1 px-4 py-4 text-center text-[13px] leading-5">
-      <p className="text-nav-copy-muted">{message}</p>
-      {action ? (
-        <Button
-          type="button"
-          variant="link"
-          className={cn(
-            "h-auto p-0 text-[13px] leading-5",
-            CHAT_THREAD_FILTER_ACTION_CLASS_NAME,
-          )}
-          onClick={() => {
-            selectFilter(action.filter);
-          }}
-        >
-          {action.label}
-        </Button>
-      ) : null}
+    <div className="w-full">
+      <p className="px-2 py-2 text-[13px] leading-5 text-nav-copy-muted">
+        {message}
+      </p>
+      {action ? <ChatThreadFilterAction {...action} /> : null}
     </div>
   );
 }
@@ -1076,55 +1072,46 @@ function VirtualizedChatThreads({
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
   const rowCount = useGet(listSignals.rowCount$);
+  const threadCount = useGet(listSignals.count$);
   const window = useGet(listSignals.window$, {
     equalityFn: equalSidebarChatThreadWindows,
   });
   const startIndex = window.startIndex;
   const visibleItems = window.items;
 
+  // Only chat rows have a fixed height. Keep the filter action in normal flow
+  // so its divider and spacing remain reachable at the end of a long list.
   return (
-    <div
-      ref={setShortcutRoot}
-      className="relative w-full"
-      data-testid="sidebar-chat-threads-virtual-list"
-      style={{ height: rowCount * CHAT_THREAD_VIRTUAL_ROW_HEIGHT }}
-    >
-      {visibleItems.map((signals, visibleOffset) => {
-        const index = startIndex + visibleOffset;
-        return (
-          <div
-            key={signals.threadId}
-            data-index={index}
-            data-testid="sidebar-chat-thread-virtual-row"
-            className="absolute left-0 top-0 w-full pb-1"
-            style={{
-              transform: `translateY(${
-                index * CHAT_THREAD_VIRTUAL_ROW_HEIGHT
-              }px)`,
-            }}
-          >
-            <ChatThreadItem
-              signals={signals}
-              rowIndex={index}
-              shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
-            />
-          </div>
-        );
-      })}
-      {window.showAllChatsRow ? (
-        <div
-          data-index={rowCount - 1}
-          data-testid="sidebar-chat-show-all-virtual-row"
-          className="absolute left-0 top-0 w-full"
-          style={{
-            transform: `translateY(${
-              (rowCount - 1) * CHAT_THREAD_VIRTUAL_ROW_HEIGHT
-            }px)`,
-          }}
-        >
-          <ShowAllChatsRow />
-        </div>
-      ) : null}
+    <div ref={setShortcutRoot} className="w-full">
+      <div
+        className="relative w-full"
+        data-testid="sidebar-chat-threads-virtual-list"
+        style={{ height: threadCount * CHAT_THREAD_VIRTUAL_ROW_HEIGHT }}
+      >
+        {visibleItems.map((signals, visibleOffset) => {
+          const index = startIndex + visibleOffset;
+          return (
+            <div
+              key={signals.threadId}
+              data-index={index}
+              data-testid="sidebar-chat-thread-virtual-row"
+              className="absolute left-0 top-0 w-full pb-1"
+              style={{
+                transform: `translateY(${index * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}px)`,
+              }}
+            >
+              <ChatThreadItem
+                signals={signals}
+                rowIndex={index}
+                shortcutNumber={
+                  !searchOpen && index < 9 ? index + 1 : undefined
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+      {rowCount > threadCount ? <ShowAllChatsRow /> : null}
     </div>
   );
 }
