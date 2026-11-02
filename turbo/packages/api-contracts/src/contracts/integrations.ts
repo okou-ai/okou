@@ -8,6 +8,8 @@ import {
   record,
   string,
   union,
+  url,
+  uuid,
   enum as zEnum,
   unknown as zUnknown,
   type infer as zInfer,
@@ -86,7 +88,7 @@ export type IntegrationsSlackMessageContract =
 const feishuCardSchema = record(string(), zUnknown());
 
 const sendFeishuMessageBodySchema = object({
-  installationId: string().uuid().optional(),
+  installationId: uuid().optional(),
   chat: string().min(1, "Chat ID is required").optional(),
   user: string().min(1, "Feishu open ID is required").optional(),
   replyToMessageId: string().min(1, "Message ID is required").optional(),
@@ -175,7 +177,7 @@ export const integrationsFeishuDownloadFileContract = c.router({
     path: "/api/integrations/feishu/download-file",
     headers: authHeadersSchema,
     query: object({
-      installation_id: string().uuid().optional(),
+      installation_id: uuid().optional(),
       message_id: string().min(1, "Message ID is required"),
       file_key: string().min(1, "File key is required"),
       type: feishuResourceTypeSchema,
@@ -220,7 +222,7 @@ const feishuUploadInitBodySchema = object({
 export type FeishuUploadInitBody = zInfer<typeof feishuUploadInitBodySchema>;
 
 const feishuUploadInitResponseSchema = object({
-  uploadId: string().uuid(),
+  uploadId: uuid(),
   uploadUrl: string(),
   fileUrl: string(),
   filename: string(),
@@ -256,8 +258,8 @@ export const integrationsFeishuUploadInitContract = c.router({
  * chat, user, or reply target.
  */
 const feishuUploadCompleteBodySchema = object({
-  uploadId: string().uuid("Upload ID must be a UUID"),
-  installationId: string().uuid().optional(),
+  uploadId: string().check(uuid("Upload ID must be a UUID")),
+  installationId: uuid().optional(),
   chat: string().min(1, "Chat ID is required").optional(),
   user: string().min(1, "Feishu open ID is required").optional(),
   replyToMessageId: string().min(1, "Message ID is required").optional(),
@@ -484,6 +486,13 @@ export type SendPhoneMessageResponse = zInfer<
   typeof sendPhoneMessageResponseSchema
 >;
 
+const sendPhoneReactionBodySchema = object({
+  messageId: string().trim().min(1).max(255),
+  reaction: string().trim().min(1).max(64),
+});
+
+export type SendPhoneReactionBody = zInfer<typeof sendPhoneReactionBodySchema>;
+
 export const integrationsPhoneMessageContract = c.router({
   sendMessage: {
     method: "POST",
@@ -499,6 +508,27 @@ export const integrationsPhoneMessageContract = c.router({
       502: apiErrorSchema,
     },
     summary: "Send a phone message",
+  },
+  sendReaction: {
+    method: "POST",
+    path: "/api/integrations/phone/reaction",
+    headers: authHeadersSchema,
+    body: sendPhoneReactionBodySchema,
+    responses: {
+      200: object({
+        ok: literal(true),
+        reactionId: string(),
+        messageId: string(),
+        reaction: string(),
+        channel: literal("imessage"),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "React to an iMessage visible to the caller",
   },
 });
 
@@ -635,7 +665,7 @@ const slackUploadInitBodySchema = object({
   filename: string().min(1, "Filename is required"),
   length: number().int().positive("File length must be a positive integer"),
   canonical: object({
-    operationId: string().uuid(),
+    operationId: uuid(),
     contentType: string().min(1).max(200),
     checksumSha256: string().regex(/^[a-f0-9]{64}$/),
     channel: string().min(1, "Channel ID is required").optional(),
@@ -662,11 +692,11 @@ const directSlackUploadInitResponseSchema = object({
 
 const canonicalSlackUploadInitResponseSchema = object({
   kind: literal("canonical"),
-  assetId: string().uuid(),
-  operationId: string().uuid(),
+  assetId: uuid(),
+  operationId: uuid(),
   /** Resolved destination channel ID (a DM channel when `user` was sent). */
   channel: string(),
-  uploadUrl: string().url().optional(),
+  uploadUrl: url().optional(),
   uploadHeaders: record(string(), string()).optional(),
   url: artifactUrlSchema,
 });
@@ -699,12 +729,12 @@ export const integrationsSlackUploadInitContract = c.router({
 });
 
 const slackUploadMaterializeBodySchema = object({
-  assetId: string().uuid(),
-  operationId: string().uuid(),
+  assetId: uuid(),
+  operationId: uuid(),
 });
 
 const slackUploadMaterializeResponseSchema = object({
-  assetId: string().uuid(),
+  assetId: uuid(),
   url: artifactUrlSchema,
   delivery: discriminatedUnion("status", [
     object({
@@ -802,7 +832,7 @@ export type TelegramUploadInitBody = zInfer<
 >;
 
 const telegramUploadInitResponseSchema = object({
-  uploadId: string().uuid(),
+  uploadId: uuid(),
   uploadUrl: string(),
   fileUrl: string(),
   filename: string(),
@@ -875,7 +905,7 @@ export type IntegrationsTeamsDownloadFileContract =
  */
 const teamsUploadInitBodySchema = object({
   canonical: object({
-    operationId: string().uuid(),
+    operationId: uuid(),
     checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
     conversationId: string().min(1).optional(),
     user: string().min(1).optional(),
@@ -907,9 +937,9 @@ const teamsUploadInitBodySchema = object({
 export type TeamsUploadInitBody = zInfer<typeof teamsUploadInitBodySchema>;
 
 const teamsUploadInitResponseSchema = object({
-  operationId: string().uuid().optional(),
+  operationId: uuid().optional(),
   uploadRequired: boolean().optional(),
-  uploadId: string().uuid(),
+  uploadId: uuid(),
   uploadUrl: string(),
   fileUrl: string(),
   filename: string(),
@@ -952,7 +982,7 @@ export const integrationsTeamsUploadInitContract = c.router({
  * Requires `telegram:write` capability (via OKOU_TOKEN).
  */
 const telegramUploadCompleteBodySchema = object({
-  uploadId: string().uuid("Upload ID must be a UUID"),
+  uploadId: string().check(uuid("Upload ID must be a UUID")),
   botId: string().min(1, "Bot ID is required"),
   /** Telegram chat ID, or `"me"` for the caller's private chat with the bot. */
   chatId: string().min(1, "Chat ID is required"),
@@ -1008,8 +1038,8 @@ export const integrationsTelegramUploadCompleteContract = c.router({
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
 const teamsUploadCompleteBodySchema = object({
-  operationId: string().uuid().optional(),
-  uploadId: string().uuid("Upload ID must be a UUID"),
+  operationId: uuid().optional(),
+  uploadId: string().check(uuid("Upload ID must be a UUID")),
   conversationId: string().min(1, "Conversation ID is required").optional(),
   user: string().min(1, "Teams user ID is required").optional(),
   activityId: string().min(1, "Activity ID is required").optional(),
@@ -1083,7 +1113,7 @@ export const integrationsGithubDownloadFileContract = c.router({
     path: "/api/integrations/github/download-file/url",
     headers: authHeadersSchema,
     query: object({
-      url: string().url("url must be a GitHub file URL"),
+      url: string().check(url("url must be a GitHub file URL")),
       filename: string().min(1).max(255).optional(),
     }),
     responses: {
@@ -1121,7 +1151,7 @@ const githubUploadInitBodySchema = object({
 export type GithubUploadInitBody = zInfer<typeof githubUploadInitBodySchema>;
 
 const githubUploadInitResponseSchema = object({
-  uploadId: string().uuid(),
+  uploadId: uuid(),
   uploadUrl: string(),
   fileUrl: string(),
   filename: string(),
@@ -1162,7 +1192,7 @@ export const integrationsGithubUploadInitContract = c.router({
  * Requires `github:write` capability (via OKOU_TOKEN).
  */
 const githubUploadCompleteBodySchema = object({
-  uploadId: string().uuid("Upload ID must be a UUID"),
+  uploadId: string().check(uuid("Upload ID must be a UUID")),
   repo: string()
     .min(1, "Repository is required")
     .regex(/^[^/\s]+\/[^/\s]+$/, "Repository must be owner/name"),
@@ -1228,7 +1258,7 @@ const phoneUploadInitBodySchema = object({
 export type PhoneUploadInitBody = zInfer<typeof phoneUploadInitBodySchema>;
 
 const phoneUploadInitResponseSchema = object({
-  uploadId: string().uuid(),
+  uploadId: uuid(),
   uploadUrl: string(),
   fileUrl: string(),
   filename: string(),
@@ -1265,7 +1295,7 @@ export const integrationsPhoneUploadInitContract = c.router({
  * AgentPhone. Requires `phone:write` capability (via OKOU_TOKEN).
  */
 const phoneUploadCompleteBodySchema = object({
-  uploadId: string().uuid("Upload ID must be a UUID"),
+  uploadId: string().check(uuid("Upload ID must be a UUID")),
   agentphoneAgentId: string().min(1, "Phone agent ID is required").optional(),
   contentType: string().min(1).max(200).optional(),
   caption: string().max(1024).optional(),
@@ -1345,8 +1375,8 @@ const slackUploadCompleteBodySchema = object({
   threadTs: string().optional(),
   title: string().optional(),
   initialComment: string().optional(),
-  canonicalAssetId: string().uuid().optional(),
-  operationId: string().uuid().optional(),
+  canonicalAssetId: uuid().optional(),
+  operationId: uuid().optional(),
   uploadError: string().max(2000).optional(),
 }).refine(
   (data) => {
@@ -1364,8 +1394,8 @@ const slackUploadCompleteResponseSchema = object({
   permalink: string(),
   /** Channel ID the file was shared to (a DM channel when `user` was sent). */
   channel: string(),
-  assetId: string().uuid().optional(),
-  assetUrl: string().url().optional(),
+  assetId: uuid().optional(),
+  assetUrl: url().optional(),
   deliveryStatus: zEnum(["delivered", "failed"]).optional(),
   deliveryError: string().optional(),
 });

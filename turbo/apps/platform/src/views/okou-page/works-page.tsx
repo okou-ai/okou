@@ -13,10 +13,8 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { AlertTriangle, EllipsisVertical, Download } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
-import {
-  OFFICIAL_TELEGRAM_BOT_ID,
-  type TelegramBot,
-} from "@okouai/api-contracts/contracts/integrations-telegram";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/validators/integrations-telegram";
+import type { TelegramBot } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,

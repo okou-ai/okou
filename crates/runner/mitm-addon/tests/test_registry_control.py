@@ -82,6 +82,138 @@ async def test_apply_rejects_noncanonical_identity_and_caller_paths(tmp_path, co
     assert exchange(tmp_path, registry_status_request())["data"] == {"state": "unobserved"}
 
 
+@pytest.mark.parametrize("entrypoint", ["control", "configure"])
+async def test_catalog_warmup_reuses_validated_bytes_and_request_rechecks_replacement(
+    tmp_path, control, mitm_ctx, real_flow, monkeypatch, entrypoint
+):
+    path = tmp_path / "registry.json"
+    cache = tmp_path / "catalog.json"
+    sandbox = builtin_sandbox("warm-run", "github")
+    sandbox["networkPolicies"] = {
+        "github": {"allow": [], "deny": ["read"], "unknownPolicy": "deny"}
+    }
+    write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
+    write_catalog_cache(
+        cache,
+        digest="sha256:" + "a" * 64,
+        version="a",
+        firewalls={"github": github_cache_firewall()},
+    )
+    request = registry_status_request() | {"method": "catalog.warm"}
+    with mitm_ctx(registry_path=str(path), builtin_firewall_catalog_cache_path=str(cache)):
+        if entrypoint == "configure":
+            mitm_addon.configure({"okou_builtin_firewall_catalog_cache_path"})
+            inode = cache.stat().st_ino
+            real_read = os.read
+
+            def read_without_reloading_configured_bytes(fd, count):
+                assert os.fstat(fd).st_ino != inode, "readiness reloaded configured catalog bytes"
+                return real_read(fd, count)
+
+            monkeypatch.setattr(os, "read", read_without_reloading_configured_bytes)
+        warmed = response_data(await asyncio.to_thread(exchange, tmp_path, request))
+        assert warmed["state"] == "available"
+        assert warmed["digest"] == "a" * 64
+        assert warmed["file"]["inode"] == cache.stat().st_ino
+        # Catalog initialization does not claim registry application or authorization.
+        assert exchange(tmp_path, registry_status_request())["data"] == {"state": "unobserved"}
+        inode = cache.stat().st_ino
+        read_before_request = os.read
+
+        def read_without_reloading_warmed_bytes(fd, count):
+            assert os.fstat(fd).st_ino != inode, "first request reloaded warmed catalog bytes"
+            return read_before_request(fd, count)
+
+        monkeypatch.setattr(os, "read", read_without_reloading_warmed_bytes)
+        flow = real_flow(host="api.github.com", path="/repos/okou-ai/okou", with_response=False)
+        await mitm_addon.request(flow)
+        assert flow.response.status_code == 403
+        assert json.loads(flow.response.content)["error"] == "permission_denied"
+
+        replacement = tmp_path / "invalid.json"
+        replacement.write_text("{invalid")
+        replacement.chmod(0o600)
+        replacement.replace(cache)
+        flow = real_flow(host="api.github.com", path="/repos/okou-ai/okou", with_response=False)
+        await mitm_addon.request(flow)
+        assert flow.response.status_code == 503
+        assert json.loads(flow.response.content)["error"] == "invalid_registry_sandbox"
+
+
+async def test_catalog_warmup_reports_missing_invalid_and_recovered_source(
+    tmp_path, control, mitm_ctx
+):
+    cache = tmp_path / "catalog.json"
+    request = registry_status_request() | {"method": "catalog.warm"}
+    with mitm_ctx(builtin_firewall_catalog_cache_path=str(cache)):
+        missing = response_data(await asyncio.to_thread(exchange, tmp_path, request))
+        assert missing == {"state": "unavailable", "file": None, "reason": "cache_file_missing"}
+        cache.write_text("{invalid")
+        cache.chmod(0o600)
+        invalid = response_data(await asyncio.to_thread(exchange, tmp_path, request))
+        assert invalid["state"] == "unavailable"
+        assert invalid["reason"] == "cache_invalid"
+        assert invalid["file"]["inode"] == cache.stat().st_ino
+        write_catalog_cache(
+            cache,
+            digest="sha256:" + "b" * 64,
+            version="b",
+            firewalls={"github": github_cache_firewall()},
+        )
+        recovered = response_data(await asyncio.to_thread(exchange, tmp_path, request))
+        assert recovered["state"] == "available"
+        assert recovered["digest"] == "b" * 64
+
+
+async def test_stalled_catalog_warmup_owns_admission_and_keeps_status_observational(
+    tmp_path, control, mitm_ctx, monkeypatch
+):
+    cache = tmp_path / "catalog.json"
+    write_catalog_cache(
+        cache,
+        digest="sha256:" + "a" * 64,
+        version="a",
+        firewalls={"github": github_cache_firewall()},
+    )
+    entered = threading.Event()
+    release = threading.Event()
+    real_read = os.read
+    inode = cache.stat().st_ino
+
+    def blocked_read(fd, count):
+        if os.fstat(fd).st_ino == inode:
+            entered.set()
+            assert release.wait(5), "test peer did not release catalog read"
+        return real_read(fd, count)
+
+    request = registry_status_request() | {"method": "catalog.warm"}
+
+    def peer():
+        try:
+            with control_connection(tmp_path) as connection:
+                connection.sendall(frame(json.dumps(request).encode()))
+                assert entered.wait(5)
+                assert exchange(tmp_path)["data"] == {"state": "running"}
+                assert exchange(tmp_path, request)["code"] == "busy"
+                assert exchange(tmp_path, registry_apply_request("a" * 64))["code"] == "busy"
+                release.set()
+                assert response_data(read_reply(connection))["state"] == "available"
+        finally:
+            release.set()
+
+    with mitm_ctx(builtin_firewall_catalog_cache_path=str(cache)):
+        monkeypatch.setattr(os, "read", blocked_read)
+        await asyncio.to_thread(peer)
+
+
+async def test_catalog_warmup_rejects_caller_selected_paths(tmp_path, control):
+    request = registry_status_request() | {
+        "method": "catalog.warm",
+        "params": {"path": "/caller-selected"},
+    }
+    assert exchange(tmp_path, request)["code"] == "invalid_request"
+
+
 async def test_actual_bytes_and_request_time_unavailability(tmp_path, control, mitm_ctx, real_flow):
     path = tmp_path / "registry.json"
     write_simple_registry(path)
@@ -280,7 +412,7 @@ async def test_internal_failure_remains_owned_and_redacted_after_waiter_deadline
         assert (await apply(tmp_path, expected))["state"] == "applied"
         assert "private registry failure detail" not in caplog.text
         assert "exception was never retrieved" not in caplog.text
-        log.error.assert_called_once_with("Registry control application failed (RuntimeError)")
+        log.error.assert_called_once_with("Registry control operation failed (RuntimeError)")
 
 
 async def test_shutdown_cancels_queued_application_without_loading_files(tmp_path, control):

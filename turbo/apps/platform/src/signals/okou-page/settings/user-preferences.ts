@@ -1,9 +1,9 @@
 import { command, computed, state } from "ccstate";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
-import {
-  userPreferencesContract,
-  type InitializedUserPreferencesResponse,
-  type UpdateUserPreferencesRequest,
+import { userPreferencesContract } from "@okouai/api-contracts/client/user-preferences";
+import type {
+  InitializedUserPreferencesResponse,
+  UpdateUserPreferencesRequest,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { apiClient$ } from "../../api-client.ts";
 import { resolveInitialLocaleFallbackFromBrowser } from "../../../i18n/locale-fallback.ts";

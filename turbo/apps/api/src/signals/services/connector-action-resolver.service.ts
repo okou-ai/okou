@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -15,7 +15,7 @@ import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connec
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
-import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import { createImmutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
@@ -185,7 +185,7 @@ function executableMethod(args: {
   };
 }
 
-function createConnectorActionResolver(
+export function createConnectorActionResolver(
   snapshot: ConnectorRuntimeSelection,
 ): ConnectorActionResolver {
   const resolveSlug: ConnectorActionResolver["resolveSlug"] = (input) => {
@@ -314,24 +314,48 @@ export function connectorActionResolver(
   });
 }
 
+/** Fresh action-time selection; callers retain their complete-read abort check. */
+export const readConnectorResolver$ = command(
+  async (
+    { get },
+    connectorSlugs: readonly ConnectorSlug[],
+  ): Promise<ConnectorActionResolver> => {
+    const catalogDb = get(db$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs,
+    });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
+    return createConnectorActionResolver(snapshot);
+  },
+);
+
 /**
  * Filters the given slugs to connectors that exist in the catalog and have an
  * executable auth method, matching `resolveSlug` with `requireExecutable`.
  * Loads only these connectors from immutable entries, so callers that
  * check a handful of slugs avoid materializing the full catalog snapshot.
  */
-export function executableConnectorSlugs(
-  connectorSlugs: readonly ConnectorSlug[],
+export function createExecutableConnectorSlugs(
+  connectorSlugs$: Computed<Promise<readonly ConnectorSlug[]>>,
 ): Computed<Promise<readonly ConnectorSlug[]>> {
+  const input$ = computed(async (get) => {
+    const requestedConnectorSlugs = await get(connectorSlugs$);
+    return { requestedConnectorSlugs };
+  });
+  const selection$ = createImmutableConnectorRuntimeSelection(input$);
   return computed(async (get): Promise<readonly ConnectorSlug[]> => {
+    const connectorSlugs = await get(connectorSlugs$);
     if (connectorSlugs.length === 0) {
       return [];
     }
-    const selection = await get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: connectorSlugs,
-      }),
-    );
+    const selection = await get(selection$);
     return connectorSlugs.filter((connectorSlug) => {
       const runtimeConnector = getConnectorRuntimeConnector(
         selection,

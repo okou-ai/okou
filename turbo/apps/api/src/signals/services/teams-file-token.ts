@@ -1,8 +1,8 @@
-import { literal, object, string, type infer as zInfer } from "zod";
+import { literal, object, string, url, type infer as zInfer } from "zod";
 
 export const teamsFileTokenPayloadSchema = object({
   tenantId: string().min(1),
-  url: string().url(),
+  url: url(),
   downloadMode: literal("graph").optional(),
   downloadInfo: literal(true).optional(),
   id: string().min(1).optional(),

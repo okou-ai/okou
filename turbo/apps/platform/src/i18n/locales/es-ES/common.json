@@ -1507,7 +1507,7 @@
         },
         "connector": {
           "action": "Conectar",
-          "description": "Gmail, Notion y más de 100",
+          "description": "Gmail, Notion y más de 4.000",
           "name": "Conecta una herramienta",
           "unit": "por conector"
         },
@@ -1798,9 +1798,10 @@
       "outOfCredits": "Se te han acabado los créditos",
       "proCard": {
         "creditsNow": "créditos · Ahora mismo",
-        "description": "Créditos adicionales · Funciones avanzadas · 3 ordenadores en la nube",
+        "description": "Funciones avanzadas · 3 ordenadores en la nube",
         "priceUnavailable": "Consulta los precios actuales de los planes",
         "title": "Quedan unas 5 tareas",
+        "upgradeFromPrice": "Mejorar desde {{price}}/mes",
         "upgradeNow": "Mejorar plan ahora"
       },
       "redirecting": "Redirigiendo...",
@@ -2375,8 +2376,10 @@
       "create": "Compartir",
       "createFailed": "No se pudo crear la conversación compartida.",
       "deselectGroup": "Deseleccionar grupo de mensajes",
+      "everyone": "Todos",
       "linkCopied": "Enlace copiado",
       "messageShareFailed": "No se pudo crear el enlace compartido.",
+      "organizationDescription": "Solo personas de tu organización",
       "publicDescription": "Los mensajes seleccionados y sus archivos adjuntos serán públicos.",
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_many": "{{count}} seleccionados",
@@ -4274,14 +4277,56 @@
       "make": "Te damos la bienvenida a {{brandName}}"
     },
     "make": {
-      "promptDescription": "Ajústalo a continuación o ejecútalo tal cual. {{assistantName}} se encarga del resto. Tus herramientas permanecen aisladas y nada sale de tu espacio de trabajo.",
       "promptLabel": "Prompt de incorporación",
-      "promptTitle": "Prueba este prompt"
+      "promptTitle": "Haz tuya esta tarea"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Investiga en la web, encuentra personas y crea imágenes con Okou. Estas herramientas están activadas por defecto; puedes ajustarlas ahora o más adelante.",
+        "items": {
+          "data-search": {
+            "description": "Compara empresas, tráfico web y anuncios para detectar oportunidades.",
+            "name": "Investigación avanzada de datos"
+          },
+          "finance": {
+            "description": "Compara cotizaciones y tendencias de mercado para investigar inversiones.",
+            "name": "Datos financieros"
+          },
+          "image-generation": {
+            "description": "Crea imágenes originales para publicaciones, campañas y presentaciones.",
+            "name": "Generación de imágenes"
+          },
+          "maps": {
+            "description": "Encuentra negocios y locales, compara ubicaciones y planifica rutas.",
+            "name": "Mapas y lugares"
+          },
+          "people-search": {
+            "description": "Encuentra clientes, socios o candidatos por cargo y empresa.",
+            "name": "Búsqueda de personas"
+          },
+          "scrape": {
+            "description": "Extrae datos clave de páginas web para informes y comparaciones.",
+            "name": "Extracción de páginas"
+          },
+          "seo": {
+            "description": "Descubre las palabras clave de tus clientes y el posicionamiento de tus competidores.",
+            "name": "Investigación SEO"
+          },
+          "social": {
+            "description": "Investiga creadores, publicaciones e interacciones para orientar tu contenido.",
+            "name": "Búsqueda social"
+          },
+          "web-search": {
+            "description": "Encuentra noticias y datos actuales con fuentes que puedas comprobar.",
+            "name": "Búsqueda web"
+          }
+        },
+        "listLabel": "Capacidades integradas",
+        "title": "Más formas de completar tu trabajo"
+      },
       "chatChannels": {
         "connectedTitle": "Tu chat está conectado",
-        "copy": "Escribe a Okou o añádelo al chat de tu equipo. Elige tu forma habitual de trabajar.",
+        "copy": "Usa Okou en tus chats habituales, a solas o con tu equipo. Puedes seguir trabajando aquí y conectar una aplicación de chat más adelante.",
         "imessageConnected": "iMessage está conectado",
         "imessageCopy": "Tu trabajo, a un mensaje de distancia.",
         "imessageExpired": "Tu código de conexión ha caducado.",
@@ -4297,19 +4342,18 @@
         "notNow": "Ahora no"
       },
       "documentTitles": {
-        "experience": "Tu experiencia con IA",
+        "experience": "Elige cómo empezar",
         "industry": "Elige tu área",
-        "ready": "Okou está listo",
+        "ready": "Tu primera tarea",
         "skills": "Importa tus skills",
-        "sources": "Conecta tu trabajo",
-        "team": "Invitar a un miembro del equipo"
+        "sources": "Conecta tu trabajo"
       },
       "experience": {
-        "copy": "Empieza con ayuda o trae el plan de Codex o Claude Code que ya utilizas.",
-        "no": "Soy nuevo en los agentes de IA",
-        "noCopy": "Okou te ayuda a encontrar una primera tarea útil.",
+        "copy": "Empieza directamente con Okou o conecta un plan de Codex o Claude Code que ya tengas.",
+        "no": "Empezar con Okou",
+        "noCopy": "Recibe ayuda con tu primera tarea.",
         "title": "¿Cómo quieres empezar con Okou?",
-        "trust": "Las tareas se ejecutan con tu plan de Codex o Claude Code en lugar de créditos de Okou, así puedes hacer más sin preocuparte por el consumo. Conéctalo ahora o más adelante."
+        "trust": "Los planes conectados usan su propia cuota en lugar de créditos de Okou. Puedes conectarlos más adelante; sus límites de uso siguen vigentes."
       },
       "industries": {
         "coaching": {
@@ -4369,11 +4413,11 @@
         }
       },
       "industry": {
-        "copy": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube. Elige tu área para una primera tarea a tu medida.",
+        "copy": "Cuéntanos a qué te dedicas. Te sugeriremos una primera tarea que encaje con tu trabajo.",
         "title": "¿A qué tipo de trabajo te dedicas?"
       },
       "mobile": {
-        "channelsCopy": "Habla con Okou donde ya trabajas.",
+        "channelsCopy": "Sigue trabajando aquí o conecta una aplicación de chat ahora.",
         "channelsTitle": "Elige una app de chat",
         "connect": "Conectar",
         "copyImportPrompt": "Copiar prompt de importación",
@@ -4389,12 +4433,10 @@
         "planCopy": "Ejecuta tareas con tu suscripción.",
         "promptTitle": "¿Qué quieres hacer?",
         "readyTitle": "Empieza tu primera tarea",
-        "skillsCopy": "Usa {{provider}} en tu ordenador.",
+        "skillsCopy": "¿Tienes skills en {{provider}}? Impórtalas desde tu ordenador o hazlo más adelante.",
         "skillsTitle": "Importa tus habilidades",
-        "sourcesCopy": "Conecta una para tu primera tarea.",
-        "startTask": "Iniciar tarea",
-        "teamCopy": "Trabajad en el mismo espacio.",
-        "teamTitle": "Invita a un compañero"
+        "sourcesCopy": "Conecta una herramienta o salta este paso y hazlo más adelante.",
+        "startTask": "Iniciar tarea"
       },
       "outcomes": {
         "accessibleLabel": "Ejemplo de {{title}} preparado a partir de {{source}}. Todos los datos son ilustrativos.",
@@ -4540,8 +4582,8 @@
             "label": "Presentación"
           },
           "report": {
-            "instruction": "Presenta los hallazgos en un informe estructurado con resultados clave, recomendaciones y próximos pasos.",
-            "label": "Informe"
+            "instruction": "Crea un documento completo con los resultados en el formato de archivo solicitado (Markdown por defecto). Súbelo como artefacto e incluye un enlace funcional al artefacto en tu respuesta final.",
+            "label": "Documento"
           },
           "research": {
             "instruction": "Presenta los hallazgos en un resumen de investigación con fuentes y preguntas pendientes. Distingue los hechos respaldados por fuentes de las recomendaciones.",
@@ -4552,17 +4594,17 @@
             "label": "Sitio web"
           }
         },
-        "title": "Elige un formato",
+        "title": "Elige un formato (opcional)",
         "tooLong": "Acorta la tarea para elegir otro formato."
       },
       "prompt": {
-        "connectorsDescription": "Conecta tus herramientas para que Okou entienda tu trabajo y complete las tareas según tus necesidades. También puedes hacerlo más tarde.",
+        "connectorsDescription": "Conecta tus aplicaciones para que Okou entienda mejor tu trabajo.",
         "connectorsTitle": "Conecta tus herramientas de trabajo",
-        "intro": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube."
+        "intro": "Conecta tus aplicaciones para obtener mejores resultados y elige un formato."
       },
       "skills": {
         "copied": "Copiado",
-        "copy": "Ejecuta este prompt en {{provider}} para importar las skills que ya has creado y que Okou pueda usarlas desde el primer día.",
+        "copy": "Si tienes skills guardadas en {{provider}}, impórtalas para que Okou pueda seguir tu forma de trabajar. Puedes saltar este paso e importarlas más adelante.",
         "copyError": "No se pudo copiar el prompt.",
         "copyPrompt": "Copiar prompt",
         "guide": {
@@ -4625,14 +4667,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Cuanto más sabe Okou de tu trabajo, más inteligente se vuelve. Conecta una herramienta que uses a diario y empieza con una tarea basada en tu trabajo real.",
-        "permissions": "Okou usa una pequeña muestra para adaptar tu primera tarea. Tú decides qué pueden hacer los Agents y durante cuánto tiempo.",
+        "copy": "Conecta una herramienta para empezar con una tarea de tu trabajo, o salta este paso y conéctala más adelante.",
+        "permissions": "Okou utiliza una pequeña muestra para sugerir tu primera tarea. Tú decides a qué puede acceder Okou y durante cuánto tiempo.",
         "securityLink": "Cómo protege Okou tus datos",
         "skipDialog": {
           "connect": "Conectar una herramienta",
-          "description": "Te recomendamos conectar tus herramientas para que Okou entienda tu trabajo y te ayude de forma más útil. También puedes conectarlas más adelante.",
+          "description": "Ya puedes empezar una tarea. Conecta una herramienta más adelante cuando quieras que Okou trabaje con tus correos, documentos o datos.",
           "skip": "Omitir por ahora",
-          "title": "Okou te ayuda mejor con tus herramientas"
+          "title": "¿Empezar sin conectar una herramienta?"
         },
         "title": "Conecta una herramienta de trabajo"
       },
@@ -4966,32 +5008,15 @@
         "connected": "Conectado",
         "connecting": "Conectando…",
         "failedNote": "No hemos podido conectar {{provider}}. Puedes continuar y conectarlo más tarde.",
-        "rowCopy": "Conéctalo para ejecutar tareas con tu plan en lugar de créditos de Okou.",
+        "rowCopy": "Usa tu plan actual para las tareas.",
         "unconfirmedNote": "No hemos podido comprobar tu conexión con {{provider}}. Puedes continuar y conectarlo más tarde."
       },
-      "team": {
-        "copy": "Invita a un miembro del equipo a compartir tus flujos de trabajo, mientras cada uno conecta sus propias herramientas.",
-        "invalidEmail": "Introduce una dirección de correo electrónico válida",
-        "invite": "Enviar invitación",
-        "invited": "Invitado",
-        "label": "Correo del miembro del equipo",
-        "note": "Podrá empezar a trabajar con Okou de inmediato.",
-        "notSent": "No enviada",
-        "panelTitle": "Invitar a un miembro del equipo",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "Conecta sus propias herramientas cuando las necesite.",
-          "workflows": "Puede ejecutar cualquier flujo de trabajo de tu equipo.",
-          "workspace": "Se une a tu espacio de trabajo."
-        },
-        "sending": "Enviando…",
-        "title": "Haz que Okou sea útil para todo tu equipo"
-      },
       "welcome": {
-        "copy": "Revisa una tarea sugerida para tu trabajo, ajústala a tu objetivo y deja que Okou empiece.",
-        "promptLabel": "Tu prompt inicial",
-        "start": "Empezar con Okou",
-        "title": "Empieza con una tarea que importe"
+        "copy": "Te hemos sugerido una primera tarea para tu trabajo. Edítala o sustitúyela por algo que quieras completar.",
+        "preparing": "Buscando una primera tarea útil para ti…",
+        "promptLabel": "Tu primera tarea",
+        "start": "Empezar mi primera tarea",
+        "title": "Empecemos tu primera tarea"
       }
     }
   },

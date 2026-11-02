@@ -1,6 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import {
   storageVersionCacheKeySql,
@@ -38,6 +38,22 @@ export function createOfficialWorkflowCatalog() {
       .limit(1);
     return acceptedCatalogFromRow(row);
   });
+}
+
+function publishedRevision(
+  row: Parameters<typeof acceptedRevisionFromRow>[0] & {
+    readonly verifiedStorageId: string | null;
+    readonly verifiedStorageVersion: string | null;
+  },
+) {
+  if (
+    row.contentBundle === null &&
+    (row.verifiedStorageId !== row.storageId ||
+      row.verifiedStorageVersion !== row.storageVersion)
+  ) {
+    throw new OfficialWorkflowRunAdmissionError();
+  }
+  return acceptedRevisionFromRow(row);
 }
 
 /** Catalog and exact published revisions are independent of model routing/mount paths. */
@@ -78,7 +94,10 @@ export function createOfficialWorkflowFacts(
         definitionName: officialWorkflowDefinitionRevisions.definitionName,
         revision: officialWorkflowDefinitionRevisions.revision,
         payload: officialWorkflowDefinitionRevisions.payload,
+        contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
         storageName: officialWorkflowDefinitionRevisions.storageName,
+        verifiedStorageId: storages.id,
+        verifiedStorageVersion: storageVersions.id,
         storageId: officialWorkflowDefinitionRevisions.storageId,
         storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
         headVersionId: storages.headVersionId,
@@ -92,18 +111,20 @@ export function createOfficialWorkflowFacts(
         expiresAt: systemStoragePresignedUrlCache.expiresAt,
       })
       .from(officialWorkflowDefinitionRevisions)
-      .innerJoin(
+      .leftJoin(
         storages,
         and(
+          isNull(officialWorkflowDefinitionRevisions.contentBundle),
           eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
           eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
           eq(storages.orgId, SYSTEM_ORG_ID),
           eq(storages.userId, VOLUME_ORG_USER_ID),
         ),
       )
-      .innerJoin(
+      .leftJoin(
         storageVersions,
         and(
+          isNull(officialWorkflowDefinitionRevisions.contentBundle),
           eq(
             storageVersions.id,
             officialWorkflowDefinitionRevisions.storageVersion,
@@ -154,7 +175,7 @@ export function createOfficialWorkflowFacts(
         rows.map((revision) => {
           return [
             JSON.stringify([revision.definitionName, revision.revision]),
-            acceptedRevisionFromRow(revision),
+            publishedRevision(revision),
           ];
         }),
       ),
@@ -164,20 +185,39 @@ export function createOfficialWorkflowFacts(
 
 type PublishedRevisionStorage = Pick<
   typeof officialWorkflowDefinitionRevisions.$inferSelect,
-  "storageName" | "storageId" | "storageVersion"
-> &
-  Pick<typeof storages.$inferSelect, "headVersionId" | "s3Prefix"> &
-  Pick<
-    typeof storageVersions.$inferSelect,
-    "s3Key" | "archiveSize" | "fileCount"
-  > &
-  Parameters<typeof cacheRowsFromProjection>[0];
+  "storageName" | "storageId" | "storageVersion" | "contentBundle"
+> & {
+  readonly headVersionId: string | null;
+  readonly s3Prefix: string | null;
+  readonly s3Key: string | null;
+  readonly archiveSize: number | null;
+  readonly fileCount: number | null;
+} & Parameters<typeof cacheRowsFromProjection>[0];
 
 function publishedStorageIndex(
   rows: readonly PublishedRevisionStorage[],
 ): StorageIndex {
   return new Map(
-    rows.map((revision) => {
+    rows.flatMap((revision) => {
+      if (
+        revision.contentBundle !== null ||
+        (revision.storageName === null &&
+          revision.storageId === null &&
+          revision.storageVersion === null)
+      ) {
+        return [];
+      }
+      if (
+        revision.storageName === null ||
+        revision.storageId === null ||
+        revision.storageVersion === null ||
+        revision.s3Key === null ||
+        revision.archiveSize === null ||
+        revision.fileCount === null ||
+        revision.s3Prefix === null
+      ) {
+        throw new OfficialWorkflowRunAdmissionError();
+      }
       const version = {
         id: revision.storageVersion,
         s3Key: revision.s3Key,
@@ -185,20 +225,24 @@ function publishedStorageIndex(
         fileCount: revision.fileCount,
       };
       return [
-        storageIndexKey(
-          SYSTEM_ORG_ID,
-          VOLUME_ORG_USER_ID,
-          revision.storageName,
-        ),
-        {
-          storageId: revision.storageId,
-          headVersionId: revision.headVersionId,
-          s3Prefix: revision.s3Prefix,
-          headVersion:
-            revision.headVersionId === revision.storageVersion ? version : null,
-          exactVersions: new Map([[revision.storageVersion, version]]),
-          cachedUrls: cacheRowsFromProjection(revision),
-        },
+        [
+          storageIndexKey(
+            SYSTEM_ORG_ID,
+            VOLUME_ORG_USER_ID,
+            revision.storageName,
+          ),
+          {
+            storageId: revision.storageId,
+            headVersionId: revision.headVersionId,
+            s3Prefix: revision.s3Prefix,
+            headVersion:
+              revision.headVersionId === revision.storageVersion
+                ? version
+                : null,
+            exactVersions: new Map([[revision.storageVersion, version]]),
+            cachedUrls: cacheRowsFromProjection(revision),
+          },
+        ] as const,
       ];
     }),
   );

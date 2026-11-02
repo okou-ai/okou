@@ -17,8 +17,6 @@ interface BrowserSessionSidebarProps {
   readonly onClose: () => void;
   /** Status layered over the live viewer, such as who is in control. */
   readonly overlay?: ReactNode;
-  /** The member's input on the live page, for the presence above. */
-  readonly onPageInput?: () => void;
 }
 
 function BrowserSessionActions({
@@ -70,7 +68,6 @@ export function BrowserSessionSidebar({
   signals,
   onClose,
   overlay,
-  onPageInput,
 }: BrowserSessionSidebarProps) {
   const { t } = useTranslation();
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
@@ -99,7 +96,6 @@ export function BrowserSessionSidebar({
           showPausedScreenshot
           actions={refined ? actions : undefined}
           overlay={refined ? overlay : undefined}
-          onPageInput={refined ? onPageInput : undefined}
         />
       </div>
     </aside>

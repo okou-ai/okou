@@ -14,7 +14,7 @@ use rsa::{
 };
 use subtle::ConstantTimeEq;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite},
     time::Instant,
 };
 use zeroize::Zeroizing;
@@ -23,10 +23,9 @@ use crate::{
     AppleRsaSrpCredentials, Authenticated, AuthenticatedStream, AuthenticationStage, Error,
     apple_srp::{expected_proof, parse_challenge_fields, write_message},
     authentication::{discard_reason, phase, read_security_result},
+    version::{ServerVersion, exchange_version},
 };
 
-const APPLE_VERSION: &[u8; 12] = b"RFB 003.889\n";
-const CLIENT_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const SECURITY_TYPE: u8 = 33;
 const KEY_REPLY_LEN: usize = 301;
 const KEY_DER_LEN: usize = 294;
@@ -46,7 +45,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        exchange_version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Apple),
     )
     .await?;
     phase(
@@ -64,17 +63,6 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_rsa_srp_raw(stream),
     })
-}
-
-async fn exchange_version<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let mut version = [0; 12];
-    stream.read_exact(&mut version).await?;
-    if &version != APPLE_VERSION {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(CLIENT_VERSION).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 async fn verify_offer<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {
@@ -249,22 +237,4 @@ async fn exchange_proofs<S: AsyncRead + AsyncWrite + Unpin>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rsa::RsaPrivateKey;
-
-    #[test]
-    fn maximum_username_fits_the_rsa_plaintext_without_truncation() {
-        let mut rng = StdRng::try_from_rng(&mut SysRng).expect("OS entropy");
-        let private = RsaPrivateKey::new(&mut rng, 2048).expect("synthetic RSA key");
-        let username = vec![b'a'; 234];
-        let encrypted = encrypted_username(&RsaPublicKey::from(&private), &username)
-            .expect("exact PKCS#1 v1.5 bound");
-        let plaintext = private
-            .decrypt(Pkcs1v15Encrypt, &encrypted)
-            .expect("decrypt");
-        assert_eq!(plaintext.len(), 245);
-        assert_eq!(plaintext.get(8..242), Some(username.as_slice()));
-        assert_eq!(plaintext.get(242..), Some(&[0, 0, 0][..]));
-    }
-}
+mod tests;

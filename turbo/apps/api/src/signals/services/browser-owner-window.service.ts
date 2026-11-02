@@ -1,8 +1,5 @@
-import {
-  browserOwnerProfiles,
-  browserOwnerWindows,
-} from "@okouai/db/schema/browser-owner";
-import { browserSessionTabSnapshots } from "@okouai/db/schema/browser-session";
+import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 import {
   BROWSER_INITIAL_SCREEN_HEIGHT,
   BROWSER_SCREEN_WIDTH,
@@ -11,6 +8,7 @@ import { array, string } from "zod";
 import { command } from "ccstate";
 import { and, eq, exists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { db$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
@@ -24,6 +22,7 @@ import {
   tryCloseBrowserUseWindow,
   initialBrowserUseWindow,
   resizeBrowserUseSession,
+  prepareBrowserUseWindowDisplay,
   restoreBrowserUseWindowTabUrls,
   createBrowserUseWindow,
   type BrowserUseWindowCandidate,
@@ -51,14 +50,14 @@ const cleanupWindowCandidate$ = command(
     }
     const references = await get(db$)
       .select({
-        primaryWindowId: browserOwnerWindows.primaryWindowId,
+        primaryWindowId: browserChatSessions.primaryWindowId,
       })
-      .from(browserOwnerWindows)
+      .from(browserChatSessions)
       .where(
         and(
-          eq(browserOwnerWindows.instanceId, args.instanceId),
+          eq(browserChatSessions.instanceId, args.instanceId),
           eq(
-            browserOwnerWindows.primaryWindowId,
+            browserChatSessions.primaryWindowId,
             args.candidate.primaryWindowId,
           ),
         ),
@@ -76,6 +75,7 @@ const cleanupWindowCandidate$ = command(
 );
 
 interface BrowserOwnerWindowInput extends BrowserUseNativeConnection {
+  readonly initialDisplay?: BrowserDisplaySize;
   readonly owner: BrowserPublicAuthority;
   readonly instanceId: string;
   readonly initial: boolean;
@@ -87,13 +87,22 @@ async function prepareBrowserOwnerWindow(
   encryptedTabUrls: string | null,
   signal: AbortSignal,
 ): Promise<void> {
-  await resizeBrowserUseSession(
-    input.cdpUrl,
-    BROWSER_SCREEN_WIDTH,
-    BROWSER_INITIAL_SCREEN_HEIGHT,
-    signal,
-    candidate.primaryWindowId,
-  );
+  if (input.initialDisplay) {
+    await prepareBrowserUseWindowDisplay(
+      input.cdpUrl,
+      candidate,
+      input.initialDisplay,
+      signal,
+    );
+  } else {
+    await resizeBrowserUseSession(
+      input.cdpUrl,
+      BROWSER_SCREEN_WIDTH,
+      BROWSER_INITIAL_SCREEN_HEIGHT,
+      signal,
+      candidate.primaryWindowId,
+    );
+  }
   signal.throwIfAborted();
   if (encryptedTabUrls === null) {
     return;
@@ -115,11 +124,15 @@ export const createBrowserOwnerWindow$ = command(
     signal: AbortSignal,
   ): Promise<BrowserOwnerResult> => {
     const [snapshot] = await get(db$)
-      .select({ encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls })
+      .select({ encryptedTabUrls: browserChatSessions.encryptedTabUrls })
       .from(browserOwnerProfiles)
       .leftJoin(
-        browserSessionTabSnapshots,
-        eq(browserSessionTabSnapshots.chatThreadId, input.owner.chatThreadId),
+        browserChatSessions,
+        and(
+          eq(browserChatSessions.chatThreadId, input.owner.chatThreadId),
+          eq(browserChatSessions.orgId, input.owner.orgId),
+          eq(browserChatSessions.userId, input.owner.userId),
+        ),
       )
       .where(
         and(
@@ -133,9 +146,9 @@ export const createBrowserOwnerWindow$ = command(
             ? undefined
             : exists(
                 new QueryBuilder()
-                  .select({ chatThreadId: browserOwnerWindows.chatThreadId })
-                  .from(browserOwnerWindows)
-                  .where(eq(browserOwnerWindows.instanceId, input.instanceId)),
+                  .select({ chatThreadId: browserChatSessions.chatThreadId })
+                  .from(browserChatSessions)
+                  .where(eq(browserChatSessions.instanceId, input.instanceId)),
               ),
         ),
       );
@@ -152,7 +165,11 @@ export const createBrowserOwnerWindow$ = command(
     const creationWork = (async () => {
       const candidate = input.initial
         ? await initialBrowserUseWindow(input.cdpUrl, signal)
-        : await createBrowserUseWindow(input.cdpUrl, signal);
+        : await createBrowserUseWindow(
+            input.cdpUrl,
+            input.initialDisplay,
+            signal,
+          );
       cleanup.candidate = candidate;
       signal.throwIfAborted();
       await prepareBrowserOwnerWindow(

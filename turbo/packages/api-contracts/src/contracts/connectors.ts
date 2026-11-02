@@ -1,15 +1,14 @@
 import {
   array,
-  discriminatedUnion,
   literal,
   object,
   record,
   string,
-  url,
   uuid,
   type infer as zInfer,
 } from "zod";
 
+import { builtinConnectorAutomaticResponseSchema } from "../validators/connectors";
 import { authHeadersSchema, initContract } from "./base";
 import {
   connectorAuthMethodIdSchema,
@@ -29,6 +28,8 @@ import {
   connectorCompletedOperationResponseSchema,
   builtinConnectorListResponseSchema,
 } from "./connector-schemas";
+
+export { builtinConnectorAutomaticResponseSchema } from "../validators/connectors";
 
 const c = initContract();
 
@@ -75,22 +76,6 @@ export const builtinConnectorOauthStartContract = c.router({
     summary: "Create connector OAuth authorization URL",
   },
 });
-
-export const builtinConnectorAutomaticResponseSchema = discriminatedUnion(
-  "result",
-  [
-    object({
-      result: literal("connected"),
-      connectionId: uuid(),
-    }),
-    object({
-      result: literal("authorization"),
-      authorizationUrl: url(),
-      oauthAttemptId: uuid(),
-      connectionId: uuid().optional(),
-    }),
-  ],
-);
 
 export const builtinConnectorAutomaticContract = c.router({
   start: {

@@ -1,8 +1,6 @@
 import { command, computed, state, type Command } from "ccstate";
-import {
-  agentDraftContract,
-  agentDraftResponseSchema,
-} from "@okouai/api-contracts/contracts/agent-draft";
+import { agentDraftContract } from "@okouai/api-contracts/client/agent-draft";
+import { agentDraftResponseSchema } from "@okouai/api-contracts/validators/agent-draft";
 import type {
   PersistedAttachment,
   UserMessageDocument,

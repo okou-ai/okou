@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingSourcesContract } from "@okouai/api-contracts/client/onboarding";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import {
@@ -13,7 +13,6 @@ import {
   nextSourcesFirstStep,
   SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
-  sourcesFirstFlow$,
 } from "./onboarding-sources-first-state.ts";
 
 /**
@@ -36,7 +35,6 @@ export const continueSourcesFirstIndustry$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const next = nextSourcesFirstStep(
       "industry",
-      get(sourcesFirstFlow$),
       get(sourcesFirstDraft$).provider,
     );
     const searchParams = new URLSearchParams(get(searchParams$));

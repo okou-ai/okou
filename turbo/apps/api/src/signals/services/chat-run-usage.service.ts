@@ -1,7 +1,5 @@
-import {
-  CHAT_THREAD_USAGE_RUN_LIMIT,
-  type ChatEventUsagePayload,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatEventUsagePayload } from "@okouai/api-contracts/contracts/chat-threads";
+import { CHAT_THREAD_USAGE_RUN_LIMIT } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";

@@ -53,7 +53,7 @@ import {
   serializeBuiltinConnectorOauthDeviceProviderState,
 } from "./connector-authorization-provider-state";
 import {
-  connectorActionResolver,
+  readConnectorResolver$,
   type ConnectorActionMethodResolution,
   type ConnectorActionResolver,
   type ResolvedConnectorActionMethod,
@@ -1128,7 +1128,7 @@ const createDeviceAuthSession$ = command(
 
 export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1150,7 +1150,7 @@ export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver([args.connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [args.connectorSlug]);
     signal.throwIfAborted();
     const resolvedMethod = await resolveRequestedDeviceAuthMethod({
       resolver,
@@ -1282,7 +1282,7 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
       return notFound("OAuth device authorization session not found");
     }
 
-    const resolver = await get(connectorActionResolver([args.connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [args.connectorSlug]);
     signal.throwIfAborted();
     const resolvedMethod = await resolveStoredDeviceAuthMethod({
       resolver,

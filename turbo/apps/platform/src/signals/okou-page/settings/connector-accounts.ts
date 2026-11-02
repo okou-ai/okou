@@ -2,12 +2,12 @@ import { command } from "ccstate";
 import { onRef } from "../../utils.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
-import {
-  connectorAccountsContract,
-  connectorAccountConnectionSchema,
-  type ConnectorAccountConnection,
-  type ConnectorAccountMutationIntent,
-  type ConnectorAccountTarget,
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
+import { connectorAccountConnectionSchema } from "@okouai/api-contracts/validators/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountMutationIntent,
+  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { accept } from "../../../lib/accept.ts";

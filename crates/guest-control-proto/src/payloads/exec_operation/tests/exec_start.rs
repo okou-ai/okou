@@ -1,6 +1,5 @@
 use super::super::start::{
-    EXEC_LIFECYCLE_SUPERVISED, EXEC_PROCESS_ROLE_CODEX_SESSION_CLEANUP,
-    EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER,
+    EXEC_LIFECYCLE_SUPERVISED, EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER,
 };
 use super::super::*;
 use super::shared::{
@@ -10,11 +9,10 @@ use super::{NONCE, assert_invalid_payload};
 
 type ExecProcessContract = (ExecProcessRole, ExecLifecyclePolicy, ExecControlPolicy);
 
-const EXEC_PROCESS_ROLES: [ExecProcessRole; 4] = [
+const EXEC_PROCESS_ROLES: [ExecProcessRole; 3] = [
     ExecProcessRole::Workload,
     ExecProcessRole::Agent,
     ExecProcessRole::SessionHistoryIdentityVerifier,
-    ExecProcessRole::CodexSessionCleanup,
 ];
 const EXEC_LIFECYCLE_POLICIES: [ExecLifecyclePolicy; 2] = [
     ExecLifecyclePolicy::OneShot,
@@ -51,12 +49,6 @@ fn exec_process_diagnostic_labels_preserve_role_lifecycle_matrix() {
             ExecProcessRole::SessionHistoryIdentityVerifier,
             "session_history_identity_verifier",
             "verify_session_history_identity",
-            "invalid",
-        ),
-        (
-            ExecProcessRole::CodexSessionCleanup,
-            "codex_session_cleanup",
-            "cleanup_codex_session",
             "invalid",
         ),
     ] {
@@ -176,10 +168,6 @@ fn is_expected_valid_exec_process_contract(
             ExecProcessRole::SessionHistoryIdentityVerifier,
             ExecLifecyclePolicy::OneShot,
             ExecControlPolicy::Disabled,
-        ) | (
-            ExecProcessRole::CodexSessionCleanup,
-            ExecLifecyclePolicy::OneShot,
-            ExecControlPolicy::Disabled,
         )
     )
 }
@@ -191,7 +179,6 @@ fn exec_process_role_wire_value(role: ExecProcessRole) -> u8 {
         ExecProcessRole::SessionHistoryIdentityVerifier => {
             EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER
         }
-        ExecProcessRole::CodexSessionCleanup => EXEC_PROCESS_ROLE_CODEX_SESSION_CLEANUP,
     }
 }
 
@@ -557,8 +544,8 @@ fn exec_start_accepts_every_valid_process_contract() {
         accepted_count += 1;
     }
 
-    assert_eq!(contract_count, 24);
-    assert_eq!(accepted_count, 6);
+    assert_eq!(contract_count, 18);
+    assert_eq!(accepted_count, 5);
 }
 
 #[test]
@@ -577,7 +564,7 @@ fn exec_start_encoder_rejects_every_invalid_process_contract() {
         rejected_count += 1;
     }
 
-    assert_eq!(rejected_count, 18);
+    assert_eq!(rejected_count, 13);
 }
 
 #[test]
@@ -596,7 +583,7 @@ fn exec_start_decoder_rejects_every_invalid_process_contract() {
         rejected_count += 1;
     }
 
-    assert_eq!(rejected_count, 18);
+    assert_eq!(rejected_count, 13);
 }
 #[test]
 fn exec_start_rejects_zero_duration_timeout() {

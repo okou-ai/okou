@@ -139,7 +139,8 @@ export async function applyPendingMigrations(
 
     const file = requiredMigrationFile(migrationFiles, migration.folderMillis);
     // Keep shipped 1462 bytes/journal identity, but execute its canonical,
-    // replayable DDL outside TX-0357. Retire with 1462 in a future history squash.
+    // replayable DDL outside the migration transaction. Retire with 1462 in a
+    // future history squash.
     const statements =
       file === "1462_browser_owner_windows.sql"
         ? readFileSync(
@@ -229,7 +230,6 @@ export async function applyPendingMigrations(
           VALUES (${migration.hash}, ${migration.folderMillis})
         `;
       } else {
-        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0357; new non-billing transactions are prohibited.
         await sql.begin(async (transaction) => {
           progress = {
             phase: "setup",

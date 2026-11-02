@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.40](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.39...codex-mock-v0.12.40) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.12.39](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.38...codex-mock-v0.12.39) (2026-10-31)
+
+## [0.12.38](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.37...codex-mock-v0.12.38) (2026-10-30)
+
+## [0.12.37](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.36...codex-mock-v0.12.37) (2026-10-30)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify unwrapped codex output token limits ([#44234](https://github.com/okou-ai/okou/issues/44234)) ([deaa4ce](https://github.com/okou-ai/okou/commit/deaa4ced7f2f82b3fa081c275c88980b83f2db93))
+
 ## [0.12.36](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.35...codex-mock-v0.12.36) (2026-10-30)
 
 ## [0.12.35](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.34...codex-mock-v0.12.35) (2026-10-30)

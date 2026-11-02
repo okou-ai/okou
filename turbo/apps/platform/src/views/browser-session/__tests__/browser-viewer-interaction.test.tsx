@@ -6,6 +6,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
+  click,
   fill,
   queryAllByRoleFast,
   setupPage,
@@ -15,11 +16,16 @@ import {
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 
-function mockViewer(windowId?: number, unavailableTargets?: readonly string[]) {
+function mockViewer(
+  windowId?: number,
+  unavailableTargets?: readonly string[],
+  extensionAvailable = true,
+) {
   const session: BrowserSession = {
     threadId,
     name: "booking",
@@ -45,6 +51,7 @@ function mockViewer(windowId?: number, unavailableTargets?: readonly string[]) {
   };
   const cdpUrl = "wss://browser.example/interactions";
   const browser = mockBrowserCdp(context, cdpUrl, {
+    extensionAvailable,
     unavailableTargets,
     targets: [
       {
@@ -82,6 +89,22 @@ async function setupViewer(windowId?: number) {
   return browser;
 }
 
+function reportedCleanupError(
+  sentry: ReturnType<typeof context.mocks.sentry>,
+): Error {
+  const report = sentry.reports.find((report) => {
+    return (
+      report.type === "exception" &&
+      report.error instanceof Error &&
+      report.error.message === "Original input cleanup is unconfirmed."
+    );
+  });
+  if (report?.type !== "exception" || !(report.error instanceof Error)) {
+    throw new Error("Expected the retained cleanup error to be reported");
+  }
+  return report.error;
+}
+
 test.each([undefined, 0])(
   "New tabs can be created and closed in window %s",
   async (windowId) => {
@@ -95,7 +118,9 @@ test.each([undefined, 0])(
       ).toHaveAttribute("aria-selected", "true");
     });
     expect(screen.getByLabelText("Address")).toHaveValue("");
-    expect(screen.getByLabelText("Address")).toHaveFocus();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Address")).toHaveFocus();
+    });
     expect(
       browser.targets.find((target) => {
         return target.targetId === "created-1";
@@ -121,6 +146,103 @@ test.each([undefined, 0])(
   },
 );
 
+test.each(["first image", "input initialization"] as const)(
+  "Selecting a tab waits for its %s before accepting another browser action",
+  async (waitingFor) => {
+    const browser = await setupViewer();
+    const pending =
+      waitingFor === "first image"
+        ? browser.holdFrames("other-page-session")
+        : browser.holdNext("Runtime.enable");
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await act(async () => {
+      await pending.received;
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      await pending.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://other.example.com",
+    );
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeEnabled();
+  },
+);
+
+test("A created tab with a failed first image retries the image without creating another tab", async () => {
+  const browser = await setupViewer(0);
+  const image = browser.holdFrames("created-1-session");
+  const created = browser.holdNextNative("createTab");
+  const newTab = screen.getByLabelText("New tab", { selector: "button" });
+  click(newTab);
+  await created.received;
+  expect(browser.targets).toContainEqual(
+    expect.objectContaining({
+      targetId: "created-1",
+      url: expect.stringMatching(/^about:blank#okou-create-/),
+    }),
+  );
+  expect(newTab).toBeDisabled();
+  await userEvent.click(newTab);
+
+  await act(async () => {
+    await created.release();
+  });
+  await image.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(newTab).toBeDisabled();
+  await userEvent.click(newTab);
+
+  act(() => {
+    image.release("!");
+  });
+  await screen.findByText("Browser view unavailable");
+  const retry = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Retry live image";
+  });
+  if (!retry) {
+    throw new Error("Missing image recovery control");
+  }
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(newTab).toBeDisabled();
+  click(retry);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(
+    queryAllByRoleFast("tab").map((tab) => {
+      return tab.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(["Example", "New tab"]);
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+});
+
 test("Submitting an address navigates the selected remote page", async () => {
   const browser = await setupViewer(0);
   const address = screen.getByLabelText("Address");
@@ -131,6 +253,501 @@ test("Submitting an address navigates the selected remote page", async () => {
   });
   expect(browser.targets[0]?.url).toBe("http://example.test/path");
   expect(browser.targets[1]?.url).toBe("https://other.example.com");
+});
+
+test("An address submission waits for its navigation receipt across its own document change", async () => {
+  const browser = await setupViewer(0);
+  const navigation = browser.holdNext("Page.navigate");
+  const address = screen.getByLabelText("Address");
+  await fill(address, "first.example/path");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("first.example", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  expect(address).toBeDisabled();
+
+  await act(async () => {
+    await navigation.release();
+  });
+  await waitFor(() => {
+    expect(address).toBeEnabled();
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await fill(address, "second.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://second.example/ready");
+  });
+  expect(browser.targets[0]?.url).toBe("http://second.example/ready");
+});
+
+test("Moving another page into the window preserves the selected page and input", async () => {
+  const browser = await setupViewer(0);
+  const membership = browser.holdNext("Browser.getWindowForTarget");
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  await membership.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  await membership.release();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "false");
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("A selected page moved away loses input while remaining pages stay selectable", async () => {
+  const browser = await setupViewer(0);
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  await screen.findByLabelText("Other", { selector: '[role="tab"]' });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  act(() => {
+    browser.move("example-page", 1);
+  });
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toBeNull();
+  await userEvent.click(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://other.example.com",
+  );
+});
+
+test.each(["sequence gap", "worker replacement"])(
+  "A native %s revokes the established viewer",
+  async (failure) => {
+    const browser = await setupViewer(0);
+    act(() => {
+      if (failure === "worker replacement") {
+        browser.resetWorker();
+      } else {
+        browser.skipNativeEvent();
+        browser.nativeEvent("tab-updated");
+      }
+    });
+    await screen.findByText("Browser disconnected");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+  },
+);
+
+test.each([
+  { code: 1000, wasClean: true },
+  { code: 1006, wasClean: false },
+])(
+  "A native close ($code) preserves the uncertain new-tab result until manual recovery",
+  async ({ code, wasClean }) => {
+    const sentry = context.mocks.sentry();
+    const browser = await setupViewer(0);
+    const created = browser.holdNextNative("createTab");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await created.received;
+    await screen.findByLabelText("New tab", { selector: '[role="tab"]' });
+
+    act(() => {
+      browser.disconnect({ code, wasClean, reason: "private-close-reason" });
+    });
+    await screen.findByText("Browser disconnected");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      sentry.breadcrumbs.filter((entry) => {
+        return entry.category === "browser.connection";
+      }),
+    ).toStrictEqual([
+      {
+        category: "browser.connection",
+        level: "info",
+        data: {
+          source: "native-close",
+          role: "control",
+          phase: "open",
+          code,
+          was_clean: wasClean,
+          pending_requests: 1,
+          cancelled_awaiting_response: 0,
+        },
+      },
+    ]);
+
+    await act(async () => {
+      await created.release();
+    });
+    expect(screen.getByText("Browser disconnected")).toBeInTheDocument();
+    const reconnect = queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.trim() === "Reconnect";
+    });
+    if (!reconnect) {
+      throw new Error("Missing reconnect control");
+    }
+    click(reconnect);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    // The original remote effect survived; recovery discovers that one tab.
+    const tab = await screen.findByLabelText("New tab", {
+      selector: '[role="tab"]',
+    });
+    click(tab);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+  },
+);
+
+test("A native close distinguishes cancelled late attachments from unfinished requests", async () => {
+  const sentry = context.mocks.sentry();
+  const browser = await setupViewer(0);
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  await screen.findByLabelText("Other", { selector: '[role="tab"]' });
+  const attachment = browser.holdNext("Target.attachToTarget");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await attachment.received;
+  act(() => {
+    browser.move("other-page", 1);
+  });
+  await screen.findByText("Browser view unavailable");
+
+  act(() => {
+    browser.disconnect({ code: 1001, wasClean: true });
+  });
+  await screen.findByText("Browser disconnected");
+  expect(
+    sentry.breadcrumbs.find((entry) => {
+      return entry.category === "browser.connection";
+    }),
+  ).toMatchObject({
+    data: {
+      role: "control",
+      phase: "open",
+      pending_requests: 0,
+      cancelled_awaiting_response: 1,
+    },
+  });
+  await act(async () => {
+    await attachment.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
+test("An empty assigned window can create a native tab without a source document", async () => {
+  const browser = mockViewer(0);
+  browser.targets.splice(0, 1);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("No tabs open");
+  await userEvent.click(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+  expect(
+    browser.targets.find((target) => {
+      return target.targetId === "created-1";
+    }),
+  ).toMatchObject({ windowId: 0, url: "about:blank" });
+});
+
+test("An unavailable required extension never admits CDP-only viewing", async () => {
+  mockViewer(0, undefined, false);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  ).toBeDisabled();
+});
+
+test("Bridge loss detaches its page after writing an unacknowledged modifier release", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.dispatchKeyEvent",
+        params: expect.objectContaining({ type: "rawKeyDown", key: "Shift" }),
+      }),
+    );
+  });
+  // The remote never acknowledges the release while the viewer closes.
+  const release = browser.holdNext("Input.dispatchKeyEvent");
+  act(() => {
+    browser.resetWorker();
+  });
+  await release.received;
+  await screen.findByText("Browser disconnected");
+  await waitFor(() => {
+    expect(browser.detached).toContain("example-page-session");
+  });
+  // The release was written before its page was detached.
+  const keyUp = browser.requests.findIndex((request) => {
+    return (
+      request.method === "Input.dispatchKeyEvent" &&
+      request.params?.type === "keyUp"
+    );
+  });
+  const pageDetach = browser.requests.findIndex((request) => {
+    return (
+      request.method === "Target.detachFromTarget" &&
+      request.params?.sessionId === "example-page-session"
+    );
+  });
+  expect(keyUp).toBeGreaterThan(-1);
+  expect(keyUp).toBeLessThan(pageDetach);
+  expect(browser.targets).toHaveLength(2);
+  // The closed incarnation no longer blocks reconnecting to the same browser.
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Missing reconnect control");
+  }
+  click(reconnect);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("Revalidation does not wait for an unacknowledged release before another tab can be used", async () => {
+  const browser = await setupViewer();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.dispatchKeyEvent",
+        params: expect.objectContaining({ type: "rawKeyDown", key: "Shift" }),
+      }),
+    );
+  });
+  // Revalidation revokes admission; the remote never acknowledges the release.
+  const release = browser.holdNext("Input.dispatchKeyEvent");
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await release.received;
+  await userEvent.click(
+    await screen.findByLabelText("Other", { selector: '[role="tab"]' }),
+  );
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test.each(["movement", "pending navigation"])(
+  "A delayed creation receipt preserves another caller's %s",
+  async (change) => {
+    const browser = await setupViewer(0);
+    const receipt = browser.holdNextNative("createTab");
+    await userEvent.click(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    );
+    await receipt.received;
+    act(() => {
+      if (change === "movement") {
+        browser.move("created-1", 1);
+      } else {
+        browser.beginNavigation(
+          "created-1",
+          "https://user-navigation.example.com",
+        );
+      }
+    });
+    await receipt.release();
+    await screen.findByText(
+      "The browser action could not be completed. Check the browser before trying again.",
+    );
+    expect(
+      browser.targets.find((target) => {
+        return target.targetId === "created-1";
+      }),
+    ).toMatchObject(
+      change === "movement"
+        ? { windowId: 1 }
+        : { pendingUrl: "https://user-navigation.example.com" },
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  },
+);
+
+test("A fresh native tab read covers preceding metadata updates during creation", async () => {
+  const browser = await setupViewer(0);
+  browser.updateBeforeNextTabRead();
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+  expect(
+    browser.targets.find((target) => {
+      return target.targetId === "created-1";
+    }),
+  ).toMatchObject({ url: "about:blank", windowId: 0 });
+});
+
+test.each(["native getTab", "Browser.getWindowForTarget"])(
+  "A delayed creation check (%s) preserves another caller's pending navigation",
+  async (method) => {
+    const browser = await setupViewer(0);
+    const attachment = browser.holdNext("Target.attachToTarget");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await attachment.received;
+    const observation =
+      method === "native getTab"
+        ? browser.holdNextNative("getTab")
+        : browser.holdNextMembership("created-1");
+    await attachment.release();
+    await observation.received;
+    act(() => {
+      browser.beginNavigation(
+        "created-1",
+        "https://user-navigation.example.com",
+      );
+    });
+    await observation.release();
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("New tab", {
+          selector: 'button:not([role="tab"])',
+        }),
+      ).toBeEnabled();
+    });
+    expect(
+      browser.targets.find((target) => {
+        return target.targetId === "created-1";
+      }),
+    ).toMatchObject({
+      url: expect.stringMatching(/^about:blank#okou-create-/),
+      pendingUrl: "https://user-navigation.example.com",
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+    expect(
+      screen.getByText(
+        "The browser action could not be completed. Check the browser before trying again.",
+      ),
+    ).toBeInTheDocument();
+  },
+);
+
+test("A delayed failed-create cleanup preserves another caller's pending navigation", async () => {
+  const browser = await setupViewer(0);
+  browser.corruptNextPageAttachment();
+  const attachment = browser.holdNext("Target.attachToTarget");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await attachment.received;
+  const cleanup = browser.holdNextNative("getTab");
+  await attachment.release();
+  await cleanup.received;
+  act(() => {
+    browser.beginNavigation("created-1", "https://user-navigation.example.com");
+  });
+  await cleanup.release();
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", {
+        selector: 'button:not([role="tab"])',
+      }),
+    ).toBeEnabled();
+  });
+  expect(
+    browser.targets.find((target) => {
+      return target.targetId === "created-1";
+    }),
+  ).toMatchObject({
+    url: expect.stringMatching(/^about:blank#okou-create-/),
+    pendingUrl: "https://user-navigation.example.com",
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(
+    screen.getByText(
+      "The browser action could not be completed. Check the browser before trying again.",
+    ),
+  ).toBeInTheDocument();
+});
+
+test("A malformed new-page attachment preserves the established browser pages", async () => {
+  const browser = await setupViewer(0);
+  browser.corruptNextPageAttachment();
+  await userEvent.click(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  );
+  await screen.findByText(
+    "The browser action could not be completed. Check the browser before trying again.",
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(
+    browser.targets.map((target) => {
+      return target.targetId;
+    }),
+  ).toStrictEqual(["example-page", "other-page"]);
+});
+
+test("A duplicate marker during creation never takes over the other caller's page", async () => {
+  const browser = await setupViewer(0);
+  const receipt = browser.holdNextNative("createTab");
+  await userEvent.click(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  );
+  await receipt.received;
+  act(() => {
+    browser.duplicate("created-1");
+  });
+  await receipt.release();
+  await screen.findByText(
+    "The browser action could not be completed. Check the browser before trying again.",
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(
+    browser.targets.map((target) => {
+      return target.targetId;
+    }),
+  ).toStrictEqual(["example-page", "other-page", "created-2"]);
+  expect(browser.targets.at(-1)?.url).toMatch(/^about:blank#okou-create-/);
 });
 
 test.each([
@@ -150,16 +767,675 @@ test.each([
   },
 );
 
-test("IME confirmation commits text once to the current remote session", async () => {
+test("Remote editing context updates keyboard hints without interrupting composition", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
+  for (const [type, inputMode, enterKeyHint] of [
+    ["search", "search", "search"],
+    ["email", "email", "enter"],
+    ["url", "url", "enter"],
+    ["tel", "tel", "enter"],
+    ["number", "decimal", "enter"],
+    ["textarea", "text", "enter"],
+    ["password", "text", "enter"],
+  ]) {
+    browser.setFocusedEditing({
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type,
+        multiline: type === "textarea",
+        inputMode: "",
+        enterKeyHint: "",
+        autoCapitalize: "characters",
+        lang: "zh-CN",
+      },
+    });
+    fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+    fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+    await waitFor(() => {
+      expect(input).toHaveAttribute("inputmode", inputMode);
+      expect(input).toHaveAttribute("enterkeyhint", enterKeyHint);
+      expect(input).toHaveAttribute(
+        "type",
+        type === "password" ? "password" : "text",
+      );
+    });
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute("lang", "zh-CN");
+    expect(input).toHaveAttribute("autocorrect", "off");
+    expect(input).toHaveAttribute("spellcheck", "false");
+  }
+  expect(input).toHaveAttribute("autocapitalize", "none");
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "text",
+      multiline: false,
+      inputMode: "numeric",
+      enterKeyHint: "send",
+      autoCapitalize: "words",
+      lang: "en-US",
+    },
+  });
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "numeric");
+    expect(input).toHaveAttribute("enterkeyhint", "send");
+  });
+  expect(input).toHaveAttribute("autocapitalize", "words");
+  fireEvent.compositionStart(input);
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "password",
+      multiline: false,
+      inputMode: "",
+      enterKeyHint: "done",
+      autoCapitalize: "characters",
+      lang: "ja",
+    },
+  });
+  const reading = browser.holdNext("Runtime.evaluate");
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await reading.received;
+  await act(async () => {
+    await reading.release();
+  });
+  expect(input).toHaveAttribute("type", "text");
+  expect(input).toHaveAttribute("inputmode", "numeric");
+  expect(input).toHaveValue("中");
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  await waitFor(() => {
+    expect(input).toHaveAttribute("type", "password");
+    expect(input).toHaveAttribute("enterkeyhint", "done");
+  });
+  expect(input).toHaveFocus();
+  browser.setFocusedEditing(null);
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "text");
+    expect(input).toHaveAttribute("enterkeyhint", "enter");
+    expect(input).toHaveAttribute("lang", "");
+  });
+  expect(input).toHaveFocus();
+});
+
+test("Remote password keyboard hints survive native editing and tab updates", async () => {
+  const browser = await setupViewer(0);
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "password",
+      multiline: false,
+      inputMode: "numeric",
+      enterKeyHint: "done",
+      autoCapitalize: "none",
+      lang: "ja",
+    },
+  });
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  await waitFor(() => {
+    expect(input).toHaveAttribute("type", "password");
+  });
   fireEvent.compositionStart(input);
   fireEvent.input(input, {
     target: { value: "中" },
     data: "中",
     inputType: "insertCompositionText",
     isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.imeSetComposition",
+      params: { text: "中", selectionStart: 1, selectionEnd: 1 },
+      sessionId: "example-page-session",
+    });
+  });
+  expect(input).toHaveAttribute("type", "password");
+  expect(input).toBeEnabled();
+  expect(input).toHaveAttribute("inputmode", "numeric");
+  expect(input).toHaveAttribute("enterkeyhint", "done");
+  expect(input).toHaveAttribute("lang", "ja");
+  expect(input).toHaveValue("中");
+  expect(input).toHaveFocus();
+  const target = browser.targets[0]!;
+  act(() => {
+    target.title = "Updated Example";
+    browser.event("Target.targetInfoChanged", {
+      targetInfo: { ...target, type: "page" },
+    });
+    browser.nativeEvent("tab-updated", target);
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Updated Example", { selector: '[role="tab"]' }),
+    ).toBeInTheDocument();
+  });
+  expect(input).toHaveAttribute("type", "password");
+  expect(input).toHaveAttribute("inputmode", "numeric");
+  expect(input).toHaveValue("中");
+  expect(input).toHaveFocus();
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "中" },
+    });
+  });
+});
+
+test("A failed editing-context read clears stale keyboard hints without disabling input", async () => {
+  const browser = await setupViewer(0);
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "text",
+      multiline: false,
+      inputMode: "none",
+      enterKeyHint: "done",
+      autoCapitalize: "characters",
+      lang: "ja",
+    },
+  });
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "none");
+  });
+  browser.setFocusedEditing(null);
+  browser.failNext("Runtime.evaluate", "Cannot find context with specified id");
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "text");
+    expect(input).toHaveAttribute("enterkeyhint", "enter");
+    expect(input).toHaveAttribute("lang", "");
+  });
+  expect(input).toBeEnabled();
+  expect(input).toHaveFocus();
+  fireEvent.input(input, {
+    target: { value: "fresh" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+    });
+  });
+});
+
+test.each(["success", "failure"])(
+  "A retired tab's delayed %s cannot alter the successor editing context",
+  async (outcome) => {
+    const browser = await setupViewer();
+    browser.setFocusedEditing({
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type: "password",
+        multiline: false,
+        inputMode: "numeric",
+        enterKeyHint: "done",
+        autoCapitalize: "none",
+        lang: "ja",
+      },
+    });
+    if (outcome === "failure") {
+      browser.failNext(
+        "Runtime.evaluate",
+        "Cannot find context with specified id",
+      );
+    }
+    const reading = browser.holdNext("Runtime.evaluate");
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    await expect(reading.received).resolves.toContain(
+      outcome === "failure" ? '"error"' : '"password"',
+    );
+    browser.setFocusedEditing({
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type: "text",
+        multiline: false,
+        inputMode: "numeric",
+        enterKeyHint: "send",
+        autoCapitalize: "none",
+        lang: "en",
+      },
+    });
+    await userEvent.click(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    await waitFor(() => {
+      expect(input).toHaveAttribute("inputmode", "numeric");
+      expect(input).toHaveAttribute("enterkeyhint", "send");
+    });
+    await act(async () => {
+      await reading.release();
+    });
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveAttribute("inputmode", "numeric");
+    expect(input).toHaveAttribute("enterkeyhint", "send");
+    expect(input).toHaveAttribute("lang", "en");
+  },
+);
+
+test("Native form actions forward Enter once without submitting an IME candidate", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  const form = input.closest("form")!;
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Unidentified", keyCode: 229 });
+  expect(fireEvent.submit(form)).toBeFalsy();
+  fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
+  fireEvent.submit(form);
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertParagraph",
+    }),
+  );
+  fireEvent.keyUp(input, { key: "Enter", code: "Enter", keyCode: 13 });
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  fireEvent.submit(form);
+  expect(
+    fireEvent(
+      input,
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertParagraph",
+      }),
+    ),
+  ).toBeTruthy();
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+  });
+  fireEvent.input(input, { inputType: "insertLineBreak" });
+  for (const inputType of ["insertLineBreak", "insertParagraph"]) {
+    expect(
+      fireEvent(
+        input,
+        new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType,
+        }),
+      ),
+    ).toBeFalsy();
+  }
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertText",
+      data: "first\nsecond",
+    }),
+  );
+  fireEvent.input(input, {
+    target: { value: "last" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "last" },
+    });
+  });
+  const keys = browser.input.filter((request) => {
+    return request.method === "Input.dispatchKeyEvent";
+  });
+  expect(keys).toHaveLength(10);
+  for (let index = 0; index < keys.length; index += 2) {
+    expect(keys[index]).toMatchObject({
+      params: {
+        type: "keyDown",
+        key: "Enter",
+        text: "\r",
+        unmodifiedText: "\r",
+      },
+    });
+    expect(keys[index + 1]).toMatchObject({
+      params: { type: "keyUp", key: "Enter" },
+    });
+  }
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.insertText";
+    }),
+  ).toStrictEqual([
+    expect.objectContaining({ params: { text: "中" } }),
+    expect.objectContaining({ params: { text: "first\nsecond" } }),
+    expect.objectContaining({ params: { text: "last" } }),
+  ]);
+});
+
+test("Soft-keyboard deletion forwards after committed text without duplicating desktop Backspace", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "d" },
+    data: "d",
+    inputType: "insertText",
+  });
+  fireEvent.keyDown(input, {
+    key: "Unidentified",
+    keyCode: 229,
+  });
+  for (let index = 0; index < 2; index++) {
+    fireEvent(
+      input,
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "deleteContentBackward",
+      }),
+    );
+  }
+  fireEvent.keyDown(input, {
+    key: "Backspace",
+    code: "Backspace",
+    keyCode: 8,
+  });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  fireEvent.keyUp(input, {
+    key: "Backspace",
+    code: "Backspace",
+    keyCode: 8,
+  });
+  fireEvent.input(input, {
+    target: { value: "next" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "next" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toStrictEqual(
+    Array.from({ length: 3 }, () => {
+      return [
+        {
+          method: "Input.dispatchKeyEvent",
+          sessionId: "example-page-session",
+          params: expect.objectContaining({
+            type: "rawKeyDown",
+            key: "Backspace",
+          }),
+        },
+        {
+          method: "Input.dispatchKeyEvent",
+          sessionId: "example-page-session",
+          params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+        },
+      ];
+    }).flat(),
+  );
+});
+
+test("Queued soft-keyboard deletion and Enter cannot reach a replacement tab", async () => {
+  const browser = await setupViewer();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  // A pending native preedit keeps the subsequent commit and deletion queued.
+  const pending = browser.holdNext("Input.imeSetComposition");
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "old" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await pending.received;
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "old",
+    }),
+  );
+  fireEvent.submit(input.closest("form")!);
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  await userEvent.click(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await pending.release();
+  const successor = screen.getByLabelText("Remote browser input");
+  await userEvent.click(successor);
+  fireEvent(
+    successor,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  fireEvent.input(successor, {
+    target: { value: "fresh" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toStrictEqual({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+      sessionId: "other-page-session",
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toStrictEqual([
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "other-page-session",
+      params: expect.objectContaining({ type: "rawKeyDown", key: "Backspace" }),
+    },
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "other-page-session",
+      params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+    },
+  ]);
+});
+
+test("Backward deletion preserves preedit and consumes committed composition residuals", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中国" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+      isComposing: true,
+    }),
+  );
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "deleteCompositionText",
+    isComposing: true,
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  fireEvent.input(input, {
+    inputType: "deleteContentBackward",
+  });
+  fireEvent.input(input, {
+    target: { value: "fresh" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.insertText";
+    }),
+  ).toStrictEqual([
+    {
+      method: "Input.insertText",
+      sessionId: "example-page-session",
+      params: { text: "中" },
+    },
+    {
+      method: "Input.insertText",
+      sessionId: "example-page-session",
+      params: { text: "fresh" },
+    },
+  ]);
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toStrictEqual([
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "example-page-session",
+      params: expect.objectContaining({ type: "rawKeyDown", key: "Backspace" }),
+    },
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "example-page-session",
+      params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+    },
+  ]);
+});
+
+test("IME preedit and confirmation progress while keyboard metadata is pending", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  const metadata = browser.holdNext("Runtime.evaluate");
+  await userEvent.click(input);
+  await metadata.received;
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中" },
+    data: "中",
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.imeSetComposition",
+      params: { text: "中", selectionStart: 1, selectionEnd: 1 },
+      sessionId: "example-page-session",
+    });
   });
   fireEvent(
     input,
@@ -187,6 +1463,9 @@ test("IME confirmation commits text once to the current remote session", async (
     ]);
   });
   expect(input).toHaveFocus();
+  await act(async () => {
+    await metadata.release();
+  });
 });
 
 test("A payload-less context reset retires composition before accepting new remote text", async () => {
@@ -293,6 +1572,42 @@ test("Closing a tab preserves address focus chosen while the close is pending", 
       return target.title;
     }),
   ).toStrictEqual(["Example"]);
+});
+
+test("A close receipt returns focus before the successor has a live image", async () => {
+  const browser = await setupViewer();
+  const image = browser.holdFrames("other-page-session");
+  const closed = browser.holdNext("Target.closeTarget");
+  await userEvent.click(screen.getByLabelText("Close Example"));
+  await closed.received;
+  await act(async () => {
+    await closed.release();
+  });
+  await image.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveFocus();
+  });
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    queryAllByRoleFast("tab").map((tab) => {
+      return tab.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(["Other"]);
+
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://other.example.com",
+  );
 });
 
 test("Shared tab controls support keyboard selection and address Escape", async () => {
@@ -434,6 +1749,193 @@ test("A late modifier cleanup stays on its original tab while the successor keep
   );
 });
 
+test.each([
+  { phase: "input", secondaryFailure: false },
+  { phase: "input", secondaryFailure: true },
+  { phase: "cleanup", secondaryFailure: false },
+] as const)(
+  "A failed original $phase receipt keeps its attribution and fence (later failure: $secondaryFailure)",
+  async ({ phase, secondaryFailure }) => {
+    const sentry = context.mocks.sentry();
+    initSentry();
+    const browser = await setupViewer();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.dispatchKeyEvent",
+        params: { type: "rawKeyDown" },
+      });
+    });
+
+    if (phase === "input") {
+      browser.failNext("Input.insertText", "private-provider-message");
+      const receipt = browser.holdNext("Input.insertText");
+      fireEvent.input(input, {
+        target: { value: "private-remote-text" },
+        inputType: "insertText",
+      });
+      await receipt.received;
+      if (secondaryFailure) {
+        // A later, different cleanup failure must not replace the original cause.
+        browser.failNext(
+          "Input.dispatchKeyEvent",
+          "secondary-private-message",
+          -32_001,
+        );
+      }
+      await receipt.release();
+    } else {
+      browser.failNext("Input.dispatchKeyEvent", "private-provider-message");
+    }
+
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://other.example.com",
+      );
+    });
+    const successor = screen.getByLabelText("Remote browser input");
+    await userEvent.click(successor);
+    fireEvent.input(successor, {
+      target: { value: "fresh-successor-text" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toStrictEqual({
+        method: "Input.insertText",
+        params: { text: "fresh-successor-text" },
+        sessionId: "other-page-session",
+      });
+    });
+
+    click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    const method =
+      phase === "input" ? "Input.insertText" : "Input.dispatchKeyEvent";
+    await waitFor(() => {
+      expect(reportedCleanupError(sentry)).toMatchObject({
+        code: undefined,
+        request: { method, code: -32_000 },
+        cause: {
+          message: "Original input retirement failed.",
+          cause: {
+            message: `Original ${phase} receipt failed: ${method} (CDP -32000).`,
+          },
+        },
+      });
+    });
+    const diagnostic = JSON.stringify(
+      reportedCleanupError(sentry),
+      (_key, value: unknown) => {
+        return value instanceof Error
+          ? {
+              ...value,
+              message: value.message,
+              stack: value.stack,
+              cause: value.cause,
+            }
+          : value;
+      },
+    );
+    expect(diagnostic).not.toMatch(
+      /private-|fresh-successor-text|ShiftLeft|example-page|other-page/,
+    );
+    expect(
+      browser.requests.filter((request) => {
+        return (
+          request.method.startsWith("Input.") &&
+          request.sessionId === "other-page-session"
+        );
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "fresh-successor-text" },
+      }),
+    ]);
+  },
+);
+
+async function revisitAfterUnsupportedIme(mixed: boolean) {
+  const sentry = context.mocks.sentry();
+  initSentry();
+  const browser = await setupViewer();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.compositionStart(input);
+  if (mixed) {
+    const supported = browser.holdNext("Input.imeSetComposition");
+    fireEvent.input(input, {
+      target: { value: "private-preedit" },
+      inputType: "insertCompositionText",
+      isComposing: true,
+    });
+    await supported.received;
+    await supported.release();
+  }
+  browser.failNext("Input.imeSetComposition", "private-ime-message", -32_601);
+  const unsupported = browser.holdNext("Input.imeSetComposition");
+  fireEvent.input(input, {
+    target: { value: "private-preedit-next" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await unsupported.received;
+  await unsupported.release();
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "private-committed-text",
+    }),
+  );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "private-committed-text" },
+    });
+  });
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://other.example.com",
+    );
+  });
+  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+  return sentry;
+}
+
+test("Unsupported-only IME preserves committed text and permits returning to its tab", async () => {
+  await revisitAfterUnsupportedIme(false);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  });
+});
+
+test("Mixed IME support retains the safe unsupported receipt and same-tab fence", async () => {
+  const sentry = await revisitAfterUnsupportedIme(true);
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await waitFor(() => {
+    expect(reportedCleanupError(sentry)).toMatchObject({
+      code: undefined,
+      request: { method: "Input.imeSetComposition", code: -32_601 },
+      cause: {
+        message: "Original input retirement failed after mixed IME support.",
+        cause: {
+          message:
+            "Original input receipt failed: Input.imeSetComposition (CDP -32601).",
+        },
+      },
+    });
+  });
+});
+
 test("A background window lookup failure leaves a valid scoped tab usable", async () => {
   mockViewer(0, ["other-page"]);
   await setupPage({ context, path: `/browsers/${threadId}` });
@@ -446,6 +1948,49 @@ test("A background window lookup failure leaves a valid scoped tab usable", asyn
     }),
   ).toStrictEqual(["Example"]);
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("A retired background membership failure cannot revoke the usable selected page", async () => {
+  const browser = await setupViewer(0);
+  const membership = browser.holdNextMembership("other-page");
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  // This request is after the cold list and targets B specifically, not A or
+  // the bridge's nested Target.getTargets lookup.
+  await membership.received;
+  act(() => {
+    const index = browser.targets.findIndex((target) => {
+      return target.targetId === "other-page";
+    });
+    browser.targets.splice(index, 1);
+    browser.event("Target.targetDestroyed", { targetId: "other-page" });
+  });
+  await membership.releaseFailure();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    screen.queryByLabelText("Other", { selector: '[role="tab"]' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "still usable" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.insertText",
+      sessionId: "example-page-session",
+      params: { text: "still usable" },
+    });
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("A held initial inventory cannot resurrect a target destroyed before its reply", async () => {

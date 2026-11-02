@@ -4,6 +4,7 @@ import {
   number,
   object,
   string,
+  uuid,
   type infer as zInfer,
 } from "zod";
 
@@ -12,7 +13,7 @@ export const telegramDeliveryTargetSchema = object({
   chatId: string().min(1),
   messageId: string().min(1),
   rootMessageId: string().nullable(),
-  userLinkId: string().uuid(),
+  userLinkId: uuid(),
   userLinkKind: literal("official"),
   agentId: string().min(1),
   isDM: boolean(),
@@ -26,5 +27,5 @@ export type TelegramDeliveryTarget = zInfer<
 
 export const telegramChatCallbackPayloadSchema =
   telegramDeliveryTargetSchema.extend({
-    chatEventId: string().uuid(),
+    chatEventId: uuid(),
   });

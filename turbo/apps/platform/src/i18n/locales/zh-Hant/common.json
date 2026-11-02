@@ -1482,7 +1482,7 @@
         },
         "connector": {
           "action": "連線",
-          "description": "Gmail、Notion 等 100 多個工具",
+          "description": "Gmail、Notion 等 4,000 多個工具",
           "name": "連線一個工具",
           "unit": "每個連接器"
         },
@@ -1766,9 +1766,10 @@
       "outOfCredits": "你的積分用完了",
       "proCard": {
         "creditsNow": "點數 · 就現在",
-        "description": "額外積分 · 進階功能 · 3 台雲端電腦",
+        "description": "進階功能 · 3 台雲端電腦",
         "priceUnavailable": "查看方案及最新價格",
         "title": "大約還剩 5 個任務",
+        "upgradeFromPrice": "升級，每月 {{price}} 起",
         "upgradeNow": "立即升級"
       },
       "redirecting": "正在跳轉…",
@@ -2324,8 +2325,10 @@
       "create": "分享",
       "createFailed": "無法建立分享對話。",
       "deselectGroup": "取消選擇該組訊息",
+      "everyone": "所有人",
       "linkCopied": "連結已複製",
       "messageShareFailed": "分享連結建立失敗。",
+      "organizationDescription": "僅限組織內成員",
       "publicDescription": "選中的訊息及其附件將公開可見。",
       "selectedCount_other": "已選 {{count}} 條",
       "selectGroup": "選擇該組訊息",
@@ -4205,14 +4208,56 @@
       "make": "歡迎使用 {{brandName}}"
     },
     "make": {
-      "promptDescription": "你可以在下面改一改，也可以直接執行，接下來交給 {{assistantName}}。你的工具都在沙箱裡執行，資料不會離開你的工作區。",
       "promptLabel": "新手引導提示詞",
-      "promptTitle": "試試這個提示詞"
+      "promptTitle": "依你的需求調整任務"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "用 Okou 查資料、找人、產生圖片。這些工具預設開啟，你可以現在調整，也可以稍後再改。",
+        "items": {
+          "data-search": {
+            "description": "比較公司、網站流量與廣告，發現商機。",
+            "name": "進階資料研究"
+          },
+          "finance": {
+            "description": "比較股價與市場趨勢，為投資研究提供依據。",
+            "name": "金融資料"
+          },
+          "image-generation": {
+            "description": "為社群貼文、行銷活動與簡報創作原創圖片。",
+            "name": "圖像生成"
+          },
+          "maps": {
+            "description": "尋找商家與場地、比較位置並規劃路線。",
+            "name": "地圖與地點"
+          },
+          "people-search": {
+            "description": "依職位與公司尋找潛在客戶、合作夥伴或候選人。",
+            "name": "人物搜尋"
+          },
+          "scrape": {
+            "description": "從網頁擷取關鍵資訊，用於簡報與比較分析。",
+            "name": "網頁擷取"
+          },
+          "seo": {
+            "description": "發現客戶搜尋的關鍵字，了解競爭對手的排名。",
+            "name": "SEO 研究"
+          },
+          "social": {
+            "description": "研究創作者、貼文與互動表現，為內容決策提供依據。",
+            "name": "社群搜尋"
+          },
+          "web-search": {
+            "description": "查找最新資訊與事實，並提供可查證的來源。",
+            "name": "網頁搜尋"
+          }
+        },
+        "listLabel": "內建能力",
+        "title": "把更多工作交給 Okou"
+      },
       "chatChannels": {
         "connectedTitle": "聊天管道已連接",
-        "copy": "透過訊息與 Okou 協作，或將它加入團隊聊天。選擇你習慣的方式。",
+        "copy": "在常用聊天工具中使用 Okou，自己用或與團隊一起用都可以。你也可以繼續在這裡工作，稍後再連接。",
         "imessageConnected": "iMessage 已連接",
         "imessageCopy": "傳則訊息，就能繼續你的工作。",
         "imessageExpired": "連接驗證碼已過期。",
@@ -4228,19 +4273,18 @@
         "notNow": "暫不"
       },
       "documentTitles": {
-        "experience": "你的 AI 使用經驗",
+        "experience": "選擇開始方式",
         "industry": "選擇你的領域",
-        "ready": "Okou 已就緒",
+        "ready": "你的第一個任務",
         "skills": "匯入你的技能",
-        "sources": "連線你的工作",
-        "team": "邀請團隊成員"
+        "sources": "連線你的工作"
       },
       "experience": {
-        "copy": "可以從引導開始，也可以連接你已有的 Codex 或 Claude Code 訂閱。",
-        "no": "我是 AI Agent 新手",
-        "noCopy": "Okou 會幫你找到合適的第一項任務。",
+        "copy": "直接使用 Okou 開始，或連接你已有的 Codex、Claude Code 訂閱。",
+        "no": "使用 Okou 開始",
+        "noCopy": "讓 Okou 幫你開始第一個任務。",
         "title": "你想怎樣開始使用 Okou？",
-        "trust": "連接 Codex 或 Claude Code 訂閱後，任務使用你已有的額度，不消耗 Okou credits，可以放心多用。現在或以後連接都可以。"
+        "trust": "連接訂閱後，任務會使用該訂閱的額度，而非 Okou 點數。可以稍後連接，原訂閱的用量限制仍然適用。"
       },
       "industries": {
         "coaching": {
@@ -4300,11 +4344,11 @@
         }
       },
       "industry": {
-        "copy": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。選擇你的領域，取得適合你的第一項任務。",
+        "copy": "告訴我們你從事什麼工作，Okou 會推薦一件適合你先嘗試的任務。",
         "title": "你主要做哪類工作？"
       },
       "mobile": {
-        "channelsCopy": "在常用聊天工具中聯絡 Okou。",
+        "channelsCopy": "繼續在這裡工作，或現在連接聊天工具。",
         "channelsTitle": "選擇聊天工具",
         "connect": "連接",
         "copyImportPrompt": "複製匯入提示詞",
@@ -4320,12 +4364,10 @@
         "planCopy": "用現有訂閱執行任務。",
         "promptTitle": "你想完成什麼？",
         "readyTitle": "開始你的第一個任務",
-        "skillsCopy": "在電腦上使用 {{provider}}。",
+        "skillsCopy": "在 {{provider}} 中有儲存的技能？可以從電腦匯入，也可以稍後再做。",
         "skillsTitle": "匯入你的技能",
-        "sourcesCopy": "為第一個任務連接一個工具。",
-        "startTask": "開始任務",
-        "teamCopy": "在同一個工作區協作。",
-        "teamTitle": "邀請同事"
+        "sourcesCopy": "先連接一個工具，也可以略過，稍後再連接。",
+        "startTask": "開始任務"
       },
       "outcomes": {
         "accessibleLabel": "根據 {{source}} 整理的{{title}}示意，內容均為範例資料。",
@@ -4471,8 +4513,8 @@
             "label": "簡報"
           },
           "report": {
-            "instruction": "將結果整理為一份結構清晰的報告，包含關鍵結果、建議和後續步驟。",
-            "label": "報告"
+            "instruction": "將完整結果製作成文件，使用要求的檔案格式（預設使用 Markdown）。將文件上傳為 artifact，並在最終回覆中提供可開啟的 artifact 連結。",
+            "label": "文件"
           },
           "research": {
             "instruction": "將結果整理為一份研究摘要，附上支持結論的來源和待解決的問題。區分有來源支持的事實與建議。",
@@ -4483,17 +4525,17 @@
             "label": "網站"
           }
         },
-        "title": "選擇產出形式",
+        "title": "選擇結果格式（選填）",
         "tooLong": "請縮短任務內容，以選擇其他產出形式。"
       },
       "prompt": {
-        "connectorsDescription": "連接這些工具，讓 Okou 更了解你的工作情境，更有針對性地幫你完成任務。也可以稍後再連接。",
+        "connectorsDescription": "連接應用程式，讓 Okou 更了解你的工作。",
         "connectorsTitle": "連接你的工作工具",
-        "intro": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。"
+        "intro": "連接應用程式，讓成果更符合需求，並選擇輸出格式。"
       },
       "skills": {
         "copied": "已複製",
-        "copy": "在 {{provider}} 中執行這段提示詞，匯入你已經寫好的技能，Okou 馬上就能用上。",
+        "copy": "如果你在 {{provider}} 中儲存過技能，可以匯入，讓 Okou 沿用你的工作方式。也可以略過，稍後再匯入。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
         "guide": {
@@ -4554,14 +4596,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Okou 越了解你的工作，就越聰明。連接一個你每天在用的工具，從一項基於真實工作的任務開始。",
-        "permissions": "Okou 會參考少量資訊為你量身打造第一項任務；Agent 能做什麼、授權多久，都由你決定。",
+        "copy": "連接一個日常工具，讓第一個任務貼近你的實際工作；也可以略過，稍後再連接。",
+        "permissions": "Okou 會用少量資訊推薦你的第一個任務。你決定 Okou 可以存取什麼，以及授權多久。",
         "securityLink": "瞭解 Okou 如何保護你的資料",
         "skipDialog": {
           "connect": "繼續連接",
-          "description": "建議先連接常用工具，讓 Okou 更了解你的工作，提供更貼近需求的協助。你也可以稍後再連接。",
+          "description": "你現在就可以開始一個任務。需要 Okou 使用郵件、文件或資料時，再連接相應工具。",
           "skip": "仍然略過",
-          "title": "連接工具，讓 Okou 更懂你的工作"
+          "title": "先不連接工具，繼續開始？"
         },
         "title": "連接一個工作工具"
       },
@@ -4895,32 +4937,15 @@
         "connected": "已連線",
         "connecting": "連線中…",
         "failedNote": "無法連線{{provider}}。",
-        "rowCopy": "連接後可使用你的方案執行，不消耗 Okou 點數。",
+        "rowCopy": "使用已有訂閱執行任務。",
         "unconfirmedNote": "無法確認{{provider}}的連線狀態。"
       },
-      "team": {
-        "copy": "邀請團隊成員共享你的工作流程，每個人各自連接自己的工具。",
-        "invalidEmail": "請輸入有效的電子郵件地址",
-        "invite": "傳送邀請",
-        "invited": "已邀請",
-        "label": "團隊成員的電子郵件",
-        "note": "他們可以馬上開始使用 Okou。",
-        "notSent": "未傳送",
-        "panelTitle": "邀請團隊成員",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "需要時連接自己的工具。",
-          "workflows": "可以執行團隊已建立的所有工作流程。",
-          "workspace": "加入你的工作區。"
-        },
-        "sending": "傳送中…",
-        "title": "讓整個團隊一起用好 Okou"
-      },
       "welcome": {
-        "copy": "看看為你的工作推薦的任務，按目標調整，再讓 Okou 開始執行。",
-        "promptLabel": "你的起始提示詞",
-        "start": "開始使用 Okou",
-        "title": "從一項有價值的任務開始"
+        "copy": "我們為你的工作推薦了一個任務。你可以修改它，也可以換成自己想完成的事。",
+        "preparing": "正在為你推薦一個實用的任務…",
+        "promptLabel": "你的第一個任務",
+        "start": "開始我的第一個任務",
+        "title": "開始你的第一個任務"
       }
     }
   },

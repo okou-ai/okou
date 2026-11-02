@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
-import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
+import { sessionOutputDeltaSchema } from "@okouai/api-contracts/validators/realtime";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { logger } from "../log.ts";
 import { createActiveRunSubscription } from "./active-run-subscription.ts";

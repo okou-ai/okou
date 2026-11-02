@@ -6,8 +6,9 @@ import {
   type GoogleDriveUploadMode,
 } from "@okouai/core/google-workspace-conversion";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/client/artifact-google-drive";
+import type { artifactGoogleDriveContract as SourceArtifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -15,7 +16,7 @@ import { pageVersion$ } from "../page-signal.ts";
 import type { infer as zInfer } from "zod";
 
 type GoogleDriveUploadedFile = zInfer<
-  (typeof artifactGoogleDriveContract.uploadWithMode.responses)[200]
+  (typeof SourceArtifactGoogleDriveContract.uploadWithMode.responses)[200]
 >;
 
 type ArtifactGoogleDriveSyncParams = {

@@ -1507,7 +1507,7 @@
         },
         "connector": {
           "action": "Connecter",
-          "description": "Gmail, Notion et plus de 100 autres",
+          "description": "Gmail, Notion et plus de 4 000 autres",
           "name": "Connecter un outil",
           "unit": "par connecteur"
         },
@@ -1798,9 +1798,10 @@
       "outOfCredits": "Vous êtes à court de crédits",
       "proCard": {
         "creditsNow": "crédits · Maintenant",
-        "description": "Crédits supplémentaires · Fonctions avancées · 3 ordinateurs cloud",
+        "description": "Fonctions avancées · 3 ordinateurs cloud",
         "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
         "title": "Environ 5 tâches restantes",
+        "upgradeFromPrice": "Passer au forfait dès {{price}}/mois",
         "upgradeNow": "Passer à Pro maintenant"
       },
       "redirecting": "Redirection...",
@@ -2375,8 +2376,10 @@
       "create": "Partager",
       "createFailed": "Impossible de créer la conversation partagée.",
       "deselectGroup": "Désélectionner le groupe de messages",
+      "everyone": "Tout le monde",
       "linkCopied": "Lien copié",
       "messageShareFailed": "Impossible de créer le lien de partage.",
+      "organizationDescription": "Uniquement les membres de votre organisation",
       "publicDescription": "Les messages sélectionnés et leurs pièces jointes seront publics.",
       "selectedCount_one": "{{count}} sélectionné",
       "selectedCount_many": "{{count}} sélectionnés",
@@ -4274,14 +4277,56 @@
       "make": "Bienvenue chez {{brandName}}"
     },
     "make": {
-      "promptDescription": "Modifiez-le ci-dessous ou exécutez-le tel quel. {{assistantName}} prend le relais à partir d'ici. Vos outils restent en sandbox et rien ne quitte votre espace de travail.",
       "promptLabel": "Prompt d’onboarding",
-      "promptTitle": "Essayez ce prompt"
+      "promptTitle": "Adaptez cette tâche à vos besoins"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Faites des recherches sur le Web, trouvez des personnes et créez des images avec Okou. Ces outils sont activés par défaut ; vous pouvez les ajuster maintenant ou plus tard.",
+        "items": {
+          "data-search": {
+            "description": "Comparez entreprises, trafic web et publicités pour repérer des opportunités.",
+            "name": "Recherche de données avancée"
+          },
+          "finance": {
+            "description": "Comparez cours boursiers et tendances pour vos recherches financières.",
+            "name": "Données financières"
+          },
+          "image-generation": {
+            "description": "Créez des visuels pour vos publications, campagnes et présentations.",
+            "name": "Génération d’images"
+          },
+          "maps": {
+            "description": "Trouvez des entreprises et des lieux, comparez leurs emplacements et planifiez des trajets.",
+            "name": "Cartes et lieux"
+          },
+          "people-search": {
+            "description": "Trouvez des prospects, partenaires ou candidats par poste et entreprise.",
+            "name": "Recherche de personnes"
+          },
+          "scrape": {
+            "description": "Extrayez les faits clés de pages web pour vos synthèses et comparaisons.",
+            "name": "Extraction de pages"
+          },
+          "seo": {
+            "description": "Découvrez les mots-clés de vos clients et le classement de vos concurrents.",
+            "name": "Recherche SEO"
+          },
+          "social": {
+            "description": "Étudiez les créateurs, publications et interactions pour guider vos contenus.",
+            "name": "Recherche sociale"
+          },
+          "web-search": {
+            "description": "Trouvez des actualités et des faits récents avec des sources vérifiables.",
+            "name": "Recherche web"
+          }
+        },
+        "listLabel": "Capacités intégrées",
+        "title": "Plus de façons d’accomplir votre travail"
+      },
       "chatChannels": {
         "connectedTitle": "Votre messagerie est connectée",
-        "copy": "Écrivez à Okou ou ajoutez-le à la messagerie de votre équipe. Choisissez votre façon habituelle de travailler.",
+        "copy": "Utilisez Okou dans vos discussions habituelles, seul ou en équipe. Vous pouvez continuer ici et connecter une application de messagerie plus tard.",
         "imessageConnected": "iMessage est connecté",
         "imessageCopy": "Votre travail, à un message près.",
         "imessageExpired": "Votre code de connexion a expiré.",
@@ -4297,19 +4342,18 @@
         "notNow": "Pas maintenant"
       },
       "documentTitles": {
-        "experience": "Votre expérience de l'IA",
+        "experience": "Choisissez comment commencer",
         "industry": "Choisir votre domaine",
-        "ready": "Okou est prêt",
+        "ready": "Votre première tâche",
         "skills": "Importer vos skills",
-        "sources": "Connecter votre travail",
-        "team": "Inviter un membre de l’équipe"
+        "sources": "Connecter votre travail"
       },
       "experience": {
-        "copy": "Commencez avec des conseils ou utilisez votre abonnement Codex ou Claude Code existant.",
-        "no": "Je découvre les agents IA",
-        "noCopy": "Okou vous aide à trouver une première tâche utile.",
+        "copy": "Commencez directement avec Okou ou connectez votre abonnement Codex ou Claude Code existant.",
+        "no": "Commencer avec Okou",
+        "noCopy": "Obtenez de l’aide pour votre première tâche.",
         "title": "Comment souhaitez-vous commencer avec Okou ?",
-        "trust": "Les tâches utilisent votre abonnement Codex ou Claude Code au lieu des crédits Okou : faites-en plus sans vous soucier de la consommation. Connectez-le maintenant ou plus tard."
+        "trust": "Les abonnements connectés utilisent leur propre quota plutôt que les crédits Okou. Vous pouvez les connecter plus tard ; leurs limites d’utilisation restent applicables."
       },
       "industries": {
         "coaching": {
@@ -4369,11 +4413,11 @@
         }
       },
       "industry": {
-        "copy": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud. Choisissez votre domaine pour une première tâche adaptée.",
+        "copy": "Parlez-nous de votre travail. Nous vous proposerons une première tâche adaptée.",
         "title": "Quel type de travail faites-vous ?"
       },
       "mobile": {
-        "channelsCopy": "Écrivez à Okou là où vous travaillez déjà.",
+        "channelsCopy": "Continuez ici ou connectez une application de messagerie.",
         "channelsTitle": "Choisissez une messagerie",
         "connect": "Connecter",
         "copyImportPrompt": "Copier le prompt d’import",
@@ -4389,12 +4433,10 @@
         "planCopy": "Exécutez des tâches avec votre abonnement.",
         "promptTitle": "Que souhaitez-vous faire ?",
         "readyTitle": "Lancez votre première tâche",
-        "skillsCopy": "Utilisez {{provider}} sur votre ordinateur.",
+        "skillsCopy": "Des skills dans {{provider}} ? Importez-les depuis votre ordinateur, ou faites-le plus tard.",
         "skillsTitle": "Importez vos compétences",
-        "sourcesCopy": "Connectez un outil pour la première tâche.",
-        "startTask": "Lancer la tâche",
-        "teamCopy": "Travaillez dans le même espace.",
-        "teamTitle": "Invitez un collègue"
+        "sourcesCopy": "Connectez un outil, ou passez cette étape et faites-le plus tard.",
+        "startTask": "Lancer la tâche"
       },
       "outcomes": {
         "accessibleLabel": "Exemple de {{title}} préparé à partir de {{source}}. Toutes les données sont fictives.",
@@ -4540,8 +4582,8 @@
             "label": "Présentation"
           },
           "report": {
-            "instruction": "Présente les résultats dans un rapport structuré avec les conclusions clés, les recommandations et les prochaines étapes.",
-            "label": "Rapport"
+            "instruction": "Crée un document complet avec les résultats dans le format de fichier demandé (Markdown par défaut). Téléverse-le comme artefact et inclus un lien fonctionnel vers cet artefact dans ta réponse finale.",
+            "label": "Document"
           },
           "research": {
             "instruction": "Présente les résultats dans une note de recherche avec les sources et les questions ouvertes. Distingue les faits étayés des recommandations.",
@@ -4552,17 +4594,17 @@
             "label": "Site web"
           }
         },
-        "title": "Choisir un format",
+        "title": "Choisissez un format (facultatif)",
         "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },
       "prompt": {
-        "connectorsDescription": "Connectez vos outils pour qu’Okou comprenne votre travail et réalise les tâches en fonction de vos besoins. Vous pouvez aussi le faire plus tard.",
+        "connectorsDescription": "Connectez vos applications pour aider Okou à mieux comprendre votre travail.",
         "connectorsTitle": "Connectez vos outils de travail",
-        "intro": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud."
+        "intro": "Connectez vos applications pour de meilleurs résultats et choisissez un format."
       },
       "skills": {
         "copied": "Copié",
-        "copy": "Exécutez ce prompt dans {{provider}} pour importer les skills que vous avez déjà créées, afin qu’Okou puisse les utiliser dès le premier jour.",
+        "copy": "Si vous avez enregistré des skills dans {{provider}}, importez-les pour qu’Okou puisse reprendre votre façon de travailler. Vous pouvez passer cette étape et les importer plus tard.",
         "copyError": "Le prompt n’a pas pu être copié.",
         "copyPrompt": "Copier le prompt",
         "guide": {
@@ -4625,14 +4667,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Plus Okou connaît votre travail, plus il devient intelligent. Connectez un outil que vous utilisez chaque jour pour commencer par une tâche tirée de votre vrai travail.",
-        "permissions": "Okou utilise un petit échantillon pour adapter votre première tâche. Vous décidez de ce que les Agents peuvent faire et pour combien de temps.",
+        "copy": "Connectez un outil pour commencer par une tâche liée à votre travail, ou passez cette étape et connectez-le plus tard.",
+        "permissions": "Okou utilise un petit échantillon pour suggérer votre première tâche. Vous choisissez ce à quoi Okou peut accéder et pour combien de temps.",
         "securityLink": "Comment Okou protège vos données",
         "skipDialog": {
           "connect": "Connecter un outil",
-          "description": "Nous vous recommandons de connecter vos outils pour qu’Okou comprenne votre travail et vous apporte une aide plus adaptée. Vous pouvez aussi les connecter plus tard.",
+          "description": "Vous pouvez déjà commencer une tâche. Connectez un outil plus tard lorsque vous voudrez qu’Okou utilise vos e-mails, documents ou données.",
           "skip": "Passer pour le moment",
-          "title": "Okou vous aide mieux avec vos outils"
+          "title": "Commencer sans connecter d’outil ?"
         },
         "title": "Connecter un outil de travail"
       },
@@ -4966,32 +5008,15 @@
         "connected": "Connecté",
         "connecting": "Connexion…",
         "failedNote": "Nous n’avons pas pu connecter {{provider}}. Vous pouvez continuer et le connecter plus tard.",
-        "rowCopy": "Connectez-le pour utiliser votre forfait plutôt que des crédits Okou.",
+        "rowCopy": "Utilisez votre abonnement actuel pour les tâches.",
         "unconfirmedNote": "Nous n’avons pas pu vérifier votre connexion à {{provider}}. Vous pouvez continuer et le connecter plus tard."
       },
-      "team": {
-        "copy": "Invitez un membre de l’équipe à partager vos workflows, chacun connectant ses propres outils.",
-        "invalidEmail": "Saisissez une adresse e-mail valide",
-        "invite": "Envoyer l'invitation",
-        "invited": "Invité",
-        "label": "E-mail du membre de l’équipe",
-        "note": "Il pourra commencer à travailler avec Okou immédiatement.",
-        "notSent": "Non envoyée",
-        "panelTitle": "Inviter un membre de l’équipe",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "Connecte ses propres outils quand il en a besoin.",
-          "workflows": "Peut exécuter tous les workflows de votre équipe.",
-          "workspace": "Rejoint votre espace de travail."
-        },
-        "sending": "Envoi…",
-        "title": "Rendez Okou utile à toute votre équipe"
-      },
       "welcome": {
-        "copy": "Examinez une tâche suggérée pour votre travail, adaptez-la à votre objectif, puis laissez Okou commencer.",
-        "promptLabel": "Votre prompt de départ",
-        "start": "Commencer avec Okou",
-        "title": "Commencez par une tâche qui compte"
+        "copy": "Nous avons suggéré une première tâche adaptée à votre travail. Modifiez-la ou remplacez-la par quelque chose que vous souhaitez accomplir.",
+        "preparing": "Recherche d’une première tâche utile pour vous…",
+        "promptLabel": "Votre première tâche",
+        "start": "Commencer ma première tâche",
+        "title": "Commençons votre première tâche"
       }
     }
   },

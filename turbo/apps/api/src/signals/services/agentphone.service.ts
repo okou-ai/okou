@@ -83,7 +83,7 @@ import {
 } from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { resolveOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -164,7 +164,6 @@ const agentPhoneChatRouteRootMessageId$ = command(
       {
         userLinkId,
         conversationId: event.conversationId,
-        messageId: event.messageId,
         replyToMessageId: event.replyToMessageId,
       },
       signal,
@@ -971,7 +970,7 @@ function formatConnectPrompt(
     "",
     "You can text me like a teammate and I'll actually do the work: research something, draft and send emails, summarize long documents, update spreadsheets, triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.",
     "",
-    "I'm most useful once I'm connected to the tools you already use — GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, X, and 100+ others.",
+    "I'm most useful once I'm connected to the tools you already use — GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, X, and 4,000+ others.",
     "",
     nextStep,
   ].join("\n");
@@ -1689,16 +1688,13 @@ export const handleAgentPhoneMessage$ = command(
       recentHistory: params.event.recentHistory,
       currentMessageId: params.event.messageId,
     });
-    const { executionContext } = await loadOptionalChatEnrichment(
-      "agentphone",
-      () => {
-        return contextRead;
-      },
-      () => {
+    const { executionContext } = await (async () => {
+      const read = contextRead;
+      const result = await settle(read, signal);
+      return resolveOptionalChatEnrichment("agentphone", result, () => {
         return { executionContext: "" };
-      },
-      signal,
-    );
+      });
+    })();
     signal.throwIfAborted();
 
     const prompt = enrichAgentPhonePrompt({

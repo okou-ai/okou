@@ -1,5 +1,165 @@
 # Changelog
 
+## [8.807.2](https://github.com/okou-ai/okou/compare/core-v8.807.1...core-v8.807.2) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.30.0
+
+## [8.807.1](https://github.com/okou-ai/okou/compare/core-v8.807.0...core-v8.807.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **browser:** seed new viewer windows from the target display ([#44486](https://github.com/okou-ai/okou/issues/44486)) ([c544f6f](https://github.com/okou-ai/okou/commit/c544f6f2b7b41015b290cb6bec04758b765ac558))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.1
+
+## [8.807.0](https://github.com/okou-ai/okou/compare/core-v8.806.1...core-v8.807.0) (2026-11-01)
+
+
+### Features
+
+* enable shared browser for staff ([#44435](https://github.com/okou-ai/okou/issues/44435)) ([a85f2d2](https://github.com/okou-ai/okou/commit/a85f2d2bf7b06fef0d225bc47e70c202f207562f))
+* **workflows:** prepare official workflow content bundles ([#44471](https://github.com/okou-ai/okou/issues/44471)) ([868fad8](https://github.com/okou-ai/okou/commit/868fad832660a1430be8f847a4af489888cefa3c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.0
+
+## [8.806.1](https://github.com/okou-ai/okou/compare/core-v8.806.0...core-v8.806.1) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.28.0
+
+## [8.806.0](https://github.com/okou-ai/okou/compare/core-v8.805.6...core-v8.806.0) (2026-10-31)
+
+
+### Features
+
+* **app:** preserve landing page files through onboarding ([#44425](https://github.com/okou-ai/okou/issues/44425)) ([5ae758c](https://github.com/okou-ai/okou/commit/5ae758cf6bb113218c9a0247354bbe60cc1f85f8))
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.1
+
+## [8.805.6](https://github.com/okou-ai/okou/compare/core-v8.805.5...core-v8.805.6) (2026-10-31)
+
+
+### Refactoring
+
+* **workflows:** omit definition snapshots from new official artifacts ([#44406](https://github.com/okou-ai/okou/issues/44406)) ([b68e1d6](https://github.com/okou-ai/okou/commit/b68e1d6251ea1b5396fc9c28d4c1dbf578f5ac10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+
+## [8.805.5](https://github.com/okou-ai/okou/compare/core-v8.805.4...core-v8.805.5) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.2
+
+## [8.805.4](https://github.com/okou-ai/okou/compare/core-v8.805.3...core-v8.805.4) (2026-10-31)
+
+
+### Performance Improvements
+
+* **app:** replace browser http contracts with schema-free descriptors ([#44306](https://github.com/okou-ai/okou/issues/44306)) ([ce8f7fc](https://github.com/okou-ai/okou/commit/ce8f7fc59e52c4da702aced0d641d41f57a63139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+
+## [8.805.3](https://github.com/okou-ai/okou/compare/core-v8.805.2...core-v8.805.3) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.0
+
+## [8.805.2](https://github.com/okou-ai/okou/compare/core-v8.805.1...core-v8.805.2) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.1
+
+## [8.805.1](https://github.com/okou-ai/okou/compare/core-v8.805.0...core-v8.805.1) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.0
+
+## [8.805.0](https://github.com/okou-ai/okou/compare/core-v8.804.2...core-v8.805.0) (2026-10-30)
+
+
+### Features
+
+* enable wechat for the requested workspace ([#44261](https://github.com/okou-ai/okou/issues/44261)) ([100af9e](https://github.com/okou-ai/okou/commit/100af9e018021b048cff54eef4c7db0a3bee422d))
+
+
+### Bug Fixes
+
+* **app:** open artifact menus on hover and copy saved share links ([#44244](https://github.com/okou-ai/okou/issues/44244)) ([665dd18](https://github.com/okou-ai/okou/commit/665dd18071bfe7e6b995a07a0c3c421be4c33ec0))
+
+## [8.804.2](https://github.com/okou-ai/okou/compare/core-v8.804.1...core-v8.804.2) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.24.0
+
+## [8.804.1](https://github.com/okou-ai/okou/compare/core-v8.804.0...core-v8.804.1) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.2
+
 ## [8.804.0](https://github.com/okou-ai/okou/compare/core-v8.803.1...core-v8.804.0) (2026-10-30)
 
 

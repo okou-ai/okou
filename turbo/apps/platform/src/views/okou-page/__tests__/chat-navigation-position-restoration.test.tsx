@@ -484,6 +484,63 @@ describe("with a measurable thread viewport", () => {
 
   it("restore the reading position during keyboard thread navigation", async () => {
     const { targetText, user, viewportHeight } = preparedScenario;
+    const misplacedMessages = new Set<string>();
+    const unexpectedMessagesByThread = new Map([
+      [KEYBOARD_PREVIOUS_THREAD_ID, targetText],
+      [KEYBOARD_CURRENT_THREAD_ID, "Previous message 1"],
+    ]);
+    const threadSelector = "[data-chat-thread-container-id]";
+    const observer = new MutationObserver((records) => {
+      const affectedSections = new Set<HTMLElement>();
+      for (const record of records) {
+        const target =
+          record.target instanceof Element
+            ? record.target
+            : record.target.parentElement;
+        const section = target?.closest<HTMLElement>(threadSelector);
+        if (section) {
+          affectedSections.add(section);
+        }
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) {
+            continue;
+          }
+          const addedSection = node.closest<HTMLElement>(threadSelector);
+          if (addedSection) {
+            affectedSections.add(addedSection);
+          }
+          for (const addedSection of node.querySelectorAll<HTMLElement>(
+            threadSelector,
+          )) {
+            affectedSections.add(addedSection);
+          }
+        }
+      }
+      for (const section of affectedSections) {
+        if (!section.isConnected) {
+          continue;
+        }
+        const otherMessage = unexpectedMessagesByThread.get(
+          section.dataset.chatThreadContainerId!,
+        );
+        if (
+          otherMessage !== undefined &&
+          section.textContent?.includes(otherMessage)
+        ) {
+          misplacedMessages.add(otherMessage);
+        }
+      }
+    });
+    observer.observe(document.body, {
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["data-chat-thread-container-id"],
+      subtree: true,
+    });
+    context.signal.addEventListener("abort", () => {
+      observer.disconnect();
+    });
     threadSection(KEYBOARD_CURRENT_THREAD_ID).focus();
     expect(threadSection(KEYBOARD_CURRENT_THREAD_ID)).toHaveFocus();
     await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
@@ -509,6 +566,7 @@ describe("with a measurable thread viewport", () => {
 
     await expectReadingPosition(returnedGeometry, targetText);
     expect(returnedGeometry.atBottom()).toBeFalsy();
+    expect([...misplacedMessages]).toStrictEqual([]);
   });
 });
 

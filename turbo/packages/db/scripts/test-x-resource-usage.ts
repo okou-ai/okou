@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { array, object, string, tuple } from "zod";
+import { array, object, string, tuple, uuid } from "zod";
 
 async function rejectsObservation(
   databaseUrl: string,
@@ -237,7 +237,7 @@ export async function validateXResourceUsageSchema(
     const receipt = await client.query(legacySql, legacy);
     if (receipt.rowCount === 1) {
       ownedReceipt = {
-        id: object({ id: string().uuid() }).parse(receipt.rows[0]).id,
+        id: object({ id: uuid() }).parse(receipt.rows[0]).id,
         source,
       };
     }

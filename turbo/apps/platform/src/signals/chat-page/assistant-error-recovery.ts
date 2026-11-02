@@ -10,7 +10,7 @@ import {
   type ModelProviderResponse,
   type PersonalSubscriptionProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/client/third-party-subscriptions";
 import {
   knownRunFailureReasonSchema,
   type KnownRunFailureReason,

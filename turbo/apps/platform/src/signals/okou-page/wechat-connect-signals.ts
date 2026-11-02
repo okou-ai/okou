@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { integrationsWechatContract } from "@okouai/api-contracts/contracts/integrations-wechat";
+import { integrationsWechatContract } from "@okouai/api-contracts/client/integrations-wechat";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { defaultAgentName$ } from "../agent.ts";

@@ -14,10 +14,11 @@ use zeroize::Zeroizing;
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, ClientCertificateAuthentication,
     ClientIdentity, Error, PlainCredentials, TrustRoots, VncPassword, X509Authentication,
-    qemu_sasl, trust::ClientAuthSelection,
+    qemu_sasl,
+    trust::ClientAuthSelection,
+    version::{ServerVersion, exchange_version},
 };
 
-const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const VENCRYPT: u8 = 19;
 const MAX_ERROR_BYTES: u32 = 4096;
 
@@ -117,7 +118,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        exchange_version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Rfb38),
     )
     .await?;
     phase(
@@ -161,20 +162,6 @@ pub(crate) async fn phase<T>(
         return Err(expired());
     }
     Ok(value)
-}
-
-async fn exchange_version<S>(stream: &mut S) -> Result<(), Error>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    let mut version = [0; 12];
-    stream.read_exact(&mut version).await?;
-    if &version != RFB_VERSION {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(RFB_VERSION).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 async fn negotiate_security<S>(stream: &mut S, subtype: u32) -> Result<(), Error>
@@ -354,54 +341,4 @@ fn challenge_response(password: VncPassword, challenge: [u8; 16]) -> Zeroizing<[
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test(start_paused = true)]
-    async fn a_pending_phase_never_repolls_ready_secret_output_at_its_deadline() {
-        use std::{task::Poll, time::Duration};
-        let (mut output, mut peer) = tokio::io::duplex(16);
-        let (released, gate) = tokio::sync::oneshot::channel();
-        let deadline = Instant::now() + Duration::from_secs(1);
-        let mut authentication = Box::pin(phase(
-            AuthenticationStage::QemuGssapiAuthentication,
-            deadline,
-            async move {
-                gate.await.unwrap();
-                output.write_u8(1).await?;
-                Ok(())
-            },
-        ));
-        // Arm both the real phase timer and the external authority/IO gate.
-        std::future::poll_fn(|cx| {
-            assert!(authentication.as_mut().poll(cx).is_pending());
-            Poll::Ready(())
-        })
-        .await;
-        tokio::time::advance(Duration::from_secs(1)).await;
-        released.send(()).unwrap();
-        let result = authentication.as_mut().await;
-        drop(authentication);
-        assert!(matches!(
-            result,
-            Err(Error::AuthenticationDeadlineExceeded {
-                stage: AuthenticationStage::QemuGssapiAuthentication
-            })
-        ));
-        // An error returned after sending the byte would not enforce expiry.
-        assert_eq!(
-            peer.read_u8().await.unwrap_err().kind(),
-            std::io::ErrorKind::UnexpectedEof
-        );
-    }
-
-    #[tokio::test]
-    async fn standard_result_never_reinterprets_apple_classic_failure() {
-        let (mut client, mut server) = tokio::io::duplex(16);
-        server.write_all(&[1, 0, 0, 0]).await.unwrap();
-        assert!(matches!(
-            read_security_result(&mut client).await,
-            Err(Error::InvalidAuthenticationResult)
-        ));
-    }
-}
+mod tests;

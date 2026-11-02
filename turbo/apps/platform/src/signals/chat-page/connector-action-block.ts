@@ -1,9 +1,7 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { uuid } from "zod";
-import {
-  connectorAccountsContract,
-  type ConnectorAccountConnection,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { isConnectorChangedPayloadFor } from "../connector-change.ts";
@@ -15,9 +13,11 @@ import {
 import {
   customConnectorSlugSchema,
   isIntegrationManagedCustomConnector,
-  type CustomConnectorSlug,
-  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/validators/custom-connectors";
+import type {
+  CustomConnectorSlug,
+  CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import {

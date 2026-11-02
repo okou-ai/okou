@@ -112,7 +112,6 @@ fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContex
         reuse_key,
         prompt,
         append_system_prompt,
-        agent_instructions,
         vars,
         sandbox_token,
         environment,

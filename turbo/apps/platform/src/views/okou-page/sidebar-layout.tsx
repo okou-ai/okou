@@ -4,7 +4,7 @@ import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
-  syncActiveImageLayout$,
+  syncActiveSidebarLayout$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import type { ReactNode } from "react";
@@ -409,7 +409,7 @@ function ChatWorkspace({
 }) {
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
-  const syncImageLayout = useSet(syncActiveImageLayout$);
+  const syncSidebarLayout = useSet(syncActiveSidebarLayout$);
   const joinedToChatList =
     useGet(unifiedChatWorkspace$) && beside === "chat-list";
   return (
@@ -417,7 +417,7 @@ function ChatWorkspace({
       layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
-      onSidebarLayoutCommit={syncImageLayout}
+      onSidebarLayoutCommit={syncSidebarLayout}
       sidebar={<ChatThreadSidebarPane />}
       // The browser scales a 1440px screen into the panel and wants room;
       // every other panel shares one remembered width.

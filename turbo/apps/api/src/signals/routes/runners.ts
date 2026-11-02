@@ -83,7 +83,7 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import { readAgentInstructionsForClaim$ } from "../services/agent-instructions-claim.service";
+import { signClaimedContentBundle$ } from "../services/content-bundle-claim";
 import {
   workflowClaimInput,
   type WorkflowClaimInput,
@@ -98,7 +98,6 @@ import {
   recordSandboxOperations,
 } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
-import { runnerWorkflowRoutes } from "./runner-workflows";
 import {
   declareSteeredInput$,
   loadNextSteerableInput$,
@@ -1065,38 +1064,74 @@ type ClaimedTransitionResult = Extract<
   ClaimTransitionResult,
   { readonly status: "claimed" }
 >;
-function withClaimedWorkflows(args: {
-  readonly responseBody: ExecutionContext;
-  readonly workflows: ClaimedTransitionResult["workflows"];
-  readonly workflowInput: WorkflowClaimInput;
-}): ExecutionContext {
-  const { responseBody, workflowInput } = args;
-  const workflowSkills = args.workflows.map((workflow) => {
+type BaseClaimResponse = Omit<ExecutionContext, "contentBundles">;
+
+const withClaimedContentBundles$ = command(
+  async (
+    { set },
+    args: {
+      readonly responseBody: BaseClaimResponse;
+      readonly claim: ClaimedTransitionResult;
+      readonly workflowInput: WorkflowClaimInput;
+      readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
+    },
+    signal: AbortSignal,
+  ): Promise<ExecutionContext> => {
+    const instructions =
+      args.claim.instructionsBundle === null
+        ? undefined
+        : await set(
+            signClaimedContentBundle$,
+            args.claim.instructionsBundle,
+            signal,
+          );
+    const skills = await Promise.all(
+      [
+        ...args.claim.workflows.map((workflow) => {
+          return {
+            contentBundle: workflow.contentBundle,
+            mountPath: `${args.workflowInput.skillRoot}/${workflow.name}`,
+          };
+        }),
+        ...(args.officialWorkflowBundles ?? []).map((bundle) => {
+          return {
+            contentBundle: bundle,
+            mountPath: bundle.mountPath,
+          };
+        }),
+      ].map(async (workflow) => {
+        return {
+          ...(await set(
+            signClaimedContentBundle$,
+            workflow.contentBundle,
+            signal,
+          )),
+          mountPath: workflow.mountPath,
+        };
+      }),
+    );
+    signal.throwIfAborted();
+    const workflowMountPaths = new Set(
+      skills.map((skill) => {
+        return skill.mountPath;
+      }),
+    );
     return {
-      workflowId: workflow.id,
-      mountPath: `${workflowInput.skillRoot}/${workflow.name}`,
-    };
-  });
-  const workflowMountPaths = new Set(
-    workflowSkills.map((skill) => {
-      return skill.mountPath;
-    }),
-  );
-  return {
-    ...responseBody,
-    storageManifest: {
-      storageMounts: (responseBody.storageManifest?.storageMounts ?? []).filter(
-        (mount) => {
+      ...args.responseBody,
+      contentBundles: { format: "tar-gzip-v1", instructions, skills },
+      storageManifest: {
+        storageMounts: (
+          args.responseBody.storageManifest?.storageMounts ?? []
+        ).filter((mount) => {
           return (
             !mount.name.startsWith("custom-skill@") &&
             !workflowMountPaths.has(mount.mountPath)
           );
-        },
-      ),
-      workflowSkills,
-    },
-  };
-}
+        }),
+      },
+    };
+  },
+);
 
 type FailedClaimTransitionResult = Exclude<
   ClaimTransitionResult,
@@ -1104,6 +1139,12 @@ type FailedClaimTransitionResult = Exclude<
 >;
 
 function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
+  if (result.status === "agent-unavailable") {
+    return notFound("Agent not found");
+  }
+  if (result.status === "bundle-unavailable") {
+    throw new Error("Required content bundle is missing or invalid at claim");
+  }
   if (result.status === "workflow-unavailable") {
     return notFound("Workflow is no longer available for this claim");
   }
@@ -1368,10 +1409,11 @@ function claimResponseBody(args: {
     StoredExecutionContext,
     "networkPolicies" | "networkPolicyRefreshes"
   >;
-}): ExecutionContext {
+}): BaseClaimResponse {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
+    officialWorkflowBundles: _officialWorkflowBundles,
     storageMounts: _storedStorageMounts,
     ...runnerStoredContext
   } = args.storedContext;
@@ -1412,7 +1454,7 @@ const buildClaimResponseBodyForClaim$ = command(
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
-  ): Promise<ExecutionContext> => {
+  ): Promise<BaseClaimResponse> => {
     const secretValues = await secretValuesForRunner(
       args.storedContext,
       args.timing,
@@ -1956,7 +1998,7 @@ const claimAuthorizedJob$ = command(
     const storedContext = storedContextResult.value;
     const workflowInput = workflowClaimInput(storedContext, run.prompt);
 
-    let responseBody = await set(
+    const baseResponseBody = await set(
       buildClaimResponseBodyForClaim$,
       {
         run,
@@ -1967,25 +2009,6 @@ const claimAuthorizedJob$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    if (run.agentId !== null) {
-      const instructions = await set(
-        readAgentInstructionsForClaim$,
-        {
-          agentId: run.agentId,
-          orgId: run.orgId,
-          userId: run.userId,
-        },
-        signal,
-      );
-      if (!instructions.available) {
-        return instructions.response;
-      }
-      responseBody = {
-        ...responseBody,
-        agentInstructions: instructions.instructions,
-      };
-    }
 
     claimRouteTiming.recordElapsed(
       "claim_route_request_to_transition_start",
@@ -2021,11 +2044,16 @@ const claimAuthorizedJob$ = command(
       return claimTransitionErrorResponse(claimResult);
     }
 
-    responseBody = withClaimedWorkflows({
-      responseBody,
-      workflows: claimResult.workflows,
-      workflowInput,
-    });
+    const responseBody = await set(
+      withClaimedContentBundles$,
+      {
+        responseBody: baseResponseBody,
+        claim: claimResult,
+        workflowInput,
+        officialWorkflowBundles: storedContext.officialWorkflowBundles,
+      },
+      signal,
+    );
 
     const response = {
       status: 200 as const,
@@ -2372,7 +2400,6 @@ const observeClaimJsonResponse: JsonResponseObserver = (
 };
 
 export const runnersRoutes: readonly RouteEntry[] = [
-  ...runnerWorkflowRoutes,
   {
     route: runnersHeartbeatContract.heartbeat,
     handler: heartbeatInner$,

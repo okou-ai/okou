@@ -33,6 +33,7 @@ import {
   object,
   record,
   string,
+  uuid,
   unknown as zUnknown,
   type infer as zInfer,
 } from "zod";
@@ -123,7 +124,7 @@ const webhookBodySchema = record(string(), zUnknown());
 const groupHistoryCursorSchema = object({
   groupId: string(),
   receivedAt: iso.datetime(),
-  id: string().uuid(),
+  id: uuid(),
 });
 
 type VerificationSendCooldownScope = "phone" | "user_org";

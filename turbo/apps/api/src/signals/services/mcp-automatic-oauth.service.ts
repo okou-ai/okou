@@ -27,6 +27,7 @@ import {
   number,
   object,
   string,
+  url,
   enum as zEnum,
   ZodError,
   type infer as zInfer,
@@ -345,7 +346,7 @@ async function probeAutomaticOAuthChallenge(
 }
 
 function requiredHttpsUrl(value: string, field: string): string {
-  const parsed = string().url().safeParse(value);
+  const parsed = url().safeParse(value);
   if (!parsed.success) {
     throw new McpAutomaticOAuthError(
       { kind: "incompatible", reason: "invalid-discovery-metadata" },
@@ -627,7 +628,7 @@ function dcrSelection(
 }
 
 const dcrClientInformationSchema = object({
-  client_id: string().min(1).max(255),
+  client_id: string().min(1),
   client_secret: string().min(1).optional(),
   client_id_issued_at: number().finite().nonnegative().optional(),
   client_secret_expires_at: number().finite().nonnegative().optional(),
@@ -739,13 +740,25 @@ async function registerDcrClient(
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthDcrRegistrationInput> {
+  const supportedMethods = supportedTokenAuthMethods(args.metadata);
+  const requestedTokenAuthMethod = (
+    ["client_secret_basic", "client_secret_post", "none"] as const
+  ).find((method) => {
+    return supportedMethods.includes(method);
+  });
   const client = await automaticOAuthRemote(
     "dynamic client registration",
     signal,
     async () => {
       const registered = await registerClient(args.issuer, {
         metadata: args.metadata,
-        clientMetadata: args.clientMetadata,
+        clientMetadata:
+          requestedTokenAuthMethod === undefined
+            ? args.clientMetadata
+            : {
+                ...args.clientMetadata,
+                token_endpoint_auth_method: requestedTokenAuthMethod,
+              },
         scope: args.scope,
         fetchFn: fetchWithSignal(signal),
       });

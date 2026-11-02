@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.30.16](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.15...runner-remote-v0.30.16) (2026-11-02)
+
+## [0.30.15](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.14...runner-remote-v0.30.15) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.30.14](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.13...runner-remote-v0.30.14) (2026-11-01)
+
+## [0.30.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.12...runner-remote-v0.30.13) (2026-11-01)
+
+## [0.30.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.11...runner-remote-v0.30.12) (2026-10-31)
+
+## [0.30.11](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.10...runner-remote-v0.30.11) (2026-10-31)
+
+## [0.30.10](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.9...runner-remote-v0.30.10) (2026-10-31)
+
+## [0.30.9](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.8...runner-remote-v0.30.9) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.30.8](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.7...runner-remote-v0.30.8) (2026-10-31)
+
+## [0.30.7](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.6...runner-remote-v0.30.7) (2026-10-30)
+
+## [0.30.6](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.5...runner-remote-v0.30.6) (2026-10-30)
+
+## [0.30.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.4...runner-remote-v0.30.5) (2026-10-30)
+
+## [0.30.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.3...runner-remote-v0.30.4) (2026-10-30)
+
+## [0.30.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.2...runner-remote-v0.30.3) (2026-10-30)
+
+## [0.30.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.1...runner-remote-v0.30.2) (2026-10-30)
+
+## [0.30.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.0...runner-remote-v0.30.1) (2026-10-30)
+
 ## [0.30.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.52...runner-remote-v0.30.0) (2026-10-30)
 
 

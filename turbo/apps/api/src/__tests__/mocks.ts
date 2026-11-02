@@ -23,6 +23,7 @@ import { mockStripeClient } from "../signals/external/stripe-client";
 import {
   TEST_EXTENSION_TARGETS,
   browserExtensionBootstrap,
+  browserExtensionBootstrapEvents,
   browserExtensionRequest,
   browserExtensionReply,
 } from "./browser-extension";
@@ -711,6 +712,17 @@ function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
   if (command.method === "Browser.getWindowForTarget") {
     return { windowId: 7 };
   }
+  if (command.method === "Browser.getWindowBounds") {
+    return {
+      bounds: {
+        left: 0,
+        top: 0,
+        width: 800,
+        height: 600,
+        windowState: "normal",
+      },
+    };
+  }
   return {};
 }
 
@@ -747,7 +759,10 @@ export function browserUseCdpHandler(
           targetInfos: [...inventory.targetInfos, ...TEST_EXTENSION_TARGETS],
         };
       }
-      for (const beforeReply of eventsBeforeReply?.(command) ?? []) {
+      for (const beforeReply of [
+        ...browserExtensionBootstrapEvents(command),
+        ...(eventsBeforeReply?.(command) ?? []),
+      ]) {
         client.send(JSON.stringify(beforeReply));
       }
       if (withholdReply?.(command)) {

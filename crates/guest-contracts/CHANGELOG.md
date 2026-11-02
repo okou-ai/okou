@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.29.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.3...guest-contracts-v0.29.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.29.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.2...guest-contracts-v0.29.3) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.29.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.1...guest-contracts-v0.29.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
+## [0.29.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.0...guest-contracts-v0.29.1) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
 ## [0.29.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.5...guest-contracts-v0.29.0) (2026-10-30)
 
 

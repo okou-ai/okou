@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  paidToolsContract,
-  type AVAILABLE_PAID_TOOL_IDS,
-} from "@okouai/api-contracts/contracts/paid-tools";
+import { paidToolsContract } from "@okouai/api-contracts/client/paid-tools";
+import type { AVAILABLE_PAID_TOOL_IDS } from "@okouai/api-contracts/contracts/paid-tools";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { toast } from "@okouai/ui/components/ui/sonner";

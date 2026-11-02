@@ -395,6 +395,40 @@ def block_gmail_send(flow: http.HTTPFlow) -> None:
     )
 
 
+def set_firewall_invalid_input_response(
+    flow: http.HTTPFlow, result: matching.FirewallInvalidInput
+) -> None:
+    log_proxy_entry(
+        flow_metadata.proxy_log_path(flow.metadata),
+        "warn",
+        f"Firewall path analysis rejected {result.method} {result.path}",
+        type="firewall_block",
+        reason="unsafe_path",
+    )
+    flow_metadata.set_firewall_decision(flow.metadata, "DENY")
+    for key in (
+        metadata_keys.FIREWALL_BASE,
+        metadata_keys.FIREWALL_NAME,
+        metadata_keys.FIREWALL_PERMISSION,
+    ):
+        flow.metadata.pop(key, None)
+    flow.response = make_local_json_response(
+        flow,
+        403,
+        {
+            "error": "permission_denied",
+            "reason": "unsafe_path",
+            "message": "Request blocked: unsafe path",
+            "method": result.method,
+            "path": result.path,
+            "url": _diagnostic_url_without_query_or_fragment(
+                flow.metadata[metadata_keys.ORIGINAL_URL]
+            ),
+            "permissions": [],
+        },
+    )
+
+
 def set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBlock) -> None:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     if result.reason == "malformed_network_policy":

@@ -84,7 +84,7 @@ export async function completePromptOnboarding(
     waitUntil: "domcontentloaded",
   });
   await expect(
-    page.getByRole("heading", { name: "Try this prompt" }),
+    page.getByRole("heading", { name: "Make this task your own" }),
   ).toBeVisible({ timeout: 60_000 });
   await expect(page.getByLabel("Onboarding prompt")).toHaveValue(
     options.prompt,

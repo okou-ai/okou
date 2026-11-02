@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.18.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.10...runner-executor-v0.18.11) (2026-11-02)
+
+## [0.18.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.9...runner-executor-v0.18.10) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.18.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.8...runner-executor-v0.18.9) (2026-11-01)
+
+## [0.18.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.7...runner-executor-v0.18.8) (2026-11-01)
+
+## [0.18.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.6...runner-executor-v0.18.7) (2026-10-31)
+
+## [0.18.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.5...runner-executor-v0.18.6) (2026-10-31)
+
+## [0.18.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.4...runner-executor-v0.18.5) (2026-10-31)
+
+## [0.18.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.3...runner-executor-v0.18.4) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.18.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.2...runner-executor-v0.18.3) (2026-10-31)
+
+## [0.18.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.1...runner-executor-v0.18.2) (2026-10-30)
+
+## [0.18.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.0...runner-executor-v0.18.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
+## [0.18.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.17.4...runner-executor-v0.18.0) (2026-10-30)
+
+
+### Features
+
+* activate hash-addressed content bundle claims ([#44319](https://github.com/okou-ai/okou/issues/44319)) ([8c5dde4](https://github.com/okou-ai/okou/commit/8c5dde4aba9158e9bb946c391923e8a2b666cd44))
+
+## [0.17.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.17.3...runner-executor-v0.17.4) (2026-10-30)
+
+## [0.17.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.17.2...runner-executor-v0.17.3) (2026-10-30)
+
+## [0.17.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.17.1...runner-executor-v0.17.2) (2026-10-30)
+
+## [0.17.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.17.0...runner-executor-v0.17.1) (2026-10-30)
+
 ## [0.17.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.16.5...runner-executor-v0.17.0) (2026-10-30)
 
 

@@ -17,6 +17,7 @@ import {
   lightboxDialogInitialFocus$,
   lightboxDialogMountRef$,
   lightboxDialogVisible$,
+  lightboxShareMenuOpen$,
   type AttachmentLightboxState,
 } from "../../signals/okou-page/attachment-chips.ts";
 import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
@@ -84,12 +85,20 @@ export function ArtifactPreviewDialogFrame({
   const closeWithAnimation = useCloseArtifactPreview();
   const visible = useGet(lightboxDialogVisible$);
   const fullscreen = useGet(lightboxDialogFullscreen$);
+  const shareMenuOpen = useGet(lightboxShareMenuOpen$);
 
   return (
     <Dialog
       open={visible}
       onOpenChangeComplete={completeDialogExit}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen, details) => {
+        if (!nextOpen && shareMenuOpen && details.reason === "escape-key") {
+          // Hover does not move focus into the popover. Let its Base UI Escape
+          // handler dismiss it before the surrounding preview can close.
+          details.cancel();
+          details.allowPropagation();
+          return;
+        }
         if (!nextOpen && visible) {
           closeWithAnimation();
         }

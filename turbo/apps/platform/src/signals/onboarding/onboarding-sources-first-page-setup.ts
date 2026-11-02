@@ -1,3 +1,5 @@
+import { OnboardingCapabilitiesPage } from "../../views/onboarding-sources-first/onboarding-capabilities-page.tsx";
+import { startOnboardingCapabilitiesDiscovery$ } from "./onboarding-capabilities.ts";
 import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
 import { OnboardingSkillsPage } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
@@ -6,7 +8,6 @@ import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboar
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
-  OnboardingTeamPage,
 } from "../../views/onboarding-sources-first/onboarding-setup-pages.tsx";
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
@@ -145,8 +146,7 @@ function createSourcesFirstPageSetup(
       set(sendEvent$, "onboarding-start");
     }
 
-    // A member invited into an existing org runs the flow without the invite
-    // step.
+    // Retain the role for funnel telemetry.
     const flow = status.isAdmin ? "owner" : "member";
     set(setSourcesFirstFlow$, flow);
 
@@ -155,13 +155,15 @@ function createSourcesFirstPageSetup(
     }
 
     const draft = get(sourcesFirstDraft$);
-    if (!sourcesFirstSteps(flow, draft.provider).includes(config.step)) {
-      // The step is not part of this run's branch, for example a member
-      // opening the invite step or a new user opening the skills step.
+    if (!sourcesFirstSteps(draft.provider).includes(config.step)) {
+      // The optional skills step requires a selected subscription provider.
       set(redirectTo$, ROUTES.onboardingExperience);
       return;
     }
 
+    if (config.step === "capabilities") {
+      set(startOnboardingCapabilitiesDiscovery$, signal);
+    }
     set(saveSourcesFirstStep$, config.step);
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
@@ -220,14 +222,19 @@ export const setupOnboardingEntryPage$ = command(
   },
 );
 
-export const setupOnboardingTeamPage$ = createSourcesFirstPageSetup({
-  step: "team",
+/** Existing bookmarks continue after the removed invitation page. */
+export const setupOnboardingTeamPage$ = command(({ set }) => {
+  set(redirectTo$, ROUTES.onboardingExperience);
+});
+
+export const setupOnboardingCapabilitiesPage$ = createSourcesFirstPageSetup({
+  step: "capabilities",
   title: () => {
     return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.team;
+      return $.onboarding.sourcesFirst.capabilities.title;
     });
   },
-  Page: OnboardingTeamPage,
+  Page: OnboardingCapabilitiesPage,
 });
 
 export const setupOnboardingExperiencePage$ = createSourcesFirstPageSetup({

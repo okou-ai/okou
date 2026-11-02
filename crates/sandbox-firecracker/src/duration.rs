@@ -9,13 +9,4 @@ pub(crate) fn duration_ms(duration: Duration) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-
-    #[test]
-    fn duration_ms_saturates_large_duration() {
-        assert_eq!(duration_ms(Duration::MAX), u64::MAX);
-    }
-}
+mod tests;

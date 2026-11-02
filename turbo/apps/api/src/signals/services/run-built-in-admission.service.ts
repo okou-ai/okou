@@ -1,10 +1,13 @@
 import { command } from "ccstate";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runBuiltInAdmissions } from "@okouai/db/schema/run-built-in-admission";
-import { and, count, eq, lte, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { discriminatedUnion, literal, object, uuid } from "zod";
 
 import { writeDb$ } from "../external/db";
-import { nowDate } from "../../lib/time";
+import { nowDate, nowDateSql } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { safeSqlStateCode } from "../../lib/pg-errors";
+import { settle } from "../utils";
 
 const RUN_BUILT_IN_MAX_IN_FLIGHT = 3;
 const RUN_BUILT_IN_MAX_STARTED = 50;
@@ -60,6 +63,14 @@ function runUsageLimit(): RunBuiltInAdmissionError {
   };
 }
 
+const admissionRowSchema = object({
+  result: discriminatedUnion("outcome", [
+    object({ outcome: literal("admitted"), id: uuid() }),
+    object({ outcome: literal("concurrency_limit") }),
+    object({ outcome: literal("usage_limit") }),
+  ]),
+});
+
 export const startRunBuiltInAdmission$ = command(
   async (
     { set },
@@ -71,69 +82,51 @@ export const startRunBuiltInAdmission$ = command(
     if (!args.runId) {
       return null;
     }
-
-    const runId = args.runId;
+    signal.throwIfAborted();
     const writeDb = set(writeDb$);
-    // Keep the post-lock snapshot: a single statement waiting for this Run
-    // could otherwise miss an admission committed by the previous lock holder.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0236; new non-billing transactions are prohibited.
-    return await writeDb.transaction(async (tx) => {
-      await tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, runId))
-        .for("no key update");
-      signal.throwIfAborted();
-
-      const now = nowDate();
-      await tx
-        .update(runBuiltInAdmissions)
-        .set({ status: "expired", completedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(runBuiltInAdmissions.runId, runId),
-            eq(runBuiltInAdmissions.status, "active"),
-            lte(runBuiltInAdmissions.expiresAt, now),
-          ),
-        );
-
-      // The Run lock serializes all inserts and blocks cascade deletion.
-      // Completion only changes status, so both limits share this snapshot.
-      const [counts] = await tx
-        .select({
-          active: count(
-            sql`CASE WHEN ${eq(runBuiltInAdmissions.status, "active")} THEN 1 END`,
-          ),
-          started: count(),
-        })
-        .from(runBuiltInAdmissions)
-        .where(eq(runBuiltInAdmissions.runId, runId));
-      signal.throwIfAborted();
-      if ((counts?.active ?? 0) >= RUN_BUILT_IN_MAX_IN_FLIGHT) {
-        return runConcurrencyLimit();
+    const query = sql`SELECT public.start_run_built_in_admission(
+      ${args.runId}::uuid, ${nowDateSql(sql`NULL::timestamp`)},
+      ${RUN_BUILT_IN_MAX_IN_FLIGHT}, ${RUN_BUILT_IN_MAX_STARTED},
+      ${RUN_BUILT_IN_ADMISSION_TTL_MS}
+    ) AS result`;
+    const rowSchema = admissionRowSchema;
+    let postCommitAbort = false;
+    const execution = await settle(
+      (async () => {
+        return parseRawRows(rowSchema, await writeDb.execute(query));
+      })(),
+    );
+    if (signal.aborted) {
+      postCommitAbort = true;
+    }
+    if (!execution.ok) {
+      throw new Error(
+        `Run built-in admission SQL execution failed (${safeSqlStateCode(execution.error) ?? "unknown"})`,
+      );
+    }
+    const [row] = execution.value;
+    if (!row) {
+      throw new Error("Run built-in admission returned no outcome");
+    }
+    const result = row.result;
+    if (postCommitAbort) {
+      // The submitted atomic attempt has committed. Release its concurrency
+      // slot before reporting cancellation; retain the attempted-start count.
+      if (result.outcome === "admitted") {
+        await set(completeRunBuiltInAdmission$, {
+          admission: { id: result.id },
+          status: "failed",
+        });
       }
-
-      if ((counts?.started ?? 0) >= RUN_BUILT_IN_MAX_STARTED) {
-        return runUsageLimit();
-      }
-
-      const expiresAt = new Date(now.getTime() + RUN_BUILT_IN_ADMISSION_TTL_MS);
-      const [row] = await tx
-        .insert(runBuiltInAdmissions)
-        .values({
-          runId,
-          kind: "image",
-          status: "active",
-          expiresAt,
-        })
-        .returning({ id: runBuiltInAdmissions.id });
       signal.throwIfAborted();
-      if (!row) {
-        throw new Error("run built-in admission insert returned no row");
-      }
-
-      return row;
-    });
+    }
+    if (result.outcome === "concurrency_limit") {
+      return runConcurrencyLimit();
+    }
+    if (result.outcome === "usage_limit") {
+      return runUsageLimit();
+    }
+    return { id: result.id };
   },
 );
 

@@ -8,7 +8,6 @@ import {
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
-  runnersWorkflowDownloadContract,
   runnersPollContract,
   runnersSteerContract,
 } from "../contracts/runners";
@@ -81,17 +80,6 @@ export const rustRouteBindings = [
     route: runnersJobClaimContract.claim,
     rustModulePath: ["runners", "jobs", "by_id", "claim"],
     rustConstName: "CLAIM",
-  },
-  {
-    route: runnersWorkflowDownloadContract.get,
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "workflows",
-      "by_workflow_id",
-    ],
-    rustConstName: "GET",
   },
   {
     route: runnersSteerContract.next,

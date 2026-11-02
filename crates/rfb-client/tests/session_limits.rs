@@ -16,15 +16,15 @@ const MEMORY_LIMIT: usize = 128 * 1024 * 1024;
 
 fn noisy_pixels(width: u16, height: u16) -> Vec<u8> {
     let count = usize::from(width) * usize::from(height);
-    let mut pixels = Vec::with_capacity(count * 4);
-    for index in 0..count {
+    let mut pixels = vec![0; count * 4];
+    for (index, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         // Deterministic avalanche mixing supplies independent RGB bytes without
         // random seeds. The fourth wire byte is padding, not another color.
         let mut value = (index as u32).wrapping_add(0x9e37_79b9);
         value = (value ^ (value >> 16)).wrapping_mul(0x85eb_ca6b);
         value = (value ^ (value >> 13)).wrapping_mul(0xc2b2_ae35);
         value ^= value >> 16;
-        pixels.extend_from_slice(&[value as u8, (value >> 8) as u8, (value >> 16) as u8, 0]);
+        *pixel = [value as u8, (value >> 8) as u8, (value >> 16) as u8, 0];
     }
     pixels
 }
@@ -103,13 +103,14 @@ async fn captures_the_maximum_frame_as_complete_png_within_the_shared_budget() {
     assert_eq!(frame.color_type, png::ColorType::Rgba);
     assert_eq!(frame.bit_depth, png::BitDepth::Eight);
     assert_eq!(frame.buffer_size(), 8_388_608 * 4);
+    let expected_row = [17, 34, 51, 255].repeat(8192);
+    assert_eq!(pixels.len(), frame.buffer_size());
     assert!(
         pixels
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .all(|pixel| *pixel == [17, 34, 51, 255])
+            .chunks_exact(expected_row.len())
+            .all(|row| row == expected_row.as_slice())
     );
+    drop(expected_row);
     drop(reader);
     drop(pixels);
     let (retained, peak) = session.memory_usage();

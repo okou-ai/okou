@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.0](https://github.com/okou-ai/okou/compare/desktop-v0.54.13...desktop-v0.55.0) (2026-10-31)
+
+
+### Features
+
+* **api-contracts:** type desktop shell queue payloads and results ([#44396](https://github.com/okou-ai/okou/issues/44396)) ([f0aaf57](https://github.com/okou-ai/okou/commit/f0aaf57f4dbf5be154a733ae92dfcfdc14ef866a))
+
 ## [0.54.13](https://github.com/okou-ai/okou/compare/desktop-v0.54.12...desktop-v0.54.13) (2026-10-30)
 
 

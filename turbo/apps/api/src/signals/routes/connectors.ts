@@ -38,7 +38,7 @@ import {
   builtinConnectorSearch$,
 } from "../services/connector-data.service";
 import {
-  connectorActionResolver,
+  readConnectorResolver$,
   type ConnectorActionMethodResolution,
 } from "../services/connector-action-resolver.service";
 import { isConnectorCatalogUnavailableError } from "../services/connector-catalog-reader.service";
@@ -235,7 +235,7 @@ const connectManualGrantBuiltinConnectorInner$ = command(
       return notFound(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver([params.connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [params.connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,
@@ -322,7 +322,7 @@ const connectNoAuthBuiltinConnectorInner$ = command(
       return notFound(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver([params.connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [params.connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,
@@ -465,7 +465,7 @@ const startBuiltinConnectorOauthInner$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver([connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug,
@@ -656,7 +656,7 @@ const startBuiltinConnectorOpenIdInner$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver([connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug,

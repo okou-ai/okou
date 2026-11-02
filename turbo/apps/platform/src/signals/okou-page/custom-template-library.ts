@@ -1,11 +1,11 @@
 import { command, computed, state } from "ccstate";
-import {
-  userTemplatesContract,
-  type UpdateUserTemplateBody,
-  type UserTemplateCatalogEntry,
-  type UserTemplateDetail,
-  type UserTemplateKind,
-  type UserTemplateSummary,
+import { userTemplatesContract } from "@okouai/api-contracts/client/user-templates";
+import type {
+  UpdateUserTemplateBody,
+  UserTemplateCatalogEntry,
+  UserTemplateDetail,
+  UserTemplateKind,
+  UserTemplateSummary,
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import { accept } from "../../lib/accept.ts";

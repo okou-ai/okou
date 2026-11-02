@@ -30,7 +30,7 @@ export const customConnectorAccountOauthBindings = pgTable(
     resource: text("resource").notNull(),
     resourceMetadataUrl: text("resource_metadata_url"),
     tokenEndpoint: text("token_endpoint").notNull(),
-    clientId: varchar("client_id", { length: 255 }).notNull(),
+    clientId: text("client_id").notNull(),
     tokenEndpointAuthMethod: varchar("token_endpoint_auth_method", {
       length: 32,
     })

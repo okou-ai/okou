@@ -67,6 +67,35 @@ enum CatalogSnapshot {
     },
 }
 
+/// Initialize the configured catalog on its existing addon owner before admission.
+/// An unavailable result retains local/inline operation and fail-closed builtins.
+pub(super) async fn warm_catalog(
+    target: &ControlTarget,
+    deadline: tokio::time::Instant,
+) -> io::Result<()> {
+    let started = std::time::Instant::now();
+    let catalog: CatalogSnapshot = control::exchange(
+        &target.directory,
+        &target.generation,
+        "catalog.warm",
+        serde_json::json!({}),
+        deadline,
+    )
+    .await?;
+    if matches!(catalog, CatalogSnapshot::NotUsed) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "catalog warmup returned no load outcome",
+        ));
+    }
+    info!(
+        catalog = ?catalog,
+        warmup_ms = started.elapsed().as_secs_f64() * 1000.0,
+        "addon catalog initialization completed"
+    );
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 enum CatalogUnavailableReason {
     #[serde(rename = "cache_path_missing")]

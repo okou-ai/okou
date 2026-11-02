@@ -207,10 +207,7 @@ fn bounded_output(output: String) -> String {
     if output.len() <= LOG_OUTPUT_LIMIT_BYTES {
         return output;
     }
-    let mut end = LOG_OUTPUT_LIMIT_BYTES;
-    while !output.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = output.floor_char_boundary(LOG_OUTPUT_LIMIT_BYTES);
     format!("{}\n[output truncated]", &output[..end])
 }
 
@@ -235,18 +232,4 @@ fn log_component(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bounded_output_truncates_at_utf8_boundary() {
-        let output = "a".repeat(LOG_OUTPUT_LIMIT_BYTES - 1) + "界";
-
-        let bounded = bounded_output(output);
-
-        assert!(bounded.is_char_boundary(LOG_OUTPUT_LIMIT_BYTES - 1));
-        assert!(bounded.starts_with(&"a".repeat(LOG_OUTPUT_LIMIT_BYTES - 1)));
-        assert!(bounded.ends_with("\n[output truncated]"));
-        assert!(!bounded.contains('界'));
-    }
-}
+mod tests;

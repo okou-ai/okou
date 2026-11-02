@@ -23,7 +23,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -2441,6 +2441,105 @@ describe("okou workflow automations", () => {
     }
     expect(updated.body.eventConfig.match).toStrictEqual({
       from: { contains: "billing@example.com" },
+    });
+  });
+
+  it("finishes admitted thread deletion and notifies its Runner when the API instance lifetime ends during Calendar teardown", async () => {
+    const runnerGroup = runs.configureRunnerGroup();
+    const scenario = await setupFixture();
+    await connectGoogleCalendar(scenario);
+    configureGoogleCalendarWatchMock({ baselineItems: [] });
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          kind: "event",
+          eventType: "google-calendar-event-created",
+          eventConfig: {
+            provider: "google-calendar",
+            event: "event_created",
+            calendarId: "primary",
+          },
+        },
+      }),
+      [201],
+    );
+    const run = await runAutomationNow(created.body.id);
+    if (!run.runId) {
+      throw new Error("Expected the public Run now request to start a Run");
+    }
+    await runs.heartbeatRunner(runnerGroup);
+    await runs.claimRunnerJob(run.runId);
+    mocks.clerk.session(
+      scenario.fixture.userId,
+      scenario.fixture.orgId,
+      "org:member",
+    );
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: true,
+      chatThreadId: run.chatThreadId,
+    });
+
+    const instanceLifetime = new AbortController();
+    let providerStops = 0;
+    server.use(
+      http.post(
+        "https://www.googleapis.com/calendar/v3/channels/stop",
+        async ({ request }) => {
+          providerStops += 1;
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer calendar-access-token",
+          );
+          await expect(request.json()).resolves.toStrictEqual({
+            id: expect.any(String),
+            resourceId: expect.any(String),
+          });
+          instanceLifetime.abort(
+            new DOMException("API instance lifetime ended", "AbortError"),
+          );
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+    );
+    context.mocks.ably.publish.mockClear();
+    const deletion = await settleIncludingAbort(
+      setupApp({
+        context,
+        routes: chatThreadDeleteRoutes,
+        signal: instanceLifetime.signal,
+        rethrowErrors: true,
+      })(chatThreadByIdContract).delete({
+        headers: authHeaders(),
+        params: { id: run.chatThreadId },
+      }),
+    );
+    expect(
+      instanceLifetime.signal.aborted,
+      deletion.ok ? JSON.stringify(deletion.value) : String(deletion.error),
+    ).toBeTruthy();
+    expect(deletion.ok).toBeFalsy();
+    await flushWaitUntilForTest();
+    expect(providerStops).toBe(1);
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: false,
+      chatThreadId: null,
+    });
+    expect((await runs.readRun(scenario.actor, run.runId)).status).toBe(
+      "cancelled",
+    );
+    await accept(
+      setupApp({ context, routes: chatThreadGetRoutes })(
+        chatThreadMetadataContract,
+      ).get({
+        headers: authHeaders(),
+        params: { id: run.chatThreadId },
+      }),
+      [404],
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
+      runId: run.runId,
+      mode: "hard",
     });
   });
 

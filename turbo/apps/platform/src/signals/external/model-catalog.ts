@@ -4,10 +4,8 @@ import {
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import { command, computed, state } from "ccstate";
-import {
-  modelCatalogContract,
-  type ModelCatalogResponse,
-} from "@okouai/api-contracts/contracts/model-catalog";
+import { modelCatalogContract } from "@okouai/api-contracts/client/model-catalog";
+import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
 import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";

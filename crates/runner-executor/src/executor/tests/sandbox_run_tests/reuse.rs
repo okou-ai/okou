@@ -17,8 +17,6 @@ fn context_with_remote_storage(archive_url: &str, archive_size: usize) -> Execut
     let mut storage = api_storage("reused-archive", "/data", "v1", archive_url);
     storage.archive_size = Some(archive_size as u64);
     context.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: Vec::new(),
     });
@@ -182,12 +180,10 @@ async fn execute_job_reuse_bypasses_fresh_pre_spawn_admission() {
 
 #[tokio::test]
 async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
-    for with_instructions in [false, true] {
-        assert_reused_decoded_delivery(with_instructions).await;
-    }
+    assert_reused_decoded_delivery().await;
 }
 
-async fn assert_reused_decoded_delivery(with_instructions: bool) {
+async fn assert_reused_decoded_delivery() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -223,10 +219,7 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
         })
         .await;
     let archive_url = server.url("/reused-archive.tar.gz");
-    let mut context = context_with_remote_storage(&archive_url, body.len());
-    if with_instructions {
-        context.agent_instructions = Some("current inline instructions".into());
-    }
+    let context = context_with_remote_storage(&archive_url, body.len());
 
     let task = tokio::spawn(async move {
         execute_job_reuse(
@@ -247,13 +240,6 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
     assert_eq!(outcome.exit_code(), 0, "error={:?}", outcome.error());
     full_get.assert_calls_async(0).await;
     assert!(overrides.write_files_calls().is_empty());
-    let writes = overrides.private_write_files_calls();
-    let instruction_files: Vec<_> = writes
-        .iter()
-        .flat_map(|call| &call.files)
-        .filter(|file| file.path.ends_with("/agent-instructions"))
-        .collect();
-    assert_eq!(instruction_files.len(), usize::from(with_instructions));
     let manifests = overrides.storage_manifest_calls();
     assert_eq!(manifests.len(), 1);
     let (json, payload) =
@@ -268,11 +254,6 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
         manifest.storages[0].archive_url.as_deref(),
         Some(archive_url.as_str())
     );
-    if with_instructions {
-        assert_eq!(manifest.storages.len(), 1);
-        assert_eq!(instruction_files[0].content, b"current inline instructions");
-        assert!(instruction_files[0].path.ends_with("/agent-instructions"));
-    }
     assert_no_telemetry_action(&telemetry, "storage_cache_fresh_delivery_single_request");
     assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
 }
@@ -396,8 +377,6 @@ async fn execute_job_reuse_rejects_invalid_storage_plan_before_proxy_registratio
     );
     artifact.archive_url = None;
     context.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: Vec::new(),
         artifacts: vec![artifact],
     });

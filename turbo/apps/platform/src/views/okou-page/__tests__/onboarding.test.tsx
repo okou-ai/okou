@@ -24,7 +24,7 @@ test("A new user keeps prompt and connector context through onboarding", async (
   });
 
   await expect(
-    screen.findByRole("heading", { name: "Try this prompt" }),
+    screen.findByRole("heading", { name: "Make this task your own" }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe("/onboarding");
   const onboardingContext = new URLSearchParams(search());

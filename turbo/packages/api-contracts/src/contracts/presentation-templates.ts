@@ -5,6 +5,7 @@ import {
   number,
   object,
   string,
+  url,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -19,7 +20,7 @@ const presentationTemplateVisibilitySchema = zEnum(["private", "public"]);
 const presentationTemplatePreviewAssetIdSchema = string().min(1).max(128);
 const presentationTemplatePreviewAssetSchema = object({
   previewAssetId: presentationTemplatePreviewAssetIdSchema,
-  url: string().url(),
+  url: url(),
   expiresAt: iso.datetime(),
 });
 
@@ -50,7 +51,7 @@ const presentationTemplateSummarySchema = object({
   id: uuid(),
   title: string(),
   sourceFilename: string(),
-  coverUrl: string().url().nullable(),
+  coverUrl: url().nullable(),
   pageCount: number().int().nonnegative(),
   visibility: presentationTemplateVisibilitySchema,
   canManage: boolean(),
@@ -65,7 +66,7 @@ const presentationTemplateCatalogEntrySchema =
 
 const presentationTemplateDetailSchema =
   presentationTemplateSummarySchema.extend({
-    pageUrls: array(string().url()),
+    pageUrls: array(url()),
     previewAssets: array(presentationTemplatePreviewAssetSchema),
   });
 

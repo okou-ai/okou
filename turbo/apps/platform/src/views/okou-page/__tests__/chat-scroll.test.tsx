@@ -42,6 +42,7 @@ const THREAD_IDS = {
   expandedWork: "b0000000-0000-4000-a000-000000000932",
   unfilledViewport: "b0000000-0000-4000-a000-000000000941",
   runWindowStart: "b0000000-0000-4000-a000-000000000942",
+  settledHistory: "b0000000-0000-4000-a000-000000000944",
 } as const;
 
 interface ChatScrollGeometry {
@@ -738,6 +739,35 @@ test("Loading older messages preserves the reading position", async () => {
       anchorById(container, readingAnchorId).getBoundingClientRect().top,
     ).toBe(readingTop);
   });
+});
+
+test("Load earlier messages once scrolling stops near the top", async () => {
+  mockMutableConversation(
+    THREAD_IDS.settledHistory,
+    completedHistoryEvents(12),
+  );
+  const container = await openConversation(
+    THREAD_IDS.settledHistory,
+    "History answer 12",
+  );
+  const geometry = installChatScrollGeometry(container);
+  // One gesture passes the top, moves away, and stops near the top again.
+  // Earlier groups load once, after the last scroll, from where it stopped.
+  scrollFromUser(container, 40);
+  scrollFromUser(container, 500);
+  scrollFromUser(container, 60);
+  const readingAnchor = geometry.firstVisibleAnchor();
+  const readingAnchorId = anchorId(readingAnchor);
+  const readingTop = readingAnchor.getBoundingClientRect().top;
+
+  const olderMessage = await screen.findByText("History question 6");
+  expect(olderMessage).toBeVisible();
+  await waitFor(() => {
+    expect(
+      anchorById(container, readingAnchorId).getBoundingClientRect().top,
+    ).toBe(readingTop);
+  });
+  expect(screen.queryByText("History question 4")).not.toBeInTheDocument();
 });
 
 test("Load earlier messages while the latest ones do not fill the viewport", async () => {

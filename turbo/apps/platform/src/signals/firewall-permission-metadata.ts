@@ -1,6 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogContract } from "@okouai/api-contracts/client/connector-catalog";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import type { PlatformConnectorPermissionMetadata } from "./connector-domain.ts";

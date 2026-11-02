@@ -1,6 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
 import type { infer as zInfer } from "zod";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { hostContract } from "@okouai/api-contracts/client/host";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";

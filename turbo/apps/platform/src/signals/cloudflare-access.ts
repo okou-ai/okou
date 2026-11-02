@@ -5,12 +5,15 @@ import {
 import type {
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
+import { cloudflareAccessContract } from "@okouai/api-contracts/client/cloudflare-access";
 import {
-  cloudflareAccessContract,
+  createCloudflareAccessConfigRequestSchema,
   scopedCloudflareAccessConfigSchema,
-  type ScopedCloudflareAccessConfig,
-  type CloudflareAccessImpactPreview,
+} from "@okouai/api-contracts/validators/cloudflare-access";
+import type {
+  ScopedCloudflareAccessConfig,
+  CloudflareAccessImpactPreview,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { command, computed, state } from "ccstate";
@@ -449,7 +452,7 @@ export const saveCloudflareAccess$ = command(
         return;
       }
       signal.throwIfAborted();
-      const body = cloudflareAccessContract.create.body.parse({
+      const body = createCloudflareAccessConfigRequestSchema.parse({
         id,
         name: textField(form, "accessName"),
         credentials: credentialsFromForm(form),

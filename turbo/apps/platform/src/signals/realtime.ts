@@ -1,9 +1,9 @@
 import { command, state, type Command } from "ccstate";
 import {
   foregroundChannelName,
-  platformRealtimeTokenContract,
   sessionOutputChannelName,
-} from "@okouai/api-contracts/contracts/realtime";
+} from "@okouai/api-contracts/validators/realtime";
+import { platformRealtimeTokenContract } from "@okouai/api-contracts/client/realtime";
 import type {
   ChannelOptions,
   ChannelStateChange,

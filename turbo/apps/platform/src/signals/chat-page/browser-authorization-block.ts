@@ -1,4 +1,4 @@
-import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
+import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/client/browser";
 import { command, computed, state } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";

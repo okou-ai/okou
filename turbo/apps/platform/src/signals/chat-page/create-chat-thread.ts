@@ -11,19 +11,19 @@ import {
   isChatRunTerminalEventType,
   revokedChatEventIds,
 } from "@okouai/api-contracts/contracts/chat-events";
-import {
-  chatThreadArtifactsContract,
-  resolveChatEventRecommendedFollowups,
-  type ChatRunOptionsRequest,
-  type ChatThreadArtifactRun,
-  type ChatThreadDraft,
-  type FeedbackNotePart,
-  type GenerationTemplateRequest,
-  type ChatEvent as PersistedChatEvent,
-  type ResolvedAttachFile,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessagePart,
+import { chatThreadArtifactsContract } from "@okouai/api-contracts/client/chat-threads";
+import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  ChatRunOptionsRequest,
+  ChatThreadArtifactRun,
+  ChatThreadDraft,
+  FeedbackNotePart,
+  GenerationTemplateRequest,
+  ChatEvent as PersistedChatEvent,
+  ResolvedAttachFile,
+  UserMessageDocument,
+  UserMessageInputDocument,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -1941,13 +1941,18 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
 function createPagedEventResources({
   chatActionContext,
   connector,
+  onBrowserPageInput$,
 }: {
   readonly chatActionContext: ChatActionContext;
   readonly connector: ComposerConnectorSignals;
+  readonly onBrowserPageInput$: Command<void, []>;
 }) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
-  const browserSessionSignals = createBrowserSessionSignals(threadId);
+  const browserSessionSignals = createBrowserSessionSignals(
+    threadId,
+    onBrowserPageInput$,
+  );
   const artifactCardSignals = createArtifactCardSignalsRegistry();
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
@@ -2303,23 +2308,48 @@ function createReadyScrollAfterRenderRequest(
   });
 }
 
-function createLoadMoreRenderedChatGroups(
+const EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX = 100;
+// Safari reverts a scrollTop write made while its scrolling thread still
+// animates a gesture, momentum, or smooth scroll. Every animated frame delivers
+// a scroll event, so a quiet interval means the compensation write will stick.
+const EARLIER_GROUPS_LOAD_SCROLL_SETTLE_MS = 150;
+
+/**
+ * Loads earlier groups once scrolling settles near the top. Every scroll
+ * restarts the wait, so the prepend and its scroll compensation never land
+ * while the browser is still moving the viewport.
+ */
+function createLoadEarlierGroupsAfterScroll(
   scroll: ChatThreadScrollSignals,
   loadMoreGroups$: Command<Promise<boolean>, [AbortSignal]>,
 ) {
-  return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
-    const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
-    const didPrepend = await set(loadMoreGroups$, signal);
-    signal.throwIfAborted();
-    if (didPrepend) {
-      await set(scroll.autoScroll$, scrollPosition, signal);
+  const loadEarlierGroupsNearTop$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+      const container = get(scroll.scrollContainer$);
+      if (
+        !container ||
+        container.scrollTop > EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX
+      ) {
+        return false;
+      }
+      const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
+      const didPrepend = await set(loadMoreGroups$, signal);
       signal.throwIfAborted();
-    }
-    return didPrepend;
-  });
+      if (didPrepend) {
+        await set(scroll.autoScroll$, scrollPosition, signal);
+        signal.throwIfAborted();
+      }
+      return didPrepend;
+    },
+  );
+  return debounceCommand(
+    loadEarlierGroupsNearTop$,
+    EARLIER_GROUPS_LOAD_SCROLL_SETTLE_MS,
+  );
 }
 
 interface ChatThreadMessagePipelineOptions {
+  onBrowserPageInput$: Command<void, []>;
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
   connector: ComposerConnectorSignals;
@@ -2331,6 +2361,7 @@ function createChatThreadMessagePipeline({
   chatEvents,
   connector,
   thinkingSummaries$,
+  onBrowserPageInput$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
   // Position is created before scroll writers are wired to the render window.
@@ -2338,6 +2369,7 @@ function createChatThreadMessagePipeline({
   const resources = createPagedEventResources({
     chatActionContext,
     connector,
+    onBrowserPageInput$,
   });
   const usage = createChatRunUsageSignals(
     threadId,
@@ -2408,7 +2440,7 @@ function createChatThreadMessagePipeline({
     scroll.pendingScrollAfterRenderRequest$,
     renderWindow.visibleRenderedChatGroups$,
   );
-  const loadMoreRenderedChatGroups$ = createLoadMoreRenderedChatGroups(
+  const loadEarlierGroupsAfterScroll$ = createLoadEarlierGroupsAfterScroll(
     scroll,
     renderWindow.loadMoreRenderedChatGroups$,
   );
@@ -2426,7 +2458,7 @@ function createChatThreadMessagePipeline({
     visibleRunUsageSignals$: usage.visibleRunUsageSignals$,
     ...renderWindow,
     readyScrollAfterRenderRequest$,
-    loadMoreRenderedChatGroups$,
+    loadEarlierGroupsAfterScroll$,
   };
 }
 
@@ -3547,7 +3579,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     runFinished$: events.runFinished$,
     recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,
-    loadMoreRenderedChatGroups$: events.loadMoreRenderedChatGroups$,
+    loadEarlierGroupsAfterScroll$: events.loadEarlierGroupsAfterScroll$,
     resetRenderedChatGroupsIfAtBottom$:
       events.resetRenderedChatGroupsIfAtBottom$,
   };
@@ -3846,16 +3878,24 @@ export function createChatPanelSignals(
     draft,
     persistence,
   );
+  // The native input graph invokes this only after admitting page input.
+  const onPageInput$ = command(({ set }) => {
+    set(browserPresence.pageInput$);
+  });
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },
     chatEvents,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
+    onBrowserPageInput$: onPageInput$,
   });
-  const messages: MessageListSignals = {
-    ...messagePipeline,
-    ...artifact,
-  };
+  const browserPresence = createBrowserPresenceSignals({
+    agentId,
+    latestRunId$: messagePipeline.latestRunId$,
+    liveRunId$: messagePipeline.liveRunId$,
+    sendEvent$: chatEvents.sendEvent$,
+  });
+  const messages: MessageListSignals = { ...messagePipeline, ...artifact };
   const feedback = createChatThreadFeedbackSignals(
     threadId,
     composer.feedback,
@@ -3923,12 +3963,7 @@ export function createChatPanelSignals(
       relations,
     ),
     relations,
-    browserPresence: createBrowserPresenceSignals({
-      agentId,
-      latestRunId$: messages.latestRunId$,
-      liveRunId$: messages.liveRunId$,
-      sendEvent$: chatEvents.sendEvent$,
-    }),
+    browserPresence,
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

@@ -1,4 +1,4 @@
-import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
+import { debugMorningBriefContract } from "@okouai/api-contracts/client/debug-morning-brief";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { command, computed } from "ccstate";

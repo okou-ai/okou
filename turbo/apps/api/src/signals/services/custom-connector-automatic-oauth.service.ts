@@ -11,6 +11,8 @@ import {
   object,
   string,
   union,
+  url,
+  uuid,
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
@@ -45,11 +47,9 @@ import {
   type McpAutomaticOAuthDcrRegistrationInput,
 } from "./mcp-automatic-oauth.service";
 
-const oauthHttpsUrlSchema = string()
-  .url()
-  .refine((value) => {
-    return new URL(value).protocol === "https:";
-  });
+const oauthHttpsUrlSchema = url().refine((value) => {
+  return new URL(value).protocol === "https:";
+});
 
 const tokenEndpointAuthMethodSchema = zEnum([
   "none",
@@ -58,8 +58,8 @@ const tokenEndpointAuthMethodSchema = zEnum([
 ]);
 
 const automaticOAuthBindingBaseSchema = object({
-  connectorAccountId: string().uuid(),
-  customConnectorId: string().uuid(),
+  connectorAccountId: uuid(),
+  customConnectorId: uuid(),
   issuer: oauthHttpsUrlSchema,
   resource: oauthHttpsUrlSchema,
   resourceMetadataUrl: oauthHttpsUrlSchema.nullable(),
@@ -69,8 +69,8 @@ const automaticOAuthBindingBaseSchema = object({
 });
 
 const dcrRegistrationSchema = object({
-  id: string().uuid(),
-  customConnectorId: string().uuid(),
+  id: uuid(),
+  customConnectorId: uuid(),
   issuer: oauthHttpsUrlSchema,
   clientId: string().min(1),
   tokenEndpointAuthMethod: tokenEndpointAuthMethodSchema,

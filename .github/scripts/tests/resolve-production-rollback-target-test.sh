@@ -20,6 +20,7 @@ data_router_response_id_floor=$(<"${repo_root}/.github/rollback-floors/data-rout
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
 data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
+official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
 cat >"${fake_bin}/git" <<'SH'
@@ -29,8 +30,16 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
+    if [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
       [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc" ]; then
+      [ "${MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7171717171717171717171717171717171717171" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID:-1}" = "1" ]
@@ -195,6 +204,26 @@ case "${1:-}" in
       [ "${MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29" ]; then
       [ "${MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7272727272727272727272727272727272727272" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_READER_ON_MAIN:-1}" = "1" ]
+      elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_API_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "c5f93ab5220486a764f9316a4496288e5bf72991" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "fc8f99468cc7946843620ff655ae22c09f9cb2ae" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_CONTENT_BUNDLE_API_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
@@ -246,7 +275,13 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *rollback-floors/workflow-attachments-direct* ]]; then
+    if [[ "$*" == *packages/core/src/official-workflow-artifact.ts* ]]; then
+      printf '%s\n' "${MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT-bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc}"
+      exit 0
+    fi
+    if [[ "$*" == *rollback-floors/content-bundle-archive-reader* ]]; then
+      printf '%s\n' "${MOCK_CONTENT_BUNDLE_ARCHIVE_READER_COMMIT-7272727272727272727272727272727272727272}"
+    elif [[ "$*" == *rollback-floors/workflow-attachments-direct* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_ATTACHMENT_COMMIT-7171717171717171717171717171717171717171}"
     elif [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
       printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
@@ -332,9 +367,19 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [[ "$*" == *rollback-floors/content-bundle-reference-only-api* ]]; then
+      [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE:-1}" = "1" ] || exit 1
+      printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-c5f93ab5220486a764f9316a4496288e5bf72991}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/run-reference-preparation" ]; then
       [ "${MOCK_RUN_REFERENCE_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_RUN_REFERENCE_PREPARATION_COMMIT-66e1cae65d0468a50149f0dafab9d0d35abd0819}"
+      exit 0
+    fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/official-workflow-bundle-reader" ]; then
+      [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_COMMIT-$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR}"
       exit 0
     fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/home-cache-capacity-reader" ]; then
@@ -456,6 +501,7 @@ run_resolver() {
     MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
+    MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -1155,6 +1201,49 @@ fi
 assert_failure "predates inline Agent instructions" \
   run_resolver "${tmp_dir}/agent-instructions-runner-floor.output" MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/agent-instructions-runner-floor.output" ] || fail "old instruction Runner must not publish rollback outputs"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates immutable content bundle publication" \
+  run_resolver "${tmp_dir}/content-bundle-api-floor.output" MOCK_CONTENT_BUNDLE_API_VALID=0
+grep -Fq 'fc8f99468cc7946843620ff655ae22c09f9cb2ae' "${tmp_dir}/failure.err" || fail "content bundle API rejection must identify the preparation commit"
+[ ! -s "${tmp_dir}/content-bundle-api-floor.output" ] || fail "legacy-only publisher must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+  fail "content bundle API floor must fail before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates hash-addressed content bundles" \
+  run_resolver "${tmp_dir}/content-bundle-runner-floor.output" MOCK_CONTENT_BUNDLE_RUNNER_VALID=0
+grep -Fq 'fc8f99468cc7946843620ff655ae22c09f9cb2ae' "${tmp_dir}/failure.err" || fail "content bundle Runner rejection must identify the preparation commit"
+[ ! -s "${tmp_dir}/content-bundle-runner-floor.output" ] || fail "legacy-only Runner must not publish rollback outputs"
+if grep -Eq '^ssh ' "${tmp_dir}/boundaries.log"; then
+  fail "content bundle Runner floor must fail before host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged content bundle archive reader" \
+    run_resolver "${tmp_dir}/bundle-archive-history.output" "MOCK_CONTENT_BUNDLE_ARCHIVE_READER_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/bundle-archive-history.output" ] || fail "invalid archive reader history must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid archive reader history must fail before provider access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Content bundle archive reader rollback floor is not on main" \
+  run_resolver "${tmp_dir}/bundle-archive-main.output" MOCK_CONTENT_BUNDLE_ARCHIVE_READER_ON_MAIN=0
+[ ! -s "${tmp_dir}/bundle-archive-main.output" ] || fail "unmerged archive reader must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "unmerged archive reader must fail before provider access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates bounded content bundle archive delivery" \
+  run_resolver "${tmp_dir}/bundle-archive-runner.output" MOCK_CONTENT_BUNDLE_ARCHIVE_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/bundle-archive-runner.output" ] || fail "per-file archive Runner must not publish outputs"
+if grep -Eq '^ssh |api.github.com/repos/' "${tmp_dir}/boundaries.log"; then
+  fail "per-file archive Runner must fail before Runner artifact or host access"
+fi
+run_resolver "${tmp_dir}/bundle-archive-older-api.output" MOCK_CONTENT_BUNDLE_ARCHIVE_API_VALID=0 >/dev/null
+grep -Fq "target_commit=${target_commit}" "${tmp_dir}/bundle-archive-older-api.output" || fail "older compatible API with corrected Runner must remain eligible"
 
 for preparation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
@@ -1988,6 +2077,48 @@ for run_reference_case in \
   [ ! -s "${tmp_dir}/run-reference-policy.output" ] || fail "invalid Run policy must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "invalid Run policy must reject before provider or host access"
+  fi
+done
+
+for official_bundle_case in \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_AVAILABLE=0|Cannot read the Official Workflow bundle reader rollback floor from main" \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_COMMIT=invalid|Missing or invalid Official Workflow bundle reader rollback floor" \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN=0|Official Workflow bundle reader rollback floor is not on main" \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_VALID=0|Rollback target predates Official Workflow bundle reader preparation"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${official_bundle_case#*|}" \
+    run_resolver "${tmp_dir}/official-workflow-bundle.output" "${official_bundle_case%%|*}"
+  [ ! -s "${tmp_dir}/official-workflow-bundle.output" ] || fail "incompatible Official bundle API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Official bundle reader floor must reject before provider or host access"
+  fi
+done
+
+for official_artifact_case in \
+  "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT=|Cannot resolve the merged Official Workflow artifact reader on main" \
+  "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT=invalid|Cannot resolve the merged Official Workflow artifact reader on main" \
+  "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_VALID=0|Rollback target predates manifest-free Official Workflow artifacts"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${official_artifact_case#*|}" \
+    run_resolver "${tmp_dir}/official-workflow-artifact.output" "${official_artifact_case%%|*}"
+  [ ! -s "${tmp_dir}/official-workflow-artifact.output" ] || fail "incompatible Official publisher must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "Official artifact floor must reject before artifact or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE=0|Cannot read the reference-only content bundle API rollback floor from main" \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT=invalid|Missing or invalid reference-only content bundle API rollback floor" \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_ON_MAIN=0|Reference-only content bundle API rollback floor is not on main" \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_VALID=0|Rollback target predates reference-only content bundle claims"; do
+  : >"${tmp_dir}/boundaries.log"
+  setting=${expectation%%|*}
+  message=${expectation#*|}
+  assert_failure "$message" run_resolver "${tmp_dir}/content-bundle-reference-api.output" "$setting"
+  [ ! -s "${tmp_dir}/content-bundle-reference-api.output" ] || fail "incompatible API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "reference-only API floor must fail before artifact or host access"
   fi
 done
 

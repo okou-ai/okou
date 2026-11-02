@@ -1,8 +1,8 @@
-import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { zodConfig } from "@okouai/eslint-rules/zod";
 import { config, oxlint } from "@okouai/eslint-config/base";
 export default [
   { ignores: ["dist/**", ".wrangler/**"] },
   ...config,
-  namedZodImportsConfig,
+  zodConfig,
   ...oxlint.buildFromOxlintConfigFile("./.oxlintrc.json"),
 ];

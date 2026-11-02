@@ -1,6 +1,10 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import {
+  browserDisplayContents,
+  type BrowserDisplaySize,
+} from "@okouai/core/browser-display";
 
 import {
   BROWSER_INITIAL_SCREEN_HEIGHT,
@@ -44,6 +48,7 @@ import {
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { mapConcurrent } from "../../lib/map-concurrent";
 import {
   bestEffort,
   readBoundedResponseText,
@@ -64,6 +69,7 @@ const MAX_BROWSER_USE_TAB_URLS = 50;
 const MAX_BROWSER_USE_TAB_URL_CHARS = 8192;
 const BROWSER_USE_SCREENSHOT_WIDTH = 640;
 const BROWSER_USE_SCREENSHOT_QUALITY = 80;
+const BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY = 4;
 const browserUseLiveUrlSchema = zUrl().refine((value) => {
   return new URL(value).origin === "https://live.browser-use.com";
 });
@@ -83,6 +89,7 @@ const browserUseCdpResponseSchema = object({
   id: number().int(),
   result: zUnknown().optional(),
   error: object({
+    code: number().int().optional(),
     message: string(),
   }).optional(),
 });
@@ -97,6 +104,11 @@ const browserUseCdpTargetsSchema = object({
 });
 const browserUseCdpWindowSchema = object({
   windowId: number().int().nonnegative().safe(),
+});
+const browserUseCdpWindowBoundsSchema = object({
+  bounds: object({
+    windowState: zEnum(["normal", "minimized", "maximized", "fullscreen"]),
+  }),
 });
 const browserUseCdpAttachedTargetSchema = object({
   sessionId: string().min(1),
@@ -147,7 +159,10 @@ interface BrowserUseCdpCommand {
 }
 
 class BrowserUseCdpCommandError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+  ) {
     super(message);
     this.name = "BrowserUseCdpCommandError";
   }
@@ -456,7 +471,7 @@ async function sendBrowserUseCdpCommand(
     const error = response.data.error;
     if (error) {
       finish(() => {
-        reject(new BrowserUseCdpCommandError(error.message));
+        reject(new BrowserUseCdpCommandError(error.message, error.code));
       });
       return;
     }
@@ -834,6 +849,7 @@ export async function initialBrowserUseWindow(
 /** Creation is never retried: an unknown response may already have a window. */
 export async function createBrowserUseWindow(
   cdpUrl: string,
+  initialDisplay: BrowserDisplaySize | undefined,
   signal: AbortSignal,
 ): Promise<BrowserUseWindowCandidate> {
   const created = await settleIncludingAbort(
@@ -845,7 +861,14 @@ export async function createBrowserUseWindow(
             {
               id: 1,
               method: "Target.createTarget",
-              params: { url: "about:blank", newWindow: true },
+              // Creation bounds are outer DIP. Calibrate exact contents after creation.
+              params: {
+                url: "about:blank",
+                newWindow: true,
+                ...(initialDisplay
+                  ? browserDisplayContents(initialDisplay, 1)
+                  : {}),
+              },
             },
             deadline,
           ),
@@ -879,13 +902,133 @@ export async function createBrowserUseWindow(
   return created.value;
 }
 
+/** Prepare native geometry; DPR emulation belongs to the sustained viewer session. */
+export async function prepareBrowserUseWindowDisplay(
+  cdpUrl: string,
+  window: BrowserUseWindowCandidate,
+  display: BrowserDisplaySize,
+  signal: AbortSignal,
+): Promise<void> {
+  const prepared = await settleIncludingAbort(
+    withBrowserUseCdpDeadline(signal, async (deadline) => {
+      await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+        const sequence = { next: 1 };
+        if (
+          (await nativeWindowForTarget(
+            socket,
+            window.targetId,
+            sequence,
+            deadline,
+          )) !== window.primaryWindowId
+        ) {
+          throw new Error("The Browser preparation target left its window");
+        }
+        // Closing this bounded socket releases its page session. A temporary
+        // metrics override would reset at that point, so only observe native scale.
+        const { sessionId } = object({ sessionId: string().min(1) }).parse(
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: sequence.next++,
+              method: "Target.attachToTarget",
+              params: { targetId: window.targetId, flatten: true },
+            },
+            deadline,
+          ),
+        );
+        const layout = object({
+          visualViewport: object({ clientWidth: number().positive() }),
+          cssVisualViewport: object({
+            clientWidth: number().positive(),
+            zoom: number().positive().optional(),
+          }),
+        }).parse(
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: sequence.next++,
+              method: "Page.getLayoutMetrics",
+              params: {},
+              sessionId,
+            },
+            deadline,
+          ),
+        );
+        const nativeDpr =
+          layout.visualViewport.clientWidth /
+          layout.cssVisualViewport.clientWidth /
+          (layout.cssVisualViewport.zoom ?? 1);
+        if (
+          (await nativeWindowForTarget(
+            socket,
+            window.targetId,
+            sequence,
+            deadline,
+          )) !== window.primaryWindowId
+        ) {
+          throw new Error("The Browser preparation target left its window");
+        }
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: sequence.next++,
+            method: "Browser.setContentsSize",
+            params: {
+              windowId: window.primaryWindowId,
+              ...browserDisplayContents(display, nativeDpr),
+            },
+          },
+          deadline,
+        );
+      });
+    }),
+  );
+  signal.throwIfAborted();
+  if (!prepared.ok) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_WINDOW_DISPLAY_ERROR",
+      "Managed Browser provider could not prepare the window display",
+    );
+  }
+}
+
 export async function browserUseWindowExists(
   connection: BrowserUseNativeConnection,
   primaryWindowId: number,
   signal: AbortSignal,
 ): Promise<boolean> {
-  return await withBrowserUseBridge(connection, signal, async (client) => {
-    return (await nativeBrowserWindow(client, primaryWindowId)) !== null;
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    return await withBrowserUseCdpSocket(
+      connection.cdpUrl,
+      deadline,
+      async (socket) => {
+        const result = await settle(
+          sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: 1,
+              method: "Browser.getWindowBounds",
+              params: { windowId: primaryWindowId },
+            },
+            deadline,
+          ),
+        );
+        deadline.throwIfAborted();
+        if (!result.ok) {
+          if (
+            result.error instanceof BrowserUseCdpCommandError &&
+            result.error.code === -32_000 &&
+            result.error.message === "Browser window not found"
+          ) {
+            return false;
+          }
+          throw result.error;
+        }
+        browserUseCdpWindowBoundsSchema.parse(result.value);
+        return true;
+      },
+    );
   });
 }
 
@@ -1095,21 +1238,27 @@ export async function captureBrowserUseScreenshot(
       ),
       { reportInput: true },
     );
-    const pageTargets = [];
+    let pageTargets = targets.targetInfos.filter((target) => {
+      return target.type === "page";
+    });
     const sequence = { next: 2 };
-    for (const target of targets.targetInfos) {
-      if (
-        target.type === "page" &&
-        (primaryWindowId === undefined ||
-          (await nativeWindowForTarget(
+    if (primaryWindowId !== undefined) {
+      const windowIds = await mapConcurrent(
+        pageTargets,
+        BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY,
+        async (target) => {
+          return await nativeWindowForTarget(
             socket,
             target.targetId,
             sequence,
             cdpSignal,
-          )) === primaryWindowId)
-      ) {
-        pageTargets.push(target);
-      }
+          );
+        },
+      );
+      cdpSignal.throwIfAborted();
+      pageTargets = pageTargets.filter((_target, index) => {
+        return windowIds[index] === primaryWindowId;
+      });
     }
     if (pageTargets.length === 0) {
       throw new Error("Browser Use CDP returned no page target");
@@ -3544,22 +3693,36 @@ export async function restoreBrowserUseWindowTabUrls(
   if (bounded.length === 0) {
     return;
   }
-  await withBrowserUseBridge(connection, signal, async (client) => {
-    if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
-      throw new Error("The Browser restore window is unavailable");
-    }
-    for (const url of bounded) {
-      const created = await client.call("createTab", {
-        windowId: window.primaryWindowId,
-        url,
-        active: false,
-      });
-      const tab = browserUseNativeTabSchema.parse(created.value);
-      if (tab.windowId !== window.primaryWindowId) {
-        throw new Error("The Browser could not confirm restored tab placement");
+  const restored = await settleIncludingAbort(
+    withBrowserUseBridge(connection, signal, async (client) => {
+      if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
+        throw new Error("The Browser restore window is unavailable");
       }
-    }
-  });
+      for (const url of bounded) {
+        const created = await client.call("createTab", {
+          windowId: window.primaryWindowId,
+          url,
+          active: false,
+        });
+        const tab = browserUseNativeTabSchema.parse(created.value);
+        if (tab.windowId !== window.primaryWindowId) {
+          throw new Error(
+            "The Browser could not confirm restored tab placement",
+          );
+        }
+      }
+    }),
+  );
+  signal.throwIfAborted();
+  if (!restored.ok) {
+    throw restored.error instanceof BrowserUseProviderError
+      ? restored.error
+      : new BrowserUseProviderError(
+          502,
+          "BROWSER_USE_SHARED_OPERATION_FAILED",
+          "Managed Browser operation could not be confirmed",
+        );
+  }
   // The restored URLs are ready; blank-seed cleanup cannot undo that result.
   await tryCloseRestoredBrowserSeed(connection.cdpUrl, window, signal);
 }
@@ -3865,21 +4028,36 @@ export async function deleteBrowserUseProfile(
 ): Promise<void> {
   await browserUseRequest(
     `/profiles/${encodeURIComponent(profileId)}`,
-    { method: "DELETE" },
+    { method: "DELETE", signal },
     signal,
     [404],
   );
 }
 
+function initialBrowserUseScreen(display: BrowserDisplaySize | undefined) {
+  const contents = display
+    ? browserDisplayContents(display, 1)
+    : { width: BROWSER_SCREEN_WIDTH, height: BROWSER_INITIAL_SCREEN_HEIGHT };
+  // Provider launch limits differ from the viewer raster budget. Admission
+  // calibrates the actual contents afterward with allowResizing enabled.
+  return {
+    width: Math.max(320, Math.min(6144, contents.width)),
+    height: Math.max(320, Math.min(3456, contents.height)),
+  };
+}
+
 export async function createBrowserUseSession(
   args: {
     readonly profileId: string;
+    readonly extensionId: string;
     readonly proxyCountryCode: string | null;
     readonly timeoutMinutes: number;
     readonly instanceId?: string;
+    readonly initialDisplay?: BrowserDisplaySize;
   },
   signal: AbortSignal,
 ): Promise<BrowserUseSession> {
+  const screen = initialBrowserUseScreen(args.initialDisplay);
   const body = await browserUseRequest(
     "/browsers",
     {
@@ -3888,11 +4066,11 @@ export async function createBrowserUseSession(
         profileId: args.profileId,
         proxyCountryCode: args.proxyCountryCode,
         timeout: args.timeoutMinutes,
-        browserScreenWidth: BROWSER_SCREEN_WIDTH,
-        browserScreenHeight: BROWSER_INITIAL_SCREEN_HEIGHT,
+        browserScreenWidth: screen.width,
+        browserScreenHeight: screen.height,
         allowResizing: true,
         enableRecording: false,
-        extensionIds: [env("OKOU_BROWSER_USE_EXTENSION_ID")],
+        extensionIds: [args.extensionId],
         metadata: args.instanceId
           ? { okouInstanceId: args.instanceId }
           : undefined,

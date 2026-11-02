@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
+import { computerUseHostsContract } from "@okouai/api-contracts/client/computer-use";
 
 import type { ListedComputerUseHost } from "../../shared-database/computed-key.ts";
 import { accept } from "../../lib/accept.ts";

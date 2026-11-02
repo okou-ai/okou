@@ -3,28 +3,30 @@ import { command, computed, state } from "ccstate";
 import type {
   InitClientReturn,
   InitClientArgs,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { vncConnectionsContract } from "@okouai/api-contracts/client/vnc-connections";
 import {
-  vncConnectionsContract,
   createVncConnectionRequestSchema,
   updateVncConnectionRequestSchema,
-  type VncConnectionResponse,
-  type VncSecurity,
-  type VncTransport,
+} from "@okouai/api-contracts/validators/vnc-connections";
+import type {
+  VncConnectionResponse,
+  VncSecurity,
+  VncTransport,
 } from "@okouai/api-contracts/contracts/vnc-connections";
+import { vncCredentialsContract } from "@okouai/api-contracts/client/vnc-credentials";
 import {
-  vncCredentialsContract,
   createVncCredentialRequestSchema,
   updateVncCredentialRequestSchema,
-  type VncCredentialResponse,
-} from "@okouai/api-contracts/contracts/vnc-credentials";
+} from "@okouai/api-contracts/validators/vnc-credentials";
+import type { VncCredentialResponse } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { VNC_ERROR_CODES } from "@okouai/api-contracts/contracts/vnc-errors";
 import {
   isVncKerberosMethod,
-  type VncKerberosMethod,
   kerberosPrincipalSchema,
   kerberosServicePrincipalSchema,
+  type VncKerberosMethod,
 } from "@okouai/api-contracts/contracts/vnc-kerberos";
 import {
   encodeAndClearKerberosMaterial,

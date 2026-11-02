@@ -19,64 +19,6 @@ fn storage(mount_path: &Path, name: &str, version: &str, archive_url: String) ->
     }
 }
 
-fn downloaded_manifest(value: serde_json::Value) -> StorageManifest {
-    let document: runner_types::storage_manifest::WorkflowSkillDocument =
-        serde_json::from_value(value).unwrap();
-    let mut manifest: StorageManifest = serde_json::from_value(serde_json::json!({
-        "storageMounts": [], "workflowSkills": [{"workflowId":document.workflow_id,"mountPath":document.mount_path}]
-    })).unwrap();
-    manifest.resolve_workflow_documents(vec![document]).unwrap();
-    manifest
-}
-
-#[test]
-fn workflow_documents_reuse_attachment_identity_and_clear_retired_managed_paths() {
-    let id = "7feae200-7a26-46f5-9dcb-12eaa0804414";
-    let mount = "/home/user/.codex/skills/custom-workflow";
-    let document = serde_json::json!({
-        "workflowId": id, "mountPath": mount, "skillMd": "first body",
-        "attachments": {"archiveUrl":"https://objects.example/archive.tar.gz","archiveSize":100,"archiveSha256":"a".repeat(64)}
-    });
-    let first = downloaded_manifest(document.clone());
-    let before = StorageFingerprints::from_manifest(&first);
-    let mut changed = document;
-    changed["skillMd"] = serde_json::json!("edited body");
-    let current = downloaded_manifest(changed.clone());
-    assert!(
-        !build_storage_plan(&current, Some(&before))
-            .unwrap()
-            .requires_guest_work()
-    );
-
-    changed["attachments"] = serde_json::Value::Null;
-    let empty = downloaded_manifest(changed);
-    assert_eq!(
-        build_storage_plan(&empty, Some(&before))
-            .unwrap()
-            .into_guest_manifest()
-            .cleanup_paths,
-        vec![mount]
-    );
-    let empty_state = StorageFingerprints::from_manifest(&empty);
-    assert_eq!(
-        build_storage_plan(&empty, Some(&StorageFingerprints::default()))
-            .unwrap()
-            .into_guest_manifest()
-            .cleanup_paths,
-        vec![mount]
-    );
-    let removed: StorageManifest =
-        serde_json::from_value(serde_json::json!({"storageMounts":[],"workflowSkills":[]}))
-            .unwrap();
-    assert_eq!(
-        build_storage_plan(&removed, Some(&empty_state))
-            .unwrap()
-            .into_guest_manifest()
-            .cleanup_paths,
-        vec![mount]
-    );
-}
-
 fn artifact(mount_path: &Path, name: &str, version: &str, archive_url: String) -> ArtifactEntry {
     ArtifactEntry {
         mount_path: mount_path.to_string_lossy().into_owned(),
@@ -133,8 +75,6 @@ fn canonical_home_state_roundtrip_rematerializes_changed_removed_tainted_and_emp
     empty_entry.archive_url = None;
     empty_entry.empty = Some(true);
     let current = StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage(&changed, "current", "v2", archive)],
         artifacts: vec![empty_entry],
     };
@@ -180,8 +120,6 @@ fn reused_empty_fingerprints_replace_stale_storage_contents() {
     fs::write(mount.join("stale.txt"), "stale").unwrap();
     let archive_url = write_archive(dir.path(), "storage.tar.gz", &[("current.txt", b"current")]);
     let manifest = StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage(&mount, "data", "v1", archive_url)],
         artifacts: Vec::new(),
     };
@@ -214,8 +152,6 @@ fn cached_artifacts_preserve_existing_root_and_repair_missing_root() {
         &[("repaired.txt", b"repaired")],
     );
     let manifest = StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: Vec::new(),
         artifacts: vec![
             artifact(&existing_mount, "existing", "v1", existing_url),
@@ -278,8 +214,6 @@ fn omitted_mount_prunes_managed_skill_and_preserves_nested_user_skills() {
         artifacts: HashMap::new(),
     };
     let manifest = StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage(&retained, "workflow", "v1", String::new())],
         artifacts: Vec::new(),
     };

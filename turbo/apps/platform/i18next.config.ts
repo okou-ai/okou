@@ -42,6 +42,7 @@ export default defineConfig({
       "connectors.providerConnect.lark.*",
       // Source-first onboarding indexes these by industry, source family, or
       // connector slug at runtime.
+      "onboarding.sourcesFirst.capabilities.items.*",
       "onboarding.sourcesFirst.industries.*",
       "onboarding.sourcesFirst.startingPrompt.*",
       "onboarding.sourcesFirst.outcomes.*",

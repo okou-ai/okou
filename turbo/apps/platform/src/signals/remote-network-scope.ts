@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
-import {
-  cloudflareAccessContract,
-  type ScopedCloudflareAccessConfig,
-  type CloudflareAccessImpactPreview,
+import { cloudflareAccessContract } from "@okouai/api-contracts/client/cloudflare-access";
+import type {
+  ScopedCloudflareAccessConfig,
+  CloudflareAccessImpactPreview,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
+import { tailscaleContract } from "@okouai/api-contracts/client/tailscale";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "./api-client.ts";
 import { authenticatedSessionKey$ } from "./auth.ts";

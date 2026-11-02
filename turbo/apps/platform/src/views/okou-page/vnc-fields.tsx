@@ -35,8 +35,8 @@ import {
 import {
   VNC_CA_BUNDLE_MAX_LENGTH,
   VNC_HOST_MAX_LENGTH,
-  type VncConnectionResponse,
-} from "@okouai/api-contracts/contracts/vnc-connections";
+} from "@okouai/api-contracts/contracts/vnc-transport";
+import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import {
   VNC_DISPLAY_NAME_MAX_LENGTH,
@@ -46,8 +46,8 @@ import {
   APPLE_RSA_SRP_USERNAME_MAX_BYTES,
   VNC_CLIENT_CHAIN_PEM_MAX_LENGTH,
   VNC_CLIENT_KEY_PEM_MAX_LENGTH,
-  type VncCredentialResponse,
-} from "@okouai/api-contracts/contracts/vnc-credentials";
+} from "@okouai/api-contracts/validators/vnc-credentials";
+import type { VncCredentialResponse } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   editVncRsaPin$,
   importVncRsaKey$,

@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.14.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.14.0...runner-provider-v0.14.1) (2026-11-02)
+
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.9...runner-provider-v0.14.0) (2026-11-01)
+
+
+### Features
+
+* **runner:** preserve api transport evidence in local info logs ([#44501](https://github.com/okou-ai/okou/issues/44501)) ([64cd33a](https://github.com/okou-ai/okou/commit/64cd33aa3319cc1089b1029a72aadbdf97fe3237))
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.13.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.8...runner-provider-v0.13.9) (2026-11-01)
+
+## [0.13.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.7...runner-provider-v0.13.8) (2026-11-01)
+
+## [0.13.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.6...runner-provider-v0.13.7) (2026-10-31)
+
+## [0.13.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.5...runner-provider-v0.13.6) (2026-10-31)
+
+## [0.13.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.4...runner-provider-v0.13.5) (2026-10-31)
+
+## [0.13.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.3...runner-provider-v0.13.4) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.13.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.2...runner-provider-v0.13.3) (2026-10-31)
+
+## [0.13.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.1...runner-provider-v0.13.2) (2026-10-30)
+
+## [0.13.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.0...runner-provider-v0.13.1) (2026-10-30)
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.12.4...runner-provider-v0.13.0) (2026-10-30)
+
+
+### Features
+
+* activate hash-addressed content bundle claims ([#44319](https://github.com/okou-ai/okou/issues/44319)) ([8c5dde4](https://github.com/okou-ai/okou/commit/8c5dde4aba9158e9bb946c391923e8a2b666cd44))
+
+## [0.12.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.12.3...runner-provider-v0.12.4) (2026-10-30)
+
+## [0.12.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.12.2...runner-provider-v0.12.3) (2026-10-30)
+
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.12.1...runner-provider-v0.12.2) (2026-10-30)
+
+## [0.12.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.12.0...runner-provider-v0.12.1) (2026-10-30)
+
 ## [0.12.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.35...runner-provider-v0.12.0) (2026-10-30)
 
 

@@ -1,9 +1,7 @@
 import { command } from "ccstate";
-import {
-  artifactReferencesContract,
-  parseArtifactReference,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
+import { webFilesContract } from "@okouai/api-contracts/client/web-files";
 import { accept } from "../lib/accept.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";

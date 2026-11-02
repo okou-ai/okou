@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  onboardingRecommendationContract,
-  type OnboardingRecommendationStatus,
-} from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingRecommendationContract } from "@okouai/api-contracts/client/onboarding";
+import type { OnboardingRecommendationStatus } from "@okouai/api-contracts/contracts/onboarding";
 import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 

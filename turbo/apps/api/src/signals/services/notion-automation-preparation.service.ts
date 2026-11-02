@@ -17,12 +17,15 @@ import { command } from "ccstate";
 import {
   array,
   boolean,
+  iso,
   literal,
   object,
   record,
   string,
   union,
+  uuid,
   unknown as zUnknown,
+  url as zUrl,
   type infer as zInfer,
   type ZodType,
 } from "zod";
@@ -46,44 +49,44 @@ const NOTION_VERSION = "2026-03-11";
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 const notionPageParentSchema = union([
-  object({ type: literal("page_id"), page_id: string().uuid() }),
+  object({ type: literal("page_id"), page_id: uuid() }),
   object({
     type: literal("data_source_id"),
-    data_source_id: string().uuid(),
-    database_id: string().uuid().optional(),
+    data_source_id: uuid(),
+    database_id: uuid().optional(),
   }),
-  object({ type: literal("database_id"), database_id: string().uuid() }),
-  object({ type: literal("block_id"), block_id: string().uuid() }),
+  object({ type: literal("database_id"), database_id: uuid() }),
+  object({ type: literal("block_id"), block_id: uuid() }),
   object({ type: literal("workspace") }).passthrough(),
 ]);
 
 const notionPageResponseSchema = object({
   object: literal("page"),
-  id: string().uuid(),
-  created_time: string().datetime().optional(),
-  last_edited_time: string().datetime().optional(),
+  id: uuid(),
+  created_time: iso.datetime().optional(),
+  last_edited_time: iso.datetime().optional(),
   archived: boolean().optional(),
   in_trash: boolean().optional(),
-  url: string().url().optional(),
+  url: zUrl().optional(),
   parent: notionPageParentSchema,
   properties: record(string(), zUnknown()).optional(),
 }).passthrough();
 
 const notionDataSourceResponseSchema = object({
   object: literal("data_source"),
-  id: string().uuid(),
+  id: uuid(),
   name: string().nullable().optional(),
-  url: string().url().optional(),
+  url: zUrl().optional(),
   parent: object({
     type: literal("database_id"),
-    database_id: string().uuid(),
+    database_id: uuid(),
   }).passthrough(),
 }).passthrough();
 
 const notionDatabaseResponseSchema = object({
   object: literal("database"),
-  id: string().uuid(),
-  url: string().url().optional(),
+  id: uuid(),
+  url: zUrl().optional(),
   title: array(
     object({
       plain_text: string().optional(),
@@ -91,7 +94,7 @@ const notionDatabaseResponseSchema = object({
   ).default([]),
   data_sources: array(
     object({
-      id: string().uuid(),
+      id: uuid(),
       name: string().nullable().optional(),
     }).passthrough(),
   ).default([]),

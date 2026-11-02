@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.21.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.15...runner-supervisor-v0.21.16) (2026-11-02)
+
+## [0.21.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.14...runner-supervisor-v0.21.15) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+
+### Performance Improvements
+
+* **runner:** warm firewall catalogs before admitting work ([#44528](https://github.com/okou-ai/okou/issues/44528)) ([1814a6d](https://github.com/okou-ai/okou/commit/1814a6d49bc2d0e20788e71144f30409fff9a0cc))
+
+## [0.21.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.13...runner-supervisor-v0.21.14) (2026-11-01)
+
+## [0.21.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.12...runner-supervisor-v0.21.13) (2026-11-01)
+
+## [0.21.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.11...runner-supervisor-v0.21.12) (2026-10-31)
+
+## [0.21.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.10...runner-supervisor-v0.21.11) (2026-10-31)
+
+## [0.21.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.9...runner-supervisor-v0.21.10) (2026-10-31)
+
+## [0.21.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.8...runner-supervisor-v0.21.9) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.21.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.7...runner-supervisor-v0.21.8) (2026-10-31)
+
+## [0.21.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.6...runner-supervisor-v0.21.7) (2026-10-30)
+
+## [0.21.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.5...runner-supervisor-v0.21.6) (2026-10-30)
+
+## [0.21.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.4...runner-supervisor-v0.21.5) (2026-10-30)
+
+## [0.21.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.3...runner-supervisor-v0.21.4) (2026-10-30)
+
+## [0.21.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.2...runner-supervisor-v0.21.3) (2026-10-30)
+
+## [0.21.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.1...runner-supervisor-v0.21.2) (2026-10-30)
+
+## [0.21.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.0...runner-supervisor-v0.21.1) (2026-10-30)
+
 ## [0.21.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.53...runner-supervisor-v0.21.0) (2026-10-30)
 
 

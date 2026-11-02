@@ -6,6 +6,8 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
@@ -179,12 +181,10 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("selects the same current Workflow from prefetch and a later independent pick", async () => {
-    context.mocks.s3.getSignedUrl.mockImplementation(() => {
-      const url = `https://storage.example.com/context/${randomUUID()}`;
-      return Promise.resolve(url);
-    });
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    const workflow = await createMiscRoutesApi(context).createWorkflow(
+    const misc = createMiscRoutesApi(context);
+    const s3 = installWorkflowVolumeS3Fixture(context);
+    const workflow = await misc.createWorkflow(
       actor,
       agentId,
       `context-${randomUUID().slice(0, 8)}`,
@@ -199,24 +199,17 @@ describe("chat agent bootstrap prefetch", () => {
       prompt: "prefetched skill",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    const firstMount = expectCanonicalStorageManifest(
-      firstClaim.claim.storageManifest,
-    )?.workflowSkills?.find((mount) => {
-      return mount.workflowId === workflow.body.id;
+    const firstMount = firstClaim.claim.contentBundles.skills.find((mount) => {
+      return mount.mountPath.endsWith(`/${workflow.body.name}`);
     });
-    expect(firstMount).toMatchObject({
-      workflowId: workflow.body.id,
-    });
-    expect(firstMount?.mountPath).toStrictEqual(expect.any(String));
-    const firstDownload = await api.downloadWorkflow(
-      first.runId,
-      workflow.body.id,
-      firstClaim.claim.sandboxToken,
-    );
-    expect(firstDownload.skillMd).toContain(
+    if (!firstMount) {
+      throw new Error("Expected the prefetched Workflow bundle");
+    }
+    const firstDownload = readClaimedContentBundle(s3.objects, firstMount);
+    expect(firstDownload.get("SKILL.md")?.toString()).toContain(
       "Keep this published skill mounted.",
     );
-    expect(firstDownload.attachments).toBeNull();
+    expect([...firstDownload.keys()]).toStrictEqual(["SKILL.md"]);
     const queuedId = randomUUID();
     await chat.requestSendEvent(
       actor,
@@ -248,24 +241,20 @@ describe("chat agent bootstrap prefetch", () => {
       throw new Error("Expected independently prepared queued run");
     }
     const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
-    const nextMount = expectCanonicalStorageManifest(
-      nextClaim.claim.storageManifest,
-    )?.workflowSkills?.find((mount) => {
-      return mount.workflowId === workflow.body.id;
+    const nextMount = nextClaim.claim.contentBundles.skills.find((mount) => {
+      return mount.mountPath === firstMount.mountPath;
     });
     expect(nextMount).toMatchObject({
-      workflowId: workflow.body.id,
-      mountPath: firstMount?.mountPath,
+      sha256: firstMount.sha256,
+      archiveBytes: firstMount.archiveBytes,
+      mountPath: firstMount.mountPath,
     });
-    expect(
-      (
-        await api.downloadWorkflow(
-          promoted.runId,
-          workflow.body.id,
-          nextClaim.claim.sandboxToken,
-        )
-      ).skillMd,
-    ).toBe(firstDownload.skillMd);
+    if (!nextMount) {
+      throw new Error("Expected the independently selected Workflow bundle");
+    }
+    expect(readClaimedContentBundle(s3.objects, nextMount)).toStrictEqual(
+      firstDownload,
+    );
     await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
   });
 

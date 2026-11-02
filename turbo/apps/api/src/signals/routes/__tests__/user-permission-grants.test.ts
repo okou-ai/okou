@@ -433,7 +433,7 @@ describe("zero user permission grants", () => {
     ]);
   });
 
-  it("applies one connector's changed grants transactionally", async () => {
+  it("applies one connector's changed grants atomically", async () => {
     const fixture = memberUser();
     const otherUser = memberUser(fixture.orgId);
     const agentId = await createAgent(fixture);
@@ -634,6 +634,192 @@ describe("zero user permission grants", () => {
     ]);
     await expect(listPermissionGrants(agentId)).resolves.toMatchObject([
       { permission: SLACK_WRITE_PERMISSION, action: "deny" },
+    ]);
+  });
+
+  it("replaces retained grants with fresh expiration and creation time", async () => {
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
+    const firstAppliedAt = Date.parse("2026-01-01T00:00:00.000Z");
+    mockNow(firstAppliedAt);
+    await applyPermissionGrants({
+      agentId,
+      connectorSlug: SLACK_CONNECTOR,
+      grants: [
+        { permission: SLACK_READ_PERMISSION, action: "allow", expiresIn: "7d" },
+        { permission: SLACK_HISTORY_PERMISSION, action: "deny" },
+      ],
+    });
+
+    const replacedAt = "2026-01-01T01:00:00.000Z";
+    mockNow(Date.parse(replacedAt));
+    const applied = await applyPermissionGrants({
+      agentId,
+      connectorSlug: SLACK_CONNECTOR,
+      mode: "replace",
+      grants: [
+        { permission: SLACK_WRITE_PERMISSION, action: "deny" },
+        { permission: SLACK_READ_PERMISSION, action: "allow" },
+      ],
+    });
+
+    expect(applied).toMatchObject([
+      {
+        permission: SLACK_WRITE_PERMISSION,
+        action: "deny",
+        expiresAt: null,
+        createdAt: replacedAt,
+        updatedAt: replacedAt,
+      },
+      {
+        permission: SLACK_READ_PERMISSION,
+        action: "allow",
+        expiresAt: null,
+        createdAt: replacedAt,
+        updatedAt: replacedAt,
+      },
+    ]);
+    const listed = await listPermissionGrants(agentId);
+    expect(listed).toHaveLength(2);
+    expect(listed).toStrictEqual(expect.arrayContaining([...applied]));
+  });
+
+  it("accepts concurrent edits of a new permission without losing other grants", async () => {
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
+    const untouched = await applyPermissionGrant({
+      agentId,
+      connectorSlug: SLACK_CONNECTOR,
+      permission: SLACK_HISTORY_PERMISSION,
+      action: "deny",
+    });
+
+    const edited = await Promise.all(
+      (["allow", "deny"] as const).map((action) => {
+        return applyPermissionGrant({
+          agentId,
+          connectorSlug: SLACK_CONNECTOR,
+          permission: SLACK_READ_PERMISSION,
+          action,
+        });
+      }),
+    );
+
+    expect(
+      edited.map((grant) => {
+        return grant.action;
+      }),
+    ).toStrictEqual(["allow", "deny"]);
+    const listed = await listPermissionGrants(agentId);
+    expect(listed).toHaveLength(2);
+    expect(listed).toContainEqual(untouched);
+    expect(edited).toContainEqual(
+      listed.find((grant) => {
+        return grant.permission === SLACK_READ_PERMISSION;
+      }),
+    );
+  });
+
+  it("preserves a temporary allow during concurrent creation and omitted-expiry edits", async () => {
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
+    mockNow(Date.parse("2026-01-01T00:00:00.000Z"));
+
+    await Promise.all([
+      applyPermissionGrant({
+        agentId,
+        connectorSlug: SLACK_CONNECTOR,
+        permission: SLACK_READ_PERMISSION,
+        action: "allow",
+        expiresIn: "1h",
+      }),
+      applyPermissionGrant({
+        agentId,
+        connectorSlug: SLACK_CONNECTOR,
+        permission: SLACK_READ_PERMISSION,
+        action: "allow",
+      }),
+    ]);
+
+    await expect(listPermissionGrants(agentId)).resolves.toMatchObject([
+      {
+        permission: SLACK_READ_PERMISSION,
+        action: "allow",
+        expiresAt: "2026-01-01T01:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("accepts concurrent replacements with per-permission outcomes", async () => {
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
+    const replacements = await Promise.all(
+      [SLACK_READ_PERMISSION, SLACK_WRITE_PERMISSION].map((permission) => {
+        return applyPermissionGrants({
+          agentId,
+          connectorSlug: SLACK_CONNECTOR,
+          mode: "replace",
+          grants: [{ permission, action: "allow" }],
+        });
+      }),
+    );
+
+    const listed = await listPermissionGrants(agentId);
+    expect(listed.length).toBeGreaterThan(0);
+    expect(listed.length).toBeLessThanOrEqual(2);
+    for (const grant of listed) {
+      expect(replacements.flat()).toContainEqual(grant);
+    }
+    expect(
+      new Set(
+        listed.map((grant) => {
+          return grant.permission;
+        }),
+      ).size,
+    ).toBe(listed.length);
+  });
+
+  it("rejects replacements after an agent becomes private without clearing stored grants", async () => {
+    const owner = memberUser();
+    const member = memberUser(owner.orgId);
+    const agentId = await createAgent(owner, "public");
+    signIn(member);
+    const initial = await applyPermissionGrant({
+      agentId,
+      connectorSlug: SLACK_CONNECTOR,
+      permission: SLACK_READ_PERMISSION,
+      action: "allow",
+    });
+    await bdd.updateAgent(owner, agentId, { visibility: "private" });
+    signIn(member);
+
+    for (const grants of [
+      [],
+      [{ permission: SLACK_WRITE_PERMISSION, action: "deny" as const }],
+    ]) {
+      const response = await accept(
+        client().apply({
+          headers: AUTH_HEADERS,
+          body: {
+            agentId,
+            connectorSlug: SLACK_CONNECTOR,
+            mode: "replace",
+            grants,
+          },
+        }),
+        [404],
+      );
+      expect(response.body.error.code).toBe("NOT_FOUND");
+    }
+
+    await bdd.updateAgent(owner, agentId, { visibility: "public" });
+    signIn(member);
+    await expect(listPermissionGrants(agentId)).resolves.toStrictEqual([
+      initial,
     ]);
   });
 

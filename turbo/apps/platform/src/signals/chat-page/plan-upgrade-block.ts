@@ -4,7 +4,7 @@ import {
 } from "./card-signal-map.ts";
 import { openSettingsBillingPlansDialog$ } from "../okou-page/settings/settings-dialog.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
-import { logsListContract } from "@okouai/api-contracts/contracts/logs";
+import { logsListContract } from "@okouai/api-contracts/client/logs";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computed, type Computed } from "ccstate";

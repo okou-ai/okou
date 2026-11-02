@@ -1,6 +1,7 @@
 import {
   discriminatedUnion,
   int,
+  iso,
   literal,
   object,
   string,
@@ -142,8 +143,8 @@ export const runnerSshContract = c.router({
     body: resolveRequestSchema
       .extend({
         expectedGeneration: generationSchema,
-        expectedCreatedAt: string().datetime(),
-        observedAt: string().datetime(),
+        expectedCreatedAt: iso.datetime(),
+        observedAt: iso.datetime(),
         failureReason: sshConnectionFailureReasonSchema.nullable(),
       })
       .strict(),

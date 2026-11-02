@@ -1,7 +1,15 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { array, boolean, iso, object, string, type infer as zInfer } from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  literal,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { safeJsonParse, settle } from "../utils";
 
@@ -182,6 +190,44 @@ export async function sendAgentPhoneMessage(
       typeof result.to_number === "string" ? result.to_number : opts.toNumber,
     mediaUrls,
   };
+}
+
+const agentPhoneReactionSchema = object({
+  id: string().min(1),
+  reaction_type: string().min(1),
+  message_id: string().min(1),
+  channel: literal("imessage"),
+});
+
+export async function sendAgentPhoneReaction(
+  opts: { readonly messageId: string; readonly reaction: string },
+  signal: AbortSignal,
+) {
+  const result = await settle(
+    accept(
+      fetch(
+        `${agentPhoneApiBase()}/v1/messages/${encodeURIComponent(opts.messageId)}/reactions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${agentPhoneApiKey()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reaction: opts.reaction }),
+          signal,
+        },
+      ),
+      [200],
+    ),
+  );
+  if (!result.ok) {
+    if (!(result.error instanceof HttpStatusError)) {
+      throw result.error;
+    }
+    const response = result.error.response;
+    throw makeAgentPhoneApiError(response.status, await response.text());
+  }
+  return agentPhoneReactionSchema.parse(await result.value.json());
 }
 
 const conversationMediaCapabilitiesSchema = object({

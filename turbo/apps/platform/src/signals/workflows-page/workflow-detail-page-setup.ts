@@ -7,7 +7,7 @@ import {
   MORNING_BRIEF_PREFERENCES_FOCUS,
   MORNING_BRIEF_PREFERENCES_ROUTE,
   MORNING_BRIEF_PREFERENCES_SECTION,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
+} from "@okouai/api-contracts/validators/morning-brief-preference";
 
 import { i18n } from "../../i18n/index.ts";
 import { WorkflowDetailPage } from "../../views/workflows-page/workflow-detail-page.tsx";

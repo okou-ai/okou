@@ -1,4 +1,4 @@
-import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/client/third-party-subscriptions";
 import { command, computed, state } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";

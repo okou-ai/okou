@@ -21,9 +21,9 @@ import type {
   ImageAnnotation,
   ComposerDraft,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { uploadsContract } from "@okouai/api-contracts/client/uploads";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
+import { webFilesContract } from "@okouai/api-contracts/client/web-files";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   messageDocumentToPrompt,

@@ -1,17 +1,19 @@
 import {
   chatThreadEventSchema,
   chatThreadSnapshotProjectionSchema,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+  indicatorsSchema,
+} from "@okouai/api-contracts/validators/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
   array,
   discriminatedUnion,
+  iso,
   literal,
   number,
   object,
   record,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -74,13 +76,12 @@ export interface SharedDatabaseQuery<TKey extends SharedDatabaseDataKey> {
 // expires independently of their cache lifetime.
 const chatThreadSnapshotSchema = object({
   chatThreads: array(chatThreadSnapshotProjectionSchema),
-  latestEventId: string().uuid().nullable(),
+  latestEventId: uuid().nullable(),
   latestSeqId: number().int().positive().nullable(),
 });
-export const chatThreadIndicatorsSchema =
-  chatThreadsContract.indicators.responses[200].extend({
-    unreadAt: record(string().uuid(), string().datetime()),
-  });
+export const chatThreadIndicatorsSchema = indicatorsSchema.extend({
+  unreadAt: record(uuid(), iso.datetime()),
+});
 export type ChatThreadIndicators = zInfer<typeof chatThreadIndicatorsSchema>;
 
 export const chatThreadEventQueryResultSchema = object({

@@ -1,4 +1,11 @@
-import { Button, buttonVariants, cn, DialogClose } from "@okouai/ui";
+import {
+  Button,
+  buttonVariants,
+  cn,
+  DialogBody,
+  DialogClose,
+  useMediaQuery,
+} from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { ArrowUpRight, Command, Sparkle, Zap } from "lucide-react";
@@ -87,7 +94,7 @@ function ResultTasks({ won }: { readonly won: boolean }) {
                 <Link
                   pathname={pathname}
                   options={{ searchParams }}
-                  className="group grid min-h-[84px] min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_1rem] items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[#ffffff03] px-5 py-4 text-left transition-colors duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07]"
+                  className="group grid min-h-16 min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_1rem] items-center gap-3 lg:min-h-[84px] lg:gap-4 rounded-2xl border border-[#b6cae21c] bg-[#ffffff03] px-3 py-3 text-left transition-colors lg:px-5 lg:py-4 duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07]"
                 />
               }
             >
@@ -112,6 +119,7 @@ function ResultTasks({ won }: { readonly won: boolean }) {
 }
 
 export function HalloweenResultScreen() {
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const copy = useHalloweenCopy();
   const round = useGet(halloweenRound$);
   const phase = useGet(halloweenPhase$);
@@ -119,68 +127,80 @@ export function HalloweenResultScreen() {
   const [operation, replay] = useLoadableSet(replayHalloween$);
   const setRules = useSet(setHalloweenRulesOpen$);
   const won = round?.outcome === "success";
+  const actions = (
+    <div className="flex flex-wrap items-stretch gap-3 lg:mt-7">
+      {won && (
+        <a
+          href={`mailto:contact@okou.ai?subject=${encodeURIComponent(copy.redeemEmailSubject)}&body=${encodeURIComponent(copy.redeemEmailBody.replaceAll("\n", "\r\n"))}`}
+          className={cn(
+            buttonVariants({ size: "lg" }),
+            goldButton,
+            "h-auto min-h-12 flex-1 whitespace-normal px-4 py-3 lg:min-h-10 lg:flex-none lg:px-5 lg:py-2",
+          )}
+        >
+          {copy.redeem}
+        </a>
+      )}
+      {phase === "open" && (
+        <Button
+          variant={won ? "quiet" : "default"}
+          size="lg"
+          className={cn(
+            won
+              ? "rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] text-[#b9c5d6] transition-colors duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]"
+              : goldButton,
+            typography.labelClassName,
+            "h-auto min-h-12 flex-1 whitespace-normal px-4 py-3 lg:min-h-10 lg:flex-none lg:px-5 lg:py-2",
+          )}
+          pending={operation.state === "loading"}
+          onClick={() => {
+            detach(replay(signal), Reason.DomCallback);
+          }}
+        >
+          {copy.again}
+        </Button>
+      )}
+    </div>
+  );
   return (
     <>
       {won && <Confetti />}
-      <main className="relative z-10 flex w-full flex-1 flex-col">
-        <div className="grid flex-1 gap-10 px-6 py-8 md:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)] md:items-start md:gap-12 md:px-10 md:py-12">
-          <section className="min-w-0">
-            <h1
-              className={cn(
-                "text-balance text-[#f4f1eb]",
-                typography.titleClassName,
-                "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
-              )}
-            >
-              {won ? copy.won : copy.lost}
-            </h1>
-            <p className={cn("mt-2 text-[#95a6be]", typography.bodyClassName)}>
-              {won ? copy.wonSub : copy.lostSub}
-            </p>
-            <p className="mt-6 text-sm leading-6 text-[#95a6be]">
-              <strong className="font-medium text-[#e8c68d]">
-                {won ? copy.resultRewardEmphasis : copy.lostRewardEmphasis}
-              </strong>
-              <br />
-              {won ? copy.resultRewardRest : copy.lostRewardRest}
-            </p>
-            <div className="mt-7 flex flex-wrap items-stretch gap-3">
-              {won && (
-                <a
-                  href={`mailto:contact@okou.ai?subject=${encodeURIComponent(copy.redeemEmailSubject)}&body=${encodeURIComponent(copy.redeemEmailBody.replaceAll("\n", "\r\n"))}`}
-                  className={cn(
-                    buttonVariants({ size: "lg" }),
-                    goldButton,
-                    "h-10 min-h-10 whitespace-normal px-5 py-2",
-                  )}
-                >
-                  {copy.redeem}
-                </a>
-              )}
-              {phase === "open" && (
-                <Button
-                  variant={won ? "quiet" : "default"}
-                  size="lg"
-                  className={cn(
-                    won
-                      ? "rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] text-[#b9c5d6] transition-colors duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]"
-                      : goldButton,
-                    typography.labelClassName,
-                    "h-auto min-h-10 whitespace-normal px-5 py-2",
-                  )}
-                  pending={operation.state === "loading"}
-                  onClick={() => {
-                    detach(replay(signal), Reason.DomCallback);
-                  }}
-                >
-                  {copy.again}
-                </Button>
-              )}
-            </div>
-          </section>
-          <ResultTasks won={won} />
-        </div>
-        <p className="border-t border-[#c0d1e512] px-6 py-5 text-center text-sm leading-5 text-[#7b8da5] md:px-10">
+      <main className="relative z-10 flex min-h-0 w-full flex-1 flex-col">
+        <DialogBody className="lg:contents">
+          <div className="grid gap-6 px-4 py-5 lg:flex-1 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)] lg:items-start lg:gap-12 lg:px-10 lg:py-12">
+            <section className="min-w-0">
+              <h1
+                className={cn(
+                  "text-balance text-[#f4f1eb]",
+                  typography.titleClassName,
+                  "text-[28px] leading-9 lg:text-[40px] lg:leading-[48px]",
+                )}
+              >
+                {won ? copy.won : copy.lost}
+              </h1>
+              <p
+                className={cn("mt-2 text-[#95a6be]", typography.bodyClassName)}
+              >
+                {won ? copy.wonSub : copy.lostSub}
+              </p>
+              <p className="mt-4 text-sm leading-6 text-[#95a6be] lg:mt-6">
+                <strong className="font-medium text-[#e8c68d]">
+                  {won ? copy.resultRewardEmphasis : copy.lostRewardEmphasis}
+                </strong>
+                <br />
+                {won ? copy.resultRewardRest : copy.lostRewardRest}
+              </p>
+              {isDesktop && actions}
+            </section>
+            <ResultTasks won={won} />
+          </div>
+        </DialogBody>
+        {!isDesktop && (
+          <div className="shrink-0 border-t border-[#c0d1e512] bg-[#091426] px-4 py-3">
+            {actions}
+          </div>
+        )}
+        <p className="shrink-0 border-t border-[#c0d1e512] px-4 py-3 text-center text-xs leading-5 text-[#7b8da5] lg:px-10 lg:py-5 lg:text-sm">
           {copy.footerBefore}
           <Button
             variant="quiet"

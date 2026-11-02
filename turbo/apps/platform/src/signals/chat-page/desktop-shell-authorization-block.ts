@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { uuid } from "zod";
 import { timeout } from "signal-timers";
-import { desktopShellAuthorizationContract } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
+import { desktopShellAuthorizationContract } from "@okouai/api-contracts/client/desktop-shell-authorization";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";

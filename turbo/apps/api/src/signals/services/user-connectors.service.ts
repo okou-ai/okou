@@ -4,7 +4,8 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { array, object, string } from "zod";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { agents } from "@okouai/db/schema/agent";
@@ -14,9 +15,9 @@ import {
 } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 
 import { writeDb$ } from "../external/db";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { publishUserSignal } from "../external/realtime";
 import { settle } from "../utils";
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
@@ -212,6 +213,22 @@ export function customConnectorDefinitions(
   };
 }
 
+const builtinConnectorSelectionRowSchema = object({
+  connector_slugs: array(string()),
+});
+
+/** Admit slug text only after the routine's existing Agent authorization lock. */
+function builtinConnectorSelectionPayload(slugs: readonly ConnectorSlug[]) {
+  return Buffer.from(
+    JSON.stringify(
+      slugs.map((slug) => {
+        return Buffer.from(slug, "utf8").toString("base64");
+      }),
+    ),
+    "utf8",
+  );
+}
+
 export const updateUserBuiltinConnectors$ = command(
   async (
     { set },
@@ -229,84 +246,29 @@ export const updateUserBuiltinConnectors$ = command(
     );
     const operation = args.operation ?? "replace";
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0308; new non-billing transactions are prohibited.
-    const committed = await db.transaction(async (tx) => {
-      const [agent] = await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.orgId, args.orgId),
-            eq(agents.id, args.agentId),
-            or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-          ),
+    const [selection] = parseRawRows(
+      builtinConnectorSelectionRowSchema,
+      await db.execute(sql`
+        SELECT connector_slugs FROM public.update_user_builtin_connectors(
+          ${args.orgId}, ${args.userId}, ${args.agentId}::uuid, ${operation},
+          ${builtinConnectorSelectionPayload(enabledConnectorSlugs)}::bytea
         )
-        .for("update")
-        .limit(1);
-      if (agent === undefined) {
-        return { status: "agentNotFound" } as const;
-      }
-
-      const connectorScope = and(
-        eq(userBuiltinConnectors.orgId, args.orgId),
-        eq(userBuiltinConnectors.userId, args.userId),
-        eq(userBuiltinConnectors.agentId, args.agentId),
-      );
-
-      if (operation === "replace") {
-        await tx.delete(userBuiltinConnectors).where(connectorScope);
-      } else if (operation === "remove" && enabledConnectorSlugs.length > 0) {
-        await tx
-          .delete(userBuiltinConnectors)
-          .where(
-            and(
-              connectorScope,
-              inArray(
-                userBuiltinConnectors.connectorSlug,
-                enabledConnectorSlugs,
-              ),
-            ),
-          );
-      }
-
-      if (operation !== "remove" && enabledConnectorSlugs.length > 0) {
-        await tx
-          .insert(userBuiltinConnectors)
-          .values(
-            enabledConnectorSlugs.map((connectorSlug) => {
-              return {
-                orgId: args.orgId,
-                userId: args.userId,
-                agentId: args.agentId,
-                connectorSlug,
-              };
-            }),
-          )
-          .onConflictDoNothing();
-      }
-
-      if (operation === "replace") {
-        return { status: "updated", enabledConnectorSlugs } as const;
-      }
-
-      const rows = await tx
-        .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-        .from(userBuiltinConnectors)
-        .where(connectorScope);
-      const result = {
-        status: "updated",
-        enabledConnectorSlugs: rows.map((row) => {
-          return row.connectorSlug;
-        }),
-      } as const;
-      return result;
-    });
-    if (committed.status === "updated") {
-      // Register invalidation before callers observe cancellation after commit.
-      await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
-        agentId: args.agentId,
-      });
+      `),
+    );
+    if (!selection) {
+      return { status: "agentNotFound" };
     }
+    const committed: UpdateUserBuiltinConnectorsResult = {
+      status: "updated",
+      enabledConnectorSlugs:
+        operation === "replace"
+          ? enabledConnectorSlugs
+          : selection.connector_slugs,
+    };
+    // Register invalidation before callers observe cancellation after commit.
+    await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
+      agentId: args.agentId,
+    });
     return committed;
   },
 );

@@ -9,6 +9,7 @@ import {
   string,
   union,
   enum as zEnum,
+  url as zUrl,
   type infer as zInfer,
 } from "zod";
 
@@ -42,30 +43,28 @@ const connectorSecretRefSchema = string().regex(
 
 export const connectorMcpSchema = object({
   transport: literal("streamable-http"),
-  endpoint: string()
-    .url()
-    .refine((value) => {
-      if (!URL.canParse(value)) {
-        return false;
-      }
-      const url = new URL(value);
-      return (
-        url.protocol === "https:" &&
-        url.href === value &&
-        !url.username &&
-        !url.password &&
-        !url.hash &&
-        !url.search &&
-        !/[{}?#]/u.test(value) &&
-        /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z][a-z0-9-]*$/u.test(
-          url.hostname,
-        ) &&
-        url.hostname.split(".").every((label) => {
-          return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label);
-        }) &&
-        !/(?:^|\.)(?:localhost|local|internal|invalid)$/u.test(url.hostname)
-      );
-    }, "MCP endpoint must be a canonical fixed public HTTPS URL"),
+  endpoint: zUrl().refine((value) => {
+    if (!URL.canParse(value)) {
+      return false;
+    }
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.href === value &&
+      !url.username &&
+      !url.password &&
+      !url.hash &&
+      !url.search &&
+      !/[{}?#]/u.test(value) &&
+      /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z][a-z0-9-]*$/u.test(
+        url.hostname,
+      ) &&
+      url.hostname.split(".").every((label) => {
+        return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label);
+      }) &&
+      !/(?:^|\.)(?:localhost|local|internal|invalid)$/u.test(url.hostname)
+    );
+  }, "MCP endpoint must be a canonical fixed public HTTPS URL"),
 }).strict();
 
 const connectorAutomaticTokenBindingsSchema = object({

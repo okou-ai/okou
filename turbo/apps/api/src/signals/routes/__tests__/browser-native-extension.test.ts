@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { expect, test } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { browserRoutes } from "../browser";
@@ -74,6 +74,15 @@ test.each(["empty closing-window snapshot", "unavailable bridge"] as const)(
         throw new Error("Expected A's native page");
       }
       page.url = "https://a.example.test/native-recovery";
+      await accept(
+        client().close({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: a.threadId },
+          body: {},
+        }),
+        [200],
+      );
+      page.url = "https://a.example.test/unsaved";
       mockNow(START + 9 * MINUTE);
       await renew(b);
       mockNow(START + 11 * MINUTE);
@@ -82,7 +91,9 @@ test.each(["empty closing-window snapshot", "unavailable bridge"] as const)(
       } else {
         f.provider.native.bridgeAvailable = false;
       }
-      expect((await use(a)).status).toBe(409);
+      expect((await use(a)).status).toBe(
+        failure === "unavailable bridge" ? 502 : 200,
+      );
       expect((await view(b)).window).toStrictEqual(sibling.window);
       expect(f.provider.sessionRequests).toHaveLength(1);
       f.provider.native.emptySnapshot = false;

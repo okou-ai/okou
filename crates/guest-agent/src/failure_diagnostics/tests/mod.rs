@@ -1392,7 +1392,7 @@ fn cli_failure_reason_classifies_claude_result_output_token_limit_diagnostic() {
 
 #[test]
 fn codex_output_limit_requires_selected_native_failure_provenance() {
-    let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+    let message = "Incomplete response returned, reason: max_output_tokens";
     for framework in [
         AgentFramework::Codex,
         AgentFramework::ClaudeCode,

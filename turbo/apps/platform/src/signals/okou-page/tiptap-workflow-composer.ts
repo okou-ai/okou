@@ -33,16 +33,14 @@ import {
   inlineReferenceVariants,
   type CompositionGate,
 } from "@okouai/ui";
-import {
-  generationTemplateRequestSchema,
-  type GenerationTemplateRequest,
-  type UserMessageDocument,
+import { generationTemplateRequestSchema } from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  GenerationTemplateRequest,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-import {
-  VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
-  type VoiceIoEditorContext,
-} from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS } from "@okouai/api-contracts/validators/voice-io-transcribe";
+import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";

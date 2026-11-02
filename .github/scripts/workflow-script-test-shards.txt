@@ -39,6 +39,7 @@
 2 deploy-desktop-workflow-test.sh
 2 docker-toolchain-workflow-test.sh
 2 implicit-npm-audit-test.sh
+2 ios-published-version-test.sh
 2 ios-testflight-workflow-test.sh
 2 native-only-ci-test.sh
 2 crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh
@@ -137,3 +138,5 @@
 4 update-rollback-dashboard-body-test.sh
 4 verify-okou-app-artifact-test.sh
 4 vm0-monitoring-home-image-cache-collect-test.sh
+
+2 runner-production-inspect-test.sh

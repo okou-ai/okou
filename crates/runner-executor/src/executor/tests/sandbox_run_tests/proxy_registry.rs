@@ -301,8 +301,6 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
     let mut storage = api_storage("reused-proxy-failure", "/data", "v1", &archive_url);
     storage.archive_size = Some(body.len() as u64);
     ctx.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: Vec::new(),
     });

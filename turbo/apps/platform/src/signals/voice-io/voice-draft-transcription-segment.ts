@@ -5,11 +5,9 @@ import {
   VOICE_ACTIVITY_POLICY_VERSION,
 } from "../../lib/voice-io/voice-activity.ts";
 import { settle } from "../utils.ts";
-import {
-  voiceIoTranscribeContract,
-  VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
-  type VoiceIoTranscribeContext,
-} from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { voiceIoTranscribeContract } from "@okouai/api-contracts/client/voice-io-transcribe";
+import { VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS } from "@okouai/api-contracts/validators/voice-io-transcribe";
+import type { VoiceIoTranscribeContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import {

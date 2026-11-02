@@ -11,11 +11,11 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import {
-  artifactCatalogContract,
-  type ArtifactCatalogKind,
-  type ArtifactDetail,
-  type ArtifactSummary,
+import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
+import type {
+  ArtifactCatalogKind,
+  ArtifactDetail,
+  ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 
 import { accept } from "../../lib/accept.ts";

@@ -590,7 +590,7 @@ async fn axiom_excludes_storage_latency_info() {
 }
 
 #[tokio::test]
-async fn runner_r2_info_keys_reach_local_formatter_but_not_axiom() {
+async fn runner_r2_and_transport_info_reach_local_formatter_but_not_axiom() {
     let server = MockServer::start_async().await;
     let (ingest, captured) = capture_axiom_ingest(&server).await;
     let (layer, guard) = init_with_base_url(&server.base_url(), "t", "test").unwrap();
@@ -616,17 +616,21 @@ async fn runner_r2_info_keys_reach_local_formatter_but_not_axiom() {
             r2_key = "local-only/cache/archive.tar.gz", "cache retry");
         tracing::info!(target: "runner::cmd::build",
             r2_key = "local-only/template.tar.zst", "template result");
+        tracing::info!(target: "runner_provider::http::transport_diagnostics",
+            local_addr = "local-only/socket-canary", raw_os_error = 104,
+            "API transport failure diagnostics");
         tracing::warn!("existing warning");
     }
     guard.shutdown().await;
 
     let local = std::fs::read_to_string(local_log.path()).unwrap();
-    assert_eq!(local.lines().count(), 5, "{local}");
+    assert_eq!(local.lines().count(), 6, "{local}");
     for key in [
         "local-only/storage/archive.tar.gz",
         "local-only/history/encoded.jsonl.zst",
         "local-only/cache/archive.tar.gz",
         "local-only/template.tar.zst",
+        "local-only/socket-canary",
     ] {
         let line = local.lines().find(|line| line.contains(key)).unwrap();
         assert!(line.contains(" INFO "), "{line}");
@@ -637,7 +641,13 @@ async fn runner_r2_info_keys_reach_local_formatter_but_not_axiom() {
     assert_eq!(remote[0]["level"], "warn");
     assert_eq!(remote[0]["message"], "existing warning");
     let serialized = serde_json::to_string(&remote).unwrap();
-    for forbidden in ["r2_key", "r2_storage_sources", "local-only/"] {
+    for forbidden in [
+        "r2_key",
+        "r2_storage_sources",
+        "local-only/",
+        "raw_os_error",
+        "local_addr",
+    ] {
         assert!(!serialized.contains(forbidden), "{forbidden} reached Axiom");
     }
 }

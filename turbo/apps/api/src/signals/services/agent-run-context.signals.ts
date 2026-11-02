@@ -706,15 +706,20 @@ export interface EagerConnectorCredentialContext {
   >;
 }
 
-/** Own decryption only after the run's eager plan selects captured values. */
+/** Connect the lazy credential read while constructing its owning graph. */
 export function createEagerConnectorCredentialContext(
-  credentials: readonly {
-    readonly id: string;
-    readonly encryptedValue: string;
-  }[],
-  resolveStartedAt: number,
+  input$: Computed<
+    Promise<{
+      readonly credentials: readonly {
+        readonly id: string;
+        readonly encryptedValue: string;
+      }[];
+      readonly resolveStartedAt: number;
+    }>
+  >,
 ): EagerConnectorCredentialContext {
-  const credentials$ = computed(async () => {
+  const credentials$ = computed(async (get) => {
+    const { credentials, resolveStartedAt } = await get(input$);
     const decryptStartedAt = performance.now();
     const decrypted = await mapConcurrent(
       credentials,

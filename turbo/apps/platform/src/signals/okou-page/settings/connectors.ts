@@ -11,23 +11,28 @@ import {
   type ConnectorAuthMethodId,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
 import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
   builtinConnectorAutomaticContract,
-  builtinConnectorAutomaticResponseSchema,
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
   builtinConnectorOauthDeviceAuthSessionContract,
-} from "@okouai/api-contracts/contracts/connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+} from "@okouai/api-contracts/client/connectors";
+import { builtinConnectorAutomaticResponseSchema } from "@okouai/api-contracts/validators/connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import type {
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
-import type { BuiltinConnectorOauthDeviceAuthSessionPollResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+} from "@okouai/api-contracts/client/types";
+import {
+  builtinConnectorOauthDeviceAuthSessionPollResponseSchema,
+  builtinConnectorExternalCodeSessionCompleteResponseSchema,
+  connectorCompletedOperationResponseSchema,
+  type BuiltinConnectorOauthDeviceAuthSessionPollResponse,
+} from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogIcon,
@@ -1051,10 +1056,9 @@ export const submitBuiltinManualGrant$ = command(
       [200],
     );
     signal.throwIfAborted();
-    const { connectionId } =
-      builtinConnectorManualGrantContract.connect.responses[200].parse(
-        result.body,
-      );
+    const { connectionId } = connectorCompletedOperationResponseSchema.parse(
+      result.body,
+    );
     if (
       !(await readCompletedBuiltinConnectorAccount(
         createClient,
@@ -1142,10 +1146,9 @@ export const connectBuiltinConnectorNoAuth$ = command(
       [200],
     );
     signal.throwIfAborted();
-    const { connectionId } =
-      builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
-        result.body,
-      );
+    const { connectionId } = connectorCompletedOperationResponseSchema.parse(
+      result.body,
+    );
     if (
       !(await readCompletedBuiltinConnectorAccount(
         createClient,
@@ -1398,7 +1401,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
 
     signal.throwIfAborted();
     const pollResult =
-      builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
+      builtinConnectorOauthDeviceAuthSessionPollResponseSchema.parse(
         pollResponse.body,
       );
     if (pollResult.status === "complete") {
@@ -1967,7 +1970,7 @@ const completeConnectorExternalCode$ = command(
     }
 
     const { connectionId } =
-      builtinConnectorExternalCodeSessionContract.complete.responses[200].parse(
+      builtinConnectorExternalCodeSessionCompleteResponseSchema.parse(
         completeResult.body,
       );
     if (

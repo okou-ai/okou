@@ -174,6 +174,7 @@ async function setupHostedSite(
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
+      [FeatureSwitchKey.ArtifactQuickActions]: true,
     },
   });
   await screen.findByText("Open website");
@@ -230,7 +231,7 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
   await waitFor(() => {
     expect(buttonNamed("Customize URL", shareMenu)).toHaveFocus();
   });
-  expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
+  expect(buttonNamed("Copied", shareMenu)).toBeEnabled();
 }
 
 test.each([false, true])(
@@ -244,7 +245,6 @@ test.each([false, true])(
     const clipboard = context.mocks.browser.clipboardWriteText();
     for (const slug of ["renamed-site", "final-site"]) {
       await renameHostedSite(shareMenu, slug);
-      click(buttonNamed("Copy link", shareMenu));
       await waitFor(() => {
         expect(title).toHaveTextContent(siteTitle);
         expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);

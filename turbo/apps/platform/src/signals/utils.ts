@@ -1,5 +1,5 @@
 import { command, state, type Command } from "ccstate";
-import { animationFrame, delay, timeout } from "signal-timers";
+import { delay, timeout } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { ApiError } from "../lib/api-error.ts";
 import { logger } from "./log.ts";
@@ -14,51 +14,6 @@ export enum Reason {
   Entrance = "entrance",
   Deferred = "deferred",
   Daemon = "daemon",
-}
-
-/** Adapt a synchronous browser API to the caller's awaited error boundary. */
-export async function callAsync<T>(callback: () => T | Promise<T>): Promise<T> {
-  return await callback();
-}
-
-/** A replaceable deadline inherits its resource owner and can finish early. */
-export function scheduleTimeout(
-  callback: () => void,
-  ms: number,
-  owner: AbortSignal,
-): () => void {
-  const controller = new AbortController();
-  const signal = AbortSignal.any([owner, controller.signal]);
-  timeout(
-    () => {
-      controller.abort();
-      callback();
-    },
-    ms,
-    { signal },
-  );
-  return () => {
-    controller.abort();
-  };
-}
-
-/** Coalesced DOM input must cancel its original frame when admission ends. */
-export function scheduleAnimationFrame(
-  callback: () => void,
-  owner: AbortSignal,
-): () => void {
-  const controller = new AbortController();
-  const signal = AbortSignal.any([owner, controller.signal]);
-  animationFrame(
-    () => {
-      controller.abort();
-      callback();
-    },
-    { signal },
-  );
-  return () => {
-    controller.abort();
-  };
 }
 
 /** Private bookkeeping shared by detach() and clearAllDetached(). */

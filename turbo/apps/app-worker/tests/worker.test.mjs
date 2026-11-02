@@ -351,7 +351,7 @@ const expectedClerkCoreScript = clerkCoreScript(builtIndexTemplate);
 const expectedClerkBootstrap = clerkBootstrap(builtIndexTemplate);
 const okouTitle = "AI Teammate for Real Work — More Done, Same Team | Okou";
 const okouDescription =
-  "An AI teammate that connects to 3,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.";
+  "An AI teammate that connects to 4,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.";
 
 function publishableKey(environment, host) {
   return `pk_${environment}_${Buffer.from(`${host}$`).toString("base64")}`;

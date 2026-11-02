@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/browser";
 import type { BrowserOptions, Contexts, User } from "@sentry/browser";
 
 import { setLogErrorHandler } from "../signals/log.ts";
+import { CdpFault } from "../signals/browser/cdp/errors.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { SENTRY_APPLICATION_KEY } from "./sentry-application-key.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
@@ -96,7 +97,20 @@ export function createPlatformSentryOptions(
     // Preserve native fetch errors for application-level error handling.
     enhanceFetchErrorMessages: false,
 
-    beforeSend(event) {
+    beforeSend(event, hint) {
+      const error = hint.originalException;
+      if (error instanceof CdpFault && error.request) {
+        event.contexts = {
+          ...event.contexts,
+          browser_cdp: {
+            kind: error.kind,
+            method: error.request.method,
+            ...(error.request.code !== undefined
+              ? { code: error.request.code }
+              : {}),
+          },
+        };
+      }
       if (event.request?.url) {
         event.request.url = redactProofUrl(event.request.url);
       }

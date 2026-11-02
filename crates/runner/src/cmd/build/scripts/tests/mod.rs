@@ -677,7 +677,7 @@ fn verify_script_checks_sandbox_helper_runtime_commands() {
             &["/usr/bin/date", "/usr/bin/ln", "/usr/bin/sed"][..],
         ),
         (
-            "storage and Codex cleanup runtime",
+            "filesystem and text-processing runtime",
             &[
                 "/usr/bin/rm",
                 "/usr/bin/find",

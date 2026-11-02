@@ -51,6 +51,7 @@ import auth_base_forwarder
 import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
 import body_capture
+import builtin_firewall_cache
 import builtin_host_policy
 import codex_model_catalog_cache
 import connector_diagnostics
@@ -268,6 +269,10 @@ def load(loader: Loader) -> None:
 
 
 def configure(updated: set[str]) -> None:
+    if "okou_builtin_firewall_catalog_cache_path" in updated:
+        # Runner disables its listener until running() below. Script loading
+        # itself is asynchronous and does not precede native listener setup.
+        builtin_firewall_cache.load_configured_catalog_snapshot()
     platform_api.configure_client_headers(
         client_session_id=ctx.options.okou_client_session_id,
         client_version=ctx.options.okou_client_version,
@@ -289,6 +294,10 @@ def running() -> None:
     usage_state_id = ctx.options.okou_usage_state_id
     run_usage.initialize(usage_state_id or None)
     if control_dir and usage_state_id:
+        proxy_server = ctx.master.addons.get("proxyserver")
+        if proxy_server is None:
+            raise RuntimeError("managed addon requires the native proxy server")
+        proxy_servers = proxy_server.servers
         registry_owner = registry_control.RegistryControl(
             asyncio.get_running_loop(), get_registry_path()
         )
@@ -298,10 +307,16 @@ def running() -> None:
             registry_owner,
             runner_flush_lifecycle.DeliveryControl(),
             usage_snapshot=run_usage.snapshot,
+            # Native server maps are replaced, and is_running only reads each
+            # instance's published listener state. No policy work runs here.
+            listener_ready=lambda: any(server.is_running for server in proxy_servers),
         )
         control.start()
         _registry_control = registry_owner
         _runner_control = control
+        # Managed launches start with server=false so reconnecting sandboxes
+        # cannot enter before configure() has validated the existing catalog.
+        ctx.options.update(server=True)
 
 
 def get_api_url() -> str:
@@ -434,23 +449,24 @@ def _prebind_bounded_requestheaders_upstream_destination(
         hostname=trusted_authority.host,
         port=trusted_authority.port,
     )
-    if (
+    reuse_binding = (
         not is_api_destination
         and upstream_admission.has_bound_destination(
             flow,
             allowed_kinds=frozenset(("connector_auth",)),
         )
         and not _request_may_use_aws_sigv4(flow)
-        # A bound connection cannot skip managed OpenRouter body admission.
-        # The canonical classifier below still selects the credential owner.
+        # Reusing a connection skips binding work, never current path validation.
+        # Managed OpenRouter still requires body admission.
         and trusted_authority.host != managed_openrouter.HOST
-    ):
-        return None
+    )
     classification = _classify_request_for_flow_with_trusted_authority(
         flow,
         trusted_authority=trusted_authority,
         defer_unresolved_public_destination=True,
     )
+    if reuse_binding:
+        return classification
     _prebind_requestheaders_upstream_destination(flow, classification)
     return classification
 
@@ -890,6 +906,11 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
 
     try:
         preparation = custom_http.prepare(flow, registry_path=get_registry_path())
+    except custom_http.InvalidFirewallInputError as error:
+        _block_custom_http_invalid_input(flow, error)
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        header_auth_response.mark(flow)
+        return None
     except AuthorityValidationError as error:
         _reject_custom_http_requestheaders(flow, error)
         return None
@@ -898,6 +919,19 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             flow, preparation=preparation, request_end_stream=request_end_stream
         )
     return _requestheaders_after_authority(flow, request_end_stream=request_end_stream)
+
+
+def _block_custom_http_invalid_input(
+    flow: http.HTTPFlow, error: custom_http.InvalidFirewallInputError
+) -> None:
+    _classify_request_for_flow(flow)
+    # Classification may observe a newer registry without this sandbox. The
+    # rejecting preparation already validated this immutable diagnostic target.
+    authority = error.authority
+    flow.metadata[metadata_keys.ORIGINAL_URL] = authority.url
+    http_network_log.set_target(flow, url=authority.url, host=authority.host, port=authority.port)
+    _start_request_timing(flow)
+    http_local_responses.set_firewall_invalid_input_response(flow, error.result)
 
 
 def _reject_custom_http_requestheaders(
@@ -948,6 +982,14 @@ def _requestheaders_after_authority(
         except BaseException:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             raise
+        if isinstance(bounded_classification, request_classification.FirewallInvalidInput):
+            _start_request_timing(flow)
+            http_local_responses.set_firewall_invalid_input_response(
+                flow, bounded_classification.firewall_invalid_input
+            )
+            flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+            header_auth_response.mark(flow)
+            return None
         if bounded_classification is not None and _admit_managed_openrouter_from_headers(
             flow, bounded_classification, request_end_stream=request_end_stream
         ):
@@ -996,6 +1038,14 @@ def _requestheaders_after_authority(
             classification=classification,
             body_check=aws_sigv4_body_check,
         )
+        return None
+    if classification.kind == "firewall_invalid_input":
+        _start_request_timing(flow)
+        http_local_responses.set_firewall_invalid_input_response(
+            flow, classification.firewall_invalid_input
+        )
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        header_auth_response.mark(flow)
         return None
     if classification.kind == "public_destination_denied":
         _start_request_timing(flow)
@@ -1751,6 +1801,11 @@ def _block_request_classification(
     if classification.kind == "firewall_ambiguous":
         _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return
+    if classification.kind == "firewall_invalid_input":
+        http_local_responses.set_firewall_invalid_input_response(
+            flow, classification.firewall_invalid_input
+        )
+        return
     if classification.kind == "firewall_block":
         _set_firewall_block_response(flow, classification.firewall_block)
         return
@@ -1863,6 +1918,9 @@ async def request(flow: http.HTTPFlow) -> None:
             preparation = custom_http.prepare(flow, registry_path=get_registry_path())
             if preparation is not None:
                 await preparation
+        except custom_http.InvalidFirewallInputError as error:
+            _block_custom_http_invalid_input(flow, error)
+            return
         except AuthorityValidationError as error:
             _classify_request_for_flow(flow)
             _block_authority_validation_error(flow, error)

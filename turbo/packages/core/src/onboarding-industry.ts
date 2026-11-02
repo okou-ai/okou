@@ -6,7 +6,5 @@
  * screens and the contract share one list instead of keeping two that drift.
  */
 
-export {
-  ONBOARDING_INDUSTRY_IDS,
-  type OnboardingIndustry,
-} from "@okouai/api-contracts/contracts/onboarding";
+export { ONBOARDING_INDUSTRY_IDS } from "@okouai/api-contracts/validators/onboarding";
+export type { OnboardingIndustry } from "@okouai/api-contracts/contracts/onboarding";

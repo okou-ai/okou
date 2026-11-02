@@ -161,6 +161,11 @@ describe("runner claim response contract", () => {
       modelUsageProvider: "fixture-model",
       modelUsageLongContextMinTotalInputTokens: 272_001,
       platformEnvironment: { OKOU_AGENT_ID: "fixture-agent-id" },
+      contentBundles: {
+        format: "tar-gzip-v1",
+        instructions: { sha256: "a".repeat(64), archiveBytes: 128 },
+        skills: [{ mountPath: "/home/user/.codex/skills/fixture-skill" }],
+      },
     });
     expect(context.environment).not.toHaveProperty("OKOU_AGENT_ID");
     expect(context).not.toHaveProperty("experimentalProfile");
@@ -1947,5 +1952,62 @@ describe("native continuation intent", () => {
       },
     ])
       expect(nativeContinuationSchema.safeParse(intent).success).toBe(false);
+  });
+});
+
+describe("pinned Official Workflow bundle queue metadata", () => {
+  const context = {
+    storageMounts: [],
+    connectorRuntimeTargets: [],
+    environment: null,
+    platformEnvironment: {},
+    secretValueEnvironmentKeys: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
+    encryptedSecrets: null,
+    cliAgentType: "claude-code",
+  };
+  it("preserves exact descriptors in both stored-context readers", () => {
+    const officialWorkflowBundles = [
+      {
+        sha256: "a".repeat(64),
+        archiveBytes: 200,
+        mountPath: "/home/user/.claude/skills/morning-brief",
+      },
+    ];
+    const queued = { ...context, officialWorkflowBundles };
+    expect(
+      storedExecutionContextSchema.parse(queued).officialWorkflowBundles,
+    ).toStrictEqual(officialWorkflowBundles);
+    expect(
+      claimCompatibleStoredExecutionContextSchema.parse(queued)
+        .officialWorkflowBundles,
+    ).toStrictEqual(officialWorkflowBundles);
+    expect(storedExecutionContextSchema.parse(context)).not.toHaveProperty(
+      "officialWorkflowBundles",
+    );
+  });
+  it("rejects unsafe destinations and incomplete bundle references", () => {
+    for (const reference of [
+      { sha256: "a".repeat(64), archiveBytes: 200, mountPath: "/tmp/escape" },
+      {
+        sha256: "a".repeat(64),
+        archiveBytes: 0,
+        mountPath: "/home/user/.codex/skills/morning-brief",
+      },
+      {
+        archiveBytes: 200,
+        mountPath: "/home/user/.codex/skills/morning-brief",
+      },
+    ])
+      expect(
+        claimCompatibleStoredExecutionContextSchema.safeParse({
+          ...context,
+          officialWorkflowBundles: [reference],
+        }).success,
+      ).toBe(false);
   });
 });

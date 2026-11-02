@@ -12,6 +12,7 @@ final class MessageArtifactStore {
     var images: [ChatArtifact]
     var file: ChatAttachmentFile?
     var contentURL: URL?
+    var htmlExpiresAt: Date?
     var text: ArtifactTextContent?
     var error: String?
     var renewedHTMLSignature = false
@@ -117,6 +118,7 @@ final class MessageArtifactStore {
         }
         if resolved.artifact.kind == .html {
           preview?.contentURL = resolved.contentURL
+          preview?.htmlExpiresAt = resolved.expiresAt
         } else {
           let kind = resolved.artifact.kind
           let isText = [.markdown, .text, .json, .csv].contains(kind)
@@ -138,11 +140,11 @@ final class MessageArtifactStore {
   }
 
   func renewHTMLSignature(status: Int?) -> Bool {
-    guard let item = preview, !item.renewedHTMLSignature, [401, 403].contains(status ?? 0) else {
-      return false
-    }
+    guard let item = preview, !item.renewedHTMLSignature else { return false }
+    let expired = item.htmlExpiresAt.map { $0 <= Date() } ?? false
+    guard [401, 403].contains(status ?? 0) || (status == 404 && expired) else { return false }
     switch item.artifact.source {
-    case .reference, .file:
+    case .reference, .file, .hostedSite:
       open(item.artifact, images: item.images, renewedHTMLSignature: true)
       return true
     case .published: return false

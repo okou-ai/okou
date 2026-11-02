@@ -3,10 +3,10 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical, Search } from "lucide-react";
-import {
-  connectorAccountExternalIdentity,
-  type ConnectorAccountConnection,
-  type ConnectorAccountTarget,
+import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validators/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   Button,

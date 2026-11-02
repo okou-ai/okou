@@ -1,5 +1,150 @@
 # Changelog
 
+## [1.9.32](https://github.com/okou-ai/okou/compare/host-worker-v1.9.31...host-worker-v1.9.32) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.30.0
+    * @okouai/core bumped to 8.807.2
+
+## [1.9.31](https://github.com/okou-ai/okou/compare/host-worker-v1.9.30...host-worker-v1.9.31) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.1
+    * @okouai/core bumped to 8.807.1
+
+## [1.9.30](https://github.com/okou-ai/okou/compare/host-worker-v1.9.29...host-worker-v1.9.30) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.0
+    * @okouai/core bumped to 8.807.0
+
+## [1.9.29](https://github.com/okou-ai/okou/compare/host-worker-v1.9.28...host-worker-v1.9.29) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.28.0
+    * @okouai/core bumped to 8.806.1
+
+## [1.9.28](https://github.com/okou-ai/okou/compare/host-worker-v1.9.27...host-worker-v1.9.28) (2026-10-31)
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.1
+    * @okouai/core bumped to 8.806.0
+    * @okouai/ui bumped to 1.18.7
+
+## [1.9.27](https://github.com/okou-ai/okou/compare/host-worker-v1.9.26...host-worker-v1.9.27) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+    * @okouai/core bumped to 8.805.6
+
+## [1.9.26](https://github.com/okou-ai/okou/compare/host-worker-v1.9.25...host-worker-v1.9.26) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.2
+    * @okouai/core bumped to 8.805.5
+
+## [1.9.25](https://github.com/okou-ai/okou/compare/host-worker-v1.9.24...host-worker-v1.9.25) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+    * @okouai/core bumped to 8.805.4
+
+## [1.9.24](https://github.com/okou-ai/okou/compare/host-worker-v1.9.23...host-worker-v1.9.24) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.0
+    * @okouai/core bumped to 8.805.3
+
+## [1.9.23](https://github.com/okou-ai/okou/compare/host-worker-v1.9.22...host-worker-v1.9.23) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.1
+    * @okouai/core bumped to 8.805.2
+
+## [1.9.22](https://github.com/okou-ai/okou/compare/host-worker-v1.9.21...host-worker-v1.9.22) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.0
+    * @okouai/core bumped to 8.805.1
+
+## [1.9.21](https://github.com/okou-ai/okou/compare/host-worker-v1.9.20...host-worker-v1.9.21) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.805.0
+
+## [1.9.20](https://github.com/okou-ai/okou/compare/host-worker-v1.9.19...host-worker-v1.9.20) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.24.0
+    * @okouai/core bumped to 8.804.2
+
+## [1.9.19](https://github.com/okou-ai/okou/compare/host-worker-v1.9.18...host-worker-v1.9.19) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.2
+    * @okouai/core bumped to 8.804.1
+
 ## [1.9.18](https://github.com/okou-ai/okou/compare/host-worker-v1.9.17...host-worker-v1.9.18) (2026-10-30)
 
 

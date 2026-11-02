@@ -847,7 +847,7 @@ async def test_firewall_allow_small_bounded_body_retargets_unconnected_upstream(
     assert binding.original_address == ("203.0.113.10", 443)
 
 
-def test_bounded_requestheaders_keeps_matching_connector_binding_without_classification(
+def test_bounded_requestheaders_revalidates_before_reusing_connector_binding(
     tmp_path, real_flow, mitm_ctx, headers, monkeypatch
 ):
     reg_path = _write_github_firewall_registry(tmp_path)
@@ -883,7 +883,8 @@ def test_bounded_requestheaders_keeps_matching_connector_binding_without_classif
         assert mitm_addon.requestheaders(flow) is None
 
     assert validated_flows == [flow]
-    assert registry_loads == []
+    assert registry_loads == [str(reg_path)]
+    assert flow.response is None
     _assert_no_request_stream(flow)
     binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
     assert binding.host == "api.github.com"

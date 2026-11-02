@@ -799,9 +799,17 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
     for tile_y in (0..HEIGHT).step_by(64) {
         for tile_x in (0..WIDTH).step_by(64) {
             tiles.push(0); // Raw ZRLE tile, with three-byte RGB CPIXEL values.
-            for y in tile_y..(tile_y + 64).min(HEIGHT) {
-                for x in tile_x..(tile_x + 64).min(WIDTH) {
-                    tiles.extend_from_slice(&color(y * WIDTH + x));
+            let tile_width = (WIDTH - tile_x).min(64);
+            let tile_height = (HEIGHT - tile_y).min(64);
+            let pixel_start = tiles.len();
+            tiles.resize(pixel_start + tile_width * tile_height * 3, 0);
+            for (y, row) in tiles[pixel_start..]
+                .chunks_exact_mut(tile_width * 3)
+                .enumerate()
+            {
+                let row_start = (tile_y + y) * WIDTH + tile_x;
+                for (x, pixel) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                    *pixel = color(row_start + x);
                 }
             }
         }
@@ -832,10 +840,20 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
     sent.unwrap();
     let output = client.pixels().unwrap();
     assert_eq!(output.len(), WIDTH * HEIGHT * 4);
-    for (index, pixel) in output.as_chunks::<4>().0.iter().enumerate() {
-        let rgb = color(index);
-        assert_eq!(*pixel, [rgb[0], rgb[1], rgb[2], 255]);
+    // Compare every independent RGBA value with one reusable expected row.
+    let mut expected_row = vec![0; WIDTH * 4];
+    for (y, row) in output.as_chunks::<{ WIDTH * 4 }>().0.iter().enumerate() {
+        let row_start = y * WIDTH;
+        for (x, pixel) in expected_row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let rgb = color(row_start + x);
+            *pixel = [rgb[0], rgb[1], rgb[2], 255];
+        }
+        assert!(
+            row == expected_row.as_slice(),
+            "decoded pixels differ in row {y}"
+        );
     }
+    drop(expected_row);
     let (current, peak) = client.memory_usage();
     assert!(current <= peak);
     assert!(peak <= 128 * 1024 * 1024);

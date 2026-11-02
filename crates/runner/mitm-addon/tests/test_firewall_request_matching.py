@@ -321,10 +321,8 @@ class TestFirewallRequestMatching:
             fw_configs,
             network_policies=grant_all(fw_configs, unknown_policy="allow"),
         )
-        assert isinstance(result, matching.FirewallBlock)
-        assert result.reason == "unsafe_path"
+        assert isinstance(result, matching.FirewallInvalidInput)
         assert result.path == "/repos/../admin"
-        assert result.permissions == ()
 
     def test_encoded_unsafe_path_blocks_before_unknown_policy_allow(self):
         fw_configs = wrap_firewalls(
@@ -343,10 +341,8 @@ class TestFirewallRequestMatching:
             fw_configs,
             network_policies=grant_all(fw_configs, unknown_policy="allow"),
         )
-        assert isinstance(result, matching.FirewallBlock)
-        assert result.reason == "unsafe_path"
+        assert isinstance(result, matching.FirewallInvalidInput)
         assert result.path == "/users/%2e%2e/admin"
-        assert result.permissions == ()
 
     def test_unsafe_path_consumed_by_parameterized_base_blocks(self):
         fw_configs = wrap_firewalls(
@@ -365,9 +361,8 @@ class TestFirewallRequestMatching:
             fw_configs,
             network_policies=grant_all(fw_configs, unknown_policy="allow"),
         )
-        assert isinstance(result, matching.FirewallBlock)
-        assert result.reason == "unsafe_path"
-        assert result.path == "/admin"
+        assert isinstance(result, matching.FirewallInvalidInput)
+        assert result.path == "/api/%2e%2e/admin"
 
     def test_dot_like_regular_segments_can_still_allow(self):
         fw_configs = wrap_firewalls(

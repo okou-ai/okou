@@ -10,7 +10,10 @@ import { createApp } from "../../app-factory";
 import { withRealAxiomLoggingForTest } from "../../__tests__/mocks";
 import { setupApp } from "../../__tests__/test-helpers";
 import { server } from "../../mocks/server";
-import { createChatEventsFixture } from "../../signals/routes/__tests__/helpers/chat-events-fixture";
+import {
+  assistantEvent,
+  createChatEventsFixture,
+} from "../../signals/routes/__tests__/helpers/chat-events-fixture";
 import { publicChatActor } from "../../signals/routes/__tests__/helpers/public-chat-actor";
 import { useSecretKmsProbe } from "../../signals/routes/__tests__/helpers/secret-kms-probe";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/webhooks-agent-health-usage-telemetry";
@@ -303,6 +306,91 @@ async function ownedTelemetryUpload() {
     },
   };
 }
+
+// Logger-owned redaction contract, driven through the normal chat/Runner API.
+// The external presence provider fails while the other completion effects work.
+describe("completed chat callback failure diagnostics", () => {
+  it("retains the failed operation without private child errors", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    const privateDetail = "private-presence-provider-detail";
+
+    await owned.run(async () => {
+      fixture.chatCallbacks.mockVertexCompletions((body) => {
+        const system = body.messages[0]?.content ?? "";
+        if (system.includes("recommended follow-up messages")) {
+          return JSON.stringify([
+            { prompt: "Continue the analysis", kind: "talk" },
+          ]);
+        }
+        return "Safe generated summary";
+      });
+      const run = await fixture.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Keep the completed answer",
+      });
+      await fixture.chatCallbacks.registerPushSubscription(owned.actor);
+      fixture.chatCallbacks.enableVapid();
+      const { sandboxHeaders, claim } = await fixture.claimChatRun(
+        owned.runnerGroup,
+        run.runId,
+      );
+      owned.rememberClaim(run.runId, claim.sandboxToken);
+      context.mocks.ably.presenceGet.mockRejectedValue(
+        new TypeError(privateDetail, {
+          cause: { code: "EPIPE", response: privateDetail },
+        }),
+      );
+      fixture.chatCallbacks.mockChatOutputEvents([
+        assistantEvent(0, "The main answer survives"),
+      ]);
+      await fixture.completeChatRunOk(run.runId, sandboxHeaders);
+      await flushWaitUntilForTest();
+
+      const completed = await fixture.api.readRun(owned.actor, run.runId);
+      expect(completed.status).toBe("completed");
+      const events = await fixture.chat.listThreadEvents(
+        owned.actor,
+        run.threadId,
+      );
+      expect(events.events).toContainEqual(
+        expect.objectContaining({ content: "The main answer survives" }),
+      );
+      expect(events.events).toContainEqual(
+        expect.objectContaining({ eventType: "output.followups" }),
+      );
+
+      const warning = context.mocks.axiomLogging.warn.mock.calls.find(
+        ([message]) => {
+          return (
+            message === "Failed to process terminal chat callback side effects"
+          );
+        },
+      );
+      expect(warning).toStrictEqual([
+        "Failed to process terminal chat callback side effects",
+        expect.objectContaining({
+          runId: run.runId,
+          status: "completed",
+          error: {
+            name: "AggregateError",
+            message: "Completed chat callback side effects failed",
+            stack: expect.any(String),
+            cause: {
+              failures: [
+                {
+                  operation: "push",
+                  reason: "type_error",
+                },
+              ],
+            },
+          },
+        }),
+      ]);
+      expect(JSON.stringify(warning)).not.toContain(privateDetail);
+    });
+  });
+});
 
 // Logger-owned transport exception: the real webhook/error boundary must retain
 // useful sanitized provider details without exposing them to its Guest caller.

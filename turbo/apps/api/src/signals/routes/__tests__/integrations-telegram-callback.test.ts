@@ -80,7 +80,6 @@ async function browser(
       messages.push({ message: structuredClone(message), target });
     },
   };
-  let closed = false;
   const window = {
     opener: openerState === "absent" ? null : owner,
     location: {
@@ -105,9 +104,6 @@ async function browser(
         history.push({ state, url: destination });
         url = new URL(destination, url);
       },
-    },
-    close() {
-      closed = true;
     },
     addEventListener(type: string, listener: (event: unknown) => void) {
       const handlers = listeners.get(type) ?? new Set();
@@ -150,9 +146,6 @@ async function browser(
     navigation,
     history,
     owner,
-    closed: () => {
-      return closed;
-    },
     timers,
     status: () => {
       return elements.get("status")?.textContent;
@@ -229,7 +222,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       const page = await browser(url);
       expect(page.response.status).toBe(422);
       expect(page.messages).toStrictEqual([]);
-      expect(page.closed()).toBeFalsy();
       expect(page.navigation).toStrictEqual([]);
     },
   );
@@ -260,7 +252,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       });
       page.receive(message({ type: "telegram-auth-ack", stage: "identity" }));
       expect(page.navigation).toStrictEqual([]);
-      expect(page.closed()).toBeFalsy();
       page.receive(message({ type: "telegram-auth-result", status: "linked" }));
       expect(page.messages.at(-1)?.message).toStrictEqual(
         message({ type: "telegram-auth-ack", stage: "result" }),
@@ -400,7 +391,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       expect(page.navigation).toStrictEqual([]);
       expect(page.status()).not.toContain("secret");
       expect(page.settings()).toBe(SETTINGS);
-      expect(page.closed()).toBeFalsy();
       expect(page.listenerCount()).toBe(0);
       expect(page.timers.size).toBe(0);
     },
@@ -427,7 +417,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       );
       expect(page.messages).toStrictEqual([]);
       expect(page.navigation).toStrictEqual([]);
-      expect(page.closed()).toBeFalsy();
       expect(page.listenerCount()).toBe(0);
     },
   );
@@ -477,7 +466,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     first.pagehide();
     const reload = await browser(new URL(first.currentUrl()));
     expect(reload.messages).toStrictEqual([]);
-    expect(reload.closed()).toBeFalsy();
     expect(reload.settings()).toBe(
       "http://localhost:3002/settings/telegram?bot=official",
     );

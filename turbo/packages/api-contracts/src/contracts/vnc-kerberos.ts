@@ -1,5 +1,6 @@
 import {
   array,
+  base64,
   discriminatedUnion,
   int,
   literal,
@@ -67,7 +68,10 @@ export const kerberosServicePrincipalSchema = kerberosPrincipalSchema.refine(
   },
 );
 
-const materialSchema = string().min(4).max(KERBEROS_INPUT_MAX_BASE64).base64();
+const materialSchema = string()
+  .min(4)
+  .max(KERBEROS_INPUT_MAX_BASE64)
+  .check(base64());
 const passwordSchema = string()
   .min(1)
   .max(1023)

@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.17.51](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.50...runner-lifecycle-v0.17.51) (2026-11-02)
+
+## [0.17.50](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.49...runner-lifecycle-v0.17.50) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.17.49](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.48...runner-lifecycle-v0.17.49) (2026-11-01)
+
+## [0.17.48](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.47...runner-lifecycle-v0.17.48) (2026-11-01)
+
+## [0.17.47](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.46...runner-lifecycle-v0.17.47) (2026-10-31)
+
+## [0.17.46](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.45...runner-lifecycle-v0.17.46) (2026-10-31)
+
+## [0.17.45](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.44...runner-lifecycle-v0.17.45) (2026-10-31)
+
+## [0.17.44](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.43...runner-lifecycle-v0.17.44) (2026-10-31)
+
+## [0.17.43](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.42...runner-lifecycle-v0.17.43) (2026-10-31)
+
+## [0.17.42](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.41...runner-lifecycle-v0.17.42) (2026-10-30)
+
+## [0.17.41](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.40...runner-lifecycle-v0.17.41) (2026-10-30)
+
+## [0.17.40](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.39...runner-lifecycle-v0.17.40) (2026-10-30)
+
+## [0.17.39](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.38...runner-lifecycle-v0.17.39) (2026-10-30)
+
+## [0.17.38](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.37...runner-lifecycle-v0.17.38) (2026-10-30)
+
+## [0.17.37](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.36...runner-lifecycle-v0.17.37) (2026-10-30)
+
 ## [0.17.36](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.35...runner-lifecycle-v0.17.36) (2026-10-30)
 
 ## [0.17.35](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.34...runner-lifecycle-v0.17.35) (2026-10-30)

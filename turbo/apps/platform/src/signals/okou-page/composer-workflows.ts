@@ -1,8 +1,6 @@
 import { computed, type Computed } from "ccstate";
-import {
-  workflowsCollectionContract,
-  type ComposerWorkflow,
-} from "@okouai/api-contracts/contracts/workflows";
+import { workflowsCollectionContract } from "@okouai/api-contracts/client/workflows";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { workflowReloadVersion$ } from "../workflows-page/workflow-reload.ts";

@@ -6,15 +6,18 @@ import {
   type infer as zInfer,
 } from "zod";
 import type { StoredExecutionContext } from "@okouai/api-contracts/contracts/runners";
+import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
+import { contentBundleAvailableCondition } from "./content-bundle-claim";
 
 export const claimedWorkflowSchema = zObject({
   id: zUuid(),
   name: zString(),
+  contentBundle: contentBundleSchema,
 });
 export type ClaimedWorkflow = zInfer<typeof claimedWorkflowSchema>;
 
@@ -24,6 +27,39 @@ export interface WorkflowClaimInput {
   readonly invokedWorkflowId: string | null;
   readonly invokedWorkflowName: string | null;
   readonly ambiguousMountPaths: readonly string[];
+}
+
+function officialWorkflowClaimSelection(
+  context: StoredExecutionContext,
+  skillRoot: string,
+): WorkflowClaimInput["selection"] {
+  const officialPaths = (context.officialWorkflowBundles ?? []).map(
+    (bundle) => {
+      return bundle.mountPath;
+    },
+  );
+  if (
+    new Set(officialPaths).size !== officialPaths.length ||
+    officialPaths.some((path) => {
+      return (
+        !path.startsWith(`${skillRoot}/`) ||
+        context.storageMounts.some((mount) => {
+          return mount.mountPath === path;
+        })
+      );
+    })
+  ) {
+    throw new Error("Official Workflow bundle destinations are inconsistent");
+  }
+  return context.customWorkflowSelection && officialPaths.length > 0
+    ? {
+        ...context.customWorkflowSelection,
+        protectedMountPaths: [
+          ...(context.customWorkflowSelection.protectedMountPaths ?? []),
+          ...officialPaths,
+        ],
+      }
+    : context.customWorkflowSelection;
 }
 
 export function workflowClaimInput(
@@ -36,6 +72,7 @@ export function workflowClaimInput(
       : context.cliAgentType === "codex"
         ? "/home/user/.codex/skills"
         : "/home/user/.claude/skills";
+  const selection = officialWorkflowClaimSelection(context, skillRoot);
   const ordinaryMount = /^custom-skill@[a-f0-9-]{36}$/u;
   for (const mount of context.storageMounts) {
     if (
@@ -52,7 +89,7 @@ export function workflowClaimInput(
     /^\/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])(?:\s|$)/u.exec(prompt.trim())?.[1] ??
     null;
   return {
-    selection: context.customWorkflowSelection,
+    selection,
     skillRoot,
     invokedWorkflowId:
       context.customWorkflowSelection?.invokedWorkflowId ??
@@ -107,13 +144,14 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
   );
   return sql`selected_workflows AS MATERIALIZED (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
-        (${workflows.attachments} IS NOT NULL) AS available
+        ${workflows.contentBundle} AS "contentBundle"
       FROM ${workflows} INNER JOIN ${agents} ON ${eq(agents.id, workflows.agentId)} CROSS JOIN locked_run
       WHERE ${eligible}
       ORDER BY ${workflows.name}, (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = locked_run."userId") DESC, ${workflows.createdAt}, ${workflows.id}
     ), workflow_selection AS MATERIALIZED (
       SELECT COALESCE(jsonb_agg(to_jsonb(selected_workflows)), '[]'::jsonb) AS documents,
-        COALESCE(bool_and(available AND NOT (${JSON.stringify(input.ambiguousMountPaths)}::jsonb ? (${input.skillRoot} || '/' || name))), true) AS available
+        COALESCE(bool_and(NOT (${JSON.stringify(input.ambiguousMountPaths)}::jsonb ? (${input.skillRoot} || '/' || name))), true) AS available,
+        COALESCE(bool_and(${contentBundleAvailableCondition(sql`selected_workflows."contentBundle"`)}), true) AS "bundlesAvailable"
       FROM selected_workflows
     ), workflow_admission AS MATERIALIZED (
       SELECT * FROM workflow_selection, locked_run
@@ -128,7 +166,7 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
               ON ${storagePublicationTokens.publicationKey} = 'workflow:' || selected_workflows.id::text
             WHERE ${and(eq(storagePublicationTokens.orgId, sql`locked_run."orgId"`), eq(storagePublicationTokens.agentId, sql`locked_run."agentId"`))}
           )
-          AND EXISTS (SELECT 1 FROM ${agents} WHERE ${and(eq(agents.id, sql`locked_run."agentId"`), eq(agents.orgId, sql`locked_run."orgId"`), or(eq(agents.visibility, "public"), eq(agents.owner, sql`locked_run."userId"`)))})
+          AND EXISTS (SELECT 1 FROM selected_agent)
           -- A mutable slug must still resolve to the captured invocation identity.
           AND (${input.invokedWorkflowId}::uuid IS NULL OR EXISTS (
             SELECT 1 FROM selected_workflows WHERE id = ${input.invokedWorkflowId}::uuid AND name = ${input.invokedWorkflowName}

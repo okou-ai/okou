@@ -11,10 +11,11 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -57,6 +58,7 @@ function liveBrowserSession(): BrowserSession {
 
 interface BrowserApiControl {
   readonly closeRequests: () => number;
+  readonly native: ReturnType<typeof mockBrowserCdp>;
 }
 
 function mockBrowserApi(
@@ -81,6 +83,7 @@ function mockBrowserApi(
   });
   context.mocks.api(browserContract.close, ({ respond }) => {
     closeRequestCount += 1;
+    currentSession = null;
     return respond(200, {});
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
@@ -94,7 +97,7 @@ function mockBrowserApi(
       : respond(200, { browser: currentSession });
   });
   const cdpUrl = "wss://cdp.browser-use.com/sidebar";
-  mockBrowserCdp(context, cdpUrl, {
+  const native = mockBrowserCdp(context, cdpUrl, {
     streaming: true,
     ...(initialSession?.window
       ? {
@@ -120,6 +123,7 @@ function mockBrowserApi(
   });
 
   return {
+    native,
     closeRequests: () => {
       return closeRequestCount;
     },
@@ -283,45 +287,115 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   });
 });
 
-test("The shared sidebar shows only its chat window and keeps it alive without input", async () => {
+test.each(["https://viewer.example/live", null])(
+  "The shared sidebar with provider liveUrl=%s operates its chat window and keeps it alive without input",
+  async (liveUrl) => {
+    mockWideScreen();
+    const session: BrowserSession = {
+      ...liveBrowserSession(),
+      liveUrl,
+      window: {
+        instanceId: "22222222-2222-4222-8222-222222222222",
+        primaryWindowId: 0,
+      },
+    };
+    mockBrowserApi(session);
+    const bodies: unknown[] = [];
+    const entered = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const cancelled = context.mocks.deferred<void>();
+    context.mocks.api(
+      browserContract.leaseByThread,
+      async ({ params, body, request, respond }) => {
+        expect(params.threadId).toBe(session.threadId);
+        bodies.push(body);
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            cancelled.resolve();
+          },
+          { once: true },
+        );
+        entered.resolve();
+        await release.promise;
+        return respond(200, { browser: session });
+      },
+    );
+    await openConversation([]);
+    await expectConversationReady();
+    click(buttonByName("Open browser"));
+    const sidebar = liveBrowserSidebar();
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    await entered.promise;
+    expect(bodies).toStrictEqual([{}]);
+    expect(
+      queryAllByRoleFast("tab", sidebar).map((tab) => {
+        return tab.getAttribute("aria-label");
+      }),
+    ).toStrictEqual(["Example"]);
+    const address = within(sidebar).getByLabelText<HTMLInputElement>("Address");
+    await fill(address, "next.example/path");
+    fireEvent.submit(address.form!);
+    await waitFor(() => {
+      expect(within(sidebar).getByLabelText("Address")).toHaveValue(
+        "http://next.example/path",
+      );
+    });
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    click(buttonByName("Close cloud browser", sidebar));
+    await cancelled.promise;
+    await waitFor(() => {
+      expect(sidebar).not.toBeInTheDocument();
+    });
+  },
+);
+
+test("Resizing the browser sidebar synchronizes the remote display to the committed panel", async () => {
   mockWideScreen();
-  const session: BrowserSession = {
-    ...liveBrowserSession(),
-    window: {
-      instanceId: "22222222-2222-4222-8222-222222222222",
-      primaryWindowId: 0,
-    },
-  };
-  mockBrowserApi(session);
-  const bodies: unknown[] = [];
-  const entered = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(
-    browserContract.leaseByThread,
-    async ({ params, body, respond }) => {
-      expect(params.threadId).toBe(session.threadId);
-      bodies.push(body);
-      entered.resolve();
-      await release.promise;
-      return respond(200, { browser: session });
+  let canvasBox = new DOMRect(0, 0, 900, 600);
+  let resizeContainer: HTMLElement | null = null;
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this instanceof HTMLCanvasElement) {
+        return canvasBox;
+      }
+      return this === resizeContainer
+        ? new DOMRect(0, 0, 1440, 900)
+        : original.call(this);
     },
   );
+  const { native } = mockBrowserApi(liveBrowserSession());
   await openConversation([]);
   await expectConversationReady();
   click(buttonByName("Open browser"));
-  const sidebar = liveBrowserSidebar();
   await waitFor(() => {
-    expect(
-      within(sidebar).getByLabelText("Remote browser input"),
-    ).toBeEnabled();
+    expect(native.viewport).toStrictEqual({ width: 900, height: 600 });
   });
-  await entered.promise;
-  expect(bodies).toStrictEqual([{}]);
-  expect(
-    queryAllByRoleFast("tab", sidebar).map((tab) => {
-      return tab.getAttribute("aria-label");
-    }),
-  ).toStrictEqual(["Example"]);
+  act(() => {
+    native.frame("AAAA");
+  });
+  const handle = await screen.findByRole("separator", {
+    name: "Resize sidebar",
+  });
+  resizeContainer = handle.parentElement;
+
+  // The committed wider panel gives the canvas its new box.
+  canvasBox = new DOMRect(0, 0, 916, 600);
+  handle.focus();
+  await userEvent.keyboard("{ArrowLeft}");
+
+  await waitFor(() => {
+    expect(native.viewport).toStrictEqual({ width: 916, height: 600 });
+  });
 });
 
 test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
@@ -355,6 +429,60 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   });
 });
 
+test("The chat browser sidebar forwards a touch tap exactly once", async () => {
+  mockWideScreen();
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this instanceof HTMLCanvasElement
+        ? new DOMRect(0, 0, 1440, 900)
+        : original.call(this);
+    },
+  );
+  const { native } = mockBrowserApi(liveBrowserSession());
+  await openConversation([]);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const input = await within(liveBrowserSidebar()).findByLabelText(
+    "Remote browser input",
+  );
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  const surface = within(liveBrowserSidebar()).getByRole("img", {
+    name: "Live browser view",
+  }).parentElement!;
+  for (const type of ["pointerdown", "pointerup"]) {
+    fireEvent(
+      surface,
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        pointerType: "touch",
+        pointerId: 5,
+        isPrimary: true,
+        clientX: 720,
+        clientY: 450,
+      }),
+    );
+  }
+  await waitFor(() => {
+    return expect(native.input).toHaveLength(2);
+  });
+  expect(native.input).toStrictEqual([
+    expect.objectContaining({
+      params: expect.objectContaining({ type: "mousePressed", x: 720, y: 450 }),
+    }),
+    expect.objectContaining({
+      params: expect.objectContaining({
+        type: "mouseReleased",
+        x: 720,
+        y: 450,
+      }),
+    }),
+  ]);
+});
+
 test("Start and close a browser from the thread sidebar", async () => {
   mockWideScreen();
   const browser = mockBrowserApi(null);
@@ -374,12 +502,102 @@ test("Start and close a browser from the thread sidebar", async () => {
     within(sidebar).findByDisplayValue("https://example.com"),
   ).resolves.toBeEnabled();
 
+  const retiredInput = within(sidebar).getByLabelText("Remote browser input");
   click(buttonByName("Close cloud browser", liveBrowserSidebar()));
   await waitFor(() => {
     expect(sidebar).not.toBeInTheDocument();
   });
   expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
   expect(browser.closeRequests()).toBe(1);
+
+  click(buttonByName("Open browser"));
+  const reopened = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  click(buttonByName("Start browser", reopened));
+  const input = await waitFor(() => {
+    const currentInput = within(reopened).getByLabelText(
+      "Remote browser input",
+    );
+    expect(currentInput).toBeEnabled();
+    return currentInput;
+  });
+  fireEvent.input(retiredInput, {
+    target: { value: "retired surface" },
+    data: "retired surface",
+    inputType: "insertText",
+  });
+  fireEvent.submit(retiredInput.closest("form")!);
+  fireEvent(
+    retiredInput,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "reopened surface" },
+    data: "reopened surface",
+    inputType: "insertText",
+  });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  fireEvent.submit(input.closest("form")!);
+  await waitFor(() => {
+    expect(browser.native.input).toContainEqual({
+      method: "Input.insertText",
+      params: { text: "reopened surface" },
+      sessionId: "example-page-session",
+    });
+  });
+  expect(browser.native.input).not.toContainEqual({
+    method: "Input.insertText",
+    params: { text: "retired surface" },
+    sessionId: "example-page-session",
+  });
+  await waitFor(() => {
+    expect(
+      browser.native.input.filter((request) => {
+        return request.method === "Input.dispatchKeyEvent";
+      }),
+    ).toStrictEqual([
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({
+          type: "rawKeyDown",
+          key: "Backspace",
+        }),
+      },
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+      },
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({
+          type: "keyDown",
+          key: "Enter",
+          text: "\r",
+        }),
+      },
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({ type: "keyUp", key: "Enter" }),
+      },
+    ]);
+  });
 });
 
 test("Open a stopped browser card and offer a new session", async () => {
@@ -580,84 +798,240 @@ test("Take over the cloud browser without stopping the working run and hand it b
   expect(browser.closeRequests()).toBe(1);
 });
 
-function livePage(viewer: HTMLElement): {
+function mockLivePageGeometry(
+  box: () => DOMRect = () => {
+    return new DOMRect(0, 0, 1440, 900);
+  },
+): void {
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this instanceof HTMLCanvasElement ? box() : original.call(this);
+    },
+  );
+}
+
+async function livePage(viewer: HTMLElement): Promise<{
   readonly view: HTMLElement;
-  readonly input: HTMLElement;
-} {
+  readonly input: HTMLInputElement;
+}> {
+  await waitFor(() => {
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
   return {
-    view: within(viewer).getByRole("img", {
-      name: "Live browser view",
-      hidden: true,
-    }),
-    input: within(viewer).getByRole("textbox", {
+    view: within(viewer).getByRole("img", { name: "Live browser view" }),
+    input: within(viewer).getByRole<HTMLInputElement>("textbox", {
       name: "Remote browser input",
-      hidden: true,
     }),
   };
 }
 
-test("Mouse and key input on the live page take the cloud browser over from a working run", async () => {
-  mockWideScreen();
-  mockBrowserApi(liveBrowserSession());
-  const runId = "d0000000-0000-4000-a000-000000000903";
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Browser navigation",
-    chatEvents: [
-      {
-        id: "page-input-live-user",
-        role: "user",
-        content: "Compare the two pricing pages",
-        runId,
-        seqId: 1,
-        createdAt: "2026-09-01T12:00:00.000Z",
-      },
-    ],
-    activeRunIds: [runId],
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
-  });
-  await expectConversationReady();
-  click(buttonByName("Open browser"));
-  const sidebar = liveBrowserSidebar();
-  await within(sidebar).findByDisplayValue("https://example.com");
-  const viewer = within(sidebar).getByRole("region", {
-    name: "Remote browser viewer",
-  });
-  await expect(
-    within(viewer).findByText(/is working$/u),
-  ).resolves.toBeInTheDocument();
-  const page = livePage(viewer);
+test.each(["mouse", "keyboard", "composition", "touch"] as const)(
+  "Accepted %s input on the live page takes the cloud browser over from a working run",
+  async (inputKind) => {
+    mockWideScreen();
+    mockLivePageGeometry();
+    mockBrowserApi(liveBrowserSession());
+    const runId = "d0000000-0000-4000-a000-000000000903";
+    mockChatLifecycle(context, {
+      threadId: THREAD_ID,
+      threadTitle: "Browser navigation",
+      chatEvents: [
+        {
+          id: "page-input-live-user",
+          role: "user",
+          content: "Compare the two pricing pages",
+          runId,
+          seqId: 1,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      activeRunIds: [runId],
+    });
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+    });
+    await expectConversationReady();
+    click(buttonByName("Open browser"));
+    const sidebar = liveBrowserSidebar();
+    await within(sidebar).findByDisplayValue("https://example.com");
+    const viewer = within(sidebar).getByRole("region", {
+      name: "Remote browser viewer",
+    });
+    await expect(
+      within(viewer).findByText(/is working$/u),
+    ).resolves.toBeInTheDocument();
+    const page = await livePage(viewer);
 
-  // The viewer does not send touch, composition keys or its focus-release key
-  // to the page, so they leave the agent driving.
-  fireEvent.pointerDown(page.view, { pointerType: "touch", button: 0 });
-  fireEvent.keyDown(page.input, { key: "Process", keyCode: 229 });
-  fireEvent.keyDown(page.input, { key: "F8" });
-  expect(within(viewer).getByText(/is working$/u)).toBeInTheDocument();
-  expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
+    // Rejected pointer input, composition keys and focus release are local only.
+    fireEvent.pointerDown(page.view, { pointerType: "pen", button: 0 });
+    fireEvent.keyDown(page.input, { key: "Process", keyCode: 229 });
+    fireEvent.keyDown(page.input, { key: "F8" });
+    expect(within(viewer).getByText(/is working$/u)).toBeInTheDocument();
+    expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
 
-  fireEvent.pointerDown(page.view, { pointerType: "mouse", button: 0 });
-  await expect(
-    within(viewer).findByText("You're in control"),
-  ).resolves.toBeInTheDocument();
-  fireEvent.pointerDown(page.view, { pointerType: "mouse", button: 0 });
-  fireEvent.keyDown(page.input, { key: "a" });
+    // Focus without a preceding remote mouse press.
+    act(() => {
+      page.input.focus();
+    });
+    expect(page.input).toHaveFocus();
+    fireEvent.compositionStart(page.input);
+    // Native composition ownership suppresses even an unmarked confirmation key.
+    fireEvent.keyDown(page.input, { key: "Enter", code: "Enter" });
+    expect(within(viewer).getByText(/is working$/u)).toBeInTheDocument();
+    fireEvent(
+      page.input,
+      Object.assign(new Event("compositionend", { bubbles: true }), {
+        data: "",
+      }),
+    );
 
-  // The Run is told once and keeps working.
-  await expect(
-    screen.findByText(TAKE_OVER_MESSAGE),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(1);
-  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
-});
+    if (inputKind === "mouse") {
+      await userEvent.pointer({
+        target: page.view,
+        keys: "[MouseLeft]",
+        coords: { clientX: 720, clientY: 450 },
+      });
+    } else if (inputKind === "touch") {
+      for (const type of ["pointerdown", "pointerup"]) {
+        fireEvent(
+          page.view,
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerType: "touch",
+            pointerId: 5,
+            isPrimary: true,
+            clientX: 720,
+            clientY: 450,
+          }),
+        );
+      }
+    } else {
+      if (inputKind === "keyboard") {
+        await userEvent.keyboard("a");
+      } else {
+        fireEvent.compositionStart(page.input);
+        fireEvent.input(page.input, {
+          target: { value: "你好" },
+          inputType: "insertCompositionText",
+          isComposing: true,
+        });
+        fireEvent(
+          page.input,
+          Object.assign(new Event("compositionend", { bubbles: true }), {
+            data: "你好",
+          }),
+        );
+        fireEvent.input(page.input, {
+          target: { value: "你好" },
+          inputType: "insertCompositionText",
+        });
+      }
+    }
+    await expect(
+      within(viewer).findByText("You're in control"),
+    ).resolves.toBeInTheDocument();
+    await userEvent.click(page.input);
+    await userEvent.keyboard("b");
+    await expect(
+      screen.findByText(TAKE_OVER_MESSAGE),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(buttonByName("Hand back", viewer)).toBeEnabled();
+    });
+    click(buttonByName("Hand back", viewer));
+    await expect(
+      screen.findByText(HAND_BACK_MESSAGE),
+    ).resolves.toBeInTheDocument();
+    // Repeated accepted input sent one notification, and the Run kept working.
+    expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(1);
+    await expect(
+      within(viewer).findByText(/is working$/u),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([true, false])(
+  "Page-input takeover ignores letterboxing and respects the Lab switch (%s)",
+  async (refined) => {
+    mockWideScreen();
+    let box = new DOMRect(0, 0, 1440, 900);
+    mockLivePageGeometry(() => {
+      return box;
+    });
+    const { native } = mockBrowserApi(liveBrowserSession());
+    const runId = "d0000000-0000-4000-a000-000000000905";
+    mockChatLifecycle(context, {
+      threadId: THREAD_ID,
+      threadTitle: "Browser navigation",
+      chatEvents: [
+        {
+          id: "page-input-guard-user",
+          role: "user",
+          content: "Compare these pages",
+          runId,
+          seqId: 1,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      activeRunIds: [runId],
+    });
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: refined },
+    });
+    await expectConversationReady();
+    click(buttonByName("Open browser"));
+    const sidebar = liveBrowserSidebar();
+    await within(sidebar).findByDisplayValue("https://example.com");
+    const viewer = within(sidebar).getByRole("region", {
+      name: "Remote browser viewer",
+    });
+    const page = await livePage(viewer);
+    const menu = await openViewerSizingMenu(viewer);
+    click(menuRadio(menu, "Off"));
+    await waitFor(() => {
+      expect(menu).not.toBeInTheDocument();
+    });
+    // A taller panel letterboxes the unchanged remote image.
+    box = new DOMRect(0, 0, 1440, 1800);
+    await userEvent.pointer({
+      target: page.view,
+      keys: "[MouseLeft]",
+      coords: { clientX: 720, clientY: 10 },
+    });
+    expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
+    expect(within(viewer).queryByText(/is working$/u) !== null).toBe(refined);
+    await userEvent.click(page.input);
+    await userEvent.keyboard("x");
+    await waitFor(() => {
+      expect(native.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.dispatchKeyEvent",
+          params: expect.objectContaining({ type: "keyDown", text: "x" }),
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryAllByText(TAKE_OVER_MESSAGE)).toHaveLength(
+        refined ? 1 : 0,
+      );
+    });
+    expect(within(viewer).queryByText("You're in control") !== null).toBe(
+      refined,
+    );
+  },
+);
 
 test("Hand back after using the cloud browser between runs continues in one step", async () => {
   mockWideScreen();
+  mockLivePageGeometry();
   mockBrowserApi(liveBrowserSession());
   const runId = "d0000000-0000-4000-a000-000000000904";
   mockChatLifecycle(context, {
@@ -707,9 +1081,11 @@ test("Hand back after using the cloud browser between runs continues in one step
   expect(within(viewer).queryByText("You're in control")).toBeNull();
 
   // Nobody is driving, so signing in tells no Run anything.
-  fireEvent.pointerDown(livePage(viewer).view, {
-    pointerType: "mouse",
-    button: 0,
+  const page = await livePage(viewer);
+  await userEvent.pointer({
+    target: page.view,
+    keys: "[MouseLeft]",
+    coords: { clientX: 720, clientY: 450 },
   });
   await expect(
     within(viewer).findByText("You're in control"),
@@ -720,6 +1096,7 @@ test("Hand back after using the cloud browser between runs continues in one step
   await expect(
     screen.findByText(HAND_BACK_MESSAGE),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
   await expect(
     within(viewer).findByText(/is working$/u),
   ).resolves.toBeInTheDocument();

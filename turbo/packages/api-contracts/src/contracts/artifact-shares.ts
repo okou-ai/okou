@@ -12,16 +12,14 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { artifactShareTargetSchema } from "../validators/artifact-shares";
 import { linkLayoutSegmentSchema } from "./link-layout";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 const audienceSchema = zEnum(["private", "organization", "public"]);
-export const artifactShareTargetSchema = discriminatedUnion("kind", [
-  object({ kind: literal("file"), id: uuid() }),
-  object({ kind: literal("html"), id: uuid() }),
-]);
+export { artifactShareTargetSchema };
 export type ArtifactShareTarget = zInfer<typeof artifactShareTargetSchema>;
 
 // This versioned object is authoritative, not a cache of a database boolean.

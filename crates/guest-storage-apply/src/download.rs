@@ -27,7 +27,6 @@ pub(crate) struct DownloadTask {
     normalized_mount_path: PathBuf,
     telemetry: DownloadTaskTelemetry,
     files: Option<Vec<guest_contracts::storage_files::StorageFile>>,
-    expected_archive_sha256: Option<String>,
 }
 
 impl DownloadTask {
@@ -39,16 +38,6 @@ impl DownloadTask {
         self.files = Some(files);
         self.telemetry.decoded();
         self.label.push_str(" delivery=decoded_files");
-    }
-
-    pub(crate) fn with_workflow_archive(
-        mut self,
-        name: Option<&str>,
-        version: Option<&str>,
-    ) -> Self {
-        self.expected_archive_sha256 =
-            guest_contracts::workflow_attachments::archive_sha256(name, version).map(str::to_owned);
-        self
     }
 
     pub(crate) fn storage(
@@ -67,7 +56,6 @@ impl DownloadTask {
             normalized_mount_path,
             telemetry,
             files: None,
-            expected_archive_sha256: None,
         }
     }
 
@@ -81,7 +69,6 @@ impl DownloadTask {
             normalized_mount_path,
             telemetry,
             files: None,
-            expected_archive_sha256: None,
         }
     }
 
@@ -486,7 +473,6 @@ fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadEr
         &mut download.opened_file_compressed_bytes,
         download.remote_metrics.as_mut(),
         download.local_metrics.as_mut(),
-        download.task.task.expected_archive_sha256.as_deref(),
     )
 }
 
@@ -496,7 +482,6 @@ fn download_and_extract(
     opened_file_compressed_bytes: &mut Option<u64>,
     remote_metrics: Option<&mut RemoteArchiveTaskMetrics>,
     local_metrics: Option<&mut LocalArchiveTaskMetrics>,
-    expected_archive_sha256: Option<&str>,
 ) -> Result<(), DownloadError> {
     fs::create_dir_all(target_path).map_err(|e| {
         DownloadError::new(format!(
@@ -526,8 +511,7 @@ fn download_and_extract(
     };
     *opened_file_compressed_bytes = reader.compressed_bytes();
     let extract_start = Instant::now();
-    let result = verify_workflow_archive(reader, expected_archive_sha256)
-        .and_then(|reader| archive::extract_tar_gz(reader, target_path));
+    let result = archive::extract_tar_gz(reader, target_path);
     let extract_wall = extract_start.elapsed();
     if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);
@@ -538,229 +522,5 @@ fn download_and_extract(
     result
 }
 
-fn verify_workflow_archive(
-    reader: source::ArchiveSource,
-    expected: Option<&str>,
-) -> Result<source::ArchiveSource, DownloadError> {
-    use sha2::{Digest, Sha256};
-    use std::io::{Cursor, Read};
-    let Some(expected) = expected else {
-        return Ok(reader);
-    };
-    // The API permits 5 MiB of supplementary bytes. This generous transport
-    // bound includes tar metadata and gzip overhead without reducing that limit.
-    const MAX_WORKFLOW_ARCHIVE_BYTES: u64 = 32 * 1024 * 1024;
-    let (reader, _) = reader.into_parts();
-    let mut bytes = Vec::new();
-    reader
-        .take(MAX_WORKFLOW_ARCHIVE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| DownloadError::new("Workflow attachment archive read failed"))?;
-    if bytes.len() as u64 > MAX_WORKFLOW_ARCHIVE_BYTES
-        || hex::encode(Sha256::digest(&bytes)) != expected
-    {
-        return Err(DownloadError::new(
-            "Workflow attachment archive integrity mismatch",
-        ));
-    }
-    let size = bytes.len() as u64;
-    Ok(source::ArchiveSource::local(Cursor::new(bytes), Some(size)))
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn normalized_path(path: &str) -> PathBuf {
-        normalize_path(Path::new(path))
-    }
-
-    fn task_at(path: &str) -> DownloadTask {
-        DownloadTask::storage(
-            format!("task {path}"),
-            "file:///tmp/archive.tar.gz".to_owned(),
-            path.to_owned(),
-            false,
-        )
-    }
-
-    fn prepared_task_at(path: &str) -> PreparedDownloadTask {
-        PreparedDownloadTask {
-            task: task_at(path),
-            effective_mount_path: normalized_path(path),
-        }
-    }
-
-    fn pending_at(id: usize, path: &str) -> PendingDownload {
-        PendingDownload::new(id, prepared_task_at(path))
-    }
-
-    #[test]
-    fn mount_paths_conflict_for_exact_and_parent_child_paths() {
-        assert!(mount_paths_conflict(
-            &normalized_path("/tmp/mount"),
-            &normalized_path("/tmp/mount")
-        ));
-        assert!(mount_paths_conflict(
-            &normalized_path("/tmp/mount"),
-            &normalized_path("/tmp/mount/child")
-        ));
-        assert!(mount_paths_conflict(
-            &normalized_path("/tmp/mount/child"),
-            &normalized_path("/tmp/mount")
-        ));
-    }
-
-    #[test]
-    fn mount_paths_do_not_conflict_for_siblings_or_prefix_traps() {
-        assert!(!mount_paths_conflict(
-            &normalized_path("/tmp/mount-a"),
-            &normalized_path("/tmp/mount-b")
-        ));
-        assert!(!mount_paths_conflict(
-            &normalized_path("/tmp/foo/bar"),
-            &normalized_path("/tmp/foo/barista")
-        ));
-    }
-
-    #[test]
-    fn mount_path_conflicts_use_lexical_normalization() {
-        assert!(mount_paths_conflict(
-            &normalized_path("/tmp//foo/./bar/baz/.."),
-            &normalized_path("/tmp/foo/bar")
-        ));
-        assert!(!mount_paths_conflict(
-            &normalized_path("/tmp/foo/bar/../barista"),
-            &normalized_path("/tmp/foo/bar")
-        ));
-    }
-
-    #[test]
-    fn task_panic_releases_reservation_and_pending_tasks_finish() {
-        guest_telemetry::log::clear_system_log_file();
-        let directory = tempfile::tempdir().unwrap();
-
-        fn runner(download: &mut StartedDownload) -> Result<(), DownloadError> {
-            if download.task.task.url == "panic" {
-                panic!("expected panic");
-            }
-            fs::write(
-                download
-                    .task
-                    .effective_mount_path()
-                    .join(&download.task.task.url),
-                &download.task.task.url,
-            )
-            .map_err(|error| DownloadError::new(error.to_string()))
-        }
-
-        // All tasks conflict, so the panic must release its reservation before
-        // any of the more-than-four remaining tasks can produce their files.
-        let tasks = (0..10)
-            .map(|index| PreparedDownloadTask {
-                task: DownloadTask::storage(
-                    format!("task-{index}"),
-                    if index == 0 {
-                        "panic".to_owned()
-                    } else {
-                        format!("file-{index}")
-                    },
-                    directory.path().to_str().unwrap().to_owned(),
-                    false,
-                ),
-                effective_mount_path: directory.path().to_owned(),
-            })
-            .collect();
-        let result = std::panic::catch_unwind(|| download_all_parallel_with_runner(tasks, runner));
-
-        assert!(matches!(result, Ok(false)));
-        for index in 1..10 {
-            let name = format!("file-{index}");
-            assert_eq!(
-                fs::read_to_string(directory.path().join(&name)).unwrap(),
-                name
-            );
-        }
-    }
-
-    #[test]
-    fn find_startable_download_observes_conflict_and_selects_later_task() {
-        let pending = VecDeque::from([
-            pending_at(3, "/tmp/mount/child"),
-            pending_at(4, "/tmp/other"),
-        ]);
-        let reservations = vec![DownloadReservation {
-            id: 2,
-            logical_mount_path: normalized_path("/tmp/mount"),
-            effective_mount_path: normalized_path("/tmp/mount"),
-        }];
-        let mut conflicts = Vec::new();
-
-        let selected = find_startable_download(
-            &pending,
-            &reservations,
-            &mut |pending_id, _, active_id, _| {
-                conflicts.push((pending_id, active_id));
-            },
-        );
-
-        assert_eq!(conflicts, [(3, 2)]);
-        assert_eq!(selected, Some((1, 4)));
-    }
-
-    #[test]
-    fn find_startable_download_reports_first_active_conflict_on_each_scan() {
-        let pending = VecDeque::from([pending_at(4, "/tmp/mount/child")]);
-        let reservations = vec![
-            DownloadReservation {
-                id: 2,
-                logical_mount_path: normalized_path("/tmp/mount"),
-                effective_mount_path: normalized_path("/tmp/mount"),
-            },
-            DownloadReservation {
-                id: 3,
-                logical_mount_path: normalized_path("/tmp/mount/child"),
-                effective_mount_path: normalized_path("/tmp/mount/child"),
-            },
-        ];
-        let mut conflicts = Vec::new();
-
-        for _ in 0..2 {
-            let selected = find_startable_download(
-                &pending,
-                &reservations,
-                &mut |pending_id, _, active_id, _| {
-                    conflicts.push((pending_id, active_id));
-                },
-            );
-            assert_eq!(selected, None);
-        }
-
-        assert_eq!(conflicts, [(4, 2), (4, 2)]);
-    }
-
-    #[test]
-    fn download_task_failure_detail_includes_entry_metadata() {
-        let task = DownloadTask::storage(
-            "storage 1 mountPath=/workspace vasStorageName=repo vasVersionId=v1 urlScheme=file cached=false"
-                .into(),
-            "file:///tmp/archive.tar.gz".into(),
-            "/workspace".into(),
-            false,
-        );
-        let error = DownloadError::new("Failed to read archive entries: invalid gzip header");
-
-        let detail = PreparedDownloadTask {
-            task,
-            effective_mount_path: PathBuf::from("/workspace"),
-        }
-        .failure_detail(&error);
-
-        assert!(detail.contains("storage 1"));
-        assert!(detail.contains("mountPath=/workspace"));
-        assert!(detail.contains("vasStorageName=repo"));
-        assert!(detail.contains("vasVersionId=v1"));
-        assert!(detail.contains("urlScheme=file"));
-        assert!(detail.contains("Failed to read archive entries"));
-    }
-}
+mod tests;

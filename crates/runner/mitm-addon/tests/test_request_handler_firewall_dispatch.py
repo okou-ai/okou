@@ -27,6 +27,172 @@ from tests.upstream_connection_helpers import seed_server_binding
 _MAX_CONNECTOR_INTENT_BYTES = 64
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v2/registries/%64elegations",
+        "/v2/registries/%2564elegations",
+        "/v2/pods/pod-id%2Flogs",
+        "/v2/files/%64elegations%2Ffoo",
+        "/v2/files/a",
+        "/v2/files/abx",
+        "/v%32/registries/id%3Fignored",
+        "/v%32/registries/id%23ignored",
+        "/v%2532/registries/id%3Fignored",
+        "/v%2532/registries/id%23ignored",
+        "/v%2532/registries/id%FF",
+        "/v%2532/registries/id%ZZ",
+        "/v2/files/管理员",
+    ],
+)
+async def test_encoded_routes_are_denied_before_connector_credentials(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, path
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            firewall_name="example",
+            api_entry={
+                "base": "https://api.example.com/v2",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [
+                    {"name": "registry-read", "rules": ["GET /registries/{id}"]},
+                    {"name": "delegations-read", "rules": ["GET /registries/delegations"]},
+                    {"name": "pods-read", "rules": ["GET /pods/{id}"]},
+                    {"name": "files-read", "rules": ["GET /files/{key+}"]},
+                    {"name": "files-restricted", "rules": ["GET /files/delegations%2Ffoo"]},
+                    {"name": "files-any", "rules": ["ANY /files/a"]},
+                    {"name": "files-a-restricted", "rules": ["GET /files/%61"]},
+                    {"name": "files-mixed", "rules": ["GET /files/a{id}x"]},
+                    {"name": "files-prefix-restricted", "rules": ["GET /files/%61{id}"]},
+                    {
+                        "name": "files-unicode-restricted",
+                        "rules": ["GET /files/%E7%AE%A1%E7%90%86%E5%91%98"],
+                    },
+                ],
+            },
+            network_policy={
+                "allow": ["registry-read", "pods-read", "files-read", "files-any", "files-mixed"],
+                "deny": [
+                    "delegations-read",
+                    "files-restricted",
+                    "files-a-restricted",
+                    "files-prefix-restricted",
+                    "files-unicode-restricted",
+                ],
+                "ask": [],
+                "unknownPolicy": "deny",
+            },
+        ),
+    )
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="api.example.com",
+        path=path,
+        request_headers=headers(("Host", "api.example.com")),
+    )
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        header_result = mitm_addon.requestheaders(flow)
+        if header_result is not None:
+            await await_requestheaders_result(header_result)
+        await mitm_addon.request(flow)
+
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert json.loads(flow.response.content)["reason"] == "unsafe_path"
+    assert "Authorization" not in flow.request.headers
+    assert flow.request.path == path
+    auth_fetch.assert_not_awaited()
+
+
+async def test_unambiguous_encoded_resource_keeps_raw_forwarding(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            firewall_name="example",
+            api_entry={
+                "base": "https://api.example.com/v2",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [{"name": "registry-read", "rules": ["GET /registries/{id}"]}],
+            },
+            network_policy={"allow": ["registry-read"], "deny": [], "unknownPolicy": "deny"},
+        ),
+    )
+    path = "/v2/registries/acme%20%E4%B8%AD?filter=%2F%23"
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="api.example.com",
+        path=path,
+        request_headers=headers(("Host", "api.example.com")),
+    )
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(),
+    ):
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer x"
+    assert flow.request.path == path
+
+
+@pytest.mark.parametrize("content_length", [17, STREAM_BUFFER_LIMIT + 1])
+async def test_invalid_path_outside_prefix_is_rejected_at_headers(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, content_length
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            firewall_name="example",
+            api_entry={
+                "base": "https://api.example.com/v2",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [{"name": "items", "rules": ["POST /items"]}],
+            },
+            network_policy={"allow": ["items"], "unknownPolicy": "allow"},
+        ),
+    )
+    path = "/outside/%ZZ?caller=private"
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="api.example.com",
+        method="POST",
+        path=path,
+        request_headers=headers(
+            ("Host", "api.example.com"), ("Content-Length", str(content_length))
+        ),
+    )
+    with mitm_ctx(registry_path=str(reg_path)), fake_firewall_headers() as auth_fetch:
+        assert mitm_addon.requestheaders(flow) is None
+        assert flow.response is not None
+        assert flow.response.status_code == 403
+        assert not flow.request.stream
+        assert upstream_destination_binding.binding_snapshot_for_tests() == {}
+        await mitm_addon.request(flow)
+
+    body = json.loads(flow.response.content)
+    assert body["reason"] == "unsafe_path"
+    assert body["path"] == "/outside/%ZZ"
+    assert body["url"] == "https://api.example.com/outside/%ZZ"
+    assert "name" not in body
+    assert "base" not in body
+    assert flow.request.path == path
+    assert "Authorization" not in flow.request.headers
+    auth_fetch.assert_not_awaited()
+
+
 class _DecodeGuardConnectorIntent(bytes):
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
         raise AssertionError("oversized connector intent must not be decoded")
@@ -1261,21 +1427,21 @@ async def test_firewall_unsafe_path_blocks_before_auth_injection(
     assert flow.response is not None
     assert flow.response.status_code == 403
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
-    assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
-    assert flow.metadata[metadata_keys.FIREWALL_NAME] == "github"
+    assert metadata_keys.FIREWALL_BASE not in flow.metadata
+    assert metadata_keys.FIREWALL_NAME not in flow.metadata
     assert "Authorization" not in flow.request.headers
     body = json.loads(flow.response.content)
     assert body["error"] == "permission_denied"
     assert body["message"] == "Request blocked: unsafe path"
     assert body["method"] == "GET"
     assert body["path"] == path
-    assert body["name"] == "github"
+    assert "name" not in body
     assert body["permissions"] == []
     assert body["reason"] == "unsafe_path"
-    assert body["base"] == "https://api.github.com"
+    assert "base" not in body
     proxy_log_entry = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")[0]
     assert proxy_log_entry["type"] == "firewall_block"
-    assert proxy_log_entry["name"] == "github"
+    assert "name" not in proxy_log_entry
     assert proxy_log_entry["reason"] == "unsafe_path"
 
 
@@ -1324,8 +1490,8 @@ async def test_unsafe_firewall_base_still_blocks_before_auth_injection(
     assert flow.response is not None
     assert flow.response.status_code == 403
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
-    assert flow.metadata[metadata_keys.FIREWALL_BASE] == unsafe_base
+    assert metadata_keys.FIREWALL_BASE not in flow.metadata
     assert "Authorization" not in flow.request.headers
     body = json.loads(flow.response.content)
     assert body["reason"] == "unsafe_path"
-    assert body["base"] == unsafe_base
+    assert "base" not in body

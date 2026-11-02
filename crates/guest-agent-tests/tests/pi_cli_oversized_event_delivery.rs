@@ -9,6 +9,7 @@ use guest_agent::masker::SecretMasker;
 use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
 use serde_json::{Value, json};
+use std::io::{BufWriter, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
@@ -427,7 +428,7 @@ impl serde::Serialize for SessionRecord<'_> {
 }
 
 fn write_session_record(
-    output: &mut Vec<u8>,
+    output: impl Write,
     index: usize,
     message: &Value,
 ) -> serde_json::Result<()> {
@@ -516,25 +517,26 @@ async fn deliver_pi_rpc_with_skips(
         .suffix(&format!("_{session_id}.jsonl"))
         .tempfile_in(session_dir)?;
     let session_path = session_file.path();
-    let mut original = Vec::new();
+    // Batch the serializers' small escaped-string writes into unchanged JSONL.
+    let mut original = BufWriter::new(Vec::new());
     for event in messages {
         serde_json::to_writer(&mut original, event)?;
-        original.push(b'\n');
+        original.write_all(b"\n")?;
     }
-    let original = String::from_utf8(original)?;
+    let original = String::from_utf8(original.into_inner()?)?;
     assert!(original.lines().all(
         |line| line.len() < guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES
     ));
     std::fs::write(&events_path, &original)?;
-    let mut session = serde_json::to_vec(
+    let mut session = BufWriter::new(serde_json::to_vec(
         &json!({"type":"session","version":3,"id":session_id,"timestamp":"2026-09-11T00:00:00Z","cwd":"/home/user/workspace"}),
-    )?;
-    session.push(b'\n');
+    )?);
+    session.write_all(b"\n")?;
     for (index, event) in messages.iter().enumerate() {
         write_session_record(&mut session, index, &event["message"])?;
-        session.push(b'\n');
+        session.write_all(b"\n")?;
     }
-    let session = String::from_utf8(session)?;
+    let session = String::from_utf8(session.into_inner()?)?;
     std::fs::write(session_path, &session)?;
     let commands_path = tmp.path().join("commands.jsonl");
     let okou = bin.join("okou");

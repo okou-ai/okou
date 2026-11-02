@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.109.26](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.25...guest-agent-v0.109.26) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.109.25](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.24...guest-agent-v0.109.25) (2026-10-31)
+
+## [0.109.24](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.23...guest-agent-v0.109.24) (2026-10-30)
+
+## [0.109.23](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.22...guest-agent-v0.109.23) (2026-10-30)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify unwrapped codex output token limits ([#44234](https://github.com/okou-ai/okou/issues/44234)) ([deaa4ce](https://github.com/okou-ai/okou/commit/deaa4ced7f2f82b3fa081c275c88980b83f2db93))
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
+
+### Performance Improvements
+
+* **guest-agent:** bound native history json allocation ([#44231](https://github.com/okou-ai/okou/issues/44231)) ([0d49b01](https://github.com/okou-ai/okou/commit/0d49b01042899e9b1019ea47493082891c97680c))
+
 ## [0.109.22](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.21...guest-agent-v0.109.22) (2026-10-30)
 
 ## [0.109.21](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.20...guest-agent-v0.109.21) (2026-10-30)

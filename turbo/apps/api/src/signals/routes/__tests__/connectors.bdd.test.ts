@@ -4279,7 +4279,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       queryInjections: [],
       authMode: "automatic" as const,
     };
-    const discoveryProvider = mockAutomaticMcpOAuthProvider(context, {
+    mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       resourceMetadataStatus: 503,
     });
@@ -4297,7 +4297,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(discoveryFailure.body.error).toMatchObject({
       code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE,
     });
-    expect(discoveryProvider.registrationBodies).toHaveLength(0);
     await connectorsApi.deleteCustomConnector(admin, discoveryConnector.id);
 
     for (const status of [429, 503]) {

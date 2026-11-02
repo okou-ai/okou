@@ -327,11 +327,16 @@ test("publication preserves artifact identity and reuses a completed upload", as
   assert.deepEqual(f.state.deletions, []);
 });
 
-test("publication retains the newest three numeric versions across all pages and leaves other extensions intact", async (t) => {
+test("publication retains the newest five numeric versions across all pages and leaves other extensions intact", async (t) => {
   const f = await fixture(t);
-  const previous = ["0.1.9", "0.1.10", "0.1.11", "0.1.0"].map((value) =>
-    extension(value),
-  );
+  const previous = [
+    "0.1.9",
+    "0.1.10",
+    "0.1.11",
+    "0.1.12",
+    "0.1.13",
+    "0.1.0",
+  ].map((value) => extension(value));
   const others = Array.from({ length: 99 }, () => ({
     id: randomUUID(),
     name: "Other extension",
@@ -348,7 +353,7 @@ test("publication retains the newest three numeric versions across all pages and
         .filter((item) => item.name === "Okou Browser")
         .map((item) => item.version),
     ),
-    new Set([version, "0.1.11", "0.1.10"]),
+    new Set([version, "0.1.13", "0.1.12", "0.1.11", "0.1.10"]),
   );
   assert.deepEqual(
     f.state.extensions.filter((item) => item.name !== "Okou Browser"),
@@ -358,16 +363,21 @@ test("publication retains the newest three numeric versions across all pages and
 
 test("cleanup failures preserve the upload receipt and resume without another upload", async (t) => {
   const f = await fixture(t);
-  const previous = ["0.1.11", "0.1.10", "0.1.9", "0.1.8"].map((value) =>
-    extension(value),
-  );
+  const previous = [
+    "0.1.13",
+    "0.1.12",
+    "0.1.11",
+    "0.1.10",
+    "0.1.9",
+    "0.1.8",
+  ].map((value) => extension(value));
   f.state.extensions = [...previous];
-  f.state.deleteFailureId = previous[3].id;
+  f.state.deleteFailureId = previous[5].id;
   const failed = await f.run();
   assert.notEqual(failed.code, 0);
   assert.match(failed.stderr, /cleanup failed \(503\)/);
   assert.deepEqual(await f.outputs(), {});
-  assert.deepEqual(f.state.deletions, [previous[2].id, previous[3].id]);
+  assert.deepEqual(f.state.deletions, [previous[4].id, previous[5].id]);
   assert.ok(
     f.state.assets.some(
       (asset) => asset.name === "browser-extension-upload.json",
@@ -379,52 +389,56 @@ test("cleanup failures preserve the upload receipt and resume without another up
   assert.equal(f.state.uploads, 1);
   assert.equal((await f.outputs()).extension_id, newId);
   assert.deepEqual(f.state.deletions, [
-    previous[2].id,
-    previous[3].id,
-    previous[3].id,
+    previous[4].id,
+    previous[5].id,
+    previous[5].id,
   ]);
   assert.deepEqual(
     new Set(f.state.extensions.map((item) => item.id)),
-    new Set([newId, previous[0].id, previous[1].id]),
+    new Set([newId, ...previous.slice(0, 4).map((item) => item.id)]),
   );
 });
 
 test("a lost deletion reply is reconciled from the registry before cleanup resumes", async (t) => {
   const f = await fixture(t);
-  const previous = ["0.1.4", "0.1.3", "0.1.2", "0.1.1"].map((value) =>
-    extension(value),
+  const previous = ["0.1.6", "0.1.5", "0.1.4", "0.1.3", "0.1.2", "0.1.1"].map(
+    (value) => extension(value),
   );
   f.state.extensions = [...previous];
-  f.state.lostDeleteReplyId = previous[2].id;
+  f.state.lostDeleteReplyId = previous[4].id;
   assert.notEqual((await f.run()).code, 0);
   assert.deepEqual(await f.outputs(), {});
   const resumed = await f.run();
   assert.equal(resumed.code, 0, resumed.stderr);
   assert.equal(f.state.uploads, 1);
-  assert.deepEqual(f.state.deletions, [previous[2].id, previous[3].id]);
+  assert.deepEqual(f.state.deletions, [previous[4].id, previous[5].id]);
   assert.deepEqual(
     new Set(f.state.extensions.map((item) => item.id)),
-    new Set([newId, previous[0].id, previous[1].id]),
+    new Set([newId, ...previous.slice(0, 4).map((item) => item.id)]),
   );
 });
 
 test("an already removed cleanup candidate does not block publication", async (t) => {
   const f = await fixture(t);
-  const previous = ["0.1.3", "0.1.2", "0.1.1"].map((value) => extension(value));
+  const previous = ["0.1.5", "0.1.4", "0.1.3", "0.1.2", "0.1.1"].map((value) =>
+    extension(value),
+  );
   f.state.extensions = [...previous];
-  f.state.missingOnDeleteId = previous[2].id;
+  f.state.missingOnDeleteId = previous[4].id;
   const result = await f.run();
   assert.equal(result.code, 0, result.stderr);
   assert.equal((await f.outputs()).extension_id, newId);
   assert.deepEqual(
     new Set(f.state.extensions.map((item) => item.id)),
-    new Set([newId, previous[0].id, previous[1].id]),
+    new Set([newId, ...previous.slice(0, 4).map((item) => item.id)]),
   );
 });
 
 test("an invalid later registry page prevents all deletion and can be retried with the same upload", async (t) => {
   const f = await fixture(t);
-  const previous = ["0.1.1", "0.1.2", "0.1.3"].map((value) => extension(value));
+  const previous = ["0.1.1", "0.1.2", "0.1.3", "0.1.4", "0.1.5"].map((value) =>
+    extension(value),
+  );
   f.state.extensions = [
     ...previous,
     ...Array.from({ length: 99 }, () => ({
@@ -445,7 +459,7 @@ test("an invalid later registry page prevents all deletion and can be retried wi
   assert.equal(f.state.uploads, 1);
   assert.equal(
     f.state.extensions.filter((item) => item.name === "Okou Browser").length,
-    3,
+    5,
   );
 });
 
@@ -477,10 +491,10 @@ test("invalid or ambiguous matching versions prevent destructive cleanup", async
   }
 });
 
-test("a publication outside the retained newest three cannot delete its selected upload", async (t) => {
+test("a publication outside the retained newest five cannot delete its selected upload", async (t) => {
   const f = await fixture(t);
-  f.state.extensions = ["0.3.0", "0.4.0", "0.5.0"].map((value) =>
-    extension(value),
+  f.state.extensions = ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0"].map(
+    (value) => extension(value),
   );
   const result = await f.run();
   assert.notEqual(result.code, 0);

@@ -1,8 +1,6 @@
-import { computerUseHostStatusSchema } from "@okouai/api-contracts/contracts/computer-use";
-import {
-  queueResponseSchema,
-  type QueueResponse,
-} from "@okouai/api-contracts/contracts/runs";
+import { computerUseHostStatusSchema } from "@okouai/api-contracts/validators/computer-use";
+import { queueResponseSchema } from "@okouai/api-contracts/validators/runs";
+import type { QueueResponse } from "@okouai/api-contracts/contracts/runs";
 import {
   array,
   number,

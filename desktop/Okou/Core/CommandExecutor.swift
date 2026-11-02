@@ -72,13 +72,13 @@ public actor CommandExecutor {
           throw DesktopFailure("command_timeout", "Shell operation expired before dispatch")
         }
         guard let shellPermissionId,
-          command.payload["shellPermissionId"]?.string == shellPermissionId
+          command.payload.shellPermissionId == shellPermissionId
         else {
           throw DesktopFailure(
             "permission_denied", "Shell Access is disabled or its permission changed")
         }
         return await shells.execute(
-          kind: kind, payload: .object(command.payload), budget: budget.remaining)
+          kind: command.kind, payload: command.payload, budget: budget.remaining)
       }
       guard Self.capabilities.contains(kind) else {
         throw DesktopFailure("unsupported_command", "Unsupported command: \(kind)")
@@ -90,7 +90,7 @@ public actor CommandExecutor {
         throw DesktopFailure("permission_denied", "Accessibility permission is required")
       }
       // The helper speaks the contract's dynamic payload shape; keep it opaque here.
-      var payload = JSONValue.object(command.payload)
+      var payload = try JSONValue(encoding: command.payload)
       if kind == "apps.list" {
         let apps = try await call(.object(["kind": .string(kind)]), remaining: budget.remaining)
         return .object(["status": .string("succeeded"), "result": apps])

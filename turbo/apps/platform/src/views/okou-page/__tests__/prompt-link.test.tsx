@@ -26,6 +26,7 @@ import {
 } from "./chat-model-panel-test-helpers.ts";
 import { findButton } from "./chat-run-test-fixtures.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 
 const context = testContext();
 
@@ -42,7 +43,12 @@ interface PromptLaunchCapture {
   readonly sends: ChatEventSendBody[];
 }
 
-function capturePromptLaunch(sendGate?: Promise<void>): PromptLaunchCapture {
+function capturePromptLaunch(
+  sendGate?: (
+    body: ChatEventSendBody,
+    never: () => Promise<never>,
+  ) => Promise<void>,
+): PromptLaunchCapture {
   const capture: PromptLaunchCapture = { createdThreads: [], sends: [] };
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     capture.createdThreads.push({
@@ -63,17 +69,20 @@ function capturePromptLaunch(sendGate?: Promise<void>): PromptLaunchCapture {
       serviceTier: body.serviceTier ?? null,
     });
   });
-  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
-    if (body.prompt === undefined) {
-      throw new Error("Expected a prompt launch request");
-    }
-    capture.sends.push(body);
-    await sendGate;
-    return respond(201, {
-      threadId: body.threadId ?? "b0000000-0000-4000-a000-000000000001",
-      createdAt: "2026-03-10T00:00:00Z",
-    });
-  });
+  context.mocks.api(
+    chatEventsContract.send,
+    async ({ body, respond, never }) => {
+      if (body.prompt === undefined) {
+        throw new Error("Expected a prompt launch request");
+      }
+      capture.sends.push(body);
+      await sendGate?.(body, never);
+      return respond(201, {
+        threadId: body.threadId ?? "b0000000-0000-4000-a000-000000000001",
+        createdAt: "2026-03-10T00:00:00Z",
+      });
+    },
+  );
   return capture;
 }
 
@@ -252,6 +261,16 @@ test.each(["", "&model=unknown-model"])(
 
 test("Completing a prompt link preserves a model chosen in a later composer", async () => {
   installConnectedPersonalSubscriptions(context);
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "gpt-6-astra",
+      modelProviderId: "e8000000-0000-4000-a000-000000000001",
+    }),
+    buildRunModel({
+      model: "claude-sonnet-5-5",
+      modelProviderId: "e8000000-0000-4000-a000-000000000002",
+    }),
+  ]);
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-astra",
     serviceTier: null,
@@ -260,11 +279,20 @@ test("Completing a prompt link preserves a model chosen in a later composer", as
     updatedAt: null,
   });
   const sendGate = context.mocks.deferred<void>();
-  const capture = capturePromptLaunch(sendGate.promise);
+  const laterSend = context.mocks.deferred<ChatEventSendBody>();
+  const capture = capturePromptLaunch(async (body, never) => {
+    if (body.prompt === "Finish the linked task") {
+      await sendGate.promise;
+      return;
+    }
+    laterSend.resolve(body);
+    await never();
+  });
   const page = await startPage({
     context,
     path: "/prompt?prompt=Finish%20the%20linked%20task&model=gpt-6-astra",
   });
+  await page.content;
   await waitForPromptLaunch("Finish the linked task", capture);
 
   act(() => {
@@ -289,9 +317,9 @@ test("Completing a prompt link preserves a model chosen in a later composer", as
   ).resolves.toBeInTheDocument();
   await fill(mountedComposer(), "Send my next task with this model");
   click(await findButton("Send"));
-  await waitFor(() => {
-    expect(capture.sends[1]?.prompt).toBe("Send my next task with this model");
-  });
+  expect((await laterSend.promise).prompt).toBe(
+    "Send my next task with this model",
+  );
   expect(capture.createdThreads[1]?.model).toBe("claude-sonnet-5-5");
 });
 

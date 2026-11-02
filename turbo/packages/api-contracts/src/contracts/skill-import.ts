@@ -1,5 +1,6 @@
 import {
   array,
+  iso,
   literal,
   number,
   object,
@@ -80,7 +81,7 @@ export const skillImportSessionResponseSchema = object({
   /** Absolute URL of the upload route the prompt posts each skill to. */
   uploadUrl: url(),
   token: string().min(1),
-  expiresAt: string().datetime(),
+  expiresAt: iso.datetime(),
   limits: skillImportLimitsSchema,
 });
 export type SkillImportSessionResponse = zInfer<
@@ -138,7 +139,7 @@ export type SkillImportRequest = zInfer<typeof skillImportRequestSchema>;
 
 export const skillImportCreatedResponseSchema = object({
   outcome: literal("created"),
-  workflowId: string().uuid(),
+  workflowId: uuid(),
   /** Normalized slug the skill was stored under. */
   name: workflowNameSchema,
 });
@@ -146,7 +147,7 @@ export const skillImportCreatedResponseSchema = object({
 export const skillImportSkippedResponseSchema = object({
   outcome: literal("skipped"),
   reason: literal("name_exists"),
-  workflowId: string().uuid(),
+  workflowId: uuid(),
   name: workflowNameSchema,
 });
 

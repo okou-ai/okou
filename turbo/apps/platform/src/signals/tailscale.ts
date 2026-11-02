@@ -7,10 +7,14 @@ import { privateNetworkHostCount } from "../lib/private-network-references.ts";
 import { sortByName, sortRemoteHosts } from "../lib/remote-resource-order.ts";
 import { locale$ } from "./locale.ts";
 import {
+  createTailscaleConfigRequestSchema,
   tailscaleChangedPayloadSchema,
-  tailscaleContract,
-  type TailscaleConfig,
-  type TailscaleImpactPreview,
+  updateTailscaleConfigRequestSchema,
+} from "@okouai/api-contracts/validators/tailscale";
+import { tailscaleContract } from "@okouai/api-contracts/client/tailscale";
+import type {
+  TailscaleConfig,
+  TailscaleImpactPreview,
 } from "@okouai/api-contracts/contracts/tailscale";
 import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import { accept } from "../lib/accept.ts";
@@ -374,7 +378,7 @@ const createTailscale$ = command(
       return false;
     }
     const id = crypto.randomUUID();
-    const parsed = tailscaleContract.create.body.safeParse({
+    const parsed = createTailscaleConfigRequestSchema.safeParse({
       id,
       scope: get(scope$),
       ...tailscaleFieldsFromForm(form),
@@ -423,7 +427,7 @@ const editTailscale$ = command(
     if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
       return false;
     }
-    const parsed = tailscaleContract.update.body.safeParse({
+    const parsed = updateTailscaleConfigRequestSchema.safeParse({
       expectedRevision: config.revision,
       name: formText(form, "tailscaleName"),
       tags: formText(form, "tailscaleTags")

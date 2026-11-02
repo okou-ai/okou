@@ -1,0 +1,1 @@
+ALTER TABLE "browser_owner_profiles" ADD COLUMN "browser_extension_id" uuid;

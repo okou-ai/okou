@@ -1,8 +1,8 @@
 // Source-first onboarding funnel analytics. The `Onboarding: ` prefix is its
 // own: `PaidOnboarding: ` stays reserved for the paid funnel's dashboards.
 //
-// Nothing a person typed is captured here. Invite addresses and the starting
-// prompt itself never leave the browser; the funnel carries counts, lengths,
+// Nothing a person typed is captured here. The starting prompt itself never
+// leaves the browser; the funnel carries counts, lengths,
 // connector slugs and the enum answers instead.
 import { command, state } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -32,7 +32,7 @@ const captureStepEvent$ = command(
     properties: TelemetryProperties = {},
   ): void => {
     const flow = get(sourcesFirstFlow$);
-    const steps = sourcesFirstSteps(flow, get(sourcesFirstDraft$).provider);
+    const steps = sourcesFirstSteps(get(sourcesFirstDraft$).provider);
     captureOnboardingEvent(name, {
       flow: "source_first",
       step_key: step,
@@ -91,14 +91,6 @@ export const captureSourceOnboardingConnected$ = command(
       // returning from a provider after a reload, is reported as such rather
       // than credited to whichever control was used last.
       source_origin: started === connectorSlug ? "grid" : "unknown",
-    });
-  },
-);
-
-export const captureSourceOnboardingInviteAdded$ = command(
-  ({ set }, inviteCount: number): void => {
-    set(captureStepEvent$, "team", "InviteAdded", {
-      invite_count: inviteCount,
     });
   },
 );

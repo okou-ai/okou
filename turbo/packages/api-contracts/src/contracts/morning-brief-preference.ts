@@ -8,28 +8,25 @@ import {
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import {
+  MORNING_BRIEF_PREFERENCES_ROUTE,
+  MORNING_BRIEF_PREFERENCES_SECTION,
+  MORNING_BRIEF_PREFERENCES_FOCUS,
+} from "../validators/morning-brief-preference";
+
+export {
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+  INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
+  isMorningBriefDefinitionName,
+  MORNING_BRIEF_PREFERENCES_ROUTE,
+  MORNING_BRIEF_PREFERENCES_SECTION,
+  MORNING_BRIEF_PREFERENCES_FOCUS,
+} from "../validators/morning-brief-preference";
 
 const c = initContract();
 
-export const MORNING_BRIEF_OFFICIAL_DEFINITION_NAME = "morning-brief";
-/** Temporary AgentSuggestion rollout (#39591). Retire the test definition at GA. */
-export const INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME =
-  "internal-test-morning-brief";
-export const MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES = [
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-  INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
-] as const;
-
-export function isMorningBriefDefinitionName(name: string | null): boolean {
-  return MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.some((candidate) => {
-    return candidate === name;
-  });
-}
-
 export const MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY = "daily-delivery";
-export const MORNING_BRIEF_PREFERENCES_ROUTE = "/agents";
-export const MORNING_BRIEF_PREFERENCES_SECTION = "preference";
-export const MORNING_BRIEF_PREFERENCES_FOCUS = "morning-brief";
 export const MORNING_BRIEF_PREFERENCES_PATH = `${MORNING_BRIEF_PREFERENCES_ROUTE}?settings=${MORNING_BRIEF_PREFERENCES_SECTION}&focus=${MORNING_BRIEF_PREFERENCES_FOCUS}`;
 
 const morningBriefUnavailableReasonSchema = zEnum([

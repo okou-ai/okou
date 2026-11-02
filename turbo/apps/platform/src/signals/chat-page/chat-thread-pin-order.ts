@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { chatThreadPinOrderContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadPinOrderContract } from "@okouai/api-contracts/client/chat-threads";
 import { moveChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "../api-client.ts";

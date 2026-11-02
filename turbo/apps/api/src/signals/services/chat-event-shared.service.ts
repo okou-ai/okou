@@ -1,7 +1,5 @@
-import {
-  serializeChatFollowupsContent,
-  type ChatRecommendedFollowup,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
+import { serializeChatFollowupsContent } from "@okouai/api-contracts/validators/chat-threads";
 import {
   chatEventAppendResultSchema,
   chatEventCommandResultSchema,

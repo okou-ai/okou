@@ -156,6 +156,7 @@ import {
 import type { ModelCatalog } from "./model-catalog.service";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
+  pinnedOfficialWorkflowBundles,
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowRunObservation,
@@ -187,10 +188,8 @@ import { agentphoneDeliveryTargetSchema } from "./agentphone-chat-callback-paylo
 
 import {
   ApiDispatchPhaseCollector,
-  type ApiDispatchTimingActionType,
   ApiDispatchTimingCollector,
   type ApiDispatchTimingDimensions,
-  type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
@@ -2310,14 +2309,18 @@ export function createThreadClaimRunObjects(
       if (!args) {
         return;
       }
-      await measureApiDispatchTiming(
-        get(timing$),
-        "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
-        "nested",
-        async () => {
-          await get(workflowAutomationLaunchModel$);
-        },
-      );
+      const timing = get(timing$);
+      const startedAt = performance.now();
+      await (async () => {
+        await get(workflowAutomationLaunchModel$);
+      })().finally(() => {
+        timing.recordDuration(
+          "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
       signal.throwIfAborted();
     },
   );
@@ -2454,13 +2457,19 @@ export function createThreadClaimRunObjects(
       selectedIdentityInputIdentityInput$,
     );
     // A Thread run always names its queue head's Agent.
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_resolve_agent_id",
-      () => {
-        return Promise.resolve(args.body.agentId);
-      },
-    );
+    const startedAt = timing ? performance.now() : undefined;
+    return await (async () => {
+      return await Promise.resolve(args.body.agentId);
+    })().finally(() => {
+      if (startedAt !== undefined) {
+        timing?.recordDuration(
+          "api_dispatch_pre_create_agent_resolve_agent_id",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      }
+    });
   });
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
@@ -2469,14 +2478,20 @@ export function createThreadClaimRunObjects(
       if (!agentId) {
         return null;
       }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_load_agent",
-        async () => {
-          // Authorization waits only for the context's Agent snapshot.
-          return await get(bootstrap.agent$);
-        },
-      );
+      const startedAt = timing ? performance.now() : undefined;
+      return await (async () => {
+        // Authorization waits only for the context's Agent snapshot.
+        return await get(bootstrap.agent$);
+      })().finally(() => {
+        if (startedAt !== undefined) {
+          timing?.recordDuration(
+            "api_dispatch_pre_create_agent_load_agent",
+            "nested",
+            performance.now() - startedAt,
+            now(),
+          );
+        }
+      });
     },
   );
   const preCreateSubscriptionAccountSubscriptionAccount$ = computed(
@@ -2506,13 +2521,18 @@ export function createThreadClaimRunObjects(
   );
   const preCreatePermissionPoliciesPermissionPolicies$ = computed(
     async (get) => {
-      return await get(threadContext.dispatchTiming$).measure(
-        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-        "nested",
-        async () => {
-          return await get(bootstrap.permissionPolicies$);
-        },
-      );
+      const timing = get(threadContext.dispatchTiming$);
+      const startedAt = performance.now();
+      return await (async () => {
+        return await get(bootstrap.permissionPolicies$);
+      })().finally(() => {
+        timing.recordDuration(
+          "api_dispatch_pre_create_agent_resolve_firewall_metadata",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
     },
   );
   const preCreatePostAuthorizationPostAuthorization$ = computed(
@@ -4599,9 +4619,25 @@ function bestEffortTelemetry(record: () => unknown): void {
   safeSync(record);
 }
 
-function ingestRunContextSnapshot(snapshot: RunContextAxiomSnapshot): void {
+function ingestRunContextSnapshot(
+  snapshot: RunContextAxiomSnapshot,
+  officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
+): void {
   bestEffortTelemetry(() => {
-    return ingestToAxiom(getDatasetName("run-context"), [snapshot]);
+    return ingestToAxiom(getDatasetName("run-context"), [
+      {
+        ...snapshot,
+        officialWorkflowBundles: (officialWorkflowBundles ?? []).map(
+          (bundle) => {
+            return {
+              sha256: bundle.sha256,
+              archiveBytes: bundle.archiveBytes,
+              mountPath: bundle.mountPath,
+            };
+          },
+        ),
+      },
+    ]);
   });
 }
 
@@ -4657,6 +4693,16 @@ function prepareAtomicLaunchPersistence(
 ): PreparedAtomicLaunchPersistence {
   const payload = runnerJobPayload({
     ...commit.launch.runnerJobPayload,
+    executionContext: {
+      ...commit.launch.runnerJobPayload.executionContext,
+      ...(commit.context.officialWorkflowRun?.provenance.schemaVersion === 2
+        ? {
+            officialWorkflowBundles: pinnedOfficialWorkflowBundles(
+              commit.context.officialWorkflowRun,
+            ),
+          }
+        : {}),
+    },
     reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
   });
   const rowsArgs = preparedLaunchRowsArgs({
@@ -4868,7 +4914,10 @@ function committedAtomicLaunchResponse(args: {
     args.transactionReturnedAt,
   );
   args.phaseTiming.appendTo(args.timing);
-  ingestRunContextSnapshot(args.committed.runContextSnapshot);
+  ingestRunContextSnapshot(
+    args.committed.runContextSnapshot,
+    args.committed.runnerJobPayload.executionContext.officialWorkflowBundles,
+  );
   const runContextRegisteredAt = now();
   const dispatchedProfile = args.committed.runnerJobPayload.profile;
   args.timing.flush({
@@ -5683,21 +5732,6 @@ function createRunBody(args: {
     appendSystemPrompt: args.prompt.appendedSystemPrompt,
     disallowedTools: [...DISALLOWED_TOOLS],
   };
-}
-
-function measureAgentRunPreCreate<T>(
-  timing: ApiDispatchTimingCollector | undefined,
-  actionType: ApiDispatchTimingActionType,
-  operation: () => T | Promise<T>,
-  dimensions?: ApiDispatchTimingDimensionsInput,
-): Promise<T> {
-  return measureApiDispatchTiming(
-    timing,
-    actionType,
-    "nested",
-    operation,
-    dimensions,
-  );
 }
 
 interface AgentRunAfterBootstrap extends AgentConnectorScopeSnapshot {

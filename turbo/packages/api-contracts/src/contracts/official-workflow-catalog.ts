@@ -5,16 +5,20 @@ import {
   lazy,
   literal,
   number,
+  never as zNever,
   object,
   record,
   string,
   union,
   url,
+  uuid,
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
   type ZodType,
 } from "zod";
+
+import { contentBundleSchema } from "./content-bundle";
 
 import { automationEventTypeSchema, workflowNameSchema } from "./workflows";
 import {
@@ -36,7 +40,7 @@ export type {
 } from "./official-workflow-bindings";
 
 /**
- * The only schema version the source catalog and publication writer emit.
+ * The schema version emitted for source catalogs and immutable business revisions.
  * Persisted readers also decode schema v2, whose immutable accepted catalogs
  * and revisions are still referenced by retired definitions and Run provenance.
  */
@@ -243,7 +247,7 @@ const fingerprintSchema = string().regex(/^[0-9a-f]{64}$/);
 
 export const officialWorkflowArtifactReferenceSchema = object({
   storageName: string().min(1).max(256),
-  storageId: string().uuid(),
+  storageId: uuid(),
   storageVersion: fingerprintSchema,
 }).strict();
 export type OfficialWorkflowArtifactReference = zInfer<
@@ -308,28 +312,45 @@ const officialWorkflowAcceptedDefinitionShape = {
   name: workflowNameSchema,
   lifecycle: officialWorkflowLifecycleSchema,
   revision: fingerprintSchema,
-  artifact: officialWorkflowArtifactReferenceSchema,
   releasedBlueprintKeys: array(officialWorkflowBlueprintKeySchema),
   presentation: officialWorkflowPresentationSchema,
 };
 
 const officialWorkflowAcceptedDefinitionV2Schema = object({
   ...officialWorkflowAcceptedDefinitionShape,
+  artifact: officialWorkflowArtifactReferenceSchema,
+  contentBundle: zNever().optional(),
   blueprints: array(officialWorkflowAcceptedBlueprintV2Schema),
 }).strict();
 
 const officialWorkflowAcceptedDefinitionV3Schema = object({
   ...officialWorkflowAcceptedDefinitionShape,
+  artifact: officialWorkflowArtifactReferenceSchema,
+  contentBundle: zNever().optional(),
   blueprints: array(officialWorkflowAcceptedBlueprintV3Schema),
 }).strict();
 
+/** Delivery format is independent of the immutable v2/v3 definition payload. */
+export const OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION = 4 as const;
+const officialWorkflowAcceptedDefinitionV4Schema = object({
+  ...officialWorkflowAcceptedDefinitionShape,
+  contentBundle: contentBundleSchema,
+  artifact: zNever().optional(),
+  blueprints: array(officialWorkflowAcceptedBlueprintSchema),
+}).strict();
+
 export type OfficialWorkflowAcceptedDefinition =
+  | zInfer<typeof officialWorkflowAcceptedDefinitionV4Schema>
   | zInfer<typeof officialWorkflowAcceptedDefinitionV2Schema>
   | zInfer<typeof officialWorkflowAcceptedDefinitionV3Schema>;
 
 export const officialWorkflowCatalogReleasePayloadSchema = discriminatedUnion(
   "schemaVersion",
   [
+    object({
+      schemaVersion: literal(OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION),
+      definitions: array(officialWorkflowAcceptedDefinitionV4Schema),
+    }).strict(),
     object({
       schemaVersion: literal(2),
       definitions: array(officialWorkflowAcceptedDefinitionV2Schema),
@@ -348,7 +369,7 @@ export type OfficialWorkflowCatalogReleasePayload = zInfer<
 export type OfficialWorkflowPublishedCatalogReleasePayload = Extract<
   OfficialWorkflowCatalogReleasePayload,
   {
-    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION;
+    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION;
   }
 >;
 export type OfficialWorkflowPublishedDefinitionRevisionPayload = Extract<
@@ -395,10 +416,18 @@ export type OfficialWorkflowCatalogSyncResponse = zInfer<
   typeof officialWorkflowCatalogSyncResponseSchema
 >;
 
-export const officialWorkflowAcceptedRevisionSchema = object({
-  definition: officialWorkflowDefinitionRevisionPayloadSchema,
-  artifact: officialWorkflowArtifactReferenceSchema,
-}).strict();
+export const officialWorkflowAcceptedRevisionSchema = union([
+  object({
+    definition: officialWorkflowDefinitionRevisionPayloadSchema,
+    artifact: officialWorkflowArtifactReferenceSchema,
+    contentBundle: contentBundleSchema.nullable().optional(),
+  }).strict(),
+  object({
+    definition: officialWorkflowDefinitionRevisionPayloadSchema,
+    artifact: zNever().optional(),
+    contentBundle: contentBundleSchema,
+  }).strict(),
+]);
 export type OfficialWorkflowAcceptedRevision = zInfer<
   typeof officialWorkflowAcceptedRevisionSchema
 >;

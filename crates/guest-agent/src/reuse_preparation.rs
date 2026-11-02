@@ -55,7 +55,7 @@ use std::path::{Component, Path, PathBuf};
 use guest_contracts::process_containment::{
     AGENT_MEMORY_MIN_BYTES, CGROUP_V2_MOUNT_PATH, CONTROL_CGROUP_NAME, EXEC_CGROUP_BASE_PATH,
     EXEC_CGROUP_NAME_PREFIX, REQUIRED_CGROUP_CONTROLLERS, WORKLOAD_CGROUP_NAME,
-    WorkloadResourcePolicy,
+    WorkloadResourcePolicy, parse_populated,
 };
 use guest_contracts::reuse_preparation::{
     FilesystemCapacity, REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
@@ -798,20 +798,6 @@ fn is_cgroup2_filesystem(path: &Path) -> io::Result<bool> {
     }
     // SAFETY: successful statfs initialized the structure.
     Ok(unsafe { stats.assume_init() }.f_type == 0x6367_7270)
-}
-
-fn parse_populated(content: &str) -> Option<bool> {
-    content.lines().find_map(|line| {
-        let (key, value) = line.split_once(' ')?;
-        if key != "populated" {
-            return None;
-        }
-        match value {
-            "0" => Some(false),
-            "1" => Some(true),
-            _ => None,
-        }
-    })
 }
 
 fn split_runtime_path(path: &Path) -> Result<(PathBuf, &OsStr), ReusePreparationError> {

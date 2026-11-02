@@ -325,9 +325,39 @@ exemption, and the existing draft/review handoff instructions.
 Runner and its embedded addon ship together. `okou_control_socket_dir` selects
 the current managed launch directory; `okou_usage_state_id` is also the control
 generation and rotates on restart. Readiness requires a correlated `proxy.status`
-reply followed by EOF, then the existing TCP listener probe, within the original
-10-second startup deadline. A socket inode alone is not readiness. Only read-only
-startup probes retry, with at most one second per control attempt.
+reply followed by EOF, then the existing TCP listener probe and one completed
+`catalog.warm` request, within the original 10-second startup deadline. A socket
+inode alone is not readiness. Only observational startup probes retry, with at
+most one second per control attempt; an uncertain warmup is not replayed.
+
+`catalog.warm` takes empty object parameters and runs the existing configured
+catalog loader on the bounded registry owner, not the control I/O thread. It
+returns the credential-free catalog projection used by registry observations:
+`available` with file identity and digest, or `unavailable` with file identity
+when known and its explicit reason. It does not apply a registry or change
+authorization. Missing and invalid sources retain existing fail-closed builtin
+behavior and supported local/inline operation. `proxy.status` remains
+observational and does not establish catalog warmth.
+
+Runner starts mitmdump with `server=false` because the pinned runtime loads
+scripts asynchronously and can otherwise listen before the addon is configured.
+The addon's configure hook preloads an existing configured catalog; its managed
+running hook then starts control and enables the listener. Standalone addon use
+without Runner control does not override the server option. This covers
+sandboxes reconnecting during proxy replacement before Runner can send its
+readiness request. Managed `proxy.status` returns `not_ready` until its own
+native server reports a bound listener, so an unrelated process on the selected
+port cannot release readiness while asynchronous binding is pending.
+Initial mitmdump startup precedes API-provider catalog publication. Supervisor
+therefore completes another catalog warmup after provider startup readiness and
+before factories, Running status, or discovery. A failed control exchange stops
+startup; lifecycle cancellation retains startup rollback ownership. Replacement
+mitmdump launches complete their catalog load before process readiness returns.
+The loader reuses the warmed file identity on initial requests; changed identities
+still invalidate it. Periodic catalog replacement after admission retains its
+existing synchronous validation cost. Warmup outcome and elapsed time are logged
+without policy or credential content; unavailable is not reported as an available
+catalog.
 
 The addon owns a separate asyncio I/O thread. It opens the launch directory with
 `O_DIRECTORY | O_NOFOLLOW`, requires the effective UID and private permissions,
@@ -1154,6 +1184,59 @@ also verifies conservative billing and unchanged forwarded requests at the HTTP
 usage reporting boundary.
 
 ## Path normalization work boundary
+
+### Authorization across encoded path interpretations
+
+The raw matcher result is the authorization and forwarding ceiling. A separate
+bounded byte graph represents independent keep/decode choices, including nested
+percent triples formed across decoded spans. Request data and declaration literal
+spans share URI normalization for unreserved bytes, hex case, valid escaped UTF-8
+scalars and accepted raw-data aliases. Parse declaration operators before this
+analysis; parameter names and source API/rule identities remain opaque provenance.
+
+Immutable typed source NFAs and exact request-local subset products prove possible
+and certain applicability. The selected owner's complete pre-precedence API/rule
+set must be stable. Matching-conditioned priority bounds must preserve the original
+winner, including owner intent, policy ties and API binding conflicts. Keeping only
+the same selected allowance is insufficient when a restricted alias becomes
+applicable. Existing method/AWS selectors remain part of source applicability;
+pending AWS body inspection admits bounded resources, never credentials.
+
+Authority scope is established before path prefixes. Invalid raw/full-chain input
+or incomplete analysis at a configured authority produces a terminal, ownerless
+`unsafe_path` denial before auth or upload admission, including in both hooks and
+custom HTTP preparation. This includes malformed encoding, traversal, introduced
+query/fragment boundaries and exhausted budgets. For valid raw/full-chain input,
+only valid UTF-8 partial interpretations participate; invalid bytes are never
+replacement characters. A valid request proven outside every interpreted prefix,
+or a valid different authority, retains ordinary network scope.
+
+Interpretation can reject but cannot promote an originally unmatched request or
+supply replacement captures, routes or credentials. Successful encoded Unicode,
+space and greedy-key requests retain their original URL, query, API entry,
+parameters, permission and exact rule for forwarding and signing. Request graphs
+and proof memos must be released before auth awaits or stream admission, and must
+not enter cached classifications or process-wide URL caches. Shared final-decision
+vectors cover TypeScript diagnostics and Python enforcement.
+
+The source-level invalid-input result maps to the existing unsafe-input diagnostic
+response. Catalog, registry, auth-wire and persisted shapes remain compatible.
+Old or draining Runners retain their old enforcement until replaced or exited;
+publishing a new diagnostic package alone does not repair enforcement.
+
+### Validation work limits
+
+Declaration analysis retains at most 256 canonical typed forms per source API or
+combined API/rule. Each connector core retains at most 262,144 NFA states and
+1,048,576 transitions. Temporary graphs have the same state/edge caps and 4,194,304
+label bytes. Request subset/product proofs retain at most 262,144 subsets and
+262,144 product pairs, 1,048,576 memoized subset/byte transitions and 4,194,304
+logical subset bytes. Compilation and whole-request path analysis charge at most
+16,777,216 and 8,388,608 work units respectively.
+
+Charge scans, edge visits and allocation growth before performing the work. Do not
+truncate forms or branches to fit a budget. Incomplete analysis remains an explicit
+invalid result on the known authority, never outside scope or a partial allowance.
 
 Path safety validation accepts at most 65,536 input characters and five percent
 decoding passes. Before whole-segment NFKC, each raw or decoded segment must have

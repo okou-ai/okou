@@ -5,7 +5,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
-  runnersWorkflowDownloadContract,
   runnersPollContract,
 } from "../contracts/runners";
 import {
@@ -18,6 +17,7 @@ import {
   webhookTelemetryContract,
   webhookUsageEventContract,
 } from "../contracts/webhooks";
+import { iosRouteBindings } from "./ios-routes";
 import { swiftRouteBindings } from "../swift-bindings/routes";
 
 export interface RuntimeApiRouteLike {
@@ -37,6 +37,7 @@ export const runtimeApiRouteOwners = [
   "guest-agent",
   "mitm-addon",
   "desktop",
+  "ios",
 ] as const;
 
 export type RuntimeApiRouteOwner = (typeof runtimeApiRouteOwners)[number];
@@ -62,11 +63,6 @@ const runtimeServiceRouteBindings = [
     id: "runners.jobs.claim",
     owner: "runner",
     route: runnersJobClaimContract.claim,
-  },
-  {
-    id: "runners.runs.workflows.download",
-    owner: "runner",
-    route: runnersWorkflowDownloadContract.get,
   },
   {
     id: "runners.heartbeat",
@@ -144,4 +140,5 @@ const desktopRouteBindings: readonly RuntimeApiRouteBinding[] =
 export const runtimeApiRouteBindings: readonly RuntimeApiRouteBinding[] = [
   ...runtimeServiceRouteBindings,
   ...desktopRouteBindings,
+  ...iosRouteBindings,
 ];

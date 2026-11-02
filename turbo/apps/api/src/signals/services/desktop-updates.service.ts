@@ -9,10 +9,12 @@ import { DESKTOP_PRODUCT_OKOU } from "@okouai/api-contracts/contracts/client-hea
 import { delay } from "signal-timers";
 import {
   array,
+  iso,
   literal,
   object,
   record,
   string,
+  url,
   type infer as zInfer,
 } from "zod";
 
@@ -133,14 +135,14 @@ const DESKTOP_RELEASE_TAG_PREFIX = "okou-desktop-v";
 type ResolvableDesktopUpdateLine = typeof DESKTOP_UPDATE_LINE_OKOU;
 
 const desktopUpdateAssetSchema = object({
-  url: string().url(),
+  url: url(),
 });
 
 const desktopUpdateReleaseSchema = object({
   version: string().min(1),
   name: string().optional(),
   notes: string().optional(),
-  pubDate: string().datetime(),
+  pubDate: iso.datetime(),
   platforms: record(string(), record(string(), desktopUpdateAssetSchema)),
 });
 

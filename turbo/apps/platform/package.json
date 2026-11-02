@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.1079.4",
+  "version": "0.1083.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "generate:emoji-data": "node scripts/generate-chat-thread-emoji-data.node.mjs",
     "lint:emoji-data": "node scripts/generate-chat-thread-emoji-data.node.mjs --check",
     "lint:build-config": "tsx --test scripts/check-build-config.node.ts",
-    "lint:runtime-imports": "node --test scripts/check-runtime-imports.node.mjs",
+    "lint:runtime-imports": "node --test scripts/check-runtime-imports.node.mjs scripts/check-client-contract-imports.node.mjs",
     "lint:i18n": "tsx --test scripts/check-i18n-fixtures.node.mjs && pnpm i18n:check",
     "lint:localized-ui": "node --test scripts/check-localized-ui.node.mjs && node scripts/check-localized-ui.mjs",
     "lint:clerk-customize": "node --test scripts/check-clerk-customize.node.mjs && node scripts/check-clerk-customize.mjs",
@@ -29,6 +29,7 @@
     "@clerk/shared": "4.39.1",
     "@clerk/ui": "1.33.1",
     "@okouai/api-contracts": "workspace:*",
+    "@okouai/browser-extension-client": "workspace:*",
     "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
     "@okouai/mermaid-lite": "workspace:*",
@@ -63,7 +64,7 @@
     "ccstate-react": "^6.1.0",
     "fflate": "^0.8.3",
     "hast-util-to-jsx-runtime": "^2.3.6",
-    "i18next": "^26.4.2",
+    "i18next": "^26.5.11",
     "idb": "~8.0.4",
     "jsonc-parser": "3.3.1",
     "katex": "0.18.7",
@@ -125,7 +126,7 @@
     "pdfjs-dist": "^6.4.299",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "^8.72.0",
+    "typescript-eslint": "^8.72.1",
     "unicode-emoji-json": "^0.9.0",
     "vite": "^8.1.6",
     "vitest": "^5.0.5"

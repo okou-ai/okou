@@ -97,7 +97,7 @@ def _bound_flow(
 
 
 @pytest.mark.parametrize(
-    ("values", "path", "classifies"),
+    ("values", "path", "aws_signal"),
     [
         pytest.param((), "/repos", False, id="no-authorization"),
         pytest.param((_LARGE_BEARER,), "/repos", False, id="large-bearer"),
@@ -176,7 +176,7 @@ def _bound_flow(
     ],
 )
 def test_prebound_prefix_decision_has_bounded_acquisition(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, monkeypatch, values, path, classifies
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, monkeypatch, values, path, aws_signal
 ):
     registry_path = _write_github_firewall_registry(tmp_path)
     flow = _bound_flow(real_flow, values, path=path)
@@ -193,6 +193,14 @@ def test_prebound_prefix_decision_has_bounded_acquisition(
     original_fields = flow.request.headers.fields
     registry_reads: list[str] = []
     load_registry_state = registry.load_registry_state
+    prefix_signals: list[bool] = []
+    request_may_use_aws_sigv4 = mitm_addon._request_may_use_aws_sigv4
+
+    def track_prefix_probe(candidate: http.HTTPFlow) -> bool:
+        assert not registry_reads
+        signal = request_may_use_aws_sigv4(candidate)
+        prefix_signals.append(signal)
+        return signal
 
     def track_registry_read(path: str) -> registry.RegistryState:
         registry_reads.append(path)
@@ -204,13 +212,15 @@ def test_prebound_prefix_decision_has_bounded_acquisition(
         return load_registry_state(path)
 
     monkeypatch.setattr(registry, "load_registry_state", track_registry_read)
+    monkeypatch.setattr(mitm_addon, "_request_may_use_aws_sigv4", track_prefix_probe)
     with (
         mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
         fake_firewall_headers() as auth_fetch,
     ):
         assert mitm_addon.requestheaders(flow) is None
 
-    assert bool(registry_reads) is classifies
+    assert prefix_signals == [aws_signal]
+    assert registry_reads == [str(registry_path)]
     auth_fetch.assert_not_called()
     assert flow.response is None
     assert flow.error is None

@@ -196,7 +196,7 @@ final class ChatSyncTests: XCTestCase {
     defer { releaseFirstTail.open() }
     let requests = Mutex<[URLRequest]>([])
     let startReads = Mutex(0)
-    let detailReads = Mutex(0)
+    let tailReads = Mutex(0)
     let initialRows = [syncRow(1, text: "Initial answer"), syncRow(2)]
     let laterRows = [
       syncRow(3, text: "Latest answer", runID: syncSecondRunID),
@@ -220,13 +220,17 @@ final class ChatSyncTests: XCTestCase {
           }
           return syncPage(initialRows + laterRows, cursor: 4)
         case 2:
-          return detailReads.withLock { $0 == 0 }
+          // The next reader can catch up before the first reader requests thread details.
+          let first = tailReads.withLock {
+            $0 += 1
+            return $0 == 1
+          }
+          return first
             ? syncPage([], cursor: 2) : syncPage(laterRows, cursor: 4)
         case 4: return syncPage([], cursor: 4)
         default: throw URLError(.unsupportedURL)
         }
       case syncPath:
-        detailReads.withLock { $0 += 1 }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       default: throw URLError(.unsupportedURL)
       }

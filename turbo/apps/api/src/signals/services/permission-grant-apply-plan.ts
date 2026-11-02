@@ -1,7 +1,4 @@
-import type {
-  UserPermissionGrantExpiresIn,
-  UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { and, eq } from "drizzle-orm";
 
@@ -47,37 +44,4 @@ export function resolveGrantExpiresAt(
       return null;
     }
   }
-}
-
-function preservedActiveGrantExpiresAt(
-  expiresAt: Date | null,
-  timestamp: Date,
-): Date | null {
-  if (!expiresAt) {
-    return null;
-  }
-  return expiresAt.getTime() > timestamp.getTime() ? expiresAt : null;
-}
-
-export function resolvedExpiresAt({
-  action,
-  expiresIn,
-  existing,
-  timestamp,
-}: {
-  readonly action: UserPermissionGrantResponse["action"];
-  readonly expiresIn: UserPermissionGrantExpiresIn | undefined;
-  readonly existing: typeof userPermissionGrants.$inferSelect | undefined;
-  readonly timestamp: Date;
-}): Date | null {
-  if (action !== "allow") {
-    return null;
-  }
-  if (expiresIn !== undefined) {
-    return resolveGrantExpiresAt(expiresIn, timestamp);
-  }
-  return preservedActiveGrantExpiresAt(
-    existing?.action === "allow" ? existing.expiresAt : null,
-    timestamp,
-  );
 }

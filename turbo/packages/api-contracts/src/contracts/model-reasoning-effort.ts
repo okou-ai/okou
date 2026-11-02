@@ -6,7 +6,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { runModelIdSchema } from "./model-providers";
+import { runModelIdSchema } from "./run-model-id";
 
 /** The effort vocabulary of the Codex and Claude Code harnesses. */
 const CODEX_REASONING_EFFORTS = [

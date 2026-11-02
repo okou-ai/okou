@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.28.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.3...guest-storage-apply-v0.28.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.28.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.2...guest-storage-apply-v0.28.3) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.28.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.1...guest-storage-apply-v0.28.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
+## [0.28.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.0...guest-storage-apply-v0.28.1) (2026-10-30)
+
 ## [0.28.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.5...guest-storage-apply-v0.28.0) (2026-10-30)
 
 

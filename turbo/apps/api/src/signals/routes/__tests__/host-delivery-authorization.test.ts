@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { object, string, enum as zEnum } from "zod";
+import { object, string, uuid, enum as zEnum } from "zod";
 import { expect, onTestFinished, test } from "vitest";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -13,8 +13,8 @@ import { createHostBddApi } from "./helpers/api-bdd-host";
 
 const context = testContext();
 const referenceSchema = object({
-  siteId: string().uuid(),
-  deploymentId: string().uuid(),
+  siteId: uuid(),
+  deploymentId: uuid(),
   publicSlug: string(),
   publicBrand: zEnum(["vm0", "okou"]),
   prefix: string(),

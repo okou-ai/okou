@@ -3,16 +3,16 @@ import {
   suggestionFeedbacks,
   type SuggestionContext,
 } from "@okouai/api-contracts/contracts/suggestion-context";
-import {
-  annotatedImageFilename,
-  type ChatThreadServiceTier,
-  type FeedbackNotePart,
-  type GenerationTemplateRequest,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessageInputPart,
-  type UserMessagePart,
+import type {
+  ChatThreadServiceTier,
+  FeedbackNotePart,
+  GenerationTemplateRequest,
+  UserMessageDocument,
+  UserMessageInputDocument,
+  UserMessageInputPart,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { annotatedImageFilename } from "@okouai/api-contracts/validators/chat-threads";
 import {
   isChatUserMessageEventType,
   type ChatEventType,

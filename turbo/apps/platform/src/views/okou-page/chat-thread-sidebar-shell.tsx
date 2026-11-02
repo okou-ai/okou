@@ -15,7 +15,11 @@ import {
   chatThreadSidebarResizeHandleRef$,
   unifiedChatThreadSidebarWidths$,
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
-import { unifiedChatWorkspace$ } from "../../signals/okou-page/unified-chat-workspace.ts";
+import {
+  chatListWidth$,
+  storedChatListHidden$,
+  unifiedChatWorkspace$,
+} from "../../signals/okou-page/unified-chat-workspace.ts";
 import { ResizeSeam } from "./resize-seam.tsx";
 
 function sidebarWidthValue(width: number | null, unified: boolean): string {
@@ -191,6 +195,9 @@ export function ChatThreadSidebarShell({
   const transitionRef = useSet(layout.transitionOnRef$);
   const { unified, width } = useChatThreadSidebarWidth(widthKey);
   const resizing = useGet(chatThreadSidebarResizing$);
+  // The chat list shares the workspace row, so its geometry sizes this panel.
+  const chatListWidth = useGet(chatListWidth$);
+  const chatListHidden = useGet(storedChatListHidden$);
   const { style, transition } = chatThreadSidebarLayout(
     width,
     unified,
@@ -203,6 +210,8 @@ export function ChatThreadSidebarShell({
     unified,
     resizing,
     animateEntry,
+    chatListWidth,
+    chatListHidden,
     workspace?.beside,
     workspace?.pwaNavigation,
     workspace?.fullscreen,

@@ -5,6 +5,7 @@ public struct ChatArtifact: Equatable, Hashable, Sendable, Identifiable {
   public enum Source: Equatable, Hashable, Sendable {
     case reference(String, fragment: String)
     case file(String)
+    case hostedSite(URL)
     case published(URL)
   }
 

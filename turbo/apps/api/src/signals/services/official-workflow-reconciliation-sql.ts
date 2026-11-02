@@ -1,3 +1,4 @@
+import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import type { OfficialWorkflowAcceptedDefinition } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -26,9 +27,10 @@ export const acceptedRevisionRowSchema = object({
   definitionName: string(),
   revision: string(),
   payload: zUnknown(),
-  storageName: string(),
-  storageId: string(),
-  storageVersion: string(),
+  storageName: string().nullable(),
+  storageId: string().nullable(),
+  storageVersion: string().nullable(),
+  contentBundle: contentBundleSchema.nullable(),
 });
 
 function acceptedCatalogAuthorityCondition() {
@@ -92,11 +94,15 @@ export function acceptedRevisionReadStatement(
       ${officialWorkflowDefinitionRevisions.payload} AS payload,
       ${officialWorkflowDefinitionRevisions.storageName} AS "storageName",
       ${officialWorkflowDefinitionRevisions.storageId} AS "storageId",
-      ${officialWorkflowDefinitionRevisions.storageVersion} AS "storageVersion"
+      ${officialWorkflowDefinitionRevisions.storageVersion} AS "storageVersion",
+      ${officialWorkflowDefinitionRevisions.contentBundle} AS "contentBundle"
     FROM ${officialWorkflowDefinitionRevisions}
-    INNER JOIN ${storages} ON ${storageCondition}
-    INNER JOIN ${storageVersions} ON ${versionCondition}
-    WHERE ${identityCondition} LIMIT 1`;
+    LEFT JOIN ${storages} ON ${storageCondition}
+    LEFT JOIN ${storageVersions} ON ${versionCondition}
+    WHERE ${identityCondition} AND (
+      (${officialWorkflowDefinitionRevisions.storageId} IS NULL AND ${officialWorkflowDefinitionRevisions.storageVersion} IS NULL)
+      OR (${storages.id} IS NOT NULL AND ${storageVersions.id} IS NOT NULL)
+    ) LIMIT 1`;
 }
 
 export const webhookTierRowSchema = object({

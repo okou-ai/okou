@@ -6,7 +6,7 @@ import {
 
 import { env } from "../../lib/env";
 import { safeJsonParse } from "../utils";
-import { canonicalJsonString } from "./official-workflow-catalog-validation.service";
+import { canonicalJsonString } from "../../lib/canonical-json";
 
 interface Owner {
   readonly orgId: string;

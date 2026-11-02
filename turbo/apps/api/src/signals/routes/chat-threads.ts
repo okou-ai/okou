@@ -11,7 +11,7 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { string } from "zod";
+import { uuid } from "zod";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -60,7 +60,7 @@ import { chatThreadUnpinRoutes } from "./chat-threads-unpin";
 import { chatThreadArchiveRoutes } from "./chat-threads-archive";
 import { chatThreadMuteRoutes } from "./chat-threads-mute";
 
-const chatThreadIdSchema = string().uuid();
+const chatThreadIdSchema = uuid();
 const catchUpChatEventsBody$ = bodyResultOf(chatThreadEventsContract.catchUp);
 
 function chatThreadNotFound() {

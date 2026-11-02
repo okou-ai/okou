@@ -5,7 +5,7 @@ import {
   getEmailEnabledFeatureStates,
   isFeatureSwitchAvailable,
 } from "@okouai/core/feature-switch";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { featureSwitchesContract } from "@okouai/api-contracts/client/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$, clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";

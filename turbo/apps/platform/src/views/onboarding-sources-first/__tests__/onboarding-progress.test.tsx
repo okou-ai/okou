@@ -122,17 +122,18 @@ test("Resuming a later step preserves progress without a connected source", asyn
   });
 
   await screen.findByRole("heading", {
-    name: "Start with a task that matters",
+    name: "Let’s start your first task",
   });
   expect(pathname()).toBe(ROUTES.onboardingReady);
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Draft my launch plan",
   );
-  expect(getButtonByName("Start with Okou")).toBeEnabled();
+  expect(getButtonByName("Start my first task")).toBeEnabled();
 });
 
 test.each([
   { step: "team", isAdmin: false },
+  { step: "team", isAdmin: true },
   { step: "skills", isAdmin: true },
 ])(
   "A saved $step step must belong to the current flow",
@@ -220,16 +221,16 @@ test("A failed completion keeps the ready step and edited request available for 
   });
 
   await screen.findByRole("heading", {
-    name: "Start with a task that matters",
+    name: "Let’s start your first task",
   });
-  click(getButtonByName("Start with Okou"));
+  click(getButtonByName("Start my first task"));
 
   await screen.findByText("Could not finish onboarding");
   expect(pathname()).toBe(ROUTES.onboardingReady);
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Draft my launch plan",
   );
   await waitFor(() => {
-    expect(getButtonByName("Start with Okou")).toBeEnabled();
+    expect(getButtonByName("Start my first task")).toBeEnabled();
   });
 });

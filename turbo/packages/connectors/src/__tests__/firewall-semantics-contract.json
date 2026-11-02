@@ -1017,6 +1017,2692 @@
   ],
   "finalDecisionCases": [
     {
+      "name": "raw Unicode scalar widths cannot hide an escaped UTF-8 literal declaration",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": [
+                    "GET /files/caf%C3%A9%E7%AE%A1%E7%90%86%E5%91%98%F0%9F%98%80"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/café管理员😀"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/café管理员😀",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "mixed Unicode and unreserved escapes preserve UTF-8 literal ownership",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%E7%AE%A1a%E7%90%86"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/管%61理"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/管%61理",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "UTF-8 normalization retains reserved ASCII escape structure",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%E7%AE%A1%2Fsecret"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/管%2Fsecret"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/管%2Fsecret",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unambiguous escaped UTF-8 literal retains its original rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/%E7%AE%A1"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%E7%AE%A1"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%E7%AE%A1",
+        "permission": "read",
+        "rule": "GET /files/%E7%AE%A1"
+      }
+    },
+    {
+      "name": "Unicode alias of an escaped UTF-8 API base cannot gain credentials",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/%E7%AE%A1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/管/files/id"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/管/files/id"
+      }
+    },
+    {
+      "name": "unambiguous escaped UTF-8 API base retains its original identity",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/%E7%AE%A1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/%E7%AE%A1/files/id"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2/%E7%AE%A1",
+        "relativePath": "/files/id",
+        "permission": "read",
+        "rule": "GET /files/{id}"
+      }
+    },
+    {
+      "name": "invalid UTF-8 at a configured authority is rejected without an owner",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/管{tenant}",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/%E7%AE%A1%FF/files/id"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/%E7%AE%A1%FF/files/id"
+      }
+    },
+    {
+      "name": "decode budget exhaustion rejects potential configured authority",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%25252525252532/files/id"
+      }
+    },
+    {
+      "name": "decode budget rejection supports host and path parameters",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://{tenant}.example.com/v2/{account}",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://acme.example.com/v%25252525252532/team/files/id"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%25252525252532/team/files/id"
+      }
+    },
+    {
+      "name": "decode budget keeps unrelated authorities outside connector scope",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://other.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "decode budget authority matching preserves nondefault ports",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com:8443/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "decode budget authority matching preserves schemes",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "http://api.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "decode budget exhaustion cannot prove an escaped path unowned",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/other%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/other%25252525252532/files/id"
+      }
+    },
+    {
+      "name": "invalid UTF-8 beside a nested prefix cannot escape configured authority scope",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%2532/registries/id%FF"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%FF"
+      }
+    },
+    {
+      "name": "malformed escapes beside a nested prefix cannot escape configured authority scope",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%2532/registries/id%ZZ"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%ZZ"
+      }
+    },
+    {
+      "name": "malformed unowned path segments do not invent a connector owner",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/other/registries/id%ZZ"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/other/registries/id%ZZ"
+      }
+    },
+    {
+      "name": "decoded query delimiter is invalid before prefix selection",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%32/registries/id%3Fignored"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%32/registries/id%3Fignored"
+      }
+    },
+    {
+      "name": "decoded fragment delimiter is invalid before prefix selection",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%32/registries/id%23ignored"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%32/registries/id%23ignored"
+      }
+    },
+    {
+      "name": "decoded query delimiter beside a nested prefix is invalid without an owner",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%2532/registries/id%3Fignored"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%3Fignored"
+      }
+    },
+    {
+      "name": "decoded fragment delimiter beside a nested prefix is invalid without an owner",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%2532/registries/id%23ignored"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%23ignored"
+      }
+    },
+    {
+      "name": "unsafe path on a configured authority is invalid before prefix matching",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/other/registries/id%3Fignored"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/other/registries/id%3Fignored"
+      }
+    },
+    {
+      "name": "unsafe encoded path does not select a different authority",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://other.example.com/v%32/registries/id%3Fignored"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "URI alias cannot hide an unknown-endpoint boundary under a lower specificity API",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/a{tenant}x",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            },
+            {
+              "base": "https://api.example.com/v2/%61{tenant}",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": []
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/abx/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2/a{tenant}x",
+        "relativePath": "/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "URI alias cannot hide a lower specificity denied mixed rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/a{id}x"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/abx"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/abx",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "URI alias cannot hide a denied route under a lower specificity API base",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/a{tenant}x",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            },
+            {
+              "base": "https://api.example.com/v2/%61{tenant}",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/abx/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2/a{tenant}x",
+        "relativePath": "/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "URI alias cannot hide a denied GET rule behind an allowed ANY rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["ANY /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "URI alias cannot hide a denied ANY rule behind an allowed GET rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["ANY /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "changed winning rule set is ambiguous even when overlapping methods are both granted",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["ANY /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read", "restricted"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "overlapping method URI aliases in different API entries remain denied",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["ANY /files/a"]
+                }
+              ]
+            },
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "URI alias cannot bypass an asked GET permission through ANY",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["ANY /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": [],
+          "ask": ["restricted"],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "URI aliases for disjoint HTTP methods remain independent",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["POST /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "permission": "files.read",
+        "rule": "GET /files/a"
+      }
+    },
+    {
+      "name": "unmatched GET alias does not block a granted POST through ANY",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["ANY /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "permission": "files.read",
+        "rule": "ANY /files/a"
+      }
+    },
+    {
+      "name": "unrelated resources remain usable beside conflicting URI literal aliases",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/a", "GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/b"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/b",
+        "permission": "files.read",
+        "rule": "GET /files/{key+}"
+      }
+    },
+    {
+      "name": "existing explicit overlapping rules retain ordinary policy reduction",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["ANY /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/a"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "permission": "files.read",
+        "rule": "ANY /files/a"
+      }
+    },
+    {
+      "name": "explicit connector intent ignores a newly applicable URI alias of another owner",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["ANY /files/a"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "other",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        },
+        "other": {
+          "allow": [],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a",
+        "connectorIntent": {
+          "status": "present",
+          "value": "example"
+        }
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "permission": "files.read",
+        "rule": "ANY /files/a"
+      }
+    },
+    {
+      "name": "encoded base literals retain the original API and raw resource path",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v%32/{tenant}",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%32/acme%20%E4%B8%AD/files/key%20x"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v%32/{tenant}",
+        "relativePath": "/files/key%20x",
+        "permission": "files.read",
+        "rule": "GET /files/{key+}"
+      }
+    },
+    {
+      "name": "URI-normalized declarations cannot promote an originally unowned base",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v%32/{tenant}",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/acme/files/id"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/acme/files/id"
+      }
+    },
+    {
+      "name": "newly equivalent API base declarations fail closed",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            },
+            {
+              "base": "https://api.example.com/v%32",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unreserved alias cannot hide a protected literal retaining a reserved escape",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%2Ffoo"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "reserved escape hex case cannot hide a protected literal",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/delegations%2ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/delegations%2Ffoo"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/delegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unescaped request cannot bypass an encoded unreserved literal declaration",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "newly equivalent URI rule declarations fail closed",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/a"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "URI rule aliases cannot be hidden in separate API entries",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/a"]
+                }
+              ]
+            },
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            },
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/a",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unambiguous encoded unreserved literal retains its original rule identity",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%61"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%61",
+        "permission": "files.read",
+        "rule": "GET /files/%61"
+      }
+    },
+    {
+      "name": "URI normalization keeps separate API authorities independent",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://one.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%61"]
+                }
+              ]
+            },
+            {
+              "base": "https://two.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/a"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://two.example.com/v2/files/a"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://two.example.com/v2",
+        "relativePath": "/files/a",
+        "permission": "files.read",
+        "rule": "GET /files/a"
+      }
+    },
+    {
+      "name": "canonical protected literal remains denied",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/delegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/delegations",
+        "reason": "permission_denied",
+        "permissions": ["delegations.read"]
+      }
+    },
+    {
+      "name": "encoded literal cannot fall through to an allowed resource ID",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%64elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%64elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "nested encoded literal cannot select a weaker rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%2564elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%2564elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "encoded literal cannot bypass an ask permission",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": ["delegations.read"],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%64elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%64elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "different decoded rules remain ambiguous even when both permissions are allowed",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read", "delegations.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%64elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%64elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "encoded separator cannot hide an unsupported nested resource",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "pods.read",
+                  "rules": ["GET /pods/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["pods.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/pods/pod-id%2Flogs"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/pods/pod-id%2Flogs",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "ordinary encoded Unicode and space IDs retain the original path",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/acme%20%E4%B8%AD"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/acme%20%E4%B8%AD",
+        "permission": "registry.read",
+        "rule": "GET /registries/{id}"
+      }
+    },
+    {
+      "name": "encoded greedy file keys retain the same authorization and raw path",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/acme%2Freport"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/acme%2Freport",
+        "permission": "files.read",
+        "rule": "GET /files/{key+}"
+      }
+    },
+    {
+      "name": "query escapes do not become authorization path data",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/id?filter=%64elegations%2F%23"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/id",
+        "permission": "registry.read",
+        "rule": "GET /registries/{id}"
+      }
+    },
+    {
+      "name": "decoding cannot introduce a query boundary",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/id%3Fignored"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/registries/id%3Fignored"
+      }
+    },
+    {
+      "name": "encoded base cannot turn an unowned URL into a credential selection",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%32/registries/id"
+      },
+      "expected": {
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%32/registries/id"
+      }
+    },
+    {
+      "name": "encoded Unicode cannot hide a protected literal",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/管理员"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%E7%AE%A1%E7%90%86%E5%91%98"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%E7%AE%A1%E7%90%86%E5%91%98",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unknown policy allowance must agree across decoded interpretations",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/unlisted%2Fid"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/unlisted%2Fid"
+      }
+    },
+    {
       "name": "parameterized repeated root slash base does not select credentials outside its scope",
       "firewalls": [
         {
@@ -2277,7 +4963,7 @@
       }
     },
     {
-      "name": "runtime backslash path preserves relative path in unsafe block",
+      "name": "runtime backslash path is invalid without an owner",
       "firewalls": [
         {
           "name": "example",
@@ -2308,12 +4994,9 @@
         "url": "https://api.example.com/items\\123"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com",
-        "relativePath": "/items\\123",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/items\\123"
       }
     },
     {
@@ -2348,11 +5031,13 @@
         "url": "https://api.example.com/v1\\items/123"
       },
       "expected": {
-        "kind": "no_match"
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v1\\items/123"
       }
     },
     {
-      "name": "unsafe path blocks after base match",
+      "name": "unsafe path rejects on configured authority before prefix selection",
       "firewalls": [
         {
           "name": "example",
@@ -2383,12 +5068,9 @@
         "url": "https://api.example.com/users/%2e%2e/admin"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com",
-        "relativePath": "/users/%2e%2e/admin",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/users/%2e%2e/admin"
       }
     },
     {
@@ -3786,6 +6468,1064 @@
         "relativePath": "/123/calendars/home/event.ics",
         "reason": "permission_denied",
         "permissions": ["calendar.write"]
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent decoding exposes a single-segment rule without escaped declarations",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/%2566iles/a%2Fb"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/%2566iles/a%2Fb",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "leading U+FEFF cannot hide a newly tied source rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{id}%61"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/\uFEFF{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/\uFEFFx%61"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/\uFEFFx%61",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "stable applicability still rejects a derived specificity flip",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{id}%61%62%63"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/prefix{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/prefixx%61%62%63"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/prefixx%61%62%63",
+        "reason": "unsafe_path",
+        "permissions": []
       }
     }
   ]

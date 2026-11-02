@@ -2,8 +2,10 @@ import type { IDBPDatabase } from "idb";
 import {
   chatThreadEventSchema,
   chatThreadSnapshotProjectionSchema,
-  type ChatThreadEvent,
-  type ChatThreadSnapshotProjection,
+} from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  ChatThreadEvent,
+  ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   CHAT_THREAD_EVENT_SYNC_STORE,

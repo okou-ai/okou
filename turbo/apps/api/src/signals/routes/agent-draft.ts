@@ -1,6 +1,7 @@
 import { command, computed } from "ccstate";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { agentDrafts } from "@okouai/db/schema/agent-draft";
+import { agents } from "@okouai/db/schema/agent";
 import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -9,7 +10,7 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
-import { agentExists } from "../services/agent-data.service";
+import { visibleAgentIdentityCondition } from "../services/agent-data.service";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import type { RouteEntry } from "../route-entry";
@@ -30,13 +31,17 @@ const getAgentDraftInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(agentDraftContract.get));
 
-  const exists = await get(
-    agentExists({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const agentScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const [visibleAgent] = await get(db$)
+    .select({ id: agents.id })
+    .from(agents)
+    .where(visibleAgentIdentityCondition(agentScope))
+    .limit(1);
+  const exists = Boolean(visibleAgent);
   if (!exists) {
     return agentNotFound(params.id);
   }
@@ -76,14 +81,18 @@ const patchAgentDraftInner$ = command(
       return bodyResult.response;
     }
 
-    const exists = await get(
-      agentExists({
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: params.id,
-      }),
-    );
+    const agentScope = {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      agentId: params.id,
+    };
+    const [visibleAgent] = await get(db$)
+      .select({ id: agents.id })
+      .from(agents)
+      .where(visibleAgentIdentityCondition(agentScope))
+      .limit(1);
     signal.throwIfAborted();
+    const exists = Boolean(visibleAgent);
     if (!exists) {
       return agentNotFound(params.id);
     }

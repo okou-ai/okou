@@ -5,8 +5,6 @@ import {
   number,
   object,
   string,
-  uuid,
-  url as zUrl,
   type infer as zInfer,
 } from "zod";
 
@@ -37,30 +35,3 @@ export const workflowAttachmentsSchema = discriminatedUnion("kind", [
   }).strict(),
 ]);
 export type WorkflowAttachments = zInfer<typeof workflowAttachmentsSchema>;
-
-/** Claim selects identities/mounts; current content is resolved during download. */
-export const workflowSkillReferenceSchema = object({
-  workflowId: uuid(),
-  mountPath: string().regex(
-    /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
-  ),
-}).strict();
-export type WorkflowSkillReference = zInfer<
-  typeof workflowSkillReferenceSchema
->;
-
-export const workflowDownloadSchema = object({
-  workflowId: uuid(),
-  skillMd: string(),
-  attachments: object({
-    archiveUrl: zUrl({ protocol: /^https$/u }).refine((value) => {
-      const url = new URL(value);
-      return url.username === "" && url.password === "";
-    }),
-    archiveSize: number().int().positive(),
-    archiveSha256: sha256,
-  })
-    .strict()
-    .nullable(),
-}).strict();
-export type WorkflowDownload = zInfer<typeof workflowDownloadSchema>;

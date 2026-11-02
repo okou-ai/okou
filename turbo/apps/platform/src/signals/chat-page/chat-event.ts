@@ -12,9 +12,11 @@ import {
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadRenameContract,
-  type FeedbackNotePart,
-  type UserMessageDocument,
-  type UserMessagePart,
+} from "@okouai/api-contracts/client/chat-threads";
+import type {
+  FeedbackNotePart,
+  UserMessageDocument,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

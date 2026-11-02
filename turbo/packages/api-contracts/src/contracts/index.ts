@@ -452,7 +452,6 @@ export {
   type RunnerCancellationMode,
   type RunnerCancellationResponse,
   runnersJobClaimContract,
-  runnersWorkflowDownloadContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,

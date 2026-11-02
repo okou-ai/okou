@@ -10,10 +10,9 @@ use tokio::sync::Notify;
 use crate::StorageManifestTiming;
 use crate::error::{Result, SandboxError, SandboxIdleTransition};
 use crate::types::{
-    CodexSessionCleanupRequest, CopyFileOptions, CopyFileResult, ExecRequest, ExecResult,
-    GuestAgentProcessHandle, GuestProcessHandle, GuestStateRestoreRequest, ProcessExit,
-    SessionHistoryIdentityVerifyRequest, StartAgentProcessRequest, StartProcessRequest,
-    StorageManifestRequest, WriteFileEntry,
+    CopyFileOptions, CopyFileResult, ExecRequest, ExecResult, GuestAgentProcessHandle,
+    GuestProcessHandle, GuestStateRestoreRequest, ProcessExit, SessionHistoryIdentityVerifyRequest,
+    StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
 };
 
 /// File-transfer encoding, explicitly selected by the business caller.
@@ -1026,23 +1025,6 @@ pub trait Sandbox: Send + Sync + Any {
         })
     }
 
-    /// Clean retained Codex rollout files through the provider's fixed helper.
-    ///
-    /// Implementations select the executable and fixed subcommand and must not
-    /// expose arbitrary command, environment, sudo, stdin, output, or lifecycle
-    /// authority. The result stdout remains untrusted and must be validated by
-    /// the session-restore owner before it becomes a write destination.
-    async fn cleanup_codex_session(
-        &self,
-        _request: &CodexSessionCleanupRequest<'_>,
-    ) -> Result<ExecResult> {
-        Err(SandboxError::Operation {
-            operation: crate::SandboxOperation::CleanupCodexSession,
-            reason: crate::SandboxOperationReason::Other,
-            message: "fixed Codex session cleanup is unsupported".to_string(),
-        })
-    }
-
     /// Restore snapshot-sensitive clock, CRNG, and optional timezone state
     /// through the provider's fixed guest helper operation.
     ///
@@ -1206,35 +1188,4 @@ pub trait Sandbox: Send + Sync + Any {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::SandboxFinalExecParkHandoff;
-
-    #[test]
-    fn final_exec_park_handoff_accepts_only_one_request() {
-        let handoff = SandboxFinalExecParkHandoff::new();
-
-        assert!(handoff.request());
-        assert!(!handoff.request());
-        assert!(handoff.accept_if_requested());
-        assert!(!handoff.cancel());
-    }
-
-    #[test]
-    fn final_exec_park_handoff_cancellation_closes_unaccepted_request() {
-        let handoff = SandboxFinalExecParkHandoff::new();
-
-        assert!(handoff.request());
-        assert!(handoff.cancel());
-        assert!(!handoff.accept_if_requested());
-        assert!(!handoff.request());
-    }
-
-    #[test]
-    fn final_exec_park_handoff_cancellation_closes_before_request() {
-        let handoff = SandboxFinalExecParkHandoff::new();
-
-        assert!(handoff.cancel());
-        assert!(!handoff.request());
-        assert!(!handoff.accept_if_requested());
-    }
-}
+mod tests;

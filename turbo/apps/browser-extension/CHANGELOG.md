@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.5.1](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.0...browser-extension-v0.5.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **browser:** wait for worker startup before bridge hello ([#44408](https://github.com/okou-ai/okou/issues/44408)) ([c5f1bb2](https://github.com/okou-ai/okou/commit/c5f1bb23f8a3871e1956eaef744a5d5b19de8e8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.1
+
+## [0.5.0](https://github.com/okou-ai/okou/compare/browser-extension-v0.4.2...browser-extension-v0.5.0) (2026-10-30)
+
+
+### Features
+
+* **browser:** adopt native window discovery in platform viewers ([#44303](https://github.com/okou-ai/okou/issues/44303)) ([e4461fe](https://github.com/okou-ai/okou/commit/e4461fe53d441879f54b30e449258c4d523b50ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.0
+
+## [0.4.2](https://github.com/okou-ai/okou/compare/browser-extension-v0.4.1...browser-extension-v0.4.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ci:** retain five browser extension versions ([#44269](https://github.com/okou-ai/okou/issues/44269)) ([0c54bc5](https://github.com/okou-ai/okou/commit/0c54bc513187082e2e3846aa49f7f3de7672d2bf))
+
 ## [0.4.1](https://github.com/okou-ai/okou/compare/browser-extension-v0.4.0...browser-extension-v0.4.1) (2026-10-30)
 
 

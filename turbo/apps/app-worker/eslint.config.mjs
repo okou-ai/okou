@@ -1,10 +1,10 @@
-import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { zodConfig } from "@okouai/eslint-rules/zod";
 import { config, oxlint } from "@okouai/eslint-config/base";
 
 export default [
   { ignores: ["shell/**"] },
   ...config,
-  namedZodImportsConfig,
+  zodConfig,
   ...oxlint.buildFromOxlintConfigFile("./.oxlintrc.json"),
   {
     files: ["tests/worker.test.mjs"],

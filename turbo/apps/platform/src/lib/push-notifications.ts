@@ -6,7 +6,7 @@
  */
 
 import { command, state } from "ccstate";
-import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
+import { pushSubscriptionsContract } from "@okouai/api-contracts/client/push-subscriptions";
 import { apiClient$, type ApiClientFactory } from "../signals/api-client.ts";
 import { accept } from "./accept.ts";
 import { bestEffort } from "../signals/utils.ts";

@@ -401,8 +401,13 @@ Configuration examples and application instructions live with
 
 At startup, the runner:
 
-1. Multiplies physical CPU and memory by the resolved concurrency factor to
-   produce the effective resource budget.
+1. Subtracts the host CPU reservation `R(P)` from the logical CPU capacity `P`
+   visible to Runner, then applies the resolved concurrency factor `F`. The
+   fractional CPU admission limit is `(P - R(P)) * F`; the I/O denominator uses
+   its floored value, `floor((P - R(P)) * F)`. The reservation curve is defined in
+   [ResourceBudget](../../crates/runner-lifecycle/src/resource_budget.rs).
+   Memory separately uses `floor(host_memory_mb * F)`, with no host-memory
+   reservation.
 2. Finds the maximum sandbox count that budget can admit across any mixture of
    configured profile CPU and memory shapes. A nonzero `max_concurrent` is an
    additional cap; `0` means there is no explicit job-count cap.
@@ -411,6 +416,8 @@ At startup, the runner:
    at least one.
 4. Reserves 20% of each configured host I/O capacity, then divides the remaining
    80% by the denominator using integer division.
+
+The CPU host reservation in step 1 is separate from the 20% I/O reserve in step 4.
 
 For each capacity:
 
@@ -432,18 +439,29 @@ all I/O limiters are disabled.
 
 ### Worked Example
 
-With a resolved denominator of `4`, the example host inputs below produce these
-sandbox-level limits:
+Consider a host with 8 visible logical CPUs, 16,384 MiB memory, concurrency
+factor `1.0`, `max_concurrent = 4`, and a single configured profile requiring
+2 vCPUs and 4,096 MiB:
+
+- The CPU reservation is `R(8) = 0.09`, so fractional CPU admission capacity is
+  `(8 - 0.09) * 1.0 = 7.91`. The I/O calculation uses `floor(7.91) = 7` vCPUs.
+- Effective memory is `floor(16384 * 1.0) = 16384` MiB.
+- CPU fits `floor(7 / 2) = 3` sandboxes; memory fits `floor(16384 / 4096) = 4`.
+  With the count cap of 4, the denominator is `min(3, 4, 4) = 3`.
+
+After the separate 20% I/O reserve and integer division by `3`, the host inputs
+below produce these sandbox-level limits:
 
 | Capacity       | Host input     | Sandbox limit after reserve and division | Structured log field           |
 | -------------- | -------------- | ---------------------------------------- | ------------------------------ |
-| Disk bandwidth | `2000 MiB/s`   | `400 MiB/s` = `419430400 bytes/s`        | `disk_bandwidth_bytes_per_sec` |
-| Disk IOPS      | `200000 ops/s` | `40000 ops/s`                            | `disk_ops_per_sec`             |
-| Network RX     | `1250 MiB/s`   | `250 MiB/s` = `262144000 bytes/s`        | `net_rx_bytes_per_sec`         |
-| Network TX     | `1000 MiB/s`   | `200 MiB/s` = `209715200 bytes/s`        | `net_tx_bytes_per_sec`         |
+| Disk bandwidth | `2000 MiB/s`   | `559240533 bytes/s`                      | `disk_bandwidth_bytes_per_sec` |
+| Disk IOPS      | `200000 ops/s` | `53333 ops/s`                            | `disk_ops_per_sec`             |
+| Network RX     | `1250 MiB/s`   | `349525333 bytes/s`                      | `net_rx_bytes_per_sec`         |
+| Network TX     | `1000 MiB/s`   | `279620266 bytes/s`                      | `net_tx_bytes_per_sec`         |
 
 If a sandbox has two writable drives, Firecracker further splits the logged
-disk budget into `209715200 bytes/s` and `20000 ops/s` for each drive.
+disk budget using integer division into `279620266 bytes/s` and `26666 ops/s`
+for each drive.
 
 ## Failure Behavior
 

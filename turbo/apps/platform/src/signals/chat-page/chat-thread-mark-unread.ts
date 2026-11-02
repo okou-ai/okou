@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { chatThreadMarkUnreadContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadMarkUnreadContract } from "@okouai/api-contracts/client/chat-threads";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

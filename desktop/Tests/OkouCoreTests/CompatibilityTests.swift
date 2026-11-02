@@ -5,7 +5,8 @@ import XCTest
 
 /// A claimed command as the API would deliver it, with only the fields a test varies.
 private func claimedCommand(
-  kind: String = "apps.list", payload: [String: JSONValue] = [:], timeoutMs: Int? = 60_000,
+  kind: String = "apps.list", payload: ComputerUseCommandClaim.Command.Payload = .init(),
+  timeoutMs: Int? = 60_000,
   createdAt: String, claimedAt: String?
 ) -> ComputerUseCommandClaim.Command {
   ComputerUseCommandClaim.Command(
@@ -90,7 +91,8 @@ final class CompatibilityTests: XCTestCase {
     let time = formatter.string(from: Date())
     let state = await executor.execute(
       claimedCommand(
-        kind: "app.state", payload: ["app": .string("Calculator")], createdAt: time,
+        kind: "app.state", payload: .init(additionalFields: ["app": .string("Calculator")]),
+        createdAt: time,
         claimedAt: time),
       claimStarted: .now)
     XCTAssertEqual(state["status"].string, "succeeded")
@@ -102,9 +104,9 @@ final class CompatibilityTests: XCTestCase {
     let click = await executor.execute(
       claimedCommand(
         kind: "element.click",
-        payload: [
+        payload: .init(additionalFields: [
           "app": .string("Calculator"), "elementIndex": .number(1), "snapshotId": snapshot,
-        ],
+        ]),
         createdAt: time, claimedAt: time),
       claimStarted: .now)
     XCTAssertEqual(click["status"].string, "succeeded")
@@ -113,9 +115,9 @@ final class CompatibilityTests: XCTestCase {
     let wrongApp = await executor.execute(
       claimedCommand(
         kind: "element.click",
-        payload: [
+        payload: .init(additionalFields: [
           "app": .string("Other app"), "elementIndex": .number(1), "snapshotId": snapshot,
-        ],
+        ]),
         createdAt: time, claimedAt: time),
       claimStarted: .now)
     XCTAssertEqual(wrongApp["status"].string, "failed")

@@ -11,6 +11,7 @@ export interface NativeTab {
   readonly pinned: boolean;
   readonly discarded: boolean;
   readonly url?: string;
+  readonly pendingUrl?: string;
   readonly title?: string;
   readonly openerTabId?: number;
 }
@@ -45,7 +46,7 @@ export interface Operations {
   listTabs: { args: { windowId: number }; result: readonly NativeTab[] };
   getTab: { args: { tabId: number }; result: NativeTab | null };
   createTab: {
-    args: { windowId: number; url: string; active?: boolean };
+    args: { windowId?: number; url: string; active?: boolean };
     result: NativeTab;
   };
   moveTabs: {
@@ -150,10 +151,13 @@ export class OkouBrowserClient {
   private readonly listeners = new Set<(event: NativeEvent) => void>();
   private readonly pages = new Set<string>();
   private browserSession: string | undefined;
+  private readinessSession: string | undefined;
   private workerSession: string | undefined;
   private workerTarget: Target | undefined;
   private workerChanged: (() => void) | undefined;
   private epoch: string | undefined;
+  private sequence: number | undefined;
+  private readonly bootstrapEvents: NativeEvent[] = [];
   private workerAlive = true;
   private closing: Promise<void> | undefined;
 
@@ -210,6 +214,18 @@ export class OkouBrowserClient {
     if (this.signal.aborted) throw new BrowserBridgeError("unavailable");
   }
 
+  private workerUrl(value: unknown): boolean {
+    if (typeof value !== "string") return false;
+    try {
+      const url = new URL(value);
+      return (
+        url.protocol === "chrome-extension:" && url.hostname === this.runtimeId
+      );
+    } catch {
+      return false;
+    }
+  }
+
   private worker(info: unknown): Target | undefined {
     if (!info || typeof info !== "object" || Array.isArray(info))
       return undefined;
@@ -220,15 +236,9 @@ export class OkouBrowserClient {
       typeof target.url !== "string"
     )
       return undefined;
-    try {
-      const url = new URL(target.url);
-      return url.protocol === "chrome-extension:" &&
-        url.hostname === this.runtimeId
-        ? (target as unknown as Target)
-        : undefined;
-    } catch {
-      return undefined;
-    }
+    return this.workerUrl(target.url)
+      ? { targetId: target.targetId, type: target.type, url: target.url }
+      : undefined;
   }
 
   private async attach(
@@ -280,43 +290,11 @@ export class OkouBrowserClient {
       throw new BrowserBridgeError("protocol");
     for (const info of result.targetInfos)
       this.workerTarget ??= this.worker(info);
-    const tab = result.targetInfos.find((info) => {
-      return record(info).type === "tab";
-    });
-    // A stopped service worker can remain enumerable with its old agent host.
-    // Merely finding its target is not proof that Runtime can execute there.
-    if (wakeWorker && tab) {
-      await this.transport.request(
-        "Extensions.triggerAction",
-        { id: this.runtimeId, targetId: record(tab).targetId },
-        this.browserSession,
-      );
-      this.current();
-    }
-    if (!this.workerTarget && (!wakeWorker || !tab))
-      throw new BrowserBridgeError("unavailable");
-    if (!this.workerTarget) {
-      await new Promise<void>((resolve, reject) => {
-        const finish = () => {
-          clearTimeout(timer);
-          this.workerChanged = undefined;
-          this.signal.removeEventListener("abort", aborted);
-        };
-        const aborted = () => {
-          finish();
-          reject(new BrowserBridgeError("unavailable"));
-        };
-        const timer = setTimeout(aborted, timeoutMs);
-        this.workerChanged = () => {
-          finish();
-          resolve();
-        };
-        this.signal.addEventListener("abort", aborted, { once: true });
-      });
-    }
-    this.current();
-    if (!this.workerTarget) throw new BrowserBridgeError("unavailable");
-    const worker = await this.attach("worker", this.workerTarget.targetId);
+    const worker = await this.startWorker(
+      result.targetInfos,
+      timeoutMs,
+      wakeWorker,
+    );
     this.current();
     await this.transport.request("Runtime.enable", {}, worker);
     this.current();
@@ -329,14 +307,132 @@ export class OkouBrowserClient {
     const hello = await this.call("hello", {});
     if (hello.value.protocol !== PROTOCOL_VERSION)
       throw new BrowserBridgeError("unavailable");
+    if (
+      !["windows", "tabs", "events"].every((capability) => {
+        return hello.value.capabilities.includes(capability);
+      })
+    )
+      throw new BrowserBridgeError("unavailable");
     this.epoch = hello.epoch;
+    this.sequence = hello.sequence;
+    for (const event of this.bootstrapEvents.splice(0)) this.acceptEvent(event);
     this.current();
+  }
+
+  private async startWorker(
+    targets: unknown[],
+    timeoutMs: number,
+    wakeWorker: boolean,
+  ): Promise<string> {
+    const tab = targets.find((info) => {
+      return record(info).type === "tab";
+    });
+    const page = targets.find((info) => {
+      return record(info).type === "page";
+    });
+    const browser = this.browserSession;
+    try {
+      if (page) {
+        const id = record(page).targetId;
+        if (typeof id !== "string") throw new BrowserBridgeError("protocol");
+        this.readinessSession = await this.attach("page", id);
+        this.current();
+        // A retained target and even a new Runtime context can precede module
+        // evaluation. Native running status is published after script startup.
+        this.workerTarget = undefined;
+        await this.transport.request(
+          "ServiceWorker.enable",
+          {},
+          this.readinessSession,
+        );
+        this.current();
+      }
+      if (wakeWorker && tab) {
+        await this.transport.request(
+          "Extensions.triggerAction",
+          { id: this.runtimeId, targetId: record(tab).targetId },
+          browser,
+        );
+        this.current();
+      }
+      if (!this.workerTarget && !this.readinessSession && (!wakeWorker || !tab))
+        throw new BrowserBridgeError("unavailable");
+      if (!this.workerTarget) {
+        await new Promise<void>((resolve, reject) => {
+          const finish = () => {
+            clearTimeout(timer);
+            this.workerChanged = undefined;
+            this.signal.removeEventListener("abort", aborted);
+          };
+          const aborted = () => {
+            finish();
+            reject(new BrowserBridgeError("unavailable"));
+          };
+          const timer = setTimeout(aborted, timeoutMs);
+          this.workerChanged = () => {
+            finish();
+            resolve();
+          };
+          this.signal.addEventListener("abort", aborted, { once: true });
+        });
+      }
+      this.current();
+      if (!this.workerTarget) throw new BrowserBridgeError("unavailable");
+      return await this.attach("worker", this.workerTarget.targetId);
+    } finally {
+      const page = this.readinessSession;
+      this.readinessSession = undefined;
+      if (page && this.pages.delete(page)) await this.detach(page, browser);
+    }
   }
 
   private event(event: CdpEvent): void {
     if (this.signal.aborted) return;
+    this.readinessEvent(event);
+    if (this.signal.aborted) return;
     this.lifecycleEvent(event);
     if (!this.signal.aborted) this.bindingEvent(event);
+  }
+
+  private readinessEvent(event: CdpEvent): void {
+    if (!this.readinessSession) return;
+    if (
+      event.sessionId === this.browserSession &&
+      event.method === "Target.detachedFromTarget" &&
+      event.params.sessionId === this.readinessSession
+    ) {
+      void this.close();
+      return;
+    }
+    if (
+      event.sessionId !== this.readinessSession ||
+      event.method !== "ServiceWorker.workerVersionUpdated" ||
+      !Array.isArray(event.params.versions)
+    )
+      return;
+    for (const info of event.params.versions) {
+      if (!info || typeof info !== "object" || Array.isArray(info)) continue;
+      const version = info as Record<string, unknown>;
+      if (!this.workerUrl(version.scriptURL)) continue;
+      const target =
+        version.runningStatus === "running"
+          ? this.worker({
+              type: "service_worker",
+              url: version.scriptURL,
+              targetId: version.targetId,
+            })
+          : undefined;
+      if (
+        this.workerSession &&
+        target?.targetId !== this.workerTarget?.targetId
+      ) {
+        this.workerAlive = false;
+        void this.close();
+        return;
+      }
+      this.workerTarget = target;
+      if (target) this.workerChanged?.();
+    }
   }
 
   private lifecycleEvent(event: CdpEvent): void {
@@ -361,19 +457,7 @@ export class OkouBrowserClient {
     }
     if (event.sessionId === this.browserSession) {
       if (event.method === "Target.targetCreated") {
-        const target = this.worker(event.params.targetInfo);
-        if (target) {
-          if (
-            this.workerSession &&
-            target.targetId !== this.workerTarget?.targetId
-          ) {
-            this.workerAlive = false;
-            void this.close();
-            return;
-          }
-          this.workerTarget = target;
-          this.workerChanged?.();
-        }
+        this.workerCreated(event.params.targetInfo);
       } else if (
         (event.method === "Target.targetDestroyed" &&
           event.params.targetId === this.workerTarget?.targetId) ||
@@ -385,34 +469,76 @@ export class OkouBrowserClient {
     }
   }
 
+  private workerCreated(info: unknown): void {
+    if (this.readinessSession) return;
+    const target = this.worker(info);
+    if (!target) return;
+    if (this.workerSession && target.targetId !== this.workerTarget?.targetId) {
+      this.workerAlive = false;
+      void this.close();
+      return;
+    }
+    this.workerTarget = target;
+    this.workerChanged?.();
+  }
+
   private bindingEvent(event: CdpEvent): void {
     if (
       event.sessionId !== this.workerSession ||
       event.method !== "Runtime.bindingCalled" ||
-      event.params.name !== EVENT_BINDING ||
-      typeof event.params.payload !== "string"
+      event.params.name !== EVENT_BINDING
     )
       return;
+    if (typeof event.params.payload !== "string") {
+      void this.close();
+      return;
+    }
     try {
       const value = record(JSON.parse(event.params.payload));
       if (
-        value.epoch !== this.epoch ||
-        typeof value.sequence !== "number" ||
-        typeof value.kind !== "string"
-      )
+        typeof value.epoch !== "string" ||
+        !Number.isSafeInteger(value.sequence) ||
+        (value.sequence as number) < 0 ||
+        typeof value.kind !== "string" ||
+        !value.kind
+      ) {
+        void this.close();
         return;
-      // Reentrant subscriptions cannot extend an in-flight dispatch.
-      const observers = [...this.listeners];
-      for (const listener of observers) {
-        if (!this.listeners.has(listener)) continue;
-        try {
-          listener(value as unknown as NativeEvent);
-        } catch {
-          // A consumer observer cannot interrupt the owning transport.
-        }
+      }
+      const native = value as unknown as NativeEvent;
+      if (this.sequence === undefined) {
+        if (this.bootstrapEvents.length >= 256) void this.close();
+        else this.bootstrapEvents.push(native);
+      } else {
+        this.acceptEvent(native);
       }
     } catch {
-      // Other runtime bindings and malformed payloads confer no authority.
+      // A malformed event on our owned binding cannot retain inventory authority.
+      void this.close();
+    }
+  }
+
+  private acceptEvent(event: NativeEvent): void {
+    if (this.signal.aborted) return;
+    if (event.epoch !== this.epoch) {
+      void this.close();
+      return;
+    }
+    if (event.sequence <= this.sequence!) return;
+    if (event.sequence !== this.sequence! + 1) {
+      void this.close();
+      return;
+    }
+    this.sequence = event.sequence;
+    // Reentrant subscriptions cannot extend an in-flight dispatch.
+    const observers = [...this.listeners];
+    for (const listener of observers) {
+      if (!this.listeners.has(listener)) continue;
+      try {
+        listener(event);
+      } catch {
+        // A consumer observer cannot interrupt the owning transport.
+      }
     }
   }
 
@@ -452,18 +578,29 @@ export class OkouBrowserClient {
     if (method === "hello" && remote.type === "undefined")
       throw new BrowserBridgeError("unavailable");
     const value = record(remote.value);
-    if (value.ok === false) throw new BrowserBridgeError("native");
     if (this.epoch !== undefined && this.epoch !== value.epoch) {
       void this.close();
       throw new BrowserBridgeError("unavailable");
     }
     if (
-      value.ok !== true ||
+      (value.ok !== true && value.ok !== false) ||
       typeof value.epoch !== "string" ||
-      typeof value.startedSequence !== "number" ||
-      typeof value.sequence !== "number"
+      !Number.isSafeInteger(value.startedSequence) ||
+      !Number.isSafeInteger(value.sequence) ||
+      (value.startedSequence as number) < 0 ||
+      (value.sequence as number) < (value.startedSequence as number)
     )
       throw new BrowserBridgeError("protocol");
+    // A response cannot repair a missed event. Native binding notifications
+    // precede their operation response on the same ordered worker session.
+    if (
+      this.sequence !== undefined &&
+      (value.sequence as number) > this.sequence
+    ) {
+      void this.close();
+      throw new BrowserBridgeError("unavailable");
+    }
+    if (value.ok === false) throw new BrowserBridgeError("native");
     return value as unknown as Observation<Operations[M]["result"]>;
   }
 

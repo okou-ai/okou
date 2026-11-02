@@ -1,3 +1,4 @@
+import { agentsMainContract } from "@okouai/api-contracts/client/agents";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { expect, test, vi } from "vitest";
 
@@ -60,4 +61,67 @@ test("uses a matching bootstrap response once before falling back to the network
   expect(third).toMatchObject({ status: 200, body: networkBody });
   expect(getToken).toHaveBeenNthCalledWith(2, context.signal);
   expect(networkRequestCount).toBe(2);
+});
+
+test("validates agent descriptor responses against the original contract", async () => {
+  const agent = {
+    agentId: "00000000-0000-4000-8000-000000000001",
+    isDefaultAgent: true,
+    ownerId: "user_test",
+    description: null,
+    displayName: "Test agent",
+    sound: null,
+    avatarUrl: null,
+    visibility: "private",
+  };
+  context.mocks.http.get("*/api/agents", () => {
+    return Response.json([agent]);
+  });
+  const client = createAuthedContractClient(agentsMainContract, {
+    baseUrl: "https://api.okou.ai",
+    clientVersion: "descriptor-test",
+    getToken: () => {
+      return Promise.resolve("test-token");
+    },
+    getVercelProtectionBypass: () => {
+      return undefined;
+    },
+  });
+
+  await expect(client.list()).resolves.toMatchObject({
+    status: 200,
+    body: [agent],
+  });
+
+  context.mocks.http.get("*/api/agents", () => {
+    return Response.json([{ ...agent, visibility: "invalid" }]);
+  });
+  await expect(client.list()).rejects.toThrow("Response validation failed");
+});
+
+test("fails when a descriptor has no test response validator", async () => {
+  const contract = {
+    list: {
+      method: "GET",
+      path: "/api/unmapped-descriptor",
+      statuses: { 200: true },
+    },
+  } as const;
+  context.mocks.http.get("*/api/unmapped-descriptor", () => {
+    return Response.json([]);
+  });
+  const client = createAuthedContractClient(contract, {
+    baseUrl: "https://api.okou.ai",
+    clientVersion: "descriptor-test",
+    getToken: () => {
+      return Promise.resolve("test-token");
+    },
+    getVercelProtectionBypass: () => {
+      return undefined;
+    },
+  });
+
+  await expect(client.list()).rejects.toThrow(
+    "Response validator missing for GET /api/unmapped-descriptor",
+  );
 });

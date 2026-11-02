@@ -1,9 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  teamsConnectContract,
-  type TeamsConnectStatus,
-} from "@okouai/api-contracts/contracts/teams-connect";
+import { teamsConnectContract } from "@okouai/api-contracts/client/teams-connect";
+import type { TeamsConnectStatus } from "@okouai/api-contracts/contracts/teams-connect";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { authenticatedSessionKey$, clerk$ } from "../auth.ts";

@@ -14,6 +14,7 @@ import {
   type PhoneUploadInitResponse,
   type SendPhoneMessageBody,
   type SendPhoneMessageResponse,
+  type SendPhoneReactionBody,
 } from "@okouai/api-contracts/contracts/integrations";
 import {
   getBaseUrl,
@@ -67,6 +68,16 @@ export async function sendAgentPhoneGroupMessage(
     return result.body;
   }
   handleError(result, "Failed to send iMessage group message");
+}
+
+export async function sendPhoneReaction(body: SendPhoneReactionBody) {
+  const config = await getClientConfig();
+  const client = initClient(integrationsPhoneMessageContract, config);
+  const result = await client.sendReaction({ body, headers: {} });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handleError(result, "Failed to add iMessage reaction");
 }
 
 export async function initPhoneFileUpload(

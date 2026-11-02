@@ -1,17 +1,17 @@
-import { array, object, string, type infer as zInfer } from "zod";
+import { array, object, uuid, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
   persistedAttachmentSchema,
   userMessageInputDocumentSchema,
-  composerDraftSchema,
 } from "./chat-threads";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { apiErrorSchema } from "./errors";
+import { agentDraftResponseSchema } from "../validators/agent-draft";
+
+export { agentDraftResponseSchema } from "../validators/agent-draft";
 
 const c = initContract();
-
-export const agentDraftResponseSchema = composerDraftSchema;
 
 export const agentDraftRequestSchema = object({
   draftUserMessage: userMessageInputDocumentSchema.nullable(),
@@ -23,7 +23,7 @@ export const agentDraftContract = c.router({
     method: "GET",
     path: "/api/agents/:id/draft",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: agentDraftResponseSchema,
       400: apiErrorSchema,
@@ -37,7 +37,7 @@ export const agentDraftContract = c.router({
     method: "PATCH",
     path: "/api/agents/:id/draft",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentDraftRequestSchema,
     responses: {
       204: c.noBody(),

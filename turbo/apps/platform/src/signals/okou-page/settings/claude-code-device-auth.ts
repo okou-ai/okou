@@ -1,7 +1,7 @@
-import {
-  claudeCodeDeviceAuthContract,
-  type ClaudeCodeDeviceAuthMode,
-  type ClaudeCodeDeviceAuthScope,
+import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/client/claude-code-device-auth";
+import type {
+  ClaudeCodeDeviceAuthMode,
+  ClaudeCodeDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { command, computed, state, type Command, type State } from "ccstate";

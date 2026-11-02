@@ -14,16 +14,18 @@ import {
   billingUsagePackCreditsContract,
   billingUsagePackManagementContract,
   billingUsagePackMigrationContract,
-  type BillingStatusResponse,
-  type CheckoutRequest,
-  type ConcurrencySubscriptionChangePreviewResponse,
-  type CreditPurchasePreviewResponse,
-  type MemberUsagePack,
-  type PlanPurchasePreviewResponse,
-  type UsagePackCheckoutRequest,
-  type UsagePackCreditsResponse,
-  type UsagePackMigrationStateResponse,
-  type UsagePackPurchasePreviewResponse,
+} from "@okouai/api-contracts/client/billing";
+import type {
+  BillingStatusResponse,
+  CheckoutRequest,
+  ConcurrencySubscriptionChangePreviewResponse,
+  CreditPurchasePreviewResponse,
+  MemberUsagePack,
+  PlanPurchasePreviewResponse,
+  UsagePackCheckoutRequest,
+  UsagePackCreditsResponse,
+  UsagePackMigrationStateResponse,
+  UsagePackPurchasePreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { toast } from "@okouai/ui/components/ui/sonner";

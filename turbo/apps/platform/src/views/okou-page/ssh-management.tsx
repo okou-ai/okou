@@ -76,23 +76,23 @@ import {
   SelectContent,
   SelectItem,
 } from "@okouai/ui";
-import {
-  SSH_DISPLAY_NAME_MAX_LENGTH,
-  SSH_HOST_MAX_LENGTH,
-  SSH_USERNAME_MAX_LENGTH,
-  SSH_PRIVATE_KEY_MAX_LENGTH,
-  SSH_PASSPHRASE_MAX_LENGTH,
-  type SshConnectionResponse,
-  type SshConnectionMode,
+import { SSH_HOST_MAX_LENGTH } from "@okouai/api-contracts/validators/ssh-connections";
+import type {
+  SshConnectionResponse,
+  SshConnectionMode,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { AccessSelection } from "./ssh-cloudflare-access.tsx";
 import { TailscaleSelection } from "./ssh-tailscale.tsx";
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import {
+  SSH_DISPLAY_NAME_MAX_LENGTH,
+  SSH_USERNAME_MAX_LENGTH,
+  SSH_PRIVATE_KEY_MAX_LENGTH,
+  SSH_PASSPHRASE_MAX_LENGTH,
   SSH_PASSWORD_MAX_LENGTH,
-  type SshCredentialResponse,
-} from "@okouai/api-contracts/contracts/ssh-credentials";
+} from "@okouai/api-contracts/validators/ssh-credentials";
+import type { SshCredentialResponse } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { SshLoadError } from "./ssh-load-error.tsx";

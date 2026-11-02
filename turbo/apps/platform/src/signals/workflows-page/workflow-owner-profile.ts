@@ -1,8 +1,6 @@
 import { command, computed } from "ccstate";
-import {
-  workflowsDetailContract,
-  type WorkflowOwnerProfile,
-} from "@okouai/api-contracts/contracts/workflows";
+import { workflowsDetailContract } from "@okouai/api-contracts/client/workflows";
+import type { WorkflowOwnerProfile } from "@okouai/api-contracts/contracts/workflows";
 
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";

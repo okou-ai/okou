@@ -477,9 +477,7 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       "Stopped",
     );
   });
-  expect(
-    within(sidebar).queryByRole("region", { name: "Remote browser viewer" }),
-  ).toBeNull();
+  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
   await expect(
     screen.findByTestId("browser-session-panel-screenshot"),
   ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
@@ -1084,10 +1082,6 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   if (!submitButton) {
     throw new Error("Missing Browser submit button");
   }
-  expect(buttonsByName("Leave website value unchanged", dialog)).toHaveLength(
-    0,
-  );
-  expect(buttonsByName("Clear website value", dialog)).toHaveLength(0);
   expect(submitButton).toBeEnabled();
   click(submitButton);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1470,10 +1464,6 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
   if (!submit) {
     throw new Error("Missing Browser submit button");
   }
-  expect(buttonsByName("Leave website value unchanged", dialog)).toHaveLength(
-    0,
-  );
-  expect(buttonsByName("Clear website value", dialog)).toHaveLength(0);
   expect(submit).toBeEnabled();
   click(submit);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();

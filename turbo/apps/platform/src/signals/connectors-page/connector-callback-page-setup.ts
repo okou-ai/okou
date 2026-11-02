@@ -1,8 +1,6 @@
-import {
-  builtinConnectorsSlugCallbackContract,
-  type ConnectorOauthCallbackResult,
-} from "@okouai/api-contracts/contracts/connectors-slug-callback";
-import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/client/connectors-slug-callback";
+import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { customConnectorOAuth2Contract } from "@okouai/api-contracts/client/custom-connectors";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationOAuthCallbackProvider } from "@okouai/core/integration-routes";
 import {
@@ -29,9 +27,9 @@ import { ROUTES } from "../route-paths.ts";
 import { settle } from "../utils.ts";
 import { i18n } from "../../i18n/index.ts";
 import { connectorIconFromSearchParams } from "./connector-redirecting-page-setup.ts";
-import { githubAppSetupCallbackContract } from "@okouai/api-contracts/contracts/github-oauth-callback";
-import { slackOauthCallbackContract } from "@okouai/api-contracts/contracts/slack-oauth-callback";
-import { teamsOauthCallbackContract } from "@okouai/api-contracts/contracts/teams-oauth-callback";
+import { githubAppSetupCallbackContract } from "@okouai/api-contracts/client/github-oauth-callback";
+import { slackOauthCallbackContract } from "@okouai/api-contracts/client/slack-oauth-callback";
+import { teamsOauthCallbackContract } from "@okouai/api-contracts/client/teams-oauth-callback";
 
 type ConnectorCallbackPageResult =
   { readonly status: "loading" } | ConnectorOauthCallbackResult;

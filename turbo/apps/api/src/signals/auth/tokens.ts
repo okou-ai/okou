@@ -106,13 +106,10 @@ const okouTokenPayloadSchema = jwtBaseSchema.extend({
   runId: string().min(1),
   orgId: string().min(1),
   capabilities: agentCapabilitiesSchema,
-  computerUseHostId: string().uuid().optional(),
+  computerUseHostId: uuid().optional(),
   cloudBrowserEnabled: literal(true).optional(),
-  customConnectorSourceIds: record(string().uuid(), string().uuid()).optional(),
-  builtinConnectorSourceIds: record(
-    connectorSlugSchema,
-    string().uuid(),
-  ).optional(),
+  customConnectorSourceIds: record(uuid(), uuid()).optional(),
+  builtinConnectorSourceIds: record(connectorSlugSchema, uuid()).optional(),
 });
 
 type OkouTokenClaims = Omit<zInfer<typeof okouTokenPayloadSchema>, "scope">;
