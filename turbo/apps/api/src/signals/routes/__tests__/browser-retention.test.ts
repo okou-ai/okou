@@ -254,50 +254,83 @@ test("preserves a Browser resumed just before its retention deadline", async () 
   });
 });
 
-test("protects pre-cutover previews after shared ownership persists with admission disabled", async () => {
-  const app = await setupApp({
-    context,
-    routes: [...browserRoutes, ...cronBrowserReconcileRoutes],
-    isolatePg: true,
-  });
-  const browsers = app(browserContract);
-  const cron = app(cronBrowserReconcileContract);
-  const f = await fixture(false);
-  await f.owned.run(async () => {
-    installBrowserWindowContentCommands(f.provider.native);
-    const objects = screenshotStorage();
-    const a = await f.start();
-    await open(a);
-    await accept(cron.reconcile({ headers: cronHeaders }), [200]);
-    await flushWaitUntilForTest();
-    mockNow(SUSPENDED_AT);
-    await accept(cron.reconcile({ headers: cronHeaders }), [200]);
-    await flushWaitUntilForTest();
-    const key = screenshotKey((await view(a)).screenshotUrl);
-    f.owned.ownsFeatureSwitches();
-    await updateFeatureSwitchesForUser(context, f.featureActor, {
-      [FeatureSwitchKey.BrowserSharedOwner]: true,
+test.each([true, false])(
+  "retires legacy previews independently of shared recovery with switch enabled=%s",
+  async (enabled) => {
+    const app = await setupApp({
+      context,
+      routes: [...browserRoutes, ...cronBrowserReconcileRoutes],
+      isolatePg: true,
     });
-    const opened = await accept(
-      browsers.open({ headers, params: { threadId: a.threadId }, body: {} }),
-      [200],
-    );
-    expect(opened.body.browser.window).toBeDefined();
-    await updateFeatureSwitchesForUser(context, f.featureActor, {
-      [FeatureSwitchKey.BrowserSharedOwner]: false,
+    const browsers = app(browserContract);
+    const cron = app(cronBrowserReconcileContract);
+    const f = await fixture(false);
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const objects = screenshotStorage();
+      const a = await f.start();
+      await open(a);
+      await accept(cron.reconcile({ headers: cronHeaders }), [200]);
+      await flushWaitUntilForTest();
+      mockNow(SUSPENDED_AT);
+      await accept(cron.reconcile({ headers: cronHeaders }), [200]);
+      await flushWaitUntilForTest();
+      const key = screenshotKey((await view(a)).screenshotUrl);
+      f.owned.ownsFeatureSwitches();
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+      });
+      const opened = await accept(
+        browsers.open({ headers, params: { threadId: a.threadId }, body: {} }),
+        [200],
+      );
+      expect(opened.body.browser.window).toBeDefined();
+      for (const page of f.provider.native.targets.values()) {
+        page.url = "https://example.test/retained-shared-tab";
+      }
+      await accept(
+        browsers.close({ headers, params: { threadId: a.threadId }, body: {} }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      mockNow(START + 22 * MINUTE);
+      await accept(cron.reconcile({ headers: cronHeaders }), [200]);
+      const sharedKey = screenshotKey((await view(a)).screenshotUrl);
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: enabled,
+      });
+      mockNow(EXPIRES_AT);
+      const reconciled = await accept(
+        cron.reconcile({ headers: cronHeaders }),
+        [200],
+      );
+      expect(reconciled.body.errors).toBe(0);
+      expect(objects.get(key)).toBeUndefined();
+      expect(objects.get(sharedKey)?.toString()).toMatch(/^preview:/u);
+      await createChatFilesBddApi(context).requestWebFileUrl(
+        f.owned.actor,
+        key.split("/")[1] ?? "",
+        [404],
+      );
+      await createChatFilesBddApi(context).requestWebFileUrl(
+        f.owned.actor,
+        sharedKey.split("/")[1] ?? "",
+        [200],
+      );
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+      });
+      expect((await view(a)).status).toBe("suspended");
+      await accept(
+        browsers.open({ headers, params: { threadId: a.threadId }, body: {} }),
+        [200],
+      );
+      expect(f.provider.createdIds).toHaveLength(2);
+      expect(
+        [...f.provider.native.targets.values()].map((page) => {
+          return page.url;
+        }),
+      ).toStrictEqual(["https://example.test/retained-shared-tab"]);
     });
-    mockNow(EXPIRES_AT);
-    const reconciled = await accept(
-      cron.reconcile({ headers: cronHeaders }),
-      [200],
-    );
-    expect(reconciled.body.errors).toBe(0);
-    expect((await view(a)).status).toBe("suspended");
-    expect(objects.get(key)?.toString()).toMatch(/^preview:/u);
-    await createChatFilesBddApi(context).requestWebFileUrl(
-      f.owned.actor,
-      key.split("/")[1] ?? "",
-      [200],
-    );
-  });
-});
+  },
+);
