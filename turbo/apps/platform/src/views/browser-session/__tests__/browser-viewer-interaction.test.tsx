@@ -983,6 +983,166 @@ test("Remote password keyboard hints survive native editing and tab updates", as
   });
 });
 
+test.each([
+  ["password", "Page.frameStartedNavigating", { frameId: "example-frame" }],
+  [
+    "password",
+    "Page.frameNavigated",
+    {
+      frame: {
+        id: "example-frame",
+        loaderId: "next-loader",
+        url: "https://example.com/next",
+      },
+    },
+  ],
+  [
+    "text",
+    "Page.navigatedWithinDocument",
+    { frameId: "example-frame", url: "https://example.com/#next" },
+  ],
+] as const)(
+  "Navigation from a %s field hands input focus to the viewer on %s",
+  async (type, method, params) => {
+    const browser = await setupViewer(0);
+    const remoteEditing = {
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type,
+        multiline: false,
+        inputMode: "numeric",
+        enterKeyHint: "done",
+        autoCapitalize: "none",
+        lang: "ja",
+      },
+    };
+    browser.setFocusedEditing(remoteEditing);
+    const input = screen.getByLabelText("Remote browser input");
+    const surface = screen.getByRole("img", {
+      name: "Live browser view",
+    }).parentElement!;
+    await userEvent.click(input);
+    await waitFor(() => {
+      expect(input).toHaveAttribute("lang", "ja");
+    });
+    expect(input).toHaveAttribute("type", type);
+    expect(input).toHaveFocus();
+
+    browser.setFocusedEditing(null);
+    act(() => {
+      browser.event(method, params, "example-page-session");
+    });
+    expect(surface).toHaveFocus();
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveValue("");
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.dispatchKeyEvent",
+        params: { type: "keyUp", key: "ArrowDown" },
+      });
+    });
+
+    const paste = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: new DataTransfer(),
+    });
+    paste.clipboardData!.setData("text/plain", "pasted on the new page");
+    Object.defineProperty(paste, "isTrusted", { value: true });
+    fireEvent(surface, paste);
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "pasted on the new page" },
+      });
+    });
+    expect(surface).toHaveFocus();
+
+    browser.setFocusedEditing({
+      ...remoteEditing,
+      editing: { ...remoteEditing.editing, type: "email", lang: "en" },
+    });
+    await userEvent.keyboard("{Tab}");
+    await waitFor(() => {
+      expect(input).toHaveAttribute("lang", "en");
+    });
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveAttribute("autocapitalize", "none");
+    await userEvent.keyboard("{F8}");
+    expect(
+      screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+    ).toHaveFocus();
+  },
+);
+
+test.each(["pre-navigation", "current-page"])(
+  "A delayed %s editing read cannot reclaim chosen address focus",
+  async (source) => {
+    const browser = await setupViewer(0);
+    const remoteEditing = {
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type: "password",
+        multiline: false,
+        inputMode: "numeric",
+        enterKeyHint: "done",
+        autoCapitalize: "none",
+        lang: "ja",
+      },
+    };
+    browser.setFocusedEditing(remoteEditing);
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    await waitFor(() => {
+      expect(input).toHaveAttribute("type", "password");
+    });
+    const reading = browser.holdNext("Runtime.evaluate");
+    const address = screen.getByLabelText("Address");
+    if (source === "pre-navigation") {
+      await userEvent.keyboard("{ArrowDown}");
+      await reading.received;
+      await userEvent.click(address);
+    }
+    browser.setFocusedEditing(null);
+    act(() => {
+      browser.event(
+        "Page.navigatedWithinDocument",
+        { frameId: "example-frame", url: "https://example.com/#next" },
+        "example-page-session",
+      );
+    });
+    const navigationFocus =
+      source === "pre-navigation"
+        ? address
+        : screen.getByRole("img", { name: "Live browser view" }).parentElement;
+    expect(navigationFocus).toHaveFocus();
+    if (source === "current-page") {
+      browser.setFocusedEditing(remoteEditing);
+      await userEvent.keyboard("{Tab}");
+      await reading.received;
+    }
+    await fill(address, "chosen.example");
+    await act(async () => {
+      await reading.release();
+    });
+    expect(address).toHaveFocus();
+    expect(address).toHaveValue("chosen.example");
+    expect(input).toHaveAttribute("type", "text");
+  },
+);
+
 test("A failed editing-context read clears stale keyboard hints without disabling input", async () => {
   const browser = await setupViewer(0);
   browser.setFocusedEditing({
@@ -1513,6 +1673,10 @@ test("A payload-less context reset retires composition before accepting new remo
       data: "old",
     }),
   );
+  expect(
+    screen.getByRole("img", { name: "Live browser view" }).parentElement,
+  ).toHaveFocus();
+  await userEvent.click(input);
   fireEvent.input(input, {
     target: { value: "fresh" },
     data: "fresh",
