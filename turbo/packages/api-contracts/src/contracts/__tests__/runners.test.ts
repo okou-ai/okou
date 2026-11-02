@@ -174,6 +174,7 @@ describe("runner claim response contract", () => {
   it("round-trips canonical trusted environments through stored contexts", () => {
     const storedContext = storedExecutionContextSchema.parse({
       storageMounts: [],
+      seedSkillBundles: [],
       connectorRuntimeTargets: [],
       environment: {
         USER_VALUE: "user-value",
@@ -210,6 +211,7 @@ describe("runner claim response contract", () => {
 describe("stored Seed Skill bundle contract", () => {
   const context = {
     storageMounts: [],
+    seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
@@ -236,7 +238,6 @@ describe("stored Seed Skill bundle contract", () => {
         claimCompatibleStoredExecutionContextSchema,
       ]) {
         expect(schema.parse(captured).seedSkillBundles).toStrictEqual([bundle]);
-        expect(schema.parse(context).storageMounts).toStrictEqual([]);
       }
     }
   });
@@ -262,6 +263,7 @@ describe("stored Workflow selection contract", () => {
   it("preserves legacy selection and current claim-time invocation intent", () => {
     const context = {
       storageMounts: [],
+      seedSkillBundles: [],
       connectorRuntimeTargets: [],
       environment: null,
       platformEnvironment: {},
@@ -303,6 +305,7 @@ describe("Pi sandbox execution contract", () => {
   const piSessionId = "22222222-2222-4222-8222-222222222222";
   const storedContext = {
     storageMounts: [],
+    seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
@@ -962,6 +965,7 @@ describe("runner poll response contract", () => {
 describe("runner storage manifest contract", () => {
   const storedContext = {
     storageMounts: [],
+    seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
@@ -2009,6 +2013,7 @@ describe("native continuation intent", () => {
 describe("pinned Official Workflow bundle queue metadata", () => {
   const context = {
     storageMounts: [],
+    seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},

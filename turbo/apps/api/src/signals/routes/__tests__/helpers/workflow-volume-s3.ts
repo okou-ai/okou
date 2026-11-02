@@ -11,7 +11,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import type { TestContext } from "../../../../__tests__/test-context";
-import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
+import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-skill-bundle-archive";
 
 function s3BodyBuffer(body: unknown): Buffer {
   if (Buffer.isBuffer(body)) {

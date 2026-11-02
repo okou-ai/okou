@@ -88,12 +88,12 @@ function emittedSeedFiles(objects: ReadonlyMap<string, Buffer>) {
     });
 }
 
-describe("Seed Skill bundle preparation through sync-skills", () => {
+describe("Seed Skill bundles through sync-skills", () => {
   beforeEach(() => {
     mockEnv("CRON_SECRET", CRON_SECRET);
   });
 
-  it("publishes complete Seed bundles, skips unchanged content, and prepares changed content", async () => {
+  it("publishes Seed bundles and non-Seed Storage, skips unchanged content, and updates changed content", async () => {
     const app = await setupApp({
       context,
       routes: cronSyncSkillsRoutes,
@@ -130,6 +130,25 @@ describe("Seed Skill bundle preparation through sync-skills", () => {
       );
       expect(bundles).toContainEqual(expected);
     }
+    const storageArchives = [...s3.objects.entries()].filter(([key]) => {
+      return key.endsWith("/archive.tar.gz");
+    });
+    expect(storageArchives).toHaveLength(1);
+    const ordinaryArchive = storageArchives[0]![1];
+    expect(
+      new Map(
+        readContentBundle(ordinaryArchive, {
+          sha256: createHash("sha256").update(ordinaryArchive).digest("hex"),
+          archiveBytes: ordinaryArchive.length,
+        }).map((file) => {
+          return [file.path, file.content];
+        }),
+      ),
+    ).toStrictEqual(
+      new Map([["SKILL.md", first.files.get("ordinary-skill/SKILL.md")]]),
+    );
+    // Three Seed packages and the ordinary skill's archive + manifest.
+    expect(s3.objects.size).toBe(SEED_SKILLS.length + 2);
     const published = new Map(s3.objects);
     expect((await sync()).body).toMatchObject({
       synced: 0,

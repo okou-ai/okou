@@ -28,7 +28,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
+import { seededSkillBundleArchive } from "../../../test-fixtures/seeded-skill-bundle-archive";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -575,7 +575,7 @@ function mockPiResourceArchiveDownloads(
       const bytes =
         historyObjects.get(objectKey) ??
         (objectKey.startsWith(bucketPrefix)
-          ? seededSystemSkillArchive(objectKey.slice(bucketPrefix.length))
+          ? seededSkillBundleArchive(objectKey.slice(bucketPrefix.length))
           : undefined);
       if (!bytes) {
         throw new Error(`Expected Pi resource archive ${objectKey}`);

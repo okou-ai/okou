@@ -362,6 +362,10 @@ const hasCurrentSkillVersion$ = command(
       return false;
     }
 
+    if (args.requiresBundle) {
+      return true;
+    }
+
     const [version] = await get(db$)
       .select({
         storageId: storageVersions.storageId,
@@ -504,7 +508,6 @@ interface SkillPublication {
   readonly upload: SkillArchiveUpload;
   readonly timestamp: Date;
   readonly commitSha: string;
-  readonly contentBundle: ContentBundle | null;
 }
 function skillVersionValues(args: SkillPublication) {
   return {
@@ -526,22 +529,56 @@ function skillHeadValues(args: SkillPublication) {
     updatedAt: args.timestamp,
   };
 }
-function skillRecordValues(args: SkillPublication) {
+function skillSourceValues(context: SkillSyncContext, timestamp: Date) {
   return {
-    name: args.context.frontmatter.name ?? args.context.skillName,
-    fullPath: args.context.fullPath,
-    storageId: args.storageId,
-    versionHash: args.context.versionHash,
-    contentBundle: args.contentBundle,
-    contentBundleSourceVersionHash:
-      args.contentBundle === null ? null : args.context.versionHash,
-    frontmatter: args.context.frontmatter,
-    s3Key: args.upload.s3Key,
-    size: args.context.totalSize,
-    fileCount: args.context.files.length,
-    syncedAt: args.timestamp,
+    name: context.frontmatter.name ?? context.skillName,
+    fullPath: context.fullPath,
+    versionHash: context.versionHash,
+    frontmatter: context.frontmatter,
+    size: context.totalSize,
+    fileCount: context.files.length,
+    syncedAt: timestamp,
   };
 }
+function skillRecordValues(args: SkillPublication) {
+  return {
+    ...skillSourceValues(args.context, args.timestamp),
+    storageId: args.storageId,
+    contentBundle: null,
+    contentBundleSourceVersionHash: null,
+    s3Key: args.upload.s3Key,
+  };
+}
+
+const commitSeedSkillPublication$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: SkillSyncContext;
+      readonly timestamp: Date;
+      readonly contentBundle: ContentBundle;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const database = set(writeDb$);
+    const record = {
+      ...skillSourceValues(args.context, args.timestamp),
+      contentBundle: args.contentBundle,
+      contentBundleSourceVersionHash: args.context.versionHash,
+    };
+    await database
+      .insert(skills)
+      .values({ url: args.context.url, ...record })
+      .onConflictDoUpdate({
+        target: skills.url,
+        // Historical Storage bindings are retained for a separate data inventory.
+        set: { ...record, updatedAt: args.timestamp },
+      });
+    signal.throwIfAborted();
+  },
+);
+
 function skillVersionMatches(
   version: Pick<
     typeof storageVersions.$inferSelect,
@@ -701,15 +738,23 @@ const syncSingleSkill$ = command(
     }
 
     const timestamp = nowDate();
-    const contentBundle = requiresBundle
-      ? await set(
-          publishContentBundle$,
-          context.files.map((file) => {
-            return { path: file.path, content: file.content };
-          }),
-          signal,
-        )
-      : null;
+    if (requiresBundle) {
+      const contentBundle = await set(
+        publishContentBundle$,
+        context.files.map((file) => {
+          return { path: file.path, content: file.content };
+        }),
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(
+        commitSeedSkillPublication$,
+        { context, timestamp, contentBundle },
+        signal,
+      );
+      signal.throwIfAborted();
+      return true;
+    }
     // Resolve the storage row first: objects must land under its canonical
     // prefix, which an existing row keeps from its creation time.
     const storage = await set(resolveSkillStorage$, { context }, signal);
@@ -743,7 +788,7 @@ const syncSingleSkill$ = command(
     signal.throwIfAborted();
     await set(
       commitSkillPublication$,
-      { storageId, context, upload, commitSha, timestamp, contentBundle },
+      { storageId, context, upload, commitSha, timestamp },
       signal,
     );
     signal.throwIfAborted();

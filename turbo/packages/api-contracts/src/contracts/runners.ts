@@ -933,9 +933,8 @@ const storedSkillBundleSchema = contentBundleSchema
 const storedExecutionContextObjectSchema = object({
   // Exact Official content is selected at admission, never refreshed at claim.
   officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
-  // Pre-activation admissions omit Seed references. Make required only after
-  // those API/rollback writers and claimable Storage-only Runs retire (#44593).
-  seedSkillBundles: array(storedSkillBundleSchema).optional(),
+  // Every supported admission writer captures the selected Seed references.
+  seedSkillBundles: array(storedSkillBundleSchema),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),
