@@ -13,12 +13,6 @@ import {
   connectorAccountTargetSchema,
 } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
-import {
-  applyUserPermissionGrantSchema,
-  userPermissionGrantActionSchema,
-  userPermissionGrantApplyModeSchema,
-} from "./user-permission-grants";
-import { permissionSchema } from "../validators/user-permission-grants";
 
 const c = initContract();
 const targetBody = object({ target: connectorAccountTargetSchema }).strict();
@@ -42,41 +36,6 @@ const chatConnectorAccessSchema = object({
   currentConnectionId: uuid().nullable(),
   available: boolean(),
 }).strict();
-
-const chatConnectorPermissionsSchema = object({
-  target: connectorAccountTargetSchema,
-  permissionNames: array(permissionSchema),
-  grants: array(
-    object({
-      permission: permissionSchema,
-      action: userPermissionGrantActionSchema,
-      expiresAt: string().nullable(),
-    }).strict(),
-  ),
-}).strict();
-
-const applyChatConnectorPermissionsSchema = object({
-  target: connectorAccountTargetSchema,
-  mode: userPermissionGrantApplyModeSchema,
-  permissionNames: array(permissionSchema).optional(),
-  grants: array(applyUserPermissionGrantSchema).max(1000),
-})
-  .strict()
-  .superRefine((body, ctx) => {
-    const names = body.grants.map((grant) => {
-      return grant.permission;
-    });
-    if (
-      new Set(names).size !== names.length ||
-      (body.permissionNames &&
-        new Set(body.permissionNames).size !== body.permissionNames.length)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Duplicate connector permission",
-      });
-    }
-  });
 
 const errors = {
   400: apiErrorSchema,
@@ -131,31 +90,6 @@ export const chatConnectorAccessContract = c.router({
     responses: { 200: chatConnectorAccessSchema, ...errors },
     summary: "Save an allowed current account for a Chat",
   },
-  getPermissions: {
-    method: "GET",
-    path: "/api/chat-threads/:threadId/connector-permissions",
-    headers: authHeadersSchema,
-    pathParams: threadParams,
-    query: connectorAccountTargetQuerySchema,
-    responses: { 200: chatConnectorPermissionsSchema, ...errors },
-    summary: "Read shared Chat permissions when any account is saved",
-  },
-  setPermissions: {
-    method: "PUT",
-    path: "/api/chat-threads/:threadId/connector-permissions",
-    headers: authHeadersSchema,
-    pathParams: threadParams,
-    body: applyChatConnectorPermissionsSchema,
-    responses: { 200: chatConnectorPermissionsSchema, ...errors },
-    summary:
-      "Configure shared Chat permissions independently of account allowance",
-  },
 });
 
 export type ChatConnectorAccess = zInfer<typeof chatConnectorAccessSchema>;
-export type ChatConnectorPermissions = zInfer<
-  typeof chatConnectorPermissionsSchema
->;
-export type ApplyChatConnectorPermissions = zInfer<
-  typeof applyChatConnectorPermissionsSchema
->;

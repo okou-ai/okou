@@ -1,41 +1,17 @@
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ApplyChatConnectorPermissions } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
+import { and, eq, sql } from "drizzle-orm";
 import {
-  chatThreadConnectorAccessOverrides,
-  chatThreadConnectorPolicies,
-  chatThreadConnectorPermissionGrants,
-} from "@okouai/db/schema/chat-thread-connector-access";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
-import { and, eq, sql, type SQL } from "drizzle-orm";
-import { resolveGrantExpiresAt } from "./permission-grant-apply-plan";
-
-export interface ConnectorAccessOwner {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly target: ConnectorAccountTarget;
-}
+  connectorAccessAccountOwner,
+  type ConnectorAccessOwner,
+} from "./connector-access-owner";
 
 export interface ChatConnectorAccessOwner extends ConnectorAccessOwner {
   readonly chatThreadId: string;
-}
-
-function connectorAccessTarget(target: ConnectorAccountTarget) {
-  return target.kind === "builtin"
-    ? eq(connectors.connectorSlug, target.connectorSlug)
-    : eq(connectors.customConnectorId, target.customConnectorId);
-}
-
-export function connectorAccessAccountOwner(owner: ConnectorAccessOwner) {
-  return and(
-    eq(connectors.orgId, owner.orgId),
-    eq(connectors.userId, owner.userId),
-    connectorAccessTarget(owner.target),
-  );
 }
 
 export function connectorAccessThreadOwner(owner: ChatConnectorAccessOwner) {
@@ -43,21 +19,6 @@ export function connectorAccessThreadOwner(owner: ChatConnectorAccessOwner) {
     eq(chatThreads.id, owner.chatThreadId),
     eq(chatThreads.userId, owner.userId),
     eq(agents.orgId, owner.orgId),
-  );
-}
-
-export function connectorAccessPolicyTarget(owner: ChatConnectorAccessOwner) {
-  return and(
-    eq(chatThreadConnectorPolicies.chatThreadId, owner.chatThreadId),
-    owner.target.kind === "builtin"
-      ? eq(
-          chatThreadConnectorPolicies.connectorSlug,
-          owner.target.connectorSlug,
-        )
-      : eq(
-          chatThreadConnectorPolicies.customConnectorId,
-          owner.target.customConnectorId,
-        ),
   );
 }
 
@@ -141,36 +102,6 @@ export function repairChatConnectorSelectionsSql(
       AND (SELECT count(*) FROM replaced) >= 0`;
 }
 
-/** The inserted policy identity is the only source for the one-time grant copy. */
-export function initializeChatConnectorPolicySql(
-  owner: ChatConnectorAccessOwner,
-) {
-  const slug =
-    owner.target.kind === "builtin" ? owner.target.connectorSlug : null;
-  const customId =
-    owner.target.kind === "custom" ? owner.target.customConnectorId : null;
-  return sql`WITH owned_thread AS MATERIALIZED (
-    SELECT ${chatThreads.id} AS id, ${agents.id} AS agent_id
-    FROM ${chatThreads} JOIN ${agents} ON ${eq(agents.id, chatThreads.agentId)}
-    WHERE ${connectorAccessThreadOwner(owner)}
-  ), initialized AS (
-    INSERT INTO ${chatThreadConnectorPolicies} (chat_thread_id, connector_slug, custom_connector_id, permission_names)
-    SELECT owned_thread.id, ${slug}::varchar, ${customId}::uuid,
-      coalesce(${userCustomConnectors.permissionNames}, '{}'::text[])
-    FROM owned_thread LEFT JOIN ${userCustomConnectors} ON
-      ${eq(userCustomConnectors.orgId, owner.orgId)} AND ${eq(userCustomConnectors.userId, owner.userId)}
-      AND ${userCustomConnectors.agentId} = owned_thread.agent_id
-      AND ${userCustomConnectors.customConnectorId} = ${customId}::uuid
-    WHERE EXISTS (SELECT 1 FROM ${connectors} WHERE ${connectorAccessAccountOwner(owner)})
-    ON CONFLICT DO NOTHING RETURNING id
-  ) INSERT INTO ${chatThreadConnectorPermissionGrants} (policy_id, permission, action, expires_at)
-    SELECT initialized.id, ${userPermissionGrants.permission}, ${userPermissionGrants.action}, ${userPermissionGrants.expiresAt}
-    FROM initialized CROSS JOIN owned_thread JOIN ${userPermissionGrants} ON
-      ${eq(userPermissionGrants.orgId, owner.orgId)} AND ${eq(userPermissionGrants.userId, owner.userId)}
-      AND ${userPermissionGrants.agentId} = owned_thread.agent_id
-      AND ${userPermissionGrants.connectorSlug} = ${slug}::varchar`;
-}
-
 export function saveChatConnectorCurrentSql(
   owner: ChatConnectorAccessOwner,
   connectionId: string,
@@ -190,35 +121,4 @@ export function saveChatConnectorCurrentSql(
       AND coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})
     ON CONFLICT ${conflict} DO UPDATE SET connector_id = excluded.connector_id
     RETURNING connector_id`;
-}
-
-/** Keep selected names, replacement removals and explicit grants in one statement. */
-export function chatConnectorPermissionMutationSql(
-  policyId: string,
-  apply: ApplyChatConnectorPermissions,
-  updatedPolicy: SQL,
-  timestamp: Date,
-) {
-  const values = apply.grants.map((grant) => {
-    const expiresAt = resolveGrantExpiresAt(
-      grant.action === "allow" ? grant.expiresIn : undefined,
-      timestamp,
-    );
-    return sql`(${policyId}::uuid, ${grant.permission}::varchar, ${grant.action}::varchar, ${sql.param(expiresAt, chatThreadConnectorPermissionGrants.expiresAt)}::timestamp)`;
-  });
-  const requested = apply.grants.map((grant) => {
-    return grant.permission;
-  });
-  const deletion = sql`DELETE FROM ${chatThreadConnectorPermissionGrants}
-    WHERE ${eq(chatThreadConnectorPermissionGrants.policyId, policyId)} AND ${apply.mode === "replace"}
-      AND NOT (${chatThreadConnectorPermissionGrants.permission} = ANY(${sql.param(requested)}::varchar[]))
-      AND EXISTS (SELECT 1 FROM updated_chat_policy) RETURNING policy_id`;
-  const insertion =
-    values.length === 0
-      ? sql`SELECT count(*) FROM removed_chat_grants`
-      : sql`INSERT INTO ${chatThreadConnectorPermissionGrants} (policy_id, permission, action, expires_at)
-      SELECT requested.* FROM (VALUES ${sql.join(values, sql`, `)}) AS requested(policy_id, permission, action, expires_at)
-      WHERE EXISTS (SELECT 1 FROM updated_chat_policy) AND (SELECT count(*) FROM removed_chat_grants) >= 0
-      ON CONFLICT (policy_id, permission) DO UPDATE SET action = excluded.action, expires_at = excluded.expires_at`;
-  return sql`WITH updated_chat_policy AS (${updatedPolicy}), removed_chat_grants AS (${deletion}) ${insertion}`;
 }

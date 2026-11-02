@@ -586,6 +586,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "connector-permissions",
+    contracts: ["connectorPermissionsContract"],
+    bindings: [],
+  },
+  {
     module: "connectors",
     contracts: [
       "builtinConnectorAutomaticContract",

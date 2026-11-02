@@ -205,6 +205,10 @@ export const clientDescriptorManifest = [
     contracts: ["connectorCheckContract"],
   },
   {
+    module: "connector-permissions",
+    contracts: ["connectorPermissionsContract"],
+  },
+  {
     module: "connectors-slug-callback",
     contracts: ["builtinConnectorsSlugCallbackContract"],
   },

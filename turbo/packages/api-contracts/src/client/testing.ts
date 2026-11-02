@@ -199,6 +199,8 @@ import { connectorCatalogContract as OriginalConnectorCatalogContract } from "..
 import { connectorCatalogContract } from "./connector-catalog";
 import { connectorCheckContract as OriginalConnectorCheckContract } from "../contracts/connector-check";
 import { connectorCheckContract } from "./connector-check";
+import { connectorPermissionsContract as OriginalConnectorPermissionsContract } from "../contracts/connector-permissions";
+import { connectorPermissionsContract } from "./connector-permissions";
 import { builtinConnectorsSlugCallbackContract as OriginalBuiltinConnectorsSlugCallbackContract } from "../contracts/connectors-slug-callback";
 import { builtinConnectorsSlugCallbackContract } from "./connectors-slug-callback";
 import {
@@ -892,6 +894,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [connectorAgentAccessContract, OriginalConnectorAgentAccessContract],
   [connectorCatalogContract, OriginalConnectorCatalogContract],
   [connectorCheckContract, OriginalConnectorCheckContract],
+  [connectorPermissionsContract, OriginalConnectorPermissionsContract],
   [
     builtinConnectorsSlugCallbackContract,
     OriginalBuiltinConnectorsSlugCallbackContract,

@@ -167,9 +167,12 @@ export {
 export {
   chatConnectorAccessContract,
   type ChatConnectorAccess,
-  type ChatConnectorPermissions,
-  type ApplyChatConnectorPermissions,
 } from "./chat-connector-access";
+export {
+  connectorPermissionsContract,
+  type ConnectorPermissions,
+  type ApplyConnectorPermissions,
+} from "./connector-permissions";
 export {
   userModelPreferenceResponseSchema,
   updateUserModelPreferenceRequestSchema,

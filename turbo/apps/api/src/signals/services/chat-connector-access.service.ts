@@ -1,54 +1,29 @@
 import { command, computed, type Computed } from "ccstate";
-import type {
-  ChatConnectorAccess,
-  ChatConnectorPermissions,
-  ApplyChatConnectorPermissions,
-} from "@okouai/api-contracts/contracts/chat-connector-access";
-import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
+import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import {
-  chatThreadConnectorAccessOverrides,
-  chatThreadConnectorPolicies,
-  chatThreadConnectorPermissionGrants,
-} from "@okouai/db/schema/chat-thread-connector-access";
-import {
-  connectorCatalog,
-  connectorCatalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
-import { and, asc, eq, exists, gt, isNull, or } from "drizzle-orm";
+import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
+import { and, asc, eq } from "drizzle-orm";
 import { boolean, object, string, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { isConnectorAccountDefaultConflict } from "./connector-account-lifecycle.service";
 import {
-  connectorCatalogCurrentWhere,
-  connectorRuntimeSlugSelectionReadPlan,
-  connectorRuntimeSlugSelectionFromRows,
-} from "./connector-catalog-slug-source.service";
-import {
-  customConnectorPermissionBundleDependencySlug,
-  loadCustomConnectorPermissionBundle,
-} from "./custom-connector-permission-bundle.service";
-import {
   accountDefaultEnabledSql,
-  chatConnectorPermissionMutationSql,
-  connectorAccessAccountOwner,
-  connectorAccessPolicyTarget,
   connectorAccessSelectionTarget,
   connectorAccessThreadOwner,
-  initializeChatConnectorPolicySql,
   repairChatConnectorSelectionsSql,
   saveChatConnectorCurrentSql,
   type ChatConnectorAccessOwner,
-  type ConnectorAccessOwner,
 } from "./chat-connector-access-sql";
+import {
+  connectorAccessAccountOwner,
+  type ConnectorAccessOwner,
+} from "./connector-access-owner";
 
 function accountColumns() {
   return {
@@ -269,203 +244,5 @@ export const setChatConnectorCurrent$ = command(
     );
     signal.throwIfAborted();
     return rows.length > 0;
-  },
-);
-
-export const initializeChatConnectorPolicy$ = command(
-  async ({ set }, owner: ChatConnectorAccessOwner, signal: AbortSignal) => {
-    await set(writeDb$).execute(initializeChatConnectorPolicySql(owner));
-    signal.throwIfAborted();
-  },
-);
-
-export function chatConnectorPermissions(
-  scope$: Computed<
-    ChatConnectorAccessOwner | null | Promise<ChatConnectorAccessOwner | null>
-  >,
-) {
-  return computed(async (get): Promise<ChatConnectorPermissions | null> => {
-    const owner = await get(scope$);
-    if (!owner) {
-      return null;
-    }
-    const db = get(db$);
-    const [policy] = await db
-      .select({
-        id: chatThreadConnectorPolicies.id,
-        permissionNames: chatThreadConnectorPolicies.permissionNames,
-      })
-      .from(chatThreadConnectorPolicies)
-      .innerJoin(
-        chatThreads,
-        eq(chatThreads.id, chatThreadConnectorPolicies.chatThreadId),
-      )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(
-        and(
-          connectorAccessThreadOwner(owner),
-          connectorAccessPolicyTarget(owner),
-          exists(
-            db
-              .select({ id: connectors.id })
-              .from(connectors)
-              .where(connectorAccessAccountOwner(owner)),
-          ),
-        ),
-      )
-      .limit(1);
-    if (!policy) {
-      return null;
-    }
-    const rows = await db
-      .select({
-        permission: chatThreadConnectorPermissionGrants.permission,
-        action: chatThreadConnectorPermissionGrants.action,
-        expiresAt: chatThreadConnectorPermissionGrants.expiresAt,
-      })
-      .from(chatThreadConnectorPermissionGrants)
-      .where(
-        and(
-          eq(chatThreadConnectorPermissionGrants.policyId, policy.id),
-          or(
-            isNull(chatThreadConnectorPermissionGrants.expiresAt),
-            gt(chatThreadConnectorPermissionGrants.expiresAt, nowDate()),
-          ),
-        ),
-      )
-      .orderBy(asc(chatThreadConnectorPermissionGrants.permission));
-    return {
-      target: owner.target,
-      permissionNames: policy.permissionNames,
-      grants: rows.map((row) => {
-        return {
-          ...row,
-          expiresAt: row.expiresAt?.toISOString() ?? null,
-        };
-      }),
-    };
-  });
-}
-
-export const applyChatConnectorPermissions$ = command(
-  async (
-    { set },
-    owner: ChatConnectorAccessOwner,
-    apply: ApplyChatConnectorPermissions,
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const [policy] = await db
-      .select({ id: chatThreadConnectorPolicies.id })
-      .from(chatThreadConnectorPolicies)
-      .innerJoin(
-        chatThreads,
-        eq(chatThreads.id, chatThreadConnectorPolicies.chatThreadId),
-      )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(
-        and(
-          connectorAccessThreadOwner(owner),
-          connectorAccessPolicyTarget(owner),
-          exists(
-            db
-              .select({ id: connectors.id })
-              .from(connectors)
-              .where(connectorAccessAccountOwner(owner)),
-          ),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!policy) {
-      return "not_found" as const;
-    }
-    if (
-      owner.target.kind === "builtin" &&
-      apply.permissionNames !== undefined
-    ) {
-      return "Selected permission names are only used by custom connectors";
-    }
-    const [definition] =
-      owner.target.kind === "custom"
-        ? await db
-            .select({
-              permissionBundleRef: orgCustomConnectors.permissionBundleRef,
-            })
-            .from(orgCustomConnectors)
-            .where(
-              and(
-                eq(orgCustomConnectors.orgId, owner.orgId),
-                eq(orgCustomConnectors.id, owner.target.customConnectorId),
-              ),
-            )
-            .limit(1)
-        : [];
-    signal.throwIfAborted();
-    const slug =
-      owner.target.kind === "builtin"
-        ? owner.target.connectorSlug
-        : definition?.permissionBundleRef
-          ? customConnectorPermissionBundleDependencySlug(
-              definition.permissionBundleRef,
-            )
-          : null;
-    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: slug === null ? [] : [slug],
-    });
-    const snapshot = connectorRuntimeSlugSelectionFromRows(
-      catalogPlan.selection,
-      await db
-        .select(catalogPlan.columns)
-        .from(connectorCatalog)
-        .leftJoin(connectorCatalogEntries, catalogPlan.join)
-        .where(connectorCatalogCurrentWhere()),
-    );
-    signal.throwIfAborted();
-    const names =
-      owner.target.kind === "builtin"
-        ? (
-            await snapshot.serverFirewalls.loadPermissionIndex(
-              owner.target.connectorSlug,
-            )
-          )?.permissionNames
-        : definition?.permissionBundleRef
-          ? (
-              await loadCustomConnectorPermissionBundle({
-                catalog: snapshot.serverFirewalls,
-                ref: definition.permissionBundleRef,
-              })
-            )?.permissionNames
-          : undefined;
-    signal.throwIfAborted();
-    if (
-      apply.grants.some((grant) => {
-        return (
-          grant.permission !== UNKNOWN_PERMISSION_GRANT &&
-          !names?.has(grant.permission)
-        );
-      }) ||
-      apply.permissionNames?.some((name) => {
-        return !names?.has(name);
-      })
-    ) {
-      return "Unknown connector permission";
-    }
-    const updated = db
-      .update(chatThreadConnectorPolicies)
-      .set({
-        permissionNames:
-          apply.permissionNames === undefined
-            ? chatThreadConnectorPolicies.permissionNames
-            : [...apply.permissionNames],
-      })
-      .where(eq(chatThreadConnectorPolicies.id, policy.id))
-      .returning({ id: chatThreadConnectorPolicies.id })
-      .getSQL();
-    await db.execute(
-      chatConnectorPermissionMutationSql(policy.id, apply, updated, nowDate()),
-    );
-    signal.throwIfAborted();
-    return "updated" as const;
   },
 );

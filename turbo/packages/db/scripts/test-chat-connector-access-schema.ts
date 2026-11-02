@@ -11,7 +11,7 @@ export async function validateChatConnectorAccessSchema(
   const accountId = randomUUID();
   const agentId = randomUUID();
   const threadId = randomUUID();
-  const policyId = randomUUID();
+  const grantId = randomUUID();
   const owner = `chat-access-${randomUUID()}`;
   try {
     await client.query(
@@ -56,26 +56,22 @@ export async function validateChatConnectorAccessSchema(
       [threadId, accountId],
     );
     await client.query(
-      "INSERT INTO chat_thread_connector_policies (id,chat_thread_id,connector_slug) VALUES ($1,$2,'schema-chat-access')",
-      [policyId, threadId],
+      "INSERT INTO connector_permission_grants (id,org_id,user_id,connector_slug,permission,action) VALUES ($1,$2,$2,'schema-chat-access','read','deny')",
+      [grantId, owner],
     );
     await assert.rejects(
       client.query(
-        "INSERT INTO chat_thread_connector_policies (chat_thread_id,connector_slug) VALUES ($1,'schema-chat-access')",
-        [threadId],
+        "INSERT INTO connector_permission_grants (org_id,user_id,connector_slug,permission,action) VALUES ($1,$1,'schema-chat-access','read','allow')",
+        [owner],
       ),
-      { code: "23505", constraint: "uq_chat_connector_policy_builtin" },
-    );
-    await client.query(
-      "INSERT INTO chat_thread_connector_permission_grants (policy_id,permission,action) VALUES ($1,'read','deny')",
-      [policyId],
+      { code: "23505", constraint: "uq_connector_permission_grants_builtin" },
     );
     await assert.rejects(
       client.query(
-        "INSERT INTO chat_thread_connector_permission_grants (policy_id,permission,action,expires_at) VALUES ($1,'write','deny',now())",
-        [policyId],
+        "INSERT INTO connector_permission_grants (org_id,user_id,connector_slug,permission,action,expires_at) VALUES ($1,$1,'schema-chat-access','write','deny',now())",
+        [owner],
       ),
-      { code: "23514", constraint: "chk_chat_connector_grant_expiry" },
+      { code: "23514", constraint: "chk_connector_permission_grants_expiry" },
     );
     await client.query("DELETE FROM connectors WHERE id=$1", [accountId]);
     assert.deepEqual(
@@ -87,29 +83,32 @@ export async function validateChatConnectorAccessSchema(
       ).rows,
       [],
     );
-    // Policy ownership follows the Chat/target, not its last saved account.
+    // Member connector permissions outlive individual accounts and Chats.
     assert.equal(
       (
         await client.query(
-          "SELECT id FROM chat_thread_connector_policies WHERE id=$1",
-          [policyId],
+          "SELECT id FROM connector_permission_grants WHERE id=$1",
+          [grantId],
         )
       ).rows[0].id,
-      policyId,
+      grantId,
     );
     await client.query("DELETE FROM chat_threads WHERE id=$1", [threadId]);
     assert.deepEqual(
       (
         await client.query(
-          "SELECT permission FROM chat_thread_connector_permission_grants WHERE policy_id=$1",
-          [policyId],
+          "SELECT permission FROM connector_permission_grants WHERE id=$1",
+          [grantId],
         )
       ).rows,
-      [],
+      [{ permission: "read" }],
     );
   } finally {
     await client.query("DELETE FROM agents WHERE id=$1", [agentId]);
     await client.query("DELETE FROM connectors WHERE id=$1", [accountId]);
+    await client.query("DELETE FROM connector_permission_grants WHERE id=$1", [
+      grantId,
+    ]);
     await client.end();
   }
 }

@@ -57,7 +57,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     displayName: "Chat connector accounts",
     description:
-      "Configure connector account access and shared permissions per chat.",
+      "Configure Chat connector accounts and shared member connector permissions.",
     enabled: false,
   },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {

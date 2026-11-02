@@ -62,26 +62,4 @@ export const chatConnectorAccessContract: ClientDescriptor<
       404: true,
     },
   },
-  getPermissions: {
-    method: "GET",
-    path: "/api/chat-threads/:threadId/connector-permissions",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-    },
-  },
-  setPermissions: {
-    method: "PUT",
-    path: "/api/chat-threads/:threadId/connector-permissions",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-    },
-  },
 };

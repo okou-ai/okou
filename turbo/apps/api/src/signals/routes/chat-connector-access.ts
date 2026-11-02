@@ -11,11 +11,8 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
-  applyChatConnectorPermissions$,
   chatConnectorAccess,
-  chatConnectorPermissions,
   connectorAccountAccessDefaults,
-  initializeChatConnectorPolicy$,
   setChatConnectorAccessOverride$,
   setChatConnectorCurrent$,
   updateConnectorAccountDefaultEnabled$,
@@ -206,81 +203,6 @@ const currentHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
     : badRequestMessage("Account is not allowed or available in this chat");
 });
 
-const permissionScope$ = computed((get) => {
-  return {
-    ...get(owner$),
-    chatThreadId: get(pathParamsOf(chatConnectorAccessContract.getPermissions))
-      .threadId,
-    target: get(queryOf(chatConnectorAccessContract.getPermissions)),
-  };
-});
-const permissions$ = chatConnectorPermissions(permissionScope$);
-const permissionsHandler$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(featureAvailable$, signal))) {
-      return unavailable;
-    }
-    const owner = await get(permissionScope$);
-    signal.throwIfAborted();
-    await set(initializeChatConnectorPolicy$, owner, signal);
-    const body = await get(permissions$);
-    signal.throwIfAborted();
-    return body ? { status: 200 as const, body } : missing;
-  },
-);
-const applyPermissionScope$ = computed(async (get) => {
-  const body = await get(
-    bodyResultOf(chatConnectorAccessContract.setPermissions),
-  );
-  return body.ok
-    ? {
-        ...get(owner$),
-        chatThreadId: get(
-          pathParamsOf(chatConnectorAccessContract.setPermissions),
-        ).threadId,
-        target: body.data.target,
-      }
-    : null;
-});
-const appliedPermissions$ = chatConnectorPermissions(applyPermissionScope$);
-const applyPermissionsHandler$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(featureAvailable$, signal))) {
-      return unavailable;
-    }
-    const body = await get(
-      bodyResultOf(chatConnectorAccessContract.setPermissions),
-    );
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const owner = {
-      ...get(owner$),
-      chatThreadId: get(
-        pathParamsOf(chatConnectorAccessContract.setPermissions),
-      ).threadId,
-      target: body.data.target,
-    };
-    await set(initializeChatConnectorPolicy$, owner, signal);
-    const result = await set(
-      applyChatConnectorPermissions$,
-      owner,
-      body.data,
-      signal,
-    );
-    if (result === "not_found") {
-      return missing;
-    }
-    if (result !== "updated") {
-      return badRequestMessage(result);
-    }
-    const response = await get(appliedPermissions$);
-    signal.throwIfAborted();
-    return response ? { status: 200 as const, body: response } : missing;
-  },
-);
-
 export const chatConnectorAccessRoutes: readonly RouteEntry[] = [
   {
     route: chatConnectorAccessContract.accountDefaults,
@@ -301,13 +223,5 @@ export const chatConnectorAccessRoutes: readonly RouteEntry[] = [
   {
     route: chatConnectorAccessContract.setThreadCurrent,
     handler: authRoute(ownerAuth, currentHandler$),
-  },
-  {
-    route: chatConnectorAccessContract.getPermissions,
-    handler: authRoute(ownerAuth, permissionsHandler$),
-  },
-  {
-    route: chatConnectorAccessContract.setPermissions,
-    handler: authRoute(ownerAuth, applyPermissionsHandler$),
   },
 ];

@@ -2,22 +2,14 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import {
-  createConnectorBddApi,
-  manualHttpCustomConnectorCreateBody,
-  mockSlackConnectorOAuth,
-} from "./helpers/api-bdd-connectors";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -38,11 +30,6 @@ function client() {
 function accounts() {
   return setupApp({ context, routes: connectorAccountRoutes })(
     connectorAccountsContract,
-  );
-}
-function legacyPermissions() {
-  return setupApp({ context, routes: userPermissionGrantsRoutes })(
-    userPermissionGrantsContract,
   );
 }
 async function ownerWithThread(enabled = true, actor = bdd.user()) {
@@ -260,275 +247,6 @@ describe("Chat connector account configuration", () => {
     });
   });
 
-  it("copies built-in policy once, keeps absolute expiry and permits editing with every account disabled", async () => {
-    const owner = await ownerWithThread();
-    const slack = { kind: "builtin", connectorSlug: "slack" } as const;
-    mockSlackConnectorOAuth();
-    const start = await connectors.startOauth(
-      owner.actor,
-      "slack",
-      "oauth",
-      owner.agentId,
-    );
-    const state = new URL(start.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected OAuth state");
-    }
-    await connectors.completeOauthCallback("slack", {
-      state,
-      code: "chat-policy-code",
-    });
-    const account = await connectors.readDefaultBuiltinAccount(
-      owner.actor,
-      "slack",
-    );
-    if (!account) {
-      throw new Error("Expected the saved Slack account");
-    }
-    mockNow(new Date("2026-11-02T12:00:00Z"));
-    const legacy = await accept(
-      legacyPermissions().apply({
-        headers,
-        body: {
-          agentId: owner.agentId,
-          connectorSlug: "slack",
-          mode: "replace",
-          grants: [
-            {
-              permission: "conversations:read",
-              action: "allow",
-              expiresIn: "1h",
-            },
-            { permission: "chat:write", action: "deny" },
-            { permission: UNKNOWN_PERMISSION_GRANT, action: "deny" },
-          ],
-        },
-      }),
-      [200],
-    );
-    const params = { threadId: owner.threadId };
-    const initial = await accept(
-      client().getPermissions({ headers, params, query: slack }),
-      [200],
-    );
-    expect(initial.body.grants).toHaveLength(legacy.body.length);
-    expect(initial.body.grants).toStrictEqual(
-      expect.arrayContaining(
-        legacy.body.map(({ permission, action, expiresAt }) => {
-          return {
-            permission,
-            action,
-            expiresAt,
-          };
-        }),
-      ),
-    );
-    mockNow(new Date("2026-11-02T12:15:00Z"));
-    await accept(
-      legacyPermissions().apply({
-        headers,
-        body: {
-          agentId: owner.agentId,
-          connectorSlug: "slack",
-          mode: "replace",
-          grants: [
-            { permission: "chat:write", action: "allow", expiresIn: "24h" },
-          ],
-        },
-      }),
-      [200],
-    );
-    await accept(
-      client().updateAccountDefault({
-        headers,
-        params: { connectionId: account.id },
-        body: { target: slack, enabled: false },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          client().getPermissions({ headers, params, query: slack }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(initial.body);
-    const edited = await accept(
-      client().setPermissions({
-        headers,
-        params,
-        body: {
-          target: slack,
-          mode: "patch",
-          grants: [
-            { permission: "chat:write", action: "allow", expiresIn: "1h" },
-          ],
-        },
-      }),
-      [200],
-    );
-    expect(edited.body.grants).toContainEqual({
-      permission: "conversations:read",
-      action: "allow",
-      expiresAt: "2026-11-02T13:00:00.000Z",
-    });
-    expect(
-      (
-        await accept(
-          client().getThread({ headers, params, query: slack }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({ available: false, currentConnectionId: null });
-    mockNow(new Date("2026-11-02T13:01:00Z"));
-    const expired = await accept(
-      client().getPermissions({ headers, params, query: slack }),
-      [200],
-    );
-    expect(expired.body.grants).toHaveLength(2);
-    expect(expired.body.grants).toStrictEqual(
-      expect.arrayContaining([
-        {
-          permission: UNKNOWN_PERMISSION_GRANT,
-          action: "deny",
-          expiresAt: null,
-        },
-        {
-          permission: "chat:write",
-          action: "allow",
-          expiresAt: "2026-11-02T13:15:00.000Z",
-        },
-      ]),
-    );
-    const cleared = await accept(
-      client().setPermissions({
-        headers,
-        params,
-        body: { target: slack, mode: "replace", grants: [] },
-      }),
-      [200],
-    );
-    expect(cleared.body.grants).toStrictEqual([]);
-    expect(
-      (
-        await accept(
-          client().getPermissions({ headers, params, query: slack }),
-          [200],
-        )
-      ).body.grants,
-    ).toStrictEqual([]);
-  });
-
-  it("keeps custom selected names shared across accounts and does not promote disabled custom siblings", async () => {
-    const owner = await ownerWithThread();
-    const definition = await connectors.createCustomConnector(
-      owner.actor,
-      manualHttpCustomConnectorCreateBody({
-        displayName: "Custom Chat policy",
-        slug: `_chat-policy-${randomUUID()}`,
-        prefixTemplates: ["https://custom-chat.example.test/"],
-        permissionBundleRef: "builtin:slack@1",
-      }),
-    );
-    const custom = {
-      kind: "custom",
-      customConnectorId: definition.id,
-    } as const;
-    const first = await connectors.setCustomConnectorValues(
-      owner.actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "custom-A" }],
-      { intent: "add" },
-    );
-    const second = await connectors.setCustomConnectorValues(
-      owner.actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "custom-B" }],
-      { intent: "add" },
-    );
-    await connectors.requestUpdateAgentCustomConnectorGrants(
-      owner.actor,
-      owner.agentId,
-      [{ customConnectorId: definition.id, permissionNames: ["chat:write"] }],
-      [200],
-    );
-    const params = { threadId: owner.threadId };
-    expect(
-      (
-        await accept(
-          client().getPermissions({ headers, params, query: custom }),
-          [200],
-        )
-      ).body.permissionNames,
-    ).toStrictEqual(["chat:write"]);
-    await connectors.requestUpdateAgentCustomConnectorGrants(
-      owner.actor,
-      owner.agentId,
-      [{ customConnectorId: definition.id, permissionNames: [] }],
-      [200],
-    );
-    await accept(
-      client().setThreadCurrent({
-        headers,
-        params,
-        body: { target: custom, connectionId: second.connectionId },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          client().getPermissions({ headers, params, query: custom }),
-          [200],
-        )
-      ).body.permissionNames,
-    ).toStrictEqual(["chat:write"]);
-    await accept(
-      client().updateAccountDefault({
-        headers,
-        params: { connectionId: second.connectionId },
-        body: { target: custom, enabled: false },
-      }),
-      [200],
-    );
-    const removed = await accept(
-      accounts().delete({
-        headers,
-        params: { connectionId: first.connectionId },
-        body: { target: custom },
-      }),
-      [200],
-    );
-    expect(removed.body.promotedDefaultConnectionId).toBeNull();
-    const edited = await accept(
-      client().setPermissions({
-        headers,
-        params,
-        body: {
-          target: custom,
-          mode: "replace",
-          permissionNames: ["conversations:read"],
-          grants: [{ permission: "chat:write", action: "deny" }],
-        },
-      }),
-      [200],
-    );
-    expect(edited.body).toStrictEqual({
-      target: custom,
-      permissionNames: ["conversations:read"],
-      grants: [{ permission: "chat:write", action: "deny", expiresAt: null }],
-    });
-    expect(
-      (
-        await accept(
-          client().getThread({ headers, params, query: custom }),
-          [200],
-        )
-      ).body.available,
-    ).toBeFalsy();
-  });
-
   it("gates owner configuration and rejects foreign accounts, Chats and mismatched targets", async () => {
     const owner = await ownerWithThread(false);
     const a = await addAccount(owner.actor, "Owner");
@@ -593,14 +311,6 @@ describe("Chat connector account configuration", () => {
     );
     await accept(
       client().getThread({
-        headers,
-        params: { threadId: other.threadId },
-        query: target,
-      }),
-      [404],
-    );
-    await accept(
-      client().getPermissions({
         headers,
         params: { threadId: other.threadId },
         query: target,
