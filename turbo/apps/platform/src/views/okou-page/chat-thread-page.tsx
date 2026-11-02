@@ -3439,28 +3439,22 @@ function ChatThreadEventGroups({
   statusRowGroupId: string | null;
 }) {
   const { i18n: translation } = useTranslation();
-  const timelineEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadTimeline];
-  const timelineEvents = timelineEnabled
-    ? groups.flatMap((group) => {
-        const section = runWorkSectionForGroup(runWorkFolding, group);
-        if (!groupRendersContent(group, section)) {
-          return [];
-        }
-        if (group.role === "user") {
-          return group.events;
-        }
-        const firstVisibleEvent =
-          group.events.find(isRenderableAssistantEvent) ?? group.events[0];
-        return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
-      })
-    : [];
-  const dateDividers = timelineEnabled
-    ? chatThreadDateDividers(
-        timelineEvents,
-        translation.resolvedLanguage ?? translation.language,
-      )
-    : undefined;
+  const timelineEvents = groups.flatMap((group) => {
+    const section = runWorkSectionForGroup(runWorkFolding, group);
+    if (!groupRendersContent(group, section)) {
+      return [];
+    }
+    if (group.role === "user") {
+      return group.events;
+    }
+    const firstVisibleEvent =
+      group.events.find(isRenderableAssistantEvent) ?? group.events[0];
+    return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
+  });
+  const dateDividers = chatThreadDateDividers(
+    timelineEvents,
+    translation.resolvedLanguage ?? translation.language,
+  );
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
@@ -3476,7 +3470,7 @@ function ChatThreadEventGroups({
           group.events.find(isRenderableAssistantEvent) ?? group.events[0];
         const assistantDate =
           group.role === "assistant" && firstAssistantEvent !== undefined
-            ? dateDividers?.get(firstAssistantEvent.id)
+            ? dateDividers.get(firstAssistantEvent.id)
             : undefined;
         const stackFirstOnPrevious =
           previousVisibleGroup !== undefined &&
@@ -6357,7 +6351,7 @@ function PagedGroupRow({
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
-  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
+  dateDividers: ReadonlyMap<string, ChatDateDivider>;
   runWorkSection?: RunWorkSectionControl;
   statusRow?: RunStatusRow;
   statusTailEvents?: readonly EnrichedChatEvent[];
@@ -6666,12 +6660,12 @@ function PagedUserGroup({
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
-  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
+  dateDividers: ReadonlyMap<string, ChatDateDivider>;
 }) {
   return (
     <>
       {group.events.map((event, index) => {
-        const dateDivider = dateDividers?.get(event.id);
+        const dateDivider = dateDividers.get(event.id);
         const modelChange = modelChanges.get(event.id);
         const previousEvent = group.events[index - 1];
         // Anything the user sent back to back is one thing they said, so the

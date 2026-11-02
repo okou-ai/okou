@@ -124,14 +124,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatThreadTimeline]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Chat timeline",
-    description:
-      "Separate chat history by day, with Today shown only alongside Yesterday.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
