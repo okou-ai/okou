@@ -693,9 +693,12 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           Uint8Array,
           "fromBase64",
           (value: string) => {
-            return Uint8Array.from(atob(value), (character) => {
-              return character.charCodeAt(0);
-            });
+            const binary = atob(value);
+            const bytes = new Uint8Array(binary.length);
+            for (let index = 0; index < binary.length; index++) {
+              bytes[index] = binary.charCodeAt(index);
+            }
+            return bytes;
           },
         );
         restoreOnAbort(getSignal(), () => {
