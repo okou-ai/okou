@@ -17,6 +17,9 @@ const DRAWING = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const PRESENTATION =
   "http://schemas.openxmlformats.org/presentationml/2006/main";
 const EMU_PER_POINT = 12_700;
+// Fresh Slides imports render percentage leading on a 1.2em normal line.
+// This is an import compatibility rule, not the font's ascent/descent metric.
+const SLIDES_NORMAL_LINE_HEIGHT = 1.2;
 const TEXT_SOURCE = "https://okou.ai/presentation/text-source/v1";
 
 export interface SlidesTextStyle {
@@ -1226,8 +1229,278 @@ function normalizeSourceFonts(
   return textStyles;
 }
 
-/** Prepare supported editable text and static picture crops for import. Other
- * shapes/archives stay owned by Google's importer; never invent a font. */
+function normalizeParagraphLineSpacing(paragraph: XmlNode): boolean {
+  const ppr = child(paragraph, DRAWING, "pPr");
+  const spacing = ppr && child(ppr, DRAWING, "lnSpc");
+  const fixed = spacing && child(spacing, DRAWING, "spcPts");
+  const points = number(fixed, "val");
+  if (
+    !spacing ||
+    !fixed ||
+    !Number.isSafeInteger(points) ||
+    points <= 0 ||
+    nodes(spacing).length !== 1 ||
+    nodes(paragraph).some((node) => {
+      return (
+        node.uri !== DRAWING || !["pPr", "r", "endParaRPr"].includes(node.local)
+      );
+    }) ||
+    (ppr &&
+      nodes(ppr).some((node) => {
+        return node.local.startsWith("bu") && node.local !== "buNone";
+      }))
+  ) {
+    return false;
+  }
+  const runs = nodes(paragraph)
+    .filter((node) => {
+      return node.local === "r";
+    })
+    .map((run) => {
+      return textRun(run);
+    });
+  const first = runs[0];
+  const endSize = number(child(paragraph, DRAWING, "endParaRPr"), "sz");
+  if (
+    !first ||
+    (Number.isFinite(endSize) && endSize !== first.size * 100) ||
+    runs.some((run) => {
+      return (
+        !run ||
+        run.size !== first.size ||
+        run.face.family !== first.face.family ||
+        run.face.italic !== first.face.italic
+      );
+    })
+  ) {
+    return false;
+  }
+  // Slides converts fixed points to a font-size percentage, then applies
+  // its normal leading again. Express that leading explicitly instead:
+  // 24pt at a uniform 20pt font becomes 100%, not 120% (28.8pt).
+  // Mixed sizes, inherited metrics, autofit and wrapping are not guessed.
+  const percentage = Math.round(
+    (points * 1000) / (first.size * SLIDES_NORMAL_LINE_HEIGHT),
+  );
+  if (percentage <= 0 || percentage > 13_200_000) {
+    return false;
+  }
+  spacing.children = [
+    {
+      ...fixed,
+      name: fixed.name.replace(/spcPts$/u, "spcPct"),
+      local: "spcPct",
+      attributes: { ...fixed.attributes, val: String(percentage) },
+    },
+  ];
+  return true;
+}
+
+function normalizeFixedLineSpacing(root: XmlNode): boolean {
+  if (
+    child(root, PRESENTATION, "timing") ||
+    child(root, PRESENTATION, "transition")
+  ) {
+    return false;
+  }
+  const content = child(root, PRESENTATION, "cSld");
+  const tree = content && child(content, PRESENTATION, "spTree");
+  let changed = false;
+  for (const shape of tree ? nodes(tree) : []) {
+    const parts = plainTextBox(shape);
+    if (!parts) {
+      continue;
+    }
+    const properties = child(parts.body, DRAWING, "bodyPr");
+    const listStyle = child(parts.body, DRAWING, "lstStyle");
+    if (
+      !properties ||
+      properties.attributes.wrap !== "none" ||
+      (properties.attributes.anchor ?? "t") !== "t" ||
+      nodes(properties).some((node) => {
+        return node.uri !== DRAWING || node.local !== "noAutofit";
+      }) ||
+      Object.entries(properties.attributes).some(([name, value]) => {
+        return (
+          !["wrap", "lIns", "rIns", "tIns", "bIns", "anchor"].includes(name) &&
+          !(name === "rtlCol" && ["0", "false"].includes(value))
+        );
+      }) ||
+      (listStyle && nodes(listStyle).length > 0)
+    ) {
+      continue;
+    }
+    for (const paragraph of nodes(parts.body).filter((node) => {
+      return node.uri === DRAWING && node.local === "p";
+    })) {
+      changed = normalizeParagraphLineSpacing(paragraph) || changed;
+    }
+  }
+  return changed;
+}
+
+const TABLE_SIDES = ["lnL", "lnR", "lnT", "lnB"] as const;
+type TableSide = (typeof TABLE_SIDES)[number];
+
+function zeroWidthFilledBorder(edge: XmlNode): boolean {
+  return (
+    number(edge, "w") === 0 &&
+    !child(edge, DRAWING, "noFill") &&
+    nodes(edge).some((node) => {
+      return (
+        node.uri === DRAWING &&
+        ["solidFill", "gradFill", "pattFill"].includes(node.local)
+      );
+    })
+  );
+}
+
+function normalizeTableBorders(table: XmlNode): boolean {
+  const grid = child(table, DRAWING, "tblGrid");
+  const columns = grid ? nodes(grid).length : 0;
+  const rows = nodes(table)
+    .filter((node) => {
+      return node.uri === DRAWING && node.local === "tr";
+    })
+    .map((row) => {
+      return nodes(row).filter((node) => {
+        return node.uri === DRAWING && node.local === "tc";
+      });
+    });
+  const hasLocalNamespaces = (node: XmlNode): boolean => {
+    return (
+      Object.keys(node.attributes).some((name) => {
+        return name === "xmlns" || name.startsWith("xmlns:");
+      }) || nodes(node).some(hasLocalNamespaces)
+    );
+  };
+  if (
+    !columns ||
+    !rows.length ||
+    hasLocalNamespaces(table) ||
+    rows.some((row) => {
+      return (
+        row.length !== columns ||
+        row.some((cell) => {
+          const properties = child(cell, DRAWING, "tcPr");
+          return (
+            !properties ||
+            ["gridSpan", "rowSpan", "hMerge", "vMerge"].some((name) => {
+              return cell.attributes[name] !== undefined;
+            }) ||
+            TABLE_SIDES.some((side) => {
+              const edge = child(properties, DRAWING, side);
+              const width = number(edge, "w");
+              return !edge || !Number.isSafeInteger(width) || width < 0;
+            })
+          );
+        })
+      );
+    })
+  ) {
+    // Merged cells and inherited borders need their own edge-resolution model.
+    return false;
+  }
+  let changed = false;
+  const mirrorVisibleEdge = (
+    left: XmlNode,
+    leftSide: TableSide,
+    right: XmlNode,
+    rightSide: TableSide,
+  ) => {
+    const leftProps = child(left, DRAWING, "tcPr")!;
+    const rightProps = child(right, DRAWING, "tcPr")!;
+    const a = child(leftProps, DRAWING, leftSide)!;
+    const b = child(rightProps, DRAWING, rightSide)!;
+    const replace = (properties: XmlNode, target: XmlNode, source: XmlNode) => {
+      properties.children[properties.children.indexOf(target)] = {
+        ...structuredClone(source),
+        name: target.name,
+        local: target.local,
+      };
+      changed = true;
+    };
+    // Both cells describe one shared border. Hiding only the zero-width side
+    // can also erase its neighbor's visible rule during Google's collapse.
+    if (zeroWidthFilledBorder(a) && number(b, "w") > 0) {
+      replace(leftProps, a, b);
+    } else if (zeroWidthFilledBorder(b) && number(a, "w") > 0) {
+      replace(rightProps, b, a);
+    }
+  };
+  for (const [rowIndex, row] of rows.entries()) {
+    for (const [columnIndex, cell] of row.entries()) {
+      const nextColumn = row[columnIndex + 1];
+      const nextRow = rows[rowIndex + 1]?.[columnIndex];
+      if (nextColumn) {
+        mirrorVisibleEdge(cell, "lnR", nextColumn, "lnL");
+      }
+      if (nextRow) {
+        mirrorVisibleEdge(cell, "lnB", nextRow, "lnT");
+      }
+    }
+  }
+  for (const cell of rows.flat()) {
+    const properties = child(cell, DRAWING, "tcPr")!;
+    for (const side of TABLE_SIDES) {
+      const edge = child(properties, DRAWING, side)!;
+      if (!zeroWidthFilledBorder(edge)) {
+        continue;
+      }
+      // A zero-width solid line becomes a visible 0.75pt hairline on import.
+      // Explicit noFill hides it without deleting the edge or its inheritance.
+      const prefix = edge.name.slice(0, edge.name.length - edge.local.length);
+      edge.children = [
+        {
+          name: `${prefix}noFill`,
+          local: "noFill",
+          uri: DRAWING,
+          attributes: {},
+          children: [],
+        },
+        ...nodes(edge).filter((node) => {
+          return !["solidFill", "gradFill", "pattFill"].includes(node.local);
+        }),
+      ];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function normalizeSlideTableBorders(root: XmlNode): boolean {
+  let changed = false;
+  const content = child(root, PRESENTATION, "cSld");
+  const tree = content && child(content, PRESENTATION, "spTree");
+  const visit = (node: XmlNode) => {
+    if (node.uri !== PRESENTATION) {
+      return;
+    }
+    if (node.local === "graphicFrame") {
+      const graphic = child(node, DRAWING, "graphic");
+      const data = graphic && child(graphic, DRAWING, "graphicData");
+      const table = data && child(data, DRAWING, "tbl");
+      if (
+        data?.attributes.uri ===
+          "http://schemas.openxmlformats.org/drawingml/2006/table" &&
+        table
+      ) {
+        changed = normalizeTableBorders(table) || changed;
+      }
+    } else if (["spTree", "grpSp"].includes(node.local)) {
+      for (const item of nodes(node)) {
+        visit(item);
+      }
+    }
+  };
+  if (tree) {
+    visit(tree);
+  }
+  return changed;
+}
+
+/** Prepare supported editable text, table edges and static picture crops for
+ * import. Other shapes/archives stay owned by Google's importer. */
 export async function prepareGoogleSlidesImport(
   source: { readonly filename: string; readonly file: Buffer },
   signal: AbortSignal,
@@ -1282,8 +1555,16 @@ export async function prepareGoogleSlidesImport(
       slideHeight,
     );
     const normalized = normalizeSourceFonts(slide.root, page, fonts);
+    const lineSpacingChanged = normalizeFixedLineSpacing(slide.root);
+    const tableBordersChanged = normalizeSlideTableBorders(slide.root);
     textStyles.push(...normalized);
-    if (prepared.value || picturesCropped || normalized.length > 0) {
+    if (
+      prepared.value ||
+      picturesCropped ||
+      normalized.length > 0 ||
+      lineSpacingChanged ||
+      tableBordersChanged
+    ) {
       archive[slide.name] = strToU8(xml(slide.root));
       changed = true;
     }

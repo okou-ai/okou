@@ -294,6 +294,257 @@ export function slidesPictureCropNoopFixture(): Buffer {
   ]);
 }
 
+function fidelityParagraph(
+  runs: string,
+  spacing = '<a:spcPts val="2400"/>',
+  properties = "",
+): string {
+  return `<a:p><a:pPr algn="l"><a:lnSpc>${spacing}</a:lnSpc><a:spcBef><a:spcPts val="400"/></a:spcBef><a:spcAft><a:spcPts val="550"/></a:spcAft>${properties}</a:pPr>${runs}</a:p>`;
+}
+
+function fidelityRun(text: string, properties = 'sz="2000"'): string {
+  return `<a:r><a:rPr ${properties}><a:solidFill><a:srgbClr val="242121"/></a:solidFill><a:latin typeface="Import Test"/></a:rPr><a:t xml:space="preserve">${text}</a:t></a:r>`;
+}
+
+function fidelityTextBox(
+  id: number,
+  name: string,
+  paragraphs: string,
+  bodyProperties = 'wrap="none" anchor="t"',
+  autofit = "<a:noAutofit/>",
+): string {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${String(id)}" name="${name}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${String(id * 100_000)}" y="${String(id * 200_000)}"/><a:ext cx="6000000" cy="1600000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr ${bodyProperties} lIns="0" rIns="0" tIns="0" bIns="0">${autofit}</a:bodyPr><a:lstStyle/>${paragraphs}</p:txBody></p:sp>`;
+}
+
+function fidelityText(): string {
+  const ordinary = () => {
+    return fidelityParagraph(fidelityRun("Ordinary body text"));
+  };
+  return [
+    fidelityTextBox(
+      2,
+      "fixed-title",
+      ["Synthetic title", "Second title line"]
+        .map((text) => {
+          return fidelityParagraph(
+            fidelityRun(text, 'sz="5090"'),
+            '<a:spcPts val="5498"/>',
+          );
+        })
+        .join(""),
+    ),
+    fidelityTextBox(
+      3,
+      "fixed-body",
+      fidelityParagraph(
+        fidelityRun("Uniform ") + fidelityRun("Latin runs", 'sz="2000" b="1"'),
+      ) +
+        fidelityParagraph(
+          fidelityRun("Rounded body leading"),
+          '<a:spcPts val="2500"/>',
+        ),
+    ),
+    fidelityTextBox(
+      4,
+      "percentage-control",
+      fidelityParagraph(
+        fidelityRun("Already percent"),
+        '<a:spcPct val="125000"/>',
+      ),
+    ),
+    fidelityTextBox(
+      5,
+      "mixed-size-control",
+      fidelityParagraph(
+        fidelityRun("Small ") + fidelityRun("large", 'sz="2200"'),
+      ),
+    ),
+    fidelityTextBox(
+      6,
+      "autofit-control",
+      ordinary(),
+      'wrap="none" anchor="t"',
+      '<a:normAutofit fontScale="85000" lnSpcReduction="10000"/>',
+    ),
+    fidelityTextBox(
+      7,
+      "inherited-size-control",
+      fidelityParagraph(
+        fidelityRun("Inherited size", 'lang="en-US"'),
+        '<a:spcPts val="2400"/>',
+        '<a:defRPr sz="2000"/>',
+      ),
+    ),
+    fidelityTextBox(
+      8,
+      "complex-script-control",
+      fidelityParagraph(fidelityRun("مرحبا")),
+    ),
+    fidelityTextBox(
+      9,
+      "field-control",
+      fidelityParagraph(
+        '<a:fld id="{11111111-2222-3333-4444-555555555555}" type="slidenum"><a:rPr sz="2000"><a:latin typeface="Import Test"/></a:rPr><a:t>1</a:t></a:fld>',
+      ),
+    ),
+    fidelityTextBox(
+      10,
+      "soft-break-control",
+      fidelityParagraph(
+        fidelityRun("Before") +
+          '<a:br><a:rPr sz="2000"/></a:br>' +
+          fidelityRun("After"),
+      ),
+    ),
+    fidelityTextBox(
+      11,
+      "baseline-control",
+      fidelityParagraph(
+        fidelityRun("Raised text", 'sz="2000" baseline="10000"'),
+      ),
+    ),
+    fidelityTextBox(
+      12,
+      "wrapped-control",
+      ordinary(),
+      'wrap="square" anchor="t"',
+    ),
+    fidelityTextBox(
+      13,
+      "middle-anchor-control",
+      ordinary(),
+      'wrap="none" anchor="ctr"',
+    ),
+    fidelityTextBox(14, "fixed-single-paragraph", ordinary()),
+    `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="20" name="group-control"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/><a:chOff x="0" y="0"/><a:chExt cx="12192000" cy="6858000"/></a:xfrm></p:grpSpPr>${fidelityTextBox(21, "grouped-control", ordinary())}</p:grpSp>`,
+  ].join("");
+}
+
+function fidelityTable(
+  id: number,
+  kind: "explicit" | "merged" | "inherited",
+): string {
+  const edge = (
+    side: string,
+    width: number,
+    color = "AABBCC",
+    dash = "solid",
+    noFill = false,
+  ) => {
+    // A nonstandard prefix catches a hard-coded a:noFill insertion.
+    return `<grid:ln${side}${kind === "inherited" && side === "L" ? "" : ` w="${String(width)}"`} cap="${width > 0 ? "rnd" : "flat"}" cmpd="sng" algn="ctr">${noFill ? "<grid:noFill/>" : `<grid:solidFill><grid:srgbClr val="${color}"/></grid:solidFill>`}<grid:prstDash val="${dash}"/><grid:round/></grid:ln${side}>`;
+  };
+  const rows = [0, 1]
+    .map((row) => {
+      const cells = [0, 1]
+        .map((column) => {
+          const topLeft = row === 0 && column === 0;
+          const bottomRight = row === 1 && column === 1;
+          const borders =
+            edge("L", 0) +
+            edge("R", topLeft ? 3175 : 0, "995522", "dot") +
+            edge(
+              "T",
+              bottomRight ? 3175 : 0,
+              "227799",
+              "solid",
+              row === 0 && column === 1,
+            ) +
+            edge(
+              "B",
+              row === 1 ? 12_700 : topLeft ? 3175 : 0,
+              topLeft ? "336699" : "242121",
+              topLeft ? "dash" : "solid",
+            );
+          const merge =
+            kind === "merged" && row === 0
+              ? column === 0
+                ? ' gridSpan="2"'
+                : ' hMerge="1"'
+              : "";
+          return `<grid:tc${merge}><grid:txBody><grid:bodyPr wrap="none" anchor="t"><grid:noAutofit/></grid:bodyPr><grid:lstStyle/><grid:p><grid:pPr><grid:lnSpc><grid:spcPts val="1440"/></grid:lnSpc></grid:pPr><grid:r><grid:rPr sz="1200"><grid:latin typeface="Import Test"/></grid:rPr><grid:t>Cell ${String(row + 1)},${String(column + 1)}</grid:t></grid:r></grid:p></grid:txBody><grid:tcPr marL="91440" marR="91440" marT="45720" marB="45720">${borders}<grid:solidFill><grid:srgbClr val="FFFFFF"/></grid:solidFill></grid:tcPr></grid:tc>`;
+        })
+        .join("");
+      return `<grid:tr h="500000">${cells}</grid:tr>`;
+    })
+    .join("");
+  const style =
+    kind === "inherited"
+      ? "<grid:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</grid:tableStyleId>"
+      : "";
+  return `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${String(id)}" name="${kind}-table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="1000000" y="4500000"/><a:ext cx="6096000" cy="1000000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><grid:tbl><grid:tblPr firstRow="1" bandRow="0">${style}</grid:tblPr><grid:tblGrid><grid:gridCol w="3048000"/><grid:gridCol w="3048000"/></grid:tblGrid>${rows}</grid:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+}
+
+/** Synthetic, non-chart Office input; no private document data or provenance. */
+export function slidesNonChartFidelityFixture({
+  tableOnly = false,
+} = {}): Buffer {
+  const slide = pictureSlide(
+    (tableOnly ? "" : fidelityText()) +
+      fidelityTable(30, "explicit") +
+      fidelityTable(31, "merged") +
+      fidelityTable(32, "inherited") +
+      cropPicture(
+        40,
+        "unchanged-media-control",
+        [100_000, 100_000, 200_000, 200_000],
+      ),
+  ).replace("<p:sld ", `<p:sld xmlns:grid="${drawingNamespace}" `);
+  return pictureDeck([slide]);
+}
+
+interface UploadedSlidesElement {
+  name: string;
+  local: string;
+  uri: string;
+  attributes: Record<string, string>;
+  children: (UploadedSlidesElement | string)[];
+}
+
+/** Namespace-aware inspection of the PPTX bytes emitted at the Drive boundary. */
+export function uploadedSlidesNonChart(bytes: Uint8Array) {
+  const archive = new AdmZip(Buffer.from(bytes));
+  return archive
+    .getEntries()
+    .filter((entry) => {
+      return /^ppt\/slides\/slide\d+\.xml$/u.test(entry.entryName);
+    })
+    .map((entry) => {
+      const parser = new SaxesParser({ xmlns: true });
+      const stack: UploadedSlidesElement[] = [];
+      let root: UploadedSlidesElement | undefined;
+      parser.on("opentag", (tag) => {
+        const node: UploadedSlidesElement = {
+          name: tag.name,
+          local: tag.local,
+          uri: tag.uri,
+          attributes: Object.fromEntries(
+            Object.values(tag.attributes).map((attribute) => {
+              return [attribute.name, attribute.value];
+            }),
+          ),
+          children: [],
+        };
+        stack.at(-1)?.children.push(node);
+        root ??= node;
+        stack.push(node);
+      });
+      const text = (value: string) => {
+        stack.at(-1)?.children.push(value);
+      };
+      parser.on("text", text);
+      parser.on("cdata", text);
+      parser.on("closetag", () => {
+        stack.pop();
+      });
+      parser.write(entry.getData().toString()).close();
+      if (!root) {
+        throw new Error("Expected a slide in the emitted Office document");
+      }
+      return { part: entry.entryName, xml: root };
+    });
+}
+
 /** Inspect native picture geometry using expanded names, not XML prefixes. */
 export function uploadedSlidesPictures(bytes: Uint8Array) {
   const archive = new AdmZip(Buffer.from(bytes));
