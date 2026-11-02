@@ -91,6 +91,7 @@ class CreateCancellationTests(unittest.TestCase):
 
     def test_every_ownership_data_clock_and_completion_field_is_required(self):
         original=copy.deepcopy(self.witnesses)
+        self.witnesses=original
         def leaves(value,path=()):
             if isinstance(value,dict):
                 for key,item in value.items(): yield from leaves(item,path+(key,))
@@ -99,12 +100,15 @@ class CreateCancellationTests(unittest.TestCase):
             else: yield path,value
         for index,event in enumerate(original[:6]):
             for path,value in leaves(event):
-                target=copy.deepcopy(original); node=target[index]
+                node=event
                 for key in path[:-1]: node=node[key]
-                node[path[-1]]=(not value) if type(value) is bool else (-1 if type(value) is int else "corrupted")
-                with self.subTest(index=index,path=path):
-                    self.witnesses=target
-                    with self.assertRaises((ValueError,KeyError,TypeError)): self.validate()
+                try:
+                    node[path[-1]]=(not value) if type(value) is bool else (-1 if type(value) is int else "corrupted")
+                    with self.subTest(index=index,path=path):
+                        with self.assertRaises((ValueError,KeyError,TypeError)): self.validate()
+                finally:
+                    node[path[-1]]=value
+        self.validate()
 
     def test_missing_duplicate_identity_and_real_file_source_are_refused(self):
         for index in range(len(self.witnesses)):
