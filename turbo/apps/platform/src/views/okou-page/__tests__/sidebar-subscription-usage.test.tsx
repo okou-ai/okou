@@ -1,5 +1,4 @@
 import {
-  fireEvent,
   screen,
   waitFor,
   waitForElementToBeRemoved,
@@ -113,14 +112,16 @@ test("Review personal subscription usage in the account menu", async () => {
 
   // Keyboard focus exposes details for the entire information block.
   const codexInformation = within(codex).getByLabelText("ChatGPT usage");
-  fireEvent.focus(codexInformation);
+  await user.keyboard("ChatGPT");
+  expect(codexInformation).toHaveFocus();
   await waitFor(() => {
     expectVisibleText("Resets in 5d 23h");
     expectVisibleText(
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  fireEvent.blur(codexInformation);
+  await user.keyboard("{ArrowDown}");
+  expect(within(claude).getByLabelText("Claude usage")).toHaveFocus();
   // The heading is part of the hover target, alongside both Claude meters.
   await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
   await waitFor(() => {
@@ -133,6 +134,21 @@ test("Review personal subscription usage in the account menu", async () => {
   });
   click(within(claude).getByLabelText("Claude usage"));
   expect(menu).toBeInTheDocument();
+  await user.keyboard("{ArrowDown}");
+  await waitFor(() => {
+    expect(screen.queryByText("Resets in 4h 12m")).not.toBeInTheDocument();
+  });
+  await user.keyboard("{Escape}");
+  const accountTrigger = queryAllByRoleFast("button").find((button) => {
+    return (
+      (button.getAttribute("aria-label") ?? button.textContent)?.trim() ===
+      "Alex Rivera"
+    );
+  });
+  await waitFor(() => {
+    expect(accountTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(accountTrigger).toHaveFocus();
+  });
 });
 
 test.each<{
