@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
@@ -330,12 +330,28 @@ pub async fn run_benchmark(
     // 6. Print stdout/stderr directly to terminal
     let stdout = std::io::stdout();
     let stderr = std::io::stderr();
-    write_benchmark_exec_output(&mut stdout.lock(), &mut stderr.lock(), &exec_result);
+    finish_benchmark(
+        &mut stdout.lock(),
+        &mut stderr.lock(),
+        &exec_result,
+        proxy_stop_result.map_err(Into::into),
+    )
+}
 
-    // 7. Propagate cleanup failure before a successful guest exit code
-    let exit_code = benchmark_exit_code(&exec_result);
+fn finish_benchmark(
+    stdout: &mut impl Write,
+    stderr: &mut impl Write,
+    result: &ExecResult,
+    proxy_stop_result: RunnerResult<()>,
+) -> RunnerResult<ExitCode> {
+    let output_result = write_benchmark_exec_output(stdout, stderr, result);
+    // Preserve guest failure status, then cleanup failure, before output failure.
+    let exit_code = benchmark_exit_code(result);
     if exit_code == 0 {
         proxy_stop_result?;
+        if output_result.is_err() {
+            return Ok(ExitCode::FAILURE);
+        }
     }
     Ok(ExitCode::from(exit_code))
 }
@@ -360,18 +376,48 @@ fn write_benchmark_exec_output(
     stdout: &mut impl Write,
     stderr: &mut impl Write,
     result: &ExecResult,
-) {
-    let _ = stdout.write_all(&result.stdout);
-    let _ = stderr.write_all(&result.stderr);
+) -> io::Result<()> {
+    let stdout_result = stdout
+        .write_all(&result.stdout)
+        .and_then(|()| stdout.flush())
+        .map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("failed to deliver benchmark stdout: {}", error.kind()),
+            )
+        });
     let mut line_open = !result.stderr.is_empty() && !result.stderr.ends_with(b"\n");
-    write_terminal_diagnostic(
-        stderr,
-        &result.termination,
-        &result.stderr,
-        &result.diagnostic,
-        false,
-        &mut line_open,
-    );
+    // Attempt stderr even if stdout failed so guest diagnostics are still delivered.
+    let stderr_result = stderr
+        .write_all(&result.stderr)
+        .and_then(|()| {
+            write_terminal_diagnostic(
+                stderr,
+                &result.termination,
+                &result.stderr,
+                &result.diagnostic,
+                false,
+                &mut line_open,
+            )
+        })
+        .and_then(|()| stderr.flush())
+        .map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("failed to deliver benchmark stderr: {}", error.kind()),
+            )
+        });
+    let output_result = stdout_result.and(stderr_result);
+    if let Err(error) = &output_result {
+        // Only static stream context and the error kind enter this bounded diagnostic.
+        // The error channel can itself be broken; never send host text to stdout.
+        if line_open {
+            let _ = writeln!(stderr);
+        }
+        let _ = writeln!(stderr, "error: {error}");
+        let _ = stderr.flush();
+    }
+    output_result
 }
 
 async fn stop_benchmark_proxy(mitm: &mut proxy::MitmProxy, phase: &'static str) {
