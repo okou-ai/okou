@@ -65,6 +65,133 @@ const trackCreatedAgent = createFixtureTracker(
 );
 
 describe("POST /api/agents", () => {
+  it.each(["private", "public"] as const)(
+    "recovers concurrent %s creation and preserves later edits on replay",
+    async (visibility) => {
+      const fixture = agentsFixture("replayed-create");
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      installDurableUserExportStorage(context, {
+        prefixes: [`${fixture.orgId}/`],
+      });
+      const clientAgentId = randomUUID();
+      const body = { clientAgentId, visibility, displayName: "Original" };
+      const settled = await Promise.allSettled(
+        [1, 2].map(() => {
+          return accept(
+            agentsClient().create({ headers: authHeaders(), body }),
+            [201],
+          );
+        }),
+      );
+      const responses = settled.map((result) => {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+        return result.value;
+      });
+      await trackCreatedAgent(
+        Promise.resolve({ ...fixture, agentId: clientAgentId }),
+      );
+      for (const response of responses) {
+        expect(response.body).toMatchObject({
+          agentId: clientAgentId,
+          ownerId: fixture.userId,
+          displayName: "Original",
+          visibility,
+        });
+      }
+      const listed = await accept(
+        agentsClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(listed.body).toHaveLength(1);
+
+      const params = { id: clientAgentId };
+      const updated = await accept(
+        agentsByIdClient().updateMetadata({
+          headers: authHeaders(),
+          params,
+          body: { displayName: "Edited after creation" },
+        }),
+        [200],
+      );
+      const instructions = setupApp({
+        context,
+        routes: agentInstructionsRoutes,
+      })(agentInstructionsContract);
+      await accept(
+        instructions.update({
+          headers: authHeaders(),
+          params,
+          body: { content: "Keep the updated instructions" },
+        }),
+        [200],
+      );
+      const replayed = await accept(
+        agentsClient().create({ headers: authHeaders(), body }),
+        [201],
+      );
+      expect(replayed.body).toStrictEqual(updated.body);
+      const read = await accept(
+        instructions.get({ headers: authHeaders(), params }),
+        [200],
+      );
+      expect(read.body.content).toBe("Keep the updated instructions");
+    },
+  );
+
+  it.each(["member", "organization"])(
+    "rejects a replay belonging to another %s without changing its Agent",
+    async (scope) => {
+      const fixture = agentsFixture("replay-owner");
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      context.mocks.s3.send.mockResolvedValue({});
+      const clientAgentId = randomUUID();
+      const original = await accept(
+        agentsClient().create({
+          headers: authHeaders(),
+          body: { clientAgentId, displayName: "Owner's Agent" },
+        }),
+        [201],
+      );
+      await trackCreatedAgent(
+        Promise.resolve({ ...fixture, agentId: clientAgentId }),
+      );
+      mocks.clerk.session(
+        scope === "member" ? `user_${randomUUID()}` : fixture.userId,
+        scope === "organization" ? `org_${randomUUID()}` : fixture.orgId,
+      );
+      const rejected = await accept(
+        agentsClient().create({
+          headers: authHeaders(),
+          body: { clientAgentId, displayName: "Other caller's Agent" },
+        }),
+        [409],
+      );
+      expect(rejected.body).toStrictEqual({
+        error: {
+          code: "CONFLICT",
+          message: "Cannot create an agent with this identity or visibility",
+        },
+      });
+      const foreignList = await accept(
+        agentsClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(foreignList.body).toStrictEqual([]);
+
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      const read = await accept(
+        agentsByIdClient().get({
+          headers: authHeaders(),
+          params: { id: clientAgentId },
+        }),
+        [200],
+      );
+      expect(read.body).toStrictEqual(original.body);
+    },
+  );
+
   it.each([
     ["displayName", 257],
     ["sound", 65],
@@ -238,12 +365,14 @@ describe("POST /api/agents", () => {
     mocks.clerk.session(fixture.userId, fixture.orgId);
     context.mocks.s3.send.mockClear();
     context.mocks.s3.send.mockResolvedValue({});
+    const clientAgentId = randomUUID();
 
     for (let index = 0; index < 7; index += 1) {
       await accept(
         agentsClient().create({
           headers: authHeaders(),
           body: {
+            ...(index === 0 ? { clientAgentId } : {}),
             displayName: `Limit Agent ${index + 1}`,
             visibility: "public",
           },
@@ -267,6 +396,35 @@ describe("POST /api/agents", () => {
         code: "CONFLICT",
       },
     });
+
+    const replayed = await accept(
+      agentsClient().create({
+        headers: authHeaders(),
+        body: {
+          clientAgentId,
+          visibility: "public",
+          displayName: "Stale retry",
+        },
+      }),
+      [201],
+    );
+    expect(replayed.body).toMatchObject({
+      agentId: clientAgentId,
+      displayName: "Limit Agent 1",
+      visibility: "public",
+    });
+    await accept(
+      agentsClient().create({
+        headers: authHeaders(),
+        body: { clientAgentId: randomUUID(), visibility: "public" },
+      }),
+      [409],
+    );
+    const listed = await accept(
+      agentsClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listed.body).toHaveLength(7);
   });
 
   it("excludes private agents from the public agent create limit", async () => {

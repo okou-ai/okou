@@ -39,9 +39,8 @@ _runner_api_vercel_logs_url_prefix() {
         "$request_host_search" "$request_path_search"
 }
 
-# A request that carries neither a method override nor a body is a plain GET,
-# and only a plain GET may be sent again: the API may already have applied a
-# write whose response never arrived.
+# The general helper retries only a plain GET: the API may already have applied
+# a write whose response never arrived. Replayable writes opt in at their owner.
 _runner_api_request_is_repeatable() {
     local arg
     for arg in "$@"; do
@@ -58,6 +57,17 @@ _runner_api_request_is_repeatable() {
 }
 
 runner_api_curl() {
+    local max_attempts=1
+    if _runner_api_request_is_repeatable "${@:2}"; then
+        max_attempts=2
+    fi
+    _runner_api_curl "$max_attempts" "$@"
+}
+
+# Only callers with an API-enforced replay identity may opt a write into retries.
+_runner_api_curl() {
+    local max_attempts="$1"
+    shift
     local path="$1"
     shift
 
@@ -82,16 +92,16 @@ runner_api_curl() {
         )
     fi
 
-    # curl exits `28` when the connect/transfer budget expires before the
-    # deployment answers anything, while `--fail-with-body` reports a served
-    # HTTP error as `22`. Only `28` means the request produced no response, so
-    # only `28` is sent again, and only for a repeatable request. Each attempt
-    # is buffered so a partial body is replaced rather than concatenated.
+    # Retry eligible timeouts, not served HTTP errors (curl status 22).
+    # Buffer each attempt so a partial body is replaced, not concatenated.
     local no_response_status=28
-    local max_attempts=1
-    if _runner_api_request_is_repeatable "$@"; then
-        max_attempts=2
+    local connect_timeout=10 attempt_timeout=30
+    if ((max_attempts > 1)); then
+        connect_timeout=5
+        attempt_timeout=5
     fi
+    connect_timeout="${E2E_CURL_CONNECT_TIMEOUT_SECONDS:-$connect_timeout}"
+    attempt_timeout="${E2E_CURL_MAX_TIME_SECONDS:-$attempt_timeout}"
 
     # Command substitution strips trailing newlines, so the exit status is
     # appended behind a marker and read back from the last occurrence. That
@@ -99,7 +109,7 @@ runner_api_curl() {
     local exit_marker=$'\nRUNNER_API_CURL_EXIT:'
 
     # Bats combines both streams in `$output`. Hold transient diagnostics until
-    # the overall request fails so a recovered GET remains machine-readable.
+    # the overall request fails so a recovered response remains machine-readable.
     local diagnostics_file
     diagnostics_file="$(mktemp "${BATS_TEST_TMPDIR:-/tmp}/runner-api-curl-stderr.XXXXXX")" || return
 
@@ -108,8 +118,8 @@ runner_api_curl() {
         body="$(
             curl --fail-with-body --silent --show-error \
                 --write-out "$vercel_log_write_out" \
-                --connect-timeout "${E2E_CURL_CONNECT_TIMEOUT_SECONDS:-10}" \
-                --max-time "${E2E_CURL_MAX_TIME_SECONDS:-30}" \
+                --connect-timeout "$connect_timeout" \
+                --max-time "$attempt_timeout" \
                 "${headers[@]}" \
                 "$@" \
                 "$request_url" \
@@ -138,7 +148,7 @@ runner_api_curl() {
             # search above finds nothing even when the API completed the
             # request late.
             printf 'runner_api_curl received no response from %s within %ss across %d attempt(s); the API may have answered after the client gave up: %s&timeline=past12Hours\n' \
-                "$diagnostic_url" "${E2E_CURL_MAX_TIME_SECONDS:-30}" \
+                "$diagnostic_url" "$attempt_timeout" \
                 "$attempt" "$vercel_logs_url_prefix" >&2
         fi
     fi
@@ -203,13 +213,16 @@ runner_chat_event_rows() {
 
 create_runner_agent() {
     local display_name="$1"
-    local payload response
+    local agent_id payload response
 
+    agent_id="$(_runner_uuid)" || return
     payload="$(jq -nc \
+        --arg clientAgentId "$agent_id" \
         --arg displayName "$display_name" \
-        '{displayName: $displayName, visibility: "private"}')"
-    response="$(runner_api_curl "/api/agents" -X POST -d "$payload")" || return 1
-    jq -er '.agentId | select(type == "string" and length > 0)' <<< "$response"
+        '{clientAgentId: $clientAgentId, displayName: $displayName, visibility: "private"}')" || return
+    response="$(_runner_api_curl 2 "/api/agents" -X POST -d "$payload")" || return
+    jq -er --arg agentId "$agent_id" \
+        '.agentId | select(. == $agentId)' <<< "$response"
 }
 
 set_runner_agent_instructions() {
