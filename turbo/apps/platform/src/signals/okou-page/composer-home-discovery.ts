@@ -14,6 +14,14 @@ const homeTaskDiscoveryEnabled$ = computed((get) => {
 export type ComposerHomeEntry =
   "people" | "information" | "general" | "briefs" | "monitor";
 
+const HOME_ENTRY_PROMPTS = {
+  people: "Find people who match the user's criteria.",
+  information: "Find information and materials relevant to the user's request.",
+  general: "Answer the user's question through search.",
+  briefs: "Prepare a brief on the topic specified by the user.",
+  monitor: "Help the user track changes to the specified subject or topic.",
+} as const satisfies Record<ComposerHomeEntry, string>;
+
 type HomeDiscoveryView = "initial" | "directory" | "task" | ComposerHomeEntry;
 
 function isHomeSearchEntry(
@@ -48,6 +56,10 @@ export function createComposerHomeDiscoverySignals(
     return get(enabled$) && view !== "directory" && view !== "task"
       ? view
       : null;
+  });
+  const additionalInfo$ = computed((get) => {
+    const entry = get(activeEntry$);
+    return entry === null ? undefined : HOME_ENTRY_PROMPTS[entry];
   });
   const hasSelection$ = computed((get) => {
     return get(activeEntry$) !== null || get(taskChips.task$) !== null;
@@ -90,6 +102,7 @@ export function createComposerHomeDiscoverySignals(
     view$,
     searchActive$,
     activeEntry$,
+    additionalInfo$,
     hasSelection$,
     clearSelection$,
     ideasVisible$,

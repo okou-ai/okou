@@ -564,12 +564,18 @@ export function createComposerSignals(
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
+  const homeDiscovery = createComposerHomeDiscoverySignals(
+    taskChips,
+    workflowComposer,
+    options.draft.save$,
+    options.threadId === undefined && !options.forwardComposer,
+  );
   const voice = createComposerVoiceInput(options, workflowComposer);
   const submission = createComposerSubmissionSignals(
     options,
     eventSignals,
     workflowComposer,
-    { voice, create, taskChips },
+    { voice, create, taskChips, homeDiscovery },
   );
   const fileInput = createComposerFileInputSignals();
   const connector =
@@ -610,12 +616,7 @@ export function createComposerSignals(
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
-    homeDiscovery: createComposerHomeDiscoverySignals(
-      taskChips,
-      workflowComposer,
-      options.draft.save$,
-      options.threadId === undefined && !options.forwardComposer,
-    ),
+    homeDiscovery,
     editor: composerEditorSignals(workflowComposer, options),
     voice,
     feedback: workflowComposer.feedback,
@@ -794,12 +795,14 @@ function createSubmitCurrentInput({
   voice,
   create,
   taskChips,
+  homeDiscovery,
 }: {
   readonly options: CreateComposerSignalsOptions;
   readonly workflowComposer: WorkflowComposerSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
+  readonly homeDiscovery: ComposerHomeDiscoverySignals;
 }) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
@@ -857,6 +860,7 @@ function createSubmitCurrentInput({
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
         composerAdditionalInfo,
+        get(homeDiscovery.additionalInfo$),
       );
       const editorDocument = additionalInfo
         ? createEditorDocumentSnapshot(
@@ -912,10 +916,12 @@ function createComposerSubmissionSignals(
     voice,
     create,
     taskChips,
+    homeDiscovery,
   }: {
     voice: ComposerVoiceInputSignals;
     create: ComposerCreateSignals;
     taskChips: ComposerTaskChipsSignals;
+    homeDiscovery: ComposerHomeDiscoverySignals;
   },
 ) {
   const { state$: voiceState$, owner$ } = voice;
@@ -939,6 +945,7 @@ function createComposerSubmissionSignals(
     voice,
     create,
     taskChips,
+    homeDiscovery,
   });
   const activatePrimaryAction$ = command(
     async (
