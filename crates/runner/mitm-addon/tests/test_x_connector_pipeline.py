@@ -49,28 +49,8 @@ class TestXConnectorResponsePipeline:
 
     @pytest.fixture(autouse=True)
     def _sync_executor(self, sync_usage_executor, usage_webhook_api):
-        """All tests here route billing through ``_call_and_get_billing`` which
-        inspects webhook delivery inline; the sync executor makes that work
-        without each test needing its own ``fresh_usage_executor`` + shutdown.
-        """
+        """Keep webhook assertions synchronous while exercising the real response/error hooks."""
         self._usage_webhook_api = usage_webhook_api
-
-    def _call_and_get_billing(self, flow, run_id="run-abc-123"):
-        """Call report_connector_usage and return the webhook payload(s).
-
-        Relies on the class-level ``_sync_executor`` autouse fixture to
-        route submissions inline.
-        """
-        with self._usage_webhook_api() as webhook:
-            start_count = webhook.request_count
-            usage.report_connector_usage(flow, run_id)
-            usage.flush_usage_events(trigger="test")
-        return [
-            event
-            for request in webhook.requests[start_count:]
-            for body in [request.json_body()]
-            for event in body["events"]
-        ]
 
     async def test_full_response_pipeline_large_x_json_uses_incremental_parser_without_buffer(
         self, tmp_path, real_flow, mitm_ctx
