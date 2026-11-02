@@ -16,7 +16,6 @@ import { enum as zEnum, type infer as zInfer } from "zod";
 
 import {
   pgBooleanDecoder,
-  pgTextDecoder,
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import {
@@ -68,9 +67,6 @@ export function networkMutationReads(args: NetworkMutationArgs) {
     qb
       .select({
         ...networkConfigFields(args.provider, "observed_network_tags"),
-        version: sql`${table}.xmin::text`
-          .mapWith(pgTextDecoder)
-          .as("config_version"),
       })
       .from(table)
       .where(visibleNetworkConfig(args.provider, args.owner, args.configId)),

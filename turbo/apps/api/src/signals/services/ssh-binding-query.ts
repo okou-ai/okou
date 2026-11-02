@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import { enteringNetworkConfig } from "./network-config-binding";
+import { readNetworkConfig } from "./network-config-binding";
 import type {
   PreparedSshConnectionCreation,
   PreparedSshConnectionUpdate,
@@ -32,12 +32,7 @@ export function selectedSshNetworkConfig(
   if (entering === undefined) {
     throw new Error("SSH network entry predicate is missing");
   }
-  const entered = enteringNetworkConfig(
-    qb,
-    `${alias}_entered`,
-    provider,
-    entering,
-  );
+  const entered = readNetworkConfig(qb, `${alias}_entered`, provider, entering);
   const config =
     provider === "tailscale" ? tailscaleConfigs : cloudflareAccessConfigs;
   const retained = qb
@@ -96,20 +91,21 @@ function sshAccessAdmissionPredicate(
   return predicate;
 }
 
-export function stampedSshCredential(
+export function readSshCredential(
   qb: QueryBuilder,
   alias: string,
   predicate: SQL,
 ) {
-  return qb
-    .$with(alias, {
-      id: sshCredentials.id,
-      name: sshCredentials.name,
-      username: sshCredentials.username,
-    })
-    .as(
-      sql`UPDATE ${sshCredentials} SET ${sql.identifier(sshCredentials.name.name)} = ${sshCredentials.name} WHERE ${predicate} RETURNING ${sshCredentials.id}, ${sshCredentials.name}, ${sshCredentials.username}`,
-    );
+  return qb.$with(alias).as(
+    qb
+      .select({
+        id: sshCredentials.id,
+        name: sshCredentials.name,
+        username: sshCredentials.username,
+      })
+      .from(sshCredentials)
+      .where(predicate),
+  );
 }
 
 // Sessionless SQL construction; execution belongs to the calling command.
@@ -180,7 +176,7 @@ export function createSshCreationReads(
     args,
     exists(qb.select({ id: ready.id }).from(ready)),
   );
-  const access = enteringNetworkConfig(
+  const access = readNetworkConfig(
     qb,
     "selected_ssh_creation_access",
     "cloudflare_access",
@@ -215,14 +211,8 @@ export function createSshUpdateReads(
 ) {
   const qb = new QueryBuilder();
   const current = qb
-    .$with("locked_ssh_binding_host")
-    .as(
-      qb
-        .select()
-        .from(sshConnections)
-        .where(ownedSshConnection(args))
-        .for("no key update"),
-    );
+    .$with("current_ssh_binding_host")
+    .as(qb.select().from(sshConnections).where(ownedSshConnection(args)));
   const base = qb.$with("eligible_ssh_binding_host").as(
     qb
       .select({ id: current.id })

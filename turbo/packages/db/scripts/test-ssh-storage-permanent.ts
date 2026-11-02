@@ -164,11 +164,33 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
           constraint: "ssh_connections_credential_owner_fk",
         },
       );
+      await assert.rejects(
+        client.query(
+          `INSERT INTO ssh_connection_observations
+             (connection_id, generation, connection_created_at, observed_at)
+           SELECT id, generation, created_at + interval '1 microsecond', now()
+           FROM ssh_connections WHERE id = $1`,
+          [host.id],
+        ),
+        { code: "23503", constraint: "ssh_observation_incarnation_fk" },
+      );
+      await client.query(
+        `INSERT INTO ssh_connection_observations
+           (connection_id, generation, connection_created_at, observed_at)
+         SELECT id, generation, created_at, now()
+         FROM ssh_connections WHERE id = $1`,
+        [host.id],
+      );
       const [removed] = await db
         .delete(sshConnections)
         .where(eq(sshConnections.id, host.id))
         .returning();
       assert.deepEqual(removed, host);
+      const observations = await client.query(
+        "SELECT connection_id FROM ssh_connection_observations WHERE connection_id = $1",
+        [host.id],
+      );
+      assert.equal(observations.rowCount, 0);
     }
     const [identity] = await db
       .insert(sshConnections)

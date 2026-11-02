@@ -616,7 +616,7 @@ test.each(["create", "update"] as const)(
 );
 
 test.each(["create", "update"] as const)(
-  "fences a concurrent selected %s against conversion and requires fresh impact before detaching it",
+  "admits a concurrent selected %s at statement start and denies new bindings after conversion",
   async (operation) => {
     const admin = await actor();
     const shared = await sharedConfig(admin);
@@ -663,15 +663,43 @@ test.each(["create", "update"] as const)(
       ),
     ]);
     if (converted.status === 200) {
-      expect(bound.status).toBe(404);
-      expect(
-        (await accept(hosts().list({ headers: member.headers }), [200])).body
-          .connections,
-      ).toStrictEqual([direct]);
-      expect(
-        (await accept(credentials().list({ headers: member.headers }), [200]))
-          .body.credentials,
-      ).toHaveLength(1);
+      if (bound.status === 404) {
+        expect(
+          (await accept(hosts().list({ headers: member.headers }), [200])).body
+            .connections,
+        ).toStrictEqual([direct]);
+      } else {
+        expect(
+          (await accept(hosts().list({ headers: member.headers }), [200])).body
+            .connections,
+        ).toContainEqual(bound.body);
+        const runtime = await ordinary.runtime(member);
+        await accept(
+          setupApp({ context, routes: chatRemoteAccessRoutes })(
+            chatRemoteAccessContract,
+          ).updateHostDefault({
+            headers: member.headers,
+            params: { protocol: "ssh", connectionId: bound.body.id },
+            body: { enabled: true },
+          }),
+          [200],
+        );
+        const resolved = await accept(
+          setupApp({ context, routes: runnerSshRoutes })(
+            runnerSshContract,
+          ).resolve({
+            headers: runnerHeaders,
+            params: { runId: runtime.runId },
+            body: {
+              connectionId: bound.body.id,
+              runnerIdentity: runtime.runnerIdentity,
+            },
+          }),
+          [200],
+        );
+        expect(resolved.body).toStrictEqual({ outcome: "unavailable" });
+      }
+      await accept(createHost(member, shared.id), [404]);
     } else {
       expect([
         "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
@@ -1580,7 +1608,7 @@ describe("protected host writes with authorized Runner authority", () => {
               },
             },
           }),
-          [200],
+          [200, 409],
         );
   }
 
@@ -2126,9 +2154,10 @@ describe("protected host writes with authorized Runner authority", () => {
       ]);
       let committed = rotated;
       if (rotated.status === 409) {
-        expect(resource).toBe("network");
         expect(rotated.body.error.code).toBe(
-          "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+          resource === "network"
+            ? "CLOUDFLARE_ACCESS_REVISION_CONFLICT"
+            : "SSH_CREDENTIAL_REVISION_CONFLICT",
         );
         const unchanged = (
           await accept(hosts().list({ headers: owner.headers }), [200])
@@ -2189,9 +2218,8 @@ describe("protected host writes with authorized Runner authority", () => {
           ? { revision: 2, generation: 2 }
           : { revision: 2, username: "rotated-deploy" },
       );
-      // Either Runner operation can exhaust its bounded freshness retry while
-      // the other requests change the Host. Check its fail-closed response
-      // against the retained state and fresh requests below.
+      // Each statement may reject a concurrent configuration change. Fresh
+      // caller requests below verify the winning state without a server retry.
       expect(["pinned", "configuration_changed", "unavailable"]).toContain(
         pinned.body.outcome,
       );

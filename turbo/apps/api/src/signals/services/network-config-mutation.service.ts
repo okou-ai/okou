@@ -44,7 +44,7 @@ export const commitNetworkConfigMutation$ = command(
             eq(sshConnections.id, hosts.id),
             eq(sshConnections.orgId, args.owner.orgId),
             eq(columns.ssh, args.configId),
-            eq(sql`${sshConnections}.xmin::text`, hosts.version),
+            eq(sshConnections.generation, hosts.generation),
             effective,
           ),
         )
@@ -60,7 +60,7 @@ export const commitNetworkConfigMutation$ = command(
             eq(hosts.protocol, "vnc"),
             eq(vncConnections.id, hosts.id),
             eq(vncConnections.orgId, args.owner.orgId),
-            eq(sql`${vncConnections}.xmin::text`, hosts.version),
+            eq(vncConnections.generation, hosts.generation),
             effective,
             gte(db.select({ count: count() }).from(ssh), 0),
           ),
@@ -80,10 +80,7 @@ export const commitNetworkConfigMutation$ = command(
     const gate = and(
       eq(table.id, args.configId),
       eq(table.orgId, args.owner.orgId),
-      eq(
-        sql`${table}.xmin::text`,
-        db.select({ version: observed.version }).from(observed),
-      ),
+      eq(table.revision, args.expectedRevision),
       exists(db.select({ id: eligible.id }).from(eligible)),
       fanout,
     );
@@ -111,7 +108,7 @@ export const commitNetworkConfigMutation$ = command(
               .where(gate)
               .returning({ ...fields }),
     );
-    // A config CAS can lose after Host writes. Consume every publication here so
+    // A concurrent revision edit can reject the configuration write. Consume every publication so
     // that even the zero-host case either commits completely or changes nothing.
     const complete =
       sql`1 / CASE WHEN ${and(fanout, eq(db.select({ count: count() }).from(changed), db.select({ count: count() }).from(eligible)))}
