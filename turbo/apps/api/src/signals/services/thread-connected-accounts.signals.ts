@@ -482,12 +482,18 @@ function createThreadAccountSignals(
       get(accountRows$),
       get(connectorScope$),
     ]);
-    return isConnectedAccountsError(selections)
-      ? new Map<string, readonly string[]>()
-      : runConnectorAccountCandidatesFromRows({
-          requests: runConnectorAccountRequests(scope, selections),
-          rows,
-        });
+    if (isConnectedAccountsError(selections)) {
+      return new Map<string, readonly string[]>();
+    }
+    const requests = runConnectorAccountRequests(scope, selections);
+    if (await get(inputs.chatAccountsEnabled$)) {
+      return new Map(
+        requests.map(({ target, sourceIds }) => {
+          return [connectorAccountTargetKey(target), sourceIds];
+        }),
+      );
+    }
+    return runConnectorAccountCandidatesFromRows({ requests, rows });
   });
   return { threadSelections$, selectionIds$, accountCandidates$ };
 }

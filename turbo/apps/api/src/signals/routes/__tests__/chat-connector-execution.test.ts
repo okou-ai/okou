@@ -568,4 +568,66 @@ describe("Chat connector execution", () => {
       }
     },
   );
+
+  it("does not substitute a healthy default for the Chat's current account when its credentials need reconnecting", async () => {
+    const value = await owner();
+    const body = manualHttpCustomConnectorCreateBody({
+      slug: `_chat-${randomUUID()}`,
+      displayName: "Pinned account",
+      prefixTemplates: ["https://pinned-account.example.test/"],
+    });
+    const definition = await connectors.createCustomConnector(
+      value.actor,
+      body,
+    );
+    const a = await connectors.setCustomConnectorValues(
+      value.actor,
+      definition.id,
+      [{ key: "secret", kind: "secret", value: "secret-A" }],
+      { intent: "add", displayName: "A" },
+    );
+    const b = await connectors.setCustomConnectorValues(
+      value.actor,
+      definition.id,
+      [{ key: "secret", kind: "secret", value: "secret-B" }],
+      { intent: "add", displayName: "B" },
+    );
+    await connectors.updateCustomConnector(value.actor, definition.id, {
+      ...body,
+      storageVersion: 2,
+    });
+    await connectors.setCustomConnectorValues(
+      value.actor,
+      definition.id,
+      [{ key: "secret", kind: "secret", value: "reconnected-A" }],
+      { intent: "reconnect", connectionId: a.connectionId },
+    );
+    const target = {
+      kind: "custom",
+      customConnectorId: definition.id,
+    } as const;
+    session(value.actor);
+    await accept(
+      access().setThreadCurrent({
+        headers: sessionHeaders,
+        params: { threadId: value.threadId },
+        body: { target, connectionId: b.connectionId },
+      }),
+      [200],
+    );
+    const run = await start(value);
+    expect(run.claim.connectorRuntimeTargets).not.toContainEqual(
+      expect.objectContaining(target),
+    );
+    expect(
+      (await accept(client().list({ headers: run.headers }), [200])).body
+        .accounts,
+    ).toContainEqual(
+      expect.objectContaining({
+        target,
+        connectionId: b.connectionId,
+        isCurrent: true,
+      }),
+    );
+  });
 });
