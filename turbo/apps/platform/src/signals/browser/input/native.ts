@@ -130,6 +130,7 @@ export interface NativeInput extends NativeInputHost {
 function createNativeState(
   input$: Computed<NativeInputPort | null>,
   releaseFocus$: Command<void, []>,
+  onPageInput$?: Command<void, []>,
 ) {
   const elements$ = state<NativeElements | null>(null);
   const proxyType$ = state<"text" | "password">("text");
@@ -149,7 +150,7 @@ function createNativeState(
   const pressedButtons$ = state<ReadonlySet<number>>(new Set());
   const admission$ = state<Admission | null>(null);
   const composition = createNativeComposition();
-  const ingress = createInputIngress(input$, canvas$);
+  const ingress = createInputIngress(input$, canvas$, onPageInput$);
   const clipboard = createNativeClipboard(
     proxy$,
     input$,
@@ -1311,8 +1312,9 @@ function createNativeClipboardRecovery(graph: NativeGraph) {
 export function createNativeInput(
   input$: Computed<NativeInputPort | null>,
   releaseFocus$: Command<void, []>,
+  onPageInput$?: Command<void, []>,
 ): NativeInput {
-  const values = createNativeState(input$, releaseFocus$);
+  const values = createNativeState(input$, releaseFocus$, onPageInput$);
   const reset = createNativeReset(values);
   const coordinated = {
     ...values,

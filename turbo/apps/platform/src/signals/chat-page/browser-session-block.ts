@@ -293,6 +293,7 @@ function createBrowserSessionKeepAliveSignals(
 
 export function createBrowserSessionSignals(
   threadId: string,
+  onPageInput$?: Command<void, []>,
 ): BrowserSessionSignals {
   const descriptor: BrowserSessionDescriptor = {
     threadId,
@@ -367,7 +368,7 @@ export function createBrowserSessionSignals(
         : null;
     },
   );
-  const browser = createBrowserSignals(browserConnection$);
+  const browser = createBrowserSignals(browserConnection$, onPageInput$);
   const reload$ = command(({ set }) => {
     set(leaseOverride$, undefined);
     set(sessionOverride$, undefined);

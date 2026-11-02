@@ -24,12 +24,21 @@ export type ContinuousSample = { readonly details: PointerDetails } & (
   | { readonly type: "mouseWheel"; readonly point: Point }
 );
 
+function createPageInputNotification(onPageInput$?: Command<void, []>) {
+  return command(({ set }, eligible: boolean) => {
+    if (eligible && onPageInput$) {
+      set(onPageInput$);
+    }
+  });
+}
+
 /** A capability can lose its original authority, but can never acquire another. */
 function createInputBinding(
   target: NativeInputPort,
   captured: InputOwner,
   input$: Computed<NativeInputPort | null>,
   closed$: Computed<boolean>,
+  onPageInput$?: Command<void, []>,
 ) {
   const owner$ = computed((get): InputOwner | null => {
     return !get(closed$) &&
@@ -39,6 +48,7 @@ function createInputBinding(
       ? captured
       : null;
   });
+  const notifyPageInput$ = createPageInputNotification(onPageInput$);
   const focus$ = command(({ get, set }) => {
     if (get(owner$)) {
       set(target.focus$, captured);
@@ -72,6 +82,7 @@ function createInputBinding(
     ) => {
       if (get(owner$)) {
         set(target.pointer$, type, point, details, captured);
+        set(notifyPageInput$, type === "mousePressed");
       }
     },
   );
@@ -79,6 +90,7 @@ function createInputBinding(
     ({ get, set }, key: Protocol.Input.DispatchKeyEventRequest) => {
       if (get(owner$)) {
         set(target.key$, key, captured);
+        set(notifyPageInput$, key.type !== "keyUp");
       }
     },
   );
@@ -86,6 +98,7 @@ function createInputBinding(
     ({ get, set }, text: string, owner: InputOwner = captured) => {
       if (owner === captured && get(owner$)) {
         set(target.text$, text, captured);
+        set(notifyPageInput$, text.length > 0);
       }
     },
   );
@@ -106,6 +119,7 @@ function createInputBinding(
     ({ get, set }, text: string, owner: InputOwner) => {
       if (owner === captured && get(owner$)) {
         set(target.commitComposition$, text, captured);
+        set(notifyPageInput$, text.length > 0);
       }
     },
   );
@@ -349,6 +363,7 @@ function createIngressAdmission(
 export function createInputIngress(
   input$: Computed<NativeInputPort | null>,
   canvas$: Computed<HTMLCanvasElement | null>,
+  onPageInput$?: Command<void, []>,
 ) {
   const internalClosed$ = state(true);
   const closed$ = computed((get) => {
@@ -360,7 +375,7 @@ export function createInputIngress(
     const target = get(input$);
     const owner = target && get(target.available$) ? get(target.owner$) : null;
     return !get(closed$) && target && owner
-      ? createInputBinding(target, owner, input$, closed$)
+      ? createInputBinding(target, owner, input$, closed$, onPageInput$)
       : null;
   });
   const current$: Command<InputBinding | null, []> = command(
