@@ -41,6 +41,36 @@ describe("isFeatureEnabled", () => {
     }
   });
 
+  it("defaults chat email quoting to staff and permits opting out", () => {
+    const key = FeatureSwitchKey.ChatEmailQuote;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ userId: "external-user" }, false],
+      [{ orgId: "external-org" }, false],
+      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, false],
+      [staff, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("limits chat email quote availability to staff organizations", () => {
+    const key = FeatureSwitchKey.ChatEmailQuote;
+    expect(isFeatureSwitchAvailable(key, {})).toBe(false);
+    expect(isFeatureSwitchAvailable(key, { orgId: "external-org" })).toBe(
+      false,
+    );
+    expect(
+      isFeatureSwitchAvailable(key, {
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      }),
+    ).toBe(true);
+  });
+
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");

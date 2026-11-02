@@ -8,13 +8,14 @@ import {
 } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
-import { File, Image, Loader2, Video } from "lucide-react";
+import { File, Image, Loader2, Mail, Video } from "lucide-react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
 import { iso } from "zod";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { cn } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
+import { quoteChatEmail$ } from "../../signals/chat-page/chat-thread-feedback.ts";
 
 import {
   escapeHtmlTags,
@@ -25,6 +26,7 @@ import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts"
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import type {
   ArtifactKind,
   ArtifactSignals,
@@ -310,6 +312,52 @@ function PlainLinkRenderer(
 ) {
   const { children, ...rest } = props;
   return <PlainLink {...rest}>{children}</PlainLink>;
+}
+
+function EmailQuoteLink({
+  address,
+  children,
+  ...props
+}: MarkdownAnchorProps & {
+  readonly address: string;
+}) {
+  const { t } = useTranslation();
+  const quote = useSet(quoteChatEmail$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <span>
+      <MediaLink {...props}>{children}</MediaLink>
+      <Button
+        type="button"
+        variant="quiet"
+        size="icon-xs"
+        className="ml-1 align-middle"
+        aria-label={t(
+          ($) => {
+            return $.chat.feedback.quoteEmail;
+          },
+          { email: address },
+        )}
+        onClick={(event) => {
+          const link = event.currentTarget.parentElement?.querySelector("a");
+          if (link instanceof HTMLAnchorElement) {
+            detach(quote(link, pageSignal), Reason.DomCallback);
+          }
+        }}
+      >
+        <Mail aria-hidden="true" />
+      </Button>
+    </span>
+  );
+}
+
+function EmailMediaLinkRenderer(props: MarkdownAnchorProps) {
+  const address = props.node?.data?.emailQuoteAddress;
+  return address !== undefined ? (
+    <EmailQuoteLink {...props} address={address} />
+  ) : (
+    <MediaLinkRenderer {...props} />
+  );
 }
 
 function MediaLinkRenderer(
@@ -773,6 +821,11 @@ const MEDIA_MARKDOWN_COMPONENTS = {
   div: MarkdownDivRenderer,
 } as const;
 
+const EMAIL_MEDIA_MARKDOWN_COMPONENTS = {
+  ...MEDIA_MARKDOWN_COMPONENTS,
+  a: EmailMediaLinkRenderer,
+} as const;
+
 const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
   ...PLAIN_MARKDOWN_COMPONENTS,
   // A site card is a block, so its paragraph has to become a div here too.
@@ -787,6 +840,7 @@ const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
 // block syntax that relies on a leading `>` — most importantly blockquotes,
 // which otherwise collapse into a literal `>` paragraph once escaped.
 interface MarkdownTreeFrameProps {
+  readonly emailQuote?: boolean;
   readonly className?: string;
   readonly style?: CSSProperties;
   readonly mediaPreview?: boolean | "link";
@@ -794,6 +848,7 @@ interface MarkdownTreeFrameProps {
 }
 
 function MarkdownTreeFrame({
+  emailQuote,
   className,
   style,
   mediaPreview = false,
@@ -807,7 +862,9 @@ function MarkdownTreeFrame({
           mediaPreview === "link"
             ? LINKED_MEDIA_MARKDOWN_COMPONENTS
             : mediaPreview
-              ? MEDIA_MARKDOWN_COMPONENTS
+              ? emailQuote
+                ? EMAIL_MEDIA_MARKDOWN_COMPONENTS
+                : MEDIA_MARKDOWN_COMPONENTS
               : PLAIN_MARKDOWN_COMPONENTS,
         ignoreInvalidStyle: true,
         jsx,
@@ -827,16 +884,19 @@ export function MarkdownEventBody({
   className,
   tree,
   mediaPreview,
+  emailQuote,
 }: {
   readonly className?: string;
   readonly tree: Root;
   readonly mediaPreview: boolean | "link";
+  readonly emailQuote?: boolean;
 }) {
   return (
     <MarkdownTreeFrame
       className={cn("text-[length:inherit]! leading-[inherit]!", className)}
       tree={tree}
       mediaPreview={mediaPreview}
+      emailQuote={emailQuote}
     />
   );
 }

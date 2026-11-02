@@ -2121,6 +2121,7 @@
       "partsHeading_other": "{{count}} parties citées depuis votre réponse",
       "placeholder": "Posez une question ou commentez cette citation",
       "quote": "Citer",
+      "quoteEmail": "Citer {{email}}",
       "remove": "Supprimer les retours",
       "sentEmailDescription": "un e-mail envoyé",
       "sourcePartHeading": "Cité depuis {{description}}",

@@ -159,7 +159,10 @@ import {
 } from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
-import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
+import {
+  hasChatEventBodyContent,
+  isTransientOutputMessage,
+} from "../../signals/chat-page/chat-event-body-blocks.ts";
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -8401,6 +8404,9 @@ function PagedAssistantEventItem({
   thread: ChatPanelSignals;
   workHistory?: boolean;
 }) {
+  const emailQuoteEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatEmailQuote] === true;
+  const sharingPhase = useGet(thread.sharing.phase$);
   const error = chatEventDisplayError(event);
   if (error) {
     return (
@@ -8445,6 +8451,12 @@ function PagedAssistantEventItem({
           }
           tree={event.tree}
           mediaPreview
+          emailQuote={
+            emailQuoteEnabled &&
+            sharingPhase === "idle" &&
+            !workHistory &&
+            !isTransientOutputMessage(event)
+          }
         />
       </ChatAssistantMessageBody>
     );

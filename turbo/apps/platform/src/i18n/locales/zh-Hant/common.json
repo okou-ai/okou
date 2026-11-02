@@ -2081,6 +2081,7 @@
       "partsHeading_other": "引用了你回覆中的 {{count}} 段內容",
       "placeholder": "針對引用內容提問或評論",
       "quote": "引用",
+      "quoteEmail": "引用 {{email}}",
       "remove": "移除反饋",
       "sentEmailDescription": "已傳送的郵件",
       "sourcePartHeading": "引用自{{description}}",
