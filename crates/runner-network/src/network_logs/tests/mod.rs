@@ -1179,7 +1179,7 @@ async fn upload_network_logs_allows_exact_source_byte_budget() {
     let log = json!({ "sequence": 1 });
     let mut content = network_log_content(std::slice::from_ref(&log)).into_bytes();
     content.resize(NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES as usize, b' ');
-    tokio::fs::write(&path, &content).await.unwrap();
+    tokio::fs::write(&path, content).await.unwrap();
 
     let server = MockServer::start_async().await;
     let expected = json!({
