@@ -3650,7 +3650,6 @@
         "open": "開啟 Teams",
         "pendingDescription": "在 Teams 中安裝應用程式，然後返回此頁面完成連接。",
         "pendingTitle": "在 Teams 中安裝以完成連線",
-        "providerName": "Microsoft Teams",
         "reinstall": "在 Teams 中重新安裝",
         "statusFailed": "無法檢查 Teams 連線。",
         "successTitle": "已連線到 Microsoft Teams",
@@ -7236,9 +7235,7 @@
       "uninstallTitle": "解除安裝 Slack 整合？"
     },
     "teams": {
-      "adminInstall": "請管理員安裝 Microsoft Teams 整合",
       "connectAccount": "連線你的 Microsoft 帳號以完成設定",
-      "connectThenInstall": "先連線你的 Microsoft 帳號，再安裝 Teams 應用",
       "description": "團隊溝通與協作",
       "disconnect": "斷開 Microsoft Teams",
       "install": "安裝到 Teams",
@@ -7246,7 +7243,7 @@
       "permissionsUpdated": "Microsoft Teams 權限已更新",
       "title": "Microsoft Teams",
       "uninstall": "解除安裝 Microsoft Teams",
-      "uninstallDescription": "這會為你的工作區移除 {{brandName}} 中的 Microsoft Teams 整合。所有已連線的使用者都會斷開連線，在管理員重新連線之前，{{displayName}}不再回復這個工作區的 Teams 訊息。",
+      "uninstallDescription": "這會從你的 {{brandName}} 工作區中移除 {{displayName}} 的 Microsoft Teams 整合。已連線的 Teams 帳號將保留。",
       "uninstallTitle": "解除安裝 Microsoft Teams 整合？"
     },
     "telegram": {

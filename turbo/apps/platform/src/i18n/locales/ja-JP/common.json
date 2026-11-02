@@ -3650,7 +3650,6 @@
         "open": "オープンチーム",
         "pendingDescription": "Teams にアプリをインストールし、このページに戻って接続を完了してください。",
         "pendingTitle": "Teams にインストールして完了",
-        "providerName": "Microsoft Teams",
         "reinstall": "Teams に再インストール",
         "statusFailed": "Teams の接続を確認できません。",
         "successTitle": "Microsoft Teams に接続されました",
@@ -7236,9 +7235,7 @@
       "uninstallTitle": "Slack 統合をアンインストールしますか?"
     },
     "teams": {
-      "adminInstall": "Microsoft Teams 統合をインストールするように管理者に依頼してください",
       "connectAccount": "Microsoft アカウントに接続してセットアップを完了してください",
-      "connectThenInstall": "Microsoft アカウントに接続し、Teams アプリをインストールします",
       "description": "チームのコミュニケーションとコラボレーション",
       "disconnect": "Microsoft Teams を切断します",
       "install": "Teams にインストールする",
@@ -7246,7 +7243,7 @@
       "permissionsUpdated": "Microsoft Teams 権限が更新されました",
       "title": "Microsoft Teams",
       "uninstall": "Microsoft Teams をアンインストールします",
-      "uninstallDescription": "これにより、ワークスペースの {{brandName}} から Microsoft Teams 統合が削除されます。接続されているすべてのユーザーは切断され、管理者が再接続するまで、{{displayName}} はこのワークスペースの Teams メッセージに応答しなくなります。",
+      "uninstallDescription": "{{brandName}} ワークスペースから {{displayName}} の Microsoft Teams 連携を削除します。接続済みの Teams アカウントは維持されます。",
       "uninstallTitle": "Microsoft Teams 統合をアンインストールしますか?"
     },
     "telegram": {

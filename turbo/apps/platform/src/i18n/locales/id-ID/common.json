@@ -3650,7 +3650,6 @@
         "open": "Buka Teams",
         "pendingDescription": "Instal aplikasi di Teams, lalu kembali ke sini untuk menyelesaikan koneksi.",
         "pendingTitle": "Instal di Teams untuk menyelesaikan",
-        "providerName": "Microsoft Teams",
         "reinstall": "Instal ulang di Teams",
         "statusFailed": "Tidak dapat memeriksa koneksi Teams.",
         "successTitle": "Berhasil tersambung ke Microsoft Teams",
@@ -7236,9 +7235,7 @@
       "uninstallTitle": "Copot pemasangan integrasi Slack?"
     },
     "teams": {
-      "adminInstall": "Minta admin Anda untuk memasang integrasi Microsoft Teams",
       "connectAccount": "Hubungkan akun Microsoft Anda untuk menyelesaikan penyiapan",
-      "connectThenInstall": "Hubungkan akun Microsoft Anda, lalu pasang aplikasi Teams",
       "description": "Komunikasi dan kolaborasi tim",
       "disconnect": "Putuskan koneksi Microsoft Teams",
       "install": "Pasang di Teams",
@@ -7246,7 +7243,7 @@
       "permissionsUpdated": "Izin Microsoft Teams telah diperbarui",
       "title": "Microsoft Teams",
       "uninstall": "Copot pemasangan Microsoft Teams",
-      "uninstallDescription": "Ini menghapus integrasi Microsoft Teams dari {{brandName}} untuk ruang kerja Anda. Semua pengguna yang terhubung akan diputus dan {{displayName}} tidak akan lagi merespons pesan Teams untuk ruang kerja ini sampai admin menghubungkannya kembali.",
+      "uninstallDescription": "Ini menghapus integrasi Microsoft Teams untuk {{displayName}} dari ruang kerja {{brandName}} Anda. Akun Teams yang terhubung tetap dipertahankan.",
       "uninstallTitle": "Copot pemasangan integrasi Microsoft Teams?"
     },
     "telegram": {

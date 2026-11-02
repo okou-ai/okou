@@ -3663,7 +3663,6 @@
         "open": "Open Teams",
         "pendingDescription": "Install the app in Teams, then return here to finish connecting.",
         "pendingTitle": "Install in Teams to finish",
-        "providerName": "Microsoft Teams",
         "reinstall": "Reinstall in Teams",
         "statusFailed": "Unable to check your Teams connection.",
         "successTitle": "Connected to Microsoft Teams",
@@ -7258,9 +7257,7 @@
       "uninstallTitle": "Uninstall Slack integration?"
     },
     "teams": {
-      "adminInstall": "Ask your admin to install the Microsoft Teams integration",
       "connectAccount": "Connect your Microsoft account to finish setup",
-      "connectThenInstall": "Connect your Microsoft account, then install the Teams app",
       "description": "Team communication and collaboration",
       "disconnect": "Disconnect Microsoft Teams",
       "install": "Install in Teams",
@@ -7268,7 +7265,7 @@
       "permissionsUpdated": "Microsoft Teams permissions have been updated",
       "title": "Microsoft Teams",
       "uninstall": "Uninstall Microsoft Teams",
-      "uninstallDescription": "This removes the Microsoft Teams integration from {{brandName}} for your workspace. All connected users will be disconnected and {{displayName}} will no longer respond to Teams messages for this workspace until an admin reconnects it.",
+      "uninstallDescription": "This removes the Microsoft Teams integration for {{displayName}} from your {{brandName}} workspace. Connected Teams accounts are kept.",
       "uninstallTitle": "Uninstall Microsoft Teams integration?"
     },
     "telegram": {

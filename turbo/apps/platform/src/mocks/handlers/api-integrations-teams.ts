@@ -11,7 +11,7 @@ let mockTeamsData: TeamsConnectStatus = {
   linkedAccounts: [],
   pendingInstallation: false,
   installUrl:
-    "https://teams.microsoft.com/l/app/00000000-0000-0000-0000-000000000001",
+    "/api/teams/oauth/connect?flow=install&orgId=org_mock&userId=user_mock",
   connectUrl: "/api/teams/oauth/connect?orgId=org_mock&userId=user_mock",
 };
 
@@ -23,7 +23,7 @@ export function resetMockTeamsIntegration(): void {
     linkedAccounts: [],
     pendingInstallation: false,
     installUrl:
-      "https://teams.microsoft.com/l/app/00000000-0000-0000-0000-000000000001",
+      "/api/teams/oauth/connect?flow=install&orgId=org_mock&userId=user_mock",
     connectUrl: "/api/teams/oauth/connect?orgId=org_mock&userId=user_mock",
   };
 }

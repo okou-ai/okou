@@ -3650,7 +3650,6 @@
         "open": "Teams 열기",
         "pendingDescription": "Teams에 앱을 설치한 다음 이 페이지로 돌아와 연결을 완료하세요.",
         "pendingTitle": "Teams에 설치하여 완료",
-        "providerName": "Microsoft Teams",
         "reinstall": "Teams에 다시 설치",
         "statusFailed": "Teams 연결을 확인할 수 없습니다.",
         "successTitle": "Microsoft Teams에 연결되었습니다",
@@ -7236,9 +7235,7 @@
       "uninstallTitle": "Slack 통합을 제거하시겠습니까?"
     },
     "teams": {
-      "adminInstall": "관리자에게 Microsoft Teams 통합 설치를 요청하세요",
       "connectAccount": "설정을 완료하려면 Microsoft 계정을 연결하세요",
-      "connectThenInstall": "Microsoft 계정을 연결한 후 Teams 앱을 설치하세요",
       "description": "팀 커뮤니케이션 및 협업",
       "disconnect": "Microsoft Teams 연결 해제",
       "install": "Teams에 설치",
@@ -7246,7 +7243,7 @@
       "permissionsUpdated": "Microsoft Teams 권한이 업데이트되었습니다",
       "title": "Microsoft Teams",
       "uninstall": "Microsoft Teams 제거",
-      "uninstallDescription": "이 작업은 워크스페이스의 {{brandName}}에서 Microsoft Teams 통합을 제거합니다. 연결된 모든 사용자가 연결 해제되고, 관리자가 다시 연결할 때까지 {{displayName}}가 이 워크스페이스의 Teams 메시지에 더 이상 응답하지 않습니다.",
+      "uninstallDescription": "{{brandName}} 워크스페이스에서 {{displayName}}의 Microsoft Teams 연동을 제거합니다. 연결된 Teams 계정은 유지됩니다.",
       "uninstallTitle": "Microsoft Teams 통합을 제거하시겠습니까?"
     },
     "telegram": {

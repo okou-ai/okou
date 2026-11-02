@@ -223,7 +223,9 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         });
       }
       await installTeamsForTest(context.signal, installation);
-      await connectTeamsAccountForTest(context, installation);
+      await connectTeamsAccountForTest(context, installation, {
+        displayName: "Teams User",
+      });
       await flushWaitUntilForTest();
       return fixture;
     },

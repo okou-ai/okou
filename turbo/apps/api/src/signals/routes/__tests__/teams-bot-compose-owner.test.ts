@@ -157,7 +157,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       tenantId: fixture.installation.teamsTenantId,
       teamsUserId: fixture.installation.teamsUserId,
       teamsAadObjectId: fixture.installation.teamsAadObjectId,
-      displayName: "Ada Lovelace",
+      displayName: "Teams User",
       userPrincipalName: fixture.installation.teamsUserPrincipalName,
     };
     const before = await owner.status(fixture);
@@ -238,7 +238,7 @@ test("returns a connection notice without starting a Run when Teams sender ident
         tenantId: fixture.installation.teamsTenantId,
         teamsUserId: fixture.installation.teamsUserId,
         teamsAadObjectId: fixture.installation.teamsAadObjectId,
-        displayName: "Ada Lovelace",
+        displayName: "Teams User",
         userPrincipalName: fixture.installation.teamsUserPrincipalName,
       },
     ]);

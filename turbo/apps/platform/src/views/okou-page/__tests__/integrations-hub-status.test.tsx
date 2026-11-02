@@ -403,9 +403,7 @@ test("An admin can begin Microsoft Teams installation", async () => {
   });
   const install = getAction("button", "Install in Teams", teamsCard);
   expect(
-    screen.getByText(
-      "Connect your Microsoft account, then install the Teams app",
-    ),
+    screen.getByText("Connect your Microsoft account to finish setup"),
   ).toBeInTheDocument();
 
   click(install);
@@ -432,14 +430,22 @@ test("Microsoft Teams offers Connect after installation", async () => {
   expect(queryAction("button", "Install in Teams", teamsCard)).toBeNull();
 });
 
-test("Microsoft Teams shows its connected team name", async () => {
+test("Microsoft Teams shows its connected account name", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
   mockTeams(context, {
     isConnected: true,
     isInstalled: true,
     isAdmin: true,
     tenantName: "Okou Tenant",
-    teamName: "Core Team",
+    linkedAccounts: [
+      {
+        tenantId: "tenant-core",
+        teamsUserId: "teams-core-user",
+        teamsAadObjectId: "aad-core-user",
+        displayName: "Avery",
+        userPrincipalName: "avery@example.test",
+      },
+    ],
   });
 
   await setupIntegrationsPage(context);
@@ -447,7 +453,7 @@ test("Microsoft Teams shows its connected team name", async () => {
   await expect(
     screen.findByText("Microsoft Teams"),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Connected (Core Team)")).toBeInTheDocument();
+  expect(screen.getByText("Connected (Avery)")).toBeInTheDocument();
   expect(getAction("link", "Install GitHub App")).toBeInTheDocument();
 });
 

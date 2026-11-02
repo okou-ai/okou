@@ -550,22 +550,8 @@ function DiscordCard() {
   );
 }
 
-function teamsCardDescription(args: {
-  isInstalled: boolean;
-  isConnected: boolean;
-  isAdmin: boolean;
-}): string {
-  if (!args.isInstalled && !args.isAdmin) {
-    return i18n.t(($) => {
-      return $.works.teams.adminInstall;
-    });
-  }
-  if (!args.isInstalled && args.isAdmin) {
-    return i18n.t(($) => {
-      return $.works.teams.connectThenInstall;
-    });
-  }
-  if (args.isInstalled && !args.isConnected) {
+function teamsCardDescription(isConnected: boolean): string {
+  if (!isConnected) {
     return i18n.t(($) => {
       return $.works.teams.connectAccount;
     });
@@ -582,8 +568,6 @@ function teamsCardConnection(data: TeamsConnectStatus | null) {
       isInstalled: false,
       isAdmin: false,
       connectedDetail: null,
-      independentIdentity: false,
-      descriptionInstalled: false,
       installUrl: null,
       connectUrl: null,
     };
@@ -598,8 +582,6 @@ function teamsCardConnection(data: TeamsConnectStatus | null) {
     isInstalled,
     isAdmin,
     connectedDetail,
-    independentIdentity: true,
-    descriptionInstalled: true,
     installUrl: data.installUrl,
     connectUrl: data.connectUrl,
   };
@@ -622,11 +604,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
   const { isConnected, isInstalled, isAdmin, connectedDetail } = connection;
   const permissionMismatch = teamsData?.permissionMismatch === true;
   const description = teamsData
-    ? teamsCardDescription({
-        isInstalled: connection.descriptionInstalled,
-        isConnected,
-        isAdmin,
-      })
+    ? teamsCardDescription(isConnected)
     : teamsDataLoadable.state === "hasError"
       ? t(($) => {
           return $.connectors.providerConnect.teams.statusFailed;
@@ -654,7 +632,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
             <div className="text-sm text-muted-foreground">{description}</div>
           </div>
           <ProviderCardActions
-            independentIdentity={connection.independentIdentity}
+            independentIdentity
             isConnected={isConnected}
             isInstalled={isInstalled}
             isAdmin={isAdmin}

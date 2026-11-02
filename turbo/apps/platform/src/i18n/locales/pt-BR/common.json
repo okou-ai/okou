@@ -3719,7 +3719,6 @@
         "open": "Abrir Teams",
         "pendingDescription": "Instale o aplicativo no Teams e volte aqui para concluir a conexão.",
         "pendingTitle": "Instale no Teams para concluir",
-        "providerName": "Microsoft Teams",
         "reinstall": "Reinstalar no Teams",
         "statusFailed": "Não foi possível verificar sua conexão com o Teams.",
         "successTitle": "Conectado ao Microsoft Teams",
@@ -7339,9 +7338,7 @@
       "uninstallTitle": "Desinstalar a integração com o Slack?"
     },
     "teams": {
-      "adminInstall": "Peça ao administrador para instalar a integração com o Microsoft Teams",
       "connectAccount": "Conecte sua conta Microsoft para concluir a configuração",
-      "connectThenInstall": "Conecte sua conta Microsoft e instale o aplicativo do Teams",
       "description": "Comunicação e colaboração em equipe",
       "disconnect": "Desconectar Microsoft Teams",
       "install": "Instalar no Teams",
@@ -7349,7 +7346,7 @@
       "permissionsUpdated": "As permissões do Microsoft Teams foram atualizadas",
       "title": "Microsoft Teams",
       "uninstall": "Desinstalar Microsoft Teams",
-      "uninstallDescription": "Isso removerá a integração com o Microsoft Teams do {{brandName}} neste espaço de trabalho. Todos os usuários conectados serão desconectados, e {{displayName}} deixará de responder a mensagens do Teams neste espaço até que um administrador reconecte a integração.",
+      "uninstallDescription": "Isso remove a integração do Microsoft Teams de {{displayName}} do seu espaço de trabalho no {{brandName}}. As contas Teams conectadas são mantidas.",
       "uninstallTitle": "Desinstalar a integração com o Microsoft Teams?"
     },
     "telegram": {
