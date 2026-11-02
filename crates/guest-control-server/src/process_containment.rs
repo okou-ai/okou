@@ -22,7 +22,7 @@ use guest_contracts::process_containment::{
     EXEC_CGROUP_BASE_PATH, EXEC_CGROUP_NAME_PREFIX, REQUIRED_CGROUP_CONTROLLERS,
     REQUIRED_CGROUP_SUBTREE_CONTROL, RUNTIME_CGROUP_NAME, TOOL_CGROUP_NAME_PREFIX,
     TOOL_MEMORY_OOM_GROUP, TOOLS_CGROUP_NAME, WORKLOAD_CGROUP_NAME, WORKLOAD_MEMORY_OOM_GROUP,
-    WorkloadResourceEvents, WorkloadResourcePolicy,
+    WorkloadResourceEvents, WorkloadResourcePolicy, parse_populated,
 };
 use guest_contracts::storage_resources::StorageResourceUsage;
 use guest_control_proto::ExecProcessRole;
@@ -1700,20 +1700,6 @@ fn read_populated(group_path: &Path) -> Result<bool, ProcessContainmentError> {
                 "cgroup.events is missing populated state",
             ),
         )
-    })
-}
-
-fn parse_populated(content: &str) -> Option<bool> {
-    content.lines().find_map(|line| {
-        let (key, value) = line.split_once(' ')?;
-        if key != "populated" {
-            return None;
-        }
-        match value {
-            "0" => Some(false),
-            "1" => Some(true),
-            _ => None,
-        }
     })
 }
 
