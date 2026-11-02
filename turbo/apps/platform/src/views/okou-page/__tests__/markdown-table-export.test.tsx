@@ -313,6 +313,30 @@ test.each([
     summary: "2 rows · 1 column",
   },
   {
+    name: "case-insensitive row and rowgroup scopes",
+    source: [
+      '<table><tbody><tr><th scope="ROW">North</th></tr>',
+      '<tr><th scope="RoWgRoUp">South</th></tr></tbody></table>',
+    ].join(""),
+    summary: "2 rows · 1 column",
+  },
+  {
+    name: "fully spanned body rows",
+    source: [
+      '<table><tbody><tr><td rowspan="2">North</td><td rowspan="2">42</td></tr>',
+      "<tr></tr></tbody></table>",
+    ].join(""),
+    summary: "2 rows · 2 columns",
+  },
+  {
+    name: "empty footer rows",
+    source: [
+      "<table><tbody><tr><td>A</td><td>B</td></tr></tbody>",
+      "<tfoot><tr></tr></tfoot></table>",
+    ].join(""),
+    summary: "2 rows · 2 columns",
+  },
+  {
     name: "row headers spanning the rest of their group",
     source: [
       '<table><tbody><tr><th scope="row" rowspan="0">North</th><td>A</td></tr>',

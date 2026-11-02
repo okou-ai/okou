@@ -32,13 +32,13 @@ export function getMarkdownTableDimensions(table: Element) {
       });
       const header =
         group.header ||
-        cells.every((cell) => {
-          return (
-            cell.tagName === "th" &&
-            cell.properties.scope !== "row" &&
-            cell.properties.scope !== "rowgroup"
-          );
-        });
+        (cells.length > 0 &&
+          cells.every((cell) => {
+            const scope = String(cell.properties.scope ?? "").toLowerCase();
+            return (
+              cell.tagName === "th" && scope !== "row" && scope !== "rowgroup"
+            );
+          }));
       if (!header) {
         rowCount++;
       }
