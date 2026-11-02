@@ -377,7 +377,11 @@ export function createBrowserSessionSignals(
     });
     set(browser.connectionChanged$);
   });
-  const browser = createBrowserSignals(browserConnection$, reload$, onPageInput$);
+  const browser = createBrowserSignals(
+    browserConnection$,
+    reload$,
+    onPageInput$,
+  );
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
