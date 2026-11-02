@@ -123,7 +123,7 @@ def _metadata_collection_violations(
             _MetadataCollectionMode.PAIR_ITERABLE,
             _MetadataCollectionMode.MAPPING_PAIR_KEYS,
         }:
-            return _metadata_pair_element_violations(path, node.key)
+            return _metadata_key_expression_violations(path, node.key, pair_depth=1)
         return _metadata_key_expression_violations(path, node.key)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         return _metadata_collection_sequence_violations(path, node, mode)
@@ -131,8 +131,8 @@ def _metadata_collection_violations(
         if mode is _MetadataCollectionMode.KEY_SEQUENCE:
             return _metadata_key_expression_violations(path, node.elt)
         if mode is _MetadataCollectionMode.MAPPING_PAIR_KEYS:
-            return _metadata_mapping_entry_pair_key_violations(path, node.elt)
-        return _metadata_pair_element_violations(path, node.elt)
+            return _metadata_key_expression_violations(path, node.elt, pair_depth=2)
+        return _metadata_key_expression_violations(path, node.elt, pair_depth=1)
     if isinstance(node, ast.Call):
         return _metadata_collection_call_violations(path, node, mode)
     if not isinstance(node, ast.Dict):
@@ -152,7 +152,7 @@ def _metadata_mapping_container_violations(
             _MetadataCollectionMode.PAIR_ITERABLE,
             _MetadataCollectionMode.MAPPING_PAIR_KEYS,
         }:
-            violations.extend(_metadata_pair_element_violations(path, key))
+            violations.extend(_metadata_key_expression_violations(path, key, pair_depth=1))
             continue
         violations.extend(_metadata_key_expression_violations(path, key))
     return violations
@@ -172,7 +172,7 @@ def _metadata_collection_sequence_violations(
                 )
                 continue
             mapping_pair_violations.extend(
-                _metadata_mapping_entry_pair_key_violations(path, element)
+                _metadata_key_expression_violations(path, element, pair_depth=2)
             )
         return mapping_pair_violations
     if mode is not _MetadataCollectionMode.KEY_SEQUENCE:
@@ -193,7 +193,9 @@ def _metadata_collection_call_violations(
         # Project constructor input to resulting keys before consuming those keys as pairs.
         mapping_pair_violations: list[str] = []
         for key in _static_mapping_input_key_outcomes(node, include_all=True).nodes:
-            mapping_pair_violations.extend(_metadata_pair_element_violations(path, key))
+            mapping_pair_violations.extend(
+                _metadata_key_expression_violations(path, key, pair_depth=1)
+            )
         return mapping_pair_violations
     if isinstance(node.func, ast.Attribute):
         if (
@@ -275,59 +277,32 @@ def _metadata_pair_sequence_violations(
         if isinstance(item, ast.Starred):
             violations.extend(_metadata_pair_iterable_violations(path, item.value))
             continue
-        violations.extend(_metadata_pair_element_violations(path, item))
+        violations.extend(_metadata_key_expression_violations(path, item, pair_depth=1))
     return violations
 
 
-def _metadata_pair_element_violations(path: Path, node: ast.AST) -> list[str]:
+def _metadata_key_expression_violations(
+    path: Path, node: ast.AST, *, pair_depth: int = 0
+) -> list[str]:
+    """Find scalar keys through alternatives and the required entry-pair layers."""
     if isinstance(node, ast.NamedExpr):
-        return _metadata_pair_element_violations(path, node.value)
+        return _metadata_key_expression_violations(path, node.value, pair_depth=pair_depth)
     if isinstance(node, ast.IfExp):
         return [
-            *_metadata_pair_element_violations(path, node.body),
-            *_metadata_pair_element_violations(path, node.orelse),
+            *_metadata_key_expression_violations(path, node.body, pair_depth=pair_depth),
+            *_metadata_key_expression_violations(path, node.orelse, pair_depth=pair_depth),
         ]
     if isinstance(node, ast.BoolOp):
         violations: list[str] = []
         for value in node.values:
-            violations.extend(_metadata_pair_element_violations(path, value))
+            violations.extend(
+                _metadata_key_expression_violations(path, value, pair_depth=pair_depth)
+            )
         return violations
-    if not isinstance(node, ast.List | ast.Tuple) or len(node.elts) != _METADATA_PAIR_LENGTH:
-        return []
-    return _metadata_key_expression_violations(path, node.elts[0])
-
-
-def _metadata_mapping_entry_pair_key_violations(path: Path, node: ast.AST) -> list[str]:
-    if isinstance(node, ast.NamedExpr):
-        return _metadata_mapping_entry_pair_key_violations(path, node.value)
-    if isinstance(node, ast.IfExp):
-        return [
-            *_metadata_mapping_entry_pair_key_violations(path, node.body),
-            *_metadata_mapping_entry_pair_key_violations(path, node.orelse),
-        ]
-    if isinstance(node, ast.BoolOp):
-        violations: list[str] = []
-        for value in node.values:
-            violations.extend(_metadata_mapping_entry_pair_key_violations(path, value))
-        return violations
-    if not isinstance(node, ast.List | ast.Tuple) or len(node.elts) != _METADATA_PAIR_LENGTH:
-        return []
-    return _metadata_pair_element_violations(path, node.elts[0])
-
-
-def _metadata_key_expression_violations(path: Path, node: ast.AST) -> list[str]:
-    if isinstance(node, ast.NamedExpr):
-        return _metadata_key_expression_violations(path, node.value)
-    if isinstance(node, ast.IfExp):
-        return [
-            *_metadata_key_expression_violations(path, node.body),
-            *_metadata_key_expression_violations(path, node.orelse),
-        ]
-    if isinstance(node, ast.BoolOp):
-        violations: list[str] = []
-        for value in node.values:
-            violations.extend(_metadata_key_expression_violations(path, value))
-        return violations
+    if pair_depth:
+        if not isinstance(node, ast.List | ast.Tuple) or len(node.elts) != _METADATA_PAIR_LENGTH:
+            return []
+        return _metadata_key_expression_violations(path, node.elts[0], pair_depth=pair_depth - 1)
     key_name = _registered_key_name(node)
     if key_name is None:
         return []
