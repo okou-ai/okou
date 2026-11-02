@@ -89,7 +89,7 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
     let total_events = SMALL_EVENT_COUNT + LARGE_EVENT_COUNT + 1;
 
     unsafe {
-        common::setup_env(&mock_cli, tmp.path(), &prompt, 3, 1)?;
+        common::setup_env_with_owned_prompt(&mock_cli, tmp.path(), prompt, 3, 1)?;
         std::env::set_var(
             guest_contracts::env::CANONICAL_API_URL_ENV,
             &server.base_url,
