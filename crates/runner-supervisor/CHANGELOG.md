@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.21](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.20...runner-supervisor-v0.21.21) (2026-11-02)
+
+
+### Bug Fixes
+
+* **runner:** preserve guest preparation on user cancellation ([#44719](https://github.com/okou-ai/okou/issues/44719)) ([d59586e](https://github.com/okou-ai/okou/commit/d59586ea87dde47e3f100f47d51666db4f0c2f96))
+
 ## [0.21.20](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.19...runner-supervisor-v0.21.20) (2026-11-02)
 
 ## [0.21.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.18...runner-supervisor-v0.21.19) (2026-11-02)

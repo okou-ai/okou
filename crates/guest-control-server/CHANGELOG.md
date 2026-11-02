@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.68](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.67...guest-control-server-v0.24.68) (2026-11-02)
+
+
+### Refactoring
+
+* **guest-control:** own vsock during connection setup ([#44735](https://github.com/okou-ai/okou/issues/44735)) ([90425c1](https://github.com/okou-ai/okou/commit/90425c1dcd2aabf529054b1a6da8846ef08c962b))
+
 ## [0.24.67](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.66...guest-control-server-v0.24.67) (2026-11-02)
 
 ## [0.24.66](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.65...guest-control-server-v0.24.66) (2026-11-02)

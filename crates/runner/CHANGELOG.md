@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.242.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.7...runner-rs-v0.242.8) (2026-11-02)
+
+
+### Refactoring
+
+* **python:** centralize constant-space header budget guards ([#44747](https://github.com/okou-ai/okou/issues/44747)) ([6490e39](https://github.com/okou-ai/okou/commit/6490e390632d5cb57dc7f4982cc10afbda0605b7))
+* **python:** share nested json probe container traversal ([#44729](https://github.com/okou-ai/okou/issues/44729)) ([ab35120](https://github.com/okou-ai/okou/commit/ab351208eecbf6404d97cf26d15d11143b47d40a))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.242.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.6...runner-rs-v0.242.7) (2026-11-02)
 
 ### Release Dependencies

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.52](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.51...process-control-ipc-v0.5.52) (2026-11-02)
+
+
+### Refactoring
+
+* **ipc:** own received placement descriptors during validation ([#44750](https://github.com/okou-ai/okou/issues/44750)) ([79e4945](https://github.com/okou-ai/okou/commit/79e4945dd4b1dd21134ae2b2c4b9675f39d7d60e))
+
 ## [0.5.51](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.50...process-control-ipc-v0.5.51) (2026-11-02)
 
 

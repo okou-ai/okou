@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.15...runner-executor-v0.18.16) (2026-11-02)
+
+
+### Bug Fixes
+
+* **runner:** preserve guest preparation on user cancellation ([#44719](https://github.com/okou-ai/okou/issues/44719)) ([d59586e](https://github.com/okou-ai/okou/commit/d59586ea87dde47e3f100f47d51666db4f0c2f96))
+
 ## [0.18.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.14...runner-executor-v0.18.15) (2026-11-02)
 
 

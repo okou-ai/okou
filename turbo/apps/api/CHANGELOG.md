@@ -10,6 +10,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.41.0](https://github.com/okou-ai/okou/compare/api-v2.40.1...api-v2.41.0) (2026-11-02)
+
+
+### Features
+
+* **connector:** add chat accounts and shared connector permissions ([#44669](https://github.com/okou-ai/okou/issues/44669)) ([4785f0d](https://github.com/okou-ai/okou/commit/4785f0df14390de71e59178a4138d0689411cb85))
+
+
+### Bug Fixes
+
+* **api:** preserve slides text leading and table borders ([#44731](https://github.com/okou-ai/okou/issues/44731)) ([b5727c0](https://github.com/okou-ai/okou/commit/b5727c03618f822c3d0975a8adf0418460d4f63c))
+* **browser:** allow shared browser sessions without chat runs ([#44703](https://github.com/okou-ai/okou/issues/44703)) ([70488f9](https://github.com/okou-ai/okou/commit/70488f99ac868ea87f968e45bd53003e89c2e682))
+* **browser:** restore thread mode when shared browser is disabled ([#44740](https://github.com/okou-ai/okou/issues/44740)) ([67a856e](https://github.com/okou-ai/okou/commit/67a856e60792571b417da0c6e2af4a592c013c45))
+
+
+### Refactoring
+
+* **api:** isolate slack reward financial settlement ([#44710](https://github.com/okou-ai/okou/issues/44710)) ([885c8a9](https://github.com/okou-ai/okou/commit/885c8a9e2271bfc035ecbaf8b9fa289033ad9097))
+* **api:** use statement authorization for ssh mutations ([#44718](https://github.com/okou-ai/okou/issues/44718)) ([020805a](https://github.com/okou-ai/okou/commit/020805af30ee2461d349a7dd4404a803dc082165))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.34.0
+    * @okouai/core bumped to 8.810.0
+    * @okouai/db bumped to 2.18.0
+    * @okouai/pi-agent-runtime bumped to 1.51.52
+
 ## [2.40.1](https://github.com/okou-ai/okou/compare/api-v2.40.0...api-v2.40.1) (2026-11-02)
 
 

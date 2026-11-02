@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1085.0](https://github.com/okou-ai/okou/compare/app-v0.1084.1...app-v0.1085.0) (2026-11-02)
+
+
+### Features
+
+* **app:** organize projects as chat sidebar folders ([#44751](https://github.com/okou-ai/okou/issues/44751)) ([e2c0304](https://github.com/okou-ai/okou/commit/e2c03040852a6eebd24921e9dc75529ad58a83c1))
+
+
+### Bug Fixes
+
+* **browser:** keep new tabs blank during preparation ([#44738](https://github.com/okou-ai/okou/issues/44738)) ([661d1a9](https://github.com/okou-ai/okou/commit/661d1a96f5f2198d2c42c6657187c862a4111a50))
+* unify chat filter actions without icons ([#44717](https://github.com/okou-ai/okou/issues/44717)) ([9286fc4](https://github.com/okou-ai/okou/commit/9286fc46885823d472ed15365a0ae148f9d4d905))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.34.0
+    * @okouai/core bumped to 8.810.0
+
 ## [0.1084.1](https://github.com/okou-ai/okou/compare/app-v0.1084.0...app-v0.1084.1) (2026-11-02)
 
 
