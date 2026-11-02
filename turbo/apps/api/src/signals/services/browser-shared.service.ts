@@ -1,7 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import {
   and,
-  desc,
   eq,
   getTableColumns,
   gt,
@@ -568,39 +567,52 @@ function sharedBrowserContext(mode$: ReturnType<typeof sharedBrowserMode>) {
         message: "Managed Browser requires a chat Run",
       } as const;
     }
+    const db = get(db$);
+    const [run] = input.runId
+      ? await db
+          .select({
+            chatThreadId: agentRuns.chatThreadId,
+            agentId: agentRuns.agentId,
+            status: agentRuns.status,
+          })
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.id, input.runId),
+              eq(agentRuns.orgId, input.orgId),
+              eq(agentRuns.userId, input.userId),
+              isNotNull(agentRuns.triggerSource),
+            ),
+          )
+          .limit(1)
+      : [];
+    const chatThreadId = input.chatThreadId ?? run?.chatThreadId;
+    const runAgentId = run?.agentId;
+    if (
+      !chatThreadId ||
+      (input.runId && !run) ||
+      (run && (!runAgentId || run.chatThreadId !== chatThreadId))
+    ) {
+      return missing();
+    }
     const [row] = await get(db$)
       .select({
-        runId: agentRuns.id,
         chatThreadId: chatThreads.id,
         enabled: chatThreads.cloudBrowserEnabled,
-        status: agentRuns.status,
       })
       .from(chatThreads)
       .innerJoin(
         agents,
         and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, input.orgId)),
       )
-      .innerJoin(
-        agentRuns,
-        and(
-          eq(agentRuns.chatThreadId, chatThreads.id),
-          eq(agentRuns.agentId, chatThreads.agentId),
-          eq(agentRuns.orgId, input.orgId),
-          eq(agentRuns.userId, input.userId),
-          isNotNull(agentRuns.triggerSource),
-        ),
-      )
       .where(
         and(
+          eq(chatThreads.id, chatThreadId),
           eq(chatThreads.userId, input.userId),
           or(eq(agents.visibility, "public"), eq(agents.owner, input.userId)),
-          input.runId ? eq(agentRuns.id, input.runId) : undefined,
-          input.chatThreadId
-            ? eq(chatThreads.id, input.chatThreadId)
-            : undefined,
+          runAgentId ? eq(chatThreads.agentId, runAgentId) : undefined,
         ),
       )
-      .orderBy(desc(agentRuns.createdAt))
       .limit(1);
     if (!row) {
       return missing();
@@ -613,7 +625,7 @@ function sharedBrowserContext(mode$: ReturnType<typeof sharedBrowserMode>) {
         message: "Cloud browser is not enabled for this chat thread",
       } as const;
     }
-    if (input.runId && !["pending", "running"].includes(row.status)) {
+    if (run && !["pending", "running"].includes(run.status)) {
       return {
         kind: "error",
         status: 409,
@@ -625,8 +637,7 @@ function sharedBrowserContext(mode$: ReturnType<typeof sharedBrowserMode>) {
       orgId: input.orgId,
       userId: input.userId,
       chatThreadId: row.chatThreadId,
-      runId: row.runId,
-      requireLiveRun: input.runId !== undefined,
+      ...(input.runId ? { runId: input.runId } : {}),
     };
     return { kind: "ok", owner, mode } as const;
   });
