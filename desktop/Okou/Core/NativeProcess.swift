@@ -24,6 +24,12 @@ public actor NativeProcess {
     case browserAutomationProbe = "browser_automation_probe"
   }
 
+  public enum RequestIntent: String, Sendable {
+    case unspecified
+    case permissionRefresh = "permission_refresh"
+    case commandPreflight = "command_preflight"
+  }
+
   private struct PendingRequest {
     let continuation: CheckedContinuation<JSONValue, Error>
     var diagnostics: NativeHelperRequestDiagnostics
@@ -124,7 +130,9 @@ public actor NativeProcess {
     self.standardError = standardError
     outputReader = reader
   }
-  public func request(_ values: JSONValue, timeout: TimeInterval = 30) async throws -> JSONValue {
+  public func request(
+    _ values: JSONValue, timeout: TimeInterval = 30, intent: RequestIntent = .unspecified
+  ) async throws -> JSONValue {
     try Task.checkCancellation()
     try start()
     sequence += 1
@@ -136,7 +144,7 @@ public actor NativeProcess {
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
         let diagnostics = NativeHelperRequestDiagnostics(
-          values, timeout: timeout, started: now(), awakeStarted: awakeNow())
+          values, intent: intent, timeout: timeout, started: now(), awakeStarted: awakeNow())
         pending[id] = PendingRequest(
           continuation: continuation, diagnostics: diagnostics)
         let current = generation
@@ -147,7 +155,7 @@ public actor NativeProcess {
               Task { await self.expire(id, generation: current) }
             }) == true
         else {
-          stop(error: Self.timeoutFailure)
+          stop(error: Self.timeoutFailure())
           return
         }
         // Dispatch uses an awake clock. Keep ContinuousClock's timer for system sleep/wake.
@@ -171,7 +179,7 @@ public actor NativeProcess {
   private func receive(_ data: Data, sequence: Int, generation current: Int) {
     guard current == generation else { return }
     if lifetime?.expired == true {
-      stop(error: Self.timeoutFailure)
+      stop(error: Self.timeoutFailure())
       return
     }
     // Tasks created by readability callbacks can reach the actor out of read order.
@@ -230,7 +238,7 @@ public actor NativeProcess {
       }
       // A ready response must not bypass the deadline when the client resumes late.
       if lifetime?.complete(responseId) != nil {
-        stop(error: Self.timeoutFailure)
+        stop(error: Self.timeoutFailure())
         return
       }
       if response["status"].string == "failed",
@@ -278,15 +286,18 @@ public actor NativeProcess {
         "\(message) Reconnect Computer Use; do not replay the failed action automatically."),
       failure: failure, responseBytes: response.count, attachments: attachments)
   }
-  private static var timeoutFailure: DesktopFailure {
+  private static func timeoutFailure(
+    interruption: DesktopFailure.Interruption? = nil
+  ) -> DesktopFailure {
     DesktopFailure(
       "command_timeout",
-      "Native command deadline expired. An action may have been delivered; do not replay automatically."
+      "Native command deadline expired. An action may have been delivered; do not replay automatically.",
+      interruption: interruption
     )
   }
   private func expire(_ id: Int, generation current: Int) {
     guard current == generation, lifetime?.expire(id, detectedBy: .timer) != nil else { return }
-    stop(error: Self.timeoutFailure)
+    stop(error: Self.timeoutFailure())
   }
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
   private func exited(generation current: Int, termination: NativeHelperTermination) {
@@ -301,13 +312,14 @@ public actor NativeProcess {
   private func reportFailure(
     _ reason: NativeHelperFailure, responseBytes: Int? = nil,
     termination: NativeHelperTermination? = nil, request: NativeHelperRequestDiagnostics? = nil,
-    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil
+    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil,
+    interruption: DesktopFailure.Interruption? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
       reason, purpose: purpose, generation: generation,
       pendingRequests: pending.count, stderrBytes: standardError.count,
       responseBytes: responseBytes, termination: termination, request: request,
-      attachments: attachments, timeout: timeout)
+      attachments: attachments, timeout: timeout, interruption: interruption)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(
@@ -318,13 +330,16 @@ public actor NativeProcess {
     let expiration = lifetime?.retire()
     var error = error
     if let expiration, let request = pending[expiration.requestID] {
-      error = Self.timeoutFailure
+      let timeout = NativeHelperTimeoutDiagnostics(
+        trigger: expiration.trigger, output: outputReader.snapshot, processedBytes: receivedBytes,
+        processedAt: outputProcessedAt, observedAt: now(), awakeObservedAt: awakeNow(),
+        detectedAt: expiration.detectedAt, retiredAt: expiration.retiredAt)
+      let interruption = timeout.interruption(
+        request: request.diagnostics, purpose: purpose, pendingRequests: pending.count)
+      error = Self.timeoutFailure(interruption: interruption)
       reportFailure(
         .timeout, request: request.diagnostics,
-        timeout: NativeHelperTimeoutDiagnostics(
-          trigger: expiration.trigger, output: outputReader.snapshot, processedBytes: receivedBytes,
-          processedAt: outputProcessedAt, observedAt: now(), awakeObservedAt: awakeNow(),
-          detectedAt: expiration.detectedAt, retiredAt: expiration.retiredAt))
+        timeout: timeout, interruption: interruption)
     } else if let failure {
       reportFailure(
         failure, responseBytes: responseBytes, termination: termination, attachments: attachments)
