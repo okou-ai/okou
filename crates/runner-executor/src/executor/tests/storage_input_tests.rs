@@ -14,16 +14,22 @@ use runner_types::{
     types::SandboxReuseResult,
 };
 use sandbox::SandboxId;
-use sandbox_mock::{MockSandboxFactory, MockSandboxOverrides};
+use sandbox_mock::{MockLifecycleGate, MockSandboxFactory, MockSandboxOverrides};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
-use super::super::{NewSandboxDispatch, execute_job, execute_job_reuse};
-use super::support::{
-    default_params, instruction_context, make_reusable_idle_sandbox_with_fingerprints,
-    minimal_context, seed_home_image_cache_with_fingerprints,
-    test_executor_config_with_startup_api, workflow_context as context,
+use super::super::{
+    ExecutionHooks, NewSandboxDispatch, ReusedSandboxDispatch, SandboxReuseDisposition,
+    SandboxReuseTerminal, execute_job, execute_job_reuse, execute_job_reuse_with_hooks,
 };
+use super::support::{
+    RUN_IN_SANDBOX_TEST_TIMEOUT, api_storage, create_overridden_sandbox, default_params,
+    instruction_context, make_reusable_idle_sandbox_with_fingerprints, minimal_context,
+    seed_home_image_cache_with_fingerprints, test_executor_config_with_startup_api,
+    workflow_context as context,
+};
+use runner_provider::RunCancellationHandle;
+use runner_types::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 
 fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
@@ -290,6 +296,172 @@ async fn instruction_storage_reuses_applied_files_and_refreshes_changed_versions
             config.background_fill.shutdown().await;
             config.decoded_cache.shutdown().await;
         }
+    }
+}
+
+#[tokio::test]
+async fn cancelled_preparation_reuses_only_instructions_applied_to_the_final_file() {
+    for cancel_during_bootstrap in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+        let guest = tempfile::tempdir().unwrap();
+        let paths = instruction_paths(Path::new("/home/user"), "claude-code").unwrap();
+        let instruction_mount = paths.staging.to_str().unwrap();
+        let target = guest_path(guest.path(), paths.target.to_str().unwrap());
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, b"previous instructions").unwrap();
+        let workflow_mount = "/home/user/workflow";
+        let workflow_file = guest_path(guest.path(), workflow_mount).join("SKILL.md");
+        fs::create_dir_all(workflow_file.parent().unwrap()).unwrap();
+        fs::write(&workflow_file, b"Agent local workflow edit").unwrap();
+
+        let new_instructions = b"updated instructions";
+        let instruction_archive = archive(&[(SOURCE_FILENAME, new_instructions)]);
+        let instruction_version = hex::encode(Sha256::digest(&instruction_archive));
+        let workflow_archive = archive(&[("SKILL.md", b"published workflow")]);
+        for (name, version, bytes) in [
+            (
+                INSTRUCTION_STORAGE_NAME,
+                instruction_version.as_str(),
+                instruction_archive.as_slice(),
+            ),
+            (WORKFLOW_STORAGE_NAME, "v1", workflow_archive.as_slice()),
+        ] {
+            let cache = config.home.storage_cache_dir(name, version);
+            fs::create_dir_all(&cache).unwrap();
+            fs::write(cache.join("archive.tar.gz"), bytes).unwrap();
+        }
+        let mut current = instruction_context(
+            &instruction_version,
+            instruction_archive.len() as u64,
+            "claude-code",
+            "cancelled-preparation",
+        );
+        current
+            .storage_manifest
+            .as_mut()
+            .unwrap()
+            .storages
+            .push(api_storage(
+                WORKFLOW_STORAGE_NAME,
+                workflow_mount,
+                "v1",
+                "https://unreachable.invalid/workflow",
+            ));
+        let mut next_context = instruction_context(
+            &instruction_version,
+            instruction_archive.len() as u64,
+            "claude-code",
+            "cancelled-preparation",
+        );
+        next_context.storage_manifest = current.storage_manifest.clone();
+        next_context.run_id = runner_types::ids::RunId::new_v4();
+        let previous = StorageFingerprints {
+            storages: [
+                (
+                    instruction_mount.into(),
+                    StorageFingerprint::new(INSTRUCTION_STORAGE_NAME, "previous"),
+                ),
+                (
+                    workflow_mount.into(),
+                    StorageFingerprint::new(WORKFLOW_STORAGE_NAME, "v1"),
+                ),
+            ]
+            .into(),
+            artifacts: Default::default(),
+        };
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+        let source_ip = sandbox.source_ip().to_string();
+        let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
+            sandbox,
+            source_ip,
+            "cancelled-instructions",
+            previous,
+        )
+        .await;
+        let gate = MockLifecycleGate::new();
+        if cancel_during_bootstrap {
+            overrides.set_private_write_file_lifecycle_gate(gate.clone());
+        } else {
+            overrides.set_storage_manifest_lifecycle_gate(gate.clone());
+        }
+        let params = default_params();
+        let cancellation = RunCancellationHandle::new();
+        let execution = execute_job_reuse_with_hooks(
+            ReusedSandboxDispatch {
+                factory: &factory,
+                idle_sandbox: idle,
+                reuse_result: SandboxReuseResult::Reused,
+            },
+            current,
+            &config,
+            &params,
+            cancellation.signals(),
+            ExecutionHooks::none(),
+        );
+        tokio::pin!(execution);
+        tokio::select! {
+            _ = &mut execution => panic!("Run completed before the preparation gate"),
+            entered = gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => entered.unwrap(),
+        };
+        cancellation.request_cooperative_user_cancellation().await;
+        overrides.clear_private_write_file_lifecycle_gate();
+        gate.release_many(usize::MAX);
+        let (mut cancelled, _) = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, execution)
+            .await
+            .unwrap();
+        assert_eq!(cancelled.exit_code(), super::super::EXIT_SIGKILL);
+        assert_eq!(
+            cancelled.sandbox_reuse_disposition,
+            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation)
+        );
+        apply_guest_storage(&overrides, guest.path(), 0, None);
+        apply_guest_instructions(&overrides, guest.path(), 0);
+        if cancel_during_bootstrap {
+            assert_eq!(fs::read(&target).unwrap(), new_instructions);
+            fs::write(&target, b"Agent local instruction edit").unwrap();
+        } else {
+            assert_eq!(fs::read(&target).unwrap(), b"previous instructions");
+        }
+
+        let (idle, _next_lease) = make_reusable_idle_sandbox_with_fingerprints(
+            cancelled.sandbox.take().unwrap(),
+            cancelled.source_ip,
+            "cancelled-instructions",
+            cancelled.storage_fingerprints,
+        )
+        .await;
+        instruction_check(&overrides, guest.path(), "claude-code");
+        let first_storage = overrides.storage_manifest_calls().len();
+        let first_exec = overrides.exec_calls().len();
+        let (mut next, _) = execute_job_reuse(
+            idle,
+            next_context,
+            &config,
+            &params,
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(next.exit_code(), 0, "{:?}", next.error());
+        if let Some(report) = next.startup_report.take() {
+            report.finish().await;
+        }
+        apply_guest_storage(&overrides, guest.path(), first_storage, None);
+        apply_guest_instructions(&overrides, guest.path(), first_exec);
+        let expected = if cancel_during_bootstrap {
+            b"Agent local instruction edit".as_slice()
+        } else {
+            new_instructions.as_slice()
+        };
+        assert_eq!(fs::read(&target).unwrap(), expected);
+        assert_eq!(
+            fs::read(&workflow_file).unwrap(),
+            b"Agent local workflow edit"
+        );
+        config.background_fill.shutdown().await;
+        config.decoded_cache.shutdown().await;
     }
 }
 

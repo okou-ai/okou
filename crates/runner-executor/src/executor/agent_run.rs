@@ -1618,6 +1618,7 @@ pub(super) async fn run_in_sandbox(
 /// Preparation progress, owned startup delivery and cancellation policy for one Agent attempt.
 pub(super) struct AgentRunLifecycle {
     pub(super) storage_preparation_complete: bool,
+    pub(super) instruction_preparation_complete: bool,
     pub(super) startup_report: Option<super::StartupReport>,
     process_cancel_timeouts: ProcessCancelTimeouts,
 }
@@ -1654,6 +1655,7 @@ impl AgentRunLifecycle {
     pub(super) fn new(process_cancel_timeouts: ProcessCancelTimeouts) -> Self {
         Self {
             storage_preparation_complete: false,
+            instruction_preparation_complete: false,
             startup_report: None,
             process_cancel_timeouts,
         }
@@ -1805,6 +1807,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         }
     };
     lifecycle.storage_preparation_complete = true;
+    lifecycle.instruction_preparation_complete = !apply_instructions;
     let RunControls {
         sandbox_recovery,
         disk_recovery,
@@ -2028,6 +2031,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             };
         }
     };
+    lifecycle.instruction_preparation_complete = true;
     let AgentBootstrapInputs {
         user_env_map,
         mut env_map,
