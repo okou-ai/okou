@@ -1,5 +1,7 @@
 use super::*;
 
+mod account_binding;
+
 use httpmock::{Method::POST, MockServer};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -623,31 +625,34 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
+    let connectors = connector_slugs
+        .into_iter()
+        .map(|connector_slug| {
+            let registration = ConnectorRuntimeTargetRegistration::Builtin {
+                connector_slug: connector_slug.into(),
+                base_url_vars: None,
+                source_id: None,
+            };
+            (
+                registration.target(),
+                ActiveConnectorSyncState {
+                    registration,
+                    generation: 0,
+                    consecutive_failures: 0,
+                    scheduled_sync: None,
+                    successful_generation: tokio::sync::watch::channel(None).0,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let context = account_context(connectors.values().map(|connector| &connector.registration));
     ActiveRunConnectorRuntimeState {
         source_ip: "10.200.0.2".to_string(),
         registry,
-        connectors: connector_slugs
-            .into_iter()
-            .map(|connector_slug| {
-                let registration = ConnectorRuntimeTargetRegistration::Builtin {
-                    connector_slug: connector_slug.into(),
-                    base_url_vars: None,
-                    source_id: None,
-                };
-                (
-                    registration.target(),
-                    ActiveConnectorSyncState {
-                        registration,
-                        generation: 0,
-                        consecutive_failures: 0,
-                        scheduled_sync: None,
-                        successful_generation: tokio::sync::watch::channel(None).0,
-                    },
-                )
-            })
-            .collect(),
+        connectors,
         cancel: CancellationToken::new(),
         next_sync_task_id: 0,
+        account_context: watch::channel(context).0,
     }
 }
 

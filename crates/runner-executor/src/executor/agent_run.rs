@@ -1078,6 +1078,44 @@ struct AgentBootstrapInputs {
     original_native_continuation: Option<String>,
 }
 
+// This subscription reports a published binding; it never authorizes one.
+async fn report_connector_account_context(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+) -> ! {
+    if let Some(runtime_sync) = &config.connector_runtime_sync
+        && let Some(mut receiver) = runtime_sync.subscribe_account_context(context.run_id).await
+    {
+        let mut last = super::env::build_connector_account_context(context);
+        loop {
+            let current = receiver.borrow_and_update().clone();
+            if current != last {
+                let result = async {
+                    let path =
+                        super::env::guest_connector_account_context_file_path(context.run_id)?;
+                    let bytes = serde_json::to_vec(&current).map_err(|error| {
+                        RunnerError::Internal(format!(
+                            "serialize connector account context: {error}"
+                        ))
+                    })?;
+                    sandbox.write_private_file(&path, &bytes).await?;
+                    RunnerResult::Ok(())
+                }
+                .await;
+                if let Err(error) = result {
+                    warn!(run_id = %context.run_id, error = %error, "connector account context publication failed");
+                }
+                last = current;
+            }
+            if receiver.changed().await.is_err() {
+                break;
+            }
+        }
+    }
+    std::future::pending().await
+}
+
 struct BootstrapFileFailure {
     error: RunnerError,
     replace: bool,
@@ -2176,6 +2214,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let mut process_cancel = handle.take_cancel_handle();
     let wait_process = sandbox.wait_process(handle, job_terminal_wait_timeout());
     tokio::pin!(wait_process);
+    let account_context_reporter = report_connector_account_context(sandbox, context, config);
+    tokio::pin!(account_context_reporter);
     let wait_outcome = model_catalog_prefetch
         .race(async {
             tokio::select! {
@@ -2210,6 +2250,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     )
                     .await
                 }
+                never = account_context_reporter.as_mut() => never,
             }
         })
         .await;

@@ -1,3 +1,4 @@
+mod account_binding;
 mod publication;
 
 use super::*;
@@ -695,6 +696,7 @@ async fn idempotent_connector_runtime_updates_preserve_registry_file() {
 
     let available_updates = vec![
         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+            account_binding: None,
             connector_slug: "slack".to_string(),
             network_policy: policy(&[], &["chat:write"], &[], "deny"),
         },
@@ -877,6 +879,7 @@ async fn builtin_absence_omits_policy_and_later_available_restores_it() {
                 "10.200.0.2",
                 "run-test",
                 &[ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                    account_binding: None,
                     connector_slug: "slack".to_string(),
                     network_policy: restored_policy.clone(),
                 }],
@@ -1002,10 +1005,12 @@ async fn mixed_connector_runtime_batch_persists_genuine_changes() {
                 "run-test",
                 &[
                     ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                        account_binding: None,
                         connector_slug: "github".to_string(),
                         network_policy: github_policy,
                     },
                     ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                        account_binding: None,
                         connector_slug: "slack".to_string(),
                         network_policy: policy(&[], &["chat:write"], &[], "deny"),
                     },
@@ -1086,6 +1091,7 @@ async fn custom_runtime_update_cannot_claim_builtin_firewall_resources() {
             "run-test",
             &[
                 ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                    account_binding: None,
                     connector_slug: "slack".to_string(),
                     network_policy: policy(&[], &["chat:write"], &[], "deny"),
                 },
@@ -1174,6 +1180,7 @@ async fn connector_runtime_target_absence_and_restore_are_atomic_and_scoped() {
                 "run-test",
                 &[
                     ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                        account_binding: None,
                         connector_slug: "slack".to_string(),
                         network_policy: policy(&[], &["chat:write"], &[], "deny"),
                     },

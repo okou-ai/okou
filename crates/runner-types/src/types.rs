@@ -174,7 +174,7 @@ pub struct ExecutionContext {
     pub pi_session_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretConnectorMetadata {
     pub source_type: String,
@@ -1524,7 +1524,7 @@ pub enum ConnectorRuntimeTarget {
     Custom { custom_connector_id: String },
 }
 
-/// Stable connector identity plus run-pinned metadata used at registration and
+/// Stable connector identity plus current metadata used at registration and
 /// in runtime synchronization requests. Metadata never participates in the
 /// derived target identity, result correlation, or realtime notification routing.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1576,6 +1576,30 @@ impl ConnectorRuntimeTargetRegistration {
             }
         }
     }
+
+    pub fn account_context_target(
+        &self,
+    ) -> guest_contracts::connector_account_context::RunConnectorAccountTarget {
+        use guest_contracts::connector_account_context::RunConnectorAccountTarget;
+        match self {
+            Self::Builtin {
+                connector_slug,
+                source_id,
+                ..
+            } => RunConnectorAccountTarget::Builtin {
+                connector_slug: connector_slug.clone(),
+                connection_id: source_id.clone(),
+            },
+            Self::Custom {
+                custom_connector_id,
+                source_id,
+                ..
+            } => RunConnectorAccountTarget::Custom {
+                custom_connector_id: custom_connector_id.clone(),
+                connection_id: source_id.clone(),
+            },
+        }
+    }
 }
 
 impl ConnectorRuntimeTarget {
@@ -1594,12 +1618,22 @@ impl ConnectorRuntimeTarget {
 pub struct ConnectorRuntimeSyncResult {
     pub target: ConnectorRuntimeTarget,
     pub next_sync_at: Option<String>,
-    /// Custom routing inputs echoed by an available synchronization result. The
-    /// scheduler accepts them only when they match the run-pinned registration.
+    /// Custom routing inputs echoed by an available synchronization result.
+    /// They must match the current registration or an explicit account binding.
     #[serde(default)]
     pub base_url_vars: Option<HashMap<String, String>>,
+    /// An API-authorized replacement; ordinary policy refreshes omit this binding.
+    #[serde(default)]
+    pub account_binding: Option<ConnectorRuntimeAccountBinding>,
     #[serde(flatten)]
     pub state: ConnectorRuntimeSyncState,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorRuntimeAccountBinding {
+    pub source_id: String,
+    pub base_url_vars: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

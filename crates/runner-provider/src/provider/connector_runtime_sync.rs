@@ -52,9 +52,11 @@ use std::time::Duration;
 use api_contracts::generated::constants::runners::CONNECTOR_RUNTIME_SYNC_TARGETS_MAX;
 use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, stream::FuturesUnordered};
+use guest_contracts::connector_account_context::RunConnectorAccountContext;
 use tokio::sync::{
     Mutex, mpsc,
     mpsc::error::{TrySendError, TrySendError::Closed, TrySendError::Full},
+    watch,
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::instrument::WithSubscriber;
@@ -69,9 +71,9 @@ use crate::connector_registry::{
 use crate::error::ProviderError;
 use runner_types::ids::RunId;
 use runner_types::types::{
-    ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeSyncState, ConnectorRuntimeTarget,
-    ConnectorRuntimeTargetRegistration, ConnectorRuntimeUnresolvedReason, FirewallEntry,
-    NetworkPolicy, NetworkPolicyRefresh,
+    ConnectorRuntimeAccountBinding, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeSyncState,
+    ConnectorRuntimeTarget, ConnectorRuntimeTargetRegistration, ConnectorRuntimeUnresolvedReason,
+    FirewallEntry, NetworkPolicy, NetworkPolicyRefresh,
 };
 
 const SYNC_REQUEST_QUEUE_CAPACITY: usize = 256;
@@ -125,6 +127,7 @@ struct ActiveRunConnectorRuntimeState {
     connectors: HashMap<ConnectorRuntimeTarget, ActiveConnectorSyncState>,
     cancel: CancellationToken,
     next_sync_task_id: u64,
+    account_context: watch::Sender<RunConnectorAccountContext>,
 }
 
 impl ActiveRunConnectorRuntimeState {
@@ -160,6 +163,50 @@ impl ActiveRunConnectorRuntimeState {
             .values_mut()
             .filter_map(|connector| connector.scheduled_sync.take())
             .map(|task| task.handle)
+    }
+
+    fn record_account_binding(
+        &mut self,
+        target: &ConnectorSyncTarget,
+        binding: &ConnectorRuntimeAccountBinding,
+    ) -> Result<(), ProviderError> {
+        let connector = self.current_target_mut(target).ok_or_else(|| {
+            ProviderError::Internal(
+                "published connector changed under its publication guard".to_string(),
+            )
+        })?;
+        match &mut connector.registration {
+            ConnectorRuntimeTargetRegistration::Builtin {
+                source_id,
+                base_url_vars,
+                ..
+            } => {
+                *source_id = Some(binding.source_id.clone());
+                *base_url_vars = Some(binding.base_url_vars.clone());
+            }
+            ConnectorRuntimeTargetRegistration::Custom {
+                source_id,
+                base_url_vars,
+                ..
+            } => {
+                *source_id = Some(binding.source_id.clone());
+                *base_url_vars = binding.base_url_vars.clone();
+            }
+        }
+        let context = account_context(
+            self.connectors
+                .values()
+                .map(|connector| &connector.registration),
+        );
+        self.account_context.send_if_modified(|current| {
+            if *current == context {
+                false
+            } else {
+                *current = context;
+                true
+            }
+        });
+        Ok(())
     }
 
     fn cancel_and_take_sync_tasks(
@@ -237,6 +284,7 @@ struct PreparedConnectorRuntimePublication {
     target: ConnectorSyncTarget,
     deadline: Option<tokio::time::Instant>,
     update: ConnectorRuntimeRegistryUpdate,
+    account_binding: Option<ConnectorRuntimeAccountBinding>,
 }
 
 #[derive(Default)]
@@ -463,6 +511,15 @@ impl ConnectorRuntimeSyncHandle {
         self.core.unregister_run(run_id).await;
     }
 
+    /// Reporting only: registry publication remains the authority for access.
+    pub async fn subscribe_account_context(
+        &self,
+        run_id: RunId,
+    ) -> Option<watch::Receiver<RunConnectorAccountContext>> {
+        let active_runs = self.core.inner.active_runs.lock().await;
+        Some(active_runs.get(&run_id)?.account_context.subscribe())
+    }
+
     pub async fn notify_connector_runtime_sync(
         &self,
         run_id: RunId,
@@ -552,6 +609,7 @@ impl ConnectorRuntimeSyncCore {
                     connectors,
                     cancel: run_cancel.clone(),
                     next_sync_task_id: 0,
+                    account_context: watch::channel(account_context(runtime_targets.iter())).0,
                 },
             );
         }
@@ -956,6 +1014,16 @@ impl ConnectorRuntimeSyncCore {
                 retry_targets.push(target.clone());
                 continue;
             };
+            let account_binding = result.account_binding.clone();
+            if let Some(binding) = &account_binding
+                && (!matches!(result.state, ConnectorRuntimeSyncState::Available { .. })
+                    || uuid::Uuid::parse_str(&binding.source_id).is_err())
+            {
+                warn!(run_id = %run_id, target = %target.target.log_identity(),
+                    "invalid connector account binding; retaining last-known-good state");
+                retry_targets.push(target.clone());
+                continue;
+            }
             let candidate_base_url_vars = match (&target.target, &result.state) {
                 (
                     ConnectorRuntimeTarget::Custom { .. },
@@ -1017,17 +1085,26 @@ impl ConnectorRuntimeSyncCore {
                 continue;
             }
             if let Some(candidate) = &candidate_base_url_vars {
-                let Some(matches_pinned_values) = self
-                    .custom_base_url_vars_match(run_id, target, candidate, registration_cancel)
-                    .await
-                else {
+                let matches_registration = match &account_binding {
+                    Some(binding) => Some(candidate == &binding.base_url_vars),
+                    None => {
+                        self.custom_base_url_vars_match(
+                            run_id,
+                            target,
+                            candidate,
+                            registration_cancel,
+                        )
+                        .await
+                    }
+                };
+                let Some(matches_pinned_values) = matches_registration else {
                     continue;
                 };
                 if !matches_pinned_values {
                     warn!(
                         run_id = %run_id,
                         target = %target.target.log_identity(),
-                        "connector runtime sync tried to replace run-pinned base URL variables"
+                        "connector runtime sync returned mismatched base URL variables"
                     );
                     retry_targets.push(target.clone());
                     continue;
@@ -1051,6 +1128,7 @@ impl ConnectorRuntimeSyncCore {
                         Ok(ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                             connector_slug: connector_slug.clone(),
                             network_policy: network_policy.clone(),
+                            account_binding: account_binding.clone(),
                         })
                     }
                 }
@@ -1074,27 +1152,32 @@ impl ConnectorRuntimeSyncCore {
                     },
                     state,
                 ) => {
-                    let routing_variables =
-                        if matches!(state, ConnectorRuntimeSyncState::Available { .. }) {
-                            let Some(routing_variables) = self
-                                .custom_base_url_vars_for_publication(
-                                    run_id,
-                                    target,
-                                    registration_cancel,
-                                )
-                                .await
-                            else {
-                                retry_targets.push(target.clone());
-                                continue;
-                            };
-                            routing_variables
-                        } else {
-                            HashMap::new()
+                    let routing_variables = if let Some(binding) = &account_binding {
+                        binding.base_url_vars.clone()
+                    } else if matches!(state, ConnectorRuntimeSyncState::Available { .. }) {
+                        let Some(routing_variables) = self
+                            .custom_base_url_vars_for_publication(
+                                run_id,
+                                target,
+                                registration_cancel,
+                            )
+                            .await
+                        else {
+                            retry_targets.push(target.clone());
+                            continue;
                         };
-                    let Some(expected_source_id) = self
-                        .source_id_for_publication(run_id, target, registration_cancel)
-                        .await
-                    else {
+                        routing_variables
+                    } else {
+                        HashMap::new()
+                    };
+                    let expected_source_id = match &account_binding {
+                        Some(binding) => Some(Some(binding.source_id.clone())),
+                        None => {
+                            self.source_id_for_publication(run_id, target, registration_cancel)
+                                .await
+                        }
+                    };
+                    let Some(expected_source_id) = expected_source_id else {
                         retry_targets.push(target.clone());
                         continue;
                     };
@@ -1150,6 +1233,7 @@ impl ConnectorRuntimeSyncCore {
                 target: target.clone(),
                 deadline,
                 update,
+                account_binding,
             });
         }
 
@@ -1175,13 +1259,13 @@ impl ConnectorRuntimeSyncCore {
                     // Acquire the registry transaction before active state so notifications can
                     // advance while the registry lock is contended. Holding both through the
                     // write orders every commit against generation and registration changes.
-                    let active_runs = self.inner.active_runs.lock().await;
+                    let mut active_runs = self.inner.active_runs.lock().await;
                     if self.inner.cancel.is_cancelled() || registration_cancel.is_cancelled() {
                         return false;
                     }
                     let Some(active) = active_runs
-                        .get(&run_id)
-                        .and_then(|active| active.for_registration(registration_cancel))
+                        .get_mut(&run_id)
+                        .and_then(|active| active.for_registration_mut(registration_cancel))
                     else {
                         return false;
                     };
@@ -1210,7 +1294,24 @@ impl ConnectorRuntimeSyncCore {
                                 &run_id.to_string(),
                                 &updates,
                             )
-                            .await;
+                            .await
+                            .and_then(|publication| {
+                                if let Some(result) = &publication {
+                                    for (prepared, published) in
+                                        prepared_publications.iter().zip(&result.outcomes)
+                                    {
+                                        if *published
+                                            && let Some(binding) = &prepared.account_binding
+                                        {
+                                            active.record_account_binding(
+                                                &prepared.target,
+                                                binding,
+                                            )?;
+                                        }
+                                    }
+                                }
+                                Ok(publication)
+                            });
                         drop(active_runs);
                         (prepared_publications, publication)
                     }
@@ -1968,6 +2069,20 @@ async fn run_sync_dispatcher(
                 }
             }
         }
+    }
+}
+
+fn account_context<'a>(
+    targets: impl Iterator<Item = &'a ConnectorRuntimeTargetRegistration>,
+) -> RunConnectorAccountContext {
+    let mut targets = targets.collect::<Vec<_>>();
+    targets.sort_by_key(|registration| registration.target().log_identity());
+    RunConnectorAccountContext {
+        schema_version: guest_contracts::connector_account_context::SCHEMA_VERSION,
+        targets: targets
+            .into_iter()
+            .map(ConnectorRuntimeTargetRegistration::account_context_target)
+            .collect(),
     }
 }
 

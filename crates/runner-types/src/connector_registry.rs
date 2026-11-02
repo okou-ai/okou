@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::types::{FirewallEntry, NetworkPolicy};
+use crate::types::{ConnectorRuntimeAccountBinding, FirewallEntry, NetworkPolicy};
 
 #[derive(Clone)]
 pub enum CustomConnectorRuntimeRegistryState {
@@ -19,6 +19,7 @@ pub enum ConnectorRuntimeRegistryUpdate {
     BuiltinAvailable {
         connector_slug: String,
         network_policy: NetworkPolicy,
+        account_binding: Option<ConnectorRuntimeAccountBinding>,
     },
     BuiltinAbsent {
         connector_slug: String,
