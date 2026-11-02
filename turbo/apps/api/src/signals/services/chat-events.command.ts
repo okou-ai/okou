@@ -18,7 +18,6 @@ import type {
   CodexServiceTier,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {

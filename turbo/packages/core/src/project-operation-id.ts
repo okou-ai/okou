@@ -23,6 +23,6 @@ export function isFreshProjectOperation(
   const issued = Number.parseInt(id.slice(0, 8) + id.slice(9, 13), 16);
   return (
     issued <= timestamp + 5 * 60 * 1000 &&
-    issued > timestamp - 7 * 24 * 60 * 60 * 1000
+    issued > timestamp - (7 * 24 * 60 * 60 * 1000 - 5 * 60 * 1000)
   );
 }

@@ -816,13 +816,13 @@ test("Project metadata recovers an expired cursor, reopens offline and stays own
     updatedAt: CREATED_AT,
   };
   let refresh = false;
-  context.mocks.api(projectsContract.snapshot, ({ respond }) =>
-    {return respond(200, {
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
       projects: [{ ...project, name: refresh ? "New name" : project.name }],
       latestEventId: null,
       latestSeqId: refresh ? 5 : 1,
-    })},
-  );
+    });
+  });
   context.mocks.api(projectsContract.events, ({ query, respond }) => {
     if (refresh && query.sinceSeqId === 1) {
       return respond(410, {
@@ -838,7 +838,7 @@ test("Project metadata recovers an expired cursor, reopens offline and stays own
     afterSeqId: null,
     consistency: "catch-up" as const,
   };
-  expect((await queryRuntime(first, query)).snapshot?.projects).toEqual([
+  expect((await queryRuntime(first, query)).snapshot?.projects).toStrictEqual([
     project,
   ]);
   refresh = true;
@@ -853,7 +853,7 @@ test("Project metadata recovers an expired cursor, reopens offline and stays own
   const peer = startRuntime(
     identity({ userId: owner.userId + "-peer" }),
   ).runtime;
-  expect(
-    await queryRuntime(peer, { ...query, consistency: "cache-only" }),
-  ).toEqual({ snapshot: null, events: [] });
+  await expect(
+    queryRuntime(peer, { ...query, consistency: "cache-only" }),
+  ).resolves.toStrictEqual({ snapshot: null, events: [] });
 });

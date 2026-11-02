@@ -21,6 +21,9 @@ import {
   newProjectThread$,
 } from "../../signals/projects/projects.ts";
 import {
+  setProjectDialog$,
+  setProjectEditorName$,
+  setProjectArchiveFilter$,
   projectDialog$,
   projectEditorName$,
   projectArchiveFilter$,
@@ -39,7 +42,7 @@ type EditorDialog = Extract<ProjectDialog, { kind: "editor" }>;
 function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const { t } = useTranslation();
   const name = useGet(projectEditorName$);
-  const setName = useSet(projectEditorName$);
+  const setName = useSet(setProjectEditorName$);
   const close = useSet(closeProjectDialog$);
   const [creation, create] = useLoadableSet(createProject$);
   const [renaming, rename] = useLoadableSet(renameProject$);
@@ -68,11 +71,17 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
         <DialogHeader>
           <DialogTitle>
             {dialog.projectId
-              ? t(($) => $.projects.renameProject)
-              : t(($) => $.projects.create)}
+              ? t(($) => {
+                  return $.projects.renameProject;
+                })
+              : t(($) => {
+                  return $.projects.create;
+                })}
           </DialogTitle>
           <DialogDescription>
-            {t(($) => $.projects.description)}
+            {t(($) => {
+              return $.projects.description;
+            })}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -82,7 +91,11 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
             detach(submit(), Reason.DomCallback);
           }}
         >
-          <label htmlFor="project-name">{t(($) => $.projects.name)}</label>
+          <label htmlFor="project-name">
+            {t(($) => {
+              return $.projects.name;
+            })}
+          </label>
           <Input
             id="project-name"
             value={name}
@@ -93,9 +106,21 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
             autoFocus
             required
           />
-          {error && <p role="alert">{t(($) => $.projects.saveError)}</p>}
+          {error && (
+            <p role="alert">
+              {t(($) => {
+                return $.projects.saveError;
+              })}
+            </p>
+          )}
           <Button type="submit" disabled={pending || !name.trim()}>
-            {pending ? t(($) => $.projects.saving) : t(($) => $.projects.save)}
+            {pending
+              ? t(($) => {
+                  return $.projects.saving;
+                })
+              : t(($) => {
+                  return $.projects.save;
+                })}
           </Button>
         </form>
       </DialogContent>
@@ -113,15 +138,24 @@ export function ProjectSidebar() {
     return null;
   }
   return (
-    <section aria-label={t(($) => $.projects.projects)} className="px-2 py-2">
+    <section
+      aria-label={t(($) => {
+        return $.projects.projects;
+      })}
+      className="px-2 py-2"
+    >
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">
-          {t(($) => $.projects.projects)}
+          {t(($) => {
+            return $.projects.projects;
+          })}
         </span>
         <Button
           variant="ghost"
           size="sm"
-          aria-label={t(($) => $.projects.create)}
+          aria-label={t(($) => {
+            return $.projects.create;
+          })}
           onClick={() => {
             open();
           }}
@@ -155,7 +189,7 @@ export function ProjectSidebar() {
 export function ProjectMembership({ threadId }: { threadId: string }) {
   const { t } = useTranslation();
   const enabled = useGet(projectsEnabled$);
-  const open = useSet(projectDialog$);
+  const open = useSet(setProjectDialog$);
   if (!enabled) {
     return null;
   }
@@ -163,7 +197,9 @@ export function ProjectMembership({ threadId }: { threadId: string }) {
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={t(($) => $.projects.move)}
+      aria-label={t(($) => {
+        return $.projects.move;
+      })}
       onClick={() => {
         open({ kind: "membership", threadId });
       }}
@@ -200,9 +236,15 @@ function ProjectMembershipDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t(($) => $.projects.moveTitle)}</DialogTitle>
+          <DialogTitle>
+            {t(($) => {
+              return $.projects.moveTitle;
+            })}
+          </DialogTitle>
           <DialogDescription>
-            {t(($) => $.projects.moveDescription)}
+            {t(($) => {
+              return $.projects.moveDescription;
+            })}
           </DialogDescription>
         </DialogHeader>
         <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
@@ -213,7 +255,9 @@ function ProjectMembershipDialog({
               detach(select(null), Reason.DomCallback);
             }}
           >
-            {t(($) => $.projects.remove)}
+            {t(($) => {
+              return $.projects.remove;
+            })}
           </Button>
           {projects.map((project) => {
             return (
@@ -235,10 +279,16 @@ function ProjectMembershipDialog({
               editor({ fromThreadId: dialog.threadId });
             }}
           >
-            {t(($) => $.projects.fromChat)}
+            {t(($) => {
+              return $.projects.fromChat;
+            })}
           </Button>
           {moving.state === "hasError" && (
-            <p role="alert">{t(($) => $.projects.moveError)}</p>
+            <p role="alert">
+              {t(($) => {
+                return $.projects.moveError;
+              })}
+            </p>
           )}
         </div>
       </DialogContent>
@@ -270,9 +320,15 @@ function DeleteProjectDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t(($) => $.projects.deleteTitle)}</DialogTitle>
+          <DialogTitle>
+            {t(($) => {
+              return $.projects.deleteTitle;
+            })}
+          </DialogTitle>
           <DialogDescription>
-            {t(($) => $.projects.deleteDescription)}
+            {t(($) => {
+              return $.projects.deleteDescription;
+            })}
           </DialogDescription>
         </DialogHeader>
         <Button
@@ -281,10 +337,16 @@ function DeleteProjectDialog({
             detach(submit(), Reason.DomCallback);
           }}
         >
-          {t(($) => $.projects.deleteProject)}
+          {t(($) => {
+            return $.projects.deleteProject;
+          })}
         </Button>
         {deletion.state === "hasError" && (
-          <p role="alert">{t(($) => $.projects.deleteError)}</p>
+          <p role="alert">
+            {t(($) => {
+              return $.projects.deleteError;
+            })}
+          </p>
         )}
       </DialogContent>
     </Dialog>
@@ -307,7 +369,7 @@ export function ProjectDialogs() {
 function ProjectHeader({ project }: { project: Project }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
-  const open = useSet(projectDialog$);
+  const open = useSet(setProjectDialog$);
   const [creation, create] = useLoadableSet(newProjectThread$);
   const signal = useGet(pageSignal$);
   return (
@@ -321,7 +383,9 @@ function ProjectHeader({ project }: { project: Project }) {
               editor({ projectId: project.id }, project.name);
             }}
           >
-            {t(($) => $.projects.rename)}
+            {t(($) => {
+              return $.projects.rename;
+            })}
           </Button>
           <Button
             variant="outline"
@@ -329,7 +393,9 @@ function ProjectHeader({ project }: { project: Project }) {
               open({ kind: "delete", projectId: project.id });
             }}
           >
-            {t(($) => $.projects.delete)}
+            {t(($) => {
+              return $.projects.delete;
+            })}
           </Button>
           <Button
             disabled={creation.state === "loading"}
@@ -337,12 +403,18 @@ function ProjectHeader({ project }: { project: Project }) {
               detach(create(project.id, signal), Reason.DomCallback);
             }}
           >
-            {t(($) => $.projects.newChat)}
+            {t(($) => {
+              return $.projects.newChat;
+            })}
           </Button>
         </div>
       </header>
       {creation.state === "hasError" && (
-        <p role="alert">{t(($) => $.projects.createChatError)}</p>
+        <p role="alert">
+          {t(($) => {
+            return $.projects.createChatError;
+          })}
+        </p>
       )}
     </>
   );
@@ -355,15 +427,23 @@ export function ProjectPage() {
   const all = useGet(eventDrivenChatThreads$);
   const agent = useLastResolved(currentChatAgentRecordId$);
   const archived = useGet(projectArchiveFilter$);
-  const setArchived = useSet(projectArchiveFilter$);
+  const setArchived = useSet(setProjectArchiveFilter$);
   const project = projects.find((item) => {
     return item.id === id;
   });
   if (!enabled || !project) {
     return (
       <main className="p-6">
-        <h1>{t(($) => $.projects.unavailable)}</h1>
-        <p>{t(($) => $.projects.unavailableDescription)}</p>
+        <h1>
+          {t(($) => {
+            return $.projects.unavailable;
+          })}
+        </h1>
+        <p>
+          {t(($) => {
+            return $.projects.unavailableDescription;
+          })}
+        </p>
       </main>
     );
   }
@@ -381,10 +461,16 @@ export function ProjectPage() {
             setArchived(event.target.checked);
           }}
         />
-        {t(($) => $.projects.archived)}
+        {t(($) => {
+          return $.projects.archived;
+        })}
       </label>
       {threads.length === 0 ? (
-        <p className="text-muted-foreground">{t(($) => $.projects.empty)}</p>
+        <p className="text-muted-foreground">
+          {t(($) => {
+            return $.projects.empty;
+          })}
+        </p>
       ) : (
         <ul className="divide-y divide-border">
           {threads.map((thread) => {
@@ -404,7 +490,10 @@ export function ProjectPage() {
                   }}
                   className="min-w-0 flex-1 truncate rounded-lg p-2 hover:bg-state-hover"
                 >
-                  {thread.title ?? t(($) => $.projects.newChat)}
+                  {thread.title ??
+                    t(($) => {
+                      return $.projects.newChat;
+                    })}
                 </Link>
                 <ProjectMembership threadId={thread.id} />
               </li>

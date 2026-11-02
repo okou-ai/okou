@@ -15,11 +15,7 @@ import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
 import { visibleAgentIdentityCondition } from "../services/agent-data.service";
-import { isUniqueViolation } from "../../lib/pg-errors";
-import { settle } from "../utils";
 import type { RouteEntry } from "../route-entry";
-
-const MAX_AGENT_DRAFT_WRITE_ATTEMPTS = 2;
 
 const agentReadAuth = {
   requireOrganization: true,
@@ -31,15 +27,16 @@ function agentNotFound(agentId: string) {
   return notFound(`Agent not found: ${agentId}`);
 }
 
-function createAgentDraftRoutes(
-  contract:
-    | typeof agentDraftContract
-    | {
-        get: typeof projectChatContract.agentDraft;
-        patch: typeof projectChatContract.saveAgentDraft;
-      },
+type AgentDraftContract =
+  | typeof agentDraftContract
+  | {
+      get: typeof projectChatContract.agentDraft;
+      patch: typeof projectChatContract.saveAgentDraft;
+    };
+function createAgentDraftReader(
+  contract: AgentDraftContract,
   prepared: boolean,
-): readonly RouteEntry[] {
+) {
   const getAgentDraftInner$ = computed(async (get) => {
     if (prepared && !(await get(projectAccess$))) {
       return notFound("Projects unavailable");
@@ -94,6 +91,13 @@ function createAgentDraftRoutes(
     };
   });
 
+  return getAgentDraftInner$;
+}
+function createAgentDraftRoutes(
+  contract: AgentDraftContract,
+  prepared: boolean,
+): readonly RouteEntry[] {
+  const getAgentDraftInner$ = createAgentDraftReader(contract, prepared);
   const patchAgentDraftInner$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       if (prepared && !(await get(projectAccess$))) {
@@ -156,39 +160,17 @@ function createAgentDraftRoutes(
           updatedAt: draft.updatedAt,
         };
 
-        for (
-          let attempt = 0;
-          attempt < MAX_AGENT_DRAFT_WRITE_ATTEMPTS;
-          attempt += 1
-        ) {
-          const updated = await writeDb
-            .update(agentDrafts)
-            .set(update)
-            .where(keyPredicate)
-            .returning({ agentId: agentDrafts.agentId });
-          if (updated.length > 0) {
-            return;
-          }
-
-          const inserted = await settle(
-            writeDb.insert(agentDrafts).values({
-              userId: draft.userId,
-              orgId: draft.orgId,
-              agentId: draft.agentId,
-              ...update,
-            }),
-          );
-          if (inserted.ok) {
-            return;
-          }
-          if (
-            !isUniqueViolation(inserted.error) ||
-            attempt === MAX_AGENT_DRAFT_WRITE_ATTEMPTS - 1
-          ) {
-            throw inserted.error;
-          }
-          // Retry the full cycle in case the competing row is deleted first.
-        }
+        await writeDb
+          .insert(agentDrafts)
+          .values(draft)
+          .onConflictDoUpdate({
+            target: [
+              agentDrafts.userId,
+              agentDrafts.orgId,
+              agentDrafts.agentId,
+            ],
+            set: update,
+          });
       })();
       signal.throwIfAborted();
 

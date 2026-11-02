@@ -19,15 +19,13 @@ async function loadProjectCache(path: string) {
   });
   try {
     const raw: unknown = JSON.parse(await readFile(path, "utf8"));
-    const parsed = projectEventQueryResultSchema.safeParse(raw);
-    if (parsed.success) {
-      state = parsed.data;
-    }
+    state = projectEventQueryResultSchema.parse(raw);
   } catch (error) {
-    if (
-      !(error instanceof SyntaxError) &&
-      !(error instanceof Error && "code" in error && error.code === "ENOENT")
-    ) {
+    if (!(
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    )) {
       throw error;
     }
   }

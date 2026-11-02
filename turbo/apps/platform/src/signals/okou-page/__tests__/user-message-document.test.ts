@@ -739,7 +739,7 @@ test("Project mentions preserve captured identity through drafts, feedback, text
     restored.parts.filter((part) => {
       return part.type === "project";
     }),
-  ).toEqual([project]);
+  ).toStrictEqual([project]);
   expect(
     restored.parts.find((part) => {
       return part.type === "feedback";

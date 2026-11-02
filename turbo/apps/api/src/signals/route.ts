@@ -3,7 +3,10 @@ import { halloweenRoutes } from "./routes/halloween";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
 import type { RouteEntry } from "./route-entry";
-import { agentDraftRoutes } from "./routes/agent-draft";
+import {
+  agentDraftRoutes,
+  projectAgentDraftRoutes,
+} from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
 import { jobsRoutes } from "./routes/jobs";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
@@ -39,7 +42,6 @@ import { buildInfoRoutes } from "./routes/build-info";
 import { builtInGenerationRoutes } from "./routes/built-in-generation";
 import { chatEventsRoutes } from "./routes/chat-events";
 import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
-import { projectAgentDraftRoutes } from "./routes/agent-draft";
 import { projectChatRoutes } from "./routes/project-chat";
 import { projectRoutes } from "./routes/projects";
 import { chatThreadRoutes } from "./routes/chat-threads";

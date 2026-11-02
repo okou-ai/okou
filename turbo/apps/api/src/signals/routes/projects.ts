@@ -40,7 +40,7 @@ const conflict = Object.freeze({
     error: {
       code: "CONFLICT",
       message:
-        "Project operation is expired or its identity has already been used",
+        "Project state changed or the operation identity is expired or already used",
     },
   },
 });

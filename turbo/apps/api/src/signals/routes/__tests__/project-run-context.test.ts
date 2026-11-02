@@ -24,7 +24,7 @@ function operation() {
 function projects() {
   return setupApp({ context, routes: projectRoutes })(projectsContract);
 }
-it("prepares queued inputs from current membership while preserving an already started Run and captured mentions", async () => {
+test("prepares queued inputs from current membership while preserving an already started Run and captured mentions", async () => {
   const { actor, agentId, runnerGroup } =
     await fixture.entitledNativeChatActor();
   if (!actor.orgId) {
@@ -115,15 +115,15 @@ it("prepares queued inputs from current membership while preserving an already s
   const history = await fixture.waitForThreadMessages(
     actor,
     first.threadId,
-    (items) =>
-      {return userMessages(items).some(
-        (event) =>
-          {return event.revokesEventId === inputId && event.runId !== undefined},
-      )},
+    (items) => {
+      return userMessages(items).some((event) => {
+        return event.revokesEventId === inputId && event.runId !== undefined;
+      });
+    },
   );
-  const nextId = userMessages(history.events).find(
-    (event) => {return event.revokesEventId === inputId},
-  )?.runId;
+  const nextId = userMessages(history.events).find((event) => {
+    return event.revokesEventId === inputId;
+  })?.runId;
   if (!nextId) {
     throw new Error("Queued Project input did not create a Run");
   }
@@ -136,7 +136,7 @@ it("prepares queued inputs from current membership while preserving an already s
   await accept(
     projects().delete({
       headers: fixture.sessionHeaders(actor),
-      params: { id },
+      params: { id: latestId },
       body: { eventId: operation() },
     }),
     [204],

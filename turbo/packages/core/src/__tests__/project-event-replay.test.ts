@@ -42,5 +42,8 @@ describe("Project identity and lifecycle", () => {
       ),
     ).toBe(false);
     expect(isFreshProjectOperation(random, now)).toBe(false);
+    const ahead = createProjectOperationId(now + 4 * 60000, random);
+    expect(isFreshProjectOperation(ahead, now)).toBe(true);
+    expect(isFreshProjectOperation(ahead, now + 7 * 86400000)).toBe(false);
   });
 });

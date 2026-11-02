@@ -1,3 +1,5 @@
+import { settle } from "../utils";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { projectAccess$ } from "./projects";
 import { projectById } from "../services/project.service";
 import { command, computed } from "ccstate";
@@ -208,14 +210,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
-  if (
-    body.data.projectId !== undefined &&
-    (!(await get(projectAccess$)) ||
-      !(await get(projectById(auth, body.data.projectId))))
-  ) {
-    return notFound("Project not found");
-  }
-
   const initialRemoteAccessOverrides =
     body.data.initialRemoteAccessOverrides ?? [];
   const remoteAccessError = await set(
@@ -348,6 +342,33 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
 });
 
+const createWithProject$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const body = await get(createBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    if (
+      body.data.projectId !== undefined &&
+      (!(await get(projectAccess$)) ||
+        !(await get(projectById(auth, body.data.projectId))))
+    ) {
+      return notFound("Project not found");
+    }
+
+    const result = await settle(set(createInner$, signal), signal);
+    if (result.ok) {
+      return result.value;
+    }
+    if (isForeignKeyViolation(result.error, "chat_threads_project_owner_fk")) {
+      return notFound("Project not found");
+    }
+    throw result.error;
+  },
+);
+
 export const chatThreadCreateRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadsContract.create,
@@ -357,7 +378,7 @@ export const chatThreadCreateRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
       },
-      createInner$,
+      createWithProject$,
     ),
   },
 ];

@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { sql } from "drizzle-orm";
 import { object, number, string } from "zod";
@@ -29,7 +29,7 @@ export const publishProjectSnapshot$ = command(
     const scope = createHash("sha256")
       .update(`${owner.userId}\0${owner.orgId}`)
       .digest("hex");
-    const key = `project-snapshots/v1/${scope}/${snapshot.latestSeqId}-${digest}.json.gz`;
+    const key = `project-snapshots/v1/${scope}/${snapshot.latestSeqId}-${digest}-${randomUUID()}.json.gz`;
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     await get(
       putImmutableS3Object(bucket, key, gzipSync(bytes), "application/json", {

@@ -130,7 +130,7 @@ describe("private cross-Agent Projects", () => {
     expect(
       (await accept(client().list({ headers: headers(peer) }), [200])).body
         .projects,
-    ).toEqual([]);
+    ).toStrictEqual([]);
     const elsewhere = await owner();
     expect(
       (
@@ -169,7 +169,7 @@ describe("private cross-Agent Projects", () => {
           return t.agentId;
         })
         .sort(),
-    ).toEqual([a.agentId, b.agentId].sort());
+    ).toStrictEqual([a.agentId, b.agentId].sort());
     expect(
       members.find((t) => {
         return t.id === first.id;
@@ -192,10 +192,10 @@ describe("private cross-Agent Projects", () => {
       ).body.threads.map((t) => {
         return t.id;
       }),
-    ).toEqual([first.id]);
+    ).toStrictEqual([first.id]);
     expect((await move(actor, second.id, q.id, old)).status).toBe(409);
     const expired = createProjectOperationId(
-      now() - 8 * 86400000,
+      now() - 8 * 86_400_000,
       randomUUID(),
     );
     expect((await move(actor, first.id, p.id, expired)).status).toBe(409);
@@ -206,6 +206,7 @@ describe("private cross-Agent Projects", () => {
     const first = await thread(actor, a.agentId);
     const p = await create(actor, "Launch", first.id);
     const second = await thread(actor, a.agentId, p.id);
+    expect(second.projectId).toBe(p.id);
     expect(
       (
         await client().delete({
@@ -237,7 +238,7 @@ describe("private cross-Agent Projects", () => {
         events.some((e) => {
           return e.chatThreadId === id && e.kind === "deleted";
         }),
-      ).toBe(false);
+      ).toBeFalsy();
     }
     expect(
       (
@@ -272,7 +273,7 @@ describe("private cross-Agent Projects", () => {
     expect(
       (await accept(client().list({ headers: headers(actor) }), [200])).body
         .projects,
-    ).toEqual([]);
+    ).toStrictEqual([]);
     expect(
       (
         await accept(
@@ -283,11 +284,11 @@ describe("private cross-Agent Projects", () => {
           [200],
         )
       ).body.events,
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 });
 
-it("serializes concurrent moves, duplicate creates and deletion against new memberships", async () => {
+test("serializes concurrent moves, duplicate creates and deletion against new memberships", async () => {
   const actor = await owner();
   const a = await agent(actor);
   const first = await thread(actor, a.agentId);
@@ -314,20 +315,24 @@ it("serializes concurrent moves, duplicate creates and deletion against new memb
       },
     }),
   ]);
-  expect([one.status, two.status]).toEqual([201, 201]);
+  expect([one.status, two.status]).toStrictEqual([201, 201]);
   const moves = await Promise.all([
     move(actor, first.id, p.id),
     move(actor, first.id, q.id),
   ]);
-  expect(moves.map((r) => {return r.status})).toEqual([200, 200]);
+  expect(
+    moves.map((r) => {
+      return r.status;
+    }),
+  ).toStrictEqual([200, 200]);
   const events = (
     await accept(
       threads().events({ headers: headers(actor), query: {} }),
       [200],
     )
-  ).body.events.filter(
-    (e) => {return e.chatThreadId === first.id && e.projectMembershipUpdated},
-  );
+  ).body.events.filter((e) => {
+    return e.chatThreadId === first.id && e.projectMembershipUpdated;
+  });
   const last = events.at(-1);
   if (!last?.projectId) {
     throw new Error("Missing committed membership");
@@ -340,7 +345,11 @@ it("serializes concurrent moves, duplicate creates and deletion against new memb
     }),
     [200],
   );
-  expect(members.body.threads.map((t) => {return t.id})).toEqual([first.id]);
+  expect(
+    members.body.threads.map((t) => {
+      return t.id;
+    }),
+  ).toStrictEqual([first.id]);
   const [deletion, joining] = await Promise.all([
     client().delete({
       headers: headers(actor),
@@ -363,21 +372,63 @@ it("serializes concurrent moves, duplicate creates and deletion against new memb
       )
     ).body.events;
     const tail = all
-      .filter((e) => {return e.chatThreadId === first.id && e.projectMembershipUpdated})
+      .filter((e) => {
+        return e.chatThreadId === first.id && e.projectMembershipUpdated;
+      })
       .at(-1);
     expect(tail?.projectId).not.toBe(p.id);
   }
 });
 
-it("publishes immutable owner-scoped metadata snapshots with an exact event tail fence",async()=>{
- const {installWorkflowVolumeS3Fixture}=await import("./helpers/workflow-volume-s3");
- const {gunzipSync}=await import("node:zlib");
- const {projectSnapshotArchiveSchema}=await import("@okouai/api-contracts/validators/projects");
- const actor=await owner();const storage=installWorkflowVolumeS3Fixture(context);const p=await create(actor,"Original");
- const snapshot=await accept(client().snapshot({headers:headers(actor)}),[200]);if(!("url" in snapshot.body)){throw new Error("Project snapshot URL missing");}
- const first=[...storage.objects.entries()].find(([key])=>key.startsWith("project-snapshots/v1/"));if(!first){throw new Error("Project metadata was not published");}
- const archived=projectSnapshotArchiveSchema.parse(JSON.parse(gunzipSync(first[1]).toString("utf8")));expect(archived.projects).toEqual([p]);expect(archived.latestSeqId).toBe(1);
- await accept(client().update({headers:headers(actor),params:{id:p.id},body:{eventId:operation(),name:"Renamed"}}),[200]);
- const tail=await accept(client().events({headers:headers(actor),query:{sinceSeqId:archived.latestSeqId}}),[200]);expect(tail.body.events).toMatchObject([{kind:"renamed",projectId:p.id,name:"Renamed",seqId:2}]);
- const renamed=await accept(client().snapshot({headers:headers(actor)}),[200]);expect(renamed.body.latestSeqId).toBe(2);expect(storage.objects.get(first[0])).toEqual(first[1]);
+test("publishes immutable owner-scoped metadata snapshots with an exact event tail fence", async () => {
+  const { installWorkflowVolumeS3Fixture } =
+    await import("./helpers/workflow-volume-s3");
+  const { gunzipSync } = await import("node:zlib");
+  const { projectSnapshotArchiveSchema } =
+    await import("@okouai/api-contracts/validators/projects");
+  const actor = await owner();
+  const storage = installWorkflowVolumeS3Fixture(context);
+  const p = await create(actor, "Original");
+  const snapshot = await accept(
+    client().snapshot({ headers: headers(actor) }),
+    [200],
+  );
+  if (!("url" in snapshot.body)) {
+    throw new Error("Project snapshot URL missing");
+  }
+  const first = [...storage.objects.entries()].find(([key]) => {
+    return key.startsWith("project-snapshots/v1/");
+  });
+  if (!first) {
+    throw new Error("Project metadata was not published");
+  }
+  const archived = projectSnapshotArchiveSchema.parse(
+    JSON.parse(gunzipSync(first[1]).toString("utf8")),
+  );
+  expect(archived.projects).toStrictEqual([p]);
+  expect(archived.latestSeqId).toBe(1);
+  await accept(
+    client().update({
+      headers: headers(actor),
+      params: { id: p.id },
+      body: { eventId: operation(), name: "Renamed" },
+    }),
+    [200],
+  );
+  const tail = await accept(
+    client().events({
+      headers: headers(actor),
+      query: { sinceSeqId: archived.latestSeqId },
+    }),
+    [200],
+  );
+  expect(tail.body.events).toMatchObject([
+    { kind: "renamed", projectId: p.id, name: "Renamed", seqId: 2 },
+  ]);
+  const renamed = await accept(
+    client().snapshot({ headers: headers(actor) }),
+    [200],
+  );
+  expect(renamed.body.latestSeqId).toBe(2);
+  expect(storage.objects.get(first[0])).toStrictEqual(first[1]);
 });

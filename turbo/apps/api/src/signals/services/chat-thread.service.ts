@@ -784,6 +784,7 @@ export function chatThreadArtifacts(args: {
 }
 
 export interface CreatedChatThread {
+  readonly projectId?: string | null;
   readonly kind: "created";
   readonly id: string;
   readonly createdAt: Date;
@@ -791,6 +792,7 @@ export interface CreatedChatThread {
 
 /** The thread a duplicate delivery of one create request replays. */
 export interface ExistingChatThread {
+  readonly projectId?: string | null;
   readonly kind: "existing";
   readonly id: string;
   readonly createdAt: Date;
@@ -799,6 +801,7 @@ export interface ExistingChatThread {
   readonly codexServiceTier: CodexServiceTier | null;
 }
 const existingClientThreadSelection = Object.freeze({
+  projectId: chatThreads.projectId,
   id: chatThreads.id,
   createdAt: chatThreads.createdAt,
   title: chatThreads.title,
@@ -1079,7 +1082,10 @@ export const createChatThread$ = command(
           );
           signal.throwIfAborted();
           if (created) {
-            return createdThreadResult(created);
+            return {
+              ...createdThreadResult(created),
+              projectId: args.projectId ?? null,
+            };
           }
         }
         if (canReplayClientThread(args)) {

@@ -14,13 +14,19 @@ import {
   updateChatThreadDraft$,
 } from "../services/chat-thread.service";
 import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
-import { notFound } from "../../lib/error";
+import { notFound, resourceUnavailable } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
 const missing = notFound("Project or conversation not found");
 function ownedThread(id: string) {
   return computed(async (get) => {
     const owner = get(organizationAuthContext$);
+    if (
+      owner.tokenType === "agent" &&
+      !owner.capabilities.includes("project:read")
+    ) {
+      return resourceUnavailable("Project access is not available");
+    }
     const rows = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)

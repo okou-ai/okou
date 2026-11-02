@@ -4,7 +4,7 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { object, uuid } from "zod";
 import { projects } from "@okouai/db/schema/project";
 import { projectEvents } from "@okouai/db/schema/project-event";
-import { type Project } from "@okouai/api-contracts/contracts/projects";
+import type { Project } from "@okouai/api-contracts/contracts/projects";
 import { isFreshProjectOperation } from "@okouai/core/project-operation-id";
 import { now } from "../../lib/time";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -91,6 +91,28 @@ const scopeSql = (owner: ProjectOwner) => {
   return sql`p.user_id = ${owner.userId} AND p.org_id = ${owner.orgId}`;
 };
 
+function validProjectMutation(input: ProjectMutation) {
+  return (
+    isFreshProjectOperation(input.eventId, now()) &&
+    (input.kind !== "created" || input.id === input.eventId)
+  );
+}
+
+function receiptMatches(
+  owner: ProjectOwner,
+  input: ProjectMutation,
+  receipt: typeof projectEvents.$inferSelect,
+) {
+  return (
+    receipt.userId === owner.userId &&
+    receipt.orgId === owner.orgId &&
+    receipt.projectId === input.id &&
+    receipt.kind === input.kind &&
+    receipt.fromThreadId === (input.fromThreadId ?? null) &&
+    (input.kind === "deleted" || receipt.name === input.name)
+  );
+}
+
 /** Receipt insertion has no conflict-ignore: a raced duplicate rolls back every CTE. */
 export const mutateProject$ = command(
   async (
@@ -99,10 +121,7 @@ export const mutateProject$ = command(
     input: ProjectMutation,
     signal: AbortSignal,
   ): Promise<"written" | "missing" | "conflict"> => {
-    if (
-      !isFreshProjectOperation(input.eventId, now()) ||
-      (input.kind === "created" && input.id !== input.eventId)
-    ) {
+    if (!validProjectMutation(input)) {
       return "conflict";
     }
     const read = get(db$);
@@ -113,14 +132,7 @@ export const mutateProject$ = command(
     signal.throwIfAborted();
     const receipt = existing[0];
     if (receipt) {
-      return receipt.userId === owner.userId &&
-        receipt.orgId === owner.orgId &&
-        receipt.projectId === input.id &&
-        receipt.kind === input.kind &&
-        receipt.fromThreadId === (input.fromThreadId ?? null) &&
-        (input.kind === "deleted" || receipt.name === input.name)
-        ? "written"
-        : "conflict";
+      return receiptMatches(owner, input, receipt) ? "written" : "conflict";
     }
     signal.throwIfAborted();
     const threadGate =
@@ -182,13 +194,7 @@ export const mutateProject$ = command(
       .from(projectEvents)
       .where(eq(projectEvents.id, input.eventId));
     signal.throwIfAborted();
-    return accepted &&
-      accepted.userId === owner.userId &&
-      accepted.orgId === owner.orgId &&
-      accepted.projectId === input.id &&
-      accepted.kind === input.kind &&
-      accepted.fromThreadId === (input.fromThreadId ?? null) &&
-      (input.kind === "deleted" || accepted.name === input.name)
+    return accepted && receiptMatches(owner, input, accepted)
       ? "written"
       : "conflict";
   },
