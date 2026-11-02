@@ -69,7 +69,7 @@ final class NativeProcessTests: XCTestCase {
       },
       awakeNow: {
         FileManager.default.fileExists(atPath: marker.path)
-          ? awakeStarted.advanced(by: awakeAdvance) : SuspendingClock.now
+          ? awakeStarted.advanced(by: awakeAdvance) : awakeStarted
       })
     return (helper, directory, marker)
   }
