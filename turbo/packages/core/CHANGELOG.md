@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.809.1](https://github.com/okou-ai/okou/compare/core-v8.809.0...core-v8.809.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* use high-resolution okou sharing artwork ([#44721](https://github.com/okou-ai/okou/issues/44721)) ([4ebff22](https://github.com/okou-ai/okou/commit/4ebff22651c042d5de49e298c4a255cdd121e350))
+
 ## [8.809.0](https://github.com/okou-ai/okou/compare/core-v8.808.1...core-v8.809.0) (2026-11-02)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.18](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.17...runner-storage-v0.8.18) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** retire orphaned guest file compression transport ([#44713](https://github.com/okou-ai/okou/issues/44713)) ([5dc1d17](https://github.com/okou-ai/okou/commit/5dc1d17b797535c5e154a6cf5960534363966fe0))
+
 ## [0.8.17](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.16...runner-storage-v0.8.17) (2026-11-02)
 
 

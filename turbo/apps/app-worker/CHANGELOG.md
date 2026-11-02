@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.10.114](https://github.com/okou-ai/okou/compare/app-worker-v1.10.113...app-worker-v1.10.114) (2026-11-02)
+
+
+### Bug Fixes
+
+* use high-resolution okou sharing artwork ([#44721](https://github.com/okou-ai/okou/issues/44721)) ([4ebff22](https://github.com/okou-ai/okou/commit/4ebff22651c042d5de49e298c4a255cdd121e350))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.809.1
+
 ## [1.10.113](https://github.com/okou-ai/okou/compare/app-worker-v1.10.112...app-worker-v1.10.113) (2026-11-02)
 
 

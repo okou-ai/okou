@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.14...runner-executor-v0.18.15) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** retire orphaned guest file compression transport ([#44713](https://github.com/okou-ai/okou/issues/44713)) ([5dc1d17](https://github.com/okou-ai/okou/commit/5dc1d17b797535c5e154a6cf5960534363966fe0))
+
 ## [0.18.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.13...runner-executor-v0.18.14) (2026-11-02)
 
 ## [0.18.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.12...runner-executor-v0.18.13) (2026-11-02)
