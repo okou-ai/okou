@@ -237,8 +237,8 @@ function MembershipActions({
   return (
     <div className="border-t border-border pt-1">
       <Button
-        variant="ghost"
-        className="w-full justify-start gap-2"
+        variant="quiet"
+        className="w-full justify-start gap-2 text-foreground"
         disabled={pending}
         onClick={() => {
           return editor({ fromThreadId: threadId }, search.trim());
@@ -251,8 +251,8 @@ function MembershipActions({
       </Button>
       {current && (
         <Button
-          variant="ghost"
-          className="w-full justify-start"
+          variant="quiet"
+          className="w-full justify-start text-foreground"
           disabled={pending}
           onClick={() => {
             return detach(onSelect(null), Reason.DomCallback);
@@ -338,8 +338,8 @@ function ProjectMembershipPicker({
           return (
             <Button
               key={project.id}
-              variant="ghost"
-              className="w-full justify-start gap-2 text-left"
+              variant="quiet"
+              className="w-full justify-start gap-2 text-left text-foreground"
               disabled={pending || project.id === current}
               onClick={() => {
                 return detach(select(project.id), Reason.DomCallback);
