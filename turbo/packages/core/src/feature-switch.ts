@@ -335,12 +335,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.LinkWalletApprovalContinuation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
-    enabled: false,
-  },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
     description:
