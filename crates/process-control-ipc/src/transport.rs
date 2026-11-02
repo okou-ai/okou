@@ -309,29 +309,26 @@ fn receive_placement(stream: &UnixStream, expected_marker: u8) -> io::Result<Own
         }
     };
 
-    let descriptors = received_rights_descriptors(&message);
+    // SAFETY: recvmsg populated this live control buffer, and no received
+    // descriptor has been adopted or closed since that call.
+    let descriptors = unsafe { take_received_rights_descriptors(&message) };
     let valid = received == 1
         && marker == [expected_marker]
         && message.msg_flags & (libc::MSG_CTRUNC | libc::MSG_TRUNC) == 0
         && descriptors.len() == 1;
     if !valid {
-        close_raw_descriptors(&descriptors);
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid workload placement descriptor bootstrap",
         ));
     }
 
-    let descriptor = descriptors.into_iter().next().ok_or_else(|| {
+    descriptors.into_iter().next().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             "workload placement descriptor bootstrap was empty",
         )
-    })?;
-    // SAFETY: recvmsg installed this descriptor for the receiving process, it
-    // appears exactly once in the validated rights message, and ownership is
-    // transferred to the returned OwnedFd.
-    Ok(unsafe { OwnedFd::from_raw_fd(descriptor) })
+    })
 }
 
 /// Confirm that Guest Agent validated and adopted the workload placement.
@@ -420,7 +417,13 @@ fn cmsg_len_for_one_fd() -> usize {
     unsafe { libc::CMSG_LEN(std::mem::size_of::<libc::c_int>() as _) as usize }
 }
 
-fn received_rights_descriptors(message: &libc::msghdr) -> Vec<libc::c_int> {
+/// Take ownership of the rights installed by a successful recvmsg.
+///
+/// # Safety
+///
+/// The message must reference a live control buffer populated by recvmsg, and
+/// its received descriptors must not have been adopted or closed already.
+unsafe fn take_received_rights_descriptors(message: &libc::msghdr) -> Vec<OwnedFd> {
     let mut descriptors = Vec::new();
     // SAFETY: message and its ancillary buffer were initialized by recvmsg;
     // CMSG_FIRSTHDR/CMSG_NXTHDR stay within msg_controllen.
@@ -442,21 +445,16 @@ fn received_rights_descriptors(message: &libc::msghdr) -> Vec<libc::c_int> {
             let data = unsafe { libc::CMSG_DATA(header).cast::<libc::c_int>() };
             for index in 0..count {
                 // SAFETY: index is bounded by the validated ancillary payload.
-                descriptors.push(unsafe { std::ptr::read_unaligned(data.add(index)) });
+                let descriptor = unsafe { std::ptr::read_unaligned(data.add(index)) };
+                // SAFETY: recvmsg installed each complete right as a distinct
+                // descriptor, and the caller guarantees it is not owned yet.
+                descriptors.push(unsafe { OwnedFd::from_raw_fd(descriptor) });
             }
         }
         // SAFETY: header belongs to message's ancillary buffer.
         header = unsafe { libc::CMSG_NXTHDR(message, header) };
     }
     descriptors
-}
-
-fn close_raw_descriptors(descriptors: &[libc::c_int]) {
-    for descriptor in descriptors {
-        // SAFETY: each descriptor was installed by recvmsg and is discarded on
-        // the malformed-bootstrap path.
-        unsafe { libc::close(*descriptor) };
-    }
 }
 
 #[cfg(target_env = "musl")]
