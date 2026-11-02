@@ -463,13 +463,18 @@ test.each([false, true])(
     renderAppStyles(screenshot);
     expect(getComputedStyle(screenshot).objectFit).toBe("cover");
     expect(getComputedStyle(screenshot).objectPosition).toBe("top");
+    const sidebar = screen.getByRole("complementary", {
+      name: "Cloud browser",
+    });
+    const pausedContent =
+      within(sidebar).getByText("Browser not live").parentElement!;
+    renderAppStyles(pausedContent);
+    expect(getComputedStyle(pausedContent).overflowY).toBe("auto");
+    expect(getComputedStyle(pausedContent).justifyContent).toBe("safe center");
 
     fireEvent.error(screenshot);
     renderAppStyles(screenshot);
     expect(screenshot).not.toBeVisible();
-    const sidebar = screen.getByRole("complementary", {
-      name: "Cloud browser",
-    });
     expect(within(sidebar).getByText("Browser not live")).toBeInTheDocument();
     expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
   },

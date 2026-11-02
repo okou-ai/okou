@@ -312,7 +312,10 @@ function PausedBrowserSession({
           </button>
         )
       }
-      className={cn("absolute inset-0 z-10", !refined && "bg-muted/20")}
+      className={cn(
+        "absolute inset-0 z-10 justify-center-safe overflow-y-auto py-6",
+        !refined && "bg-muted/20",
+      )}
     />
   );
   return (
