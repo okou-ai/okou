@@ -1,4 +1,4 @@
-//! Hash-addressed package bootstrap with verified bytes and private installation.
+//! Workflow Storage inputs and private Agent instruction package installation.
 use super::super::{
     DEFAULT_EXEC_TIMEOUT, ExecutorConfig, JobTelemetry, RunnerError, RunnerResult,
     guest_runtime_dir,
@@ -6,7 +6,11 @@ use super::super::{
 use super::{format_helper_exec_failure, guest_storage_apply_env, helper_exec_succeeded};
 use guest_contracts::content_bundle::{BundleApplication, BundleArchiveSource};
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
-use runner_types::{content_bundle::PreparedBundle, types::ExecutionContext};
+use runner_types::{
+    content_bundle::{PreparedBundle, WORKFLOW_BUNDLE_STORAGE_NAME},
+    storage_manifest::{StorageEntry, StorageManifest},
+    types::ExecutionContext,
+};
 use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox, WriteFileEntry};
 use std::{collections::HashSet, time::Instant};
 use tokio_util::sync::CancellationToken;
@@ -45,16 +49,6 @@ async fn prepare(
     cancel: &CancellationToken,
 ) -> RunnerResult<()> {
     let bundles = &context.content_bundles;
-    let cache = &config.content_bundle_cache;
-    let mut prepared = Vec::new();
-    if let Some(reference) = &bundles.instructions {
-        let archive = cache.get(reference, cancel).await?;
-        prepared.push(PreparedBundle {
-            mount_path: None,
-            sha256: reference.sha256.clone(),
-            archive,
-        });
-    }
     let mut paths: HashSet<String> = context
         .storage_manifest
         .iter()
@@ -65,23 +59,38 @@ async fn prepare(
                 .chain(m.artifacts.iter().map(|a| a.mount_path.clone()))
         })
         .collect();
+    let mut workflows = Vec::with_capacity(bundles.skills.len());
     for skill in &bundles.skills {
+        skill.reference().validate().map_err(RunnerError::Api)?;
         runner_types::storage_manifest::validate_workflow_mount(&skill.mount_path)
             .map_err(RunnerError::Api)?;
         if !paths.insert(skill.mount_path.clone()) {
             return Err(RunnerError::Api("Conflicting content bundle mount".into()));
         }
-        let archive = cache.get(&skill.reference(), cancel).await?;
-        prepared.push(PreparedBundle {
-            mount_path: Some(skill.mount_path.clone()),
-            sha256: skill.sha256.clone(),
-            archive,
+        workflows.push(StorageEntry {
+            name: WORKFLOW_BUNDLE_STORAGE_NAME.into(),
+            mount_path: skill.mount_path.clone(),
+            vas_storage_name: WORKFLOW_BUNDLE_STORAGE_NAME.into(),
+            vas_version_id: skill.sha256.clone(),
+            archive_url: skill.download_url.clone(),
+            archive_size: Some(skill.archive_bytes),
         });
     }
-    if context.storage_manifest.is_none() {
-        context.storage_manifest = Some(runner_types::storage_manifest::StorageManifest {
+    context
+        .storage_manifest
+        .get_or_insert_with(|| StorageManifest {
             storages: Vec::new(),
             artifacts: Vec::new(),
+        })
+        .storages
+        .extend(workflows);
+
+    let mut prepared = Vec::new();
+    if let Some(reference) = &bundles.instructions {
+        let archive = config.content_bundle_cache.get(reference, cancel).await?;
+        prepared.push(PreparedBundle {
+            sha256: reference.sha256.clone(),
+            archive,
         });
     }
     context.prepared_bundles = prepared;
@@ -119,18 +128,12 @@ async fn apply(sandbox: &dyn Sandbox, context: &ExecutionContext) -> RunnerResul
             sha256: bundle.sha256.clone(),
             archive_bytes: bundle.archive.len() as u64,
         };
-        let application = match &bundle.mount_path {
-            Some(mount) => BundleApplication::Skill {
-                mount: mount.clone(),
-                archive,
-            },
-            None => BundleApplication::Instructions {
-                framework: super::super::cli_framework::normalized_cli_agent_type(
-                    &context.cli_agent_type,
-                )
-                .into(),
-                archive,
-            },
+        let application = BundleApplication::Instructions {
+            framework: super::super::cli_framework::normalized_cli_agent_type(
+                &context.cli_agent_type,
+            )
+            .into(),
+            archive,
         };
         let metadata = serde_json::to_vec(&application)
             .map_err(|_| RunnerError::Internal("Bundle metadata encoding failed".into()))?;

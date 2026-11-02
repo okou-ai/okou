@@ -21,7 +21,9 @@ async fn cached_packages_install_on_fresh_and_reused_sandboxes() {
     let instructions_hash = "5644f53789818b6778d665399d5241f33b28fd16231356cc8c930d5109feb35c";
     let root = config.home.bundles_dir();
     tokio::fs::create_dir_all(&root).await.unwrap();
-    tokio::fs::write(root.join(format!("{hash}.tar.gz")), archive)
+    let workflow_cache = config.home.storage_cache_dir("content-bundle", hash);
+    tokio::fs::create_dir_all(&workflow_cache).await.unwrap();
+    tokio::fs::write(workflow_cache.join("archive.tar.gz"), archive)
         .await
         .unwrap();
     tokio::fs::write(
@@ -57,9 +59,8 @@ async fn cached_packages_install_on_fresh_and_reused_sandboxes() {
     }
     assert!(
         overrides
-            .private_write_files_calls()
+            .write_file_calls()
             .iter()
-            .flat_map(|call| &call.files)
             .any(|file| file.content == archive)
     );
     assert!(

@@ -1,5 +1,4 @@
 //! Verify and install a complete private archive without trusting writable Guest cache state.
-use crate::cleanup_directory::CleanupDirectory;
 use guest_contracts::content_bundle::{BundleApplication, BundleArchiveSource, MAX_METADATA_BYTES};
 use std::{
     collections::HashSet,
@@ -32,10 +31,7 @@ fn apply(home: &Path, runtime: &Path, metadata: &[u8]) -> io::Result<()> {
         return Err(invalid());
     }
     let input: BundleApplication = serde_json::from_slice(metadata).map_err(|_| invalid())?;
-    let archive = match &input {
-        BundleApplication::Instructions { archive, .. }
-        | BundleApplication::Skill { archive, .. } => archive,
-    };
+    let BundleApplication::Instructions { framework, archive } = input;
     let staging = runtime.join("bundle-staging");
     match fs::remove_dir_all(&staging) {
         Ok(()) => {}
@@ -44,63 +40,16 @@ fn apply(home: &Path, runtime: &Path, metadata: &[u8]) -> io::Result<()> {
     }
     fs::create_dir(&staging)?;
     fs::set_permissions(&staging, fs::Permissions::from_mode(0o700))?;
-    let paths = unpack_archive(runtime, archive, &staging)?;
-    match input {
-        BundleApplication::Instructions { framework, archive } => {
-            if paths.len() != 1 || !paths.contains("instructions.md") {
-                return Err(invalid());
-            }
-            let source = staging.join("instructions.md");
-            if !crate::instructions::apply_agent_instructions(home, &framework, &source) {
-                return Err(invalid());
-            }
-            fs::remove_dir_all(staging)?;
-            fs::remove_file(archive.source)
-        }
-        BundleApplication::Skill { mount, archive } => {
-            let Some(relative) =
-                crate::instructions::workflow_skill_relative_mount(home, Path::new(&mount))
-            else {
-                return Err(invalid());
-            };
-            if !paths.contains("SKILL.md") {
-                return Err(invalid());
-            }
-            // All package paths are validated before touching a managed destination.
-            let target = home.join(relative);
-            let parent = target.parent().ok_or_else(invalid)?;
-            let mut dir = home.to_path_buf();
-            for part in parent
-                .strip_prefix(home)
-                .map_err(|_| invalid())?
-                .components()
-            {
-                dir.push(part);
-                match fs::create_dir(&dir) {
-                    Ok(()) => fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?,
-                    Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(e) => return Err(e),
-                }
-                if !fs::symlink_metadata(&dir)?.file_type().is_dir() {
-                    return Err(invalid());
-                }
-            }
-            let pinned = CleanupDirectory::open(parent)?;
-            let target = pinned
-                .proc_path()
-                .join(target.file_name().ok_or_else(invalid)?);
-            match fs::symlink_metadata(&target) {
-                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-                    fs::remove_dir_all(&target)?
-                }
-                Ok(_) => return Err(invalid()),
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e),
-            }
-            fs::rename(staging, target)?;
-            fs::remove_file(archive.source)
-        }
+    let paths = unpack_archive(runtime, &archive, &staging)?;
+    if paths.len() != 1 || !paths.contains("instructions.md") {
+        return Err(invalid());
     }
+    let source = staging.join("instructions.md");
+    if !crate::instructions::apply_agent_instructions(home, &framework, &source) {
+        return Err(invalid());
+    }
+    fs::remove_dir_all(staging)?;
+    fs::remove_file(archive.source)
 }
 
 fn unpack_archive(

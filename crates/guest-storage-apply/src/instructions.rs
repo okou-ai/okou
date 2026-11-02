@@ -34,20 +34,6 @@ pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> 
     copy_instruction_file(source, &target, filename, "Applied Agent instructions")
 }
 
-pub(crate) fn workflow_skill_relative_mount<'a>(home: &Path, mount: &'a Path) -> Option<&'a str> {
-    let relative = mount.strip_prefix(home).ok()?.to_str()?;
-    let name = [".claude/skills/", ".codex/skills/", ".pi/agent/skills/"]
-        .iter()
-        .find_map(|prefix| relative.strip_prefix(prefix))?;
-    ((2..=64).contains(&name.len())
-        && !name.starts_with('-')
-        && !name.ends_with('-')
-        && name
-            .bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-'))
-    .then_some(relative)
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct InstructionCleanup {
     mount_path: String,

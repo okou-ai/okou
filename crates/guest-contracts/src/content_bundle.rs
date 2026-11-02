@@ -24,11 +24,4 @@ pub enum BundleApplication {
         /// Complete instructions archive.
         archive: BundleArchiveSource,
     },
-    /// Replace a complete managed Workflow skill directory.
-    Skill {
-        /// Validated skills mount.
-        mount: String,
-        /// Complete Workflow archive, including SKILL.md and attachments.
-        archive: BundleArchiveSource,
-    },
 }
