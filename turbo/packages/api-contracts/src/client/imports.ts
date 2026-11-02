@@ -1428,6 +1428,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "run-connector-accounts",
+    contracts: ["runConnectorAccountsContract"],
+    bindings: [],
+  },
+  {
     module: "run-models",
     contracts: ["runModelsMainContract"],
     bindings: [],

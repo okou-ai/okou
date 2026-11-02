@@ -1,4 +1,8 @@
 import { command, computed } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { setChatConnectorCurrent$ } from "../services/chat-connector-access.service";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -54,6 +58,36 @@ const updateSelectionInner$ = command(
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    if (
+      isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
+    ) {
+      const saved = await set(
+        setChatConnectorCurrent$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          chatThreadId: params.id,
+          target: body.data.target,
+        },
+        body.data.connectionId,
+        signal,
+      );
+      if (saved) {
+        await publishChatThreadDetailChangedSafely(auth.userId, params.id);
+        signal.throwIfAborted();
+      }
+      return saved
+        ? { status: 200 as const, body: body.data }
+        : badRequestMessage(
+            "Account is unavailable or not allowed in this Chat",
+          );
     }
     const result = await set(
       updateChatThreadConnectorSelection$,
@@ -123,6 +157,19 @@ const clearSelectionInner$ = command(
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    if (
+      isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
+    ) {
+      return badRequestMessage(
+        "Manage this Chat's account access instead of clearing its current account",
+      );
     }
     const result = await set(
       clearChatThreadConnectorSelection$,

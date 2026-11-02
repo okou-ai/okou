@@ -11,6 +11,7 @@ import {
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../../lib/okou-env";
+import { chatConnectorAccountsEnabled } from "../../../lib/api/domains/run-connector-accounts";
 import { isUuid } from "../../../lib/utils/uuid";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import { connectorAccountCliLabel } from "../account-label";
@@ -76,7 +77,9 @@ function availableInspection(
 export const switchConnectorAccountRequestCommand = new Command()
   .name("switch-request")
   .description(
-    "Ask the user to use one exact connector account for future runs in this chat",
+    chatConnectorAccountsEnabled()
+      ? "Ask the owner to allow and select one exact account in this Chat"
+      : "Ask the user to use one exact connector account for future runs in this chat",
   )
   .argument(
     "<selector>",
@@ -102,7 +105,7 @@ Example:
 
 Notes:
   - First run okou connector account list <slug> --json and use an exact returned connectionId
-  - This changes only future runs in the current web chat thread, not the current run or global default
+  - ${chatConnectorAccountsEnabled() ? "Owner confirmation allows and selects only this exact account in this Chat; it does not change global defaults or another Chat" : "This changes only future runs in the current web chat thread, not the current run or global default"}
   - ${CALLBACK_PROMPT_GUIDANCE}
   - Use this callback flow only when account switching is this turn's single access action
   - Return the generated URL verbatim with all query parameters, then end the current turn`,
@@ -164,7 +167,10 @@ Notes:
             ),
           });
         }
-        if (!isConnectorDiscoveryAuthorized(connector, agentContext)) {
+        if (
+          !chatConnectorAccountsEnabled() &&
+          !isConnectorDiscoveryAuthorized(connector, agentContext)
+        ) {
           throw new Error(
             `Connector ${slug} is not authorized for the current web chat agent`,
           );

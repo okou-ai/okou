@@ -262,6 +262,7 @@
     "src/signals/services/email-layout.ts",
     "src/signals/services/execution-agent-connectors.service.ts",
     "src/signals/services/execution-agent-selection-context.service.ts",
+    "src/signals/services/member-connector-selection.ts",
     "src/signals/services/execution-agent-workflows.service.ts",
     "src/signals/services/execution-connector-permissions.service.ts",
     "src/signals/services/execution-connector-sources.service.ts",

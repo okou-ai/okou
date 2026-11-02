@@ -1077,6 +1077,7 @@
       "notNow": "Non ora",
       "review": "Esamina autorizzazioni",
       "scopeNote": "Si applica a questo agente, non solo all’attività corrente.",
+      "sharedScopeNote": "Si applica a questo connettore in tutte le tue chat e i tuoi agenti.",
       "title": "Concedi le seguenti autorizzazioni"
     }
   },

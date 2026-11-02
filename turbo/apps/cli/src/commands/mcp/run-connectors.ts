@@ -1,5 +1,6 @@
 import { listRunMcpConnectors as listRunMcpConnectorsApi } from "../../lib/api/domains/connectors";
 import { findConnectorBySelector } from "../connector/connector-selector";
+import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 
 type RunMcpConnector = Awaited<
   ReturnType<typeof listRunMcpConnectorsApi>
@@ -33,7 +34,9 @@ export async function resolveRunMcpConnector(
   );
   if (!connector) {
     throw new Error(
-      `MCP connector "${connectorSlug}" is not authorized for this Agent`,
+      chatConnectorAccountsEnabled()
+        ? `MCP connector "${connectorSlug}" has no available account in this Chat`
+        : `MCP connector "${connectorSlug}" is not authorized for this Agent`,
     );
   }
   return connector;

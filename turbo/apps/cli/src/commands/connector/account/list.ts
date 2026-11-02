@@ -14,6 +14,10 @@ import {
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { findConnectorBySelector } from "../connector-selector";
+import {
+  chatConnectorAccountsEnabled,
+  listRunConnectorAccounts,
+} from "../../../lib/api/domains/run-connector-accounts";
 import { connectorAccountCliInventoryLabel } from "../account-label";
 import {
   connectorDiscoveryItems,
@@ -115,6 +119,7 @@ function jsonOutput(
   target: ConnectorAccountTarget,
   connections: readonly ConnectorAccountConnection[],
   defaultConnection: ConnectorAccountConnection | null,
+  access?: Awaited<ReturnType<typeof listRunConnectorAccounts>>,
 ): object {
   return {
     context: "available",
@@ -140,6 +145,18 @@ function jsonOutput(
         missingRequiredFields: account.missingRequiredFields,
         configuredFieldKeys: account.configuredFieldKeys,
         reconnectReason: account.reconnectReason,
+        ...(access
+          ? {
+              enabled:
+                access.accounts.find((entry) => {
+                  return entry.connectionId === account.id;
+                })?.enabled === true,
+              isCurrent:
+                access.accounts.find((entry) => {
+                  return entry.connectionId === account.id;
+                })?.isCurrent === true,
+            }
+          : {}),
       };
     }),
   };
@@ -158,7 +175,7 @@ export const listConnectorAccountsCommand = new Command()
   .addHelpText(
     "after",
     `
-Use only an exact connectionId returned for this connector; never invent an ID or reuse one from another connector. This is available-account inventory, not the account already admitted to the current Run. Inspect that selection with okou connector status <slug> --json. Requesting a switch changes only future runs in the current web chat.`,
+Use only an exact connectionId returned for this connector; never invent an ID or reuse one from another connector. Inspect the current account with okou connector status <slug> --json. ${chatConnectorAccountsEnabled() ? "JSON includes enabled and isCurrent for this Chat. Switch an enabled account directly with connector account switch; request owner approval for a disabled account with switch-request." : "Requesting a switch changes only future runs in the current web chat."}`,
   )
   .action(
     withErrorHandler(
@@ -212,6 +229,9 @@ Use only an exact connectionId returned for this connector; never invent an ID o
         }
 
         if (options.json) {
+          const access = chatConnectorAccountsEnabled()
+            ? await listRunConnectorAccounts()
+            : undefined;
           console.log(
             JSON.stringify(
               jsonOutput(
@@ -219,6 +239,7 @@ Use only an exact connectionId returned for this connector; never invent an ID o
                 target,
                 result.connections,
                 result.defaultConnection,
+                access,
               ),
               null,
               2,

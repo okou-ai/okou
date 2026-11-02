@@ -115,7 +115,10 @@ export async function loadConnectorPermissionInfos(args: {
 }
 
 export function connectorPermissionGrantsToFirewallPolicies(
-  grants: readonly UserPermissionGrant[],
+  grants: readonly Pick<
+    UserPermissionGrant,
+    "connectorSlug" | "permission" | "action"
+  >[],
 ): FirewallPolicies | null {
   return permissionGrantsToFirewallPolicies(grants);
 }

@@ -238,6 +238,7 @@ function BatchHeader({
 
 function BatchPermissionDetails({ batch }: BatchViewProps) {
   const { t } = useTranslation();
+  const features = useLoadable(featureSwitch$);
   const {
     complete,
     loadFailed,
@@ -260,7 +261,10 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
       )}
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return $.authorization.permissionBatch.scopeNote;
+          return features.state === "hasData" &&
+            features.data[FeatureSwitchKey.ConnectorChatAccountAccess]
+            ? $.authorization.permissionBatch.sharedScopeNote
+            : $.authorization.permissionBatch.scopeNote;
         })}
       </p>
       {groups.map(({ connector, items }) => {

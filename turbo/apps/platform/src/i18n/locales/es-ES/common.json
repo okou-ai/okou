@@ -1077,6 +1077,7 @@
       "notNow": "Ahora no",
       "review": "Revisar permisos",
       "scopeNote": "Se aplica a este agente, no solo a la tarea actual.",
+      "sharedScopeNote": "Se aplica a este conector en todos tus chats y agentes.",
       "title": "Conceder los siguientes permisos"
     }
   },

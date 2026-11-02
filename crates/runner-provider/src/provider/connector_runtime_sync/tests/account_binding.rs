@@ -182,13 +182,11 @@ async fn assert_account_replacement(custom: bool) {
         then.status(200)
             .json_body(response(&firewall_b, &vars_b, true));
     });
-    handle
-        .notify_connector_runtime_sync(run_id, target.clone())
-        .await;
-    observe_current_successful_sync(&handle, run_id, target.clone())
-        .await
-        .wait()
-        .await;
+    assert!(
+        handle
+            .sync_account_binding(run_id, target.clone(), ACCOUNT_B)
+            .await
+    );
     switch.assert_calls(1);
     switch.delete_async().await;
     tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, context.changed())

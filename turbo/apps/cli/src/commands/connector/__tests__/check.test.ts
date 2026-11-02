@@ -374,6 +374,58 @@ describe("okou connector check command", () => {
     expect(mockExit).toHaveBeenCalledWith(1);
   }
 
+  it.each([false, true])(
+    "uses Chat allowance rather than Agent grants in diagnostics (JSON: %s)",
+    async (json) => {
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken({
+          capabilities: [
+            "connector:read",
+            "agent-run:read",
+            "connector-account:switch",
+          ],
+        }),
+      );
+      let legacyReads = 0;
+      stubAgentConnectors([], () => {
+        legacyReads += 1;
+      });
+      stubDiagnostic(resolvedEnvironment());
+      server.use(
+        http.get(`${API_BASE_URL}/api/run/connector-accounts`, () => {
+          return HttpResponse.json({
+            chatThreadId: "22222222-2222-4222-8222-222222222222",
+            permissionGrants: [],
+            accounts: [
+              {
+                target: { kind: "builtin", connectorSlug: "github" },
+                connectionId: SELECTED_CONNECTION_ID,
+                displayName: "Run-selected account",
+                enabled: true,
+                isCurrent: true,
+                isDefault: true,
+              },
+            ],
+          });
+        }),
+      );
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--env-name",
+        "GH_TOKEN",
+        ...(json ? ["--json"] : []),
+      ]);
+      expect(legacyReads).toBe(0);
+      expect(getOutput()).toContain(
+        json ? '"authorized": true' : "has an allowed account in this Chat",
+      );
+      expect(getOutput()).toContain(SELECTED_CONNECTION_ID);
+      expect(getOutput()).not.toContain("/authorize");
+    },
+  );
+
   describe("current-member account diagnostics", () => {
     const target = { kind: "builtin", connectorSlug: "github" } as const;
     const account = connectorAccount(target, {

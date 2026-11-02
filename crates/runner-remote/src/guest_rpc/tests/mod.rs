@@ -191,6 +191,7 @@ async fn dispatch_without_consumers_rejects_known_unavailable_and_unknown_method
         ("vnc.session.reconnect", "unknown_method"),
         ("vnc.capture.extra", "unknown_method"),
         ("run.usage", "unavailable"),
+        ("connector.account.sync", "unavailable"),
         ("run.usage.extra", "unknown_method"),
         ("unrelated.query", "unknown_method"),
     ] {

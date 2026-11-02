@@ -609,6 +609,10 @@ export const clientDescriptorManifest = [
     contracts: ["remotesContract"],
   },
   {
+    module: "run-connector-accounts",
+    contracts: ["runConnectorAccountsContract"],
+  },
+  {
     module: "run-models",
     contracts: ["runModelsMainContract"],
   },

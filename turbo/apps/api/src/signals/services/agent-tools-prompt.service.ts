@@ -60,6 +60,7 @@ export interface AgentToolsPromptInputs {
   readonly browserSharedOwnerEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly batchConnectorPermissionsEnabled: boolean;
+  readonly chatConnectorAccountsEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -70,6 +71,10 @@ export function buildAgentToolsPromptInputs(args: {
   const context = args.featureSwitchContext;
   return {
     disabledPaidTools: args.disabledPaidTools,
+    chatConnectorAccountsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.ConnectorChatAccountAccess,
+      context,
+    ),
     wechatEnabled: isFeatureEnabled(
       FeatureSwitchKey.WechatIntegration,
       context,
@@ -216,8 +221,10 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
     "- Connector accounts: inspect the current account with `okou connector status <slug> --json` and list alternatives with `okou connector account list <slug> --json`. Use only an exact `connectionId` returned by these commands; never invent an ID or reuse one from another connector.",
-    "- Disconnect a saved connector account with `okou connector account disconnect <selector> --connection-id <uuid>` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account across all Agents, not just this Agent's access. Read `okou connector account disconnect --help` for reconnection risks. Use `okou connector account impact` to inspect affected references first. To remove only this Agent's access while keeping the account connected, use `okou connector unauthorize <selector>` instead.",
-    "- Request one account switch in the current web chat with `okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>`. This changes only the current thread's override for future runs, not the current run or global default. Keep the callback prompt concise and do not include secrets because it is included in the URL. Share the returned link and end the turn; Okou starts the callback round only after the user confirms and the selection succeeds.",
+    `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account across all Agents. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. ${args.chatConnectorAccountsEnabled ? "To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally." : "To remove only this Agent's access while keeping the account connected, use `okou connector unauthorize <selector>` instead."}`,
+    args.chatConnectorAccountsEnabled
+      ? "- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with `okou connector account switch <slug> --connection-id <uuid>`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with `okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's Chats, Agents and accounts; switching does not reset them. Listener accounts do not grant execution access."
+      : "- Request one account switch in the current web chat with `okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>`. This changes only the current thread's override for future runs, not the current run or global default. Keep the callback prompt concise and do not include secrets because it is included in the URL. Share the returned link and end the turn; Okou starts the callback round only after the user confirms and the selection succeeds.",
     "- Custom connectors: when the user wants to add their own custom connector, run `okou connector custom -h` first and follow its guidance.",
     "- Model availability and provider routing are workspace model settings, separate from connectors. Use `okou model ls` to list allowed models and `okou model switch` for model-switching guidance.",
     "- Personal subscriptions: use `okou subscription list --json` and `okou subscription show <id> --json` to inspect connected Claude Code / Codex accounts, usage windows, natural reset times, and remaining reset credits. `okou subscription switch <id>` changes only the default account for that provider for subsequent unpinned runs; current runs keep their captured account. Use `okou subscription reset-link <id>` to produce a Codex Reset Card link, return the exact URL, and let the user click Reset. Generating or opening the link does not reset usage.",

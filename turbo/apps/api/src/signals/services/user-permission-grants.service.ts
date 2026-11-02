@@ -237,6 +237,7 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       readonly scope: UserPermissionGrantScope;
       readonly connectorSlugs: readonly string[];
       readonly snapshot: ConnectorRuntimeLookup;
+      readonly memberRules?: readonly ResolvedPermissionGrant[];
     },
     checkedAt: Date = nowDate(),
   ): Promise<readonly ActiveNetworkPolicyRefresh[]> => {
@@ -253,22 +254,24 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       return [];
     }
 
-    const grants = await get(db$)
-      .select(userPermissionGrantSelection)
-      .from(userPermissionGrants)
-      .where(
-        and(
-          eq(userPermissionGrants.orgId, scope.orgId),
-          eq(userPermissionGrants.userId, scope.userId),
-          eq(userPermissionGrants.agentId, scope.agentId),
-          inArray(userPermissionGrants.connectorSlug, uniqueConnectorSlugs),
-          activeUserPermissionGrantCondition(checkedAt),
-        ),
-      )
-      .orderBy(
-        asc(userPermissionGrants.connectorSlug),
-        asc(userPermissionGrants.permission),
-      );
+    const grants =
+      args.memberRules ??
+      (await get(db$)
+        .select(userPermissionGrantSelection)
+        .from(userPermissionGrants)
+        .where(
+          and(
+            eq(userPermissionGrants.orgId, scope.orgId),
+            eq(userPermissionGrants.userId, scope.userId),
+            eq(userPermissionGrants.agentId, scope.agentId),
+            inArray(userPermissionGrants.connectorSlug, uniqueConnectorSlugs),
+            activeUserPermissionGrantCondition(checkedAt),
+          ),
+        )
+        .orderBy(
+          asc(userPermissionGrants.connectorSlug),
+          asc(userPermissionGrants.permission),
+        ));
     const indexes = await Promise.all(
       uniqueConnectorSlugs.map(async (connectorSlug) => {
         return {

@@ -98,7 +98,10 @@ function createIntegrationPrompts(
   };
 }
 
-function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
+function createExecutionPromptSources(
+  bootstrap: AgentRunContextSignals,
+  threadContext: ThreadContext,
+) {
   const agent$ = computed((get) => {
     return get(bootstrap.agent$);
   });
@@ -111,8 +114,20 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
   const memberRoutes$ = computed((get) => {
     return get(bootstrap.memberRoutes$);
   });
-  const authorizedConnectors$ = computed((get) => {
-    return get(bootstrap.authorizedConnectors$);
+  const authorizedConnectors$ = computed(async (get) => {
+    const [connectors, selection] = await Promise.all([
+      get(bootstrap.authorizedConnectors$),
+      get(threadContext.connectorSelection$),
+    ]);
+    if ("status" in selection) {
+      throw new Error("Connector prompt requires an available Chat");
+    }
+    const scope = selection.connectorScope;
+    return connectors.filter((connector) => {
+      return connector.kind === "builtin"
+        ? scope.allowedConnectorSlugs.includes(connector.connectorSlug)
+        : scope.allowedCustomConnectorIds.includes(connector.customConnectorId);
+    });
   });
   const selectedImageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
@@ -137,7 +152,7 @@ export function createPromptAndSkillVolumesSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ): Computed<Promise<PromptAndSkillVolumes>> {
-  const sources = createExecutionPromptSources(bootstrap);
+  const sources = createExecutionPromptSources(bootstrap, threadContext);
   const {
     agent$,
     memberMetadata$,

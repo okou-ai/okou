@@ -4,6 +4,10 @@ import {
   getAgentUserBuiltinConnectors,
 } from "../../lib/api/domains/agents";
 import { getOkouAgentId } from "../../lib/okou-env";
+import {
+  chatConnectorAccountsEnabled,
+  listRunConnectorAccounts,
+} from "../../lib/api/domains/run-connector-accounts";
 
 interface AgentContext {
   agentId: string;
@@ -36,6 +40,24 @@ export async function resolveAgentContext(
 ): Promise<AgentContext | null> {
   if (!agentId) return null;
 
+  if (chatConnectorAccountsEnabled()) {
+    const [agent, inventory] = await Promise.all([
+      getAgent(agentId),
+      listRunConnectorAccounts(),
+    ]);
+    return {
+      agentId: agent.agentId,
+      displayName: agent.displayName ?? agent.agentId,
+      authorizedConnectorSlugs: new Set(
+        inventory.accounts.flatMap((account) => {
+          return account.enabled && account.target.kind === "builtin"
+            ? [account.target.connectorSlug]
+            : [];
+        }),
+      ),
+    };
+  }
+
   const [agent, enabledConnectorSlugs] = await Promise.all([
     getAgent(agentId),
     getAgentUserBuiltinConnectors(agentId),
@@ -52,6 +74,31 @@ export async function resolveConnectorDiscoveryAgentContext(
   agentId: string | undefined,
 ): Promise<ConnectorDiscoveryAgentContext | null> {
   if (!agentId) return null;
+
+  if (chatConnectorAccountsEnabled()) {
+    const [agent, inventory] = await Promise.all([
+      getAgent(agentId),
+      listRunConnectorAccounts(),
+    ]);
+    return {
+      agentId: agent.agentId,
+      displayName: agent.displayName ?? agent.agentId,
+      authorizedConnectorSlugs: new Set(
+        inventory.accounts.flatMap((account) => {
+          return account.enabled && account.target.kind === "builtin"
+            ? [account.target.connectorSlug]
+            : [];
+        }),
+      ),
+      authorizedCustomConnectorIds: new Set(
+        inventory.accounts.flatMap((account) => {
+          return account.enabled && account.target.kind === "custom"
+            ? [account.target.customConnectorId]
+            : [];
+        }),
+      ),
+    };
+  }
 
   const [agent, enabledConnectorSlugs, customConnectorGrants] =
     await Promise.all([

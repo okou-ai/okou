@@ -9,6 +9,7 @@ import { permissionRequestCommand } from "./permission-request";
 import { connectorAccountCommand } from "./account";
 import { connectorOAuthCommand } from "./oauth";
 import { unauthorizeCommand } from "./unauthorize";
+import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 
 export const connectorCommand = new Command()
   .name("connector")
@@ -22,7 +23,7 @@ export const connectorCommand = new Command()
   .addCommand(searchCommand)
   .addCommand(statusCommand)
   .addCommand(permissionRequestCommand)
-  .addCommand(unauthorizeCommand)
+  .addCommand(unauthorizeCommand, { hidden: chatConnectorAccountsEnabled() })
   .addHelpText(
     "after",
     `
@@ -38,23 +39,26 @@ Choose a command:
   check         Diagnose a failed URL or a builtin environment name.
   permission-request
                 Request a diagnosed builtin permission; custom permissions use settings.
-  unauthorize   Remove one connector from an Agent's access; narrowing needs no approval.
+  ${chatConnectorAccountsEnabled() ? "account switch  Use an allowed account in this Run and save this Chat's current account." : "unauthorize   Remove one connector from an Agent's access; narrowing needs no approval."}
 
 Connection and access:
-  A definition describes the service and its authentication setup. Members then
+  ${
+    chatConnectorAccountsEnabled()
+      ? "A connector is available when this Chat has an allowed account. Account inventory includes denied accounts; only the owner can enable them through switch-request. Firewall permissions are shared across all your Chats, Agents and accounts."
+      : `A definition describes the service and its authentication setup. Members then
   connect their own accounts, grant Agent access, and select any fine-grained
   permissions. Creating a custom definition alone does not complete these steps.
   Use connect for member credentials and oauth start for existing authorization
   flows. Neither command changes Agent grants or fine-grained permissions.
-  Use unauthorize to remove an Agent's connector grant directly.
+  Use unauthorize to remove an Agent's connector grant directly.`
+  }
   Use account disconnect --connection-id <uuid> to remove a saved account across
   all Agents. See account disconnect --help for reconnection risks.
 
 Run context:
   Inside a run, omit --agent to use the current Agent (OKOU_AGENT_ID).
   Account inspection and permission-request require an explicit --agent to match
-  the current Agent. Unauthorize can target another visible Agent with --agent;
-  it only removes the current user's grant.
+  the current Agent. ${chatConnectorAccountsEnabled() ? "Chat allowance determines connector availability." : "Unauthorize can target another visible Agent with --agent; it only removes the current user's grant."}
   Agent selection does not replace the accounts admitted to that run. Missing
   run account context means unavailable; it does not select another account.
   Outside a run, commands exposing --agent can inspect that Agent's authorization.
@@ -69,8 +73,7 @@ Account selection:
   Inspect the account used by this Run with connector status <slug> --json, and
   list alternatives with connector account list <slug> --json. Use only an
   exact returned connectionId; never invent one or reuse it for another connector.
-  Account switches affect future runs in the current chat, not this Run or a
-  global default.
+  ${chatConnectorAccountsEnabled() ? "Use account switch for an already allowed account in this Run. Use switch-request for exact owner approval of a denied account. Both retain this Chat's current choice for later Runs; global defaults and listener accounts are unchanged." : "Account switches affect future runs in the current chat, not this Run or a global default."}
 
 Permission recovery:
   Diagnose the exact failed URL and method with connector check before trying

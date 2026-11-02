@@ -562,6 +562,7 @@ function configFromCustomRuntime(
 }
 
 interface RunDiagnosticRegistration {
+  readonly runId: string;
   readonly agentId: string;
   readonly targets: readonly ConnectorRuntimeTargetRegistration[];
 }
@@ -617,7 +618,11 @@ const readRunDiagnosticRegistration$ = command(
     );
     return {
       kind: "available",
-      registration: { agentId: row.agentId, targets: payload.targets },
+      registration: {
+        runId: args.runId,
+        agentId: row.agentId,
+        targets: payload.targets,
+      },
     };
   },
 );
@@ -725,7 +730,9 @@ async function loadRunDiagnosticState(args: {
       configFromCatalogView(
         view,
         registration.kind === "builtin"
-          ? (registration.baseUrlVars ?? null)
+          ? runtime.state === "available" && runtime.baseUrlVars !== undefined
+            ? runtime.baseUrlVars
+            : (registration.baseUrlVars ?? null)
           : null,
         false,
         networkPolicy,
@@ -1585,6 +1592,7 @@ function runDiagnosticRuntimeArgs(
       orgId: args.orgId,
       userId: args.userId,
       agentId: registration.agentId,
+      runId: registration.runId,
     },
     targets: runtimeTargetsForRequest(registration, args.request),
   };

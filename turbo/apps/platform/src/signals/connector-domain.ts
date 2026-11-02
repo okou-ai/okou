@@ -31,7 +31,13 @@ export type PlatformConnectorCatalogConnectItem =
   PublicConnectorCatalogConnectItem & BuiltinConnectorAccountView;
 export type PlatformConnectorPermissionMetadata =
   PublicConnectorCatalogPermissionDetail;
-export type PlatformUserPermissionGrant = UserPermissionGrantResponse;
+export type PlatformUserPermissionGrant = Pick<
+  UserPermissionGrantResponse,
+  "connectorSlug" | "permission" | "action" | "expiresAt"
+> &
+  Partial<
+    Pick<UserPermissionGrantResponse, "agentId" | "createdAt" | "updatedAt">
+  >;
 export type PlatformConnectorAccountMutationIntent = Extract<
   ConnectorAccountMutationIntent,
   { readonly intent: "add" | "reconnect" }

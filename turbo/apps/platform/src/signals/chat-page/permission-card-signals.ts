@@ -7,7 +7,7 @@ import type {
 } from "../connector-domain.ts";
 import { agentById } from "../agent.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
-import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
+import { permissionGrantsForConnectors } from "../permission-allow/permission-allow-signals.ts";
 import {
   permissionActionResourceKey,
   type PermissionActionDescriptor,
@@ -48,7 +48,10 @@ function createPermissionSignals(
       chatThreadSortEventId: crypto.randomUUID(),
     },
     agent$: agentById(descriptor.agentId),
-    grants$: userPermissionGrantsByAgent({ agentId: descriptor.agentId }),
+    grants$: permissionGrantsForConnectors({
+      agentId: descriptor.agentId,
+      connectorSlugs: [descriptor.connectorSlug],
+    }),
     metadata$: firewallPermissionMetadataByConnector({
       connectorSlug: descriptor.connectorSlug,
     }),

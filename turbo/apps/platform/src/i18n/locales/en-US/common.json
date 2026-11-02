@@ -1057,6 +1057,7 @@
       "notNow": "Not now",
       "review": "Review permissions",
       "scopeNote": "Applies to this agent, not only the current task.",
+      "sharedScopeNote": "Applies to this connector across all your chats and agents.",
       "title": "Allow the following permissions"
     }
   },
