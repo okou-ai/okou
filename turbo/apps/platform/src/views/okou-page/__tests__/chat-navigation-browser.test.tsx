@@ -1136,7 +1136,7 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
     baseUrl: "https://api.okou.ai",
   }).rows({
     params: { threadId: THREAD_ID },
-    query: { sinceSeqId: 0, limit: 100 },
+    query: chatThreadEventsContract.rows.query.parse({ sinceSeqId: 0 }),
     fetchOptions: { signal: context.signal },
   });
   expect(events.status).toBe(200);
