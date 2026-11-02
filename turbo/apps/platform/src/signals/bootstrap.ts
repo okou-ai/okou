@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
 import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
@@ -629,6 +631,9 @@ const completeBootstrap$ = command(
     set(applyFeatureSwitches$, featureSwitches);
 
     await Promise.all([
+      ...(featureSwitches.switches[FeatureSwitchKey.MarketingContentHandoff]
+        ? [set(enrollMarketingHandoffSession$, signal)]
+        : []),
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
       set(bootstrapOnboardingGuard$, signal),

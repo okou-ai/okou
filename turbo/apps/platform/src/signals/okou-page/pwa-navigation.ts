@@ -24,6 +24,7 @@ export function isPwaAgentComposeRequested(
 ): boolean {
   return Boolean(
     searchParams.get("prompt") ||
+    searchParams.get("handoff") ||
     searchParams.get("templatePicker") ||
     searchParams.get("compose") === "1",
   );

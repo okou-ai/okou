@@ -1,3 +1,4 @@
+import { marketingHandoff$ } from "../prompt-page/marketing-handoff.ts";
 import { computed } from "ccstate";
 import {
   connectorSlugSchema,
@@ -21,12 +22,13 @@ const RECOMMENDED_OAUTH_CONNECTOR_SLUGS = [
 ] as const satisfies readonly ConnectorSlug[];
 
 const requestedConnectorSlugs$ = computed((get) => {
-  return (get(searchParams$).get("connector") ?? "")
-    .split(",")
-    .flatMap((value) => {
-      const parsed = connectorSlugSchema.safeParse(value.trim());
-      return parsed.success ? [parsed.data] : [];
-    });
+  const requested = get(searchParams$).has("handoff")
+    ? get(marketingHandoff$)?.manifest.options.connector
+    : get(searchParams$).get("connector");
+  return (requested ?? "").split(",").flatMap((value) => {
+    const parsed = connectorSlugSchema.safeParse(value.trim());
+    return parsed.success ? [parsed.data] : [];
+  });
 });
 
 /** Every prompt handoff offers connections, with the link's tools first. */

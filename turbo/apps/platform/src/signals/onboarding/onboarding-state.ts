@@ -1,3 +1,4 @@
+import type { MarketingHandoffFile } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { command, computed, state } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { defaultOnboardingOutputFormat } from "./onboarding-default-output-format.ts";
@@ -8,11 +9,12 @@ import {
 
 export interface OnboardingDraft {
   readonly prompt: string;
+  readonly files: MarketingHandoffFile[];
   readonly output: OnboardingOutputFormat | null;
 }
 
 function emptyOnboardingDraft(): OnboardingDraft {
-  return { prompt: "", output: null };
+  return { prompt: "", output: null, files: [] };
 }
 
 const internalOnboardingDraft$ = state<OnboardingDraft>(emptyOnboardingDraft());
@@ -41,9 +43,13 @@ export const resetOnboardingDraft$ = command(({ set }) => {
 
 /** Select a task-shaped default once, independently of the editable task. */
 export const hydrateOnboardingRoute$ = command(
-  ({ set }, searchParams: URLSearchParams) => {
+  (
+    { set },
+    searchParams: URLSearchParams,
+    handoff?: { prompt: string; files: MarketingHandoffFile[] },
+  ) => {
     set(resetOnboardingDraft$);
-    const prompt = searchParams.get("prompt");
+    const prompt = handoff?.prompt ?? searchParams.get("prompt");
     if (prompt === null) {
       return;
     }
@@ -65,12 +71,14 @@ export const hydrateOnboardingRoute$ = command(
           -copy.options[existingFormat].instruction.length - 2,
         ),
         output: existingFormat,
+        files: handoff?.files ?? [],
       });
       return;
     }
     set(internalOnboardingDraft$, {
       prompt,
       output: prompt.trim() ? defaultOnboardingOutputFormat(prompt) : null,
+      files: handoff?.files ?? [],
     });
   },
 );

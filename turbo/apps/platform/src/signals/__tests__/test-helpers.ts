@@ -6,6 +6,7 @@ import { installPlatformLifecycle } from "../../test/platform-lifecycle.ts";
 import { installSharedDatabaseWorkerBootstrap } from "../../test/shared-database-worker-bootstrap.ts";
 import { logger, resetLoggerForTest } from "../log";
 import { resetLocalStorageForTest$ } from "../external/local-storage";
+import { resetSessionStorageForTest$ } from "../external/session-storage";
 import { resetAllMockHandlers } from "../../mocks/handlers";
 import { createTestMocks, type TestMocks } from "./test-mocks.ts";
 
@@ -135,6 +136,7 @@ export function createTestRuntime(parent: TestContext): TestRuntime {
         "abort",
         () => {
           current.store?.set(resetLocalStorageForTest$);
+          current.store?.set(resetSessionStorageForTest$);
           current.store = null;
           current.workerStore = null;
         },
@@ -220,6 +222,7 @@ export function testContext(): TestContext {
         store = createStore();
         context.signal.addEventListener("abort", () => {
           store?.set(resetLocalStorageForTest$);
+          store?.set(resetSessionStorageForTest$);
           store = null;
         });
       }

@@ -3018,6 +3018,13 @@
       "when": 1793600389091,
       "tag": "1509_auto_recharge_failure_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 1510,
+      "version": "7",
+      "when": 1793604891532,
+      "tag": "1510_marketing_content_handoff",
+      "breakpoints": true
     }
   ]
 }

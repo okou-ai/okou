@@ -1,3 +1,8 @@
+import {
+  loadMarketingHandoff$,
+  importMarketingHandoffFiles$,
+  finishMarketingHandoff$,
+} from "../prompt-page/marketing-handoff.ts";
 import { initializeHalloweenHome$ } from "../halloween/halloween.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
@@ -42,6 +47,35 @@ import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
+
+const restoreMarketingAgentDraft$ = command(
+  async ({ get, set }, agentDraft: EnsuredAgentDraft, signal: AbortSignal) => {
+    const params = get(searchParams$);
+    const handoff = await set(loadMarketingHandoff$, signal);
+    if (!handoff) {
+      throw new Error("Marketing handoff is unavailable");
+    }
+    const imported = await set(
+      importMarketingHandoffFiles$,
+      handoff.hash,
+      signal,
+    );
+    const targetDraft = agentDraft.draft;
+    set(targetDraft.clear$);
+    set(targetDraft.setInput$, handoff.manifest.prompt);
+    await set(targetDraft.restoreAttachments$, imported, signal);
+    signal.throwIfAborted();
+    if (get(targetDraft.attachments$).length !== imported.length) {
+      throw new Error("The received attachments are no longer available");
+    }
+    await set(agentDraft.queueDraftSync$, signal);
+    signal.throwIfAborted();
+    set(finishMarketingHandoff$, handoff);
+    const next = new URLSearchParams(params);
+    next.delete("handoff");
+    set(updateSearchParams$, next);
+  },
+);
 
 export const setupAgentChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -146,12 +180,15 @@ export const setupAgentChatPage$ = command(
     await set(checkUnifiedSettingsParam$, signal);
 
     const params = get(searchParams$);
-    const prompt = params.get("prompt");
+    const prompt = params.get("handoff") ? null : params.get("prompt");
+    if (params.get("handoff")) {
+      await set(restoreMarketingAgentDraft$, agentDraft, signal);
+    }
     const queue = params.get("queue");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
     );
-    if (agentDraft && !prompt) {
+    if (agentDraft && !prompt && !params.get("handoff")) {
       await set(agentDraft.load$, signal);
     }
     if (prompt) {

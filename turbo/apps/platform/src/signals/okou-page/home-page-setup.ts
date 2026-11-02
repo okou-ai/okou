@@ -17,6 +17,7 @@ export const setupHomePage$ = command(
     }
     const params = get(searchParams$);
     const prompt = params.get("prompt");
+    const handoff = params.get("handoff");
     const queue = params.get("queue");
     const settings = params.get("settings");
     const billingView = params.get("billingView");
@@ -26,6 +27,9 @@ export const setupHomePage$ = command(
       params.get("templatePicker"),
     );
     const forwardParams = new URLSearchParams();
+    if (handoff) {
+      forwardParams.set("handoff", handoff);
+    }
     if (prompt) {
       forwardParams.set("prompt", prompt);
     }

@@ -1,3 +1,4 @@
+import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { halloweenOperationsRoutes } from "./routes/halloween-operations";
 import { halloweenRoutes } from "./routes/halloween";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
@@ -476,6 +477,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...integrationsTelegramUploadInitRoutes,
   ...uploadsCompleteRoutes,
   ...uploadsMultipartRoutes,
+  ...marketingHandoffsRoutes,
   ...uploadsPrepareRoutes,
   ...presentationTemplatesRoutes,
   ...userTemplatesRoutes,

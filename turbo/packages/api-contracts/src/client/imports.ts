@@ -1127,6 +1127,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "marketing-handoffs",
+    contracts: ["marketingHandoffsContract"],
+    bindings: [],
+  },
+  {
     module: "mcp-chat-search",
     contracts: ["mcpChatSearchContract"],
     bindings: [],

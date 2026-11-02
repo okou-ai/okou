@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.MarketingContentHandoff]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Marketing content handoff",
+    description:
+      "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
     displayName: "Chat thinking brand motion",
