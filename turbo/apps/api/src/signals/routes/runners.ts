@@ -1096,7 +1096,7 @@ const withClaimedContentBundles$ = command(
         }),
         ...[
           ...(args.officialWorkflowBundles ?? []),
-          ...(args.seedSkillBundles ?? []),
+          ...args.seedSkillBundles,
         ].map((bundle) => {
           return {
             contentBundle: bundle,

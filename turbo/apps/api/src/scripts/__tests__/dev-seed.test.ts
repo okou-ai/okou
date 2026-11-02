@@ -27,7 +27,7 @@ function buildVendorKeys(
   });
 }
 
-describe("official skill volume seeds", () => {
+describe("historical non-Seed skill volume seeds", () => {
   it("uses the current registry repository without renaming stored objects", () => {
     for (const volume of rawDevSeedSkillVolumes) {
       expect(volume.url).toMatch(

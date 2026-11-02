@@ -33,7 +33,7 @@ export const skills = pgTable(
     }),
     versionHash: varchar("version_hash", { length: 64 }),
     contentBundle: jsonb("content_bundle").$type<ContentBundle>(),
-    // Previous writers can change version_hash without touching these fields.
+    // Logical source version whose files produced contentBundle.
     contentBundleSourceVersionHash: varchar(
       "content_bundle_source_version_hash",
       {

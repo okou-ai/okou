@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { expect } from "vitest";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { readContentBundle } from "@okouai/core/content-bundle";
-import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
+import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-skill-bundle-archive";
 
 /** Inspect new or baseline external S3 fixture bytes using the claimed reference. */
 export function readClaimedContentBundle(

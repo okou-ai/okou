@@ -1078,28 +1078,6 @@
     "versionFileCount": 1
   },
   {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/computer-use",
-    "name": "computer-use",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/computer-use/46836824d2a97fe17fb1315d1b90c246ecab1975396d9aa5c934673c1bf13f32",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/computer-use",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/computer-use",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 8917,
-    "storageId": "385d1ebf-af69-4530-9b7a-11fb9a47badf",
-    "frontmatter": {
-      "name": "computer-use",
-      "description": "Operate the user's connected desktop apps through Okou Computer Use. Use when a task explicitly asks for okou computer-use, desktop computer use, opening or inspecting a local app, reading a GUI, clicking UI elements, using Slack/Safari/Chrome/Arc/Notion/Finder or another desktop app, taking an app screenshot, or performing a UI workflow that cannot be completed through normal APIs alone."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/computer-use",
-    "storageSize": 3397,
-    "versionHash": "46836824d2a97fe17fb1315d1b90c246ecab1975396d9aa5c934673c1bf13f32",
-    "versionSize": 3397,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/contract-redline",
     "name": "contract-redline",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/contract-redline/182e62b4d35256d8acc9f7f0ff9699c3c7d9ebb86e76541d8eb078a1dbfcece1",
@@ -1975,28 +1953,6 @@
     "storageSize": 2794,
     "versionHash": "b5d8e4af5d1143886938e9d277c7976afdf8271d1cddf6d8d3edcb1ee857184f",
     "versionSize": 2794,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/gen",
-    "name": "gen",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/gen/74789b227c6bc3554c7e2720fdd79ebc2644d47e44205d242ea3e7b3bef5ccf3",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/gen",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/gen",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 7679,
-    "storageId": "a4c85458-994c-4b12-89b4-2abf3b3410f7",
-    "frontmatter": {
-      "name": "gen",
-      "description": "Use Okou generation pipelines via `okou generate` for images, videos, voice, presentations, websites, reports, posters, docs designs, dashboard designs, mobile app designs, and connector-backed text/code/document generation. Use when a user asks to generate an artifact and the right built-in pipeline, style, model, or connector should be discovered at runtime."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/gen",
-    "storageSize": 2944,
-    "versionHash": "74789b227c6bc3554c7e2720fdd79ebc2644d47e44205d242ea3e7b3bef5ccf3",
-    "versionSize": 2944,
     "skillFileCount": 1,
     "storageFileCount": 1,
     "versionFileCount": 1

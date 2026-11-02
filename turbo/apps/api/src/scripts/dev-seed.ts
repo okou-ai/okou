@@ -83,7 +83,6 @@ const DEV_SEED_SKILL_VOLUMES: readonly DevSeedSkillVolume[] =
   rawDevSeedSkillVolumes;
 
 const PREVIEW_E2E_VOLUME_SKILL_NAMES: readonly string[] = [
-  ...SEED_SKILLS,
   "github",
   "slack",
   "discord-webhook",

@@ -27,7 +27,7 @@ import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
-import { seededSystemSkillArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
+import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-skill-bundle-archive";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
@@ -1016,7 +1016,7 @@ export function createChatEventsFixture(context: TestContext) {
     }
     const bucketPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/`;
     const seeded = objectKey.startsWith(bucketPrefix)
-      ? seededSystemSkillArchive(objectKey.slice(bucketPrefix.length))
+      ? seededSkillBundleArchive(objectKey.slice(bucketPrefix.length))
       : undefined;
     if (seeded) {
       return seeded;

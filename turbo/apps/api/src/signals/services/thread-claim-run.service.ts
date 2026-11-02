@@ -5267,9 +5267,7 @@ function buildStoredExecutionContextDraft(
     readonly additionalVolumes:
       readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly additionalVolumeSources: AdditionalVolumeSources;
-    readonly seedSkillBundles: NonNullable<
-      StoredExecutionContext["seedSkillBundles"]
-    >;
+    readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
     readonly platformEnvironment: Record<string, string> | undefined;
     readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
@@ -5432,9 +5430,7 @@ interface BuildRunnerJobPayloadInput {
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
-  readonly seedSkillBundles: NonNullable<
-    StoredExecutionContext["seedSkillBundles"]
-  >;
+  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
   readonly userTimezone: string | undefined;

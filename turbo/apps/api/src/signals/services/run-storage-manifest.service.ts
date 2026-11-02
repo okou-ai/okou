@@ -1411,9 +1411,7 @@ interface RunArtifacts {
 interface PreparedAdditionalVolumes {
   readonly volumes: readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly sources: AdditionalVolumeSources;
-  readonly seedSkillBundles: NonNullable<
-    StoredExecutionContext["seedSkillBundles"]
-  >;
+  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
 }
 
 function autoMemoryMountPath(framework: SupportedFramework): string {
@@ -1511,9 +1509,7 @@ export function prepareRunOutputMetadata(args: {
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly seedSkillBundles: NonNullable<
-    StoredExecutionContext["seedSkillBundles"]
-  >;
+  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({

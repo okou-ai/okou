@@ -113,6 +113,7 @@ readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600
 # Rollback starts Runner before API, so both artifacts must retain that preparation.
 readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
+readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
@@ -864,6 +865,17 @@ if ! git merge-base --is-ancestor "$content_bundle_reference_only_api_commit" or
 fi
 if ! git merge-base --is-ancestor "$content_bundle_reference_only_api_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates reference-only content bundle claims: ${content_bundle_reference_only_api_commit}."
+fi
+
+# Bundle-only Seed updates do not create matching legacy Storage versions.
+# Earlier sync publishers still require those versions when content is unchanged.
+seed_skill_bundle_only_api_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SEED_SKILL_BUNDLE_ONLY_API_PATH" | sed -n '1p')
+if [[ ! "$seed_skill_bundle_only_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Seed Skill bundle-only publisher on main."
+fi
+if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then

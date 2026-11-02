@@ -31,7 +31,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
+    if [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
+      [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
       else
@@ -276,6 +278,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/seed-skill-bundle-only-api* ]]; then
+      printf '%s\n' "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_COMMIT-7373737373737373737373737373737373737373}"
+      exit 0
+    fi
     if [[ "$*" == *packages/core/src/official-workflow-artifact.ts* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT-bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc}"
       exit 0
@@ -2121,6 +2127,20 @@ for expectation in \
   [ ! -s "${tmp_dir}/content-bundle-reference-api.output" ] || fail "incompatible API must not publish rollback outputs"
   if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
     fail "reference-only API floor must fail before artifact or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_SEED_SKILL_BUNDLE_ONLY_API_COMMIT=|Cannot resolve the merged Seed Skill bundle-only publisher on main" \
+  "MOCK_SEED_SKILL_BUNDLE_ONLY_API_COMMIT=invalid|Cannot resolve the merged Seed Skill bundle-only publisher on main" \
+  "MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID=0|Rollback target predates the Seed Skill bundle-only publisher"; do
+  : >"${tmp_dir}/boundaries.log"
+  setting=${expectation%%|*}
+  message=${expectation#*|}
+  assert_failure "$message" run_resolver "${tmp_dir}/seed-skill-bundle-only-api.output" "$setting"
+  [ ! -s "${tmp_dir}/seed-skill-bundle-only-api.output" ] || fail "incompatible Seed publisher must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "Seed publisher floor must fail before artifact or host access"
   fi
 done
 
