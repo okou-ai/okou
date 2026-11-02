@@ -1843,9 +1843,6 @@
         "edit": "Ubah",
         "label": "Saran pembuatan",
         "ratioHint": "Rasio aspek adalah preferensi dan bergantung pada model gambar serta templat.",
-        "report": "Laporan",
-        "reportFormat": "Format laporan",
-        "reportHint": "Pilih format atau templat dokumen di bawah.",
         "thisMessage": "Hanya pesan ini"
       },
       "mentionHint": "Cari agen atau obrolan…",

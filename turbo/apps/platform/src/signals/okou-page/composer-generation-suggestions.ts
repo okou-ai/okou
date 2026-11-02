@@ -4,7 +4,6 @@ import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { DraftSignals } from "./chat-draft.ts";
 import type {
-  ComposerCreateMode,
   ComposerCreateSignals,
   PresentationSlideCount,
 } from "./composer-create.ts";
@@ -14,7 +13,7 @@ import type {
   WorkflowComposerSignals,
 } from "./tiptap-workflow-composer.ts";
 import {
-  detectComposerGenerationIntent,
+  detectComposerGenerationIntents,
   type ComposerGenerationIntent,
 } from "./composer-generation-intent.ts";
 
@@ -44,25 +43,28 @@ function createRecommendationState() {
     applied$: state<AppliedGenerationSuggestion | null>(null),
     slideCount$: state<PresentationSlideCount>("8-12"),
     imageAspectRatio$: state<GenerationImageAspectRatio>("auto"),
-    reportOutput$: state<"document" | "presentation" | null>(null),
+    selectedIntent$: state<{
+      readonly session: number;
+      readonly intent: ComposerGenerationIntent;
+    } | null>(null),
   };
 }
 type RecommendationState = ReturnType<typeof createRecommendationState>;
 
-function dismissGenerationIntent(
+function dismissGenerationIntents(
   previous: RecommendationState["dismissed$"]["init"],
   session: number,
-  intent: ComposerGenerationIntent,
+  intents: readonly ComposerGenerationIntent[],
 ) {
-  const intents = previous?.session === session ? previous.intents : [];
+  const earlier = previous?.session === session ? previous.intents : [];
   return {
     session,
-    intents: intents.includes(intent) ? intents : [...intents, intent],
+    intents: [...new Set([...earlier, ...intents])],
   };
 }
 
 function recommendationPreferences(settings: RecommendationState) {
-  const { slideCount$, imageAspectRatio$, reportOutput$ } = settings;
+  const { slideCount$, imageAspectRatio$ } = settings;
   return {
     slideCount$: computed((get) => {
       return get(slideCount$);
@@ -78,12 +80,6 @@ function recommendationPreferences(settings: RecommendationState) {
         set(imageAspectRatio$, value);
       },
     ),
-    reportOutput$: computed((get) => {
-      return get(reportOutput$);
-    }),
-    setReportOutput$: command(({ set }, value: "document" | "presentation") => {
-      set(reportOutput$, value);
-    }),
   };
 }
 
@@ -110,41 +106,29 @@ function createApplicationSignals({
     editing$,
     slideCount$,
     imageAspectRatio$,
-    reportOutput$,
+    selectedIntent$,
   } = settings;
-  const apply$ = command(({ get, set }, mode?: ComposerCreateMode) => {
+  const apply$ = command(({ get, set }) => {
     const intent = get(panelIntent$);
     if (!intent) {
       return;
     }
-    const selectedMode =
-      mode ?? (intent === "report" ? get(reportOutput$) : intent);
-    if (!selectedMode) {
-      return;
-    }
     const previous = get(appliedSelection$);
-    const changingFormat = get(create.mode$) !== selectedMode;
-    if (changingFormat && previous?.template) {
-      // Changing an explicitly applied report format replaces only our own template.
-      set(composer.updateTemplate$, previous.template, null);
-    }
-    set(tasks.openTask$, selectedMode);
-    if (selectedMode === "presentation") {
+    set(tasks.openTask$, intent);
+    if (intent === "presentation") {
       set(create.setPresentationSlideCount$, get(slideCount$));
     }
     set(applied$, {
       intent,
       revision: get(create.selectionRevision$),
       imageAspectRatio: get(imageAspectRatio$),
-      template: changingFormat ? undefined : previous?.template,
+      template: previous?.template,
     });
     set(
       dismissed$,
-      dismissGenerationIntent(
-        get(dismissed$),
-        get(draft.inputSession$),
+      dismissGenerationIntents(get(dismissed$), get(draft.inputSession$), [
         intent,
-      ),
+      ]),
     );
     set(editing$, false);
   });
@@ -153,10 +137,9 @@ function createApplicationSignals({
       { get, set },
       template: GenerationTemplateRequest,
       attachment: ComposerTemplateAttachment,
-      mode: ComposerCreateMode,
     ) => {
       // Apply before insertion: the new inline template deliberately suppresses suggestions.
-      set(apply$, mode);
+      set(apply$);
       const applied = get(appliedSelection$);
       if (!applied) {
         return;
@@ -180,13 +163,12 @@ function createApplicationSignals({
     }
     set(slideCount$, get(create.presentationSlideCount$));
     set(imageAspectRatio$, applied.imageAspectRatio);
-    set(
-      reportOutput$,
-      get(create.mode$) === "presentation" ? "presentation" : "document",
-    );
     set(editing$, true);
   });
-  const additionalInfo$ = createImagePreferenceInfo(create, appliedSelection$);
+  const additionalInfo$ = createGenerationAdditionalInfo(
+    create,
+    appliedSelection$,
+  );
   const completeSubmission$ = command(
     ({ get, set }, selection: AppliedGenerationSuggestion | null) => {
       if (selection === null || get(appliedSelection$) !== selection) {
@@ -199,7 +181,7 @@ function createApplicationSignals({
       set(dismissed$, null);
       set(slideCount$, "8-12");
       set(imageAspectRatio$, "auto");
-      set(reportOutput$, null);
+      set(selectedIntent$, null);
     },
   );
   return {
@@ -211,12 +193,15 @@ function createApplicationSignals({
   };
 }
 
-function createImagePreferenceInfo(
+function createGenerationAdditionalInfo(
   create: ComposerCreateSignals,
   appliedSelection$: Computed<AppliedGenerationSuggestion | null>,
 ) {
   return computed((get) => {
     const applied = get(appliedSelection$);
+    if (applied?.intent === "website") {
+      return "Create a website.";
+    }
     if (
       get(create.mode$) !== "image" ||
       !applied ||
@@ -242,7 +227,7 @@ export function createComposerGenerationSuggestions(
   forwardComposer: boolean,
 ) {
   const settings = createRecommendationState();
-  const { applied$, editing$, dismissed$ } = settings;
+  const { applied$, editing$, dismissed$, selectedIntent$ } = settings;
   const enabled$ = computed((get) => {
     return (
       !forwardComposer &&
@@ -255,18 +240,18 @@ export function createComposerGenerationSuggestions(
       ? applied
       : null;
   });
-  const panelIntent$ = computed((get): ComposerGenerationIntent | null => {
+  const panelIntents$ = computed((get): readonly ComposerGenerationIntent[] => {
     if (
       !get(enabled$) ||
       get(composer.isComposing$) ||
       get(composer.activeSlashRange$) ||
       get(composer.activeChatThreadSuggestionRange$)
     ) {
-      return null;
+      return [];
     }
     const applied = get(appliedSelection$);
     if (applied) {
-      return get(editing$) ? applied.intent : null;
+      return get(editing$) ? [applied.intent] : [];
     }
     // A manual task or template always wins, even if the text mentions another type.
     if (
@@ -274,35 +259,49 @@ export function createComposerGenerationSuggestions(
       get(draft.generationTemplate$) ||
       get(composer.templateRequests$).length > 0
     ) {
-      return null;
+      return [];
     }
-    const intent = detectComposerGenerationIntent(get(draft.input$));
     const dismissed = get(dismissed$);
-    return intent &&
-      !(
-        dismissed?.session === get(draft.inputSession$) &&
-        dismissed.intents.includes(intent)
-      )
-      ? intent
-      : null;
+    return detectComposerGenerationIntents(get(draft.input$)).filter(
+      (intent) => {
+        return !(
+          dismissed?.session === get(draft.inputSession$) &&
+          dismissed.intents.includes(intent)
+        );
+      },
+    );
   });
+  const panelIntent$ = computed((get): ComposerGenerationIntent | null => {
+    const intents = get(panelIntents$);
+    const selected = get(selectedIntent$);
+    return selected?.session === get(draft.inputSession$) &&
+      intents.includes(selected.intent)
+      ? selected.intent
+      : (intents[0] ?? null);
+  });
+  const selectIntent$ = command(
+    ({ get, set }, intent: ComposerGenerationIntent) => {
+      if (get(panelIntents$).includes(intent)) {
+        set(selectedIntent$, { session: get(draft.inputSession$), intent });
+      }
+    },
+  );
   const dismiss$ = command(({ get, set }) => {
-    const intent = get(panelIntent$);
-    if (intent) {
-      set(
-        dismissed$,
-        dismissGenerationIntent(
-          get(dismissed$),
-          get(draft.inputSession$),
-          intent,
-        ),
-      );
-    }
+    set(
+      dismissed$,
+      dismissGenerationIntents(
+        get(dismissed$),
+        get(draft.inputSession$),
+        get(panelIntents$),
+      ),
+    );
     set(editing$, false);
   });
   return {
     enabled$,
+    panelIntents$,
     panelIntent$,
+    selectIntent$,
     appliedSelection$,
     dismiss$,
     ...recommendationPreferences(settings),

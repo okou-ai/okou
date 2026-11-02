@@ -1843,9 +1843,6 @@
         "edit": "變更",
         "label": "生成推薦",
         "ratioHint": "比例僅為偏好，具體取決於圖片模型和模板的支援。",
-        "report": "報告",
-        "reportFormat": "報告形式",
-        "reportHint": "請選擇形式，或選擇下方的文件模板。",
         "thisMessage": "僅本則訊息"
       },
       "mentionHint": "搜尋智慧體或聊天…",

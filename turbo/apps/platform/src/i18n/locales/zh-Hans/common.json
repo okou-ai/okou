@@ -1843,9 +1843,6 @@
         "edit": "更改",
         "label": "生成推荐",
         "ratioHint": "画幅仅为偏好，具体取决于图片模型和模板的支持。",
-        "report": "报告",
-        "reportFormat": "报告形式",
-        "reportHint": "请选择形式，或选择下方的文档模板。",
         "thisMessage": "仅本条消息"
       },
       "mentionHint": "搜索智能体或聊天…",

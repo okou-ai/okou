@@ -1,6 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { FileText, Image, Presentation, X } from "lucide-react";
+import { FileText, Globe, Image, Presentation, X } from "lucide-react";
 import {
   Button,
   Select,
@@ -8,13 +8,11 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Toggle,
+  ToggleGroup,
 } from "@okouai/ui";
-import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import {
-  PRESENTATION_SLIDE_COUNTS,
-  type ComposerCreateMode,
-} from "../../signals/okou-page/composer-create.ts";
+import { PRESENTATION_SLIDE_COUNTS } from "../../signals/okou-page/composer-create.ts";
 import { GENERATION_IMAGE_ASPECT_RATIOS } from "../../signals/okou-page/composer-generation-suggestions.ts";
 import type { ComposerGenerationIntent } from "../../signals/okou-page/composer-generation-intent.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -39,11 +37,7 @@ function GenerationOptions({
   const setSlideCount = useSet(signals.generation.setSlideCount$);
   const ratio = useGet(signals.generation.imageAspectRatio$);
   const setRatio = useSet(signals.generation.setImageAspectRatio$);
-  const reportOutput = useGet(signals.generation.reportOutput$);
-  if (
-    intent === "presentation" ||
-    (intent === "report" && reportOutput === "presentation")
-  ) {
+  if (intent === "presentation") {
     const items = PRESENTATION_SLIDE_COUNTS.map((value) => {
       return {
         value,
@@ -143,29 +137,13 @@ function GenerationTemplateRail({
   readonly intent: ComposerGenerationIntent;
 }) {
   const { t } = useTranslation();
-  const reportOutput = useGet(signals.generation.reportOutput$);
-  const mode: ComposerCreateMode =
-    intent === "report" ? (reportOutput ?? "document") : intent;
   const category =
-    mode === "presentation"
+    intent === "presentation"
       ? "slides"
-      : mode === "image"
+      : intent === "image"
         ? "illustration"
-        : "document";
-  const reportSlugs = new Set(
-    DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
-      return item.category === "report";
-    }).map((item) => {
-      return item.slug;
-    }),
-  );
-  const templates = slashTemplatePreviews(category).filter((preview) => {
-    return (
-      intent !== "report" ||
-      mode !== "document" ||
-      reportSlugs.has(preview.slug)
-    );
-  });
+        : intent;
+  const templates = slashTemplatePreviews(category);
   const selectTemplate = useSet(signals.generation.selectTemplate$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
@@ -188,7 +166,7 @@ function GenerationTemplateRail({
               { title: preview.title },
             )}
             onClick={() => {
-              selectTemplate(preview.template, preview.attachment, mode);
+              selectTemplate(preview.template, preview.attachment);
               detach(saveDraft(pageSignal), Reason.DomCallback);
             }}
           >
@@ -217,60 +195,12 @@ function GenerationTemplateRail({
   );
 }
 
-function ReportFormatOptions({
-  signals,
-}: {
-  readonly signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const reportOutput = useGet(signals.generation.reportOutput$);
-  const setReportOutput = useSet(signals.generation.setReportOutput$);
-  return (
-    <>
-      <div
-        className="flex flex-wrap items-center gap-2"
-        role="group"
-        aria-label={t(($) => {
-          return $.chat.composer.generationSuggestions.reportFormat;
-        })}
-      >
-        <Button
-          type="button"
-          variant={reportOutput === "document" ? "neutral" : "outline"}
-          size="sm"
-          aria-pressed={reportOutput === "document"}
-          onClick={() => {
-            setReportOutput("document");
-          }}
-        >
-          {t(($) => {
-            return $.chat.taskChips.tasks.document;
-          })}
-        </Button>
-        <Button
-          type="button"
-          variant={reportOutput === "presentation" ? "neutral" : "outline"}
-          size="sm"
-          aria-pressed={reportOutput === "presentation"}
-          onClick={() => {
-            setReportOutput("presentation");
-          }}
-        >
-          {t(($) => {
-            return $.chat.taskChips.tasks.presentation;
-          })}
-        </Button>
-      </div>
-      {reportOutput === null && (
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.chat.composer.generationSuggestions.reportHint;
-          })}
-        </p>
-      )}
-    </>
-  );
-}
+const GENERATION_ICONS = {
+  website: Globe,
+  image: Image,
+  presentation: Presentation,
+  document: FileText,
+} as const;
 
 export function ComposerGenerationSuggestions({
   signals,
@@ -278,34 +208,22 @@ export function ComposerGenerationSuggestions({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const intents = useGet(signals.generation.panelIntents$);
   const intent = useGet(signals.generation.panelIntent$);
-  const reportOutput = useGet(signals.generation.reportOutput$);
+  const selectIntent = useSet(signals.generation.selectIntent$);
   const dismiss = useSet(signals.generation.dismiss$);
   const apply = useSet(signals.generation.apply$);
   const focus = useSet(signals.editor.focus$);
   if (!intent) {
     return null;
   }
-  const labels = {
-    presentation: t(($) => {
-      return $.chat.taskChips.tasks.presentation;
-    }),
-    image: t(($) => {
-      return $.chat.taskChips.tasks.image;
-    }),
-    document: t(($) => {
-      return $.chat.taskChips.tasks.document;
-    }),
-    report: t(($) => {
-      return $.chat.composer.generationSuggestions.report;
-    }),
-  };
-  const Icon =
-    intent === "presentation"
-      ? Presentation
-      : intent === "image"
-        ? Image
-        : FileText;
+  const labels = t(
+    ($) => {
+      return $.chat.taskChips.tasks;
+    },
+    { returnObjects: true },
+  );
+  const Icon = GENERATION_ICONS[intent];
   return (
     <section
       role="region"
@@ -350,16 +268,37 @@ export function ComposerGenerationSuggestions({
           return $.chat.composer.generationSuggestions.description;
         })}
       </p>
-      {intent === "report" && <ReportFormatOptions signals={signals} />}
+      {intents.length > 1 && (
+        <ToggleGroup<ComposerGenerationIntent>
+          aria-label={t(($) => {
+            return $.chat.taskChips.chooseTask;
+          })}
+          className="flex-wrap"
+          value={[intent]}
+          onValueChange={(value) => {
+            const selected = value[0];
+            if (selected) {
+              selectIntent(selected);
+            }
+          }}
+        >
+          {intents.map((candidate) => {
+            return (
+              <Toggle key={candidate} value={candidate} variant="filter">
+                {labels[candidate]}
+              </Toggle>
+            );
+          })}
+        </ToggleGroup>
+      )}
       <GenerationTemplateRail signals={signals} intent={intent} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <GenerationOptions signals={signals} intent={intent} />
+        <GenerationOptions key={intent} signals={signals} intent={intent} />
         <Button
           type="button"
           variant="neutral"
           size="sm"
           className="ml-auto"
-          disabled={intent === "report" && reportOutput === null}
           onClick={() => {
             apply();
           }}

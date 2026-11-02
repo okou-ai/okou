@@ -6,6 +6,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -116,7 +117,7 @@ async function chooseOption(
 
 async function applySettings(
   panel: HTMLElement,
-  task: "Presentation" | "Image" | "Document",
+  task: "Presentation" | "Image" | "Document" | "Website",
 ): Promise<void> {
   click(button("Apply settings", panel));
   await waitFor(() => {
@@ -142,6 +143,80 @@ test("The default rollout keeps a bare generation prompt as an ordinary draft", 
   await waitFor(() => {
     expect(capture.runPrompts).toStrictEqual(["slide"]);
   });
+});
+
+test.each([
+  {
+    task: "Presentation",
+    drafts: [
+      "The agenda is ready; include SLIDES for the team.",
+      "Please review ＰＰＴＸ before noon.",
+      "把季度数据整理为演示文稿即可",
+    ],
+  },
+  {
+    task: "Image",
+    drafts: [
+      "image of a cat",
+      "For the autumn campaign, I need an image of our product.",
+      "Do not generate a Docker image.",
+      "Inspect `IMAGES` and 图片素材 later.",
+    ],
+  },
+  {
+    task: "Document",
+    drafts: [
+      'The note says "DOCX"; summarize its contents.',
+      "Please compare the documents.",
+      "把这份文档整理给客户",
+    ],
+  },
+  {
+    task: "Website",
+    drafts: [
+      "The launch handoff lists website.html.",
+      "Review WEBSITES before launch.",
+      "请更新公司的网站内容",
+    ],
+  },
+] as const)(
+  "$task keywords anywhere in the draft offer a single staged category",
+  async ({ task, drafts }) => {
+    const { capture, editor } = await setupComposer();
+    for (const draft of drafts) {
+      await fill(editor, draft);
+      const panel = await suggestions();
+      await expect(
+        within(panel).findByRole("heading", { name: task }),
+      ).resolves.toBeInTheDocument();
+      expect(
+        within(panel).queryByRole("group", { name: "Choose a task" }),
+      ).not.toBeInTheDocument();
+      expect(button("Apply settings", panel)).toBeEnabled();
+      expect(queryButton(`Remove ${task}`)).not.toBeInTheDocument();
+      expect(editor.textContent).toBe(draft);
+      expect(capture.runPrompts).toHaveLength(0);
+    }
+  },
+);
+
+test("Only whole supported keywords offer automatic generation settings", async () => {
+  const { capture, editor } = await setupComposer();
+  const drafts = [
+    "The slider was reimaged; documentation and mywebsite need review.",
+    "Create a report, workflow, or visualization about the campaign.",
+    "请整理财报、调研报告、工作流与可视化结果",
+  ];
+  for (const draft of drafts) {
+    await fill(editor, "image");
+    await suggestions();
+    await fill(editor, draft);
+    await waitFor(() => {
+      expect(querySuggestions()).not.toBeInTheDocument();
+    });
+    expect(editor.textContent).toBe(draft);
+    expect(capture.runPrompts).toHaveLength(0);
+  }
 });
 
 test("Slide suggestions stage changes until Apply and expire after this message", async () => {
@@ -287,113 +362,221 @@ test("A rejected thread send retains the applied generation settings for retry",
   });
 });
 
-test("Escape closes recommendations without submitting or changing the draft", async () => {
+test("A document keyword in a sentence offers a template without rewriting the message", async () => {
   const { capture, editor } = await setupComposer();
-  await fill(editor, "slide");
-  await suggestions();
-  fireEvent.keyDown(editor, { key: "Escape" });
-  await waitFor(() => {
-    expect(querySuggestions()).not.toBeInTheDocument();
-  });
-  expect(editor.textContent).toBe("slide");
-  expect(capture.runPrompts).toHaveLength(0);
-  expect(editor).toHaveFocus();
-});
-
-test("A bare doc offers document settings without changing or sending the text", async () => {
-  const { capture, editor } = await setupComposer();
-  await fill(editor, "doc");
+  const [template] = DOCUMENT_TEMPLATE_ITEMS;
+  if (!template) {
+    throw new Error("Expected a document template");
+  }
+  const draft = "Summarize this document for our team.";
+  await fill(editor, draft);
   const panel = await suggestions();
   expect(
     within(panel).getByRole("heading", { name: "Document" }),
   ).toBeInTheDocument();
   expect(button("Apply settings", panel)).toBeEnabled();
-  expect(editor.textContent).toBe("doc");
+  expect(editor.textContent).toBe(draft);
   expect(capture.runPrompts).toHaveLength(0);
 
-  await applySettings(panel, "Document");
-  expect(editor.textContent).toBe("doc");
+  click(button(`Use template ${template.title}`, panel));
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
+  });
+  expect(button("Remove Document")).toBeInTheDocument();
+  expect(screen.getByText("This message only")).toBeInTheDocument();
+  expect(querySuggestions()).not.toBeInTheDocument();
+  expect(editor).toHaveTextContent(draft);
   expect(capture.runPrompts).toHaveLength(0);
+
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(messageText(capture.sentMessages[0])).toBe(draft);
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "template",
+    titleSnapshot: template.title,
+    template: {
+      type: "document",
+      selection: { documentTemplateId: template.id },
+    },
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: "Create a document.",
+  });
 });
 
-test.each([
-  { output: "Document", intent: "Create a document." },
-  { output: "Presentation", intent: "Create a presentation." },
-] as const)(
-  "A report requires an explicit $output choice before applying settings",
-  async ({ output, intent }) => {
-    const { capture, editor } = await setupComposer();
-    await fill(editor, "report");
-    const panel = await suggestions();
-    const apply = button("Apply settings", panel);
-    expect(apply).toBeDisabled();
-    expect(button("Document", panel)).toHaveAttribute("aria-pressed", "false");
-    expect(button("Presentation", panel)).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    click(button(output, panel));
-    await waitFor(() => {
-      expect(apply).toBeEnabled();
-    });
-    expect(button(output, panel)).toHaveAttribute("aria-pressed", "true");
-    expect(editor.textContent).toBe("report");
-    expect(capture.runPrompts).toHaveLength(0);
-
-    await applySettings(panel, output);
-    expect(editor.textContent).toBe("report");
-    expect(capture.runPrompts).toHaveLength(0);
-    click(button("Send"));
-    await waitFor(() => {
-      expect(capture.sentMessages).toHaveLength(1);
-    });
-    expect(capture.runPrompts).toStrictEqual(["report"]);
-    expect(messageText(capture.sentMessages[0])).toBe("report");
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.stringContaining(intent),
-    });
-  },
-);
-
-test("Changing a report format removes only its recommendation-owned template", async () => {
+test("A full-text website suggestion sends its catalog template for this message only", async () => {
   const { capture, editor } = await setupComposer();
-  const documentTemplate = DOCUMENT_TEMPLATE_ITEMS.find((item) => {
-    return item.category === "report";
-  });
-  const [presentationTemplate, nextPresentationTemplate] =
-    PRESENTATION_TEMPLATE_PICKER_ITEMS;
-  if (!documentTemplate || !presentationTemplate || !nextPresentationTemplate) {
-    throw new Error("Expected document and presentation templates");
+  const [template] = WEBSITE_TEMPLATE_ITEMS;
+  if (!template) {
+    throw new Error("Expected a website template");
   }
-  await fill(editor, "report");
-  click(button(`Use template ${documentTemplate.title}`, await suggestions()));
+  const draft = "For our autumn campaign, we need a website for reservations.";
+  await fill(editor, draft);
+  const panel = await suggestions();
+  expect(
+    within(panel).getByRole("heading", { name: "Website" }),
+  ).toBeInTheDocument();
+  expect(queryButton("Remove Website")).not.toBeInTheDocument();
+  expect(editor.textContent).toBe(draft);
+  expect(capture.runPrompts).toHaveLength(0);
+
+  click(button(`Use template ${template.title}`, panel));
   await waitFor(() => {
-    expect(composerInlineTemplates()).toHaveLength(1);
+    expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
+  });
+  expect(button("Remove Website")).toBeInTheDocument();
+  expect(screen.getByText("This message only")).toBeInTheDocument();
+  expect(querySuggestions()).not.toBeInTheDocument();
+  expect(editor).toHaveTextContent(draft);
+  expect(capture.runPrompts).toHaveLength(0);
+
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(messageText(capture.sentMessages[0])).toBe(draft);
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "template",
+    titleSnapshot: template.title,
+    template: {
+      type: "website",
+      selection: { websiteTemplateId: template.id },
+    },
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: "Create a website.",
+  });
+  await expect(screen.findByText(draft)).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(queryButton("Remove Website")).not.toBeInTheDocument();
+    expect(screen.queryByText("This message only")).not.toBeInTheDocument();
+    expect(composerInlineTemplates()).toHaveLength(0);
+  });
+  const nextEditor = await findComposerEditor();
+  await fill(nextEditor, "Thanks for the update.");
+  expect(nextEditor.textContent).toBe("Thanks for the update.");
+  expect(queryButton("Change generation settings")).not.toBeInTheDocument();
+  expect(querySuggestions()).not.toBeInTheDocument();
+});
+
+test("Candidate choices follow first mention and preserve staged options until confirmation", async () => {
+  const { capture, editor } = await setupComposer();
+  const draft =
+    "A website, an image, and slides for launch; another image and a document.";
+  await fill(editor, draft);
+  const panel = await suggestions();
+  expect(
+    within(panel).getByRole("heading", { name: "Website" }),
+  ).toBeInTheDocument();
+  const choices = within(panel).getByRole("group", {
+    name: "Choose a task",
+  });
+  expect(
+    queryAllByRoleFast("button", choices).map((choice) => {
+      return choice.textContent?.trim();
+    }),
+  ).toStrictEqual(["Website", "Image", "Presentation", "Document"]);
+  expect(button("Website", choices)).toHaveAttribute("aria-pressed", "true");
+  for (const task of ["Image", "Presentation", "Document"]) {
+    expect(button(task, choices)).toHaveAttribute("aria-pressed", "false");
+  }
+
+  click(button("Image", choices));
+  await within(panel).findByRole("heading", { name: "Image" });
+  expect(button("Image", choices)).toHaveAttribute("aria-pressed", "true");
+  expect(button("Website", choices)).toHaveAttribute("aria-pressed", "false");
+  await chooseOption(panel, "Image aspect ratio", "16:9");
+  click(button("Presentation", choices));
+  await within(panel).findByRole("heading", { name: "Presentation" });
+  expect(button("Presentation", choices)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(button("Image", choices)).toHaveAttribute("aria-pressed", "false");
+  await chooseOption(panel, "Slide count", "20–24 slides");
+  click(button("Image", choices));
+  await within(panel).findByRole("heading", { name: "Image" });
+  expect(
+    within(panel).getByRole("combobox", { name: "Image aspect ratio" }),
+  ).toHaveTextContent("16:9");
+  for (const task of ["Website", "Image", "Presentation", "Document"]) {
+    expect(queryButton(`Remove ${task}`)).not.toBeInTheDocument();
+  }
+  expect(composerInlineTemplates()).toHaveLength(0);
+  expect(editor.textContent).toBe(draft);
+  expect(capture.runPrompts).toHaveLength(0);
+
+  await applySettings(panel, "Image");
+  expect(button("Change generation settings")).toHaveTextContent("16:9");
+  click(button("Change generation settings"));
+  const changes = await suggestions();
+  expect(
+    within(changes).getByRole("heading", { name: "Image" }),
+  ).toBeInTheDocument();
+  expect(
+    within(changes).queryByRole("group", { name: "Choose a task" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(changes).getByRole("combobox", { name: "Image aspect ratio" }),
+  ).toHaveTextContent("16:9");
+  click(button("Dismiss suggestions", changes));
+  await waitFor(() => {
+    expect(querySuggestions()).not.toBeInTheDocument();
+  });
+  expect(button("Remove Image")).toBeInTheDocument();
+  expect(editor.textContent).toBe(draft);
+
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(messageText(capture.sentMessages[0])).toBe(draft);
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("Create an image."),
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("- Preferred aspect ratio: 16:9"),
+  });
+});
+
+test("Changing a presentation recommendation replaces its previous template", async () => {
+  const { capture, editor } = await setupComposer();
+  const [template, nextTemplate] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!template || !nextTemplate) {
+    throw new Error("Expected presentation templates");
+  }
+  const draft = "Use slides and an image for our launch.";
+  await fill(editor, draft);
+  const panel = await suggestions();
+  expect(
+    within(panel).getByRole("heading", { name: "Presentation" }),
+  ).toBeInTheDocument();
+  click(button(`Use template ${template.title}`, panel));
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
   });
   click(button("Change generation settings"));
   const changes = await suggestions();
-  click(button("Presentation", changes));
-  await applySettings(changes, "Presentation");
-  expect(composerInlineTemplates()).toHaveLength(0);
-  expect(editor.textContent?.trim()).toBe("report");
-  click(button("Change generation settings"));
-  click(
-    button(`Use template ${presentationTemplate.title}`, await suggestions()),
-  );
-  click(button("Change generation settings"));
-  click(
-    button(
-      `Use template ${nextPresentationTemplate.title}`,
-      await suggestions(),
-    ),
-  );
+  expect(
+    within(changes).getByRole("heading", { name: "Presentation" }),
+  ).toBeInTheDocument();
+  expect(
+    within(changes).queryByRole("group", { name: "Choose a task" }),
+  ).not.toBeInTheDocument();
+  click(button(`Use template ${nextTemplate.title}`, changes));
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(1);
-    expect(composerInlineTemplates()[0]).toHaveTextContent(
-      nextPresentationTemplate.title,
-    );
+    expect(composerInlineTemplates()[0]).toHaveTextContent(nextTemplate.title);
   });
+  expect(button("Remove Presentation")).toBeInTheDocument();
+  expect(editor).toHaveTextContent(draft);
+  expect(capture.runPrompts).toHaveLength(0);
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -401,9 +584,9 @@ test("Changing a report format removes only its recommendation-owned template", 
   expect(capture.selectedTemplates).toHaveLength(1);
   expect(capture.selectedTemplates[0]).toMatchObject({
     type: "presentation",
-    selection: { templateId: nextPresentationTemplate.templateId },
+    selection: { templateId: nextTemplate.templateId },
   });
-  expect(messageText(capture.sentMessages[0])).toBe("report");
+  expect(messageText(capture.sentMessages[0])).toBe(draft);
 });
 
 test("A same-type manual template selection takes ownership from a recommendation", async () => {
@@ -489,38 +672,109 @@ test("A manually attached template suppresses suggestions even after removing it
   );
 });
 
-test("Dismissal survives edits of the same intent until the draft is cleared", async () => {
-  const { capture, editor } = await setupComposer();
-  const user = userEvent.setup({ delay: null });
-  await fill(editor, "slide");
-  const panel = await suggestions();
-  click(button("Dismiss suggestions", panel));
-  await screen.findByRole("group", { name: "Choose a task" });
-  expect(querySuggestions()).not.toBeInTheDocument();
-  expect(editor).toHaveFocus();
-  expect(editor.textContent).toBe("slide");
+test.each(["Dismiss suggestions", "Escape"] as const)(
+  "%s closes every matched category through edits until the draft is cleared",
+  async (dismissal) => {
+    const { capture, editor } = await setupComposer();
+    const user = userEvent.setup({ delay: null });
+    const draft = "slides and an image";
+    await fill(editor, draft);
+    const panel = await suggestions();
+    expect(
+      within(panel).getByRole("heading", { name: "Presentation" }),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByRole("group", { name: "Choose a task" }),
+    ).toBeInTheDocument();
+    if (dismissal === "Escape") {
+      await user.keyboard("{Escape}");
+    } else {
+      click(button(dismissal, panel));
+    }
+    await waitFor(() => {
+      expect(querySuggestions()).not.toBeInTheDocument();
+    });
+    expect(editor).toHaveFocus();
+    expect(editor.textContent).toBe(draft);
+    expect(capture.runPrompts).toHaveLength(0);
 
-  await user.keyboard("s");
-  expect(editor.textContent).toBe("slides");
-  expect(querySuggestions()).not.toBeInTheDocument();
-  expect(capture.runPrompts).toHaveLength(0);
+    await user.keyboard(" for the launch");
+    expect(editor.textContent).toBe(`${draft} for the launch`);
+    expect(querySuggestions()).not.toBeInTheDocument();
+    await fill(editor, "image");
+    expect(editor.textContent).toBe("image");
+    expect(querySuggestions()).not.toBeInTheDocument();
 
-  await fill(editor, "");
-  expect(editor.textContent).toBe("");
-  await fill(editor, "slide");
-  await expect(suggestions()).resolves.toBeInTheDocument();
-  expect(editor.textContent).toBe("slide");
-  expect(capture.runPrompts).toHaveLength(0);
-});
+    await fill(editor, "");
+    expect(editor.textContent).toBe("");
+    await fill(editor, draft);
+    const reopened = await suggestions();
+    expect(
+      within(reopened).getByRole("heading", { name: "Presentation" }),
+    ).toBeInTheDocument();
+    expect(
+      within(reopened).getByRole("group", { name: "Choose a task" }),
+    ).toBeInTheDocument();
+    expect(editor.textContent).toBe(draft);
+    expect(capture.runPrompts).toHaveLength(0);
+  },
+);
 
-test("Dismissing a different intent does not forget earlier dismissals in the same draft", async () => {
+test("New candidates do not reopen previously dismissed types in the same draft", async () => {
   const { editor } = await setupComposer();
-  await fill(editor, "slide");
-  click(button("Dismiss suggestions", await suggestions()));
   await fill(editor, "image");
   click(button("Dismiss suggestions", await suggestions()));
-  await fill(editor, "slide");
+  await waitFor(() => {
+    expect(querySuggestions()).not.toBeInTheDocument();
+  });
+  await fill(editor, "image and a website");
+  const website = await suggestions();
+  expect(
+    within(website).getByRole("heading", { name: "Website" }),
+  ).toBeInTheDocument();
+  expect(
+    within(website).queryByRole("group", { name: "Choose a task" }),
+  ).not.toBeInTheDocument();
+  click(button("Dismiss suggestions", website));
+  await waitFor(() => {
+    expect(querySuggestions()).not.toBeInTheDocument();
+  });
+  await fill(editor, "A website, image, and document.");
+  const document = await suggestions();
+  expect(
+    within(document).getByRole("heading", { name: "Document" }),
+  ).toBeInTheDocument();
+  expect(
+    within(document).queryByRole("group", { name: "Choose a task" }),
+  ).not.toBeInTheDocument();
+  click(button("Dismiss suggestions", document));
+  await waitFor(() => {
+    expect(querySuggestions()).not.toBeInTheDocument();
+  });
+  await fill(editor, "website and image");
+  expect(editor.textContent).toBe("website and image");
   expect(querySuggestions()).not.toBeInTheDocument();
+});
+
+test("An active slash menu gates full-text generation suggestions", async () => {
+  const { capture, editor } = await setupComposer();
+  const draft = "For this campaign, I need an image";
+  await fill(editor, draft);
+  await suggestions();
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard(" /");
+  await expect(
+    screen.findByTestId("slash-workflow-menu"),
+  ).resolves.toBeInTheDocument();
+  expect(editor.textContent).toBe(`${draft} /`);
+  expect(querySuggestions()).not.toBeInTheDocument();
+  expect(capture.runPrompts).toHaveLength(0);
+
+  await fill(editor, draft);
+  await expect(suggestions()).resolves.toBeInTheDocument();
+  expect(editor.textContent).toBe(draft);
+  expect(screen.queryByTestId("slash-workflow-menu")).not.toBeInTheDocument();
+  expect(capture.runPrompts).toHaveLength(0);
 });
 
 test("Thread suggestions sit above the composer and stay closed during IME composition", async () => {

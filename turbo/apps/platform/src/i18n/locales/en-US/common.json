@@ -1847,9 +1847,6 @@
         "edit": "Change",
         "label": "Generation suggestions",
         "ratioHint": "Aspect ratio is a preference, subject to the image model and template.",
-        "report": "Report",
-        "reportFormat": "Report format",
-        "reportHint": "Choose a format, or select a document template below.",
         "thisMessage": "This message only"
       },
       "mentionHint": "Search agents or chats…",

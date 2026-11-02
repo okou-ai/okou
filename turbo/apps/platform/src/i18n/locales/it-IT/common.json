@@ -1875,9 +1875,6 @@
         "edit": "Modifica",
         "label": "Suggerimenti di generazione",
         "ratioHint": "Le proporzioni sono una preferenza e dipendono dal modello di immagini e dal modello scelto.",
-        "report": "Report",
-        "reportFormat": "Formato del report",
-        "reportHint": "Scegli un formato o un modello di documento qui sotto.",
         "thisMessage": "Solo questo messaggio"
       },
       "mentionHint": "Cerca agenti o chat…",
