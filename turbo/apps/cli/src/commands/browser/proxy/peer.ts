@@ -580,7 +580,10 @@ export class ProxyPeer {
   ): void {
     if (method === "Target.setDiscoverTargets") {
       if (requested.discover === true) this.discovery.set(channel, requested);
-      else this.discovery.delete(channel);
+      else {
+        this.discovery.delete(channel);
+        this.visible.delete(channel);
+      }
     }
     if (method === "Target.setAutoAttach") {
       if (requested.autoAttach === true)

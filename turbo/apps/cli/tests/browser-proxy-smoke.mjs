@@ -765,6 +765,29 @@ try {
   });
   assert.equal(blankTab.length, 1);
   const movedSession = await pageSession(scopedA, created.targetId);
+  const nativeDiscovery = await wire(endpoint);
+  const proxyDiscovery = await wire(proxyA.endpoint);
+  const cancelledEvents = new Map([
+    [nativeDiscovery, []],
+    [proxyDiscovery, []],
+  ]);
+  const discoveryListeners = [];
+  for (const [connection, events] of cancelledEvents) {
+    await connection.request("Target.setDiscoverTargets", {
+      discover: true,
+      filter: [{ type: "page" }],
+    });
+    await connection.request("Target.setDiscoverTargets", { discover: false });
+    discoveryListeners.push(
+      connection.onEvent((event) => {
+        if (
+          event.method === "Target.targetDestroyed" &&
+          event.params.targetId === created.targetId
+        )
+          events.push(event);
+      }),
+    );
+  }
   await observe(
     scopedA,
     (event) => {
@@ -782,6 +805,18 @@ try {
       });
     },
   );
+  // The scoped detach proves ownership reconciliation began. Await this peer's
+  // queued control work before observing the cancelled discovery contract.
+  await proxyDiscovery.request("Target.setAutoAttach", {
+    autoAttach: false,
+    waitForDebuggerOnStart: false,
+    flatten: true,
+  });
+  await nativeDiscovery.request("Target.getTargets");
+  for (const off of discoveryListeners) off();
+  assert.equal(cancelledEvents.get(nativeDiscovery).length, 0);
+  assert.equal(cancelledEvents.get(proxyDiscovery).length, 0);
+  for (const connection of cancelledEvents.keys()) connection.close();
   await assert.rejects(scopedA.request("Runtime.enable", {}, movedSession));
   // Moving a different native tab must not invalidate this iframe's ancestry.
   await scopedA.request("Runtime.enable", {}, frameSession);
@@ -872,6 +907,7 @@ try {
         guestTaskAdmission: options["guest-task"],
         getCdpUrlAndIndependentClient: true,
         popup: true,
+        discoveryCancellation: true,
         nativeMoveRetiresSession: true,
         unrelatedMovePreservesIframe: true,
         parentMoveRetiresIframe: true,

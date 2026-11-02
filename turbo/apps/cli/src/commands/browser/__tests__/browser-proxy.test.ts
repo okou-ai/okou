@@ -159,6 +159,65 @@ describe("chat-window CDP proxy protocol", () => {
     ).rejects.toMatchObject({ code: -32000 });
   });
 
+  it.each([false, true])(
+    "stops discovery notifications after cancellation (browser session=%s)",
+    async (browserSession) => {
+      const browser = String(
+        (await connection.request("Target.attachToBrowserTarget")).sessionId,
+      );
+      const cancelled = browserSession ? browser : undefined;
+      const active = browserSession ? undefined : browser;
+      const created = await connection.request("Target.createTarget", {
+        url: "about:blank",
+      });
+      for (const channel of [undefined, browser])
+        await connection.request(
+          "Target.setDiscoverTargets",
+          { discover: true },
+          channel,
+        );
+      await connection.request(
+        "Target.setDiscoverTargets",
+        { discover: false },
+        cancelled,
+      );
+      const cancelledEvents: Message[] = [];
+      const listen = (message: Message) => {
+        if (message.sessionId === cancelled) cancelledEvents.push(message);
+      };
+      connection.listeners.add(listen);
+      const removed = connection.event((message) => {
+        return (
+          message.method === "Target.targetDestroyed" &&
+          message.sessionId === active &&
+          message.params?.targetId === "A"
+        );
+      });
+      provider.move("A", 1);
+      // The other channel's synthetic event proves native reconciliation began.
+      // Await this peer's queued control work before asserting cancellation.
+      await removed;
+      await connection.request("Target.setAutoAttach", {
+        autoAttach: false,
+        waitForDebuggerOnStart: false,
+        flatten: true,
+      });
+      connection.listeners.delete(listen);
+      expect(
+        cancelledEvents.filter((message) => {
+          return message.method === "Target.targetDestroyed";
+        }),
+      ).toStrictEqual([]);
+      expect(
+        (await connection.request("Target.getTargets")).targetInfos,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ targetId: created.targetId }),
+        ]),
+      );
+    },
+  );
+
   it("supports flat sessions without a membership request for every input", async () => {
     const { sessionId } = await connection.request("Target.attachToTarget", {
       targetId: "A",
