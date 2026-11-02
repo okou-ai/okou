@@ -291,7 +291,9 @@ public actor NativeProcess {
   ) -> DesktopFailure {
     DesktopFailure(
       "command_timeout",
-      "Native command deadline expired. An action may have been delivered; do not replay automatically.",
+      interruption == nil
+        ? "Native command deadline expired. An action may have been delivered; do not replay automatically."
+        : "Permission check deadline expired while this Mac was asleep.",
       interruption: interruption
     )
   }

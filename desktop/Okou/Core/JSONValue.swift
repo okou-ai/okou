@@ -80,6 +80,7 @@ public enum JSONValue: Codable, Sendable, Equatable {
 public struct DesktopFailure: Error, LocalizedError, Sendable {
   public enum Interruption: Sendable, Equatable {
     case suspendedPermissionRefresh
+    case suspendedCommandPreflight
   }
 
   public let code: String

@@ -112,12 +112,15 @@ struct NativeHelperTimeoutDiagnostics: Sendable {
     let elapsed = request.started.duration(to: observedAt).seconds
     let awake = request.awakeStarted.duration(to: awakeObservedAt).seconds
     guard purpose == .computerUse, request.operation == .permissionsState,
-      request.intent == .permissionRefresh, pendingRequests == 1,
+      request.intent == .permissionRefresh || request.intent == .commandPreflight,
+      pendingRequests == 1, request.writtenAt != nil,
       request.timeout > 0, request.timeout.isFinite,
       detectedAt >= request.deadline, retiredAt >= detectedAt, observedAt >= retiredAt,
+      elapsed.isFinite, awake.isFinite,
       awake >= 0, awake < request.timeout, elapsed >= request.timeout, elapsed > awake
     else { return nil }
-    return .suspendedPermissionRefresh
+    return request.intent == .permissionRefresh
+      ? .suspendedPermissionRefresh : .suspendedCommandPreflight
   }
 }
 

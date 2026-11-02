@@ -451,6 +451,9 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(events.count, 1)
     let event = try XCTUnwrap(events.first)
     XCTAssertEqual(event["level"].string, "info")
+    XCTAssertEqual(
+      event["fingerprint"],
+      .array([.string("desktop-native-helper"), .string("permission-check-system-suspension")]))
     let diagnostics = event["contexts"]["nativeHelper"]
     XCTAssertEqual(diagnostics["requestIntent"].string, "permission_refresh")
     XCTAssertEqual(diagnostics["outcome"].string, "expired_during_system_suspension")
@@ -483,7 +486,7 @@ final class NativeProcessTests: XCTestCase {
 
   func testAwakePermissionRefreshTimeoutStillPropagatesAnError() async throws {
     let collector = try telemetry()
-    let fixture = try permissionFixture(awakeAdvance: .seconds(120))
+    let fixture = try permissionFixture(awakeAdvance: .seconds(11))
     let executor = CommandExecutor(helper: fixture.helper)
     do {
       _ = try await executor.permissions()
@@ -503,12 +506,18 @@ final class NativeProcessTests: XCTestCase {
     let result = await listApps(CommandExecutor(helper: fixture.helper))
     XCTAssertEqual(result["status"].string, "failed")
     XCTAssertEqual(result["error"]["code"].string, "command_timeout")
+    XCTAssertTrue(try XCTUnwrap(result["error"]["message"].string).contains("asleep"))
     let attempts = try String(
       contentsOf: fixture.directory.appendingPathComponent("attempts"), encoding: .utf8)
     XCTAssertEqual(attempts.split(separator: "\n"), ["permissions.state"])
     let event = try XCTUnwrap(collector.events().first)
-    XCTAssertEqual(event["level"].string, "error")
+    XCTAssertEqual(event["level"].string, "info")
     XCTAssertEqual(event["contexts"]["nativeHelper"]["requestIntent"].string, "command_preflight")
+    XCTAssertEqual(
+      event["contexts"]["nativeHelper"]["outcome"].string, "expired_during_system_suspension")
+    XCTAssertEqual(
+      event["fingerprint"],
+      .array([.string("desktop-native-helper"), .string("permission-check-system-suspension")]))
   }
 
   func testSuspendedPermissionReadWithUnspecifiedIntentRemainsAnError() async throws {
