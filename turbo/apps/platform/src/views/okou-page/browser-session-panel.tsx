@@ -262,7 +262,25 @@ function PausedBrowserSession({
   );
   const pausedMessage = (
     <PanelMessage
-      icon={<AppWindow size={26} className="text-muted-foreground" />}
+      icon={
+        showScreenshot ? (
+          <div className="relative mb-3 aspect-[16/10] w-full max-w-80 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/20">
+            <ArtifactThumbnailImage
+              src={screenshotUrl}
+              load={screenshotLoad}
+              testId="browser-session-panel-screenshot"
+              className="absolute inset-0 h-full w-full object-cover object-top"
+              fallback={
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <AppWindow size={26} className="text-muted-foreground" />
+                </span>
+              }
+            />
+          </div>
+        ) : (
+          <AppWindow size={26} className="text-muted-foreground" />
+        )
+      }
       title={t(($) => {
         return $.browserSession.panel.notLive;
       })}
@@ -294,14 +312,7 @@ function PausedBrowserSession({
           </button>
         )
       }
-      className={cn(
-        "absolute inset-0 z-10",
-        showScreenshot
-          ? "bg-background/50 backdrop-blur-md"
-          : refined
-            ? ""
-            : undefined,
-      )}
+      className={cn("absolute inset-0 z-10", !refined && "bg-muted/20")}
     />
   );
   return (
@@ -311,22 +322,7 @@ function PausedBrowserSession({
         signals={signals.browser}
         actions={refined ? actions : null}
         presence={null}
-        placeholder={
-          <>
-            {showScreenshot && (
-              <ArtifactThumbnailImage
-                src={screenshotUrl}
-                load={screenshotLoad}
-                testId="browser-session-panel-screenshot"
-                className="absolute inset-x-0 top-0 h-auto w-full object-contain object-top"
-                fallback={
-                  <span className="absolute inset-0 bg-muted/20" aria-hidden />
-                }
-              />
-            )}
-            <div data-browser-session-screenshot-mask>{pausedMessage}</div>
-          </>
-        }
+        placeholder={pausedMessage}
       />
     </PanelFrame>
   );

@@ -414,36 +414,66 @@ test("Browser cards show status and thumbnail changes on events and continuity g
   );
 });
 
-test("A browser card uses a private screenshot thumbnail while its panel keeps the original", async () => {
-  const screenshotUrl =
-    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
-    "?X-Amz-Signature=browser-screenshot-signature";
-  const browser = managedBrowserSession({
-    status: "suspended",
-    screenshotUrl,
-    liveUrl: null,
-  });
-  installCapabilityChat({
-    events: completedConversation(
-      `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
-    ),
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser });
-  });
+test.each([false, true])(
+  "A paused browser frames its original screenshot with cloud browser panel=%s",
+  async (cloudBrowserPanel) => {
+    const screenshotUrl =
+      `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
+      "?X-Amz-Signature=browser-screenshot-signature";
+    const browser = managedBrowserSession({
+      status: "suspended",
+      screenshotUrl,
+      liveUrl: null,
+    });
+    installCapabilityChat({
+      events: completedConversation(
+        `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
+      ),
+    });
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(200, { browser });
+    });
 
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  const card = await findButton("Open Research browser");
-  expect(within(card).getByTestId("browser-session-thumbnail")).toHaveAttribute(
-    "src",
-    `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${screenshotUrl}`,
-  );
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.CloudBrowserPanel]: cloudBrowserPanel,
+      },
+    });
+    const card = await findButton("Open Research browser");
+    expect(
+      within(card).getByTestId("browser-session-thumbnail"),
+    ).toHaveAttribute(
+      "src",
+      `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${screenshotUrl}`,
+    );
 
-  click(card);
-  await expect(
-    screen.findByTestId("browser-session-panel-screenshot"),
-  ).resolves.toHaveAttribute("src", screenshotUrl);
-});
+    click(card);
+    const screenshot = await screen.findByTestId(
+      "browser-session-panel-screenshot",
+    );
+    expect(screenshot).toHaveAttribute("src", screenshotUrl);
+    const renderAppStyles = await createRenderedAppStyles(context.signal);
+    renderAppStyles(screenshot.parentElement!);
+    expect(getComputedStyle(screenshot.parentElement!).aspectRatio).toBe(
+      "16 / 10",
+    );
+    renderAppStyles(screenshot);
+    expect(getComputedStyle(screenshot).objectFit).toBe("cover");
+    expect(getComputedStyle(screenshot).objectPosition).toBe("top");
+
+    fireEvent.error(screenshot);
+    renderAppStyles(screenshot);
+    expect(screenshot).not.toBeVisible();
+    const sidebar = screen.getByRole("complementary", {
+      name: "Cloud browser",
+    });
+    expect(within(sidebar).getByText("Browser not live")).toBeInTheDocument();
+    expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
+  },
+);
 
 test("Follow suspension and resumption in the live browser panel", async () => {
   const { updateBrowser } = await openManagedBrowserChat();
