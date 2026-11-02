@@ -1506,7 +1506,7 @@
         },
         "connector": {
           "action": "Conectar",
-          "description": "Gmail, Notion e mais de 100",
+          "description": "Gmail, Notion e mais de 4.000",
           "name": "Conecte uma ferramenta",
           "unit": "por conector"
         },
