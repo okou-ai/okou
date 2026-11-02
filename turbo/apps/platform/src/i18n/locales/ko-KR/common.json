@@ -3574,6 +3574,7 @@
         "backToSettings": "설정으로 돌아가기",
         "checkingTitle": "계정 상태 확인 중...",
         "connectionFailed": "연결 실패",
+        "invalidBotConnectLink": "이 연결 링크는 유효하지 않거나 만료되었습니다. {{provider}}로 돌아가 봇에게 메시지를 보내 새 링크를 받으세요.",
         "invalidLink": "유효하지 않은 링크",
         "verifying": "연결 확인 중입니다. 잠시만 기다려 주세요."
       },

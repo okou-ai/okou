@@ -3587,6 +3587,7 @@
         "backToSettings": "Back to settings",
         "checkingTitle": "Checking account status...",
         "connectionFailed": "Connection failed",
+        "invalidBotConnectLink": "This connection link is invalid or has expired. Return to {{provider}} and message the bot for a new link.",
         "invalidLink": "Invalid link",
         "verifying": "Please wait while we verify your connection."
       },

@@ -3574,6 +3574,7 @@
         "backToSettings": "返回設定",
         "checkingTitle": "正在檢查帳號狀態…",
         "connectionFailed": "連線失敗",
+        "invalidBotConnectLink": "此綁定連結無效或已過期。請返回 {{provider}}，傳送訊息給機器人以取得新的綁定連結。",
         "invalidLink": "連結無效",
         "verifying": "我們正在驗證你的連線，請稍候。"
       },

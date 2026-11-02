@@ -3589,6 +3589,7 @@
         "backToSettings": "Zurück zu den Einstellungen",
         "checkingTitle": "Kontostatus wird geprüft...",
         "connectionFailed": "Verbindung fehlgeschlagen",
+        "invalidBotConnectLink": "Dieser Verbindungslink ist ungültig oder abgelaufen. Kehre zu {{provider}} zurück und sende dem Bot eine Nachricht, um einen neuen Link zu erhalten.",
         "invalidLink": "Ungültiger Link",
         "verifying": "Bitte warten Sie, während wir Ihre Verbindung überprüfen."
       },
