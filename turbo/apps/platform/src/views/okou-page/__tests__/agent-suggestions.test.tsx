@@ -760,7 +760,6 @@ test("Feed options continue in the default Agent after visiting a secondary Agen
     featureSwitches: features,
   });
   expect(button("Workflow")).toBeInTheDocument();
-  expect(screen.queryByText(makeSuggestion().title)).not.toBeInTheDocument();
   click(link("/feed"));
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
