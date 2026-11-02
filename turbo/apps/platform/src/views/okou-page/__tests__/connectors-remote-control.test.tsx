@@ -2,8 +2,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -46,7 +45,25 @@ test("Remote control lists each connection and filters credentials by type", asy
     return respond(200, { observations: [] });
   });
   context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
+    return respond(200, {
+      credentials: [
+        {
+          id: "d0000000-0000-4000-8000-000000000001",
+          name: "Deployment login",
+          username: "deploy",
+          authMethod: "password",
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+          hosts: ["Deployment", "Analytics"].map((displayName, index) => {
+            return {
+              id: `b0000000-0000-4000-8000-00000000000${index + 1}`,
+              displayName,
+            };
+          }),
+        },
+      ],
+    });
   });
   context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: 1 });
@@ -70,29 +87,52 @@ test("Remote control lists each connection and filters credentials by type", asy
     });
   });
   context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
+    return respond(200, {
+      credentials: [
+        {
+          id: "f0000000-0000-4000-8000-000000000001",
+          name: "Desktop login",
+          authMethod: "vnc_password",
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+          hosts: [
+            {
+              id: "e0000000-0000-4000-8000-000000000001",
+              displayName: "Design desktop",
+            },
+          ],
+        },
+      ],
+    });
   });
 
   await setupPage({
     context,
     path: "/connectors?scope=remote-control",
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
   });
-  await screen.findByRole("heading", { name: "Deployment" });
-  expect(screen.getByRole("heading", { name: "Analytics" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Design desktop" })).toBeVisible();
+  const connections = await screen.findByRole("list", {
+    name: "Remote connections",
+  });
+  await within(connections).findByRole("listitem", { name: "Deployment" });
+  expect(
+    within(connections).getByRole("listitem", { name: "Analytics" }),
+  ).toBeInTheDocument();
+  expect(
+    within(connections).getByRole("listitem", { name: "Design desktop" }),
+  ).toBeInTheDocument();
   expect(
     screen.getByTestId("connectors-scope-remote-control"),
   ).toHaveTextContent("3");
 
-  click(getConnectorAction("button", "Type: All"));
-  const menu = await screen.findByRole("menu");
-  click(getConnectorAction("menuitem", "VNC", menu));
-  expect(screen.queryByRole("heading", { name: "Deployment" })).toBeNull();
-  expect(screen.getByRole("heading", { name: "Design desktop" })).toBeVisible();
-
-  click(screen.getByRole("radio", { name: "Credentials" }));
-  await screen.findByText("No saved VNC credentials.");
-  expect(screen.queryByText(/No saved SSH credentials/u)).toBeNull();
-  expect(getConnectorAction("button", "Add credential")).toBeVisible();
+  click(getConnectorAction("link", "Manage credentials"));
+  await screen.findByRole("heading", { name: "Credentials", level: 1 });
+  await expect(
+    screen.findByRole("heading", { name: "Deployment login" }),
+  ).resolves.toBeInTheDocument();
+  click(screen.getByRole("radio", { name: "VNC" }));
+  await expect(
+    screen.findByRole("heading", { name: "Desktop login" }),
+  ).resolves.toBeInTheDocument();
+  expect(getConnectorAction("button", "Add credential")).toBeInTheDocument();
 });

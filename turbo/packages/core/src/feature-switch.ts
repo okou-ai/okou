@@ -89,13 +89,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.RemoteControlGuidedSetup]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Remote control guided setup",
-    description:
-      "Set up and manage remote connections and private networks step by step.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",

@@ -5,12 +5,10 @@ import {
   closeRemoteNetworkEditor$,
 } from "./remote-network-location.ts";
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { SSH_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/validators/ssh-credentials";
 import type { SshConnectionMode } from "@okouai/api-contracts/contracts/ssh-connections";
 import { VNC_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/validators/vnc-credentials";
 import { authenticatedSessionKey$ } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
   searchParams$,
   updateSearchParams$,
@@ -86,11 +84,6 @@ type RemoteSetupDraft = Omit<RemoteSetup, "step" | "vncStep">;
 const setup$ = state<RemoteSetupDraft | null>(null);
 const flowSequence$ = state(0);
 const resetSetupOperation$ = resetSignal();
-export const remoteControlGuidedEnabled$ = computed((get) => {
-  return (
-    get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] ?? false
-  );
-});
 function initialSetup(
   sessionKey: string,
   protocol: "ssh" | "vnc",
@@ -179,7 +172,6 @@ export const remoteSetup$ = computed((get): RemoteSetup | null => {
   const sessionKey = get(authenticatedSessionKey$);
   const protocol = get(remoteSetupProtocol$);
   if (
-    !get(remoteControlGuidedEnabled$) ||
     !sessionKey ||
     !protocol ||
     get(searchParams$).get("scope") !== "remote-control"
@@ -392,7 +384,7 @@ export const enterRemoteSetup$ = command(
     fromComputer?: boolean,
   ) => {
     const sessionKey = get(authenticatedSessionKey$);
-    if (!sessionKey || !get(remoteControlGuidedEnabled$)) {
+    if (!sessionKey) {
       return;
     }
     set(resetRemoteSetup$);
@@ -435,7 +427,7 @@ export const chooseRemoteProtocol$ = command(
   },
 );
 export const startComputerSetup$ = command(({ get, set }) => {
-  if (!get(remoteControlGuidedEnabled$) || !get(authenticatedSessionKey$)) {
+  if (!get(authenticatedSessionKey$)) {
     return;
   }
   set(resetRemoteSetup$);
@@ -728,9 +720,6 @@ export const chooseRemoteNetworkProvider$ = command(
     parentSignal: AbortSignal,
   ) => {
     const signal = set(resetSetupOperation$, parentSignal);
-    if (!get(remoteControlGuidedEnabled$)) {
-      return;
-    }
     if (kind === "tailscale") {
       const existing = await get(tailscaleDialog$);
       signal.throwIfAborted();

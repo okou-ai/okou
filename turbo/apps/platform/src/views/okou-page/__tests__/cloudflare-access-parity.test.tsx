@@ -1,10 +1,10 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cloudflareAccessContract,
   type CloudflareAccessImpactPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -42,22 +42,21 @@ const impact: CloudflareAccessImpactPreview = Object.freeze({
   affectedOwners: [{ userId: "other-owner", displayName: "Other Owner" }],
   impactSnapshot: "a".repeat(64),
 });
-const operations = ["convert", "delete"] as const;
+const detailsPath = `/connectors?scope=private-network&remoteResource=cloudflare:${config.id}`;
 
 beforeEach(() => {
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  });
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
 });
 
-async function page(
-  role: "admin" | "member" = "member",
-  path = "/connectors?scope=private-network",
-) {
+async function page(path = detailsPath, role: "admin" | "member" = "member") {
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path,
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
@@ -69,57 +68,46 @@ async function page(
   });
 }
 
-async function sharedDialog(operation: (typeof operations)[number]) {
+async function sharedDeletion() {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
   });
-  await page("admin");
-  const organization = await screen.findByRole("region", {
-    name: "Organization",
+  await page(detailsPath, "admin");
+  await screen.findByRole("heading", { name: shared.name });
+  click(getAction("button", "Delete Cloudflare Access"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete Cloudflare Access",
   });
-  await within(organization).findByText(shared.name);
-  const action =
-    operation === "convert" ? "Make personal" : "Delete Cloudflare Access";
-  click(getAction("button", action, organization));
-  const dialog = await screen.findByRole("dialog", { name: action });
   await within(dialog).findByText(/Other Owner/u);
   await userEvent.click(within(dialog).getByRole("checkbox"));
-  expect(getAction("button", action, dialog)).toBeEnabled();
-  return { dialog, action };
+  expect(getAction("button", "Delete Cloudflare Access", dialog)).toBeEnabled();
+  return dialog;
 }
 
-test("An unchanged save closes the editor without updating the configuration", async () => {
+test("An unchanged save returns to details without updating the configuration", async () => {
   context.mocks.api(cloudflareAccessContract.update, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Unavailable" },
     });
   });
   await page();
-  await screen.findByText(config.name);
-  click(getAction("button", "Edit Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), ` ${config.name} `);
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(screen.getByText(config.name)).toBeInTheDocument();
+  await screen.findByRole("heading", { name: config.name });
+  click(getAction("button", "Edit settings"));
+  const name = await screen.findByLabelText("Network name");
+  await fill(name, ` ${config.name} `);
+  click(getAction("button", "Save network"));
+  await screen.findByRole("heading", { name: config.name });
+  expect(getAction("button", "Edit settings")).toBeInTheDocument();
 });
 
-test.each(
-  operations.flatMap((operation) => {
-    return ["cloudflare-access:changed", "ssh:changed"].map((topic) => {
-      return { operation, topic };
-    });
-  }),
-)(
-  "$operation refreshes changed impact on $topic and requires fresh confirmation",
-  async ({ operation, topic }) => {
+test.each(["cloudflare-access:changed", "ssh:changed"])(
+  "Shared deletion refreshes changed impact on %s and requires fresh confirmation",
+  async (topic) => {
     let currentImpact = impact;
     context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
       return respond(200, currentImpact);
     });
-    const { dialog, action } = await sharedDialog(operation);
+    const dialog = await sharedDeletion();
     currentImpact = {
       ...impact,
       otherHostCount: 3,
@@ -130,30 +118,29 @@ test.each(
     });
     await within(dialog).findByText(/1 member and 3 hosts/u);
     expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-    expect(getAction("button", action, dialog)).toBeDisabled();
+    expect(
+      getAction("button", "Delete Cloudflare Access", dialog),
+    ).toBeDisabled();
   },
 );
 
-test.each(operations)(
-  "%s keeps confirmation when a refreshed impact snapshot is unchanged",
-  async (operation) => {
-    let currentImpact = impact;
-    context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-      return respond(200, currentImpact);
-    });
-    const { dialog, action } = await sharedDialog(operation);
-    currentImpact = {
-      ...impact,
-      affectedOwners: [{ userId: "other-owner", displayName: "Updated Owner" }],
-    };
-    await act(() => {
-      return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
-    });
-    await within(dialog).findByText(/Updated Owner/u);
-    expect(within(dialog).getByRole("checkbox")).toBeChecked();
-    expect(getAction("button", action, dialog)).toBeEnabled();
-  },
-);
+test("Shared deletion keeps confirmation when a refreshed impact snapshot is unchanged", async () => {
+  let currentImpact = impact;
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(200, currentImpact);
+  });
+  const dialog = await sharedDeletion();
+  currentImpact = {
+    ...impact,
+    affectedOwners: [{ userId: "other-owner", displayName: "Updated Owner" }],
+  };
+  await act(() => {
+    return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
+  });
+  await within(dialog).findByText(/Updated Owner/u);
+  expect(within(dialog).getByRole("checkbox")).toBeChecked();
+  expect(getAction("button", "Delete Cloudflare Access", dialog)).toBeEnabled();
+});
 
 test("A network-only removal refreshes SSH rebind requirements and preserves default access", async () => {
   let removed = false;
@@ -179,7 +166,6 @@ test("A network-only removal refreshes SSH rebind requirements and preserves def
             {
               ...shared,
               sshHosts: [{ id: host.id, displayName: host.displayName }],
-              vncHosts: [],
             },
           ],
     });
@@ -218,13 +204,13 @@ test("A network-only removal refreshes SSH rebind requirements and preserves def
       });
     },
   );
-  await page("member", "/connectors?scope=remote-control&type=ssh");
-  await screen.findByText(host.displayName);
+  await page(`/connectors?scope=remote-control&remoteResource=ssh:${host.id}`);
+  await screen.findByRole("heading", { name: host.displayName });
   const toggle = await screen.findByRole("switch", {
     name: "Enabled by default for chats",
   });
   await waitFor(() => {
-    return expect(toggle).toBeChecked();
+    expect(toggle).toBeChecked();
   });
   removed = true;
   await act(() => {
@@ -236,26 +222,4 @@ test("A network-only removal refreshes SSH rebind requirements and preserves def
   expect(
     screen.getByRole("switch", { name: "Enabled by default for chats" }),
   ).toBeChecked();
-});
-
-test("Background network revalidation preserves an open name and credential draft", async () => {
-  let current = config;
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
-  });
-  await page();
-  await screen.findByText(config.name);
-  click(getAction("button", "Edit Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), "Local draft");
-  await userEvent.click(within(dialog).getByRole("checkbox"));
-  const secret = within(dialog).getByLabelText("Service Token Client Secret");
-  await fill(secret, "draft-secret");
-  current = { ...config, name: "Server rename", revision: 2 };
-  await act(() => {
-    return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
-  });
-  await screen.findByText(current.name);
-  expect(within(dialog).getByLabelText("Name")).toHaveValue("Local draft");
-  expect(secret).toHaveValue("draft-secret");
 });

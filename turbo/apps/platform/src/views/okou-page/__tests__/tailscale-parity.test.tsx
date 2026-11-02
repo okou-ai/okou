@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   tailscaleContract,
   type TailscaleConfig,
@@ -50,7 +49,6 @@ async function page() {
   context.mocks.data.org({ id: orgId, name: "Engineering", role: "admin" });
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     auth: {
       user: { id: "tailscale-owner", fullName: "Tailscale Owner" },
       organization: {
@@ -58,11 +56,14 @@ async function page() {
         memberships: [{ id: orgId }],
       },
     },
-    path: "/connectors?scope=private-network",
+    path: `/connectors?scope=private-network&remoteResource=tailscale:${config.id}`,
   });
-  const section = await screen.findByRole("region", { name: "Tailscale" });
-  await within(section).findByText(config.name);
-  return section;
+  await screen.findByRole("heading", { name: config.name });
+}
+
+async function edit() {
+  click(getAction("button", "Edit settings"));
+  return await screen.findByLabelText("Network name");
 }
 
 test("A common SSH notice refreshes network usage and restores deletion after unbinding", async () => {
@@ -70,9 +71,9 @@ test("A common SSH notice refreshes network usage and restores deletion after un
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, { configs: [current] });
   });
-  const section = await page();
-  await within(section).findByText("Not used by any of your hosts");
-  expect(getAction("button", "Delete Tailscale", section)).toBeEnabled();
+  await page();
+  await screen.findByText("Not used by any of your hosts");
+  expect(getAction("button", "Delete Tailscale")).toBeEnabled();
   current = {
     ...config,
     sshHosts: [
@@ -85,36 +86,29 @@ test("A common SSH notice refreshes network usage and restores deletion after un
   await act(() => {
     return context.mocks.ably.trigger("ssh:changed", { orgId });
   });
-  await within(section).findByText("New private server");
-  expect(getAction("button", "Delete Tailscale", section)).toBeDisabled();
+  await screen.findByText("New private server");
+  expect(getAction("button", "Delete Tailscale")).toBeDisabled();
   current = config;
   await act(() => {
     return context.mocks.ably.trigger("ssh:changed", { orgId });
   });
-  await within(section).findByText("Not used by any of your hosts");
-  expect(within(section).queryByText("New private server")).toBeNull();
-  expect(getAction("button", "Delete Tailscale", section)).toBeEnabled();
+  await screen.findByText("Not used by any of your hosts");
+  expect(getAction("button", "Delete Tailscale")).toBeEnabled();
 });
 
-test("Saving unchanged normalized metadata closes the editor even when writes are unavailable", async () => {
+test("Saving unchanged normalized metadata returns to details even when writes are unavailable", async () => {
   context.mocks.api(tailscaleContract.update, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Writes unavailable" },
     });
   });
-  const section = await page();
-  click(getAction("button", "Edit Tailscale", section));
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), `  ${config.name}  `);
-  await fill(
-    within(dialog).getByLabelText("Registration tags"),
-    "tag:okou, tag:build",
-  );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(within(section).getByText(config.name)).toBeInTheDocument();
+  await page();
+  const name = await edit();
+  await fill(name, `  ${config.name}  `);
+  await fill(screen.getByLabelText("Allowed tags"), "tag:okou, tag:build");
+  click(getAction("button", "Save network"));
+  await screen.findByRole("heading", { name: config.name });
+  expect(getAction("button", "Edit settings")).toBeInTheDocument();
 });
 
 test("An intentional tag-order edit is saved against the current revision", async () => {
@@ -128,24 +122,14 @@ test("An intentional tag-order edit is saved against the current revision", asyn
     current = { ...config, tags: body.tags ?? config.tags, revision: 2 };
     return respond(200, current);
   });
-  const section = await page();
-  click(getAction("button", "Edit Tailscale", section));
-  const dialog = await screen.findByRole("dialog");
-  await fill(
-    within(dialog).getByLabelText("Registration tags"),
-    "tag:build, tag:okou",
-  );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  await within(section).findByText("tag:build, tag:okou");
+  await page();
+  await edit();
+  await fill(screen.getByLabelText("Allowed tags"), "tag:build, tag:okou");
+  click(getAction("button", "Save network"));
+  await screen.findByRole("heading", { name: config.name });
+  await screen.findByText("tag:build, tag:okou");
   expect(requests).toStrictEqual([
-    {
-      expectedRevision: 1,
-      name: config.name,
-      tags: ["tag:build", "tag:okou"],
-    },
+    { expectedRevision: 1, name: config.name, tags: ["tag:build", "tag:okou"] },
   ]);
 });
 
@@ -165,9 +149,11 @@ test("Affected members expose identifiers only for ambiguous or unavailable name
       ],
     });
   });
-  const section = await page();
-  click(getAction("button", "Make personal", section));
-  const dialog = await screen.findByRole("dialog");
+  await page();
+  click(getAction("button", "Delete Tailscale"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete Tailscale",
+  });
   await within(dialog).findByText("Unique Member");
   expect(dialog.textContent).not.toContain("user_unique");
   expect(dialog.textContent).toContain("Same Name (ID user_alpha_12345678)");
@@ -176,54 +162,64 @@ test("Affected members expose identifiers only for ambiguous or unavailable name
   expect(dialog.textContent).not.toContain("user_gamma");
 });
 
-test.each([
-  { operation: "delete", label: "Delete Tailscale" },
-  { operation: "adopt", label: "Make personal" },
-] as const)(
-  "A zero-impact $operation needs no other-owner acknowledgement",
-  async ({ operation, label }) => {
+test.each(["delete", "restrict"] as const)(
+  "A zero-impact %s needs no other-owner acknowledgement",
+  async (operation) => {
+    let current: TailscaleConfig | null = shared;
     const requests: unknown[] = [];
     context.mocks.api(tailscaleContract.list, ({ respond }) => {
-      return respond(200, { configs: [shared] });
+      return respond(200, { configs: current ? [current] : [] });
     });
     context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-      return respond(200, {
-        ...impact,
-        otherHostCount: 0,
-        affectedOwners: [],
-      });
+      return respond(200, { ...impact, otherHostCount: 0, affectedOwners: [] });
     });
-    if (operation === "delete") {
-      context.mocks.api(tailscaleContract.delete, ({ body, respond }) => {
+    context.mocks.api(tailscaleContract.delete, ({ body, respond }) => {
+      requests.push(body);
+      current = null;
+      return respond(204);
+    });
+    context.mocks.api(
+      tailscaleContract.convertToPersonal,
+      ({ body, respond }) => {
         requests.push(body);
-        return respond(204);
-      });
+        current = { ...shared, scope: "personal", revision: 2, generation: 2 };
+        return respond(200, current);
+      },
+    );
+    await page();
+    if (operation === "delete") {
+      click(getAction("button", "Delete Tailscale"));
     } else {
-      context.mocks.api(
-        tailscaleContract.convertToPersonal,
-        ({ body, respond }) => {
-          requests.push(body);
-          return respond(200, {
-            ...shared,
-            scope: "personal",
-            revision: 2,
-            generation: 2,
-          });
-        },
-      );
+      await edit();
+      click(screen.getByText("Only me", { exact: true }));
+      click(getAction("button", "Save network"));
     }
-    const section = await page();
-    click(getAction("button", label, section));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", {
+      name:
+        operation === "delete"
+          ? "Delete Tailscale"
+          : "Make this network available only to you?",
+    });
+    const label = operation === "delete" ? "Delete Tailscale" : "Make personal";
     await waitFor(() => {
-      return expect(getAction("button", label, dialog)).toBeEnabled();
+      expect(getAction("button", label, dialog)).toBeEnabled();
     });
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
-    expect(within(dialog).queryByText(/Affected:/u)).toBeNull();
     click(getAction("button", label, dialog));
     await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
+    if (operation === "delete") {
+      click(getAction("button", "Back to private networks"));
+      const directory = await screen.findByRole("region", {
+        name: "Private networks",
+      });
+      await within(directory).findByRole("heading", {
+        name: "No networks added yet",
+      });
+    } else {
+      await screen.findByText("Only me", { selector: "dd" });
+    }
     expect(requests).toStrictEqual([
       { expectedRevision: 1, impactSnapshot: impact.impactSnapshot },
     ]);

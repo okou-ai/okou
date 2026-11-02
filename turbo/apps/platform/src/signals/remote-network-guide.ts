@@ -1,7 +1,5 @@
 import { command, computed } from "ccstate";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 export type NetworkGuideProvider = "tailscale" | "cloudflare";
 const REMOTE_NETWORK_GUIDE_STEP_COUNT = Object.freeze({
   tailscale: 4,
@@ -16,10 +14,7 @@ interface NetworkGuide {
 export const remoteNetworkGuide$ = computed<NetworkGuide | null>((get) => {
   const params = get(searchParams$);
   const provider = params.get("networkGuide");
-  if (
-    !get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] ||
-    (provider !== "tailscale" && provider !== "cloudflare")
-  ) {
+  if (provider !== "tailscale" && provider !== "cloudflare") {
     return null;
   }
   const step = Number(params.get("networkStep"));

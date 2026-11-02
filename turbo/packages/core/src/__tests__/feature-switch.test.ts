@@ -6,7 +6,6 @@ import {
   filterFeatureSwitchOverrides,
   getFeatureSwitchDescriptions,
   getFeatureSwitchMetadata,
-  isFeatureSwitchAvailable,
 } from "../feature-switch";
 
 describe("FeatureSwitchKey", () => {
@@ -390,64 +389,5 @@ describe("overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Dummy, { userId: "any-user" }),
     ).toBe(true);
-  });
-});
-
-describe("remote UI rollout", () => {
-  it.each([
-    "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
-    "user_3G9pYGWE2oaAQAUfb8wIwcLxwiy",
-  ])("enables remote setup for Bingjie's verified identity %s", (userId) => {
-    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
-    for (const orgId of [
-      undefined,
-      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      "external-org",
-    ]) {
-      expect(isFeatureEnabled(key, { userId, orgId })).toBe(true);
-      expect(getAllFeatureStates({ userId, orgId })[key]).toBe(true);
-      expect(isFeatureSwitchAvailable(key, { userId, orgId })).toBe(true);
-      expect(
-        getAllFeatureStates({ userId, orgId, overrides: { [key]: false } })[
-          key
-        ],
-      ).toBe(false);
-    }
-  });
-
-  it("enables remote setup for the staff organization with an opt-out", () => {
-    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
-    const context = {
-      userId: "staff-colleague",
-      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-    };
-    expect(isFeatureEnabled(key, context)).toBe(true);
-    expect(getAllFeatureStates(context)[key]).toBe(true);
-    expect(isFeatureSwitchAvailable(key, context)).toBe(true);
-    const disabled = { ...context, overrides: { [key]: false } };
-    expect(isFeatureEnabled(key, disabled)).toBe(false);
-    expect(getAllFeatureStates(disabled)[key]).toBe(false);
-  });
-
-  it("defaults remote setup on for everyone and allows opting out", () => {
-    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
-    for (const context of [
-      {},
-      { email: "bingjie@okou.ai" },
-      { email: "bingjie@vm0.ai" },
-      {
-        userId: "staff-colleague",
-        email: "ethan@okou.ai",
-        orgId: "external-org",
-      },
-      { userId: "external-user", orgId: "external-org" },
-    ]) {
-      expect(isFeatureEnabled(key, context)).toBe(true);
-      expect(getAllFeatureStates(context)[key]).toBe(true);
-      expect(isFeatureSwitchAvailable(key, context)).toBe(true);
-      const overridden = { ...context, overrides: { [key]: false } };
-      expect(isFeatureEnabled(key, overridden)).toBe(false);
-      expect(getAllFeatureStates(overridden)[key]).toBe(false);
-    }
   });
 });

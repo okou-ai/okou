@@ -32,7 +32,6 @@ import {
   vncOriginTlsTrust$,
   vncOriginTlsCaBundle$,
 } from "../../signals/vnc.ts";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { RemoteConnectionMethodHelp } from "./remote-field-help.tsx";
 
 interface NetworkConfigOption {
@@ -82,14 +81,11 @@ function VncNetworkEmpty({
   readonly type: "cloudflare_access" | "tailscale";
 }) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <p id={id} className="text-sm leading-relaxed text-muted-foreground">
       {t(
         ($) => {
-          return guided
-            ? $.remoteConnectionHelp.networkEmpty
-            : $.vnc.native.empty;
+          return $.remoteConnectionHelp.networkEmpty;
         },
         {
           provider: t(($) => {
@@ -158,7 +154,6 @@ function VncNetworkConfigSelection({
   readonly available: readonly NetworkConfigOption[] | null;
 }) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   const id = useGet(
     role === "rfb" ? vncNetworkConfigId$ : vncKdcNetworkConfigId$,
   );
@@ -171,9 +166,7 @@ function VncNetworkConfigSelection({
     <div className="grid min-w-0 gap-2 text-sm">
       <label htmlFor={`vnc-${role}-network-config`}>
         {t(($) => {
-          return guided
-            ? $.remoteControlSetup.network
-            : $.vnc.native.configuration;
+          return $.remoteControlSetup.network;
         })}
       </label>
       <Select
@@ -234,17 +227,6 @@ function VncNetworkConfigSelection({
           })}
         </p>
       )}
-      {!guided && (
-        <p className="text-muted-foreground">
-          {type === "cloudflare_access"
-            ? t(($) => {
-                return $.vnc.native.gatewayHelp;
-              })
-            : t(($) => {
-                return $.vnc.native.peerHelp;
-              })}
-        </p>
-      )}
     </div>
   );
 }
@@ -261,7 +243,6 @@ export function VncNetworkFields({
   readonly hideConnectionDetails?: boolean;
 }) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   const type = useGet(role === "rfb" ? vncTransport$ : vncKdcTransport$);
   const chooseRfb = useSet(chooseVncTransport$);
   const chooseKdc = useSet(chooseVncKdcTransport$);
@@ -269,7 +250,7 @@ export function VncNetworkFields({
     {
       value: "direct",
       label: t(($) => {
-        return guided ? $.remoteControlSetup.direct : $.vnc.transport.direct;
+        return $.remoteControlSetup.direct;
       }),
     },
     {
@@ -298,15 +279,13 @@ export function VncNetworkFields({
           <label htmlFor={`vnc-${role}-route`}>
             {role === "rfb"
               ? t(($) => {
-                  return guided
-                    ? $.remoteControlSetup.connectionMethod
-                    : $.vnc.transport.title;
+                  return $.remoteControlSetup.connectionMethod;
                 })
               : t(($) => {
                   return $.vnc.kerberos.kdcRoute;
                 })}
           </label>
-          {guided && role === "rfb" && <RemoteConnectionMethodHelp />}
+          {role === "rfb" && <RemoteConnectionMethodHelp />}
         </div>
         <Select
           items={items}
@@ -331,7 +310,7 @@ export function VncNetworkFields({
             })}
           </SelectContent>
         </Select>
-        {guided && role === "rfb" && (
+        {role === "rfb" && (
           <p className="text-muted-foreground">
             {t(($) => {
               return type === "direct"
@@ -350,7 +329,7 @@ export function VncNetworkFields({
       )}
       {role === "rfb" && type === "cloudflare_access" && (
         <div hidden={hideConnectionDetails}>
-          {guided && !protectedRoute ? (
+          {!protectedRoute ? (
             <details className="rounded-lg border border-divider p-3">
               <summary className="cursor-pointer rounded-md text-sm text-muted-foreground hover:text-foreground">
                 {t(($) => {
@@ -378,7 +357,6 @@ function VncOriginTlsFields({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   const originTlsEnabled = useGet(vncOriginTlsEnabled$);
   const serverName = useGet(vncOriginTlsServerName$);
   const trust = useGet(vncOriginTlsTrust$);
@@ -415,9 +393,7 @@ function VncOriginTlsFields({
       </label>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return guided
-            ? $.remoteConnectionHelp.originTls
-            : $.vnc.native.originTlsHelp;
+          return $.remoteConnectionHelp.originTls;
         })}
       </p>
       {enabled && (
