@@ -6,8 +6,9 @@ export class CdpFault extends Error {
     message: string,
     readonly code?: number,
     readonly request?: ViewerError["request"],
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "CdpFault";
   }
 }

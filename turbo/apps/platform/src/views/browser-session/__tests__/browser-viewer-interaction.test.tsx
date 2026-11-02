@@ -16,6 +16,7 @@ import {
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -86,6 +87,22 @@ async function setupViewer(windowId?: number) {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
   return browser;
+}
+
+function reportedCleanupError(
+  sentry: ReturnType<typeof context.mocks.sentry>,
+): Error {
+  const report = sentry.reports.find((report) => {
+    return (
+      report.type === "exception" &&
+      report.error instanceof Error &&
+      report.error.message === "Original input cleanup is unconfirmed."
+    );
+  });
+  if (report?.type !== "exception" || !(report.error instanceof Error)) {
+    throw new Error("Expected the retained cleanup error to be reported");
+  }
+  return report.error;
 }
 
 test.each([undefined, 0])(
@@ -1629,6 +1646,193 @@ test("A late modifier cleanup stays on its original tab while the successor keep
   expect(screen.getByLabelText("Address")).toHaveValue(
     "https://other.example.com",
   );
+});
+
+test.each([
+  { phase: "input", secondaryFailure: false },
+  { phase: "input", secondaryFailure: true },
+  { phase: "cleanup", secondaryFailure: false },
+] as const)(
+  "A failed original $phase receipt keeps its attribution and fence (later failure: $secondaryFailure)",
+  async ({ phase, secondaryFailure }) => {
+    const sentry = context.mocks.sentry();
+    initSentry();
+    const browser = await setupViewer();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.dispatchKeyEvent",
+        params: { type: "rawKeyDown" },
+      });
+    });
+
+    if (phase === "input") {
+      browser.failNext("Input.insertText", "private-provider-message");
+      const receipt = browser.holdNext("Input.insertText");
+      fireEvent.input(input, {
+        target: { value: "private-remote-text" },
+        inputType: "insertText",
+      });
+      await receipt.received;
+      if (secondaryFailure) {
+        // A later, different cleanup failure must not replace the original cause.
+        browser.failNext(
+          "Input.dispatchKeyEvent",
+          "secondary-private-message",
+          -32_001,
+        );
+      }
+      await receipt.release();
+    } else {
+      browser.failNext("Input.dispatchKeyEvent", "private-provider-message");
+    }
+
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://other.example.com",
+      );
+    });
+    const successor = screen.getByLabelText("Remote browser input");
+    await userEvent.click(successor);
+    fireEvent.input(successor, {
+      target: { value: "fresh-successor-text" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toStrictEqual({
+        method: "Input.insertText",
+        params: { text: "fresh-successor-text" },
+        sessionId: "other-page-session",
+      });
+    });
+
+    click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    const method =
+      phase === "input" ? "Input.insertText" : "Input.dispatchKeyEvent";
+    await waitFor(() => {
+      expect(reportedCleanupError(sentry)).toMatchObject({
+        code: undefined,
+        request: { method, code: -32_000 },
+        cause: {
+          message: "Original input retirement failed.",
+          cause: {
+            message: `Original ${phase} receipt failed: ${method} (CDP -32000).`,
+          },
+        },
+      });
+    });
+    const diagnostic = JSON.stringify(
+      reportedCleanupError(sentry),
+      (_key, value: unknown) => {
+        return value instanceof Error
+          ? {
+              ...value,
+              message: value.message,
+              stack: value.stack,
+              cause: value.cause,
+            }
+          : value;
+      },
+    );
+    expect(diagnostic).not.toMatch(
+      /private-|fresh-successor-text|ShiftLeft|example-page|other-page/,
+    );
+    expect(
+      browser.requests.filter((request) => {
+        return (
+          request.method.startsWith("Input.") &&
+          request.sessionId === "other-page-session"
+        );
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "fresh-successor-text" },
+      }),
+    ]);
+  },
+);
+
+async function revisitAfterUnsupportedIme(mixed: boolean) {
+  const sentry = context.mocks.sentry();
+  initSentry();
+  const browser = await setupViewer();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.compositionStart(input);
+  if (mixed) {
+    const supported = browser.holdNext("Input.imeSetComposition");
+    fireEvent.input(input, {
+      target: { value: "private-preedit" },
+      inputType: "insertCompositionText",
+      isComposing: true,
+    });
+    await supported.received;
+    await supported.release();
+  }
+  browser.failNext("Input.imeSetComposition", "private-ime-message", -32_601);
+  const unsupported = browser.holdNext("Input.imeSetComposition");
+  fireEvent.input(input, {
+    target: { value: "private-preedit-next" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await unsupported.received;
+  await unsupported.release();
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "private-committed-text",
+    }),
+  );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "private-committed-text" },
+    });
+  });
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://other.example.com",
+    );
+  });
+  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+  return sentry;
+}
+
+test("Unsupported-only IME preserves committed text and permits returning to its tab", async () => {
+  await revisitAfterUnsupportedIme(false);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  });
+});
+
+test("Mixed IME support retains the safe unsupported receipt and same-tab fence", async () => {
+  const sentry = await revisitAfterUnsupportedIme(true);
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await waitFor(() => {
+    expect(reportedCleanupError(sentry)).toMatchObject({
+      code: undefined,
+      request: { method: "Input.imeSetComposition", code: -32_601 },
+      cause: {
+        message: "Original input retirement failed after mixed IME support.",
+        cause: {
+          message:
+            "Original input receipt failed: Input.imeSetComposition (CDP -32601).",
+        },
+      },
+    });
+  });
 });
 
 test("A background window lookup failure leaves a valid scoped tab usable", async () => {
