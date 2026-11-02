@@ -4,6 +4,8 @@ import itertools
 import json
 import re
 import urllib.parse
+from collections.abc import Callable
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -108,10 +110,10 @@ def _source_forms(pattern: str) -> set[str]:
     return {"".join(parts) for parts in itertools.product(*alternatives)}
 
 
-def _matches(path: str, form: str) -> bool:
+def _matching_pattern(form: str) -> re.Pattern[str]:
     pieces = form.split("/")[1:]
     if form == "/":
-        return path == "/"
+        return re.compile("/")
     expression = "^"
     for index, segment in enumerate(pieces):
         if segment == _OPERATORS["*"]:
@@ -122,7 +124,18 @@ def _matches(path: str, form: str) -> bool:
             expression += "/" + "".join(
                 "[^/]+" if char == _OPERATORS[""] else re.escape(char) for char in segment
             )
-    return re.fullmatch(expression.removeprefix("^"), path) is not None
+    return re.compile(expression.removeprefix("^"))
+
+
+@pytest.fixture
+def reference_matches() -> Callable[[str, str], bool]:
+    # Reuse expression preparation within this case, never matching outcomes.
+    pattern_for = cache(_matching_pattern)
+
+    def matches(path: str, form: str) -> bool:
+        return pattern_for(form).fullmatch(path) is not None
+
+    return matches
 
 
 def _priority(form: str) -> tuple[int, ...]:
@@ -172,11 +185,15 @@ def _priority(form: str) -> tuple[int, ...]:
         "/files/%E7%AE%A1",
     ],
 )
-def test_public_language_proof_matches_independent_concrete_model(pattern: str, path: str):
+def test_public_language_proof_matches_independent_concrete_model(
+    pattern: str, path: str, reference_matches
+):
     forms = _source_forms(pattern)
     paths = _views(path)
-    outcomes = [_matches(candidate, form) for form in forms for candidate in paths]
-    priorities = [_priority(form) for form in forms if any(_matches(p, form) for p in paths)]
+    outcomes = [reference_matches(candidate, form) for form in forms for candidate in paths]
+    priorities = [
+        _priority(form) for form in forms if any(reference_matches(p, form) for p in paths)
+    ]
     result = applicability(request_language(path), PathCompiler().compile(pattern))
     assert result.possible == any(outcomes)
     assert result.certain == all(outcomes)
@@ -198,13 +215,13 @@ def test_every_product_branch_including_sink_is_inspected():
     assert not proof.certain
 
 
-def test_union_of_declaration_aliases_is_not_universal_applicability():
+def test_union_of_declaration_aliases_is_not_universal_applicability(reference_matches):
     path = "/files/a%2Fb/x"
     pattern = "/files/a%2Fb/{tail*}"
     forms = _source_forms(pattern)
     views = _views(path)
-    assert all(any(_matches(candidate, form) for form in forms) for candidate in views)
-    assert not all(_matches(candidate, form) for form in forms for candidate in views)
+    assert all(any(reference_matches(candidate, form) for form in forms) for candidate in views)
+    assert not all(reference_matches(candidate, form) for form in forms for candidate in views)
     proof = applicability(request_language(path), PathCompiler().compile(pattern))
     assert proof.possible
     assert not proof.certain
@@ -328,15 +345,17 @@ def test_raw_or_full_chain_unsafe_input_is_explicitly_invalid(path: str):
         request_language(path)
 
 
-def test_shared_corpus_is_derived_from_reference_and_matches_python():
+def test_shared_corpus_is_derived_from_reference_and_matches_python(reference_matches):
     corpus = Path(__file__).resolve().parents[4] / (
         "turbo/packages/connectors/src/__tests__/path-language-model.json"
     )
     for case in json.loads(corpus.read_text()):
         forms = _source_forms(case["pattern"])
         paths = _views(case["path"])
-        outcomes = [_matches(path, form) for form in forms for path in paths]
-        priorities = [_priority(form) for form in forms if any(_matches(p, form) for p in paths)]
+        outcomes = [reference_matches(path, form) for form in forms for path in paths]
+        priorities = [
+            _priority(form) for form in forms if any(reference_matches(p, form) for p in paths)
+        ]
         expected = {
             "possible": any(outcomes),
             "certain": all(outcomes),
@@ -353,7 +372,7 @@ def test_shared_corpus_is_derived_from_reference_and_matches_python():
         assert result.maximum == (max(priorities) if priorities else None), case
 
 
-def test_exhaustive_small_joint_literal_choices_against_independent_model():
+def test_exhaustive_small_joint_literal_choices_against_independent_model(reference_matches):
     alphabet = ("a", "%61", "%2561", "%2525252561", "%2F", "%252F", "%25%36%31", "%E7%AE%A1")
     compiler = PathCompiler()
     patterns = [
@@ -367,9 +386,9 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model():
         analysis = PathAnalysis(request_language(path))
         for pattern in patterns:
             forms = forms_by_pattern[pattern]
-            outcomes = [_matches(candidate, form) for form in forms for candidate in views]
+            outcomes = [reference_matches(candidate, form) for form in forms for candidate in views]
             priorities = [
-                _priority(form) for form in forms if any(_matches(p, form) for p in views)
+                _priority(form) for form in forms if any(reference_matches(p, form) for p in views)
             ]
             result = analysis.applicability(compiler.compile(pattern))
             assert result.possible == any(outcomes), (pattern, path)
@@ -378,12 +397,12 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model():
             assert result.maximum == (max(priorities) if priorities else None), (pattern, path)
 
 
-def _base_relative(path: str, form: str) -> str | None:
+def _base_relative(path: str, form: str, matches: Callable[[str, str], bool]) -> str | None:
     base = form[:-1] if form.endswith("/") else form
     if not base:
         return path
     if _OPERATORS["+"] in base or _OPERATORS["*"] in base:
-        return "/" if _matches(path, base) else None
+        return "/" if matches(path, base) else None
     expression = "".join("[^/]+" if x == _OPERATORS[""] else re.escape(x) for x in base)
     match = re.match(expression + r"(?=/|$)", path)
     return (path[match.end() :] or "/") if match else None
@@ -424,7 +443,7 @@ def _base_priority(form: str) -> int:
     "path", ["/", "//", "/files", "/files/", "/files/a", "/files%2Fa", "/files//a"]
 )
 def test_correlated_base_and_route_against_independent_model(
-    base: str, rule: str | None, path: str
+    base: str, rule: str | None, path: str, reference_matches
 ):
     bases = _source_forms(base)
     routes = {None} if rule is None else _source_forms(rule)
@@ -435,8 +454,10 @@ def test_correlated_base_and_route_against_independent_model(
         priority = (_base_priority(base_form),) + (() if route is None else _priority(route))
         matches = []
         for candidate in paths:
-            relative = _base_relative(candidate, base_form)
-            matches.append(relative is not None and (route is None or _matches(relative, route)))
+            relative = _base_relative(candidate, base_form, reference_matches)
+            matches.append(
+                relative is not None and (route is None or reference_matches(relative, route))
+            )
         outcomes.extend(matches)
         if any(matches):
             priorities.append(priority)
