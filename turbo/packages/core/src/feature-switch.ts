@@ -50,7 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     displayName: "First task upgrade",
     description: "Show the Pro offer after a user's first completed chat task.",
-    enabled: true,
+    enabled: false,
   },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
@@ -64,7 +64,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Halloween quiz",
     description:
       "Open the 2026 Halloween quiz from the animated chat home dialog and associate results with your account.",
-    enabled: true,
+    enabled: false,
   },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
@@ -77,7 +77,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Onboarding source outcomes",
     description:
       "Show industry-specific examples of work prepared from connected tools.",
-    enabled: true,
+    enabled: false,
   },
   [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
     maintainer: "yuma@okou.ai",

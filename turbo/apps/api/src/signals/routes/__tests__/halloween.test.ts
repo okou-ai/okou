@@ -49,9 +49,22 @@ function actor(staff = true) {
   });
   return { userId, orgId };
 }
-beforeEach(() => {
+async function enableQuiz() {
+  const switches = setupApp({ context, routes: featureSwitchesRoutes })(
+    featureSwitchesContract,
+  );
+  await accept(
+    switches.update({
+      headers,
+      body: { switches: { [FeatureSwitchKey.HalloweenQuiz]: true } },
+    }),
+    [200],
+  );
+}
+beforeEach(async () => {
   mockNow(new Date("2026-10-30T12:00:00Z"));
   actor();
+  await enableQuiz();
 });
 
 async function getFinale(game: Awaited<ReturnType<typeof clients>>["game"]) {
@@ -184,6 +197,7 @@ describe("Halloween quiz", () => {
     });
     expect(restarted.body.id).not.toBe(original.body.id);
     actor();
+    await enableQuiz();
     await accept(game.current({ headers }), [404]);
     await accept(
       game.leave({
@@ -255,6 +269,10 @@ describe("Halloween quiz", () => {
     const { game } = clients(app);
     const switches = app(featureSwitchesContract);
     actor(false);
+    expect((await accept(game.status({ headers }), [200])).body).toStrictEqual({
+      phase: "unavailable",
+    });
+    await enableQuiz();
     let activeRound: HalloweenRound | null = null;
     for (const now of ["2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z"]) {
       mockNow(new Date(now));
@@ -313,10 +331,14 @@ describe("Halloween quiz", () => {
       game.leave({ headers, body: roundReference(activeRound) }),
     ).resolves.toMatchObject(unavailable);
 
-    await accept(switches.delete({ headers }), [200]);
+    await enableQuiz();
     expect((await accept(game.current({ headers }), [200])).body).toStrictEqual(
       activeRound,
     );
+    await accept(switches.delete({ headers }), [200]);
+    expect((await accept(game.status({ headers }), [200])).body).toStrictEqual({
+      phase: "unavailable",
+    });
   });
 
   it("requires authentication for every gameplay endpoint", async () => {
@@ -356,6 +378,7 @@ describe("Halloween quiz", () => {
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
+    await enableQuiz();
     mockNow(new Date("2026-01-01T00:00:00Z"));
     for (let index = 0; index < 2; index++) {
       const started = await accept(
