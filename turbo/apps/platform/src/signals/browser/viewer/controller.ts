@@ -1251,9 +1251,13 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
         set(selected.stream.dispose$, selected.attached.frames.signal),
       ]);
       signal.throwIfAborted();
+      // Native capture closure can precede the other original cleanup receipts.
       const result = receipts.find(
-        (receipt): receipt is PromiseRejectedResult => {
-          return receipt.status === "rejected";
+        (receipt, index): receipt is PromiseRejectedResult => {
+          return (
+            receipt.status === "rejected" &&
+            (index !== 1 || !get(selected.stream.stopped$))
+          );
         },
       );
       // Once closing begins, the transport close owns session detachment.

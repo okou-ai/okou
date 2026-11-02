@@ -2749,6 +2749,84 @@ test("A late capture-detachment proof leaves the newer selection live and allows
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
 });
 
+test.each([true, false])(
+  "A frame-session end before input cleanup settles preserves its confirmation (input confirmed=%s)",
+  async (confirmed) => {
+    const browser = await setupScopedPair();
+    click(screen.getByLabelText("Browser settings"));
+    click(await screen.findByText("Connection mode"));
+    click(await screen.findByText("Separate image connection"));
+    await waitFor(() => {
+      expect(browser.connections()).toBe(3);
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const frameSession = [...browser.requests].reverse().find((request) => {
+      return request.method === "Page.startScreencast";
+    })?.sessionId;
+    if (!frameSession) {
+      throw new Error("Missing original frame session");
+    }
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.dispatchKeyEvent",
+          params: expect.objectContaining({ type: "rawKeyDown", key: "Shift" }),
+        }),
+      );
+    });
+    if (!confirmed) {
+      browser.failNext("Input.dispatchKeyEvent", "Input release unconfirmed");
+    }
+    const release = browser.holdNext("Input.dispatchKeyEvent");
+    browser.failNext("Page.stopScreencast", "Capture stop unconfirmed");
+    const stop = browser.holdNext("Page.stopScreencast");
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await release.received;
+    await stop.received;
+    await act(async () => {
+      await stop.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://other.example.com",
+      );
+    });
+    act(() => {
+      browser.event("Target.detachedFromTarget", {
+        sessionId: frameSession,
+        targetId: "example-page",
+      });
+    });
+    await act(async () => {
+      await release.release();
+    });
+    click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+    if (!confirmed) {
+      await screen.findByText("Browser view unavailable");
+    }
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toHaveProperty(
+        "disabled",
+        !confirmed,
+      );
+    });
+    if (!confirmed) {
+      return;
+    }
+    const address = screen.getByLabelText("Address");
+    expect(address).toHaveValue("https://example.com");
+    await fill(address, "cleanup-proof.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://cleanup-proof.example/ready");
+    });
+  },
+);
+
 test("A capture-detachment proof cannot clear unconfirmed input cleanup", async () => {
   const browser = await setupScopedPair();
   const input = screen.getByLabelText("Remote browser input");
