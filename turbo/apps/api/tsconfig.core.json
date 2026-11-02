@@ -491,6 +491,7 @@
     "src/signals/services/integration-note-prompt.service.ts",
     "src/signals/services/integration-run-errors.service.ts",
     "src/signals/services/internal-agentphone-chat-run-callback.service.ts",
+    "src/signals/services/whatsapp-task-notification.service.ts",
     "src/signals/services/internal-chat-run-callback.service.ts",
     "src/signals/services/internal-chat-run-output-timing.service.ts",
     "src/signals/services/internal-discord-chat-run-callback.service.ts",

@@ -15,7 +15,7 @@ import { safeJsonParse, settle } from "../utils";
 
 const log = logger("api:agentphone");
 
-interface AgentPhoneSentMessage {
+export interface AgentPhoneSentMessage {
   readonly id: string;
   readonly channel: string | null;
   readonly fromNumber: string | null;
@@ -69,10 +69,42 @@ export function isAgentPhoneApiError(
   );
 }
 
+export function isAgentPhoneWhatsappWindowClosed(error: unknown): boolean {
+  if (!isAgentPhoneApiError(error) || error.status !== 422) {
+    return false;
+  }
+  const body = valueObject(safeJsonParse(error.body));
+  const details = valueObject(body.error);
+  // AgentPhone documents Meta 131047 in the rejection message. Other 422s
+  // (including invalid templates) must never trigger another send.
+  return (
+    details.code === 131_047 ||
+    details.code === "131047" ||
+    [details.message, body.detail].some((message) => {
+      return typeof message === "string" && /\b131047\b/u.test(message);
+    })
+  );
+}
+
 const whatsappNumbersSchema = object({
   data: array(object({ phoneNumber: string(), whatsappEnabled: boolean() })),
   hasMore: boolean(),
 });
+
+async function rejectAgentPhoneMessage(response: Response): Promise<never> {
+  const text = await response.text();
+  const error = makeAgentPhoneApiError(response.status, text);
+  if (
+    !isAgentPhoneWhatsappWindowClosed(error) &&
+    (error.status !== 422 || error.code !== "CONVERSATION_CONTENT_RESTRICTED")
+  ) {
+    log.error("AgentPhone send message failed", {
+      status: response.status,
+      body: text,
+    });
+  }
+  throw error;
+}
 
 export async function isAgentPhoneWhatsappNumberEnabled(
   phoneNumber: string,
@@ -113,6 +145,11 @@ export async function sendAgentPhoneMessage(
     readonly mediaUrl?: string | null;
     readonly mediaUrls?: readonly string[] | null;
     readonly channel?: "whatsapp";
+    readonly template?: {
+      readonly name: "okou_task_completed";
+      readonly language: "en_US";
+      readonly variables: readonly [string, string];
+    };
   },
   signal?: AbortSignal,
 ): Promise<AgentPhoneSentMessage> {
@@ -141,6 +178,7 @@ export async function sendAgentPhoneMessage(
             ? { reply_to_message_id: opts.replyToMessageId }
             : {}),
           body: opts.body,
+          ...(opts.template ? { template: opts.template } : {}),
           ...(opts.mediaUrl ? { media_url: opts.mediaUrl } : {}),
           ...(opts.mediaUrls?.length ? { media_urls: opts.mediaUrls } : {}),
         }),
@@ -154,19 +192,7 @@ export async function sendAgentPhoneMessage(
     if (!(failure instanceof HttpStatusError)) {
       throw failure;
     }
-    const response = failure.response;
-    const text = await response.text();
-    const error = makeAgentPhoneApiError(response.status, text);
-    if (
-      error.status !== 422 ||
-      error.code !== "CONVERSATION_CONTENT_RESTRICTED"
-    ) {
-      log.error("AgentPhone send message failed", {
-        status: response.status,
-        body: text,
-      });
-    }
-    throw error;
+    return await rejectAgentPhoneMessage(failure.response);
   }
   const response = responseResult.value;
 

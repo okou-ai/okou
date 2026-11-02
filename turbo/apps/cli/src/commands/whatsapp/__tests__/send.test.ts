@@ -11,6 +11,13 @@ vi.spyOn(process, "exit").mockImplementation(() => {
 beforeEach(() => {
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
   vi.stubEnv("OKOU_TOKEN", "test-token");
+  for (const command of whatsappCommand.commands.flatMap((parent) => {
+    return parent.commands;
+  })) {
+    command.setOptionValue("taskCompleted", false);
+    command.setOptionValue("json", false);
+    command.setOptionValue("to", "me");
+  }
 });
 
 it("prints all WhatsApp part receipts as one JSON envelope", async () => {
@@ -65,6 +72,75 @@ it("rejects an arbitrary recipient instead of borrowing another connection", asy
   ).rejects.toThrow("process.exit called");
   expect(errors).toHaveBeenCalledWith(
     expect.stringContaining("only go to your independently verified WhatsApp"),
+  );
+});
+
+it.each([true, false])(
+  "reports the actual task-completion send mode (template=%s)",
+  async (template) => {
+    let requestBody: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/integrations/whatsapp/message",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json({
+            channel: "whatsapp",
+            toNumber: "+4915123456789",
+            messages: [{ id: "completion-receipt" }],
+            ...(template ? { template: "okou_task_completed" } : {}),
+          });
+        },
+      ),
+    );
+    await whatsappCommand.parseAsync([
+      "node",
+      "cli",
+      "message",
+      "send",
+      "--text",
+      "Your report is ready",
+      "--task-completed",
+      "--json",
+    ]);
+    expect(requestBody).toEqual({
+      text: "Your report is ready",
+      taskCompleted: true,
+    });
+    expect(JSON.parse(output.mock.calls.flat().join("\n"))).toEqual({
+      integration: "whatsapp",
+      chatId: "+4915123456789",
+      messages: [{ id: "completion-receipt", url: null }],
+      ...(template ? { template: "okou_task_completed" } : {}),
+    });
+  },
+);
+
+it("identifies a template notification instead of claiming the original text was sent", async () => {
+  server.use(
+    http.post("http://localhost:3000/api/integrations/whatsapp/message", () => {
+      return HttpResponse.json({
+        channel: "whatsapp",
+        toNumber: "+4915123456789",
+        messages: [{ id: "template-receipt" }],
+        template: "okou_task_completed",
+      });
+    }),
+  );
+  await whatsappCommand.parseAsync([
+    "node",
+    "cli",
+    "message",
+    "send",
+    "--text",
+    "Done",
+    "--task-completed",
+  ]);
+  expect(output.mock.calls.flat().join("\n")).toContain(
+    "Task notification accepted",
+  );
+  expect(output.mock.calls.flat().join("\n")).toContain(
+    "original text was not sent",
   );
 });
 

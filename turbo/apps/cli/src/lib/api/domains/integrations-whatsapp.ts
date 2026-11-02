@@ -18,12 +18,18 @@ export class WhatsappMessageSendError extends ApiRequestError {
   }
 }
 
-export async function sendWhatsappMessage(text: string) {
+export async function sendWhatsappMessage(
+  text: string,
+  taskCompleted?: boolean,
+) {
   const client = initClient(
     integrationsWhatsappContract,
     await getClientConfig(),
   );
-  const result = await client.sendMessage({ headers: {}, body: { text } });
+  const result = await client.sendMessage({
+    headers: {},
+    body: { text, ...(taskCompleted ? { taskCompleted: true } : {}) },
+  });
   if (result.status === 200) {
     return result.body;
   }

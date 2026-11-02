@@ -130,12 +130,16 @@ export const integrationsWhatsappContract = c.router({
     method: "POST",
     path: "/api/integrations/whatsapp/message",
     headers: authHeadersSchema,
-    body: object({ text: string().min(1).max(65536) }),
+    body: object({
+      text: string().min(1).max(65536),
+      taskCompleted: boolean().optional(),
+    }),
     responses: {
       200: object({
         channel: literal("whatsapp"),
         toNumber: string(),
         messages: array(object({ id: string() })),
+        template: literal("okou_task_completed").optional(),
       }),
       400: sendErrorSchema,
       401: apiErrorSchema,
@@ -145,7 +149,7 @@ export const integrationsWhatsappContract = c.router({
       503: apiErrorSchema,
     },
     summary:
-      "Send a WhatsApp message to your verified account within the customer service window",
+      "Send a WhatsApp message, with an approved template fallback for a completed task from the current run",
   },
 });
 export type WhatsappLinkStatusResponse = zInfer<typeof linkStatusSchema>;
