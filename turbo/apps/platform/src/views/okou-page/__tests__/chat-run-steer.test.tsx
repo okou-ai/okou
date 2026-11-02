@@ -355,6 +355,24 @@ test("Keep the selected steer and status row through steer delivery and the firs
   expect(selected.startsWith(STEER)).toBeTruthy();
   expect(selected).toContain(NEXT_RESULT);
   expect(selected.endsWith("Thinking...")).toBeTruthy();
+
+  const latestResult = "The final dependency check is still running.";
+  events.push(
+    assistantEvent({
+      id: "next-streamed-result",
+      runId: RUN_A,
+      seqId: 7,
+      text: latestResult,
+      createdAt: createdAt(21),
+    }),
+  );
+  publishRunUpdate();
+
+  await expect(screen.findByText(latestResult)).resolves.toBeInTheDocument();
+  const updatedSelection = selectedText();
+  expect(updatedSelection.startsWith(STEER)).toBeTruthy();
+  expect(updatedSelection).toContain(latestResult);
+  expect(updatedSelection.endsWith("Thinking...")).toBeTruthy();
 });
 
 test("Stop interrupts the live run and keeps the queued follow-up", async () => {

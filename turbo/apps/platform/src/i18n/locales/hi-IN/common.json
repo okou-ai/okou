@@ -2308,7 +2308,6 @@
       "fastModeWillBeOn": "फ़ास्ट मोड चालू होगा",
       "justNow": "बस अब",
       "keepGoing": "जारी रखें",
-      "keepGoingAt": "चलते रहें · {{timestamp}}",
       "modelChangedTo": "मॉडल को {{model}} में बदल दिया गया है",
       "queueEllipsis": "कतार...",
       "relatedArtifactCount_one": "{{formattedCount}} आर्टिफ़ैक्ट",

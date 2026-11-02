@@ -150,9 +150,11 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
     throw new Error("Expected the task completion status");
   }
   expect(completion).not.toContainElement(card);
-  const separator = within(completion).getByRole("separator");
+  const followups = within(completion).getByRole("group", {
+    name: "Keep going",
+  });
   expect(
-    card.compareDocumentPosition(separator) & Node.DOCUMENT_POSITION_FOLLOWING,
+    card.compareDocumentPosition(followups) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
     screen.getByText("Your report is ready.").compareDocumentPosition(card) &

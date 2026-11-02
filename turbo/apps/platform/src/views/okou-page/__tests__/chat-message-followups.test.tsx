@@ -271,7 +271,26 @@ test("A recommended follow-up edits the draft without sending it", async () => {
   await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   const group = await keepGoingGroup();
-  expect(screen.getByText(/Keep going ·/u)).toBeVisible();
+  const timestamp = screen.getByText(
+    new Date("2026-08-21T14:00:05.000Z").toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }),
+  );
+  expect(timestamp).toHaveAttribute("datetime", "2026-08-21T14:00:05.000Z");
+  const actions = timestamp.closest<HTMLElement>(
+    '[data-testid="chat-event-actions"]',
+  );
+  if (!actions) {
+    throw new Error("Expected the timestamp beside the message actions");
+  }
+  expect(
+    queryAllByRoleFast("button", actions).find((button) => {
+      return button.getAttribute("aria-label") === "Copy message";
+    }),
+  ).toBeInTheDocument();
   expect(followupButtons(group)).toHaveLength(followups.length);
   const composer = await findComposer();
   await fill(composer, "Keep the current launch context");

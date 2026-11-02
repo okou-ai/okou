@@ -2350,7 +2350,6 @@
       "fastModeWillBeOn": "Le mode rapide sera activé",
       "justNow": "à l'instant",
       "keepGoing": "Continuez",
-      "keepGoingAt": "Continuez · {{timestamp}}",
       "modelChangedTo": "Le modèle a été changé en {{model}}",
       "queueEllipsis": "en file d'attente...",
       "relatedArtifactCount_one": "{{formattedCount}} artefact",

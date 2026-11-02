@@ -242,7 +242,7 @@ test("Show only the latest failure when neither response produced output", async
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
 
-test("Keep completion status visible while followups are unavailable", async () => {
+test("Keep the result timestamp with its actions while followups arrive later", async () => {
   const events = [
     ...resultEvents(),
     completedEvent({
@@ -254,14 +254,12 @@ test("Keep completion status visible while followups are unavailable", async () 
   installRunChat({ chatEvents: events });
   await openChat();
 
-  const completionTail = document.querySelector<HTMLElement>(
-    "[data-chat-run-status-tail]",
-  );
-  expect(completionTail).toBeVisible();
-  expect(completionTail?.querySelector("p")).toBeVisible();
-  expect(completionTail?.querySelector('[role="separator"]')).toBeVisible();
-  expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
-  await expectRetainedResult();
+  const main = await expectRetainedResult();
+  const timestamp = main.querySelector("time");
+  expect(timestamp).toHaveAttribute("datetime", "2026-08-01T10:00:03.000Z");
+  expect(
+    main.querySelector('[data-testid="chat-event-actions"]'),
+  ).toContainElement(timestamp);
 
   events.push({
     id: "delayed-followups",
@@ -276,7 +274,73 @@ test("Keep completion status visible while followups are unavailable", async () 
   const followups = await screen.findByRole("group", { name: "Keep going" });
   expect(followups.closest("[data-chat-run-status-tail]")).toBeVisible();
   expect(screen.getByText("Summarize the check")).toBeVisible();
+  const retainedMain = await expectRetainedResult();
+  expect(retainedMain.querySelector("time")).toHaveAttribute(
+    "datetime",
+    "2026-08-01T10:00:03.000Z",
+  );
+});
+
+test("Replace inline thinking with the response timestamp when the run completes", async () => {
+  const events = resultEvents();
+  const activeRunIds = [RUN_A];
+  installRunChat({ chatEvents: events, activeRunIds });
+  await openChat();
+
+  const main = await expectRetainedResult();
+  const thinking = main.querySelector<HTMLElement>("[data-thinking-indicator]");
+  expect(thinking).toBeInTheDocument();
+  expect(main).toContainElement(thinking);
+  expect(queryButton("Copy message", main)).toBeInTheDocument();
+
+  events.push(
+    completedEvent({ id: "inline-completed", runId: RUN_A, seqId: 4 }),
+  );
+  activeRunIds.splice(0);
+  publishRunUpdate();
+
+  await waitFor(() => {
+    expect(main.querySelector("time")).toHaveAttribute(
+      "datetime",
+      "2026-08-01T10:00:03.000Z",
+    );
+  });
   await expectRetainedResult();
+});
+
+test("Each historical response retains its own timestamp beside its actions", async () => {
+  installRunChat({
+    chatEvents: [
+      ...resultEvents(),
+      completedEvent({ id: "first-completed", runId: RUN_A, seqId: 4 }),
+      promptEvent({
+        id: "next-input",
+        runId: RUN_B,
+        seqId: 5,
+        text: "Check again",
+      }),
+      assistantEvent({
+        id: "next-result",
+        runId: RUN_B,
+        seqId: 6,
+        text: "The next check is complete.",
+      }),
+      completedEvent({ id: "next-completed", runId: RUN_B, seqId: 7 }),
+    ],
+  });
+  await openChat();
+
+  for (const [text, createdAt] of [
+    [RESULT, "2026-08-01T10:00:03.000Z"],
+    ["The next check is complete.", "2026-08-01T10:00:06.000Z"],
+  ] as const) {
+    const main = screen.getByText(text).closest("[data-chat-run-work-main]");
+    const actions = main?.querySelector('[data-testid="chat-event-actions"]');
+    expect(actions?.querySelector("time")).toHaveAttribute(
+      "datetime",
+      createdAt,
+    );
+  }
 });
 
 test("Retire completion and followups while retaining the result actions", async () => {

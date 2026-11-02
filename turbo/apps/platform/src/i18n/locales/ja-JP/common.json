@@ -2300,7 +2300,6 @@
       "fastModeWillBeOn": "Fastモードがオンになります",
       "justNow": "たった今",
       "keepGoing": "続ける",
-      "keepGoingAt": "続ける · {{timestamp}}",
       "modelChangedTo": "モデルを{{model}}に変更しました",
       "queueEllipsis": "行列...",
       "relatedArtifactCount_one": "{{formattedCount}} 個のアーティファクト",

@@ -2300,7 +2300,6 @@
       "fastModeWillBeOn": "快速模式將開啟",
       "justNow": "剛剛",
       "keepGoing": "繼續",
-      "keepGoingAt": "繼續 · {{timestamp}}",
       "modelChangedTo": "模型已切換為{{model}}",
       "queueEllipsis": "佇列…",
       "relatedArtifactCount_one": "{{formattedCount}} 個成果",

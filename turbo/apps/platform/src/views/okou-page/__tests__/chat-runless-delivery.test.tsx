@@ -131,6 +131,13 @@ test("renders a thread whose only message carries no run identity", async () => 
   await readyChat();
 
   await expect(screen.findByText(RUNLESS_MESSAGE)).resolves.toBeInTheDocument();
+  const actions = assistantGroupFor(RUNLESS_MESSAGE).querySelector(
+    '[data-testid="chat-event-actions"]',
+  );
+  expect(actions?.querySelector("time")).toHaveAttribute(
+    "datetime",
+    MESSAGE_CREATED_AT,
+  );
 });
 
 test("renders a delivery that carries no run identity after a Run", async () => {

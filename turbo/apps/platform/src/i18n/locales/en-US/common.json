@@ -2308,7 +2308,6 @@
       "fastModeWillBeOn": "Fast mode will be on",
       "justNow": "just now",
       "keepGoing": "Keep going",
-      "keepGoingAt": "Keep going · {{timestamp}}",
       "modelChangedTo": "Model changed to {{model}}",
       "queueEllipsis": "queue...",
       "relatedArtifactCount_one": "{{formattedCount}} artifact",

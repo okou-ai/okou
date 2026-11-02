@@ -459,7 +459,10 @@ test("Keep completed result actions before recommended followups", async () => {
 
   expect(actions).toBeVisible();
   expect(followupButton).toBeVisible();
-  expect(screen.getByText(/Keep going ·/u)).toBeVisible();
+  expect(actions.querySelector("time")).toHaveAttribute(
+    "datetime",
+    "2026-08-01T10:00:03.000Z",
+  );
   expect(mainMessage).toContainElement(actions);
   expect(assistantGroupFor(main)).toContainElement(keepGoing);
   expect(actions).toContainElement(

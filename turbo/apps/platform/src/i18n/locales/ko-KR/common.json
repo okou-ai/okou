@@ -2300,7 +2300,6 @@
       "fastModeWillBeOn": "Fast 모드가 켜집니다",
       "justNow": "방금",
       "keepGoing": "계속 진행",
-      "keepGoingAt": "계속 진행 · {{timestamp}}",
       "modelChangedTo": "모델을 {{model}}로 변경했습니다",
       "queueEllipsis": "대기 중...",
       "relatedArtifactCount_one": "{{formattedCount}}개의 아티팩트",

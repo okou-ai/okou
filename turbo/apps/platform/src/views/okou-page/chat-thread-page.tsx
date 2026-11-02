@@ -4598,12 +4598,14 @@ function InlineThinkingRow({
 function RunStatusRowContent({
   thread,
   statusRow,
+  hasResult = false,
 }: {
   thread: ChatPanelSignals;
   statusRow: RunStatusRow;
+  hasResult?: boolean;
 }) {
   return statusRow.kind === "finished" ? (
-    <FinishedStatusRow thread={thread} />
+    <FinishedStatusRow thread={thread} hasResult={hasResult} />
   ) : (
     <ThinkingIndicatorRow thread={thread} indicators={statusRow.indicators} />
   );
@@ -4637,60 +4639,40 @@ function ThinkingIndicatorRow({
   );
 }
 
-function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
-  const recommendedFollowupSource =
+function FinishedStatusRow({
+  thread,
+  hasResult,
+}: {
+  thread: ChatPanelSignals;
+  hasResult: boolean;
+}) {
+  const { t } = useTranslation();
+  const source =
     useLastResolved(thread.recommendedFollowupSource$, {
       equalityFn: equalRecommendedFollowupSources,
     }) ?? null;
-  return (
-    // Completed content also mounts when reopening a historical thread. Keep it
-    // opaque so the PWA page-transition snapshot and the live page agree.
-    <div data-role="assistant-thinking" className="min-w-0">
-      <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
-    </div>
-  );
-}
-
-function FinishedRunRow({
-  thread,
-  source,
-}: {
-  thread: ChatPanelSignals;
-  source: RecommendedFollowupSource | null;
-}) {
-  const { t } = useTranslation();
   const donePhrase =
     useLastResolved(thread.donePhrase$) ??
     t(($) => {
       return $.chat.run.done.default;
     });
-  const runFinishedAt = useLastResolved(thread.latestRunFinishCreatedAt$);
-  const label =
-    source && runFinishedAt
-      ? t(
-          ($) => {
-            return $.chat.run.keepGoingAt;
-          },
-          {
-            timestamp: formatChatTimestamp(runFinishedAt),
-          },
-        )
-      : source
-        ? t(($) => {
-            return $.chat.run.keepGoing;
-          })
-        : donePhrase;
-
+  if (source) {
+    return <RecommendedFollowupList thread={thread} source={source} />;
+  }
+  if (hasResult) {
+    return null;
+  }
+  // A completed run without output still needs a visible completion status.
   return (
-    <div className={CHAT_THREAD_RESPONSE_COMPACT_STACK_CLASS}>
-      <RunSectionDivider
-        label={label}
-        className={CHAT_THREAD_RESPONSE_FLUSH_CLASS}
-      />
-      {source ? (
-        <RecommendedFollowupList thread={thread} source={source} />
-      ) : null}
-    </div>
+    <p
+      data-role="assistant-thinking"
+      className={cn(
+        CHAT_THREAD_RESPONSE_LINE_CLASS,
+        CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
+      )}
+    >
+      {donePhrase}
+    </p>
   );
 }
 
@@ -8147,12 +8129,10 @@ function buildPagedAssistantTimeline({
 function PagedAssistantTimeline({
   items,
   thread,
-  mainActions,
   workHistory = false,
 }: {
   items: readonly PagedAssistantTimelineItem[];
   thread: ChatPanelSignals;
-  mainActions?: ReactNode;
   workHistory?: boolean;
 }) {
   return items.map((item) => {
@@ -8191,18 +8171,6 @@ function PagedAssistantTimeline({
               />
             </div>
           )}
-        </div>
-      );
-    }
-    if (item.kind === "run-work-main") {
-      return (
-        <div
-          key={item.event.id}
-          data-chat-run-work-main
-          className={CHAT_THREAD_RESPONSE_STACK_CLASS}
-        >
-          <PagedAssistantEventItem event={item.event} thread={thread} />
-          {mainActions}
         </div>
       );
     }
@@ -8256,38 +8224,78 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         shareEvents={[mainEvent]}
         relatedArtifacts={runWorkSection?.remainingArtifactCards}
+        showTimestamp={statusRow?.kind !== "thinking-indicators"}
         embedded
       />
     ) : undefined;
 
+  const inlineThinking =
+    mainEvent !== undefined && statusRow?.kind === "thinking-indicators";
   return withChatScrollLayout(
     <>
       <PagedAssistantTimeline
-        items={timelineItems}
+        items={timelineItems.filter((item) => {
+          return item.kind !== "run-work-main";
+        })}
         thread={thread}
-        mainActions={mainActions}
       />
-      {statusRow?.kind === "finished" ? (
-        <CompletedResultUpgrade thread={thread} />
-      ) : null}
-      {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (
+      <div
+        data-chat-run-work-main={mainEvent !== undefined ? "" : undefined}
+        className={cn(
+          CHAT_THREAD_RESPONSE_STACK_CLASS,
+          mainEvent === undefined && statusRow === undefined && "hidden",
+        )}
+      >
+        <PagedAssistantTimeline
+          items={timelineItems.filter((item) => {
+            return item.kind === "run-work-main";
+          })}
+          thread={thread}
+        />
+        <div
+          className={cn(
+            "flex min-w-0 gap-2",
+            inlineThinking ? "items-center" : "flex-col",
+          )}
+        >
+          {mainActions}
+          {statusRow?.kind === "finished" ? (
+            <CompletedResultUpgrade thread={thread} />
+          ) : null}
+          {/* Keep the status owner mounted as output arrives so native text
+              selections and the thinking-message cycle retain their endpoint. */}
+          <div
+            data-chat-run-status-tail
+            className={cn(
+              CHAT_THREAD_RESPONSE_STACK_CLASS,
+              "empty:hidden",
+              inlineThinking && "min-w-0 flex-1",
+            )}
+          >
+            {statusRow !== undefined ? (
+              <RunStatusRowContent
+                thread={thread}
+                statusRow={statusRow}
+                hasResult={mainEvent !== undefined}
+              />
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {statusTailEvents?.length ? (
         <div
           data-chat-run-status-tail
           className={CHAT_THREAD_RESPONSE_STACK_CLASS}
         >
-          {statusTailEvents?.length ? (
-            statusTailEvents.map((event) => {
-              return (
-                <PagedAssistantEventItem
-                  key={event.id}
-                  event={event}
-                  thread={thread}
-                />
-              );
-            })
-          ) : statusRow !== undefined ? (
-            <RunStatusRowContent thread={thread} statusRow={statusRow} />
-          ) : null}
+          {statusTailEvents.map((event) => {
+            return (
+              <PagedAssistantEventItem
+                key={event.id}
+                event={event}
+                thread={thread}
+              />
+            );
+          })}
         </div>
       ) : null}
     </>,
@@ -8331,7 +8339,10 @@ function PagedAssistantGroup({
       data-role="assistant"
       data-chat-run-id={runId}
       data-turn-created-at={group.events[0]?.createdAt}
-      className={CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS}
+      className={cn(
+        CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS,
+        "group/assistant-message",
+      )}
     >
       <ChatConversationLandingHighlight
         thread={thread}
@@ -8794,6 +8805,7 @@ function PagedGroupPrimaryActions({
   shareCopied,
   pdfAction,
   relatedArtifacts,
+  timestamp,
 }: {
   firstRunId: string | undefined;
   hasContent: boolean;
@@ -8805,12 +8817,13 @@ function PagedGroupPrimaryActions({
   shareCopied: boolean;
   pdfAction?: ReactNode;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
+  timestamp: string | undefined;
 }) {
   const { t } = useTranslation();
   return (
     <div
       className={cn(
-        "flex items-center gap-1",
+        "flex min-w-0 flex-1 items-center gap-1",
         // Icon buttons keep their 28px hit target centered around the 16px
         // glyph. Let the target overhang so the visible glyph, not its box,
         // starts on the response column.
@@ -8818,54 +8831,66 @@ function PagedGroupPrimaryActions({
       )}
       data-testid="chat-event-actions"
     >
-      {hasContent && (
-        <CopyButton
-          copyAction={onCopy}
-          render={({ onClick, ref }, { copied }) => {
-            return (
-              <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        ref={ref}
-                        type="button"
-                        variant="quiet"
-                        size="icon-xs"
-                        iconSize="sm"
-                        onClick={onClick}
-                        className="text-muted-foreground/60"
-                        aria-label={t(($) => {
-                          return $.chat.actions.copyMessage;
-                        })}
-                      >
-                        {copied ? <Check /> : <Copy />}
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom">
-                    {copied
-                      ? t(($) => {
-                          return $.chat.actions.copied;
-                        })
-                      : t(($) => {
-                          return $.chat.actions.copyMessage;
-                        })}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            );
-          }}
-        />
-      )}
-      {onShare && <MessageShareAction onShare={onShare} copied={shareCopied} />}
-      {pdfAction}
-      {relatedArtifacts ? (
-        <RelatedArtifactsDialog cards={relatedArtifacts} />
+      <div className="flex shrink-0 items-center gap-1">
+        {hasContent && (
+          <CopyButton
+            copyAction={onCopy}
+            render={({ onClick, ref }, { copied }) => {
+              return (
+                <TooltipProvider delay={300}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          ref={ref}
+                          type="button"
+                          variant="quiet"
+                          size="icon-xs"
+                          iconSize="sm"
+                          onClick={onClick}
+                          className="text-muted-foreground/60"
+                          aria-label={t(($) => {
+                            return $.chat.actions.copyMessage;
+                          })}
+                        >
+                          {copied ? <Check /> : <Copy />}
+                        </Button>
+                      }
+                    />
+                    <TooltipContent side="bottom">
+                      {copied
+                        ? t(($) => {
+                            return $.chat.actions.copied;
+                          })
+                        : t(($) => {
+                            return $.chat.actions.copyMessage;
+                          })}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            }}
+          />
+        )}
+        {onShare && (
+          <MessageShareAction onShare={onShare} copied={shareCopied} />
+        )}
+        {pdfAction}
+        {relatedArtifacts ? (
+          <RelatedArtifactsDialog cards={relatedArtifacts} />
+        ) : null}
+        {showRunUsage && firstRunId && (
+          <RunUsageChip runId={firstRunId} thread={thread} />
+        )}
+      </div>
+      {timestamp ? (
+        <time
+          dateTime={timestamp}
+          className="min-w-0 truncate pl-2 text-sm text-muted-foreground/60 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/assistant-message:opacity-100 group-focus-within/assistant-message:opacity-100"
+        >
+          {formatChatTimestamp(timestamp)}
+        </time>
       ) : null}
-      {showRunUsage && firstRunId && (
-        <RunUsageChip runId={firstRunId} thread={thread} />
-      )}
     </div>
   );
 }
@@ -8876,6 +8901,7 @@ function PagedGroupActions({
   thread,
   shareEvents,
   relatedArtifacts,
+  showTimestamp = true,
   embedded = false,
 }: {
   group: ChatEventGroup;
@@ -8884,6 +8910,7 @@ function PagedGroupActions({
   /** The assistant events this action bar shares, with their user prompt. */
   shareEvents: readonly EnrichedChatEvent[];
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
+  showTimestamp?: boolean;
   embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
@@ -8934,8 +8961,11 @@ function PagedGroupActions({
         }
       : undefined;
 
+  const timestamp = showTimestamp
+    ? persistedMessages.at(-1)?.createdAt
+    : undefined;
   const actions = (
-    <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
+    <div className={cn(CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS, "min-h-9")}>
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
         hasContent={hasContent}
@@ -8961,6 +8991,7 @@ function PagedGroupActions({
           ) : undefined
         }
         relatedArtifacts={relatedArtifacts}
+        timestamp={timestamp}
       />
     </div>
   );

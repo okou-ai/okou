@@ -2300,7 +2300,6 @@
       "fastModeWillBeOn": "Mode cepat akan aktif",
       "justNow": "baru saja",
       "keepGoing": "Lanjutkan",
-      "keepGoingAt": "Lanjutkan · {{timestamp}}",
       "modelChangedTo": "Model diganti menjadi {{model}}",
       "queueEllipsis": "antrean...",
       "relatedArtifactCount_one": "{{formattedCount}} artefak",

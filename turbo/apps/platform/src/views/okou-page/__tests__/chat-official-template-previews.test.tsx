@@ -173,8 +173,8 @@ test.each(officialPreviewCases)(
     ).resolves.toBeEnabled();
     expect(screen.queryByText(/^Working for /u)).toBeNull();
     expect(
-      document.querySelector('[data-role="assistant-thinking"]') === null,
-    ).toBe(runless);
+      document.querySelector('[data-testid="chat-event-actions"] time'),
+    ).toHaveAttribute("datetime", row.createdAt);
     await expectPreview();
   },
 );
