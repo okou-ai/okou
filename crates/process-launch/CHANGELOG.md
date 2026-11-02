@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/okou-ai/okou/compare/process-launch-v0.1.3...process-launch-v0.1.4) (2026-11-02)
+
+
+### Refactoring
+
+* **process-launch:** use owned descriptor cloning ([#44709](https://github.com/okou-ai/okou/issues/44709)) ([7797eb8](https://github.com/okou-ai/okou/commit/7797eb84b73714f027c5cde9550b5107b4cade02))
+
 ## [0.1.3](https://github.com/okou-ai/okou/compare/process-launch-v0.1.2...process-launch-v0.1.3) (2026-11-01)
 
 

@@ -13,6 +13,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1084.0](https://github.com/okou-ai/okou/compare/app-v0.1083.6...app-v0.1084.0) (2026-11-02)
+
+
+### Features
+
+* **chat:** quote email contacts from inline mail icons ([#44620](https://github.com/okou-ai/okou/issues/44620)) ([e855924](https://github.com/okou-ai/okou/commit/e855924e6fabe9c22d67b73858e640183d4ff285))
+* implement private cross-agent projects behind release gate ([#44617](https://github.com/okou-ai/okou/issues/44617)) ([428f461](https://github.com/okou-ai/okou/commit/428f46154beb1a11cdf09f150650c388826e539c))
+
+
+### Bug Fixes
+
+* **app:** move markdown table export to footer ([#44618](https://github.com/okou-ai/okou/issues/44618)) ([66c8873](https://github.com/okou-ai/okou/commit/66c88739620676718f77d7eaa1837279686b9ba2))
+* **app:** stabilize composer task icons in safari ([#44685](https://github.com/okou-ai/okou/issues/44685)) ([8a58467](https://github.com/okou-ai/okou/commit/8a584679b9c727bbf7ccf7a45f6c444b5b43022a))
+* **browser:** preserve mounted heartbeat after transient lease failures ([#44680](https://github.com/okou-ai/okou/issues/44680)) ([70dcba0](https://github.com/okou-ai/okou/commit/70dcba080dac5dbfe1c2831e2ffd0996f6037987))
+* **browser:** report established viewer disconnects once ([#44682](https://github.com/okou-ai/okou/issues/44682)) ([460f2e6](https://github.com/okou-ai/okou/commit/460f2e6b2a35b971b1deb96300af9cde3bd27ce2))
+* **browser:** retain safe bridge failure diagnostics ([#44683](https://github.com/okou-ai/okou/issues/44683)) ([05cb9a7](https://github.com/okou-ai/okou/commit/05cb9a723e071d2be7877fb19c7fac2e65ad1e19))
+* **browser:** unblock reconnect from unacknowledged cleanup ([#44676](https://github.com/okou-ai/okou/issues/44676)) ([8a18bc7](https://github.com/okou-ai/okou/commit/8a18bc77877df1005a40b9471e23b4d4ac06de1b))
+* gate cjk markdown emphasis rendering behind a lab switch ([#44653](https://github.com/okou-ai/okou/issues/44653)) ([aa7c978](https://github.com/okou-ai/okou/commit/aa7c9787430bc29a8b59587bf42a51d49b4a8429))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.33.0
+    * @okouai/browser-extension-client bumped to 0.4.2
+    * @okouai/core bumped to 8.809.0
+
 ## [0.1083.6](https://github.com/okou-ai/okou/compare/app-v0.1083.5...app-v0.1083.6) (2026-11-02)
 
 

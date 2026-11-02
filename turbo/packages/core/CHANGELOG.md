@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.809.0](https://github.com/okou-ai/okou/compare/core-v8.808.1...core-v8.809.0) (2026-11-02)
+
+
+### Features
+
+* **chat:** quote email contacts from inline mail icons ([#44620](https://github.com/okou-ai/okou/issues/44620)) ([e855924](https://github.com/okou-ai/okou/commit/e855924e6fabe9c22d67b73858e640183d4ff285))
+* implement private cross-agent projects behind release gate ([#44617](https://github.com/okou-ai/okou/issues/44617)) ([428f461](https://github.com/okou-ai/okou/commit/428f46154beb1a11cdf09f150650c388826e539c))
+
+
+### Bug Fixes
+
+* gate cjk markdown emphasis rendering behind a lab switch ([#44653](https://github.com/okou-ai/okou/issues/44653)) ([aa7c978](https://github.com/okou-ai/okou/commit/aa7c9787430bc29a8b59587bf42a51d49b4a8429))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.33.0
+
 ## [8.808.1](https://github.com/okou-ai/okou/compare/core-v8.808.0...core-v8.808.1) (2026-11-02)
 
 
