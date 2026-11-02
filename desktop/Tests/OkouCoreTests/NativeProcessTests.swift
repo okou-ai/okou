@@ -49,16 +49,19 @@ final class NativeProcessTests: XCTestCase {
       import json, os, pathlib, sys, tempfile
       root = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY'])
       marker = pathlib.Path(tempfile.gettempdir()) / "\#(marker.lastPathComponent)"
+      first_request = None
       for line in sys.stdin:
           request = json.loads(line)
+          if first_request is None:
+              first_request = request
           with (root / 'attempts').open('a') as stream:
               stream.write(request['kind'] + '\n')
           if len((root / 'attempts').read_text().splitlines()) >= \#(requestsBeforeSuspension):
               marker.write_text(str(os.getpid()))
-          if \#(responds ? "True" : "False"):
-              print(json.dumps({'id': request['id'], 'status': 'succeeded',
-                                'result': {'accessibility': True, 'screenRecording': True,
-                                           'pid': os.getpid()}}), flush=True)
+              if \#(responds ? "True" : "False"):
+                  print(json.dumps({'id': first_request['id'], 'status': 'succeeded',
+                                    'result': {'accessibility': True, 'screenRecording': True,
+                                               'pid': os.getpid()}}), flush=True)
       """#,
       now: {
         ContinuousClock.now.advanced(
@@ -525,10 +528,10 @@ final class NativeProcessTests: XCTestCase {
 
   func testSuspendedPermissionRefreshDoesNotHideAnotherPendingRequest() async throws {
     let collector = try telemetry()
-    let fixture = try permissionFixture(responds: false, requestsBeforeSuspension: 2)
+    let fixture = try permissionFixture(requestsBeforeSuspension: 2)
     let first = Task {
       try await fixture.helper.request(
-        .object(["kind": .string("permissions.state")]), timeout: 1, intent: .permissionRefresh)
+        .object(["kind": .string("permissions.state")]), intent: .permissionRefresh)
     }
     let attemptsURL = fixture.directory.appendingPathComponent("attempts")
     let received = XCTNSPredicateExpectation(
@@ -551,6 +554,8 @@ final class NativeProcessTests: XCTestCase {
     let event = try XCTUnwrap(collector.events().first)
     XCTAssertEqual(event["level"].string, "error")
     XCTAssertEqual(event["contexts"]["nativeHelper"]["pendingRequests"].number, 2)
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["operation"].string, "permissions.state")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["timeoutDetectedBy"].string, "response")
   }
 
   func testBlockedStdinWriteExpiresAndReapsTheHelperBeforeRecovery() async throws {
