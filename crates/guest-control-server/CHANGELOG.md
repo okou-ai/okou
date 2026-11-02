@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.63](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.62...guest-control-server-v0.24.63) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** share guest cgroup populated-state parsing ([#44583](https://github.com/okou-ai/okou/issues/44583)) ([f06f9c1](https://github.com/okou-ai/okou/commit/f06f9c1ddc0986c80cfdf807f30b81d076e28cc7))
+
 ## [0.24.62](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.61...guest-control-server-v0.24.62) (2026-11-01)
 
 
