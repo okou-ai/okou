@@ -67,7 +67,7 @@ const OKOU_APP_METADATA = {
     "An AI teammate that connects to 4,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.",
   documentTitle: "AI Teammate for Real Work — More Done, Same Team | Okou",
   openGraphTitle: "AI Teammate for Real Work — More Done, Same Team | Okou",
-  socialImagePath: "web/okou-og-image-more-done-b7e36e66ad2b.png",
+  socialImagePath: "web/okou-og-image-more-done-2400-a37778bc6c62.png",
   staticAssetsOrigin: "https://static.okou.io",
   twitterDescription:
     "An AI teammate that connects to 4,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.",
