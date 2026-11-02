@@ -459,9 +459,63 @@ fn apply_connector_runtime_update(
         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
             connector_slug,
             network_policy,
+            account_binding,
         } => {
             if !sandbox_has_connector_firewall(sandbox, connector_slug) {
                 return Ok(false);
+            }
+            if let Some(binding) = account_binding {
+                if sandbox
+                    .firewalls
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|entry| {
+                        firewall_entry_matches(entry, connector_slug)
+                            && custom_connector_owner(entry).is_some()
+                    })
+                {
+                    return Err(RunnerError::Internal(format!(
+                        "builtin connector {connector_slug} cannot replace a custom connector firewall"
+                    )));
+                }
+                replace_first_matching_firewall(
+                    sandbox.firewalls.get_or_insert_with(Vec::new),
+                    FirewallEntry::Builtin {
+                        name: connector_slug.clone(),
+                        base_url_vars: Some(binding.base_url_vars.clone()),
+                        source_id: Some(binding.connection_id.clone()),
+                    },
+                    |entry| {
+                        firewall_entry_matches(entry, connector_slug)
+                            && custom_connector_owner(entry).is_none()
+                    },
+                );
+                sandbox.connector_routing_variables.insert(
+                    format!("builtin:{connector_slug}"),
+                    binding.base_url_vars.clone(),
+                );
+                if let Some(aliases) = &sandbox.secret_connector_map {
+                    let metadata = sandbox
+                        .secret_connector_metadata_map
+                        .get_or_insert_with(HashMap::new);
+                    for (alias, owner) in aliases {
+                        if owner != connector_slug {
+                            continue;
+                        }
+                        let source = metadata.entry(alias.clone()).or_insert_with(|| {
+                            SecretConnectorMetadata {
+                                source_type: "connector".to_string(),
+                                source_user_id: None,
+                                source_id: None,
+                                metadata_key: None,
+                            }
+                        });
+                        if source.source_type == "connector" {
+                            source.source_id = Some(binding.connection_id.clone());
+                        }
+                    }
+                }
             }
             sandbox.omitted_builtin_firewalls.remove(connector_slug);
             sandbox
@@ -774,6 +828,7 @@ impl ProxyRegistryHandle {
                 source_ip,
                 run_id,
                 &[ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                    account_binding: None,
                     connector_slug: connector_slug.to_string(),
                     network_policy: policy,
                 }],
@@ -888,6 +943,7 @@ impl ConnectorRuntimeRegistryTransaction {
         let previous_omitted_builtin_firewalls = sandbox.omitted_builtin_firewalls.clone();
         let previous_omitted_custom_connector_ids = sandbox.omitted_custom_connector_ids.clone();
         let previous_connector_routing_variables = sandbox.connector_routing_variables.clone();
+        let previous_secret_connector_metadata_map = sandbox.secret_connector_metadata_map.clone();
         let accepted = updates
             .iter()
             .map(|update| apply_connector_runtime_update(sandbox, update))
@@ -907,6 +963,7 @@ impl ConnectorRuntimeRegistryTransaction {
             && previous_omitted_builtin_firewalls == sandbox.omitted_builtin_firewalls
             && previous_omitted_custom_connector_ids == sandbox.omitted_custom_connector_ids
             && previous_connector_routing_variables == sandbox.connector_routing_variables
+            && previous_secret_connector_metadata_map == sandbox.secret_connector_metadata_map
         {
             return Ok(Some(ConnectorRuntimePublication {
                 outcomes: accepted,

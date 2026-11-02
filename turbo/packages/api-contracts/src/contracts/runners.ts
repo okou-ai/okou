@@ -364,11 +364,18 @@ const connectorRuntimeResultBaseSchema = object({
   nextSyncAt: iso.datetime({ offset: true }).optional(),
 });
 
+// Explicit account replacement; ordinary policy refreshes omit this binding.
+export const connectorRuntimeAccountBindingSchema = object({
+  connectionId: uuid(),
+  baseUrlVars: record(string(), string()),
+});
+
 export const connectorRuntimeBuiltinAvailableResultSchema =
   connectorRuntimeResultBaseSchema.extend({
     target: connectorRuntimeBuiltinTargetSchema,
     state: literal("available"),
     networkPolicy: networkPolicySchema,
+    accountBinding: connectorRuntimeAccountBindingSchema.optional(),
   });
 
 export const connectorRuntimeBuiltinUnresolvedResultSchema =
@@ -401,6 +408,7 @@ export const connectorRuntimeCustomAvailableResultSchema =
     }),
     networkPolicy: networkPolicySchema,
     baseUrlVars: record(string(), string()),
+    accountBinding: connectorRuntimeAccountBindingSchema.optional(),
   });
 
 export const connectorRuntimeCustomUnresolvedResultSchema =

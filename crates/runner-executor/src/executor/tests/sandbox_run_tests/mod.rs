@@ -54,6 +54,7 @@ use runner_types::types::{ConnectorRuntimeTargetRegistration, FirewallEntry, San
 use tracing::Level;
 use tracing_subscriber::prelude::*;
 
+mod account_context;
 mod blank_prefetch;
 mod cancellation;
 mod codex_reconnect;

@@ -750,7 +750,7 @@ describe("connector runtime synchronization contract", () => {
     expect(execution.connectorRuntimeTargets).toEqual([target]);
   });
 
-  it("keeps builtin runtime synchronization policy-only", () => {
+  it("accepts legacy builtin policy refreshes without an account binding", () => {
     const result = {
       target: { kind: "builtin", connectorSlug: "plaud-mcp" },
       state: "available",
@@ -769,6 +769,44 @@ describe("connector runtime synchronization contract", () => {
       }),
     ).toStrictEqual(result);
   });
+
+  it.each(["builtin", "custom"] as const)(
+    "preserves an optional exact account binding on available %s results",
+    (kind) => {
+      const connectionId = "10000000-0000-4000-8000-000000000001";
+      const baseUrlVars = { workspace: "account-b" };
+      const result = {
+        target:
+          kind === "builtin"
+            ? { kind, connectorSlug: "slack" }
+            : { kind, customConnectorId },
+        state: "available",
+        networkPolicy: { allow: [], deny: [], ask: [], unknownPolicy: "ask" },
+        ...(kind === "custom"
+          ? {
+              firewall: {
+                kind: "inline",
+                customConnectorId,
+                sourceId: connectionId,
+                firewall: { name: "custom-connector", apis: [] },
+              },
+              baseUrlVars,
+            }
+          : {}),
+        accountBinding: { connectionId, baseUrlVars },
+      };
+
+      expect(connectorRuntimeSyncResultSchema.parse(result)).toStrictEqual(
+        result,
+      );
+      expect(
+        connectorRuntimeSyncResultSchema.safeParse({
+          ...result,
+          accountBinding: { connectionId },
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it("requires stable API identities on available custom firewalls", () => {
     const result = {

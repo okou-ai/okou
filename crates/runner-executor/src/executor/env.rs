@@ -11,9 +11,7 @@ use api_contracts::generated::types::runners::{
 };
 use guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id;
 use guest_contracts::codex_thread_id::canonical_codex_thread_id;
-use guest_contracts::connector_account_context::{
-    RunConnectorAccountContext, RunConnectorAccountTarget,
-};
+use guest_contracts::connector_account_context::RunConnectorAccountContext;
 use sandbox::WriteFileEntry;
 
 use super::cli_framework::{
@@ -673,28 +671,14 @@ pub(super) fn guest_connector_account_context_file_path(run_id: RunId) -> Runner
     })
 }
 
-fn build_connector_account_context(context: &ExecutionContext) -> RunConnectorAccountContext {
-    let targets = context
-        .connector_runtime_targets
-        .iter()
-        .map(|target| match target {
-            ConnectorRuntimeTargetRegistration::Builtin {
-                connector_slug,
-                source_id,
-                ..
-            } => RunConnectorAccountTarget::Builtin {
-                connector_slug: connector_slug.clone(),
-                connection_id: source_id.clone(),
-            },
-            ConnectorRuntimeTargetRegistration::Custom {
-                custom_connector_id,
-                source_id,
-                ..
-            } => RunConnectorAccountTarget::Custom {
-                custom_connector_id: custom_connector_id.clone(),
-                connection_id: source_id.clone(),
-            },
-        })
+pub(super) fn build_connector_account_context(
+    context: &ExecutionContext,
+) -> RunConnectorAccountContext {
+    let mut registrations = context.connector_runtime_targets.iter().collect::<Vec<_>>();
+    registrations.sort_by_key(|registration| registration.target().log_identity());
+    let targets = registrations
+        .into_iter()
+        .map(ConnectorRuntimeTargetRegistration::account_context_target)
         .collect();
     RunConnectorAccountContext {
         schema_version: guest_contracts::connector_account_context::SCHEMA_VERSION,
