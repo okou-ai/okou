@@ -35,6 +35,7 @@ const autoRechargeSchema = object({
   enabled: boolean(),
   threshold: number().nullable(),
   amount: number().nullable(),
+  disabledReason: literal("consecutive_failures").optional(),
 });
 
 const creditExpirySchema = object({

@@ -1066,6 +1066,7 @@
       "amountTitle": "Recharge amount",
       "automaticTopUps": "Automatic top-ups",
       "description": "Purchase credits when your balance falls below a threshold.",
+      "disabledAfterFailures": "Auto-recharge was turned off after repeated payment failures. Check your payment method before turning it on again.",
       "enableAria": "Enable auto-recharge",
       "thresholdAria": "Credit threshold for auto-recharge",
       "thresholdDescription": "Trigger a purchase when your credit balance goes under this number.",
@@ -1387,7 +1388,8 @@
       "handBack": "Hand back",
       "handBackMessage": "I'm done in the browser. Please continue.",
       "memberInControl": "You're in control",
-      "takeOver": "Take over"
+      "takeOver": "Take over",
+      "takeOverMessage": "I've taken over the browser. Don't use it until I hand it back."
     },
     "reclaimHint_one": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minute.",
     "reclaimHint_other": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minutes.",
@@ -3597,6 +3599,7 @@
         "backToSettings": "Back to settings",
         "checkingTitle": "Checking account status...",
         "connectionFailed": "Connection failed",
+        "invalidBotConnectLink": "This connection link is invalid or has expired. Return to {{provider}} and message the bot for a new link.",
         "invalidLink": "Invalid link",
         "verifying": "Please wait while we verify your connection."
       },

@@ -4,11 +4,8 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  FirstTaskUpgrade = "firstTaskUpgrade",
   ChatThinkingBrandMotion = "chatThinkingBrandMotion",
-  HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
-  OnboardingSourceOutcomes = "onboardingSourceOutcomes",
   TeamsWorkspaceIdentity = "teamsWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
   SharedThreadVisibility = "sharedThreadVisibility",
@@ -47,7 +44,6 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
-  ArtifactQuickActions = "artifactQuickActions",
   ArtifactDeletion = "artifactDeletion",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",

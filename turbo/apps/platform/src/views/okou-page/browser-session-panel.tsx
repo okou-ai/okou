@@ -13,14 +13,11 @@ import {
 } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Browser } from "../browser/browser.tsx";
-import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
-  readonly showPausedScreenshot?: boolean;
   /**
    * Panel actions for a host without its own header. The live viewer places
    * them at the end of its tab row; other states give them a row of their own.
@@ -178,9 +175,9 @@ function BrowserCdpViewer({
   const connecting =
     connection.state === "hasData" &&
     connection.data !== null &&
-    (connection.data.liveUrl !== liveUrl ||
-      connection.data.instanceId !== (instanceId ?? null) ||
-      connection.data.windowId !== (windowId ?? null));
+    (connection.data.requestedSession.liveUrl !== liveUrl ||
+      connection.data.requestedSession.window?.instanceId !== instanceId ||
+      connection.data.requestedSession.window?.primaryWindowId !== windowId);
   if (connection.state === "loading") {
     return (
       <>
@@ -225,25 +222,18 @@ function BrowserCdpViewer({
 
 function PausedBrowserSession({
   signals,
-  screenshotUrl,
-  screenshotLoad,
-  showPausedScreenshot,
   starting,
   onStart,
   refined,
   actions,
 }: {
   readonly signals: BrowserSessionSignals;
-  readonly screenshotUrl?: string | null;
-  readonly screenshotLoad: ImageLoadSignals;
-  readonly showPausedScreenshot: boolean;
   readonly starting: boolean;
   readonly onStart: () => void;
   readonly refined: boolean;
   readonly actions: ReactNode;
 }) {
   const { t } = useTranslation();
-  const showScreenshot = showPausedScreenshot && screenshotUrl;
   const startContent = (
     <>
       {starting ? (
@@ -294,14 +284,7 @@ function PausedBrowserSession({
           </button>
         )
       }
-      className={cn(
-        "absolute inset-0 z-10",
-        showScreenshot
-          ? "bg-background/50 backdrop-blur-md"
-          : refined
-            ? ""
-            : undefined,
-      )}
+      className={cn("absolute inset-0 z-10", !refined && "bg-muted/20")}
     />
   );
   return (
@@ -311,22 +294,7 @@ function PausedBrowserSession({
         signals={signals.browser}
         actions={refined ? actions : null}
         presence={null}
-        placeholder={
-          <>
-            {showScreenshot && (
-              <ArtifactThumbnailImage
-                src={screenshotUrl}
-                load={screenshotLoad}
-                testId="browser-session-panel-screenshot"
-                className="absolute inset-x-0 top-0 h-auto w-full object-contain object-top"
-                fallback={
-                  <span className="absolute inset-0 bg-muted/20" aria-hidden />
-                }
-              />
-            )}
-            <div data-browser-session-screenshot-mask>{pausedMessage}</div>
-          </>
-        }
+        placeholder={pausedMessage}
       />
     </PanelFrame>
   );
@@ -350,7 +318,6 @@ function equalPanelSessions(
 
 export function BrowserSessionPanel({
   signals,
-  showPausedScreenshot = false,
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
@@ -386,9 +353,6 @@ export function BrowserSessionPanel({
     return (
       <PausedBrowserSession
         signals={signals}
-        screenshotUrl={session?.screenshotUrl}
-        screenshotLoad={signals.screenshotImageLoad}
-        showPausedScreenshot={showPausedScreenshot}
         starting={starting}
         onStart={() => {
           detach(start(pageSignal), Reason.DomCallback);

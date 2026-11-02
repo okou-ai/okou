@@ -4,6 +4,7 @@ import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 
 import { i18n } from "../../i18n/index.ts";
 import { FeishuSettingsPage } from "../../views/okou-page/feishu-card.tsx";
+import { FeishuConnectErrorPage } from "../../views/okou-page/feishu-connect-error-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -35,7 +36,18 @@ export const setupFeishuSettingsPage$ = command(
     }
 
     if (isAccountConnect) {
-      await set(connectFeishuAccount$, signal);
+      const result = await set(connectFeishuAccount$, signal);
+      signal.throwIfAborted();
+      if (result === "invalid_link") {
+        set(updatePage$, createElement(FeishuConnectErrorPage));
+        set(
+          updateDocumentTitle$,
+          i18n.t(($) => {
+            return $.connectors.providerConnect[platform].connectTitle;
+          }),
+        );
+        await set(hideAppSkeleton$, signal);
+      }
       return;
     }
 

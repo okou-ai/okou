@@ -1086,6 +1086,7 @@
       "amountTitle": "Montant de la recharge",
       "automaticTopUps": "Recharges automatiques",
       "description": "Achetez des crédits lorsque votre solde tombe en dessous d'un seuil.",
+      "disabledAfterFailures": "La recharge automatique a été désactivée après plusieurs échecs de paiement. Vérifiez votre moyen de paiement avant de la réactiver.",
       "enableAria": "Activer la recharge automatique",
       "thresholdAria": "Seuil de crédit pour le rechargement automatique",
       "thresholdDescription": "Déclenchez un achat lorsque votre solde de crédit passe en dessous de ce chiffre.",
@@ -1409,7 +1410,8 @@
       "handBack": "Rendre la main",
       "handBackMessage": "J’ai terminé dans le navigateur. Tu peux continuer.",
       "memberInControl": "Vous avez la main",
-      "takeOver": "Prendre la main"
+      "takeOver": "Prendre la main",
+      "takeOverMessage": "J’ai pris la main sur le navigateur. Ne l’utilise pas avant que je te le rende."
     },
     "reclaimHint_one": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minute d'inactivité.",
     "reclaimHint_many": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
@@ -3653,6 +3655,7 @@
         "backToSettings": "Retour aux paramètres",
         "checkingTitle": "Vérification de l'état du compte...",
         "connectionFailed": "Connexion échouée",
+        "invalidBotConnectLink": "Ce lien de connexion est invalide ou a expiré. Retournez sur {{provider}} et envoyez un message au bot pour obtenir un nouveau lien.",
         "invalidLink": "Lien invalide",
         "verifying": "Veuillez patienter pendant que nous vérifions votre connexion."
       },

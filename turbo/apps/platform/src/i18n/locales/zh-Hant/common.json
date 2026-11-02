@@ -1064,6 +1064,7 @@
       "amountTitle": "充值數量",
       "automaticTopUps": "自動充值",
       "description": "當餘額低於設定值時自動購買積分。",
+      "disabledAfterFailures": "自動儲值因連續付款失敗已關閉。請檢查付款方式後重新開啟。",
       "enableAria": "啟用自動充值",
       "thresholdAria": "自動充值的積分閾值",
       "thresholdDescription": "當積分餘額低於這個數值時觸發購買。",
@@ -1385,7 +1386,8 @@
       "handBack": "交還",
       "handBackMessage": "我在瀏覽器裡操作完了，請繼續。",
       "memberInControl": "你正在操作",
-      "takeOver": "接管"
+      "takeOver": "接管",
+      "takeOverMessage": "我先接管瀏覽器，在我交還之前請不要操作它。"
     },
     "reclaimHint_one": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
     "reclaimHint_other": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
@@ -3584,6 +3586,7 @@
         "backToSettings": "返回設定",
         "checkingTitle": "正在檢查帳號狀態…",
         "connectionFailed": "連線失敗",
+        "invalidBotConnectLink": "此綁定連結無效或已過期。請返回 {{provider}}，傳送訊息給機器人以取得新的綁定連結。",
         "invalidLink": "連結無效",
         "verifying": "我們正在驗證你的連線，請稍候。"
       },

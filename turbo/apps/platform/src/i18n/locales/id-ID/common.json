@@ -1064,6 +1064,7 @@
       "amountTitle": "Jumlah isi ulang",
       "automaticTopUps": "Isi ulang otomatis",
       "description": "Beli kredit saat saldo Anda turun di bawah ambang batas.",
+      "disabledAfterFailures": "Isi ulang otomatis dinonaktifkan setelah pembayaran gagal berulang kali. Periksa metode pembayaran sebelum mengaktifkannya kembali.",
       "enableAria": "Aktifkan isi ulang otomatis",
       "thresholdAria": "Ambang kredit untuk isi ulang otomatis",
       "thresholdDescription": "Lakukan pembelian saat saldo kredit Anda di bawah angka ini.",
@@ -1385,7 +1386,8 @@
       "handBack": "Serahkan kembali",
       "handBackMessage": "Saya sudah selesai di browser. Silakan lanjutkan.",
       "memberInControl": "Anda yang mengendalikan",
-      "takeOver": "Ambil alih"
+      "takeOver": "Ambil alih",
+      "takeOverMessage": "Saya mengambil alih browser. Jangan gunakan sampai saya menyerahkannya kembali."
     },
     "reclaimHint_one": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
     "reclaimHint_other": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
@@ -3584,6 +3586,7 @@
         "backToSettings": "Kembali ke setelan",
         "checkingTitle": "Memeriksa status akun...",
         "connectionFailed": "Koneksi gagal",
+        "invalidBotConnectLink": "Tautan koneksi ini tidak valid atau sudah kedaluwarsa. Kembali ke {{provider}} dan kirim pesan ke bot untuk mendapatkan tautan baru.",
         "invalidLink": "Tautan tidak valid",
         "verifying": "Harap tunggu saat kami memverifikasi koneksi Anda."
       },

@@ -13,6 +13,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   mockBrowserCdp,
+  recordBrowserStartupErrors,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -72,7 +73,11 @@ function mockViewer(
     return respond(200, { browser: session });
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    return respond(200, {
+      browser: session,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
@@ -474,6 +479,9 @@ test("An empty assigned window can create a native tab without a source document
 });
 
 test("An unavailable required extension never admits CDP-only viewing", async () => {
+  const startupErrors = recordBrowserStartupErrors();
+  const sentry = context.mocks.sentry();
+  initSentry();
   mockViewer(0, undefined, false);
   await setupPage({ context, path: `/browsers/${threadId}` });
   await screen.findByText("Browser view unavailable");
@@ -481,6 +489,19 @@ test("An unavailable required extension never admits CDP-only viewing", async ()
   expect(
     screen.getByLabelText("New tab", { selector: "button" }),
   ).toBeDisabled();
+  await waitFor(() => {
+    expect(sentry.reports).toContainEqual(
+      expect.objectContaining({
+        type: "exception",
+        error: expect.objectContaining({
+          name: "CdpFault",
+          message:
+            "The required Okou Browser extension is unavailable. Reconnect the browser.",
+        }),
+      }),
+    );
+    expect(startupErrors).toHaveLength(1);
+  });
 });
 
 test("Bridge loss detaches its page after writing an unacknowledged modifier release", async () => {

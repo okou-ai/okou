@@ -3,6 +3,11 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import {
+  chatThreadEventsContract,
+  userMessageDocumentSchema,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { initClient } from "@okouai/api-contracts/client/transport";
+import {
   act,
   fireEvent,
   screen,
@@ -28,10 +33,14 @@ import {
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000901";
+const TAKE_OVER_MESSAGE =
+  "I've taken over the browser. Don't use it until I hand it back.";
+const HAND_BACK_MESSAGE = "I'm done in the browser. Please continue.";
 
 function liveBrowserSession(): BrowserSession {
   return {
@@ -115,7 +124,14 @@ function mockBrowserApi(
       : {}),
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    if (!currentSession) {
+      throw new Error("Expected an active browser for viewer connection");
+    }
+    return respond(200, {
+      browser: currentSession,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
   });
 
   return {
@@ -636,7 +652,7 @@ test("Open a stopped browser card and offer a new session", async () => {
   expect(buttonByName("Start browser", sidebar)).toBeEnabled();
 });
 
-test("Take over the cloud browser from a working run and hand it back through the composer", async () => {
+test("Take over the cloud browser without stopping the working run and hand it back", async () => {
   mockWideScreen();
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -688,11 +704,13 @@ test("Take over the cloud browser from a working run and hand it back through th
       createdAt: "2026-09-01T12:00:04.000Z",
     },
   ];
+  const takeOverAccepted = createDeferredPromise<void>(context.signal);
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
     chatEvents,
     activeRunIds: [runId],
+    appendGate: takeOverAccepted.promise,
   });
   await setupPage({
     context,
@@ -718,6 +736,15 @@ test("Take over the cloud browser from a working run and hand it back through th
   await expect(
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText(TAKE_OVER_MESSAGE),
+  ).resolves.toBeInTheDocument();
+  // Handing back before the Run has been told could reach it first.
+  expect(buttonByName("Hand back", viewer)).toBeDisabled();
+  takeOverAccepted.resolve();
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
 
   // An earlier Run's final output, budget declaration and usage can arrive late.
   act(() => {
@@ -769,15 +796,509 @@ test("Take over the cloud browser from a working run and hand it back through th
   expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 
   click(buttonByName("Hand back", viewer));
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "I'm done in the browser. Please continue.",
-    );
-  });
-  expect(within(sidebar).queryByText("You're in control")).toBeNull();
+  // The Run kept working, so the continue message is steered into it.
+  await expect(
+    screen.findByText(HAND_BACK_MESSAGE),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    within(viewer).findByText(/is working$/u),
+  ).resolves.toBeInTheDocument();
   click(buttonByName("Close cloud browser", viewer));
   await waitFor(() => {
     expect(sidebar).not.toBeInTheDocument();
   });
   expect(browser.closeRequests()).toBe(1);
+});
+
+function mockLivePageGeometry(
+  box: () => DOMRect = () => {
+    return new DOMRect(0, 0, 1440, 900);
+  },
+): void {
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this instanceof HTMLCanvasElement ? box() : original.call(this);
+    },
+  );
+}
+
+async function livePage(viewer: HTMLElement): Promise<{
+  readonly view: HTMLElement;
+  readonly input: HTMLInputElement;
+}> {
+  await waitFor(() => {
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  return {
+    view: within(viewer).getByRole("img", { name: "Live browser view" }),
+    input: within(viewer).getByRole<HTMLInputElement>("textbox", {
+      name: "Remote browser input",
+    }),
+  };
+}
+
+test.each(["mouse", "keyboard", "composition", "touch"] as const)(
+  "Accepted %s input on the live page takes the cloud browser over from a working run",
+  async (inputKind) => {
+    mockWideScreen();
+    mockLivePageGeometry();
+    mockBrowserApi(liveBrowserSession());
+    const runId = "d0000000-0000-4000-a000-000000000903";
+    mockChatLifecycle(context, {
+      threadId: THREAD_ID,
+      threadTitle: "Browser navigation",
+      chatEvents: [
+        {
+          id: "page-input-live-user",
+          role: "user",
+          content: "Compare the two pricing pages",
+          runId,
+          seqId: 1,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      activeRunIds: [runId],
+    });
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+    });
+    await expectConversationReady();
+    click(buttonByName("Open browser"));
+    const sidebar = liveBrowserSidebar();
+    await within(sidebar).findByDisplayValue("https://example.com");
+    const viewer = within(sidebar).getByRole("region", {
+      name: "Remote browser viewer",
+    });
+    await expect(
+      within(viewer).findByText(/is working$/u),
+    ).resolves.toBeInTheDocument();
+    const page = await livePage(viewer);
+
+    // Rejected pointer input, composition keys and focus release are local only.
+    fireEvent.pointerDown(page.view, { pointerType: "pen", button: 0 });
+    fireEvent.keyDown(page.input, { key: "Process", keyCode: 229 });
+    fireEvent.keyDown(page.input, { key: "F8" });
+    expect(within(viewer).getByText(/is working$/u)).toBeInTheDocument();
+    expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
+
+    // Focus without a preceding remote mouse press.
+    act(() => {
+      page.input.focus();
+    });
+    expect(page.input).toHaveFocus();
+    fireEvent.compositionStart(page.input);
+    // Native composition ownership suppresses even an unmarked confirmation key.
+    fireEvent.keyDown(page.input, { key: "Enter", code: "Enter" });
+    expect(within(viewer).getByText(/is working$/u)).toBeInTheDocument();
+    fireEvent(
+      page.input,
+      Object.assign(new Event("compositionend", { bubbles: true }), {
+        data: "",
+      }),
+    );
+
+    if (inputKind === "mouse") {
+      await userEvent.pointer({
+        target: page.view,
+        keys: "[MouseLeft]",
+        coords: { clientX: 720, clientY: 450 },
+      });
+    } else if (inputKind === "touch") {
+      for (const type of ["pointerdown", "pointerup"]) {
+        fireEvent(
+          page.view,
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerType: "touch",
+            pointerId: 5,
+            isPrimary: true,
+            clientX: 720,
+            clientY: 450,
+          }),
+        );
+      }
+    } else {
+      if (inputKind === "keyboard") {
+        await userEvent.keyboard("a");
+      } else {
+        fireEvent.compositionStart(page.input);
+        fireEvent.input(page.input, {
+          target: { value: "你好" },
+          inputType: "insertCompositionText",
+          isComposing: true,
+        });
+        fireEvent(
+          page.input,
+          Object.assign(new Event("compositionend", { bubbles: true }), {
+            data: "你好",
+          }),
+        );
+        fireEvent.input(page.input, {
+          target: { value: "你好" },
+          inputType: "insertCompositionText",
+        });
+      }
+    }
+    await expect(
+      within(viewer).findByText("You're in control"),
+    ).resolves.toBeInTheDocument();
+    await userEvent.click(page.input);
+    await userEvent.keyboard("b");
+    await expect(
+      screen.findByText(TAKE_OVER_MESSAGE),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(buttonByName("Hand back", viewer)).toBeEnabled();
+    });
+    click(buttonByName("Hand back", viewer));
+    await expect(
+      screen.findByText(HAND_BACK_MESSAGE),
+    ).resolves.toBeInTheDocument();
+    // Repeated accepted input sent one notification, and the Run kept working.
+    expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(1);
+    await expect(
+      within(viewer).findByText(/is working$/u),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([true, false])(
+  "Page-input takeover ignores letterboxing and respects the Lab switch (%s)",
+  async (refined) => {
+    mockWideScreen();
+    let box = new DOMRect(0, 0, 1440, 900);
+    mockLivePageGeometry(() => {
+      return box;
+    });
+    const { native } = mockBrowserApi(liveBrowserSession());
+    const runId = "d0000000-0000-4000-a000-000000000905";
+    mockChatLifecycle(context, {
+      threadId: THREAD_ID,
+      threadTitle: "Browser navigation",
+      chatEvents: [
+        {
+          id: "page-input-guard-user",
+          role: "user",
+          content: "Compare these pages",
+          runId,
+          seqId: 1,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      activeRunIds: [runId],
+    });
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: refined },
+    });
+    await expectConversationReady();
+    click(buttonByName("Open browser"));
+    const sidebar = liveBrowserSidebar();
+    await within(sidebar).findByDisplayValue("https://example.com");
+    const viewer = within(sidebar).getByRole("region", {
+      name: "Remote browser viewer",
+    });
+    const page = await livePage(viewer);
+    const menu = await openViewerSizingMenu(viewer);
+    click(menuRadio(menu, "Off"));
+    await waitFor(() => {
+      expect(menu).not.toBeInTheDocument();
+    });
+    // A taller panel letterboxes the unchanged remote image.
+    box = new DOMRect(0, 0, 1440, 1800);
+    await userEvent.pointer({
+      target: page.view,
+      keys: "[MouseLeft]",
+      coords: { clientX: 720, clientY: 10 },
+    });
+    expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
+    expect(within(viewer).queryByText(/is working$/u) !== null).toBe(refined);
+    await userEvent.click(page.input);
+    await userEvent.keyboard("x");
+    await waitFor(() => {
+      expect(native.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.dispatchKeyEvent",
+          params: expect.objectContaining({ type: "keyDown", text: "x" }),
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryAllByText(TAKE_OVER_MESSAGE)).toHaveLength(
+        refined ? 1 : 0,
+      );
+    });
+    expect(within(viewer).queryByText("You're in control") !== null).toBe(
+      refined,
+    );
+  },
+);
+
+test("A delayed handback cannot clear a newer run's page-input takeover", async () => {
+  mockWideScreen();
+  mockLivePageGeometry();
+  mockBrowserApi(liveBrowserSession());
+  const runId = "d0000000-0000-4000-a000-000000000906";
+  const newerRunId = "d0000000-0000-4000-a000-000000000907";
+  const chatEvents: MockChatEventInput[] = [
+    {
+      id: "delayed-handback-user",
+      role: "user",
+      content: "Compare these pages",
+      runId,
+      seqId: 1,
+      createdAt: "2026-09-01T12:00:00.000Z",
+    },
+  ];
+  const handBackStarted = createDeferredPromise<void>(context.signal);
+  const handBackAccepted = createDeferredPromise<void>(context.signal);
+  const lifecycle = {
+    threadId: THREAD_ID,
+    threadTitle: "Browser navigation",
+    chatEvents,
+    activeRunIds: [runId],
+    appendGate: Promise.resolve(),
+    onQueuedEventAppend: ({ content }: { content?: string }) => {
+      if (content === HAND_BACK_MESSAGE && !handBackStarted.settled()) {
+        handBackStarted.resolve();
+      }
+    },
+  };
+  mockChatLifecycle(context, lifecycle);
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  const page = await livePage(viewer);
+  click(buttonByName("Take over", viewer));
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+
+  lifecycle.appendGate = handBackAccepted.promise;
+  click(buttonByName("Hand back", viewer));
+  await handBackStarted.promise;
+  expect(buttonByName("Hand back", viewer)).toBeDisabled();
+
+  // Realtime can expose a newer Run before the earlier HTTP send settles.
+  act(() => {
+    chatEvents.push(
+      {
+        id: "delayed-handback-complete",
+        role: "assistant",
+        content: null,
+        runId,
+        runLifecycleEvent: "completed",
+        seqId: 100,
+        createdAt: "2026-09-01T12:01:40.000Z",
+      },
+      {
+        id: "delayed-handback-new-run",
+        role: "user",
+        content: "Continue the comparison",
+        runId: newerRunId,
+        seqId: 101,
+        createdAt: "2026-09-01T12:01:41.000Z",
+      },
+    );
+    lifecycle.activeRunIds.push(newerRunId);
+    createChatEvent(THREAD_ID);
+  });
+  await within(viewer).findByText(/is working$/u);
+
+  // A new takeover is independent of the old handback still in flight.
+  lifecycle.appendGate = Promise.resolve();
+  await userEvent.pointer({
+    target: page.view,
+    keys: "[MouseLeft]",
+    coords: { clientX: 720, clientY: 450 },
+  });
+  await within(viewer).findByText("You're in control");
+  // Local ownership moves immediately, but its notice waits for the older send.
+  expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(1);
+  handBackAccepted.resolve();
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
+
+  // Read the public event tail, not optimistic UI or request invocation order.
+  const events = await initClient(chatThreadEventsContract, {
+    baseUrl: "https://api.okou.ai",
+  }).rows({
+    params: { threadId: THREAD_ID },
+    query: chatThreadEventsContract.rows.query.parse({ sinceSeqId: 0 }),
+    fetchOptions: { signal: context.signal },
+  });
+  expect(events.status).toBe(200);
+  if (events.status !== 200) {
+    throw new Error("Expected the persisted handoff events");
+  }
+  expect(
+    events.body.rows
+      .filter((row) => {
+        return row.eventType === "input.prompt" && row.runId === null;
+      })
+      .map((row) => {
+        return userMessageDocumentSchema
+          .parse(row.payload?.userMessage)
+          .parts.flatMap((part) => {
+            return part.type === "text" ? [part.text] : [];
+          })
+          .join("");
+      }),
+  ).toStrictEqual([TAKE_OVER_MESSAGE, HAND_BACK_MESSAGE, TAKE_OVER_MESSAGE]);
+
+  click(buttonByName("Hand back", viewer));
+  await waitFor(() => {
+    expect(screen.getAllByText(HAND_BACK_MESSAGE)).toHaveLength(2);
+  });
+  await waitFor(() => {
+    expect(within(viewer).getByRole("status")).toHaveTextContent(
+      /is working$/u,
+    );
+  });
+});
+
+test("A failed handback does not poison the next explicit handback", async () => {
+  mockWideScreen();
+  mockBrowserApi(liveBrowserSession());
+  const runId = "d0000000-0000-4000-a000-000000000908";
+  const rejected = createDeferredPromise<void>(context.signal);
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    chatEvents: [
+      {
+        id: "retry-handback-user",
+        role: "user",
+        content: "Compare these pages",
+        runId,
+        seqId: 1,
+        createdAt: "2026-09-01T12:00:00.000Z",
+      },
+    ],
+    activeRunIds: [runId],
+    onQueuedEventAppend: ({ content }) => {
+      if (content === HAND_BACK_MESSAGE && !rejected.settled()) {
+        rejected.resolve();
+        throw new Error("The first handback request failed");
+      }
+    },
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  click(buttonByName("Take over", viewer));
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+
+  click(buttonByName("Hand back", viewer));
+  await rejected.promise;
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
+
+  click(buttonByName("Hand back", viewer));
+  await within(viewer).findByText(/is working$/u);
+});
+
+test("Hand back after using the cloud browser between runs continues in one step", async () => {
+  mockWideScreen();
+  mockLivePageGeometry();
+  mockBrowserApi(liveBrowserSession());
+  const runId = "d0000000-0000-4000-a000-000000000904";
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Browser navigation",
+    chatEvents: [
+      {
+        id: "between-runs-user",
+        role: "user",
+        content: "Download last month's invoices",
+        runId,
+        seqId: 1,
+        createdAt: "2026-09-01T12:00:00.000Z",
+      },
+      {
+        id: "between-runs-reply",
+        role: "assistant",
+        content: "Please sign in to the billing site in the browser.",
+        runId,
+        seqId: 2,
+        createdAt: "2026-09-01T12:00:01.000Z",
+      },
+      {
+        id: "between-runs-complete",
+        role: "assistant",
+        content: null,
+        runId,
+        runLifecycleEvent: "completed",
+        seqId: 3,
+        createdAt: "2026-09-01T12:00:02.000Z",
+      },
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  expect(within(viewer).queryByText("You're in control")).toBeNull();
+
+  // Nobody is driving, so signing in tells no Run anything.
+  const page = await livePage(viewer);
+  await userEvent.pointer({
+    target: page.view,
+    keys: "[MouseLeft]",
+    coords: { clientX: 720, clientY: 450 },
+  });
+  await expect(
+    within(viewer).findByText("You're in control"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
+
+  click(buttonByName("Hand back", viewer));
+  await expect(
+    screen.findByText(HAND_BACK_MESSAGE),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
+  await expect(
+    within(viewer).findByText(/is working$/u),
+  ).resolves.toBeInTheDocument();
 });

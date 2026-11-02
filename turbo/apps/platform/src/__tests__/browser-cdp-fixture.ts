@@ -1,4 +1,5 @@
 import { array, number, object, string, unknown } from "zod";
+import { vi } from "vitest";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
 export const TEST_BROWSER_EXTENSION = Object.freeze({
@@ -6,6 +7,27 @@ export const TEST_BROWSER_EXTENSION = Object.freeze({
   runtimeId: "abcdefghijklmnopabcdefghijklmnop",
   version: "0.3.0",
 });
+
+/** Retain expected startup reports while keeping the unexpected-error guard. */
+export function recordBrowserStartupErrors(): Error[] {
+  const errors: Error[] = [];
+  const consoleError = vi.spyOn(console, "error");
+  const unexpected = consoleError.getMockImplementation();
+  if (!unexpected) {
+    throw new Error("Expected the shared console error guard");
+  }
+  consoleError.mockImplementation((...args: unknown[]) => {
+    if (
+      args[1] === "Browser viewer startup failed" &&
+      args[2] instanceof Error
+    ) {
+      errors.push(args[2]);
+      return;
+    }
+    unexpected(...args);
+  });
+  return errors;
+}
 
 interface BrowserTarget {
   readonly targetId: string;
@@ -47,6 +69,8 @@ export function mockBrowserCdp(
       : context.mocks.browser.imageBitmap(1440, 900);
   const viewport = { width: 1440, height: 900 };
   let focusedEditing: unknown = null;
+  const windowStates = new Map<number, string>();
+  const restoredSizes = new Map<number, { width: number; height: number }>();
   const targets: BrowserTarget[] = (
     options.targets ?? [
       {
@@ -83,6 +107,12 @@ export function mockBrowserCdp(
   }
 
   function frame(data: string, sessionId = "example-page-session") {
+    const target = targets.find((candidate) => {
+      return `${candidate.targetId}-session` === sessionId;
+    });
+    if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
+      return;
+    }
     event(
       "Page.screencastFrame",
       {
@@ -326,9 +356,27 @@ export function mockBrowserCdp(
       return {
         result: {
           windowId: target.windowId ?? 0,
-          bounds: { ...viewport, windowState: "normal" },
+          bounds: {
+            ...viewport,
+            windowState: windowStates.get(target.windowId ?? 0) ?? "normal",
+          },
         },
       };
+    }
+    if (request.method === "Browser.setWindowBounds") {
+      const { windowId, bounds } = object({
+        windowId: number(),
+        bounds: object({ windowState: string() }),
+      }).parse(request.params);
+      windowStates.set(windowId, bounds.windowState);
+      const restored = restoredSizes.get(windowId);
+      if (bounds.windowState === "normal" && restored) {
+        viewport.width = restored.width;
+        viewport.height = restored.height;
+        bitmap?.resize(restored.width, restored.height);
+        restoredSizes.delete(windowId);
+      }
+      return { result: {} };
     }
     if (request.method === "Browser.setContentsSize") {
       const size = object({ width: number(), height: number() }).parse(
@@ -564,6 +612,24 @@ export function mockBrowserCdp(
     viewport,
     setFocusedEditing(value: unknown) {
       focusedEditing = value;
+    },
+    setWindowState(
+      state: string,
+      windowId = 0,
+      restoredSize?: { width: number; height: number },
+    ) {
+      windowStates.set(windowId, state);
+      if (restoredSize) {
+        restoredSizes.set(windowId, restoredSize);
+      }
+    },
+    windowState(windowId = 0) {
+      return windowStates.get(windowId) ?? "normal";
+    },
+    ignoreNextWindowRestore() {
+      nextResponses.set("Browser.setWindowBounds", () => {
+        return { result: {} };
+      });
     },
     connections: socket.connections,
     openConnection() {

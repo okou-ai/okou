@@ -213,10 +213,10 @@ function usagePackCatalogResponse() {
   };
 }
 
-function mockBillingStory(): {
+function mockBillingStory(initialStatus = activeProBillingStatus()): {
   readonly creditCheckoutRequest: () => CreditCheckoutRequest | null;
 } {
-  let billingStatus = activeProBillingStatus();
+  let billingStatus = initialStatus;
   let creditCheckoutRequest: CreditCheckoutRequest | null = null;
 
   context.mocks.data.org({
@@ -3869,6 +3869,50 @@ test("Invalid automatic top-ups can be discarded while saving is disabled", asyn
   expect(
     screen.queryByLabelText("Credit threshold for auto-recharge"),
   ).not.toBeInTheDocument();
+});
+
+test("Re-enable automatic top-ups after repeated payment failures", async () => {
+  const billingStatus = activeProBillingStatus();
+  billingStatus.autoRecharge = {
+    enabled: true,
+    threshold: 2000,
+    amount: 10_000,
+  };
+  mockBillingStory(billingStatus);
+  await openBillingTab("/?settings=billing");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Enable auto-recharge")).toBeChecked();
+    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
+  });
+  billingStatus.autoRecharge = {
+    enabled: false,
+    threshold: 2000,
+    amount: 10_000,
+    disabledReason: "consecutive_failures",
+  };
+  context.mocks.ably.trigger("billing:changed");
+  const reason =
+    "Auto-recharge was turned off after repeated payment failures. Check your payment method before turning it on again.";
+  await expect(screen.findByText(reason)).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Enable auto-recharge")).not.toBeChecked();
+
+  click(screen.getByLabelText("Enable auto-recharge"));
+  await expect(
+    screen.findByLabelText("Credit threshold for auto-recharge"),
+  ).resolves.toHaveValue("2000");
+  expect(
+    screen.getByLabelText("Auto-recharge credit amount in credits"),
+  ).toHaveValue("10000");
+  expect(screen.getByText(reason)).toBeInTheDocument();
+
+  click(screen.getByTestId("save-button"));
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("auto-recharge-unsaved-bar"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Enable auto-recharge")).toBeChecked();
+    expect(screen.queryByText(reason)).not.toBeInTheDocument();
+  });
 });
 
 test("Save automatic credit top-ups", async () => {

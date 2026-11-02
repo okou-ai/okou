@@ -1,0 +1,1 @@
+ALTER TABLE "org_metadata" ADD COLUMN "auto_recharge_failure_count" integer DEFAULT 0 NOT NULL;

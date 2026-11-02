@@ -14,8 +14,6 @@ import {
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/validators/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import {
   captureSourceOnboardingConnected$,
@@ -118,14 +116,11 @@ function useSourceExplanation(
   connectors: readonly PlatformConnectorCatalogConnectItem[],
 ) {
   const { t } = useTranslation();
-  const features = useGet(featureSwitch$);
   const outcomeIndustry = industry ?? "other";
   const outcomeConnector = connectors.find((connector) => {
     return connector.slug === INDUSTRY_SOURCE_SLUGS[outcomeIndustry][0];
   });
-  const showOutcome =
-    features[FeatureSwitchKey.OnboardingSourceOutcomes] &&
-    outcomeConnector !== undefined;
+  const showOutcome = outcomeConnector !== undefined;
   return {
     title: t(($) => {
       return showOutcome

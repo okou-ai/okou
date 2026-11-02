@@ -86,11 +86,14 @@ private final class SessionURLProtocol: URLProtocol, @unchecked Sendable {
     return try! JSONDecoder().decode(JSONValue.self, from: data)
   }
   func reply(_ body: JSONValue, status: Int = 200) {
+    replyData(try! JSONEncoder().encode(body), status: status)
+  }
+  func replyData(_ data: Data, status: Int, headers: [String: String] = [:]) {
     let response = HTTPURLResponse(
       url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-      headerFields: ["Content-Type": "application/json"])!
+      headerFields: ["Content-Type": "application/json"].merging(headers) { _, value in value })!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: try! JSONEncoder().encode(body))
+    client?.urlProtocol(self, didLoad: data)
     client?.urlProtocolDidFinishLoading(self)
   }
 }
@@ -277,9 +280,48 @@ final class DesktopSessionTests: XCTestCase, @unchecked Sendable {
   }
 
   @MainActor
+  func testIdentityHTMLFailureKeepsTheVerifiedAccountAndRecovers() async throws {
+    SessionURLProtocol.boundary.set { connection in
+      if connection.request.url!.path == "/api/auth/me",
+        SessionURLProtocol.boundary.count("/api/auth/me") == 2
+      {
+        connection.replyData(
+          Data("<html>Bad Gateway</html>".utf8), status: 502,
+          headers: ["Content-Type": "text/html"])
+      } else {
+        replySessionRequest(connection)
+      }
+    }
+    let source = SessionBoundary()
+    let view = SessionView()
+    let (api, session) = sessionTestAPI()
+    defer { session.invalidateAndCancel() }
+    let coordinator = DesktopSessionCoordinator(
+      source: source, api: api, stopHost: { XCTFail("A gateway failure is not a sign-out") },
+      onChange: view.apply)
+    await coordinator.start()
+    XCTAssertTrue(view.state.signedIn)
+    await coordinator.synchronize()
+    XCTAssertTrue(view.state.signedIn)
+    XCTAssertTrue(view.state.canAuthenticateHost)
+    XCTAssertEqual(view.state.error, "Unable to verify Desktop account")
+    let recovered = expectation(description: "The existing retry re-verifies the account")
+    view.conditions = [
+      ("recovered", { $0.signedIn && $0.developerToolsAvailable && $0.error == nil }, recovered)
+    ]
+    await fulfillment(of: [recovered], timeout: 4)
+    XCTAssertEqual(SessionURLProtocol.boundary.count("/api/auth/me"), 3)
+    let token = try await coordinator.token(forceRefresh: false)
+    XCTAssertEqual(token, "token-a")
+    await coordinator.stop()
+  }
+
+  @MainActor
   func testRejectedAuthenticationRefreshesOnceAndCannotKeepAHostGrant() async throws {
     SessionURLProtocol.boundary.set { connection in
-      connection.reply(.object([:]), status: 401)
+      connection.replyData(
+        Data("<html>Unauthorized</html>".utf8), status: 401,
+        headers: ["Content-Type": "text/html"])
     }
     let source = SessionBoundary()
     var forcedRefreshes = 0
@@ -577,7 +619,9 @@ final class DesktopSessionTests: XCTestCase, @unchecked Sendable {
   @MainActor
   func testForbiddenIdentityReadShowsTheSDKAccountWithoutGrantingHostAccess() async throws {
     SessionURLProtocol.boundary.set { connection in
-      connection.reply(.object([:]), status: 403)
+      connection.replyData(
+        Data("<html>Forbidden</html>".utf8), status: 403,
+        headers: ["Content-Type": "text/html"])
     }
     let source = SessionBoundary()
     let (api, session) = sessionTestAPI()

@@ -40,7 +40,7 @@ export function createShareLinkCopy() {
         return;
       }
       set(internalCopiedUrl$, url);
-      // Confirmation must not keep the save operation busy for two seconds.
+      // Expire the confirmation without holding the copy command open.
       timeout(
         () => {
           set(internalCopiedUrl$, null);

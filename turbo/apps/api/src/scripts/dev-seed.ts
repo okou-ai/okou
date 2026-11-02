@@ -177,21 +177,24 @@ function withLongContextPricing(
 
 function withFastPricing(
   rows: readonly UsagePricingRow[],
+  multiplier: number,
 ): readonly UsagePricingRow[] {
   return [
     ...rows,
     ...rows.map(([category, unitPrice, unitSize]) => {
-      return [`${category}.fast`, unitPrice * 2, unitSize] as const;
+      return [`${category}.fast`, unitPrice * multiplier, unitSize] as const;
     }),
   ];
 }
 
 const GPT_5_6_SOL_USAGE_PRICING = withFastPricing(
   withLongContextPricing(GPT_5_6_SOL_PRICING, 2, 1.5),
+  2,
 );
 
 const GPT_5_6_LUNA_USAGE_PRICING = withFastPricing(
   withLongContextPricing(GPT_5_6_LUNA_PRICING, 2, 1.5),
+  2,
 );
 
 function buildSeedSkillValues(
@@ -466,7 +469,7 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup(
     "model",
     "gpt-6-astra",
-    withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
+    withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5), 2),
   ),
   // https://developers.openai.com/api/docs/models/gpt-6.1-sol
   ...usageGroup(
@@ -483,6 +486,7 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
         2,
         1.5,
       ),
+      2,
     ),
   ),
   // No official rate page is recorded for gpt-6-sol. These rows mirror the
@@ -504,6 +508,7 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
         2,
         1.5,
       ),
+      2,
     ),
   ),
   // https://developers.openai.com/api/docs/models/gpt-6-luna
@@ -516,19 +521,22 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // is copied from the target database's current GPT rows by migration 1194.
   ...usageGroup("model", "okou-1.0", GPT_5_6_LUNA_USAGE_PRICING),
   // Synthetic test/preview rates, not production tariffs. Cover both runtime
-  // presets and every standard/long-context category without copying live data.
+  // presets and every standard/long-context/fast category without copying live data.
   ...["@preset/okou-1-0", "@preset/okou-1-0-dsf"].flatMap((provider) => {
     return usageGroup(
       "model",
       provider,
-      withLongContextPricing(
-        [
-          ["tokens.input", 1000, 1_000_000],
-          ["tokens.output", 1000, 1_000_000],
-          ["tokens.cache_read", 1000, 1_000_000],
-          ["tokens.cache_creation", 1000, 1_000_000],
-        ],
-        1,
+      withFastPricing(
+        withLongContextPricing(
+          [
+            ["tokens.input", 1000, 1_000_000],
+            ["tokens.output", 1000, 1_000_000],
+            ["tokens.cache_read", 1000, 1_000_000],
+            ["tokens.cache_creation", 1000, 1_000_000],
+          ],
+          1,
+          1,
+        ),
         1,
       ),
     );

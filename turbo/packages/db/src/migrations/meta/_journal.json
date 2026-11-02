@@ -3011,6 +3011,13 @@
       "when": 1793593407839,
       "tag": "1508_seed_skill_bundle_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 1509,
+      "version": "7",
+      "when": 1793600389091,
+      "tag": "1509_auto_recharge_failure_limit",
+      "breakpoints": true
     }
   ]
 }

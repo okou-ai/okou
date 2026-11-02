@@ -9,10 +9,10 @@ use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
 const MANIFEST_STDIN_ARG: &str = "--manifest-stdin";
-const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin | --bundle-stdin";
+const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin | --instructions-stdin";
 
 enum ManifestInput {
-    BundleStdin,
+    InstructionsStdin,
     Path(String),
     Stdin,
     FilesStdin,
@@ -68,8 +68,11 @@ fn install_runtime_log_paths() -> Result<(), String> {
 fn manifest_input_from_args() -> Option<ManifestInput> {
     let mut args = std::env::args().skip(1);
     let arg = args.next()?;
-    if arg == "--bundle-stdin" {
-        return args.next().is_none().then_some(ManifestInput::BundleStdin);
+    if arg == "--instructions-stdin" {
+        return args
+            .next()
+            .is_none()
+            .then_some(ManifestInput::InstructionsStdin);
     }
     if args.next().is_some() {
         return None;
@@ -85,7 +88,7 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
 
 fn run(input: ManifestInput) -> bool {
     match input {
-        ManifestInput::BundleStdin => {
+        ManifestInput::InstructionsStdin => {
             let Ok(run_id) = std::env::var(env::RUN_ID_ENV) else {
                 return false;
             };
@@ -93,7 +96,7 @@ fn run(input: ManifestInput) -> bool {
                 return false;
             };
             let mut metadata = Vec::new();
-            let limit = guest_contracts::content_bundle::MAX_METADATA_BYTES;
+            let limit = guest_contracts::agent_instructions::MAX_METADATA_BYTES;
             if std::io::stdin()
                 .take(limit as u64 + 1)
                 .read_to_end(&mut metadata)
@@ -102,7 +105,7 @@ fn run(input: ManifestInput) -> bool {
             {
                 return false;
             }
-            guest_storage_apply::apply_content_bundle(
+            guest_storage_apply::apply_agent_instructions(
                 std::path::Path::new("/home/user"),
                 &runtime,
                 &metadata,

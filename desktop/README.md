@@ -48,7 +48,10 @@ count, duration, and bounded response headers (`cf-ray`, `x-vercel-id`,
 `x-vercel-cache`, `x-request-id`, `server`, `content-type`, and `retry-after`).
 A forced 401 refresh retains both wire attempts with distinct request IDs.
 HTTP metadata is recorded before JSON decoding, so HTML edge errors remain
-attributable. Transport failures retain their error type and URL error code.
+attributable. Non-2xx responses with non-JSON bodies retain their HTTP status,
+raw bytes, and `Retry-After`; their dynamic JSON view is `.null`. Structured JSON
+errors remain readable, and nonempty successful responses still require valid
+JSON. Transport failures retain their error type and URL error code.
 Each failed attempt also identifies token lookup, forced token refresh, or HTTP
 as its last operation phase. `operation.phaseTimings` retains bounded token-read
 timings, and `operation.budgetScope` identifies the expired `operation` or

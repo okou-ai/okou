@@ -1086,6 +1086,7 @@
       "amountTitle": "Valor da recarga",
       "automaticTopUps": "Recargas automáticas",
       "description": "Compre créditos quando o saldo ficar abaixo de um limite.",
+      "disabledAfterFailures": "A recarga automática foi desativada após falhas consecutivas no pagamento. Verifique a forma de pagamento antes de ativá-la novamente.",
       "enableAria": "Ativar recarga automática",
       "thresholdAria": "Limite de créditos para recarga automática",
       "thresholdDescription": "Faça uma compra quando o saldo de créditos ficar abaixo deste número.",
@@ -1409,7 +1410,8 @@
       "handBack": "Devolver",
       "handBackMessage": "Terminei no navegador. Pode continuar.",
       "memberInControl": "Você está no controle",
-      "takeOver": "Assumir"
+      "takeOver": "Assumir",
+      "takeOverMessage": "Assumi o controle do navegador. Não use até eu devolver."
     },
     "reclaimHint_one": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minuto de inatividade.",
     "reclaimHint_many": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
@@ -3653,6 +3655,7 @@
         "backToSettings": "Voltar para as configurações",
         "checkingTitle": "Verificando o status da conta...",
         "connectionFailed": "Falha na conexão",
+        "invalidBotConnectLink": "Este link de conexão é inválido ou expirou. Volte ao {{provider}} e envie uma mensagem ao bot para obter um novo link.",
         "invalidLink": "Link inválido",
         "verifying": "Aguarde enquanto verificamos sua conexão."
       },
