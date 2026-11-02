@@ -1,7 +1,10 @@
 import { computed, type Computed } from "ccstate";
-import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
+import { resolveSkillRef } from "@okouai/core/github-url";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { getSkillStorageName } from "@okouai/core/storage-names";
+import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
+import { skills as skillCatalog } from "@okouai/db/schema/skill";
+import { inArray } from "drizzle-orm";
+import { db$ } from "../external/db";
 import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
 
 export function createSystemSkillsContext(
@@ -14,21 +17,42 @@ export function createSystemSkillsContext(
     const skills = SEED_SKILLS.filter((name) => {
       return name !== "gen" || !disabledPaidTools.includes("image-generation");
     });
-    const skillVolumes = [...new Set(skills)].flatMap(
-      (skillName): readonly SkillVolume[] => {
-        const parsed = parseGitHubTreeUrl(resolveSkillRef(skillName));
-        return parsed
-          ? [
-              {
-                name: getSkillStorageName(parsed.fullPath),
-                skillName: parsed.skillName,
-                system: true,
-                source: "system_skill",
-              },
-            ]
-          : [];
-      },
+    const published = await get(db$)
+      .select({
+        url: skillCatalog.url,
+        versionHash: skillCatalog.versionHash,
+        contentBundle: skillCatalog.contentBundle,
+        contentBundleSourceVersionHash:
+          skillCatalog.contentBundleSourceVersionHash,
+      })
+      .from(skillCatalog)
+      .where(inArray(skillCatalog.url, skills.map(resolveSkillRef)));
+    const byUrl = new Map(
+      published.map((skill) => {
+        return [skill.url, skill];
+      }),
     );
+    const skillVolumes = skills.flatMap((skillName): readonly SkillVolume[] => {
+      const skill = byUrl.get(resolveSkillRef(skillName));
+      // An absent global cache entry has no registered skill to install.
+      if (!skill) {
+        return [];
+      }
+      if (
+        skill.versionHash === null ||
+        skill.contentBundle === null ||
+        skill.contentBundleSourceVersionHash !== skill.versionHash
+      ) {
+        throw new Error(`Seed Skill bundle is not prepared: ${skillName}`);
+      }
+      return [
+        {
+          skillName,
+          source: "system_skill",
+          contentBundle: contentBundleSchema.parse(skill.contentBundle),
+        },
+      ];
+    });
     return {
       systemPromptVariables: {},
       userPromptVariables: {},

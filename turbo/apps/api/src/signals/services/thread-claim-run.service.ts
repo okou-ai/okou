@@ -4622,6 +4622,7 @@ function bestEffortTelemetry(record: () => unknown): void {
 function ingestRunContextSnapshot(
   snapshot: RunContextAxiomSnapshot,
   officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
+  seedSkillBundles: StoredExecutionContext["seedSkillBundles"],
 ): void {
   bestEffortTelemetry(() => {
     return ingestToAxiom(getDatasetName("run-context"), [
@@ -4636,6 +4637,7 @@ function ingestRunContextSnapshot(
             };
           },
         ),
+        seedSkillBundles,
       },
     ]);
   });
@@ -4917,6 +4919,7 @@ function committedAtomicLaunchResponse(args: {
   ingestRunContextSnapshot(
     args.committed.runContextSnapshot,
     args.committed.runnerJobPayload.executionContext.officialWorkflowBundles,
+    args.committed.runnerJobPayload.executionContext.seedSkillBundles,
   );
   const runContextRegisteredAt = now();
   const dispatchedProfile = args.committed.runnerJobPayload.profile;
@@ -5264,6 +5267,9 @@ function buildStoredExecutionContextDraft(
     readonly additionalVolumes:
       readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly additionalVolumeSources: AdditionalVolumeSources;
+    readonly seedSkillBundles: NonNullable<
+      StoredExecutionContext["seedSkillBundles"]
+    >;
     readonly platformEnvironment: Record<string, string> | undefined;
     readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
@@ -5323,6 +5329,7 @@ function buildStoredExecutionContextDraft(
   return {
     context: {
       environment,
+      seedSkillBundles: args.seedSkillBundles,
       // Capture invocation identity and mount precedence, never Workflow content.
       ...(args.resolved.agentId !== null
         ? {
@@ -5425,6 +5432,9 @@ interface BuildRunnerJobPayloadInput {
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
+  readonly seedSkillBundles: NonNullable<
+    StoredExecutionContext["seedSkillBundles"]
+  >;
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
   readonly userTimezone: string | undefined;

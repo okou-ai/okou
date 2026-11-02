@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { cronSyncSkillsContract } from "@okouai/api-contracts/contracts/cron";
 import { readContentBundle } from "@okouai/core/content-bundle";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -17,6 +18,9 @@ import { cronSyncSkillsRoutes } from "../cron-sync-skills";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 
 const context = testContext();
 const CRON_SECRET = "seed-bundle-preparation-cron";
@@ -188,7 +192,140 @@ describe("Seed Skill bundle preparation through sync-skills", () => {
     expect((await sync()).body).toMatchObject({ total: 0, failed: 0 });
   });
 
-  it("continues delivering prepared Seed Skills through Storage to new Runs", async () => {
+  it.each([
+    { framework: "claude-code", root: "/home/user/.claude/skills" },
+    { framework: "codex", root: "/home/user/.codex/skills" },
+    { framework: "pi", root: "/home/user/.pi/agent/skills" },
+  ] as const)(
+    "pins prepared $framework Seed bundles across later syncs",
+    async ({ framework, root }) => {
+      const app = await setupApp({
+        context,
+        routes: cronSyncSkillsRoutes,
+        isolatePg: true,
+      });
+      const owned = await publicChatActor(context);
+      owned.ownsFeatureSwitches();
+      const fixture = createChatEventsFixture(context);
+      const source = await sourceArchive();
+      const s3 = await owned.run(async () => {
+        if (framework === "claude-code") {
+          await fixture.api.ensurePersonalSubscriptionModel(owned.actor, {
+            model: "claude-fable-5-1",
+          });
+        } else {
+          await fixture.configureSubscriptionPiModel(owned.actor);
+          if (!owned.actor.orgId) {
+            throw new Error("Expected an entitled workspace");
+          }
+          await updateFeatureSwitchesForUser(
+            context,
+            { ...owned.actor, orgId: owned.actor.orgId },
+            {
+              [FeatureSwitchKey.CodexExecution]: framework === "codex",
+            },
+          );
+        }
+        const storage = installWorkflowVolumeS3Fixture(context);
+        githubSource("e".repeat(40), source.archive);
+        await accept(
+          app(cronSyncSkillsContract).sync({
+            headers: { authorization: `Bearer ${CRON_SECRET}` },
+          }),
+          [200],
+        );
+        return storage;
+      });
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Inspect system skills",
+      });
+      const changed = await sourceArchive("updated gen instructions");
+      await owned.run(async () => {
+        githubSource("f".repeat(40), changed.archive);
+        await accept(
+          app(cronSyncSkillsContract).sync({
+            headers: { authorization: `Bearer ${CRON_SECRET}` },
+          }),
+          [200],
+        );
+      });
+      const { claim, sandboxHeaders } = await owned.claimChatRun(
+        owned.runnerGroup,
+        run.runId,
+      );
+      expect(claim.cliAgentType).toBe(framework);
+      expect(
+        claim.contentBundles.skills.map((bundle) => {
+          return bundle.mountPath;
+        }),
+      ).toStrictEqual(
+        SEED_SKILLS.map((name) => {
+          return `${root}/${name}`;
+        }),
+      );
+      for (const name of SEED_SKILLS) {
+        const bundle = claim.contentBundles.skills.find((entry) => {
+          return entry.mountPath === `${root}/${name}`;
+        })!;
+        const expected = new Map(
+          [...source.files]
+            .filter(([path]) => {
+              return path.startsWith(`${name}/`);
+            })
+            .map(([path, content]) => {
+              return [path.slice(name.length + 1), content];
+            }),
+        );
+        expect(readClaimedContentBundle(s3.objects, bundle)).toStrictEqual(
+          expected,
+        );
+      }
+      const mountPaths = [
+        ...claim.contentBundles.skills.map((bundle) => {
+          return bundle.mountPath;
+        }),
+        ...(claim.storageManifest?.storageMounts ?? []).map((mount) => {
+          return mount.mountPath;
+        }),
+      ];
+      expect(new Set(mountPaths).size).toBe(mountPaths.length);
+      await owned.run(() => {
+        return fixture.failChatRun(
+          run.runId,
+          sandboxHeaders,
+          "Captured Seed bundles inspected",
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+      const next = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Use the later Seed publication",
+      });
+      const later = await owned.claimChatRun(owned.runnerGroup, next.runId);
+      const selected = later.claim.contentBundles.skills.find((bundle) => {
+        return bundle.mountPath === `${root}/gen`;
+      })!;
+      expect(readClaimedContentBundle(s3.objects, selected)).toStrictEqual(
+        new Map([["SKILL.md", changed.files.get("gen/SKILL.md")]]),
+      );
+      expect(selected.sha256).not.toBe(
+        claim.contentBundles.skills.find((bundle) => {
+          return bundle.mountPath === `${root}/gen`;
+        })!.sha256,
+      );
+      await owned.run(() => {
+        return fixture.failChatRun(
+          next.runId,
+          later.sandboxHeaders,
+          "Later Seed bundle inspected",
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+    },
+  );
+
+  it("keeps image generation capability filtering when selecting Seed bundles", async () => {
     const app = await setupApp({
       context,
       routes: cronSyncSkillsRoutes,
@@ -206,30 +343,32 @@ describe("Seed Skill bundle preparation through sync-skills", () => {
         }),
         [200],
       );
+      await setPaidToolDisabled(context, owned.actor, "image-generation", true);
       return storage;
     });
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
-      prompt: "Inspect system skills",
+      prompt: "Use permitted Seed skills",
     });
     const { claim, sandboxHeaders } = await owned.claimChatRun(
       owned.runnerGroup,
       run.runId,
     );
-    const mounts = claim.storageManifest?.storageMounts ?? [];
-    for (const name of ["computer-use", "workflow-setup"]) {
-      expect(mounts).toContainEqual(
-        expect.objectContaining({
-          mountPath: expect.stringMatching(new RegExp(`/skills/${name}$`, "u")),
-        }),
-      );
+    expect(
+      claim.contentBundles.skills.map((bundle) => {
+        return bundle.mountPath.split("/").at(-1);
+      }),
+    ).toStrictEqual(["computer-use", "workflow-setup"]);
+    for (const bundle of claim.contentBundles.skills) {
+      expect(
+        readClaimedContentBundle(s3.objects, bundle).get("SKILL.md"),
+      ).toBeDefined();
     }
-    expect(emittedSeedFiles(s3.objects)).toHaveLength(SEED_SKILLS.length);
     await owned.run(() => {
       return fixture.failChatRun(
         run.runId,
         sandboxHeaders,
-        "Seed Storage delivery inspected",
+        "Permitted Seed bundles inspected",
       );
     });
     await owned.run(flushWaitUntilForTest);
