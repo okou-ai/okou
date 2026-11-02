@@ -208,7 +208,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Offer a Quote action from the email Mail icon in chat.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ChatThreadInlineRename]: {
     maintainer: "tongx@okou.ai",

@@ -326,13 +326,9 @@ test("Target the selected contact's own table row or list item", async () => {
   expect(feedbackItems()[0]).toHaveTextContent("Sam Patel");
 });
 
-test("Keep Mail unavailable to an external organization even with a true server override", async () => {
+test("Keep Mail off by default outside the staff organization", async () => {
   installCapabilityChat({ events: completedConversation(JANE_RECORD) });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatEmailQuote]: true },
-  });
+  await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
   const link = await waitFor(() => {
@@ -341,6 +337,31 @@ test("Keep Mail unavailable to an external organization even with a true server 
 
   expect(link).toHaveTextContent("jane@example.com");
   expect(emailQuoteButtons()).toHaveLength(0);
+});
+
+test("Honor an explicit Mail quote override in a preview workspace", async () => {
+  const sends: CapturedChatSend[] = [];
+  installCapabilityChat({
+    events: completedConversation(JANE_RECORD),
+    onSend(send) {
+      sends.push(send);
+    },
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ChatEmailQuote]: true },
+  });
+  await readyChat();
+
+  click(await findButton("Quote jane@example.com"));
+
+  await waitFor(() => {
+    expect(feedbackItems()).toHaveLength(1);
+  });
+  expect(feedbackItems()[0]).toHaveTextContent("Jane Doe");
+  expect(feedbackItems()[0]).toHaveTextContent("jane@example.com");
+  expect(sends).toHaveLength(0);
 });
 
 test("Keep the original mailto link without a quote action when disabled", async () => {

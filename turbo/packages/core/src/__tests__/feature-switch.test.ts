@@ -41,7 +41,7 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults chat email quoting to staff and permits opting out", () => {
+  it("defaults chat email quoting to staff and honors Lab overrides", () => {
     const key = FeatureSwitchKey.ChatEmailQuote;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
@@ -49,7 +49,7 @@ describe("isFeatureEnabled", () => {
       [{ userId: "external-user" }, false],
       [{ orgId: "external-org" }, false],
       [{ userId: "external-user", orgId: "external-org" }, false],
-      [{ orgId: "external-org", overrides: { [key]: true } }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, true],
       [staff, true],
       [{ ...staff, overrides: { [key]: false } }, false],
     ] as const) {
@@ -58,12 +58,10 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("limits chat email quote availability to staff organizations", () => {
+  it("keeps chat email quoting available in Lab for explicit rollout overrides", () => {
     const key = FeatureSwitchKey.ChatEmailQuote;
-    expect(isFeatureSwitchAvailable(key, {})).toBe(false);
-    expect(isFeatureSwitchAvailable(key, { orgId: "external-org" })).toBe(
-      false,
-    );
+    expect(isFeatureSwitchAvailable(key, {})).toBe(true);
+    expect(isFeatureSwitchAvailable(key, { orgId: "external-org" })).toBe(true);
     expect(
       isFeatureSwitchAvailable(key, {
         orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
