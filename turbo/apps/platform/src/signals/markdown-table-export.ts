@@ -125,6 +125,33 @@ interface TableGoogleConnection {
     | { readonly intent: "reconnect"; readonly connectionId: string };
 }
 
+const saveTableFile$ = command(
+  async (
+    { set },
+    params: TableGoogleSave & {
+      readonly connectionId?: string;
+      readonly authorize: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    await set(
+      syncArtifactAndRefresh$,
+      {
+        ...params,
+        successMessage:
+          params.mode === "google"
+            ? i18n.t(($) => {
+                return $.markdown.tableExport.savedSheets;
+              })
+            : i18n.t(($) => {
+                return $.markdown.tableExport.savedDrive;
+              }),
+      },
+      signal,
+    );
+  },
+);
+
 const pageTableConnection$ = computed((get) => {
   get(pageVersion$);
   return state<TableGoogleConnection | null>(null);
@@ -154,7 +181,7 @@ export const connectMarkdownTable$ = command(
         },
         onSuccess: async (connectedAccountId, ownerSignal) => {
           await set(
-            syncArtifactAndRefresh$,
+            saveTableFile$,
             {
               ...request.params,
               connectionId: connectedAccountId,
@@ -187,7 +214,7 @@ const saveTableToGoogle$ = command(
     const connectionId = detail.body.googleDriveConnectionId;
     if (status && status.status !== "disconnected") {
       await set(
-        syncArtifactAndRefresh$,
+        saveTableFile$,
         { ...params, connectionId, authorize: false },
         signal,
       );
@@ -195,7 +222,7 @@ const saveTableToGoogle$ = command(
     }
     if (recovery?.action === "authorize") {
       await set(
-        syncArtifactAndRefresh$,
+        saveTableFile$,
         { ...params, connectionId, authorize: true },
         signal,
       );

@@ -404,6 +404,7 @@
         "agents": "एजेंटों",
         "artifacts": "आर्टिफ़ैक्ट्स",
         "connectors": "कनेक्टर्स",
+        "feed": "फ़ीड",
         "settings": "सेटिंग्स",
         "workflows": "वर्कफ़्लो",
         "works": "जहां {{agentName}} काम करता है"
@@ -1387,7 +1388,8 @@
       "handBack": "वापस सौंपें",
       "handBackMessage": "मैंने ब्राउज़र में काम पूरा कर लिया है। कृपया जारी रखें।",
       "memberInControl": "नियंत्रण आपके पास है",
-      "takeOver": "नियंत्रण लें"
+      "takeOver": "नियंत्रण लें",
+      "takeOverMessage": "मैंने ब्राउज़र का नियंत्रण ले लिया है। जब तक मैं इसे वापस न सौंपूँ, कृपया इसका उपयोग न करें।"
     },
     "reclaimHint_one": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनट के बाद इसे पुनः प्राप्त करता है।",
     "reclaimHint_other": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनटों के बाद इसे पुनः प्राप्त करता है।",
@@ -1596,8 +1598,6 @@
       "customDirection": "मैं चाहता हूँ…",
       "customDirectionDescription": "कोई सवाल पूछें या बताएँ कि आप क्या करना चाहते हैं।",
       "customPlaceholder": "आपके मन में क्या है?",
-      "customPrepared": "आगे बताएँ…",
-      "customPreparedDescription": "ऊपर अपना संदेश लिखें, फिर भेजें।",
       "dismiss": "खारिज करें",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2631,7 +2631,6 @@
         "image": "चित्र",
         "jobs": "Tasks",
         "presentation": "स्लाइड",
-        "suggestions": "सुझाव",
         "visualization": "विज़ुअलाइज़ेशन",
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
@@ -4119,6 +4118,12 @@
     "previousFeature": "पिछली सुविधा",
     "tryPrompt": "यह काम आज़माएँ"
   },
+  "feed": {
+    "description": "आपके हाल के काम के आधार पर सुझाए गए अगले कदम।",
+    "emptyDescription": "नए सुझाव यहाँ दिखाई देंगे।",
+    "emptyTitle": "आप पूरी तरह अप टू डेट हैं",
+    "title": "फ़ीड"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4209,6 +4214,9 @@
       "export": "एक्सपोर्ट करें",
       "filename": "तालिका",
       "googleUnavailable": "इस तालिका को अपने चैट में खोलें या अपना Google Drive कनेक्शन जाँचें।",
+      "savedDrive": "Google Drive में सेव किया गया",
+      "savedSheets": "Google Sheets में सेव किया गया",
+      "saving": "सेव हो रहा है…",
       "sheets": "Google Sheets में सेव करें",
       "uploadFailed": "तालिका अपलोड नहीं हो सकी। फिर से कोशिश करें।"
     }

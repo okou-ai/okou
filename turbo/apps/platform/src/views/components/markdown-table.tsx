@@ -60,6 +60,7 @@ function ExportableTable({
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const threadId = useGet(currentChatThreadId$);
+  const connection = useGet(markdownTableConnection$);
   const [operation, exportTable] = useLoadableSet(exportMarkdownTable$);
   const pending = operation.state === "loading";
   const run = (mode: "excel" | "original" | "google") => {
@@ -78,15 +79,19 @@ function ExportableTable({
               <Button
                 variant="quiet"
                 size="sm"
-                disabled={pending}
+                disabled={pending || connection?.params.table === node}
                 aria-busy={pending}
               />
             }
           >
             {pending ? <Loader2 className="animate-spin" /> : <Download />}
-            {t(($) => {
-              return $.markdown.tableExport.export;
-            })}
+            {pending
+              ? t(($) => {
+                  return $.markdown.tableExport.saving;
+                })
+              : t(($) => {
+                  return $.markdown.tableExport.export;
+                })}
             <ChevronDown />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

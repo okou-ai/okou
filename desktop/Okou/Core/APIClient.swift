@@ -9,6 +9,7 @@ public struct APIResponse: Sendable {
   /// Raw response bytes, decoded on demand into generated contract types.
   public let data: Data
   /// Dynamic view of the body for payloads the app relays without reading them.
+  /// Non-JSON error responses expose `.null`; their status and raw bytes remain available.
   public let body: JSONValue
   public let retryAfter: TimeInterval?
 
@@ -54,10 +55,26 @@ public actor APIClient {
   private let version: String
   private let sessionId = UUID().uuidString.lowercased()
   private let session: URLSession
-  public init(baseURL: URL, version: String, session: URLSession = .shared) {
+  private let now: @Sendable () -> ContinuousClock.Instant
+  private let awakeNow: @Sendable () -> SuspendingClock.Instant
+
+  public init(
+    baseURL: URL, version: String, session: URLSession = .shared,
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+    awakeNow: @escaping @Sendable () -> SuspendingClock.Instant = { .now }
+  ) {
     self.baseURL = baseURL
     self.version = version
     self.session = session
+    self.now = now
+    self.awakeNow = awakeNow
+  }
+
+  private func timing(
+    _ started: ContinuousClock.Instant, _ awakeStarted: SuspendingClock.Instant
+  ) -> APIRequestTiming {
+    APIRequestTiming(
+      duration: started.duration(to: now()), awakeDuration: awakeStarted.duration(to: awakeNow()))
   }
   /// Resolves a contract route against an API origin.
   public static func url(for route: ApiRoute, baseURL: URL) throws -> URL {
@@ -72,8 +89,10 @@ public actor APIClient {
     trace: APIRequestTrace? = nil,
     tokenProvider: @escaping @Sendable (Bool) async throws -> String
   ) async throws -> APIResponse {
+    let started = now()
+    let awakeStarted = awakeNow()
     do {
-      return try await withThrowingTaskGroup(of: APIResponse.self) { group in
+      let response = try await withThrowingTaskGroup(of: APIResponse.self) { group in
         group.addTask {
           let token = try await self.readToken(
             forceRefresh: false, trace: trace, provider: tokenProvider)
@@ -94,9 +113,15 @@ public actor APIClient {
         defer { group.cancelAll() }
         return try await group.next()!
       }
-    } catch let expired as APIRequestDeadlineExceeded {
-      await trace?.expired(expired.scope)
-      throw DesktopFailure("network_error", "Desktop authentication request timed out")
+      await trace?.recordOperation(timing(started, awakeStarted))
+      return response
+    } catch {
+      await trace?.recordOperation(timing(started, awakeStarted))
+      if let expired = error as? APIRequestDeadlineExceeded {
+        await trace?.expired(expired.scope)
+        throw DesktopFailure("network_error", "Desktop authentication request timed out")
+      }
+      throw error
     }
   }
 
@@ -106,16 +131,17 @@ public actor APIClient {
   ) async throws -> String {
     let phase: APIRequestPhase = forceRefresh ? .tokenRefresh : .tokenLookup
     await trace?.begin(phase)
-    let started = ContinuousClock.now
+    let started = now()
+    let awakeStarted = awakeNow()
     do {
       let token = try await provider(forceRefresh)
       await trace?.recordAuthentication(
-        APIAuthenticationDiagnostic(phase: phase, duration: started.duration(to: .now)))
+        APIAuthenticationDiagnostic(phase: phase, timing: timing(started, awakeStarted)))
       return token
     } catch {
       await trace?.recordAuthentication(
         APIAuthenticationDiagnostic(
-          phase: phase, duration: started.duration(to: .now), error: error))
+          phase: phase, timing: timing(started, awakeStarted), error: error))
       throw error
     }
   }
@@ -142,7 +168,8 @@ public actor APIClient {
     }
     // URLRequest's timeout is an inactivity timeout. Claims and completion
     // reports require a total wall-clock deadline even if bytes keep arriving.
-    let started = ContinuousClock.now
+    let started = now()
+    let awakeStarted = awakeNow()
     let startedAt = Date()
     let metrics = trace.map { _ in APIRequestMetrics() }
     let data: Data
@@ -170,19 +197,26 @@ public actor APIClient {
       await trace?.record(
         APIRequestDiagnostic(
           requestId: requestId, sessionId: sessionId, startedAt: startedAt,
-          duration: started.duration(to: .now), error: failure, transport: metrics?.snapshot()))
+          timing: timing(started, awakeStarted), error: failure, transport: metrics?.snapshot()))
       throw failure
     }
     // Preserve HTTP evidence even when an edge's HTML error page fails JSON decoding.
     await trace?.record(
       APIRequestDiagnostic(
         requestId: requestId, sessionId: sessionId, startedAt: startedAt,
-        duration: started.duration(to: .now), response: response as? HTTPURLResponse,
+        timing: timing(started, awakeStarted), response: response as? HTTPURLResponse,
         responseBytes: data.count, transport: metrics?.snapshot()))
     guard let http = response as? HTTPURLResponse else {
       throw DesktopFailure("network_error", "Invalid API response")
     }
-    let value = data.isEmpty ? JSONValue.null : try JSONDecoder().decode(JSONValue.self, from: data)
+    let value: JSONValue
+    do {
+      value = data.isEmpty ? .null : try JSONDecoder().decode(JSONValue.self, from: data)
+    } catch let error as DecodingError {
+      guard !(200..<300).contains(http.statusCode) else { throw error }
+      // An edge's error page must not hide the HTTP status from auth/recovery handling.
+      value = .null
+    }
     let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
     return APIResponse(status: http.statusCode, data: data, body: value, retryAfter: retryAfter)
   }

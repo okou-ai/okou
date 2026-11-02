@@ -1,9 +1,9 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import type {
   Suggestion,
   SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
-import { defaultAgentId$ } from "../agent.ts";
+import { currentAgentId$, defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
@@ -30,14 +30,6 @@ import type {
   FeedbackNotePart,
   ComposerDraft,
 } from "@okouai/api-contracts/contracts/chat-threads";
-
-export const preparedAgentSuggestionId$ = computed((get) => {
-  return (
-    get(get(agentChatComposerSignals$).feedback.items$).find((item) => {
-      return item.suggestionContext;
-    })?.suggestionContext?.suggestionId ?? null
-  );
-});
 
 async function suggestionDraftVersion(draft: ComposerDraft): Promise<string> {
   return Array.from(
@@ -105,13 +97,34 @@ function withSuggestionContext(
 
 const resetPreparation$ = resetSignal();
 
-/** Prepare the saved, complete context in the existing composer without consuming it. */
+/**
+ * The Feed has no composer of its own. A prepared draft continues in the
+ * default agent's home, whose setup loads and persists any pending handoff.
+ */
+const openAgentComposer$ = command(
+  async ({ get, set }, agentId: string, signal: AbortSignal) => {
+    await set(
+      navigateTo$,
+      ROUTES.agentChat,
+      { pathParams: { agentId } },
+      signal,
+    );
+    signal.throwIfAborted();
+    // The home recovers an unreachable agent onto another surface; focus only
+    // the composer that received the draft.
+    if (get(currentAgentId$) === agentId) {
+      set(get(agentChatComposerSignals$).editor.focus$);
+    }
+  },
+);
+
+/** Prepare the saved, complete context in the default agent's composer without consuming it. */
 export const prepareAgentSuggestion$ = command(
   async ({ get, set }, item: Suggestion, pageSignal: AbortSignal) => {
     const signal = set(resetPreparation$, pageSignal);
     const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
-    if (!agentId || get(agentChatComposerSignals$).agentId !== agentId) {
+    if (!agentId) {
       throw new Error("Suggestion target is unavailable");
     }
     const entry = set(ensureAgentDraft$, agentId);
@@ -153,7 +166,7 @@ export const prepareAgentSuggestion$ = command(
         );
       })
     ) {
-      set(get(agentChatComposerSignals$).editor.focus$);
+      await set(openAgentComposer$, agentId, get(rootSignal$));
       return;
     }
     const oldAttachmentIds = new Set(
@@ -188,6 +201,9 @@ export const prepareAgentSuggestion$ = command(
     if (content === null) {
       throw new Error("Invalid suggestion background");
     }
+    // Leaving the Feed is part of this action, so the installed context is
+    // reconciled, saved and opened beyond the Feed visit.
+    const committed = get(rootSignal$);
     const seeded = set(
       draft.seed$,
       {
@@ -199,10 +215,13 @@ export const prepareAgentSuggestion$ = command(
           ...addedAttachments.map(createRestoredAttachment),
         ],
       },
-      signal,
+      committed,
     );
-    set(get(agentChatComposerSignals$).editor.focus$);
-    await Promise.all([seeded, set(entry.queueDraftSync$, signal)]);
+    await Promise.all([
+      seeded,
+      set(entry.queueDraftSync$, committed),
+      set(openAgentComposer$, agentId, committed),
+    ]);
   },
 );
 
@@ -245,10 +264,13 @@ const applyAgentSuggestionDraft$ = command(
     if (!target) {
       throw new Error("Suggestion target is unavailable");
     }
-    set(get(agentChatComposerSignals$).editor.focus$);
-    await installed;
+    await Promise.all([installed, set(openAgentComposer$, agentId, signal)]);
     signal.throwIfAborted();
-    await set(target.load$, signal);
+    // The agent home normally loads and persists its handoff. A recovered
+    // destination has no composer, so retain the prepared draft here too.
+    if (get(draft.composerDraftHandoff$)) {
+      await set(target.load$, signal);
+    }
   },
 );
 
@@ -259,7 +281,10 @@ export const startAgentSuggestion$ = command(
     optionId: string,
     pageSignal: AbortSignal,
   ): Promise<void> => {
-    const entries = await get(agentSuggestionEntries$);
+    const [entries, agentId] = await Promise.all([
+      get(agentSuggestionEntries$),
+      get(defaultAgentId$),
+    ]);
     pageSignal.throwIfAborted();
     const entry = entries.find((candidate) => {
       return candidate.item.id === item.id;
@@ -273,7 +298,9 @@ export const startAgentSuggestion$ = command(
     if (!option) {
       throw new Error("Suggestion option is unavailable");
     }
-    const agentId = get(agentChatComposerSignals$).agentId;
+    if (!agentId) {
+      throw new Error("Suggestion target is unavailable");
+    }
     const signal = get(rootSignal$);
     set(resetPreparation$);
     set(entry.hidden$, true);

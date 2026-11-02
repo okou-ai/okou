@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.55.2](https://github.com/okou-ai/okou/compare/desktop-v0.55.1...desktop-v0.55.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* preserve desktop http status for non-json error responses ([#44601](https://github.com/okou-ai/okou/issues/44601)) ([8821d9d](https://github.com/okou-ai/okou/commit/8821d9dbdb02c80daf21211ef15d41c560e6e05a))
+
+## [0.55.1](https://github.com/okou-ai/okou/compare/desktop-v0.55.0...desktop-v0.55.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* preserve desktop heartbeat phase and suspension diagnostics ([#44594](https://github.com/okou-ai/okou/issues/44594)) ([183b37b](https://github.com/okou-ai/okou/commit/183b37be2e0ce4bae0e54ca05aed0d1df3ed5ac6))
+
 ## [0.55.0](https://github.com/okou-ai/okou/compare/desktop-v0.54.13...desktop-v0.55.0) (2026-10-31)
 
 

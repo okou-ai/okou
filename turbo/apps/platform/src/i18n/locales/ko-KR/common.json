@@ -404,6 +404,7 @@
         "agents": "에이전트",
         "artifacts": "아티팩트",
         "connectors": "커넥터",
+        "feed": "피드",
         "settings": "설정",
         "workflows": "워크플로",
         "works": "{{agentName}}가(이) 작업하는 곳"
@@ -1385,7 +1386,8 @@
       "handBack": "다시 맡기기",
       "handBackMessage": "브라우저 작업을 마쳤어요. 계속해 주세요.",
       "memberInControl": "직접 조작 중",
-      "takeOver": "직접 조작"
+      "takeOver": "직접 조작",
+      "takeOverMessage": "브라우저를 직접 조작할게요. 다시 넘겨드릴 때까지 사용하지 말아 주세요."
     },
     "reclaimHint_one": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
     "reclaimHint_other": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
@@ -1594,8 +1596,6 @@
       "customDirection": "이렇게 하고 싶어요…",
       "customDirectionDescription": "질문하거나 하고 싶은 일을 알려주세요.",
       "customPlaceholder": "어떤 생각을 하고 계신가요?",
-      "customPrepared": "계속 말씀해 주세요…",
-      "customPreparedDescription": "위에 메시지를 입력한 뒤 보내세요.",
       "dismiss": "무시",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2620,7 +2620,6 @@
         "image": "이미지",
         "jobs": "Tasks",
         "presentation": "슬라이드",
-        "suggestions": "제안",
         "visualization": "시각화",
         "website": "웹사이트",
         "workflow": "워크플로"
@@ -4104,6 +4103,12 @@
     "previousFeature": "이전 기능",
     "tryPrompt": "이 작업 시작하기"
   },
+  "feed": {
+    "description": "최근 작업을 바탕으로 제안된 다음 단계입니다.",
+    "emptyDescription": "새로운 제안이 여기에 표시됩니다.",
+    "emptyTitle": "모두 확인했어요",
+    "title": "피드"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4194,6 +4199,9 @@
       "export": "내보내기",
       "filename": "표",
       "googleUnavailable": "내 채팅에서 이 표를 열거나 Google Drive 연결을 확인해 주세요.",
+      "savedDrive": "Google Drive에 저장됨",
+      "savedSheets": "Google Sheets에 저장됨",
+      "saving": "저장 중…",
       "sheets": "Google Sheets에 저장",
       "uploadFailed": "표를 업로드하지 못했습니다. 다시 시도해 주세요."
     }

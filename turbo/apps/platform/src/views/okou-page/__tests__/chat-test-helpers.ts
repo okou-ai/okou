@@ -440,6 +440,13 @@ export function mockChatLifecycle(
   let activeRunIds = options?.activeRunIds ?? [];
 
   const allocateDynamicSeqId = (): number => {
+    // Tests can deliver newer seed rows while an earlier request is pending.
+    nextDynamicSeqId = Math.max(
+      nextDynamicSeqId,
+      ...[...historyEvents, ...chatEvents].map((event) => {
+        return event.seqId ?? 0;
+      }),
+    );
     nextDynamicSeqId++;
     return nextDynamicSeqId;
   };

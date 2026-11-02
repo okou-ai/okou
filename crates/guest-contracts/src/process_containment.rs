@@ -126,6 +126,24 @@ pub const WORKLOAD_PIDS_MAX: &str = "max";
 /// Guest Agent leaf so concurrent ordinary execs cannot dominate it.
 pub const CONTROL_CPU_WEIGHT: u64 = 10_000;
 
+/// Return the first recognized `populated 0` or `populated 1` cgroup event.
+///
+/// Unrelated or malformed records are skipped; no recognized record returns
+/// `None`. File access and the consequence of an unknown state belong to callers.
+pub fn parse_populated(content: &str) -> Option<bool> {
+    content.lines().find_map(|line| {
+        let (key, value) = line.split_once(' ')?;
+        if key != "populated" {
+            return None;
+        }
+        match value {
+            "0" => Some(false),
+            "1" => Some(true),
+            _ => None,
+        }
+    })
+}
+
 /// Workload cgroup-v2 resource events shared by guest consumers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WorkloadResourceEvents {

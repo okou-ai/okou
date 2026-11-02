@@ -418,6 +418,7 @@
         "agents": "Agents",
         "artifacts": "Artéfacts",
         "connectors": "Connecteurs",
+        "feed": "Fil",
         "settings": "Paramètres",
         "workflows": "Workflows",
         "works": "Où {{agentName}} travaille"
@@ -1409,7 +1410,8 @@
       "handBack": "Rendre la main",
       "handBackMessage": "J’ai terminé dans le navigateur. Tu peux continuer.",
       "memberInControl": "Vous avez la main",
-      "takeOver": "Prendre la main"
+      "takeOver": "Prendre la main",
+      "takeOverMessage": "J’ai pris la main sur le navigateur. Ne l’utilise pas avant que je te le rende."
     },
     "reclaimHint_one": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minute d'inactivité.",
     "reclaimHint_many": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
@@ -1619,8 +1621,6 @@
       "customDirection": "J’aimerais…",
       "customDirectionDescription": "Posez une question ou décrivez ce que vous aimeriez faire.",
       "customPlaceholder": "Qu’avez-vous en tête ?",
-      "customPrepared": "Continuez…",
-      "customPreparedDescription": "Ajoutez votre message ci-dessus, puis envoyez-le.",
       "dismiss": "Ignorer",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2677,7 +2677,6 @@
         "image": "Image",
         "jobs": "Tasks",
         "presentation": "Diapositives",
-        "suggestions": "Suggestions",
         "visualization": "Visualisation",
         "website": "Site web",
         "workflow": "Workflow"
@@ -4173,6 +4172,12 @@
     "previousFeature": "Fonctionnalité précédente",
     "tryPrompt": "Essayer cette tâche"
   },
+  "feed": {
+    "description": "Prochaines étapes suggérées d’après votre travail récent.",
+    "emptyDescription": "Les nouvelles suggestions apparaîtront ici.",
+    "emptyTitle": "Vous êtes à jour",
+    "title": "Fil"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4263,6 +4268,9 @@
       "export": "Exporter",
       "filename": "Tableau",
       "googleUnavailable": "Ouvre ce tableau dans ton chat ou vérifie ta connexion à Google Drive.",
+      "savedDrive": "Enregistré dans Google Drive",
+      "savedSheets": "Enregistré dans Google Sheets",
+      "saving": "Enregistrement…",
       "sheets": "Enregistrer dans Google Sheets",
       "uploadFailed": "Impossible d’importer le tableau. Réessaie."
     }

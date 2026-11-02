@@ -404,6 +404,7 @@
         "agents": "智能體",
         "artifacts": "成果",
         "connectors": "連接器",
+        "feed": "動態",
         "settings": "設定",
         "workflows": "工作流",
         "works": "{{agentName}} 的工作渠道"
@@ -1385,7 +1386,8 @@
       "handBack": "交還",
       "handBackMessage": "我在瀏覽器裡操作完了，請繼續。",
       "memberInControl": "你正在操作",
-      "takeOver": "接管"
+      "takeOver": "接管",
+      "takeOverMessage": "我先接管瀏覽器，在我交還之前請不要操作它。"
     },
     "reclaimHint_one": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
     "reclaimHint_other": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
@@ -1594,8 +1596,6 @@
       "customDirection": "我想……",
       "customDirectionDescription": "提出問題，或說說你想做什麼。",
       "customPlaceholder": "你有什麼想法？",
-      "customPrepared": "接著說……",
-      "customPreparedDescription": "在上方輸入訊息，然後傳送。",
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
@@ -2620,7 +2620,6 @@
         "image": "圖片",
         "jobs": "任務",
         "presentation": "簡報",
-        "suggestions": "建議",
         "visualization": "視覺化",
         "website": "網站",
         "workflow": "工作流"
@@ -4104,6 +4103,12 @@
     "previousFeature": "上一個功能",
     "tryPrompt": "試試這個任務"
   },
+  "feed": {
+    "description": "根據你最近的工作推薦的下一步。",
+    "emptyDescription": "新的建議會顯示在這裡。",
+    "emptyTitle": "已全部處理",
+    "title": "動態"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4194,6 +4199,9 @@
       "export": "匯出",
       "filename": "表格",
       "googleUnavailable": "請在你的聊天中儲存表格，或檢查 Google Drive 連線。",
+      "savedDrive": "已儲存到 Google Drive",
+      "savedSheets": "已儲存到 Google Sheets",
+      "saving": "正在儲存…",
       "sheets": "儲存到 Google Sheets",
       "uploadFailed": "表格上傳失敗，請重試。"
     }

@@ -1941,13 +1941,18 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
 function createPagedEventResources({
   chatActionContext,
   connector,
+  onBrowserPageInput$,
 }: {
   readonly chatActionContext: ChatActionContext;
   readonly connector: ComposerConnectorSignals;
+  readonly onBrowserPageInput$: Command<void, []>;
 }) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
-  const browserSessionSignals = createBrowserSessionSignals(threadId);
+  const browserSessionSignals = createBrowserSessionSignals(
+    threadId,
+    onBrowserPageInput$,
+  );
   const artifactCardSignals = createArtifactCardSignalsRegistry();
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
@@ -2344,6 +2349,7 @@ function createLoadEarlierGroupsAfterScroll(
 }
 
 interface ChatThreadMessagePipelineOptions {
+  onBrowserPageInput$: Command<void, []>;
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
   connector: ComposerConnectorSignals;
@@ -2355,6 +2361,7 @@ function createChatThreadMessagePipeline({
   chatEvents,
   connector,
   thinkingSummaries$,
+  onBrowserPageInput$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
   // Position is created before scroll writers are wired to the render window.
@@ -2362,6 +2369,7 @@ function createChatThreadMessagePipeline({
   const resources = createPagedEventResources({
     chatActionContext,
     connector,
+    onBrowserPageInput$,
   });
   const usage = createChatRunUsageSignals(
     threadId,
@@ -3870,16 +3878,24 @@ export function createChatPanelSignals(
     draft,
     persistence,
   );
+  // The native input graph invokes this only after admitting page input.
+  const onPageInput$ = command(({ set }) => {
+    set(browserPresence.pageInput$);
+  });
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },
     chatEvents,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
+    onBrowserPageInput$: onPageInput$,
   });
-  const messages: MessageListSignals = {
-    ...messagePipeline,
-    ...artifact,
-  };
+  const browserPresence = createBrowserPresenceSignals({
+    agentId,
+    latestRunId$: messagePipeline.latestRunId$,
+    liveRunId$: messagePipeline.liveRunId$,
+    sendEvent$: chatEvents.sendEvent$,
+  });
+  const messages: MessageListSignals = { ...messagePipeline, ...artifact };
   const feedback = createChatThreadFeedbackSignals(
     threadId,
     composer.feedback,
@@ -3947,11 +3963,7 @@ export function createChatPanelSignals(
       relations,
     ),
     relations,
-    browserPresence: createBrowserPresenceSignals({
-      latestRunId$: messages.latestRunId$,
-      liveRunId$: messages.liveRunId$,
-      composer,
-    }),
+    browserPresence,
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

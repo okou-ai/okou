@@ -404,6 +404,7 @@
         "agents": "エージェント",
         "artifacts": "アーティファクト",
         "connectors": "コネクター",
+        "feed": "フィード",
         "settings": "設定",
         "workflows": "ワークフロー",
         "works": "{{agentName}}の連携先"
@@ -1385,7 +1386,8 @@
       "handBack": "操作を戻す",
       "handBackMessage": "ブラウザでの操作が終わりました。続けてください。",
       "memberInControl": "あなたが操作中",
-      "takeOver": "操作を代わる"
+      "takeOver": "操作を代わる",
+      "takeOverMessage": "ブラウザの操作を引き継ぎました。お返しするまで使わないでください。"
     },
     "reclaimHint_one": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
     "reclaimHint_other": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
@@ -1594,8 +1596,6 @@
       "customDirection": "こんなことがしたい…",
       "customDirectionDescription": "質問や、やりたいことを入力できます。",
       "customPlaceholder": "どんなことを考えていますか？",
-      "customPrepared": "続きをどうぞ…",
-      "customPreparedDescription": "上にメッセージを入力して送信してください。",
       "dismiss": "非表示にする",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2620,7 +2620,6 @@
         "image": "画像",
         "jobs": "Tasks",
         "presentation": "スライド",
-        "suggestions": "提案",
         "visualization": "可視化",
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
@@ -4104,6 +4103,12 @@
     "previousFeature": "前の機能",
     "tryPrompt": "このタスクを試す"
   },
+  "feed": {
+    "description": "最近の作業をもとにした、次のステップの提案です。",
+    "emptyDescription": "新しい提案はここに表示されます。",
+    "emptyTitle": "すべて確認済みです",
+    "title": "フィード"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4194,6 +4199,9 @@
       "export": "エクスポート",
       "filename": "表",
       "googleUnavailable": "自分のチャットでこの表を開くか、Google Drive の接続を確認してください。",
+      "savedDrive": "Google Drive に保存しました",
+      "savedSheets": "Google Sheets に保存しました",
+      "saving": "保存中…",
       "sheets": "Google Sheets に保存",
       "uploadFailed": "表をアップロードできませんでした。もう一度お試しください。"
     }

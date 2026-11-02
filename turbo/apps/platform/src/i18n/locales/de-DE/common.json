@@ -404,6 +404,7 @@
         "agents": "Agenten",
         "artifacts": "Artefakte",
         "connectors": "Integrationen",
+        "feed": "Feed",
         "settings": "Einstellungen",
         "workflows": "Workflows",
         "works": "Einsatzorte von {{agentName}}"
@@ -1387,7 +1388,8 @@
       "handBack": "Zurückgeben",
       "handBackMessage": "Ich bin im Browser fertig. Bitte mach weiter.",
       "memberInControl": "Du hast die Kontrolle",
-      "takeOver": "Übernehmen"
+      "takeOver": "Übernehmen",
+      "takeOverMessage": "Ich habe den Browser übernommen. Bitte nutze ihn nicht, bis ich ihn zurückgebe."
     },
     "reclaimHint_one": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minute Inaktivität zurück.",
     "reclaimHint_other": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minuten Inaktivität zurück.",
@@ -1596,8 +1598,6 @@
       "customDirection": "Ich möchte…",
       "customDirectionDescription": "Stelle eine Frage oder beschreibe, was du tun möchtest.",
       "customPlaceholder": "Was hast du im Sinn?",
-      "customPrepared": "Erzähl weiter…",
-      "customPreparedDescription": "Schreibe deine Nachricht oben und sende sie ab.",
       "dismiss": "Verwerfen",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2631,7 +2631,6 @@
         "image": "Bild",
         "jobs": "Tasks",
         "presentation": "Folien",
-        "suggestions": "Vorschläge",
         "visualization": "Visualisierung",
         "website": "Website",
         "workflow": "Workflow"
@@ -4119,6 +4118,12 @@
     "previousFeature": "Vorherige Funktion",
     "tryPrompt": "Diese Aufgabe ausprobieren"
   },
+  "feed": {
+    "description": "Vorgeschlagene nächste Schritte auf Basis deiner letzten Arbeit.",
+    "emptyDescription": "Neue Vorschläge erscheinen hier.",
+    "emptyTitle": "Du bist auf dem neuesten Stand",
+    "title": "Feed"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4209,6 +4214,9 @@
       "export": "Exportieren",
       "filename": "Tabelle",
       "googleUnavailable": "Öffne diese Tabelle in deinem Chat oder überprüfe deine Google-Drive-Verbindung.",
+      "savedDrive": "In Google Drive gespeichert",
+      "savedSheets": "In Google Sheets gespeichert",
+      "saving": "Wird gespeichert…",
       "sheets": "In Google Sheets speichern",
       "uploadFailed": "Die Tabelle konnte nicht hochgeladen werden. Versuche es erneut."
     }

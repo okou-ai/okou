@@ -13,6 +13,45 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1083.4](https://github.com/okou-ai/okou/compare/app-v0.1083.3...app-v0.1083.4) (2026-11-02)
+
+
+### Bug Fixes
+
+* **browser:** restore native windows before display calibration ([#44580](https://github.com/okou-ai/okou/issues/44580)) ([c59be2a](https://github.com/okou-ai/okou/commit/c59be2a623bc46bec18bc1238ac2605a8e4e644c))
+
+## [0.1083.3](https://github.com/okou-ai/okou/compare/app-v0.1083.2...app-v0.1083.3) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.31.0
+    * @okouai/core bumped to 8.807.4
+
+## [0.1083.2](https://github.com/okou-ai/okou/compare/app-v0.1083.1...app-v0.1083.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **app:** keep markdown table exports repeatable ([#44584](https://github.com/okou-ai/okou/issues/44584)) ([6976833](https://github.com/okou-ai/okou/commit/6976833d83a549c278964b9546433deb8fba63ff))
+
+## [0.1083.1](https://github.com/okou-ai/okou/compare/app-v0.1083.0...app-v0.1083.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **browser:** copy selected text from focusable page content ([#44582](https://github.com/okou-ai/okou/issues/44582)) ([e7625c9](https://github.com/okou-ai/okou/commit/e7625c9d0f8841ea71a49e3be90d98723dd26456))
+* **platform:** retain native browser close diagnostics ([#44558](https://github.com/okou-ai/okou/issues/44558)) ([878108c](https://github.com/okou-ai/okou/commit/878108cd25993c75be642e768ee3c59e45deb8ba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.807.3
+
 ## [0.1083.0](https://github.com/okou-ai/okou/compare/app-v0.1082.5...app-v0.1083.0) (2026-11-02)
 
 

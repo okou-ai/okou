@@ -418,6 +418,7 @@
         "agents": "Agenti",
         "artifacts": "Artefatti",
         "connectors": "Connettori",
+        "feed": "Feed",
         "settings": "Impostazioni",
         "workflows": "Flussi di lavoro",
         "works": "Dove lavora {{agentName}}"
@@ -1409,7 +1410,8 @@
       "handBack": "Restituisci",
       "handBackMessage": "Ho finito nel browser. Continua pure.",
       "memberInControl": "Hai il controllo",
-      "takeOver": "Prendi il controllo"
+      "takeOver": "Prendi il controllo",
+      "takeOverMessage": "Ho preso il controllo del browser. Non usarlo finché non te lo restituisco."
     },
     "reclaimHint_one": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuto di inattività.",
     "reclaimHint_many": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
@@ -1619,8 +1621,6 @@
       "customDirection": "Vorrei…",
       "customDirectionDescription": "Fai una domanda o descrivi cosa vorresti fare.",
       "customPlaceholder": "Cosa hai in mente?",
-      "customPrepared": "Continua…",
-      "customPreparedDescription": "Aggiungi il tuo messaggio qui sopra, poi invialo.",
       "dismiss": "Ignora",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2677,7 +2677,6 @@
         "image": "Immagine",
         "jobs": "Tasks",
         "presentation": "Diapositive",
-        "suggestions": "Suggerimenti",
         "visualization": "Visualizzazione",
         "website": "Sito web",
         "workflow": "Workflow"
@@ -4173,6 +4172,12 @@
     "previousFeature": "Funzionalità precedente",
     "tryPrompt": "Prova questa attività"
   },
+  "feed": {
+    "description": "Prossimi passi suggeriti in base al tuo lavoro recente.",
+    "emptyDescription": "I nuovi suggerimenti appariranno qui.",
+    "emptyTitle": "Sei in pari",
+    "title": "Feed"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4263,6 +4268,9 @@
       "export": "Esporta",
       "filename": "Tabella",
       "googleUnavailable": "Apri questa tabella nella tua chat o controlla la connessione a Google Drive.",
+      "savedDrive": "Salvato su Google Drive",
+      "savedSheets": "Salvato in Google Sheets",
+      "saving": "Salvataggio…",
       "sheets": "Salva in Google Sheets",
       "uploadFailed": "Impossibile caricare la tabella. Riprova."
     }

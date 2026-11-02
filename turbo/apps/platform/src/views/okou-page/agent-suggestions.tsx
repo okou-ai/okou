@@ -32,7 +32,6 @@ import {
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
   prepareAgentSuggestion$,
-  preparedAgentSuggestionId$,
   startAgentSuggestion$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -107,11 +106,9 @@ function AgentSuggestionOption({
   option,
   onClick,
   custom = false,
-  selected = false,
 }: {
   readonly option: Pick<SuggestionOption, "label" | "description" | "threadId">;
   readonly custom?: boolean;
-  readonly selected?: boolean;
   readonly onClick: () => void;
 }) {
   const label = option.label;
@@ -122,7 +119,6 @@ function AgentSuggestionOption({
       className="h-auto min-h-12 w-full justify-start gap-3 whitespace-normal rounded-lg border-border bg-card px-3 py-2.5 text-left font-normal"
       aria-label={label}
       aria-description={option.description}
-      aria-pressed={custom ? selected : undefined}
       onClick={onClick}
     >
       {custom ? (
@@ -140,43 +136,24 @@ function AgentSuggestionOption({
           </span>
         )}
       </span>
-      {selected ? (
-        <Check aria-hidden className="text-muted-foreground" />
-      ) : (
-        <ArrowRight aria-hidden className="text-muted-foreground" />
-      )}
+      <ArrowRight aria-hidden className="text-muted-foreground" />
     </Button>
   );
 }
 
-function CustomDirectionOption({
-  selected,
-  onClick,
-}: {
-  readonly selected: boolean;
-  readonly onClick: () => void;
-}) {
+function CustomDirectionOption({ onClick }: { readonly onClick: () => void }) {
   const { t } = useTranslation();
   return (
     <AgentSuggestionOption
       custom
-      selected={selected}
       option={{
         threadId: null,
-        label: selected
-          ? t(($) => {
-              return $.chat.agentSuggestions.customPrepared;
-            })
-          : t(($) => {
-              return $.chat.agentSuggestions.customDirection;
-            }),
-        description: selected
-          ? t(($) => {
-              return $.chat.agentSuggestions.customPreparedDescription;
-            })
-          : t(($) => {
-              return $.chat.agentSuggestions.customDirectionDescription;
-            }),
+        label: t(($) => {
+          return $.chat.agentSuggestions.customDirection;
+        }),
+        description: t(($) => {
+          return $.chat.agentSuggestions.customDirectionDescription;
+        }),
       }}
       onClick={onClick}
     />
@@ -453,7 +430,6 @@ export function AgentSuggestions() {
   const start = useSet(startAgentSuggestion$);
   const prepare = useSet(prepareAgentSuggestion$);
   const submitFeedback = useSet(submitAgentSuggestionFeedback$);
-  const preparedId = useGet(preparedAgentSuggestionId$);
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   if (result.state !== "hasData" || result.data.length === 0) {
@@ -514,7 +490,6 @@ export function AgentSuggestions() {
                   );
                 })}
                 <CustomDirectionOption
-                  selected={preparedId === item.id}
                   onClick={() => {
                     detach(prepare(item, signal), Reason.DomCallback);
                   }}

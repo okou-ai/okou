@@ -7,7 +7,6 @@ import {
   FileText,
   Globe,
   Image,
-  Lightbulb,
   ListTodo,
   Presentation,
   Route,
@@ -38,7 +37,6 @@ import {
 const TASK_CHIP = "shrink-0 px-3";
 const TASK_ICONS = {
   jobs: ListTodo,
-  suggestions: Lightbulb,
   workflow: Route,
   presentation: Presentation,
   document: FileText,
@@ -96,7 +94,6 @@ function TaskChipSizing({
             <span
               key={task}
               data-task-sizing-item=""
-              data-priority={task === "suggestions" ? "" : undefined}
               className={cn(buttonVariants({ variant: "outline" }), TASK_CHIP)}
             >
               <Icon size={16} aria-hidden />
@@ -275,7 +272,7 @@ export function ComposerTaskChipRow({
   ]);
 
   const select = (task: ComposerTask) => {
-    if (task === "suggestions" || task === "jobs") {
+    if (task === "jobs") {
       browseTask(task);
     } else {
       selectTask(task);

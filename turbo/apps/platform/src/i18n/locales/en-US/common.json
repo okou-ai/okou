@@ -404,6 +404,7 @@
         "agents": "Agents",
         "artifacts": "Artifacts",
         "connectors": "Connectors",
+        "feed": "Feed",
         "settings": "Settings",
         "workflows": "Workflows",
         "works": "Where {{agentName}} works"
@@ -1387,7 +1388,8 @@
       "handBack": "Hand back",
       "handBackMessage": "I'm done in the browser. Please continue.",
       "memberInControl": "You're in control",
-      "takeOver": "Take over"
+      "takeOver": "Take over",
+      "takeOverMessage": "I've taken over the browser. Don't use it until I hand it back."
     },
     "reclaimHint_one": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minute.",
     "reclaimHint_other": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minutes.",
@@ -1596,8 +1598,6 @@
       "customDirection": "I’d like to…",
       "customDirectionDescription": "Ask a question or describe what you’d like to do.",
       "customPlaceholder": "What do you have in mind?",
-      "customPrepared": "Go on…",
-      "customPreparedDescription": "Add your message above, then send.",
       "dismiss": "Dismiss",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2631,7 +2631,6 @@
         "image": "Image",
         "jobs": "Tasks",
         "presentation": "Presentation",
-        "suggestions": "Suggestions",
         "visualization": "Visualization",
         "website": "Website",
         "workflow": "Workflow"
@@ -4117,6 +4116,12 @@
     "previousFeature": "Previous feature",
     "tryPrompt": "Try this task"
   },
+  "feed": {
+    "description": "Suggested next steps based on your recent work.",
+    "emptyDescription": "New suggestions will appear here.",
+    "emptyTitle": "You’re all caught up",
+    "title": "Feed"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4207,6 +4212,9 @@
       "export": "Export",
       "filename": "Table",
       "googleUnavailable": "Open this table in your chat to save it to Google, or check your Google Drive connection.",
+      "savedDrive": "Saved to Google Drive",
+      "savedSheets": "Saved to Google Sheets",
+      "saving": "Saving…",
       "sheets": "Save to Google Sheets",
       "uploadFailed": "Could not upload the table. Please try again."
     }

@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.807.4](https://github.com/okou-ai/okou/compare/core-v8.807.3...core-v8.807.4) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.31.0
+
+## [8.807.3](https://github.com/okou-ai/okou/compare/core-v8.807.2...core-v8.807.3) (2026-11-02)
+
+
+### Refactoring
+
+* **workflows:** decouple official bundles from legacy storage ([#44578](https://github.com/okou-ai/okou/issues/44578)) ([4efa008](https://github.com/okou-ai/okou/commit/4efa00809be22ef8adf37a3837f0c58297a71b56))
+
 ## [8.807.2](https://github.com/okou-ai/okou/compare/core-v8.807.1...core-v8.807.2) (2026-11-01)
 
 

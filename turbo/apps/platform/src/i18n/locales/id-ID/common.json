@@ -404,6 +404,7 @@
         "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
+        "feed": "Feed",
         "settings": "Pengaturan",
         "workflows": "Alur kerja",
         "works": "Tempat {{agentName}} bekerja"
@@ -1385,7 +1386,8 @@
       "handBack": "Serahkan kembali",
       "handBackMessage": "Saya sudah selesai di browser. Silakan lanjutkan.",
       "memberInControl": "Anda yang mengendalikan",
-      "takeOver": "Ambil alih"
+      "takeOver": "Ambil alih",
+      "takeOverMessage": "Saya mengambil alih browser. Jangan gunakan sampai saya menyerahkannya kembali."
     },
     "reclaimHint_one": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
     "reclaimHint_other": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
@@ -1594,8 +1596,6 @@
       "customDirection": "Saya ingin…",
       "customDirectionDescription": "Ajukan pertanyaan atau jelaskan apa yang ingin Anda lakukan.",
       "customPlaceholder": "Apa yang Anda pikirkan?",
-      "customPrepared": "Silakan lanjutkan…",
-      "customPreparedDescription": "Tulis pesan Anda di atas, lalu kirim.",
       "dismiss": "Abaikan",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2620,7 +2620,6 @@
         "image": "Gambar",
         "jobs": "Tasks",
         "presentation": "Slide",
-        "suggestions": "Saran",
         "visualization": "Visualisasi",
         "website": "Situs web",
         "workflow": "Alur kerja"
@@ -4104,6 +4103,12 @@
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
   },
+  "feed": {
+    "description": "Langkah berikutnya yang disarankan berdasarkan pekerjaan terbaru Anda.",
+    "emptyDescription": "Saran baru akan muncul di sini.",
+    "emptyTitle": "Semua sudah terkini",
+    "title": "Feed"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4194,6 +4199,9 @@
       "export": "Ekspor",
       "filename": "Tabel",
       "googleUnavailable": "Buka tabel ini di chat Anda atau periksa koneksi Google Drive Anda.",
+      "savedDrive": "Disimpan ke Google Drive",
+      "savedSheets": "Disimpan ke Google Sheets",
+      "saving": "Menyimpan…",
       "sheets": "Simpan ke Google Sheets",
       "uploadFailed": "Tabel tidak dapat diunggah. Coba lagi."
     }

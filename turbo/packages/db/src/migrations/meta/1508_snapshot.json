@@ -1,5 +1,5 @@
 {
-  "id": "60f7d782-1ad7-4655-be33-cc72e3fd3052",
+  "id": "a0c8473b-0271-4b7b-9784-bc26ab607680",
   "prevId": "ca9235d8-3ea5-41ae-968b-ca269b739d0e",
   "version": "7",
   "dialect": "postgresql",
@@ -23661,13 +23661,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "auto_recharge_failure_count": {
-          "name": "auto_recharge_failure_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -26179,6 +26172,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "content_bundle": {
+          "name": "content_bundle",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_bundle_source_version_hash": {
+          "name": "content_bundle_source_version_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "commit_sha": {
           "name": "commit_sha",
           "type": "varchar(40)",
@@ -26290,7 +26295,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "skills_content_bundle_check": {
+          "name": "skills_content_bundle_check",
+          "value": "(\n          (\"skills\".\"content_bundle\" IS NULL AND \"skills\".\"content_bundle_source_version_hash\" IS NULL)\n          OR (\n            \"skills\".\"content_bundle\" IS NOT NULL\n            AND \"skills\".\"content_bundle_source_version_hash\" IS NOT NULL\n            AND \"skills\".\"content_bundle_source_version_hash\" ~ '^[0-9a-f]{64}$'\n            AND jsonb_typeof(\"skills\".\"content_bundle\") = 'object'\n            AND \"skills\".\"content_bundle\" ?& ARRAY['sha256', 'archiveBytes']\n            AND (\"skills\".\"content_bundle\" - 'sha256' - 'archiveBytes') = '{}'::jsonb\n            AND jsonb_typeof(\"skills\".\"content_bundle\"->'sha256') = 'string'\n            AND \"skills\".\"content_bundle\"->>'sha256' ~ '^[0-9a-f]{64}$'\n            AND CASE WHEN jsonb_typeof(\"skills\".\"content_bundle\"->'archiveBytes') = 'number'\n              THEN (\"skills\".\"content_bundle\"->>'archiveBytes')::numeric BETWEEN 1 AND 33554432\n                AND trunc((\"skills\".\"content_bundle\"->>'archiveBytes')::numeric) = (\"skills\".\"content_bundle\"->>'archiveBytes')::numeric\n              ELSE false\n            END\n          )\n        )"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.slack_chat_ingress": {

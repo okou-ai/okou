@@ -418,6 +418,7 @@
         "agents": "Agentes",
         "artifacts": "Artefatos",
         "connectors": "Conectores",
+        "feed": "Feed",
         "settings": "Configurações",
         "workflows": "Fluxos de trabalho",
         "works": "Onde {{agentName}} trabalha"
@@ -1409,7 +1410,8 @@
       "handBack": "Devolver",
       "handBackMessage": "Terminei no navegador. Pode continuar.",
       "memberInControl": "Você está no controle",
-      "takeOver": "Assumir"
+      "takeOver": "Assumir",
+      "takeOverMessage": "Assumi o controle do navegador. Não use até eu devolver."
     },
     "reclaimHint_one": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minuto de inatividade.",
     "reclaimHint_many": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
@@ -1619,8 +1621,6 @@
       "customDirection": "Eu gostaria de…",
       "customDirectionDescription": "Faça uma pergunta ou descreva o que gostaria de fazer.",
       "customPlaceholder": "O que você tem em mente?",
-      "customPrepared": "Continue…",
-      "customPreparedDescription": "Escreva sua mensagem acima e envie.",
       "dismiss": "Dispensar",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2677,7 +2677,6 @@
         "image": "Imagem",
         "jobs": "Tasks",
         "presentation": "Slides",
-        "suggestions": "Sugestões",
         "visualization": "Visualização",
         "website": "Site",
         "workflow": "Fluxo de trabalho"
@@ -4173,6 +4172,12 @@
     "previousFeature": "Recurso anterior",
     "tryPrompt": "Experimentar esta tarefa"
   },
+  "feed": {
+    "description": "Próximos passos sugeridos com base no seu trabalho recente.",
+    "emptyDescription": "Novas sugestões aparecerão aqui.",
+    "emptyTitle": "Tudo em dia",
+    "title": "Feed"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4263,6 +4268,9 @@
       "export": "Exportar",
       "filename": "Tabela",
       "googleUnavailable": "Abra esta tabela no seu chat ou verifique sua conexão com o Google Drive.",
+      "savedDrive": "Salvo no Google Drive",
+      "savedSheets": "Salvo no Google Sheets",
+      "saving": "Salvando…",
       "sheets": "Salvar no Google Sheets",
       "uploadFailed": "Não foi possível enviar a tabela. Tente novamente."
     }

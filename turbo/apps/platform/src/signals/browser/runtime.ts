@@ -271,7 +271,10 @@ function createMountedNodeGraph(
 }
 
 /** DOM incarnation and immutable connection identity determine the child graph. */
-function createDOMGraph(context: RuntimeState) {
+function createDOMGraph(
+  context: RuntimeState,
+  onPageInput$?: Command<void, []>,
+) {
   const {
     model,
     installed$,
@@ -330,7 +333,11 @@ function createDOMGraph(context: RuntimeState) {
     const lease = get(installed$);
     return lease ? get(lease.controller.input$) : null;
   });
-  const native = createNativeInput(selectedInput$, focus.release$);
+  const native = createNativeInput(
+    selectedInput$,
+    focus.release$,
+    onPageInput$,
+  );
   const controllerGraph$ = computed((get) => {
     const identity = get(identity$);
     return identity
@@ -1115,9 +1122,10 @@ function createLayoutSync(context: RuntimeState) {
 /** Compose private graphs in the existing App Store; expose only the public API. */
 export function createBrowserRuntime(
   connection$: Computed<Promise<BrowserConnection | null>>,
+  onPageInput$?: Command<void, []>,
 ): BrowserSignals {
   const context = createRuntimeState(connection$);
-  const graph = createDOMGraph(context);
+  const graph = createDOMGraph(context, onPageInput$);
   const lifecycle = createNativeLifecycle(context, graph);
   const observers = createConnectionObservers(context, graph, lifecycle);
   const surface$ = graph.surface.ref$;

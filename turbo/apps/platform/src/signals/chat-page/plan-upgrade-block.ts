@@ -6,12 +6,10 @@ import { openSettingsBillingPlansDialog$ } from "../okou-page/settings/settings-
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 import { logsListContract } from "@okouai/api-contracts/client/logs";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computed, type Computed } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
 import { pathname$ } from "../route.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
@@ -56,11 +54,10 @@ export function createFirstTaskUpgradeEligibility(
   });
   return computed(async (get): Promise<boolean> => {
     const owner = get(authenticatedSessionKey$);
-    const enabled = get(featureSwitch$)[FeatureSwitchKey.FirstTaskUpgrade];
     const runId = get(completedRunId$);
     // Refresh the history check when returning from another chat.
     get(pathname$);
-    if (!owner || !enabled || !runId) {
+    if (!owner || !runId) {
       return false;
     }
     const client = get(apiClient$)(logsListContract);

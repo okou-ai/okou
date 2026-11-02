@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -81,7 +80,6 @@ test("changing the selected industry updates its outcome without connecting a so
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: { [FeatureSwitchKey.OnboardingSourceOutcomes]: true },
   });
   await chooseIndustry("Design & creative");
 
@@ -104,30 +102,12 @@ test("changing the selected industry updates its outcome without connecting a so
   expect(action("Continue")).toBeDisabled();
 });
 
-test("the original source step remains available when outcome guidance is disabled", async () => {
-  catalog();
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-    featureSwitches: { [FeatureSwitchKey.OnboardingSourceOutcomes]: false },
-  });
-  await chooseIndustry("Design & creative");
-  await expect(
-    screen.findByRole("heading", { name: "Connect a work tool" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("figure")).not.toBeInTheDocument();
-  expect(screen.getByText("Manage Drive files")).toBeInTheDocument();
-  expect(action("Continue")).toBeDisabled();
-});
-
 test("an unavailable featured source does not advertise an outcome for that source", async () => {
   catalog(false);
   await setupPage({
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: { [FeatureSwitchKey.OnboardingSourceOutcomes]: true },
   });
   await chooseIndustry("Design & creative");
   await expect(
@@ -147,7 +127,6 @@ test("a phone can expand the example while the connection requirement stays in p
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: { [FeatureSwitchKey.OnboardingSourceOutcomes]: true },
   });
   await chooseIndustry("Design & creative");
   const summary = await screen.findByText("See an example of what you can get");

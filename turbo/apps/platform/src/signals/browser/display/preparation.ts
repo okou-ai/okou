@@ -70,6 +70,18 @@ interface CalibratedWindow {
   readonly geometry: NativeWindowGeometry;
 }
 
+class WindowStateFault extends CdpFault {
+  constructor(
+    readonly windowId: number,
+    readonly windowState: Exclude<Protocol.Browser.WindowState, "normal">,
+  ) {
+    super(
+      "display",
+      "The browser window changed state during display synchronization.",
+    );
+  }
+}
+
 function observeWindow(
   window: Protocol.Browser.GetWindowForTargetResponse,
   windowId: number | null,
@@ -80,10 +92,18 @@ function observeWindow(
   ) {
     throw new CdpFault("scope", "The page is outside this viewer's window.");
   }
-  if (window.bounds.windowState && window.bounds.windowState !== "normal") {
+  const windowState: unknown = window.bounds.windowState;
+  if (
+    windowState === "minimized" ||
+    windowState === "maximized" ||
+    windowState === "fullscreen"
+  ) {
+    throw new WindowStateFault(window.windowId, windowState);
+  }
+  if (windowState !== undefined && windowState !== "normal") {
     throw new CdpFault(
       "display",
-      "Restore the browser window before synchronizing its display.",
+      "The browser window state is unavailable for display synchronization.",
     );
   }
   const { width, height } = window.bounds;
@@ -248,30 +268,42 @@ function createSnapshotAcquisition(
     client,
     windowId,
   } = context;
+  const observeCalibration$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+      if (signal.aborted || !set(current$)) {
+        return false;
+      }
+      const calibration = get(calibration$);
+      if (calibration.kind === "verified") {
+        return true;
+      }
+      const window = await client.request("Browser.getWindowForTarget", {
+        targetId: target.targetId,
+      });
+      signal.throwIfAborted();
+      if (!set(current$)) {
+        return false;
+      }
+      // An unfinished calibration may outlive a native state change. Re-read
+      // before capture so a minimized window cannot strand a later attempt.
+      const observed = observeWindow(window, windowId);
+      if (calibration.kind === "unbound") {
+        await set(target.geometry.waitForNativeFrame$, signal);
+        if (signal.aborted || !set(current$)) {
+          return false;
+        }
+      }
+      set(calibration$, { kind: "observed", window: observed });
+      return true;
+    },
+  );
   const acquireSnapshot$ = command(
     async (
       { get, set },
       signal: AbortSignal,
     ): Promise<DisplaySnapshot | null> => {
-      if (signal.aborted || !set(current$)) {
+      if (!(await set(observeCalibration$, signal))) {
         return null;
-      }
-      if (get(calibration$).kind === "unbound") {
-        await set(target.geometry.waitForNativeFrame$, signal);
-        if (signal.aborted || !set(current$)) {
-          return null;
-        }
-        const window = await client.request("Browser.getWindowForTarget", {
-          targetId: target.targetId,
-        });
-        signal.throwIfAborted();
-        if (!set(current$)) {
-          return null;
-        }
-        set(calibration$, {
-          kind: "observed",
-          window: observeWindow(window, windowId),
-        });
       }
       const observed = get(calibration$);
       if (observed.kind === "observed") {
@@ -328,10 +360,75 @@ function createSnapshotAcquisition(
   return { acquireSnapshot$ };
 }
 
-function createPreparationCommands(
+/** Restore only during acquisition; a second failure belongs to normal recovery. */
+function createSnapshotRecovery(
   context: PreparationContext & ReturnType<typeof createSnapshotAcquisition>,
 ) {
-  const { calibration$, current$, acquireSnapshot$, client, target, windowId } =
+  const { acquireSnapshot$, calibration$, current$, client, target } = context;
+  const acquirePrepared$ = command(
+    async ({ set }, signal: AbortSignal): Promise<DisplaySnapshot | null> => {
+      const [result] = await Promise.allSettled([
+        set(acquireSnapshot$, signal),
+      ]);
+      signal.throwIfAborted();
+      if (result.status === "fulfilled") {
+        return result.value;
+      }
+      const error: unknown = result.reason;
+      if (!(error instanceof WindowStateFault)) {
+        throw error;
+      }
+      if (!set(current$)) {
+        return null;
+      }
+      set(calibration$, { kind: "unbound" });
+      set(target.geometry.uncertain$);
+      await client.request(
+        "Browser.setWindowBounds",
+        { windowId: error.windowId, bounds: { windowState: "normal" } },
+        undefined,
+        undefined,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!set(current$)) {
+        return null;
+      }
+      const window = await client.request(
+        "Browser.getWindowForTarget",
+        { targetId: target.targetId },
+        undefined,
+        undefined,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!set(current$)) {
+        return null;
+      }
+      const observed = observeWindow(window, error.windowId);
+      await client.request(
+        "Emulation.clearDeviceMetricsOverride",
+        undefined,
+        target.sessionId,
+        undefined,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!set(current$)) {
+        return null;
+      }
+      set(calibration$, { kind: "observed", window: observed });
+      // Reuse the fresh native capture fence; never reuse pre-restoration geometry.
+      return set(acquireSnapshot$, signal);
+    },
+  );
+  return { acquirePrepared$ };
+}
+
+function createPreparationCommands(
+  context: PreparationContext & ReturnType<typeof createSnapshotRecovery>,
+) {
+  const { calibration$, current$, acquirePrepared$, client, target, windowId } =
     context;
   const acquire$ = command(
     async (
@@ -339,7 +436,7 @@ function createPreparationCommands(
       signal: AbortSignal,
     ): Promise<DisplaySnapshot | null> => {
       const [result] = await Promise.allSettled([
-        set(acquireSnapshot$, signal),
+        set(acquirePrepared$, signal),
       ]);
       if (signal.aborted) {
         const calibration = get(calibration$);
@@ -409,6 +506,7 @@ export function createDisplayPreparation(
     ...context,
     ...confirmation,
   });
-  const commands = createPreparationCommands({ ...context, ...acquisition });
+  const recovery = createSnapshotRecovery({ ...context, ...acquisition });
+  const commands = createPreparationCommands({ ...context, ...recovery });
   return { ...commands, currentSnapshot$: context.currentSnapshot$ };
 }
