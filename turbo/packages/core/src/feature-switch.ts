@@ -46,12 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.FirstTaskUpgrade]: {
-    maintainer: "ming@okou.ai",
-    displayName: "First task upgrade",
-    description: "Show the Pro offer after a user's first completed chat task.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
     displayName: "Chat thinking brand motion",
@@ -59,25 +53,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use a textured, breathing brand mark with subtle scaling, sheen, and cycling brand colors in chat thinking states.",
     enabled: false,
   },
-  [FeatureSwitchKey.HalloweenQuiz]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Halloween quiz",
-    description:
-      "Open the 2026 Halloween quiz from the animated chat home dialog and associate results with your account.",
-    enabled: true,
-  },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",
     description: "Show published product updates once per user and edition.",
     enabled: false,
-  },
-  [FeatureSwitchKey.OnboardingSourceOutcomes]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Onboarding source outcomes",
-    description:
-      "Show industry-specific examples of work prepared from connected tools.",
-    enabled: true,
   },
   [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
     maintainer: "yuma@okou.ai",

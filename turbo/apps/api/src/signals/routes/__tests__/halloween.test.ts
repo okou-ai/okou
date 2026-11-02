@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   halloweenContract,
   halloweenOperationsContract,
@@ -13,7 +11,6 @@ import { mockNow } from "../../../lib/time";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { halloweenRoutes } from "../halloween";
 import { halloweenOperationsRoutes } from "../halloween-operations";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -243,80 +240,27 @@ describe("Halloween quiz", () => {
     ).toStrictEqual(failed);
   });
 
-  it("uses the feature switch as the only availability gate for signed-in users", async () => {
-    const app = setupApp({
-      context,
-      routes: [
-        ...halloweenRoutes,
-        ...halloweenOperationsRoutes,
-        ...featureSwitchesRoutes,
-      ],
-    });
-    const { game } = clients(app);
-    const switches = app(featureSwitchesContract);
+  it("lets signed-in workspace users play throughout the year", async () => {
+    const { game } = clients(
+      setupApp({
+        context,
+        routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
+      }),
+    );
     actor(false);
-    let activeRound: HalloweenRound | null = null;
     for (const now of ["2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z"]) {
       mockNow(new Date(now));
       expect(
         (await accept(game.status({ headers }), [200])).body,
       ).toStrictEqual({ phase: "open" });
-      activeRound = (
-        await accept(game.start({ headers, body: { restart: true } }), [200])
-      ).body;
+      const activeRound = await accept(
+        game.start({ headers, body: { restart: true } }),
+        [200],
+      );
+      expect(
+        (await accept(game.current({ headers }), [200])).body,
+      ).toStrictEqual(activeRound.body);
     }
-    if (!activeRound?.question) {
-      throw new Error("Expected an active Halloween round");
-    }
-
-    await accept(
-      switches.update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.HalloweenQuiz]: false } },
-      }),
-      [200],
-    );
-    expect((await accept(game.status({ headers }), [200])).body).toStrictEqual({
-      phase: "unavailable",
-    });
-    await accept(game.current({ headers }), [409]);
-    await accept(game.start({ headers, body: { restart: false } }), [409]);
-    const unavailable = {
-      status: 409,
-      body: {
-        error: {
-          code: "CONFLICT",
-          message: "This Halloween quiz is not open",
-        },
-      },
-    };
-    await expect(
-      game.answer({
-        headers,
-        body: {
-          ...roundReference(activeRound),
-          questionId: activeRound.question.id,
-          optionId: correctOption(activeRound),
-        },
-      }),
-    ).resolves.toMatchObject(unavailable);
-    await expect(
-      game.next({
-        headers,
-        body: {
-          ...roundReference(activeRound),
-          questionId: activeRound.question.id,
-        },
-      }),
-    ).resolves.toMatchObject(unavailable);
-    await expect(
-      game.leave({ headers, body: roundReference(activeRound) }),
-    ).resolves.toMatchObject(unavailable);
-
-    await accept(switches.delete({ headers }), [200]);
-    expect((await accept(game.current({ headers }), [200])).body).toStrictEqual(
-      activeRound,
-    );
   });
 
   it("requires authentication for every gameplay endpoint", async () => {

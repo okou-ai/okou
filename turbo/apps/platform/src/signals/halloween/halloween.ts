@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { delay } from "signal-timers";
 import { halloweenContract } from "@okouai/api-contracts/client/halloween";
 import type {
@@ -10,7 +9,6 @@ import { accept } from "../../lib/accept.ts";
 import { ensureHalloweenI18nResources } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { locale$ } from "../locale.ts";
 import {
   hash$,
@@ -292,11 +290,7 @@ export const initializeHalloweenHome$ = command(
     set(bubbleTransitionState$, null);
     set(ghostExpandedState$, false);
     set(ghostGreetingLocked$, false);
-    const { switches } = await get(featureSwitches$);
     signal.throwIfAborted();
-    if (!switches[FeatureSwitchKey.HalloweenQuiz]) {
-      return;
-    }
     await set(watchHalloweenPhase$, signal);
     if (get(phaseState$) !== "open") {
       return;
