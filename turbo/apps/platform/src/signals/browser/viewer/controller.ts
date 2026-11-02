@@ -1265,6 +1265,12 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
       }
       set(wake$);
       signal.throwIfAborted();
+      // The fence retains uncertainty; the existing detached owner reports the
+      // original input failure only after detachment and waiter publication.
+      const input = receipts[0];
+      if (input.status === "rejected") {
+        throw input.reason;
+      }
     },
   );
   return { waitRetirement$, detachAttached$, finishRetirement$ };

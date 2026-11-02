@@ -397,7 +397,7 @@ function createSessionCleanup(graph: SessionActions) {
     async ({ set }, signal: AbortSignal): Promise<void> => {
       await set(queue.settle$);
       signal.throwIfAborted();
-      await set(effects.completion$);
+      await set(effects.completion$, "suspension");
       signal.throwIfAborted();
     },
   );
@@ -437,7 +437,7 @@ function createSessionCleanup(graph: SessionActions) {
       const [drained] = await Promise.allSettled([set(queue.settle$)]);
       signal.throwIfAborted();
       set(dispose$, reason);
-      await set(effects.completion$);
+      await set(effects.completion$, "retirement");
       signal.throwIfAborted();
       if (drained.status === "rejected") {
         throw drained.reason;
