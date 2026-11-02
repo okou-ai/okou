@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.18](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.17...runner-remote-v0.30.18) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
 ## [0.30.17](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.16...runner-remote-v0.30.17) (2026-11-02)
 
 ## [0.30.16](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.15...runner-remote-v0.30.16) (2026-11-02)

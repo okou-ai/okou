@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.242.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.3...runner-rs-v0.242.4) (2026-11-02)
+
+
+### Refactoring
+
+* **python:** centralize connector response finalization ownership ([#44624](https://github.com/okou-ai/okou/issues/44624)) ([54c365d](https://github.com/okou-ai/okou/commit/54c365d3bbf13d3812ac088371dfd0bdd8836108))
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.242.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.2...runner-rs-v0.242.3) (2026-11-02)
 
 ### Release Dependencies

@@ -13,6 +13,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1083.5](https://github.com/okou-ai/okou/compare/app-v0.1083.4...app-v0.1083.5) (2026-11-02)
+
+
+### Bug Fixes
+
+* **app:** confirm message shares immediately ([#44636](https://github.com/okou-ai/okou/issues/44636)) ([2443df9](https://github.com/okou-ai/okou/commit/2443df9417d4ebd4634b18f5c36da8cb3b745727))
+* **app:** remove screenshots from paused browser panels ([#44585](https://github.com/okou-ai/okou/issues/44585)) ([602b616](https://github.com/okou-ai/okou/commit/602b616e40a9f0b3287cd0193f29a71435220865))
+* **billing:** turn off auto-recharge after consecutive failures ([#44587](https://github.com/okou-ai/okou/issues/44587)) ([5881a17](https://github.com/okou-ai/okou/commit/5881a17e5c332bef9ff4efe94f96048deef82962))
+* **browser:** acquire coherent viewer bindings on reconnect ([#44606](https://github.com/okou-ai/okou/issues/44606)) ([03444af](https://github.com/okou-ai/okou/commit/03444afe60a11dec7134c1e8872f72519ccef099))
+* handle invalid feishu bot connection links ([#44619](https://github.com/okou-ai/okou/issues/44619)) ([7801052](https://github.com/okou-ai/okou/commit/78010527837678d7e7f5e4bfc338c1d577de88f7))
+
+
+### Refactoring
+
+* **app:** remove artifact quick actions ([#44615](https://github.com/okou-ai/okou/issues/44615)) ([17a4d1e](https://github.com/okou-ai/okou/commit/17a4d1e2b224595281cbeb98ab45a97c0a2fc701))
+* remove released first task halloween and onboarding switches ([#44575](https://github.com/okou-ai/okou/issues/44575)) ([4571899](https://github.com/okou-ai/okou/commit/4571899bd04a73a9e13591326ad0f9b21f9612fd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.31.1
+    * @okouai/core bumped to 8.808.0
+
 ## [0.1083.4](https://github.com/okou-ai/okou/compare/app-v0.1083.3...app-v0.1083.4) (2026-11-02)
 
 
