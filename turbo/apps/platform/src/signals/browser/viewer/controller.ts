@@ -3229,11 +3229,13 @@ function createDisposalGraph(
           const nativeClosed = get(nativeState$)?.close();
           get(framesState$)?.close(fault);
           get(clientState$)?.close(fault);
-          set(resetOwner$, AbortSignal.abort());
           await nativeClosed;
         })(),
       ]);
       signal.throwIfAborted();
+      // The ended sockets have rejected their pending receipts. Let native
+      // cleanup settle before aborting their owner, preserving those failures.
+      set(resetOwner$, AbortSignal.abort());
       // Publish only after local retirement, never after a peer acknowledgement.
       set(closedState$, result);
       set(wake$);
