@@ -1294,7 +1294,9 @@ test("reconnecting an awarded workspace and replaying the reward worker preserve
   });
   await disconnectChat();
   const reconnect = await integrationStatus();
-  if (!reconnect.connectUrl) throw new Error("Expected a reconnect link");
+  if (!reconnect.connectUrl) {
+    throw new Error("Expected a reconnect link");
+  }
   await complete(await start(reconnect.connectUrl), current);
   const operator = setupApp({ context, routes: getStartedRoutes })(
     cronGetStartedContract,

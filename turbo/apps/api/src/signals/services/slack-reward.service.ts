@@ -52,7 +52,9 @@ const commitSlackReward$ = command(
           ),
         )
         .returning({ id: getStartedClaims.id });
-      if (!claimed) return;
+      if (!claimed) {
+        return;
+      }
       await tx.insert(creditExpiresRecord).values({
         id: recordId,
         orgId: claim.orgId,
@@ -70,8 +72,9 @@ const commitSlackReward$ = command(
         })
         .where(eq(orgMetadata.orgId, claim.orgId))
         .returning({ orgId: orgMetadata.orgId });
-      if (!wallet)
+      if (!wallet) {
         throw new Error("Slack reward wallet disappeared before publication");
+      }
       const [pending] = await tx
         .select()
         .from(pendingOrgCreditExpirationQuery(claim.orgId, at));
@@ -136,7 +139,9 @@ export const settleSlackWorkspaceRewards$ = command(
       .orderBy(getStartedClaims.createdAt, getStartedClaims.id)
       .limit(10);
     signal.throwIfAborted();
-    for (const claim of claims) await set(settleSlackReward$, claim, signal);
+    for (const claim of claims) {
+      await set(settleSlackReward$, claim, signal);
+    }
   },
 );
 
@@ -154,7 +159,9 @@ export const processPendingSlackRewards$ = command(
       .orderBy(getStartedClaims.nextAttemptAt, getStartedClaims.id)
       .limit(10);
     signal.throwIfAborted();
-    for (const claim of claims) await set(settleSlackReward$, claim, signal);
+    for (const claim of claims) {
+      await set(settleSlackReward$, claim, signal);
+    }
     return claims.length;
   },
 );

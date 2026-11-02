@@ -123,8 +123,9 @@ const commitSlackInstallation$ = command(
       .select()
       .from(installed);
     signal.throwIfAborted();
-    if (!installation)
+    if (!installation) {
       throw new Error("Slack installation upsert did not return a row");
+    }
     return installation;
   },
 );
@@ -136,8 +137,9 @@ export const persistSlackInstallation$ = command(
     args: SlackInstallationWrite,
     signal: AbortSignal,
   ): Promise<SlackInstallation> => {
-    if (args.orgId === null)
+    if (args.orgId === null) {
       return await set(commitAnonymousSlackInstallation$, args, signal);
+    }
     await set(ensureGetStartedRewardWallet$, args.orgId, signal);
     const installed = await set(commitSlackInstallation$, args, signal);
     await set(

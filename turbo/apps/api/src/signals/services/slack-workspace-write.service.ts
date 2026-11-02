@@ -45,7 +45,9 @@ const commitSlackWorkspaceConnection$ = command(
       .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId));
     signal.throwIfAborted();
     const admission = slackWorkspaceAdmission(args, currentInstallation);
-    if (admission.kind !== "allowed") return admission;
+    if (admission.kind !== "allowed") {
+      return admission;
+    }
     const plan = slackConnectionValues(args);
     const current = await db
       .select(plan.currentSelection)
@@ -53,7 +55,9 @@ const commitSlackWorkspaceConnection$ = command(
       .where(plan.currentWhere);
     signal.throwIfAborted();
     const denied = slackConnectionAdmission(args, current);
-    if (denied) return denied;
+    if (denied) {
+      return denied;
+    }
     const at = nowDate();
     // An initial bind is a real state transition, not a tuple stamp. A losing
     // binder publishes neither a connection nor a reward receipt.
@@ -134,12 +138,13 @@ const commitSlackWorkspaceConnection$ = command(
       .leftJoin(replaced, sql`true`);
     signal.throwIfAborted();
     const published = rows[0];
-    if (!published)
+    if (!published) {
       return {
         kind: "forbidden",
         message:
           "The Slack workspace or account changed. Please connect again.",
       };
+    }
     return connectedSlackWorkspace(
       args,
       published.installation,
@@ -166,11 +171,12 @@ export const connectSlackWorkspace$ = command(
     );
     signal.throwIfAborted();
     if (!result.ok) {
-      if (isDeletedInstallationReference(result.error))
+      if (isDeletedInstallationReference(result.error)) {
         return {
           kind: "not_found",
           message: "Workspace not found. Please install the Slack app first.",
         };
+      }
       throw result.error;
     }
     if (result.value.kind === "ok") {
