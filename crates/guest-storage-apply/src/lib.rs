@@ -23,8 +23,8 @@
 //!
 //! Cached storages and artifacts preserve their mount roots. Empty artifacts
 //! retain root identity and ownership while clearing stale contents, including
-//! when a containing directory is also cleaned. Hash-addressed content bundles
-//! use the same archive extraction and managed instruction file safety checks.
+//! when a containing directory is also cleaned. Instruction packages use the same
+//! Storage delivery before managed instruction-file application.
 //!
 //! ## Archive metadata limits
 //!
@@ -294,5 +294,5 @@ fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
 #[cfg(test)]
 mod tests;
 
-mod content_bundle;
-pub use content_bundle::apply_content_bundle;
+mod agent_instructions;
+pub use agent_instructions::apply_agent_instructions;

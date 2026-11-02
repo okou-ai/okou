@@ -202,7 +202,6 @@ pub struct ExecutorConfig {
     pub fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission,
     pub background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator,
     pub decoded_cache: crate::storage_cache::decoded::DecodedCache,
-    pub content_bundle_cache: runner_storage::content_bundle_cache::ContentBundleCache,
     pub pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission,
     pub home: HomePaths,
     pub home_cache: Option<HomeImageCache>,
@@ -727,16 +726,19 @@ fn initialize_execution_telemetry(
     (spawn_timing, telemetry)
 }
 
-async fn prepare_execution_context(
+fn prepare_execution_context(
     context: &mut ExecutionContext,
     config: &ExecutorConfig,
     sandbox_id: &str,
-    cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
+    cancel: &CancellationToken,
 ) -> RunnerResult<env::PreparedRunPayload> {
     let payload = validate_execution_context_before_sandbox(context, &config.api_url, sandbox_id)
         .map_err(RunnerError::Internal)?;
-    storage::prepare_content_bundles(context, config, cancel, telemetry).await?;
+    if cancel.is_cancelled() {
+        return Err(RunnerError::Cancelled);
+    }
+    storage::prepare_content_bundles(context, telemetry)?;
     Ok(payload)
 }
 
@@ -785,11 +787,9 @@ pub async fn execute_job_with_prepared_notifier(
         &mut context,
         config,
         &sandbox_id,
-        &cancellation.any(),
         &mut telemetry,
-    )
-    .await
-    {
+        &cancellation.any(),
+    ) {
         Err(RunnerError::Cancelled) => {
             let mut outcome = ExecuteOutcome::preparation_failure("cancelled");
             outcome.mark_cancelled();
@@ -984,11 +984,9 @@ pub async fn execute_job_reuse_with_hooks(
         &mut context,
         config,
         &sandbox_id_string,
-        &cancellation.any(),
         &mut telemetry,
-    )
-    .await
-    {
+        &cancellation.any(),
+    ) {
         Err(error) => ExecuteOutcome::reused_sandbox_failure(
             match error {
                 RunnerError::Cancelled => ExecutionFailure::cancelled(),

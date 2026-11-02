@@ -8,9 +8,9 @@ mod sandbox;
 mod tracing;
 
 pub(super) use self::config::{
-    assert_proxy_registry_empty, default_params, make_reusable_idle_sandbox, test_budget_lease,
-    test_device_rate_limits, test_executor_config, test_executor_config_with_startup_api,
-    test_telemetry,
+    assert_proxy_registry_empty, default_params, make_reusable_idle_sandbox,
+    make_reusable_idle_sandbox_with_fingerprints, test_budget_lease, test_device_rate_limits,
+    test_executor_config, test_executor_config_with_startup_api, test_telemetry,
 };
 pub(super) use self::context::{context_with_env, minimal_context};
 pub(super) use self::env::{
