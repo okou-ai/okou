@@ -165,7 +165,7 @@ fn write_remote_exec_stderr(
     let _ = stderr.write_all(&result.stderr);
     let mut line_open = !result.stderr.is_empty() && !result.stderr.ends_with(b"\n");
 
-    write_terminal_diagnostic(
+    let _ = write_terminal_diagnostic(
         stderr,
         &result.termination,
         &result.stderr,
