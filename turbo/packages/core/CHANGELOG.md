@@ -1,5 +1,22 @@
 # Changelog
 
+## [8.808.1](https://github.com/okou-ai/okou/compare/core-v8.808.0...core-v8.808.1) (2026-11-02)
+
+
+### Refactoring
+
+* remove artifact deletion feature switch ([#44649](https://github.com/okou-ai/okou/issues/44649)) ([6fdcb0e](https://github.com/okou-ai/okou/commit/6fdcb0e11da48286252c8277d54c8fcf23d0abf3))
+* remove chat thread timeline feature switch ([#44651](https://github.com/okou-ai/okou/issues/44651)) ([9fa275a](https://github.com/okou-ai/okou/commit/9fa275ac619738a90345e866425fa3dfdeb4dd14))
+* remove shared thread visibility feature switch ([#44658](https://github.com/okou-ai/okou/issues/44658)) ([5578cdb](https://github.com/okou-ai/okou/commit/5578cdb5b540607a66f7c8d2de52a287ecd8ee09))
+* **teams:** remove workspace identity feature switch ([#44660](https://github.com/okou-ai/okou/issues/44660)) ([e77bc14](https://github.com/okou-ai/okou/commit/e77bc14635c0b1f8b8420aa1f8b5fb4fc9f01db5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.32.0
+
 ## [8.808.0](https://github.com/okou-ai/okou/compare/core-v8.807.4...core-v8.808.0) (2026-11-02)
 
 
