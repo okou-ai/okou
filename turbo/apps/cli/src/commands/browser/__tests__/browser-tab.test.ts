@@ -179,7 +179,19 @@ describe("chat-window Browser commands", () => {
     );
     server.use(
       http.post("http://localhost:3000/api/browsers/use", () => {
-        return HttpResponse.json({ browser: browser(), cdpUrl: CDP_URL });
+        return HttpResponse.json({
+          browser: browser(),
+          cdpUrl: CDP_URL,
+          ...(window
+            ? {
+                extension: {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  runtimeId: "abcdefghijklmnopabcdefghijklmnop",
+                  version: "0.5.1",
+                },
+              }
+            : {}),
+        });
       }),
       cdp.addEventListener("connection", ({ client }) => {
         client.addEventListener("message", (event) => {
