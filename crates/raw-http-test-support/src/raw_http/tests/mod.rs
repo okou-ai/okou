@@ -184,6 +184,28 @@ async fn timeout_aborts_and_reaps_unfinished_accept() {
 }
 
 #[tokio::test]
+async fn dropping_server_closes_accepted_connection() {
+    let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Stall]).await;
+    let mut socket = connect(&server).await;
+    socket.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
+    assert_eq!(
+        server.next_request("request before server drop").await,
+        "GET / HTTP/1.1\r\n\r\n"
+    );
+
+    drop(server);
+
+    let mut byte = [0];
+    assert_eq!(
+        tokio::time::timeout(RAW_HTTP_FIXTURE_TIMEOUT, socket.read(&mut byte))
+            .await
+            .expect("dropping the server must close its accepted connection")
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn explicit_cancellation_reaps_stalled_action() {
     let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Stall]).await;
     let mut socket = connect(&server).await;

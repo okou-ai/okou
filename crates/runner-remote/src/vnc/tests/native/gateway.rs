@@ -13,7 +13,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    task::{JoinHandle, JoinSet},
+    task::JoinSet,
 };
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::{
@@ -39,6 +39,8 @@ impl Callback for Upgrade {
 }
 
 pub(crate) struct Gateway {
+    // Request abort before releasing the remaining fixture fields.
+    _task: tokio_util::task::AbortOnDropHandle<()>,
     pub(crate) address: SocketAddr,
     pub(crate) tls: Arc<ClientConfig>,
     pub(crate) ca: String,
@@ -46,7 +48,6 @@ pub(crate) struct Gateway {
     pub(crate) upgraded: Arc<tokio::sync::Notify>,
     pub(crate) received: Arc<tokio::sync::Notify>,
     pub(crate) origin_gate: Arc<tokio::sync::Semaphore>,
-    task: JoinHandle<()>,
 }
 
 fn certificate(name: &str, expired: bool) -> (Arc<ServerConfig>, Arc<ClientConfig>, String) {
@@ -173,13 +174,7 @@ impl Gateway {
             upgraded,
             received,
             origin_gate,
-            task,
+            _task: tokio_util::task::AbortOnDropHandle::new(task),
         }
-    }
-}
-
-impl Drop for Gateway {
-    fn drop(&mut self) {
-        self.task.abort();
     }
 }

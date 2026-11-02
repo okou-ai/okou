@@ -1,4 +1,5 @@
 use super::*;
+use tokio_util::task::AbortOnDropHandle;
 
 const PHASES: [&str; 4] = [
     STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
@@ -44,19 +45,11 @@ struct GatedResponse {
     task: ResponseTask,
 }
 
-struct ResponseTask(Option<JoinHandle<()>>);
+struct ResponseTask(Option<AbortOnDropHandle<()>>);
 
 impl ResponseTask {
     async fn finish(mut self) {
-        join_raw_http_task(self.0.take().unwrap(), "gated phase response").await;
-    }
-}
-
-impl Drop for ResponseTask {
-    fn drop(&mut self) {
-        if let Some(task) = &self.0 {
-            task.abort();
-        }
+        join_raw_http_task(self.0.take().unwrap().detach(), "gated phase response").await;
     }
 }
 
@@ -116,7 +109,7 @@ impl GatedResponse {
             requested,
             headers,
             body,
-            task: ResponseTask(Some(task)),
+            task: ResponseTask(Some(AbortOnDropHandle::new(task))),
         }
     }
 }

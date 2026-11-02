@@ -7,6 +7,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
 use nix::libc;
 use tokio::io::unix::AsyncFd;
+use tokio::task::JoinHandle;
 use tokio::time::Instant as TimerInstant;
 use tracing::instrument::WithSubscriber;
 
