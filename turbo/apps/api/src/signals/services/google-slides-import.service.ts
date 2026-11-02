@@ -1247,7 +1247,10 @@ function normalizeParagraphLineSpacing(paragraph: XmlNode): boolean {
     }) ||
     (ppr &&
       nodes(ppr).some((node) => {
-        return node.local.startsWith("bu") && node.local !== "buNone";
+        return (
+          (node.local.startsWith("bu") && node.local !== "buNone") ||
+          node.local === "defRPr"
+        );
       }))
   ) {
     return false;

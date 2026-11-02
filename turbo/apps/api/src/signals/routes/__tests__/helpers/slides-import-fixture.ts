@@ -416,6 +416,16 @@ function fidelityText(): string {
       'wrap="none" anchor="ctr"',
     ),
     fidelityTextBox(14, "fixed-single-paragraph", ordinary()),
+    fidelityTextBox(
+      15,
+      "inherited-baseline-control",
+      fidelityParagraph(
+        fidelityRun("Ordinary ", 'sz="2000" baseline="0"') +
+          fidelityRun("Inherited raised text"),
+        '<a:spcPts val="2400"/>',
+        '<a:defRPr baseline="30000"/>',
+      ),
+    ),
     `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="20" name="group-control"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/><a:chOff x="0" y="0"/><a:chExt cx="12192000" cy="6858000"/></a:xfrm></p:grpSpPr>${fidelityTextBox(21, "grouped-control", ordinary())}</p:grpSp>`,
   ].join("");
 }
