@@ -295,7 +295,7 @@ function PausedBrowserSession({
       }
       className={
         showScreenshot
-          ? "absolute inset-0 z-10 bg-background/60 backdrop-blur-xs"
+          ? "absolute inset-0 z-10 bg-background/50 backdrop-blur-md"
           : refined
             ? ""
             : undefined
