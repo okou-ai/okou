@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.242.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.0...runner-rs-v0.242.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **runner:** delay listeners until catalog initialization ([#44530](https://github.com/okou-ai/okou/issues/44530)) ([d056210](https://github.com/okou-ai/okou/commit/d0562106b3f76cc293798e0d3d0e57378c41f97b))
+
 ## [0.242.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.20...runner-rs-v0.242.0) (2026-11-01)
 
 

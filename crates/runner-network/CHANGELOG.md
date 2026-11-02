@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.19](https://github.com/okou-ai/okou/compare/runner-network-v0.3.18...runner-network-v0.3.19) (2026-11-02)
+
+
+### Bug Fixes
+
+* **runner:** delay listeners until catalog initialization ([#44530](https://github.com/okou-ai/okou/issues/44530)) ([d056210](https://github.com/okou-ai/okou/commit/d0562106b3f76cc293798e0d3d0e57378c41f97b))
+
 ## [0.3.18](https://github.com/okou-ai/okou/compare/runner-network-v0.3.17...runner-network-v0.3.18) (2026-11-01)
 
 
