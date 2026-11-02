@@ -59,6 +59,11 @@ interface Connection {
   discovery: Set<string | undefined>;
   automatic: Map<string | undefined, Set<string>>;
 }
+interface HeldWindowLookup {
+  targetId: string;
+  requested(): void;
+  respond?: () => void;
+}
 
 /** External Chrome/extension protocol fixture, with real loopback WebSockets. */
 export async function browserCdpProvider() {
@@ -151,6 +156,7 @@ export async function browserCdpProvider() {
   let nextSession = 0;
   let nextTarget = 0;
   let rejectRelated = false;
+  let heldWindowLookup: HeldWindowLookup | undefined;
   const bounds = new Map<number, Record<string, unknown>>([
     [0, {}],
     [1, {}],
@@ -424,10 +430,17 @@ export async function browserCdpProvider() {
           reply({});
         },
         "Browser.getWindowForTarget": () => {
-          const target = targets.get(String(params.targetId));
-          if (target && target.window >= 0)
-            reply({ windowId: target.window, bounds: {} });
-          else fail(-32000, "No browser window for target");
+          const respond = () => {
+            const target = targets.get(String(params.targetId));
+            if (target && target.window >= 0)
+              reply({ windowId: target.window, bounds: {} });
+            else fail(-32000, "No browser window for target");
+          };
+          const held = heldWindowLookup;
+          if (held && held.targetId === params.targetId) {
+            held.respond = respond;
+            held.requested();
+          } else respond();
         },
         "Browser.getWindowBounds": () => {
           reply({ bounds: bounds.get(Number(params.windowId)) });
@@ -558,12 +571,30 @@ export async function browserCdpProvider() {
     rejectNextRelated() {
       rejectRelated = true;
     },
+    holdWindowLookup(targetId: string) {
+      if (heldWindowLookup) throw new Error("A window lookup is already held");
+      let requested!: () => void;
+      const observed = new Promise<void>((resolve) => {
+        requested = resolve;
+      });
+      const held: HeldWindowLookup = { targetId, requested };
+      heldWindowLookup = held;
+      return {
+        observed,
+        resume() {
+          heldWindowLookup = undefined;
+          held.respond?.();
+        },
+      };
+    },
     hasWindow: (windowId: number) => {
       return [...targets.values()].some((target) => {
         return target.type === "page" && target.window === windowId;
       });
     },
     async close() {
+      heldWindowLookup?.respond?.();
+      heldWindowLookup = undefined;
       for (const connection of connections) connection.socket.terminate();
       await new Promise<void>((resolve, reject) => {
         return server.close((error) => {

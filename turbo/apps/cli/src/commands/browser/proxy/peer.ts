@@ -1009,7 +1009,9 @@ export class ProxyPeer {
     for (const [channel, visible] of this.visible) {
       if (channel && !this.liveSession(channel)) continue;
       for (const id of visible) {
-        if (await this.scope.allows(id)) continue;
+        const allowed = await this.scope.allows(id);
+        if (this.visible.get(channel) !== visible) break;
+        if (allowed) continue;
         visible.delete(id);
         this.emit(channel, {
           method: "Target.targetDestroyed",
@@ -1019,11 +1021,15 @@ export class ProxyPeer {
       const discover = this.discovery.get(channel);
       if (discover)
         for (const info of this.scope.targets.values()) {
+          if (visible.has(info.targetId) || !this.matches(info, discover))
+            continue;
+          const allowed = await this.scope.contains(info);
           if (
-            !visible.has(info.targetId) &&
-            this.matches(info, discover) &&
-            (await this.scope.contains(info))
-          ) {
+            this.visible.get(channel) !== visible ||
+            this.discovery.get(channel) !== discover
+          )
+            break;
+          if (allowed) {
             visible.add(info.targetId);
             this.emit(channel, {
               method: "Target.targetCreated",

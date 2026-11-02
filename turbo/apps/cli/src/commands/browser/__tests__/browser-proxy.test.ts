@@ -159,9 +159,16 @@ describe("chat-window CDP proxy protocol", () => {
     ).rejects.toMatchObject({ code: -32000 });
   });
 
-  it.each([false, true])(
-    "stops discovery notifications after cancellation (browser session=%s)",
-    async (browserSession) => {
+  it.each([
+    { browserSession: false, timing: "before" },
+    { browserSession: true, timing: "before" },
+    { browserSession: false, timing: "removal" },
+    { browserSession: true, timing: "removal" },
+    { browserSession: false, timing: "addition" },
+    { browserSession: true, timing: "addition" },
+  ])(
+    "stops discovery notifications after cancellation (browser session=$browserSession, timing=$timing)",
+    async ({ browserSession, timing }) => {
       const browser = String(
         (await connection.request("Target.attachToBrowserTarget")).sessionId,
       );
@@ -170,33 +177,50 @@ describe("chat-window CDP proxy protocol", () => {
       const created = await connection.request("Target.createTarget", {
         url: "about:blank",
       });
-      for (const channel of [undefined, browser])
+      for (const channel of [cancelled, active])
         await connection.request(
           "Target.setDiscoverTargets",
-          { discover: true },
+          { discover: true, filter: [{ type: "tab" }, { type: "page" }] },
           channel,
         );
-      await connection.request(
-        "Target.setDiscoverTargets",
-        { discover: false },
-        cancelled,
-      );
+      const cancel = () => {
+        return connection.request(
+          "Target.setDiscoverTargets",
+          { discover: false },
+          cancelled,
+        );
+      };
+      if (timing === "before") await cancel();
       const cancelledEvents: Message[] = [];
       const listen = (message: Message) => {
         if (message.sessionId === cancelled) cancelledEvents.push(message);
       };
       connection.listeners.add(listen);
-      const removed = connection.event((message) => {
+      const entering = timing === "addition";
+      const reconciled = connection.event((message) => {
         return (
-          message.method === "Target.targetDestroyed" &&
+          message.method ===
+            (entering ? "Target.targetCreated" : "Target.targetDestroyed") &&
           message.sessionId === active &&
-          message.params?.targetId === "A"
+          (entering
+            ? (message.params?.targetInfo as { targetId?: string })
+                ?.targetId === "TAB-B"
+            : message.params?.targetId === "TAB-A")
         );
       });
-      provider.move("A", 1);
+      const held =
+        timing === "before"
+          ? undefined
+          : provider.holdWindowLookup(entering ? "TAB-B" : "TAB-A");
+      provider.move(entering ? "B" : "A", entering ? 0 : 1);
+      if (held) {
+        await held.observed;
+        await cancel();
+        held.resume();
+      }
       // The other channel's synthetic event proves native reconciliation began.
       // Await this peer's queued control work before asserting cancellation.
-      await removed;
+      await reconciled;
       await connection.request("Target.setAutoAttach", {
         autoAttach: false,
         waitForDebuggerOnStart: false,
@@ -205,7 +229,9 @@ describe("chat-window CDP proxy protocol", () => {
       connection.listeners.delete(listen);
       expect(
         cancelledEvents.filter((message) => {
-          return message.method === "Target.targetDestroyed";
+          return ["Target.targetCreated", "Target.targetDestroyed"].includes(
+            String(message.method),
+          );
         }),
       ).toStrictEqual([]);
       expect(
