@@ -1,6 +1,6 @@
 use crate::LOG_TAG;
 use crate::cleanup_directory::CleanupDirectory;
-use crate::path::normalize_path;
+use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::{log_info, log_warn};
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};

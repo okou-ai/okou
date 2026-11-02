@@ -22,7 +22,7 @@ pub(crate) fn execution_context_for_test(run_id: RunId) -> ExecutionContext {
         prompt: "test".into(),
         append_system_prompt: None,
 
-        content_bundles: runner_types::content_bundle::ClaimedContentBundles::default(),
+        instruction_file: None,
         vars: None,
         sandbox_token: "tok".into(),
         storage_manifest: None,

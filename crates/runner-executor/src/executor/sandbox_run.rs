@@ -46,7 +46,7 @@ use crate::home_mount::ensure_home_drive_mounted;
 use crate::network_log_manager::NetworkLogSession;
 use crate::proxy;
 use crate::storage_cache::PreparedStorage;
-use crate::storage_fingerprints::StorageFingerprints;
+use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 use crate::storage_plan::build_storage_plan;
 use crate::telemetry::JobTelemetry;
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
@@ -452,9 +452,8 @@ pub(super) async fn prepare_storage(
     cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<Option<PreparedStorage>> {
-    let Some(manifest) = &context.storage_manifest else {
-        return Ok(None);
-    };
+    let empty_manifest = runner_types::storage_manifest::StorageManifest::default();
+    let manifest = context.storage_manifest.as_ref().unwrap_or(&empty_manifest);
     let apply_started = Instant::now();
     let result: RunnerResult<Option<PreparedStorage>> = async {
         let mut plan = build_storage_plan(manifest, previous_storage)?;
@@ -1854,8 +1853,8 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
             None
         };
 
-    let current_inputs = runner_types::content_bundle::fingerprints(context);
-    let storage_fingerprints = if lifecycle.storage_preparation_complete {
+    let current_inputs = context.storage_fingerprints();
+    let mut storage_fingerprints = if lifecycle.storage_preparation_complete {
         current_inputs
     } else {
         // Cancellation may precede reconciliation, or interrupt a partial apply.
@@ -1863,6 +1862,16 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
         // were installed. A later physical reuse must reconcile them again.
         current_inputs.tainted_paths_including(previous_storage)
     };
+    if !lifecycle.instruction_preparation_complete
+        && let Some(instruction) = &context.instruction_file
+    {
+        // Staging can finish before bootstrap copies the final instruction file.
+        // Preserve other completed inputs without claiming this file was applied.
+        storage_fingerprints.storages.insert(
+            instruction.storage_mount.clone(),
+            StorageFingerprint::tainted(),
+        );
+    }
     PreparedSandboxAttempt {
         retry_inputs,
         outcome: ExecuteOutcome {

@@ -4001,6 +4001,118 @@ async fn api_client_complete_serializes_sandbox_identity() {
 }
 
 #[tokio::test]
+async fn api_claim_normalization_rejects_invalid_publication_inputs() {
+    for kind in [
+        "missing",
+        "format",
+        "null",
+        "hash",
+        "size",
+        "url",
+        "mount",
+        "duplicate",
+        "storage-conflict",
+        "instruction-conflict",
+    ] {
+        let server = MockServer::start_async().await;
+        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+        let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        match kind {
+            "missing" => {
+                body.as_object_mut().unwrap().remove("contentBundles");
+            }
+            "format" => body["contentBundles"]["format"] = serde_json::json!("invalid"),
+            "null" => body["contentBundles"]["instructions"] = Value::Null,
+            "hash" => {
+                body["contentBundles"]["instructions"]["sha256"] = serde_json::json!("invalid")
+            }
+            "size" => {
+                body["contentBundles"]["instructions"]["archiveBytes"] =
+                    serde_json::json!(32 * 1024 * 1024 + 1)
+            }
+            "url" => {
+                body["contentBundles"]["instructions"]["downloadUrl"] = serde_json::json!(
+                    "https://user:secret-fixture@storage.fixture.invalid/private?signature=secret-fixture"
+                )
+            }
+            "mount" => {
+                body["contentBundles"]["skills"][0]["mountPath"] =
+                    serde_json::json!("/home/user/.codex")
+            }
+            "duplicate" => {
+                let duplicate = body["contentBundles"]["skills"][0].clone();
+                body["contentBundles"]["skills"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(duplicate);
+            }
+            _ => {
+                let mount = if kind == "instruction-conflict" {
+                    "/home/user/.vm0/agent-instructions/codex"
+                } else {
+                    "/home/user/.codex/skills/fixture-skill"
+                };
+                let mut conflict = body["storageManifest"]["storageMounts"][0].clone();
+                conflict["mountPath"] = serde_json::json!(mount);
+                body["storageManifest"]["storageMounts"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(conflict);
+            }
+        }
+        let request = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path(format!("/api/runners/jobs/{run_id}/claim"));
+                then.status(200).json_body(body);
+            })
+            .await;
+        let api = api_client_for_server(&server);
+        let error = api
+            .claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+            .expect_err("invalid publication must fail before execution");
+        let ClaimApiError::ResponseDecode(message) = error else {
+            panic!("expected response decode failure")
+        };
+        assert!(!message.contains("secret-fixture"));
+        request.assert_calls_async(1).await;
+    }
+}
+
+#[tokio::test]
+async fn api_claim_normalization_ignores_forged_runner_application_metadata() {
+    let server = MockServer::start_async().await;
+    let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+    let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    body["instructionFile"] = serde_json::json!({"storageMount": "/home/user/.ssh"});
+    let request = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/jobs/{run_id}/claim"));
+            then.status(200).json_body(body);
+        })
+        .await;
+    let api = api_client_for_server(&server);
+    let response = api
+        .claim_for_test(&JobCandidate::new(
+            run_id,
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        response.context.instruction_file.unwrap().storage_mount,
+        "/home/user/.vm0/agent-instructions/codex"
+    );
+    request.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn api_provider_claim_accepts_shared_current_response_fixture() {
     let server = MockServer::start_async().await;
     let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
@@ -4056,16 +4168,23 @@ async fn api_provider_claim_accepts_shared_current_response_fixture() {
 
     assert_eq!(context.run_id, run_id);
     assert_eq!(context.prompt, "Inspect the fixture repository");
-    let bundles = &context.content_bundles;
-    let instructions = bundles.instructions.as_ref().unwrap();
-    instructions.validate().unwrap();
-    assert_eq!(instructions.sha256, "a".repeat(64));
-    assert_eq!(instructions.archive_bytes, 128);
-    assert_eq!(bundles.skills.len(), 1);
-    let skill = &bundles.skills[0];
-    skill.reference().validate().unwrap();
-    assert_eq!(skill.sha256, "b".repeat(64));
-    assert_eq!(skill.archive_bytes, 256);
+    let storages = &context.storage_manifest.as_ref().unwrap().storages;
+    let instructions = storages
+        .iter()
+        .find(|entry| entry.vas_storage_name == "instruction")
+        .unwrap();
+    assert_eq!(instructions.vas_version_id, "a".repeat(64));
+    assert_eq!(instructions.archive_size, Some(128));
+    assert_eq!(
+        context.instruction_file.as_ref().unwrap().storage_mount,
+        instructions.mount_path
+    );
+    let skill = storages
+        .iter()
+        .find(|entry| entry.vas_storage_name == "workflow")
+        .unwrap();
+    assert_eq!(skill.vas_version_id, "b".repeat(64));
+    assert_eq!(skill.archive_size, Some(256));
     assert_eq!(skill.mount_path, "/home/user/.codex/skills/fixture-skill");
     assert_eq!(
         context.append_system_prompt.as_deref(),
@@ -4075,7 +4194,7 @@ async fn api_provider_claim_accepts_shared_current_response_fixture() {
         context.vars.as_ref().unwrap()["FIXTURE_REGION"],
         "test-region"
     );
-    assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 1);
+    assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 3);
     let native = context
         .native_continuation
         .as_ref()
@@ -4376,7 +4495,9 @@ async fn api_provider_claim_accepts_canonical_storage_mount_response() {
         .expect("canonical storage mount claim response should decode");
     let manifest = claimed.context().storage_manifest.as_ref().unwrap();
 
-    assert_eq!(manifest.storages.len(), 1);
+    assert_eq!(manifest.storages.len(), 3);
+    assert_eq!(manifest.storages[1].vas_storage_name, "workflow");
+    assert_eq!(manifest.storages[2].vas_storage_name, "instruction");
     assert_eq!(manifest.storages[0].name, "fixture-workspace");
     assert_eq!(
         manifest.storages[0].vas_version_id,

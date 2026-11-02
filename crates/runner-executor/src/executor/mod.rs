@@ -529,8 +529,8 @@ impl ExecuteOutcome {
         self.failure = Some(ExecutionFailure::cancelled());
     }
 
-    fn with_content_context(mut self, context: &ExecutionContext) -> Self {
-        let mut inputs = runner_types::content_bundle::fingerprints(context);
+    fn with_storage_context(mut self, context: &ExecutionContext) -> Self {
+        let mut inputs = context.storage_fingerprints();
         // Observed reconciliation state takes precedence over requested inputs,
         // including tainted paths retained from the previous filesystem state.
         inputs.storages.extend(self.storage_fingerprints.storages);
@@ -732,10 +732,9 @@ fn initialize_execution_telemetry(
 }
 
 fn prepare_execution_context(
-    context: &mut ExecutionContext,
+    context: &ExecutionContext,
     config: &ExecutorConfig,
     sandbox_id: &str,
-    telemetry: &mut JobTelemetry,
     cancel: &CancellationToken,
 ) -> RunnerResult<env::PreparedRunPayload> {
     let payload = validate_execution_context_before_sandbox(context, &config.api_url, sandbox_id)
@@ -743,7 +742,6 @@ fn prepare_execution_context(
     if cancel.is_cancelled() {
         return Err(RunnerError::Cancelled);
     }
-    storage::prepare_content_bundles(context, telemetry)?;
     Ok(payload)
 }
 
@@ -771,7 +769,7 @@ pub async fn execute_job(
 
 pub async fn execute_job_with_prepared_notifier(
     factory: &dyn SandboxFactory,
-    mut context: ExecutionContext,
+    context: ExecutionContext,
     dispatch: NewSandboxDispatch,
     config: &ExecutorConfig,
     params: &JobParams,
@@ -788,44 +786,39 @@ pub async fn execute_job_with_prepared_notifier(
         initialize_execution_telemetry(&context, config, pre_spawn_timing);
 
     let sandbox_id = dispatch.id.to_string();
-    let outcome = match prepare_execution_context(
-        &mut context,
-        config,
-        &sandbox_id,
-        &mut telemetry,
-        &cancellation.any(),
-    ) {
-        Err(RunnerError::Cancelled) => {
-            let mut outcome = ExecuteOutcome::preparation_failure("cancelled");
-            outcome.mark_cancelled();
-            outcome
-        }
-        Err(RunnerError::Internal(message)) => ExecuteOutcome::preparation_failure(message),
-        Err(error) => ExecuteOutcome::preparation_failure(error),
-        Ok(prepared_run_payload) => match execute_new_sandbox_with_prepared_notifier(
-            factory,
-            &context,
-            dispatch,
-            config,
-            params,
-            &mut telemetry,
-            NewSandboxHooks {
-                preparation: FreshPreparation::Initial,
-                controls: RunControls::from_cancellation(cancellation, active_input_source)
-                    .with_sandbox_recovery(sandbox_recovery)
-                    .with_spawn_timing(spawn_timing),
-                prepared_run_payload,
-                sandbox_prepared: sandbox_prepared.as_ref(),
+    let outcome =
+        match prepare_execution_context(&context, config, &sandbox_id, &cancellation.any()) {
+            Err(RunnerError::Cancelled) => {
+                let mut outcome = ExecuteOutcome::preparation_failure("cancelled");
+                outcome.mark_cancelled();
+                outcome
+            }
+            Err(RunnerError::Internal(message)) => ExecuteOutcome::preparation_failure(message),
+            Err(error) => ExecuteOutcome::preparation_failure(error),
+            Ok(prepared_run_payload) => match execute_new_sandbox_with_prepared_notifier(
+                factory,
+                &context,
+                dispatch,
+                config,
+                params,
+                &mut telemetry,
+                NewSandboxHooks {
+                    preparation: FreshPreparation::Initial,
+                    controls: RunControls::from_cancellation(cancellation, active_input_source)
+                        .with_sandbox_recovery(sandbox_recovery)
+                        .with_spawn_timing(spawn_timing),
+                    prepared_run_payload,
+                    sandbox_prepared: sandbox_prepared.as_ref(),
+                },
+            )
+            .await
+            {
+                Ok(outcome) => outcome,
+                Err(e) => ExecuteOutcome::preparation_failure(e),
             },
-        )
-        .await
-        {
-            Ok(outcome) => outcome,
-            Err(e) => ExecuteOutcome::preparation_failure(e),
-        },
-    };
+        };
 
-    (outcome.with_content_context(&context), telemetry)
+    (outcome.with_storage_context(&context), telemetry)
 }
 
 /// Execute a single job inside a **reused** (kept-alive) sandbox.
@@ -866,7 +859,7 @@ pub struct ReusedSandboxDispatch<'a> {
 
 pub async fn execute_job_reuse_with_hooks(
     dispatch: ReusedSandboxDispatch<'_>,
-    mut context: ExecutionContext,
+    context: ExecutionContext,
     config: &ExecutorConfig,
     params: &JobParams,
     cancellation: RunCancellationSignals,
@@ -912,7 +905,7 @@ pub async fn execute_job_reuse_with_hooks(
                 source_ip,
                 None,
             )
-            .with_content_context(&context),
+            .with_storage_context(&context),
             telemetry,
         );
     }
@@ -940,7 +933,7 @@ pub async fn execute_job_reuse_with_hooks(
         Err(failure) => {
             return (
                 ExecuteOutcome::reused_sandbox_failure(*failure, sandbox, source_ip, None)
-                    .with_content_context(&context),
+                    .with_storage_context(&context),
                 telemetry,
             );
         }
@@ -955,7 +948,7 @@ pub async fn execute_job_reuse_with_hooks(
                 source_ip,
                 home_image,
             )
-            .with_content_context(&context),
+            .with_storage_context(&context),
             telemetry,
         );
     }
@@ -986,10 +979,9 @@ pub async fn execute_job_reuse_with_hooks(
     // retires an unusable blank before attempting its single replacement.
     let sandbox_id_string = sandbox_id.to_string();
     let outcome = match prepare_execution_context(
-        &mut context,
+        &context,
         config,
         &sandbox_id_string,
-        &mut telemetry,
         &cancellation.any(),
     ) {
         Err(error) => ExecuteOutcome::reused_sandbox_failure(
@@ -1044,7 +1036,7 @@ pub async fn execute_job_reuse_with_hooks(
         }
     };
 
-    (outcome.with_content_context(&context), telemetry)
+    (outcome.with_storage_context(&context), telemetry)
 }
 
 fn blank_home_reuse_result(context: &ExecutionContext, config: &ExecutorConfig) -> HomeReuseResult {

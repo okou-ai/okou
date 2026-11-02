@@ -32,7 +32,7 @@
 //! the resolved plan is finally converted to the guest manifest for execution.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use api_contracts::generated::{
@@ -42,6 +42,7 @@ use api_contracts::generated::{
     types::runners::storage::ArtifactEntryMissingRootPolicy,
 };
 use guest_contracts::storage_manifest as wire;
+use guest_contracts::storage_paths::normalize_path;
 
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
@@ -364,6 +365,92 @@ pub fn build_storage_plan(
 }
 
 impl StoragePlan {
+    /// Download roots retained by an unchanged cached ancestor during cleanup.
+    ///
+    /// Guest extraction resolves these roots after cleanup, so surviving symlinks
+    /// need a filesystem check before reusing a file outside their logical paths.
+    pub fn preserved_download_mounts(&self) -> Vec<String> {
+        let preserved = self.preserved_mounts().collect::<Vec<_>>();
+        self.storages
+            .iter()
+            .filter(|entry| matches!(&entry.action, StorageAction::Download { .. }))
+            .map(|entry| &entry.mount_path)
+            .chain(
+                self.artifacts
+                    .iter()
+                    .filter(|entry| matches!(&entry.action, ArtifactAction::Download { .. }))
+                    .map(|entry| &entry.mount_path),
+            )
+            .filter(|mount| {
+                let logical = normalize_path(Path::new(mount));
+                preserved.iter().any(|root| logical.starts_with(root))
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn preserved_mounts(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        self.storages
+            .iter()
+            .filter(|entry| matches!(&entry.action, StorageAction::ReuseExisting))
+            .map(|entry| normalize_path(Path::new(&entry.mount_path)))
+            .chain(
+                self.artifacts
+                    .iter()
+                    .filter(|entry| {
+                        matches!(
+                            &entry.action,
+                            ArtifactAction::ReuseOrRepair { .. }
+                                | ArtifactAction::PrepareEmpty { cached: true }
+                        )
+                    })
+                    .map(|entry| normalize_path(Path::new(&entry.mount_path))),
+            )
+    }
+
+    /// Whether reconciliation can replace or remove an already existing file.
+    ///
+    /// Resolve relative paths against the Guest helper's absolute working directory.
+    /// Keep the Guest's lexical path identities for preserved cached mounts:
+    /// relative and absolute cleanup paths have distinct preservation rules.
+    /// Downloads and instruction cleanup can still replace a file.
+    /// A safely present descendant proves an unchanged artifact root exists,
+    /// so its missing-root repair cannot replace that file. Empty artifacts
+    /// only create directories after the normal cleanup phase.
+    pub fn replaces_existing_file(&self, path: &Path, working_dir: &Path) -> bool {
+        let path = normalize_path(&working_dir.join(path));
+        let contains = |mount: &str| path.starts_with(normalize_path(&working_dir.join(mount)));
+        let preserved = self.preserved_mounts().collect::<Vec<_>>();
+        self.cleanup_paths.iter().any(|mount| {
+            let cleanup = normalize_path(Path::new(mount));
+            let absolute_cleanup = normalize_path(&working_dir.join(&cleanup));
+            let Ok(relative) = path.strip_prefix(&absolute_cleanup) else {
+                return false;
+            };
+            // Guest cleanup preserves a whole immediate child when it overlaps
+            // a cached mount, including cached siblings below that child.
+            let entry = relative
+                .components()
+                .next()
+                .map(|part| cleanup.join(part))
+                .unwrap_or_else(|| cleanup.clone());
+            !preserved
+                .iter()
+                .any(|mount| entry.starts_with(mount) || mount.starts_with(&entry))
+        }) || self
+            .instruction_cleanups
+            .iter()
+            .any(|cleanup| contains(&cleanup.mount_path))
+            || self.storages.iter().any(|entry| {
+                contains(&entry.mount_path)
+                    && matches!(&entry.action, StorageAction::Download { .. })
+            })
+            || self.artifacts.iter().any(|entry| {
+                contains(&entry.mount_path)
+                    && matches!(&entry.action, ArtifactAction::Download { .. })
+            })
+    }
+
     pub(crate) fn decoded_prepared(&self) -> bool {
         self.decoded_prepared
     }

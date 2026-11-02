@@ -1,6 +1,5 @@
 mod blank_pool;
 mod blank_prefetch;
-mod content_bundle_cleanup;
 mod device_limits;
 mod disk_recovery;
 mod drain;
@@ -10,3 +9,4 @@ mod parking;
 mod prune_idle;
 mod same_thread_reuse;
 mod status;
+mod workflow_storage_cleanup;

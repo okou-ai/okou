@@ -1,7 +1,12 @@
+//! Shared lexical path identity for Storage planning and Guest filesystem operations.
+
 use std::path::{Component, Path, PathBuf};
 
 /// Collapse `.` and resolvable `..` components without accessing the filesystem.
-pub(crate) fn normalize_path(path: &Path) -> PathBuf {
+///
+/// This does not resolve symlinks. Absolute paths stop at the root; relative
+/// paths retain leading parent components that cannot be collapsed.
+pub fn normalize_path(path: &Path) -> PathBuf {
     let mut components = Vec::new();
 
     for component in path.components() {

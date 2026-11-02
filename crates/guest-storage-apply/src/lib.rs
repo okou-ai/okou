@@ -60,7 +60,6 @@ mod http_failure;
 pub mod input_telemetry;
 mod instructions;
 mod manifest;
-mod path;
 mod plan;
 mod source;
 mod tar_metadata;
@@ -295,4 +294,4 @@ fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
 mod tests;
 
 mod agent_instructions;
-pub use agent_instructions::apply_agent_instructions;
+pub use agent_instructions::{apply_agent_instructions, check_agent_instructions};

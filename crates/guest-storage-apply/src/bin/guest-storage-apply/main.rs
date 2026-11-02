@@ -9,10 +9,10 @@ use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
 const MANIFEST_STDIN_ARG: &str = "--manifest-stdin";
-const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin | --instructions-stdin";
+const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin | --instructions-stdin | --instructions-check-stdin";
 
 enum ManifestInput {
-    InstructionsStdin,
+    InstructionsStdin { check: bool },
     Path(String),
     Stdin,
     FilesStdin,
@@ -28,6 +28,25 @@ fn main() {
         log_error!(LOG_TAG, "{USAGE}");
         std::process::exit(1);
     };
+
+    if matches!(&input, ManifestInput::InstructionsStdin { check: true }) {
+        match read_instruction_metadata(
+            guest_contracts::agent_instructions::MAX_CHECK_METADATA_BYTES,
+        )
+        .and_then(|metadata| {
+            guest_storage_apply::check_agent_instructions(
+                std::path::Path::new("/home/user"),
+                &metadata,
+            )
+        }) {
+            Ok(present) => println!("{present}"),
+            Err(error) => {
+                log_error!(LOG_TAG, "Instruction file check failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     let start = Instant::now();
     let success = run(input);
@@ -68,11 +87,16 @@ fn install_runtime_log_paths() -> Result<(), String> {
 fn manifest_input_from_args() -> Option<ManifestInput> {
     let mut args = std::env::args().skip(1);
     let arg = args.next()?;
-    if arg == "--instructions-stdin" {
+    if matches!(
+        arg.as_str(),
+        "--instructions-stdin" | "--instructions-check-stdin"
+    ) {
         return args
             .next()
             .is_none()
-            .then_some(ManifestInput::InstructionsStdin);
+            .then_some(ManifestInput::InstructionsStdin {
+                check: arg == "--instructions-check-stdin",
+            });
     }
     if args.next().is_some() {
         return None;
@@ -86,28 +110,27 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
     }
 }
 
+fn read_instruction_metadata(limit: usize) -> io::Result<Vec<u8>> {
+    let mut metadata = Vec::new();
+    io::stdin()
+        .take(limit as u64 + 1)
+        .read_to_end(&mut metadata)?;
+    if metadata.len() > limit {
+        return Err(io::Error::other("Instruction metadata exceeds bound"));
+    }
+    Ok(metadata)
+}
+
 fn run(input: ManifestInput) -> bool {
     match input {
-        ManifestInput::InstructionsStdin => {
-            let Ok(run_id) = std::env::var(env::RUN_ID_ENV) else {
+        ManifestInput::InstructionsStdin { .. } => {
+            let Ok(metadata) =
+                read_instruction_metadata(guest_contracts::agent_instructions::MAX_METADATA_BYTES)
+            else {
                 return false;
             };
-            let Ok(runtime) = runtime_paths::run_dir_from_env(&run_id) else {
-                return false;
-            };
-            let mut metadata = Vec::new();
-            let limit = guest_contracts::agent_instructions::MAX_METADATA_BYTES;
-            if std::io::stdin()
-                .take(limit as u64 + 1)
-                .read_to_end(&mut metadata)
-                .is_err()
-                || metadata.len() > limit
-            {
-                return false;
-            }
             guest_storage_apply::apply_agent_instructions(
                 std::path::Path::new("/home/user"),
-                &runtime,
                 &metadata,
             )
         }

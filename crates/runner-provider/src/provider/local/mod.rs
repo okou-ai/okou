@@ -272,7 +272,7 @@ impl JobProvider for LocalProvider {
             prompt: req.prompt,
             append_system_prompt: None,
 
-            content_bundles: runner_types::content_bundle::ClaimedContentBundles::default(),
+            instruction_file: None,
             vars: req.vars,
             sandbox_token: String::new(),
             storage_manifest: None,

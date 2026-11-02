@@ -5,7 +5,19 @@ use api_contracts::generated::types::runners::storage::{
 };
 use serde::Deserialize;
 
-#[derive(Clone, Debug, PartialEq)]
+/// Business cache namespace for complete Workflow packages.
+pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
+/// Business cache namespace for complete Agent instruction packages.
+pub const INSTRUCTION_STORAGE_NAME: &str = "instruction";
+
+/// Apply a managed instruction file from an ordinary Storage input.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstructionFile {
+    /// Stable framework-specific staging mount in the normalized manifest.
+    pub storage_mount: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct StorageManifest {
     pub storages: Vec<StorageEntry>,
     pub artifacts: Vec<ArtifactEntry>,
