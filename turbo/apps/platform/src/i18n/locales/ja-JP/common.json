@@ -404,6 +404,7 @@
         "agents": "エージェント",
         "artifacts": "アーティファクト",
         "connectors": "コネクター",
+        "feed": "フィード",
         "settings": "設定",
         "workflows": "ワークフロー",
         "works": "{{agentName}}の連携先"
@@ -1593,8 +1594,6 @@
       "customDirection": "こんなことがしたい…",
       "customDirectionDescription": "質問や、やりたいことを入力できます。",
       "customPlaceholder": "どんなことを考えていますか？",
-      "customPrepared": "続きをどうぞ…",
-      "customPreparedDescription": "上にメッセージを入力して送信してください。",
       "dismiss": "非表示にする",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2619,7 +2618,6 @@
         "image": "画像",
         "jobs": "Tasks",
         "presentation": "スライド",
-        "suggestions": "提案",
         "visualization": "可視化",
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
@@ -4102,6 +4100,12 @@
     "previous": "前へ",
     "previousFeature": "前の機能",
     "tryPrompt": "このタスクを試す"
+  },
+  "feed": {
+    "description": "最近の作業をもとにした、次のステップの提案です。",
+    "emptyDescription": "新しい提案はここに表示されます。",
+    "emptyTitle": "すべて確認済みです",
+    "title": "フィード"
   },
   "global": {
     "errors": {

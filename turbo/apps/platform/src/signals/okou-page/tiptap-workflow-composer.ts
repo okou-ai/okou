@@ -2503,6 +2503,12 @@ function createMountEditorCommand({
           editorDocument: set(draft.readEditorDocument$),
         }),
       );
+      // A draft prepared or restored while no editor was mounted can carry
+      // feedback, including suggestion context that requires a note.
+      set(
+        feedback.replaceFromEditor$,
+        feedbackItemsFromWorkflowComposer(editor),
+      );
       set(
         draft.setEditorDocument$,
         createEditorDocumentSnapshot(editor.state.doc),

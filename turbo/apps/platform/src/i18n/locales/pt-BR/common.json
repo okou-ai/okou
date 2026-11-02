@@ -418,6 +418,7 @@
         "agents": "Agentes",
         "artifacts": "Artefatos",
         "connectors": "Conectores",
+        "feed": "Feed",
         "settings": "Configurações",
         "workflows": "Fluxos de trabalho",
         "works": "Onde {{agentName}} trabalha"
@@ -1618,8 +1619,6 @@
       "customDirection": "Eu gostaria de…",
       "customDirectionDescription": "Faça uma pergunta ou descreva o que gostaria de fazer.",
       "customPlaceholder": "O que você tem em mente?",
-      "customPrepared": "Continue…",
-      "customPreparedDescription": "Escreva sua mensagem acima e envie.",
       "dismiss": "Dispensar",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2676,7 +2675,6 @@
         "image": "Imagem",
         "jobs": "Tasks",
         "presentation": "Slides",
-        "suggestions": "Sugestões",
         "visualization": "Visualização",
         "website": "Site",
         "workflow": "Fluxo de trabalho"
@@ -4171,6 +4169,12 @@
     "previous": "Anterior",
     "previousFeature": "Recurso anterior",
     "tryPrompt": "Experimentar esta tarefa"
+  },
+  "feed": {
+    "description": "Próximos passos sugeridos com base no seu trabalho recente.",
+    "emptyDescription": "Novas sugestões aparecerão aqui.",
+    "emptyTitle": "Tudo em dia",
+    "title": "Feed"
   },
   "global": {
     "errors": {

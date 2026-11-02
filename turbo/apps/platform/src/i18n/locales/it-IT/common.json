@@ -418,6 +418,7 @@
         "agents": "Agenti",
         "artifacts": "Artefatti",
         "connectors": "Connettori",
+        "feed": "Feed",
         "settings": "Impostazioni",
         "workflows": "Flussi di lavoro",
         "works": "Dove lavora {{agentName}}"
@@ -1618,8 +1619,6 @@
       "customDirection": "Vorrei…",
       "customDirectionDescription": "Fai una domanda o descrivi cosa vorresti fare.",
       "customPlaceholder": "Cosa hai in mente?",
-      "customPrepared": "Continua…",
-      "customPreparedDescription": "Aggiungi il tuo messaggio qui sopra, poi invialo.",
       "dismiss": "Ignora",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2676,7 +2675,6 @@
         "image": "Immagine",
         "jobs": "Tasks",
         "presentation": "Diapositive",
-        "suggestions": "Suggerimenti",
         "visualization": "Visualizzazione",
         "website": "Sito web",
         "workflow": "Workflow"
@@ -4171,6 +4169,12 @@
     "previous": "Indietro",
     "previousFeature": "Funzionalità precedente",
     "tryPrompt": "Prova questa attività"
+  },
+  "feed": {
+    "description": "Prossimi passi suggeriti in base al tuo lavoro recente.",
+    "emptyDescription": "I nuovi suggerimenti appariranno qui.",
+    "emptyTitle": "Sei in pari",
+    "title": "Feed"
   },
   "global": {
     "errors": {

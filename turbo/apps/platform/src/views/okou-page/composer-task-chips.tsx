@@ -2,12 +2,6 @@ import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Image, MessageSquare } from "lucide-react";
 import { Button, Tabs, TabsContent } from "@okouai/ui";
-import {
-  agentSuggestionsEnabled$,
-  visibleAgentSuggestions$,
-  suggestionFeedbackConfirmation$,
-} from "../../signals/okou-page/agent-suggestion-session.ts";
-import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { EntrustedJobs } from "./entrusted-jobs.tsx";
 import { entrustedJobsEnabled$ } from "../../signals/okou-page/entrusted-jobs.ts";
 import { cn } from "@okouai/ui/lib/utils";
@@ -620,9 +614,6 @@ function ComposerTaskPanel({
   readonly signals: ComposerSignals;
   readonly selected: ComposerTask;
 }) {
-  if (selected === "suggestions") {
-    return <AgentSuggestions />;
-  }
   if (selected === "jobs") {
     return <EntrustedJobs />;
   }
@@ -681,7 +672,7 @@ function ComposerTaskTabs({
         const task = tasks.find((candidate) => {
           return candidate === value;
         });
-        if (task === "suggestions" || task === "jobs") {
+        if (task === "jobs") {
           browseTask(task);
         } else if (task) {
           selectTask(task);
@@ -710,30 +701,13 @@ export function ComposerTaskChips({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const suggestions = useLoadable(agentSuggestionsEnabled$);
-  const suggestionsEnabled =
-    suggestions.state === "hasData" && suggestions.data;
   const jobs = useLoadable(entrustedJobsEnabled$);
   const jobsEnabled = jobs.state === "hasData" && jobs.data;
-  // Suggestions joins the row only once the pool has resolved with items. A
-  // pending or failed read would add a tab and a placeholder that vanish again
-  // whenever the pool turns out empty; a refresh keeps the last resolved pool.
-  const items = useLastLoadable(visibleAgentSuggestions$);
-  const feedback = useGet(suggestionFeedbackConfirmation$);
-  const showSuggestions =
-    suggestionsEnabled &&
-    items.state === "hasData" &&
-    (items.data.length > 0 || feedback !== null);
   const current = useGet(signals.taskChips.task$);
-  const selected =
-    (current === "suggestions" && !showSuggestions) ||
-    (current === "jobs" && !jobsEnabled)
-      ? null
-      : (current ?? (showSuggestions ? "suggestions" : null));
+  const selected = current === "jobs" && !jobsEnabled ? null : current;
   const tasks = (
     [
       "jobs",
-      "suggestions",
       "workflow",
       "presentation",
       "document",
@@ -745,9 +719,6 @@ export function ComposerTaskChips({
     if (task === "jobs") {
       return jobsEnabled;
     }
-    if (task === "suggestions") {
-      return showSuggestions;
-    }
     return (
       task === "workflow" ||
       task === "website" ||
@@ -755,12 +726,9 @@ export function ComposerTaskChips({
       signals.create.modes.includes(task)
     );
   });
-  // Suggestions is the starting panel; selecting a task moves its chip into
-  // the composer and hides the choices in either rollout.
-  if (
-    (suggestionsEnabled || jobsEnabled) &&
-    (selected === null || selected === "suggestions" || selected === "jobs")
-  ) {
+  // Tasks is browsed beside the row; selecting another task moves its chip
+  // into the composer and hides the choices.
+  if (jobsEnabled && (selected === null || selected === "jobs")) {
     return (
       <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
     );
