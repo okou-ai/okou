@@ -21,13 +21,14 @@ vi.mock("node:child_process", async (importOriginal) => {
     spawn(file: string, args: string[], options: SpawnOptions) {
       expect(file).toBe("/usr/local/bin/guest-task-exec");
       const startup = args[0] !== "stop";
-      if (startup) expect(args.at(-1)).toMatch(/browser-proxy-worker\.js$/u);
+      if (startup) expect(args.at(-1)).toBe("__browser-proxy");
       const program = startup
         ? `
         const fs = require("node:fs");
         fs.writeSync(3, JSON.stringify({handle:"11111111-1111-4111-8111-111111111111",pid:process.pid})+"\\n"); fs.closeSync(3);
         process.on("message", () => process.send(${external.mode === "startup-failure" ? '{error:"private-provider-details"}' : '{endpoint:"ws://127.0.0.1:45678/devtools/browser"}'}));
         process.once("disconnect", () => process.exit(0));
+        process.send({ready:true});
       `
         : "process.exit(0)";
       const child = original.spawn(process.execPath, ["-e", program], options);

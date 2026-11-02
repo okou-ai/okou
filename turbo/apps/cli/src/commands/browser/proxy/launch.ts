@@ -1,13 +1,16 @@
-import { fileURLToPath } from "node:url";
-import { object, string } from "zod";
+import { literal, object, string } from "zod";
 import { launchGuestTask, type GuestTask } from "../../../lib/guest-task";
 import type { ProxyConfiguration } from "./server";
 
 const readySchema = object({
   endpoint: string().regex(/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser$/u),
 });
+const receiverSchema = object({ ready: literal(true) });
 
 export async function launchWindowProxy(config: ProxyConfiguration) {
+  const entrypoint = process.argv[1];
+  if (!entrypoint) throw new Error("Cannot locate the Okou CLI entrypoint");
+  const runtimeArguments = entrypoint.endsWith(".ts") ? process.execArgv : [];
   let resolve!: (value: string) => void;
   let reject!: (error: Error) => void;
   const ready = new Promise<string>((accept, fail) => {
@@ -30,7 +33,7 @@ export async function launchWindowProxy(config: ProxyConfiguration) {
   try {
     task = await launchGuestTask(
       process.execPath,
-      [fileURLToPath(new URL("./browser-proxy-worker.js", import.meta.url))],
+      [...runtimeArguments, entrypoint, "__browser-proxy"],
       {
         stdout: 2,
         stderr: 2,
@@ -41,11 +44,20 @@ export async function launchWindowProxy(config: ProxyConfiguration) {
             return reject(new Error("Scoped Browser exited during startup"));
           });
           child.once("message", (message: unknown) => {
-            const parsed = readySchema.safeParse(message);
-            if (parsed.success) resolve(parsed.data.endpoint);
-            else reject(new Error("Scoped Browser startup failed"));
+            if (!receiverSchema.safeParse(message).success) {
+              reject(new Error("Scoped Browser startup failed"));
+              return;
+            }
+            // Root CLI bootstrap/lazy import may yield before the receiver exists.
+            child.once("message", (message: unknown) => {
+              const parsed = readySchema.safeParse(message);
+              if (parsed.success) resolve(parsed.data.endpoint);
+              else reject(new Error("Scoped Browser startup failed"));
+            });
+            child.send(config, (error) => {
+              if (error) reject(new Error("Scoped Browser startup failed"));
+            });
           });
-          child.send(config);
         },
       },
     );

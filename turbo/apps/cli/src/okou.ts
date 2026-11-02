@@ -39,6 +39,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   string | readonly string[] | null
 > = {
   "__agent-loop": null,
+  "__browser-proxy": null,
   __subagent_loop__: null,
   subagent: null,
   agent: "agent:read",
@@ -175,6 +176,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Internal sandbox agent loop",
     load: async () => {
       return (await import("./commands/__agent-loop")).agentLoopCommand;
+    },
+  },
+  {
+    name: "__browser-proxy",
+    description: "Internal scoped Browser CDP proxy",
+    load: async () => {
+      return (await import("./commands/__browser-proxy")).browserProxyCommand;
     },
   },
   {

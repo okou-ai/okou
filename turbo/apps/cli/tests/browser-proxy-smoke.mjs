@@ -10,14 +10,22 @@ import process from "node:process";
 import console from "node:console";
 import { performance } from "node:perf_hooks";
 import { setTimeout, clearTimeout } from "node:timers";
-import { promisify } from "node:util";
+import { parseArgs, promisify } from "node:util";
 import { openWire } from "../../browser-extension/tests/cdp.mjs";
 
 const run = promisify(execFile);
+const { values: options } = parseArgs({
+  options: {
+    "guest-task": { type: "boolean", default: false },
+    "cli-entry": { type: "string" },
+  },
+});
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const profile = await mkdtemp(resolve(tmpdir(), "okou-browser-proxy-smoke-"));
 const extension = resolve(root, "turbo/apps/browser-extension/dist");
-const worker = resolve(root, "turbo/apps/cli/dist/browser-proxy-worker.js");
+const cliEntry = resolve(
+  options["cli-entry"] ?? resolve(root, "turbo/apps/cli/dist/okou.js"),
+);
 const children = [];
 const wires = [];
 const sessions = [];
@@ -57,17 +65,18 @@ function observe(wire, predicate, operation) {
 }
 
 async function proxy(endpoint, runtimeId, windowId) {
-  const managed = process.argv.includes("--guest-task");
+  const managed = options["guest-task"];
+  const workerArguments = [cliEntry, "__browser-proxy"];
   const child = managed
     ? spawn(
         "/usr/local/bin/guest-task-exec",
-        ["--report-fd", "3", "--", process.execPath, worker],
+        ["--report-fd", "3", "--", process.execPath, ...workerArguments],
         {
           detached: true,
           stdio: ["ignore", "ignore", "pipe", "pipe", "ipc"],
         },
       )
-    : spawn(process.execPath, [worker], {
+    : spawn(process.execPath, workerArguments, {
         stdio: ["ignore", "ignore", "pipe", "ipc"],
       });
   const closed = once(child, "close");
@@ -101,11 +110,18 @@ async function proxy(endpoint, runtimeId, windowId) {
       reject(new Error(`Proxy startup exit ${code}`));
     });
     child.once("message", (message) => {
-      clearTimeout(timer);
-      if (message.endpoint) resolve(message.endpoint);
-      else reject(new Error("Proxy startup failed"));
+      if (message.ready !== true) {
+        clearTimeout(timer);
+        reject(new Error("Proxy receiver startup failed"));
+        return;
+      }
+      child.once("message", (message) => {
+        clearTimeout(timer);
+        if (message.endpoint) resolve(message.endpoint);
+        else reject(new Error("Proxy startup failed"));
+      });
+      child.send({ cdpUrl: endpoint, runtimeId, windowId });
     });
-    child.send({ cdpUrl: endpoint, runtimeId, windowId });
   });
   const result = await admitted;
   if (result.error) throw result.error;
@@ -408,6 +424,26 @@ try {
       ["--session", session, "--no-pin-tab", "connect", connection.endpoint],
       { timeout: 15000 },
     );
+    const extracted = await run(
+      "agent-browser",
+      ["--session", session, "get", "cdp-url", "--json"],
+      { timeout: 15000 },
+    );
+    const response = JSON.parse(extracted.stdout);
+    assert.equal(response.success, true);
+    assert.equal(response.data.cdpUrl, connection.endpoint);
+    const independent = await wire(response.data.cdpUrl);
+    const inventory = await pages(independent);
+    assert.ok(
+      inventory.some((page) => {
+        return page.targetId === (suffix === "a" ? a : b);
+      }),
+    );
+    assert.ok(
+      !inventory.some((page) => {
+        return page.targetId === (suffix === "a" ? b : a);
+      }),
+    );
     await run(
       "agent-browser",
       [
@@ -522,7 +558,8 @@ try {
         forTab: true,
         nestedSessions: true,
         agentBrowser: true,
-        guestTaskAdmission: process.argv.includes("--guest-task"),
+        guestTaskAdmission: options["guest-task"],
+        getCdpUrlAndIndependentClient: true,
         popup: true,
         nativeMoveRetiresSession: true,
         reconnect: true,
