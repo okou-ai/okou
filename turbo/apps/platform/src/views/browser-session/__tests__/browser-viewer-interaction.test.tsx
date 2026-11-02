@@ -770,6 +770,96 @@ test("Remote editing context configures one stable selection-capable keyboard pr
   expect(input).toHaveFocus();
 });
 
+test("Remote password keyboard hints survive native editing and streamed frames", async () => {
+  const browser = await setupViewer(0);
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "password",
+      multiline: false,
+      inputMode: "numeric",
+      enterKeyHint: "done",
+      autoCapitalize: "none",
+      lang: "ja",
+    },
+  });
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  await waitFor(() => {
+    expect(input).toHaveAttribute("type", "password");
+  });
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中" },
+    data: "中",
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.imeSetComposition",
+      params: { text: "中", selectionStart: 1, selectionEnd: 1 },
+      sessionId: "example-page-session",
+    });
+  });
+  expect(input).toHaveAttribute("type", "password");
+  const acknowledged = browser.requests.filter((request) => {
+    return request.method === "Page.screencastFrameAck";
+  }).length;
+  act(() => {
+    browser.frame("AAAA");
+  });
+  await waitFor(() => {
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Page.screencastFrameAck";
+      }).length,
+    ).toBeGreaterThan(acknowledged);
+  });
+  expect(input).toBeEnabled();
+  expect(input).toHaveAttribute("type", "password");
+  expect(input).toHaveAttribute("inputmode", "numeric");
+  expect(input).toHaveAttribute("enterkeyhint", "done");
+  expect(input).toHaveAttribute("lang", "ja");
+  expect(input).toHaveValue("中");
+  expect(input).toHaveFocus();
+  const target = browser.targets[0]!;
+  act(() => {
+    target.title = "Updated Example";
+    browser.event("Target.targetInfoChanged", {
+      targetInfo: { ...target, type: "page" },
+    });
+    browser.nativeEvent("tab-updated", target);
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Updated Example", { selector: '[role="tab"]' }),
+    ).toBeInTheDocument();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBe(input);
+  expect(input).toHaveAttribute("type", "password");
+  expect(input).toHaveAttribute("inputmode", "numeric");
+  expect(input).toHaveValue("中");
+  expect(input).toHaveFocus();
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "中" },
+    });
+  });
+});
+
 test("A failed editing-context read clears stale keyboard hints without disabling input", async () => {
   const browser = await setupViewer(0);
   browser.setFocusedEditing({

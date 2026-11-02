@@ -1150,6 +1150,7 @@ export function createBrowserRuntime(
     transport$: model.transport$,
     windowSizeSync$: model.windowSizeSync$,
     clipboardRecovery$: graph.native.recovery$,
+    proxyType$: graph.native.proxyType$,
     tabLayout$: model.tabLayout$,
     rejectFavicon$: model.rejectFavicon$,
     editAddress$: model.editAddress$,

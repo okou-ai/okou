@@ -92,6 +92,7 @@ function configureProxy(
   proxyAttribute(proxy, "autocomplete", "off");
   proxyAttribute(proxy, "autocorrect", "off");
   proxyAttribute(proxy, "spellcheck", "false");
+  return type;
 }
 interface NativeElements {
   readonly surface: HTMLElement;
@@ -107,6 +108,8 @@ interface Admission {
   readonly owner: InputOwner | null;
 }
 export interface NativeInput extends NativeInputHost {
+  /** The applied type stays unchanged throughout native composition. */
+  readonly proxyType$: Computed<"text" | "password">;
   readonly bind$: Command<
     void,
     [
@@ -129,6 +132,7 @@ function createNativeState(
   releaseFocus$: Command<void, []>,
 ) {
   const elements$ = state<NativeElements | null>(null);
+  const proxyType$ = state<"text" | "password">("text");
   const canvas$ = computed((get) => {
     return get(elements$)?.canvas ?? null;
   });
@@ -156,6 +160,7 @@ function createNativeState(
   return {
     input$,
     releaseFocus$,
+    proxyType$,
     elements$,
     canvas$,
     proxy$,
@@ -278,6 +283,7 @@ function createNativeCoordination(
     ingress,
     input$,
     pointerId$,
+    proxyType$,
     reset$,
     resetLocal$,
     resetting$,
@@ -317,7 +323,10 @@ function createNativeCoordination(
     const current = get(input$);
     const elements = get(elements$);
     if (elements && !get(composition.composing$)) {
-      configureProxy(elements.proxy, current ? get(current.editing$) : null);
+      set(
+        proxyType$,
+        configureProxy(elements.proxy, current ? get(current.editing$) : null),
+      );
     }
     const caret = current ? get(current.caret$) : null;
     if (caret) {
@@ -1338,6 +1347,9 @@ export function createNativeInput(
     synchronize$: coordinated.synchronize$,
     place$: coordinated.place$,
     recovery$: values.clipboard.recovery$,
+    proxyType$: computed((get) => {
+      return get(values.proxyType$);
+    }),
     dismissClipboard$: values.clipboard.dismiss$,
   };
 }

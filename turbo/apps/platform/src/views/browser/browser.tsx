@@ -962,9 +962,11 @@ function BrowserClipboard({ signals }: { readonly signals: BrowserSignals }) {
 }
 
 /** Product presentation and state belong to Platform; each graph owns its mounted browser. */
+// React restores input properties after events, so render the applied native type.
 function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
   const { t } = useTranslation();
   const controls = useGet(signals.controls$);
+  const type = useGet(signals.proxyType$);
   const inputRef = useSet(signals.refs.input$);
   return (
     <form className="contents">
@@ -975,7 +977,7 @@ function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
           return $.browserViewer.remoteInput;
         })}
         disabled={!controls.streaming}
-        type="text"
+        type={type}
         inputMode="text"
         enterKeyHint="enter"
         autoComplete="off"
