@@ -424,6 +424,9 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(retries.count, 2)
     XCTAssertEqual(retries[1]["requests"].array?.last?["status"].number, 503)
     XCTAssertEqual(summary["finalRequests"].array?.last?["status"].number, 200)
+    XCTAssertEqual(summary["finalOperation"]["durationMs"].number, 0)
+    XCTAssertEqual(summary["finalOperation"]["awakeElapsedMs"].number, 0)
+    XCTAssertEqual(summary["finalOperation"]["systemSuspendedMs"].number, 0)
     XCTAssertEqual(
       summary["finalRequests"].array?.last?["clientSessionId"], requests[1]["clientSessionId"])
     for event in events {
