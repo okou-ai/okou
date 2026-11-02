@@ -1,15 +1,22 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { GOOGLE_WORKSPACE_MIME_TYPES } from "@okouai/core/google-workspace-conversion";
+import {
+  GOOGLE_WORKSPACE_MIME_TYPES,
+  type GoogleDriveUploadMode,
+} from "@okouai/core/google-workspace-conversion";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import {
   artifactReferencesContract,
   artifactReferencePath,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import {
+  artifactCatalogContract,
+  type ArtifactDetail,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -35,6 +42,28 @@ const context = testContext();
 const FILE_ID = "a0000000-0000-4000-a000-000000000761";
 const CATALOG_ID = "a0000000-0000-4000-a000-000000000762";
 const CONNECTION_ID = "a0000000-0000-4000-a000-000000000763";
+const TABLE_FILES = [
+  { fileId: FILE_ID, artifactId: CATALOG_ID },
+  {
+    fileId: "a0000000-0000-4000-a000-000000000764",
+    artifactId: "a0000000-0000-4000-a000-000000000765",
+  },
+] as const;
+const CLOUD_EXPORTS = [
+  {
+    mode: "original",
+    action: "Save to Google Drive",
+    saved: "Saved to Google Drive",
+    open: "Open in Google Drive",
+  },
+  {
+    mode: "google",
+    action: "Save to Google Sheets",
+    saved: "Saved to Google Sheets",
+    open: "Open in Google Sheets",
+  },
+] as const;
+const UPLOAD_URL = "https://storage.example.test/table-export";
 const TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const SOURCE = [
@@ -77,6 +106,140 @@ function sheet(bytes: ArrayBuffer) {
   );
   expect(document.querySelector("parsererror")).toBeNull();
   return document;
+}
+
+function tableExportButton(index = 0) {
+  const button = queryAllByRoleFast("button").filter((candidate) => {
+    return ["Export", "Saving…"].includes(candidate.textContent?.trim() ?? "");
+  })[index];
+  if (!button) {
+    throw new Error(`Expected export control for table ${index + 1}`);
+  }
+  return button;
+}
+
+async function openExportMenu(index = 0) {
+  await waitFor(() => {
+    expect(tableExportButton(index)).toBeEnabled();
+  });
+  click(tableExportButton(index));
+  return screen.findByRole("menu");
+}
+
+async function closeExportMenu(index = 0) {
+  await userEvent.setup().keyboard("{Escape}");
+  await waitFor(() => {
+    expect(tableExportButton(index)).toHaveAttribute("aria-expanded", "false");
+  });
+}
+
+async function expectSavedLink(label: string, url: string, menu: HTMLElement) {
+  const item = await findNamedMenuItem(label, menu);
+  expect(item.tagName).toBe("A");
+  expect(item).toHaveAttribute("href", url);
+  expect(item).toHaveAttribute("target", "_blank");
+  expect(item).toHaveAttribute("rel", "noopener noreferrer");
+}
+
+function googleFile(mode: GoogleDriveUploadMode, webViewLink: string | null) {
+  return {
+    id: `google-${mode}`,
+    name: "Table.xlsx",
+    mimeType:
+      mode === "google" ? GOOGLE_WORKSPACE_MIME_TYPES.spreadsheet : TYPE,
+    webViewLink,
+  };
+}
+
+function mockTableCloudFiles(
+  options: {
+    readonly files?: readonly {
+      readonly fileId: string;
+      readonly artifactId: string;
+    }[];
+    readonly onUpload?: (bytes: ArrayBuffer) => void;
+    readonly googleDriveSync?: () => NonNullable<
+      ArtifactDetail["googleDriveSync"]
+    >;
+  } = {},
+) {
+  const files = options.files ?? [TABLE_FILES[0]];
+  let nextFile = 0;
+  context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
+    expect(body).toMatchObject({
+      filename: "Table.xlsx",
+      contentType: TYPE,
+      requirePrivateArtifact: true,
+      purpose: "artifact",
+    });
+    const file = files[nextFile] ?? files[files.length - 1];
+    nextFile += 1;
+    if (!file) {
+      throw new Error("Expected a table upload fixture");
+    }
+    return respond(200, {
+      id: file.fileId,
+      filename: "Table.xlsx",
+      contentType: TYPE,
+      size: body.size,
+      url: `https://app.example.test${artifactReferencePath(file.fileId, "Table.xlsx")}`,
+      uploadUrl: UPLOAD_URL,
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(UPLOAD_URL, async ({ request }) => {
+    options.onUpload?.(await request.arrayBuffer());
+    return new HttpResponse(null, { status: 200 });
+  });
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    return respond(200, {
+      id: body.id,
+      filename: "Table.xlsx",
+      contentType: TYPE,
+      size: 100,
+      url: `https://app.example.test${artifactReferencePath(body.id, "Table.xlsx")}`,
+    });
+  });
+  context.mocks.api(
+    artifactReferencesContract.ownerArtifact,
+    ({ params, respond }) => {
+      const file = files.find((candidate) => {
+        return (
+          artifactReferencePath(candidate.fileId, "Table.xlsx").slice(
+            "/artifacts/".length,
+          ) === params.reference
+        );
+      });
+      if (!file) {
+        throw new Error(`Unexpected table reference: ${params.reference}`);
+      }
+      return respond(200, { artifactId: file.artifactId });
+    },
+  );
+  context.mocks.api(artifactCatalogContract.get, ({ params, respond }) => {
+    const file = files.find((candidate) => {
+      return candidate.artifactId === params.artifactId;
+    });
+    if (!file) {
+      throw new Error(`Unexpected table artifact: ${params.artifactId}`);
+    }
+    return respond(200, {
+      ...fileArtifactDetail(
+        artifactSummary(file.artifactId, "file", "Table.xlsx"),
+        {
+          fileId: file.fileId,
+          filename: "Table.xlsx",
+          contentType: TYPE,
+          url: `https://app.example.test${artifactReferencePath(file.fileId, "Table.xlsx")}`,
+        },
+      ),
+      googleDriveConnectionId: CONNECTION_ID,
+      googleDriveSync: options.googleDriveSync?.() ?? {
+        status: "not_synced",
+        accountReady: true,
+      },
+    });
+  });
 }
 
 test("Each table exports its own real workbook with literal values and source URLs", async () => {
@@ -196,58 +359,12 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
         });
       },
     );
-    context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
-      expect(body).toMatchObject({
-        filename: "Table.xlsx",
-        contentType: TYPE,
-        requirePrivateArtifact: true,
-        purpose: "artifact",
-      });
-      return respond(200, {
-        id: FILE_ID,
-        filename: "Table.xlsx",
-        contentType: TYPE,
-        size: body.size,
-        url: `https://app.example.test${artifactReferencePath(FILE_ID, "table.xlsx")}`,
-        uploadUrl: "https://storage.example.test/table-export",
-        uploadHeaders: {},
-      });
-    });
-    context.mocks.http.put(
-      "https://storage.example.test/table-export",
-      async ({ request }) => {
-        storedFiles.push(await request.arrayBuffer());
-        return new HttpResponse(null, { status: 200 });
+    mockTableCloudFiles({
+      onUpload: (bytes) => {
+        storedFiles.push(bytes);
       },
-    );
-    context.mocks.api(uploadsContract.complete, ({ respond }) => {
-      return respond(200, {
-        id: FILE_ID,
-        filename: "Table.xlsx",
-        contentType: TYPE,
-        size: 100,
-        url: `https://app.example.test${artifactReferencePath(FILE_ID, "table.xlsx")}`,
-      });
-    });
-    context.mocks.api(
-      artifactReferencesContract.ownerArtifact,
-      ({ respond }) => {
-        return respond(200, { artifactId: CATALOG_ID });
-      },
-    );
-    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...fileArtifactDetail(
-          artifactSummary(CATALOG_ID, "file", "Table.xlsx"),
-          {
-            fileId: FILE_ID,
-            filename: "Table.xlsx",
-            contentType: TYPE,
-            url: `https://app.example.test${artifactReferencePath(FILE_ID, "table.xlsx")}`,
-          },
-        ),
-        googleDriveConnectionId: CONNECTION_ID,
-        googleDriveSync: needsConnection
+      googleDriveSync: () => {
+        return needsConnection
           ? {
               status: "disconnected",
               recovery:
@@ -257,8 +374,8 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
             }
           : authorized
             ? { status: "not_synced", accountReady: true }
-            : { status: "disconnected", recovery: { action: "authorize" } },
-      });
+            : { status: "disconnected", recovery: { action: "authorize" } };
+      },
     });
     context.mocks.api(
       userBuiltinConnectorsContract.update,
@@ -280,47 +397,34 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
           connectionId: body.connectionId,
           mode: body.mode,
         });
-        return respond(200, {
-          id: `google-${body.mode}`,
-          name: "Table.xlsx",
-          mimeType:
-            body.mode === "google"
-              ? GOOGLE_WORKSPACE_MIME_TYPES.spreadsheet
-              : TYPE,
-          webViewLink: `https://drive.google.test/${body.mode}`,
-        });
+        return respond(
+          200,
+          googleFile(body.mode, `https://drive.google.test/${body.mode}`),
+        );
       },
     );
     await openTables();
-    for (const [label, mode] of [
-      ["Save to Google Drive", "original"],
-      ["Save to Google Sheets", "google"],
-    ]) {
-      click(
-        queryAllByRoleFast("button").filter((button) => {
-          return button.textContent === "Export";
-        })[0]!,
-      );
-      click(await findNamedMenuItem(label!));
+    for (const { action, mode, saved, open } of CLOUD_EXPORTS) {
+      const menu = await openExportMenu();
+      click(await findNamedMenuItem(action, menu));
       if (needsConnection) {
         const dialog = await screen.findByRole("dialog");
         beforeConnectPopupCounts.push(popup.calls.length);
         click(buttonNamed("Connect", dialog));
       }
-      await waitFor(() => {
-        return expect(saves).toContainEqual({
-          artifactId: CATALOG_ID,
-          connectionId: CONNECTION_ID,
-          mode,
-        });
+      await expect(screen.findByText(saved)).resolves.toBeInTheDocument();
+      expect(saves).toContainEqual({
+        artifactId: CATALOG_ID,
+        connectionId: CONNECTION_ID,
+        mode,
       });
-      await waitFor(() => {
-        return expect(
-          queryAllByRoleFast("button").filter((button) => {
-            return button.textContent === "Export";
-          })[0],
-        ).toBeEnabled();
-      });
+      const reopened = await openExportMenu();
+      await expectSavedLink(
+        open,
+        `https://drive.google.test/${mode}`,
+        reopened,
+      );
+      await closeExportMenu();
     }
     expect(beforeConnectPopupCounts).toStrictEqual(
       accountState === "connect" || accountState === "reconnect" ? [0] : [],
@@ -341,5 +445,228 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
           return link.getAttribute("href");
         }),
     ).toContain("https://drive.google.test/google");
+  },
+);
+
+test("Interleaving two tables and Google destinations retains each saved link", async () => {
+  const firstLinks = {
+    original: "https://drive.google.test/file/d/first-table/view?usp=sharing",
+    google: "https://docs.google.test/spreadsheets/d/first-table/edit",
+  };
+  const secondLinks = {
+    original: "https://drive.google.test/file/d/second-table/view",
+    google:
+      "https://docs.google.test/spreadsheets/d/second-table/edit?usp=sharing",
+  };
+  mockTableCloudFiles({ files: TABLE_FILES });
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadWithMode,
+    ({ params, body, respond }) => {
+      const links = params.artifactId === CATALOG_ID ? firstLinks : secondLinks;
+      return respond(200, googleFile(body.mode, links[body.mode]));
+    },
+  );
+  await openTables();
+
+  let menu = await openExportMenu(0);
+  click(await findNamedMenuItem("Save to Google Drive", menu));
+  menu = await openExportMenu(0);
+  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
+  await closeExportMenu(0);
+
+  menu = await openExportMenu(1);
+  await expect(
+    findNamedMenuItem("Save to Google Drive", menu),
+  ).resolves.not.toHaveAttribute("aria-disabled", "true");
+  click(await findNamedMenuItem("Save to Google Sheets", menu));
+  menu = await openExportMenu(1);
+  await expectSavedLink("Open in Google Sheets", secondLinks.google, menu);
+  await closeExportMenu(1);
+
+  menu = await openExportMenu(0);
+  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
+  click(await findNamedMenuItem("Save to Google Sheets", menu));
+  menu = await openExportMenu(0);
+  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
+  await expectSavedLink("Open in Google Sheets", firstLinks.google, menu);
+  await closeExportMenu(0);
+
+  menu = await openExportMenu(1);
+  await expectSavedLink("Open in Google Sheets", secondLinks.google, menu);
+  click(await findNamedMenuItem("Save to Google Drive", menu));
+  menu = await openExportMenu(1);
+  await expectSavedLink("Open in Google Drive", secondLinks.original, menu);
+  await expectSavedLink("Open in Google Sheets", secondLinks.google, menu);
+  await closeExportMenu(1);
+
+  menu = await openExportMenu(0);
+  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
+  await expectSavedLink("Open in Google Sheets", firstLinks.google, menu);
+});
+
+test("An unconfirmed Sheets conversion remains retryable without replacing the Drive save", async () => {
+  const driveUrl = "https://drive.google.test/file/d/original-table/view";
+  const sheetsUrl =
+    "https://docs.google.test/spreadsheets/d/confirmed-table/edit";
+  let conversionConfirmed = false;
+  mockTableCloudFiles();
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadWithMode,
+    ({ body, respond }) => {
+      if (body.mode === "google" && !conversionConfirmed) {
+        return respond(200, {
+          ...googleFile(
+            "google",
+            "https://drive.google.test/file/d/unconverted/view",
+          ),
+          mimeType: TYPE,
+        });
+      }
+      return respond(
+        200,
+        googleFile(body.mode, body.mode === "google" ? sheetsUrl : driveUrl),
+      );
+    },
+  );
+  await openTables();
+
+  let menu = await openExportMenu();
+  click(await findNamedMenuItem("Save to Google Drive", menu));
+  await expect(
+    screen.findByText("Saved to Google Drive"),
+  ).resolves.toBeInTheDocument();
+  menu = await openExportMenu();
+  await expectSavedLink("Open in Google Drive", driveUrl, menu);
+  click(await findNamedMenuItem("Save to Google Sheets", menu));
+  await expect(
+    screen.findByText(
+      "Google conversion could not be confirmed. Check Drive before retrying.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Saved to Google Sheets")).not.toBeInTheDocument();
+
+  menu = await openExportMenu();
+  await expectSavedLink("Open in Google Drive", driveUrl, menu);
+  const retry = await findNamedMenuItem("Save to Google Sheets", menu);
+  expect(retry).not.toHaveAttribute("aria-disabled", "true");
+  conversionConfirmed = true;
+  click(retry);
+  await expect(
+    screen.findByText("Saved to Google Sheets"),
+  ).resolves.toBeInTheDocument();
+  menu = await openExportMenu();
+  await expectSavedLink("Open in Google Drive", driveUrl, menu);
+  await expectSavedLink("Open in Google Sheets", sheetsUrl, menu);
+});
+
+test.each([
+  {
+    failure: "upload",
+    destination: CLOUD_EXPORTS[0],
+    error: "Could not upload the table. Please try again.",
+  },
+  {
+    failure: "Google Drive API",
+    destination: CLOUD_EXPORTS[1],
+    error: "Google Drive is temporarily unavailable",
+  },
+])(
+  "A $failure failure leaves the table save available for retry",
+  async ({ failure, destination, error }) => {
+    let recovered = false;
+    const savedUrl = `https://drive.google.test/retried-${destination.mode}`;
+    mockTableCloudFiles();
+    context.mocks.http.put(UPLOAD_URL, () => {
+      return new HttpResponse(null, {
+        status: failure === "upload" && !recovered ? 503 : 200,
+      });
+    });
+    context.mocks.api(
+      artifactGoogleDriveContract.uploadWithMode,
+      ({ body, respond }) => {
+        if (failure === "Google Drive API" && !recovered) {
+          return respond(503, {
+            error: { code: "DRIVE_UPLOAD_FAILED", message: error },
+          });
+        }
+        return respond(200, googleFile(body.mode, savedUrl));
+      },
+    );
+    await openTables();
+
+    let menu = await openExportMenu();
+    click(await findNamedMenuItem(destination.action, menu));
+    await expect(screen.findByText(error)).resolves.toBeInTheDocument();
+    menu = await openExportMenu();
+    const retry = await findNamedMenuItem(destination.action, menu);
+    expect(retry).not.toHaveAttribute("aria-disabled", "true");
+
+    recovered = true;
+    click(retry);
+    await expect(
+      screen.findByText(destination.saved),
+    ).resolves.toBeInTheDocument();
+    menu = await openExportMenu();
+    await expectSavedLink(destination.open, savedUrl, menu);
+  },
+);
+
+test("The table export trigger is disabled and says Saving… during the initial upload", async () => {
+  const uploadStarted = context.mocks.deferred<void>();
+  const releaseUpload = context.mocks.deferred<void>();
+  const savedUrl = "https://drive.google.test/file/d/pending-table/view";
+  mockTableCloudFiles();
+  context.mocks.http.put(UPLOAD_URL, async () => {
+    uploadStarted.resolve();
+    await releaseUpload.promise;
+    return new HttpResponse(null, { status: 200 });
+  });
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadWithMode,
+    ({ body, respond }) => {
+      return respond(200, googleFile(body.mode, savedUrl));
+    },
+  );
+  await openTables();
+
+  const menu = await openExportMenu();
+  click(await findNamedMenuItem("Save to Google Drive", menu));
+  await uploadStarted.promise;
+  await waitFor(() => {
+    expect(buttonNamed("Saving…")).toBeDisabled();
+  });
+  expect(buttonNamed("Saving…")).toHaveAttribute("aria-busy", "true");
+  expect(tableExportButton(1)).toBeEnabled();
+  expect(tableExportButton(1)).toHaveTextContent("Export");
+
+  releaseUpload.resolve();
+  await expect(
+    screen.findByText("Saved to Google Drive"),
+  ).resolves.toBeInTheDocument();
+  const reopened = await openExportMenu();
+  expect(tableExportButton()).toHaveAttribute("aria-busy", "false");
+  await expectSavedLink("Open in Google Drive", savedUrl, reopened);
+});
+
+test.each(CLOUD_EXPORTS)(
+  "A completed $mode save without a URL renders a disabled saved item",
+  async ({ action, saved }) => {
+    mockTableCloudFiles();
+    context.mocks.api(
+      artifactGoogleDriveContract.uploadWithMode,
+      ({ body, respond }) => {
+        return respond(200, googleFile(body.mode, null));
+      },
+    );
+    await openTables();
+
+    const menu = await openExportMenu();
+    click(await findNamedMenuItem(action, menu));
+    await expect(screen.findByText(saved)).resolves.toBeInTheDocument();
+    const reopened = await openExportMenu();
+    const savedItem = await findNamedMenuItem(saved, reopened);
+    expect(savedItem).toHaveAttribute("aria-disabled", "true");
+    expect(savedItem).not.toHaveAttribute("href");
+    expect(savedItem.tagName).not.toBe("A");
   },
 );

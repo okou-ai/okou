@@ -125,6 +125,71 @@ interface TableGoogleConnection {
     | { readonly intent: "reconnect"; readonly connectionId: string };
 }
 
+export interface TableGoogleSavedFile {
+  readonly webViewLink: string | null;
+}
+
+interface TableGoogleSavedFiles {
+  readonly artifactId: string;
+  readonly files: Partial<Record<GoogleDriveUploadMode, TableGoogleSavedFile>>;
+}
+
+// Completed exports belong to this page, not the last saved artifact globally.
+const pageSavedTables$ = computed((get) => {
+  get(pageVersion$);
+  return state<ReadonlyMap<Element, TableGoogleSavedFiles>>(new Map());
+});
+
+export const markdownTableSavedFiles$ = computed((get) => {
+  return get(get(pageSavedTables$));
+});
+
+const saveTableFile$ = command(
+  async (
+    { get, set },
+    params: TableGoogleSave & {
+      readonly connectionId?: string;
+      readonly authorize: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    const savedTables$ = get(pageSavedTables$);
+    const uploads = get(uploadedTables$);
+    const result = await set(
+      syncArtifactAndRefresh$,
+      {
+        ...params,
+        successMessage:
+          params.mode === "google"
+            ? i18n.t(($) => {
+                return $.markdown.tableExport.savedSheets;
+              })
+            : i18n.t(($) => {
+                return $.markdown.tableExport.savedDrive;
+              }),
+      },
+      signal,
+    );
+    if (
+      result.kind === "uploaded" &&
+      uploads.get(params.table)?.artifactId === params.artifactId
+    ) {
+      const saved = new Map(get(savedTables$));
+      const previous = saved.get(params.table);
+      saved.set(params.table, {
+        artifactId: params.artifactId,
+        files: {
+          ...(previous?.artifactId === params.artifactId
+            ? previous.files
+            : undefined),
+          [params.mode]: { webViewLink: result.file.webViewLink },
+        },
+      });
+      set(savedTables$, saved);
+    }
+  },
+);
+
 const pageTableConnection$ = computed((get) => {
   get(pageVersion$);
   return state<TableGoogleConnection | null>(null);
@@ -154,7 +219,7 @@ export const connectMarkdownTable$ = command(
         },
         onSuccess: async (connectedAccountId, ownerSignal) => {
           await set(
-            syncArtifactAndRefresh$,
+            saveTableFile$,
             {
               ...request.params,
               connectionId: connectedAccountId,
@@ -187,7 +252,7 @@ const saveTableToGoogle$ = command(
     const connectionId = detail.body.googleDriveConnectionId;
     if (status && status.status !== "disconnected") {
       await set(
-        syncArtifactAndRefresh$,
+        saveTableFile$,
         { ...params, connectionId, authorize: false },
         signal,
       );
@@ -195,7 +260,7 @@ const saveTableToGoogle$ = command(
     }
     if (recovery?.action === "authorize") {
       await set(
-        syncArtifactAndRefresh$,
+        saveTableFile$,
         { ...params, connectionId, authorize: true },
         signal,
       );

@@ -22,6 +22,7 @@ type GoogleDriveUploadedFile = zInfer<
 type ArtifactGoogleDriveSyncParams = {
   readonly agentId: string;
   readonly connectionId?: string;
+  readonly successMessage?: string;
 } & ArtifactGoogleDriveSyncFile;
 
 type ArtifactGoogleDriveSyncFile = {
@@ -72,12 +73,13 @@ async function syncArtifactFileToGoogleDrive(
     return { kind: "conversion-unconfirmed", file: response.body };
   }
   toast.success(
-    i18n.t(
-      ($) => {
-        return $.artifacts.googleDrive.syncedFiles;
-      },
-      { count: 1 },
-    ),
+    params.successMessage ??
+      i18n.t(
+        ($) => {
+          return $.artifacts.googleDrive.syncedFiles;
+        },
+        { count: 1 },
+      ),
     {
       action: response.body.webViewLink
         ? createElement(
@@ -132,7 +134,7 @@ export const syncArtifactAndRefresh$ = command(
       readonly onSyncSuccess?: () => void;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<ArtifactGoogleDriveSyncResult> => {
     signal.throwIfAborted();
     // Capture this page's state before any await; old work cannot write into
     // a replacement page's graph even if its completion races navigation.
@@ -144,7 +146,7 @@ export const syncArtifactAndRefresh$ = command(
       previous.agentId === params.agentId &&
       previous.connectionId === params.connectionId;
     if (params.mode === "google" && sameAccount && previous.googleImport) {
-      return;
+      return { kind: "uploaded", file: previous.googleImport };
     }
     if (params.authorize) {
       await authorizeGoogleDriveForAgent(
@@ -182,6 +184,7 @@ export const syncArtifactAndRefresh$ = command(
     if (result.kind === "uploaded") {
       params.onSyncSuccess?.();
     }
+    return result;
   },
 );
 

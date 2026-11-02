@@ -4206,6 +4206,10 @@
       "export": "Export",
       "filename": "Table",
       "googleUnavailable": "Open this table in your chat to save it to Google, or check your Google Drive connection.",
+      "openDrive": "Open in Google Drive",
+      "savedDrive": "Saved to Google Drive",
+      "savedSheets": "Saved to Google Sheets",
+      "saving": "Saving…",
       "sheets": "Save to Google Sheets",
       "uploadFailed": "Could not upload the table. Please try again."
     }

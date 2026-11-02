@@ -4193,6 +4193,10 @@
       "export": "エクスポート",
       "filename": "表",
       "googleUnavailable": "自分のチャットでこの表を開くか、Google Drive の接続を確認してください。",
+      "openDrive": "Google Drive で開く",
+      "savedDrive": "Google Drive に保存しました",
+      "savedSheets": "Google Sheets に保存しました",
+      "saving": "保存中…",
       "sheets": "Google Sheets に保存",
       "uploadFailed": "表をアップロードできませんでした。もう一度お試しください。"
     }
