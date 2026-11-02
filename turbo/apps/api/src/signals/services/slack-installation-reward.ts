@@ -1,12 +1,6 @@
-import { randomUUID } from "node:crypto";
-import {
-  GET_STARTED_REWARDS,
-  GET_STARTED_REWARD_TTL_MS,
-} from "@okouai/api-contracts/contracts/get-started";
+import { GET_STARTED_REWARDS } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
@@ -67,30 +61,30 @@ export function slackRewardUnavailableReason(
       : null;
 }
 
-/** Executed only with the wallet and existing claim owned by the caller command. */
-export function slackOrgRewardSql(
-  claim: typeof getStartedClaims.$inferSelect,
-  rewardKey: string,
+/** Persist completion with its source publication, before financial settlement. */
+export function pendingSlackRewardSql(
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly workspaceId: string;
+  },
   at: Date,
+  source: SQL,
 ) {
-  const recordId = randomUUID();
-  const expiresAt = new Date(at.getTime() + GET_STARTED_REWARD_TTL_MS);
-  return sql`WITH grant_record AS (
-    INSERT INTO ${creditExpiresRecord} (id, org_id, source, amount, remaining, expires_at, created_at)
-    VALUES (${recordId}::uuid, ${claim.orgId}, 'get_started_reward', ${claim.rewardAmount}, ${claim.rewardAmount},
-      ${sql.param(expiresAt, creditExpiresRecord.expiresAt)}, ${sql.param(at, creditExpiresRecord.createdAt)})
-    RETURNING id
-  ), credited AS (
-    UPDATE ${orgMetadata} SET credits = credits + ${claim.rewardAmount}, updated_at = ${sql.param(at, orgMetadata.updatedAt)}
-    WHERE ${orgMetadata.orgId} = ${claim.orgId} AND EXISTS (SELECT 1 FROM grant_record)
-    RETURNING org_id
-  )
-  UPDATE ${getStartedClaims} SET status = 'granted', reward_key = ${rewardKey}, reward_slot = NULL,
-    org_credit_record_id = ${recordId}::uuid, granted_at = ${sql.param(at, getStartedClaims.grantedAt)},
-    expires_at = ${sql.param(expiresAt, getStartedClaims.expiresAt)}, reason = NULL,
-    completed_at = COALESCE(completed_at, ${sql.param(at, getStartedClaims.completedAt)}),
-    lease_id = NULL, lease_expires_at = NULL, updated_at = ${sql.param(at, getStartedClaims.updatedAt)}
-  WHERE ${getStartedClaims.id} = ${claim.id} AND EXISTS (SELECT 1 FROM credited)`;
+  const reward = slackRewardIdentity(
+    args.orgId,
+    args.userId,
+    args.workspaceId,
+    at,
+  );
+  return sql`INSERT INTO ${getStartedClaims} (
+    org_id, actor_user_id, quest_key, source_key, reward_amount, reward_target,
+    completed_at, next_attempt_at, created_at, updated_at
+  ) SELECT ${args.orgId}, ${args.userId}, 'slack', ${args.workspaceId},
+      ${reward.values.rewardAmount}, 'org', ${sql.param(at, getStartedClaims.completedAt)},
+      ${sql.param(at, getStartedClaims.nextAttemptAt)}, ${sql.param(at, getStartedClaims.createdAt)},
+      ${sql.param(at, getStartedClaims.updatedAt)} FROM (${source}) AS completed_slack_source WHERE true
+    ON CONFLICT (actor_user_id, quest_key, source_key) DO NOTHING RETURNING id`;
 }
 
 /** Initial values only; the owning command inserts these iff it created the wallet. */
@@ -119,17 +113,7 @@ export function unsettledSlackClaim(id: string) {
   );
 }
 
-/** A terminal receipt is never granted or rewritten by a later completion. */
-export function claimNeedsSlackReward(
-  claim: typeof getStartedClaims.$inferSelect | undefined,
-): claim is typeof getStartedClaims.$inferSelect {
-  if (!claim) {
-    throw new Error("Slack completion claim was not persisted");
-  }
-  return !["granted", "ineligible", "rejected"].includes(claim.status);
-}
-
-/** Only the two financial uniqueness constraints represent a lost reward race. */
+/** Only the financial uniqueness constraints represent a lost reward race. */
 export function slackRewardGrantFailureReason(
   result:
     { readonly ok: true } | { readonly ok: false; readonly error: unknown },
@@ -141,7 +125,10 @@ export function slackRewardGrantFailureReason(
   if (isUniqueViolation(error, "uq_get_started_reward_key")) {
     return "already_redeemed";
   }
-  if (isUniqueViolation(error, "uq_get_started_slack_org")) {
+  if (
+    isUniqueViolation(error, "uq_get_started_slack_org") ||
+    isUniqueViolation(error, "uq_credit_expires_slack_reward_org")
+  ) {
     return "limit_reached";
   }
   throw error;
