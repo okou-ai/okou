@@ -70,7 +70,10 @@ export function seededSkillBundleArchive(
   });
   if (bundle) {
     return readFileSync(
-      new URL(`./seed-skill-bundles/${bundle.name}.tar.gz`, import.meta.url),
+      new URL(
+        `../scripts/dev-seed-skill-bundles/${bundle.name}.tar.gz`,
+        import.meta.url,
+      ),
     );
   }
   return undefined;

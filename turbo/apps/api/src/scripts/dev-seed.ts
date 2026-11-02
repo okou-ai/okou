@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
 
 import { count, gte, sql, type SQL } from "drizzle-orm";
 import { escapeLiteral } from "pg";
@@ -8,6 +9,10 @@ import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  contentBundleKey,
+  readContentBundle,
+} from "@okouai/core/content-bundle";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { skills } from "@okouai/db/schema/skill";
@@ -15,9 +20,10 @@ import { command, createStore } from "ccstate";
 
 import { closeDbPool, db } from "../lib/db";
 import { pgIntegerDecoder } from "../lib/db-structured-result";
-import { optionalEnv } from "../lib/env";
+import { env, optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
+import { putS3Object$ } from "../signals/external/s3";
 import { immutableCatalogHash$ } from "../signals/services/connector-catalog-immutable.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
 import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
@@ -719,6 +725,29 @@ const seedPreparedSkills$ = command(
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
+    // Preview/development buckets do not inherit production's immutable objects.
+    // Publish verified bytes before exposing their references in this environment.
+    for (const skill of devSeedSkillBundles) {
+      const archive = await readFile(
+        new URL(
+          `./dev-seed-skill-bundles/${skill.name}.tar.gz`,
+          import.meta.url,
+        ),
+      );
+      signal.throwIfAborted();
+      readContentBundle(archive, skill.contentBundle);
+      await set(
+        putS3Object$,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+          key: contentBundleKey(skill.contentBundle.sha256),
+          body: archive,
+          contentType: "application/gzip",
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
     const database = set(writeDb$);
     const upserted = await database
       .insert(skills)

@@ -1,6 +1,6 @@
 -- Fixed current Seed packages, shared by native PostgreSQL and PGlite.
 -- Bytes and source identities are captured in dev-seed-skill-bundles.json and
--- test-fixtures/seed-skill-bundles; existing catalog authority is preserved.
+-- scripts/dev-seed-skill-bundles; existing catalog authority is preserved.
 INSERT INTO skills (
   url, name, full_path, version_hash, content_bundle,
   content_bundle_source_version_hash, commit_sha, size, file_count, frontmatter
