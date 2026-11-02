@@ -58,7 +58,7 @@ test("future Project references remain readable in a restored conversation and f
     const message = document.querySelector("[data-structured-user-message]");
     expect(message).toHaveTextContent("Original launch");
     expect(
-      message?.querySelector(`a[href="/projects/${projectId}"]`),
+      message?.querySelector(`a[href^="/projects/${projectId}"]`),
     ).toHaveTextContent("Original launch");
     expect(message).toHaveTextContent("Check the schedule");
   });

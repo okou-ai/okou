@@ -4,7 +4,7 @@ import { test, expect } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
-import { setupPage, click } from "../../../__tests__/page-helper.ts";
+import { setupPage, click,queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   installContinuityWorkspace,
@@ -14,6 +14,7 @@ import {
 const context = testContext();
 const id = "30000000-0000-4000-8000-000000000071";
 const at = "2026-11-02T00:00:00.000Z";
+function namedLink(container:HTMLElement,name:string){return queryAllByRoleFast("link",container).find((link)=>{return link.textContent?.trim()===name;})??null;}
 function metadata() {
   const p = { id, name: "Launch", createdAt: at, updatedAt: at };
   context.mocks.api(projectsContract.snapshot, ({ respond }) =>
@@ -65,21 +66,21 @@ test("Project view shows conversations across Agents, filters archives and prese
   const main = await screen.findByRole("main");
   await waitFor(() =>
     {return expect(
-      within(main).getByRole("link", { name: "Launch planning" }),
+      namedLink(main,"Launch planning"),
     ).toBeVisible()},
   );
   expect(
-    within(main).getByRole("link", { name: "Other Agent research" }),
+    namedLink(main,"Other Agent research"),
   ).toHaveAttribute("href", expect.stringContaining("/chats/" + other.id));
   expect(
-    within(main).queryByRole("link", { name: "Ordinary chat" }),
+    namedLink(main,"Ordinary chat"),
   ).toBeNull();
   expect(
-    within(main).queryByRole("link", { name: "Archived research" }),
+    namedLink(main,"Archived research"),
   ).toBeNull();
   click(within(main).getByRole("checkbox", { name: "Archived conversations" }));
   expect(
-    await within(main).findByRole("link", { name: "Archived research" }),
+    namedLink(main,"Archived research"),
   ).toBeVisible();
 });
 test("ordinary lists hide assigned chats and @Project inserts captured identity without navigating", async () => {
@@ -112,7 +113,7 @@ test("ordinary lists hide assigned chats and @Project inserts captured identity 
   await user.click(input);
   await user.type(input, "@Launch");
   const menu = await screen.findByTestId("chat-thread-suggestion-menu");
-  await user.click(within(menu).getByRole("button", { name: "Launch" }));
+  const item=queryAllByRoleFast("button",menu).find((button)=>{return button.textContent?.trim()==="Launch";});if(!item){throw new Error("Project mention was not offered");}await user.click(item);
   expect(
     input.querySelector(`[data-project-mention="${id}"]`),
   ).toHaveTextContent("Launch");

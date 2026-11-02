@@ -368,3 +368,16 @@ it("serializes concurrent moves, duplicate creates and deletion against new memb
     expect(tail?.projectId).not.toBe(p.id);
   }
 });
+
+it("publishes immutable owner-scoped metadata snapshots with an exact event tail fence",async()=>{
+ const {installWorkflowVolumeS3Fixture}=await import("./helpers/workflow-volume-s3");
+ const {gunzipSync}=await import("node:zlib");
+ const {projectSnapshotArchiveSchema}=await import("@okouai/api-contracts/validators/projects");
+ const actor=await owner();const storage=installWorkflowVolumeS3Fixture(context);const p=await create(actor,"Original");
+ const snapshot=await accept(client().snapshot({headers:headers(actor)}),[200]);if(!("url" in snapshot.body)){throw new Error("Project snapshot URL missing");}
+ const first=[...storage.objects.entries()].find(([key])=>key.startsWith("project-snapshots/v1/"));if(!first){throw new Error("Project metadata was not published");}
+ const archived=projectSnapshotArchiveSchema.parse(JSON.parse(gunzipSync(first[1]).toString("utf8")));expect(archived.projects).toEqual([p]);expect(archived.latestSeqId).toBe(1);
+ await accept(client().update({headers:headers(actor),params:{id:p.id},body:{eventId:operation(),name:"Renamed"}}),[200]);
+ const tail=await accept(client().events({headers:headers(actor),query:{sinceSeqId:archived.latestSeqId}}),[200]);expect(tail.body.events).toMatchObject([{kind:"renamed",projectId:p.id,name:"Renamed",seqId:2}]);
+ const renamed=await accept(client().snapshot({headers:headers(actor)}),[200]);expect(renamed.body.latestSeqId).toBe(2);expect(storage.objects.get(first[0])).toEqual(first[1]);
+});

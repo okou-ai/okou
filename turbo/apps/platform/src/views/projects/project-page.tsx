@@ -240,7 +240,7 @@ export function ProjectMembership({ threadId }: { threadId: string }) {
               })}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-2">
+          <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
             <Button
               disabled={pending}
               variant="outline"
