@@ -94,6 +94,8 @@ export function mockBrowserCdp(
   const requests: BrowserRequest[] = [];
   const input: { method: string; params: unknown; sessionId?: string }[] = [];
   const detached: string[] = [];
+  const retiredSessions = new Set<string>();
+  const sessionTargets = new Map<string, string>();
   const captures: unknown[] = [];
   const heldReplies = new Map<string, (response: string) => void>();
   const heldFrames = new Map<string, () => void>();
@@ -103,12 +105,16 @@ export function mockBrowserCdp(
   >();
 
   function event(method: string, params: unknown, sessionId?: string) {
+    if (method === "Target.detachedFromTarget") {
+      const detached = object({ sessionId: string() }).parse(params);
+      retiredSessions.add(detached.sessionId);
+    }
     socket.receive(cdpUrl, JSON.stringify({ method, params, sessionId }));
   }
 
   function frame(data: string, sessionId = "example-page-session") {
     const target = targets.find((candidate) => {
-      return `${candidate.targetId}-session` === sessionId;
+      return candidate.targetId === sessionTargets.get(sessionId);
     });
     if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
       return;
@@ -262,7 +268,9 @@ export function mockBrowserCdp(
 
   function targetForSession(sessionId: string | undefined) {
     const target = targets.find((candidate) => {
-      return `${candidate.targetId}-session` === sessionId;
+      return (
+        candidate.targetId === (sessionId && sessionTargets.get(sessionId))
+      );
     });
     if (!target) {
       throw new Error("Unknown viewer target session");
@@ -327,12 +335,17 @@ export function mockBrowserCdp(
           corruptPageAttachment = false;
           return { sessionId: "" };
         }
-        return {
-          sessionId:
-            request.params?.targetId === "okou-worker"
-              ? `worker-${++sessionSequence}`
-              : `${request.params?.targetId ?? "example-page"}-session`,
-        };
+        if (request.params?.targetId === "okou-worker") {
+          return { sessionId: `worker-${++sessionSequence}` };
+        }
+        const targetId = request.params?.targetId ?? "example-page";
+        const original = `${targetId}-session`;
+        let sessionId = original;
+        while (retiredSessions.has(sessionId)) {
+          sessionId = `${original}-${++sessionSequence}`;
+        }
+        sessionTargets.set(sessionId, targetId);
+        return { sessionId };
       }
       case "Target.attachToBrowserTarget": {
         return { sessionId: `native-browser-${++sessionSequence}` };
@@ -523,6 +536,11 @@ export function mockBrowserCdp(
   }
 
   function respond(request: BrowserRequest): BrowserResponse {
+    if (request.sessionId && retiredSessions.has(request.sessionId)) {
+      return {
+        error: { code: -32_001, message: "Session with given id not found." },
+      };
+    }
     const next = nextResponses.get(request.method);
     if (next) {
       nextResponses.delete(request.method);

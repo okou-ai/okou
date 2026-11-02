@@ -95,12 +95,17 @@ interface FaviconDocument {
   readonly waiting: boolean;
   readonly ready: boolean;
 }
-interface Retirement {
+type Retirement = {
   readonly owner: object;
   readonly session: SelectedSession;
-  readonly phase: "pending" | "blocked";
-  readonly error?: unknown;
-}
+} & (
+  | { readonly phase: "pending" }
+  | {
+      readonly phase: "blocked";
+      readonly error: unknown;
+      readonly captureOnly: boolean;
+    }
+);
 interface CaptureChange {
   readonly settings: CaptureSettings;
   readonly first: number;
@@ -888,6 +893,9 @@ function createCaptureRecoveryGraph(
             ...retirement,
             phase: "blocked",
             error: cleanup.reason,
+            captureOnly: cleanups.every((receipt, index) => {
+              return index === 1 || receipt.status === "fulfilled";
+            }),
           });
         }
         set(retirements$, next);
@@ -1257,6 +1265,7 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
             ...retirement,
             phase: "blocked",
             error: result.reason,
+            captureOnly: receipts[0].status === "fulfilled",
           });
         }
         set(retirements$, fences);
@@ -2043,6 +2052,9 @@ function createDetachedEvent(
         event.params.sessionId === expected &&
         !get(closingTargets$).has(selected.attached.owner.targetId)
       ) {
+        if (source === selected.attached.frames) {
+          set(selected.stream.detached$);
+        }
         set(get(links$).retireCurrent$, "target-replaced", false, true);
         const discovery = get(get(links$).discovery$);
         if (discovery) {
@@ -2057,13 +2069,70 @@ function createDetachedEvent(
   );
 }
 
+function createRetiredSessionEvents(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+) {
+  const { model, retirements$, wake$, connected$ } = context;
+  return command(
+    (
+      { get, set },
+      event: CdpEvent,
+      source: CdpClient,
+      selected: SelectedSession | null,
+    ) => {
+      for (const retirement of get(retirements$).values()) {
+        const original = retirement.session;
+        if (
+          original !== selected &&
+          source === original.attached.client &&
+          event.sessionId === original.attached.sessionId
+        ) {
+          set(original.input.event$, event);
+        }
+        if (
+          event.method !== "Target.detachedFromTarget" ||
+          source !== original.attached.frames ||
+          event.params.sessionId !== original.attached.frameSessionId
+        ) {
+          continue;
+        }
+        set(original.stream.detached$);
+        if (retirement.phase !== "blocked" || !retirement.captureOnly) {
+          continue;
+        }
+        const targetId = original.attached.owner.targetId;
+        const remaining = new Map(get(retirements$));
+        remaining.delete(targetId);
+        set(retirements$, remaining);
+        set(wake$);
+        if (
+          selected ||
+          !get(connected$) ||
+          get(model.selectedTabId$) !== targetId
+        ) {
+          continue;
+        }
+        const discovery = get(get(links$).discovery$);
+        if (discovery) {
+          detach(
+            set(discovery.refresh$, original.attached.client.signal),
+            Reason.DomCallback,
+            "browser confirmed capture retirement",
+          );
+        }
+      }
+    },
+  );
+}
+
 function createProtocolEventDispatch(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
   followActiveTarget$: ControllerLinks["followActiveTarget$"],
 ) {
-  const { clientState$, disposedState$, retirements$, targetRevision$, wake$ } =
-    context;
+  const { clientState$, disposedState$, targetRevision$, wake$ } = context;
+  const retiredEvent$ = createRetiredSessionEvents(context, links$);
   const detachedEvent$ = createDetachedEvent(context, links$);
   const sessionEvent$ = createSessionEvent(context, links$);
   const screencastEvent$ = createScreencastEvent(context, links$);
@@ -2075,16 +2144,7 @@ function createProtocolEventDispatch(
       signal: AbortSignal,
     ): Promise<void> => {
       const selected = get(get(links$).selectedSession$);
-      for (const retirement of get(retirements$).values()) {
-        const original = retirement.session;
-        if (
-          original !== selected &&
-          source === original.attached.client &&
-          event.sessionId === original.attached.sessionId
-        ) {
-          set(original.input.event$, event);
-        }
-      }
+      set(retiredEvent$, event, source, selected);
       if (get(disposedState$)) {
         return;
       }
@@ -2493,8 +2553,20 @@ function createConnectionGraph(
           set(wake$);
         },
       };
-      const [result] = await Promise.allSettled([set(bootstrap$, signal)]);
+      let [result] = await Promise.allSettled([set(bootstrap$, signal)]);
       signal.throwIfAborted();
+      while (
+        result.status === "rejected" &&
+        isAbortError(result.reason) &&
+        !get(disposedState$) &&
+        get(connected$)
+      ) {
+        // Selection ownership can change while the connection is opening.
+        [result] = await Promise.allSettled([
+          set(get(links$).restoreSelection$, signal),
+        ]);
+        signal.throwIfAborted();
+      }
       if (result.status === "rejected") {
         if (!get(disposedState$) && !isAbortError(result.reason)) {
           set(readinessFailure$, result.reason);

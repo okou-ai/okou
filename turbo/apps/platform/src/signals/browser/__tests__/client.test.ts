@@ -39,6 +39,64 @@ test("closing a viewer rejects pending requests without closing the remote brows
   expect(received).toStrictEqual(["Target.getTargets", "Browser.getVersion"]);
 });
 
+test("session detachment rejects only requests owned by the closed session", async () => {
+  const received = context.mocks.deferred<ReadonlyMap<string, number>>();
+  const requests = new Map<string, number>();
+  const socket = context.mocks.browser.webSocket((data) => {
+    const request: unknown = JSON.parse(data);
+    if (
+      !isRecord(request) ||
+      typeof request.id !== "number" ||
+      typeof request.method !== "string"
+    ) {
+      throw new Error("Invalid fixture request");
+    }
+    requests.set(request.method, request.id);
+    if (requests.size === 3) {
+      received.resolve(new Map(requests));
+    }
+    return null;
+  });
+  const client = createCdpClient(endpoint, {}, context.signal);
+  await client.opened;
+  const capture = Promise.allSettled([
+    client.request("Page.startScreencast", {}, "closed-session"),
+  ]);
+  const healthy = client.request("Page.enable", undefined, "healthy-session");
+  const root = client.request("Browser.getVersion", undefined);
+  const ids = await received.promise;
+  socket.receive(
+    endpoint,
+    JSON.stringify({
+      method: "Target.detachedFromTarget",
+      params: { sessionId: "closed-session" },
+    }),
+  );
+  await expect(capture).resolves.toMatchObject([
+    {
+      status: "rejected",
+      reason: {
+        kind: "target-unavailable",
+        request: { method: "Page.startScreencast" },
+      },
+    },
+  ]);
+  socket.receive(
+    endpoint,
+    JSON.stringify({ id: ids.get("Page.enable"), result: {} }),
+  );
+  socket.receive(
+    endpoint,
+    JSON.stringify({
+      id: ids.get("Browser.getVersion"),
+      result: { product: "healthy-browser" },
+    }),
+  );
+  await expect(healthy).resolves.toStrictEqual({});
+  await expect(root).resolves.toMatchObject({ product: "healthy-browser" });
+  client.close();
+});
+
 test("raw native attachment cancellation preserves its original parent session", async () => {
   const operation = createTestRuntime(context);
   const sent = context.mocks.deferred<number>();

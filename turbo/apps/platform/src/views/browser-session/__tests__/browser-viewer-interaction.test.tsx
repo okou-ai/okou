@@ -2302,6 +2302,125 @@ test.each(["closed", "still open"])(
   },
 );
 
+test("A detached session releases a held capture request without waiting for its late reply", async () => {
+  const browser = mockViewer(0);
+  const capture = browser.holdNext("Page.startScreencast");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await capture.received;
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "example-page-session",
+      targetId: "example-page",
+    });
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await capture.release();
+  const address = screen.getByLabelText("Address");
+  await fill(address, "fresh-session.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://fresh-session.example/ready");
+  });
+});
+
+test("A late session-detachment receipt resolves capture-only retirement uncertainty", async () => {
+  const browser = await setupViewer(0);
+  browser.failNext("Page.stopScreencast", "Capture stop unconfirmed");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await screen.findByText("Browser view unavailable");
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "example-page-session",
+      targetId: "example-page",
+    });
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+async function setupScopedPair() {
+  const browser = mockViewer(0);
+  browser.targets[1]!.windowId = 0;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  return browser;
+}
+
+async function chooseHealthyTabAfterRetirementFailure(
+  browser: ReturnType<typeof mockViewer>,
+  method: string,
+) {
+  browser.failNext(method, "Original cleanup unconfirmed");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await screen.findByText("Browser view unavailable");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+}
+
+test("A late capture-detachment proof leaves the newer selection live and allows revisiting the retired tab", async () => {
+  const browser = await setupScopedPair();
+  await chooseHealthyTabAfterRetirementFailure(browser, "Page.stopScreencast");
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "example-page-session",
+      targetId: "example-page",
+    });
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("A capture-detachment proof cannot clear unconfirmed input cleanup", async () => {
+  const browser = await setupScopedPair();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.dispatchKeyEvent",
+        params: expect.objectContaining({ type: "rawKeyDown" }),
+      }),
+    );
+  });
+  await chooseHealthyTabAfterRetirementFailure(
+    browser,
+    "Input.dispatchKeyEvent",
+  );
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "example-page-session",
+      targetId: "example-page",
+    });
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
 test.each(["before", "after"])(
   "Selected target destruction %s its failed membership response automatically recovers a scoped survivor",
   async (destruction) => {
