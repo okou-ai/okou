@@ -290,10 +290,11 @@ def _skip_json_number(body: bytes, i: int) -> _IndexResult:
     return _IndexResult("ok", i)
 
 
-def _skip_json_array(
+def _skip_json_container(
     body: bytes,
     i: int,
     *,
+    is_object: bool,
     depth: int,
     max_depth: int,
     max_key_bytes: int,
@@ -301,13 +302,26 @@ def _skip_json_array(
 ) -> _IndexResult:
     if depth >= max_depth:
         return _IndexResult("bound_exceeded")
+    closing_byte = ord("}") if is_object else ord("]")
     i = _skip_json_whitespace(body, i + 1)
     if i >= len(body):
         return _IndexResult("incomplete")
-    if body[i] == ord("]"):
+    if body[i] == closing_byte:
         return _IndexResult("ok", i + 1)
 
     while i < len(body):
+        if is_object:
+            key_result = _skip_json_string(body, i, max_bytes=max_key_bytes)
+            if key_result.status != "ok":
+                return key_result
+            i = _skip_json_whitespace(body, key_result.index)
+            if i >= len(body):
+                return _IndexResult("incomplete")
+            if body[i] != ord(":"):
+                return _IndexResult("invalid")
+            i = _skip_json_whitespace(body, i + 1)
+            if i >= len(body):
+                return _IndexResult("incomplete")
         value_result = _skip_json_value(
             body,
             i,
@@ -321,59 +335,7 @@ def _skip_json_array(
         i = _skip_json_whitespace(body, value_result.index)
         if i >= len(body):
             return _IndexResult("incomplete")
-        if body[i] == ord("]"):
-            return _IndexResult("ok", i + 1)
-        if body[i] != ord(","):
-            return _IndexResult("invalid")
-        i = _skip_json_whitespace(body, i + 1)
-        if i >= len(body):
-            return _IndexResult("incomplete")
-    return _IndexResult("incomplete")
-
-
-def _skip_json_object(
-    body: bytes,
-    i: int,
-    *,
-    depth: int,
-    max_depth: int,
-    max_key_bytes: int,
-    max_string_bytes: int,
-) -> _IndexResult:
-    if depth >= max_depth:
-        return _IndexResult("bound_exceeded")
-    i = _skip_json_whitespace(body, i + 1)
-    if i >= len(body):
-        return _IndexResult("incomplete")
-    if body[i] == ord("}"):
-        return _IndexResult("ok", i + 1)
-
-    while i < len(body):
-        key_result = _skip_json_string(body, i, max_bytes=max_key_bytes)
-        if key_result.status != "ok":
-            return key_result
-        i = _skip_json_whitespace(body, key_result.index)
-        if i >= len(body):
-            return _IndexResult("incomplete")
-        if body[i] != ord(":"):
-            return _IndexResult("invalid")
-        i = _skip_json_whitespace(body, i + 1)
-        if i >= len(body):
-            return _IndexResult("incomplete")
-        value_result = _skip_json_value(
-            body,
-            i,
-            depth=depth + 1,
-            max_depth=max_depth,
-            max_key_bytes=max_key_bytes,
-            max_string_bytes=max_string_bytes,
-        )
-        if value_result.status != "ok":
-            return value_result
-        i = _skip_json_whitespace(body, value_result.index)
-        if i >= len(body):
-            return _IndexResult("incomplete")
-        if body[i] == ord("}"):
+        if body[i] == closing_byte:
             return _IndexResult("ok", i + 1)
         if body[i] != ord(","):
             return _IndexResult("invalid")
@@ -399,18 +361,20 @@ def _skip_json_value(
     if b == ord('"'):
         return _skip_json_string(body, i, max_bytes=max_string_bytes)
     if b == ord("{"):
-        return _skip_json_object(
+        return _skip_json_container(
             body,
             i,
+            is_object=True,
             depth=depth,
             max_depth=max_depth,
             max_key_bytes=max_key_bytes,
             max_string_bytes=max_string_bytes,
         )
     if b == ord("["):
-        return _skip_json_array(
+        return _skip_json_container(
             body,
             i,
+            is_object=False,
             depth=depth,
             max_depth=max_depth,
             max_key_bytes=max_key_bytes,
