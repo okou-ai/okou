@@ -1,3 +1,5 @@
+import type { BridgeDiagnostics } from "@okouai/browser-extension-client";
+
 export type ViewerStatus =
   | "connecting"
   | "streaming"
@@ -26,6 +28,8 @@ export interface ViewerError {
     readonly method: string;
     readonly code?: number;
   };
+  /** Safe bridge observations, retained independently of reporting policy. */
+  readonly bridge?: BridgeDiagnostics;
 }
 
 export interface ViewerTarget {

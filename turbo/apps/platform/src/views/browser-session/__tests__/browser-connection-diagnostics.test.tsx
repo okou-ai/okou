@@ -34,6 +34,7 @@ async function setupViewer(
   options: {
     readonly empty?: boolean;
     readonly scoped?: boolean;
+    readonly configure?: (browser: ReturnType<typeof mockBrowserCdp>) => void;
   } = {},
 ) {
   const sentry = context.mocks.sentry();
@@ -42,6 +43,7 @@ async function setupViewer(
     autoOpen,
     ...(options.empty ? { targets: [] } : {}),
   });
+  options.configure?.(browser);
   const session: BrowserSession = {
     threadId,
     name: "booking",
@@ -98,6 +100,167 @@ async function useSplitTransport() {
   click(within(menu).getByText("Separate image connection"));
   await expectInputReady();
 }
+test("A bridge bootstrap failure keeps safe CDP facts in its semantic startup report", async () => {
+  const startupErrors = recordBrowserStartupErrors();
+  const { sentry } = await setupViewer(true, {
+    configure: (browser) => {
+      browser.failNext("Runtime.addBinding", endpoint, -32_001);
+    },
+  });
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await waitFor(() => {
+    expect(startupErrors).toHaveLength(1);
+  });
+  const failure = startupErrors[0];
+  expect(failure).toMatchObject({
+    name: "CdpFault",
+    kind: "extension",
+    code: undefined,
+    request: { method: "Runtime.addBinding", code: -32_001 },
+    cause: {
+      name: "BrowserBridgeError",
+      diagnostics: {
+        stage: "bind-events",
+        reason: "cdp-protocol-failed",
+        request: { method: "Runtime.addBinding", code: -32_001 },
+      },
+    },
+  });
+  await waitFor(() => {
+    expect(sentry.reports).toContainEqual(
+      expect.objectContaining({ type: "exception", error: failure }),
+    );
+    expect(sentry.reports).toHaveLength(1);
+  });
+  const diagnostic = JSON.stringify(failure, (_key, value: unknown) => {
+    return value instanceof Error
+      ? {
+          ...value,
+          message: value.message,
+          stack: value.stack,
+          cause: value.cause,
+        }
+      : value;
+  });
+  expect(diagnostic).not.toMatch(
+    /private-|fixture-worker|native-browser-|worker-\d/,
+  );
+});
+
+test.each([
+  { failure: "epoch change", reason: "epoch-changed" },
+  { failure: "sequence gap", reason: "sequence-gap" },
+  { failure: "worker crash", reason: "worker-crashed" },
+])(
+  "A bridge $failure revokes the real viewer without changing recovery policy",
+  async ({ failure, reason }) => {
+    const { browser, sentry } = await setupViewer(true);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    act(() => {
+      if (failure === "epoch change") {
+        browser.resetWorker();
+      } else if (failure === "sequence gap") {
+        browser.skipNativeEvent();
+        browser.nativeEvent("tab-updated");
+      } else {
+        const worker = browser.requests.find((request) => {
+          return request.method === "Runtime.addBinding";
+        });
+        if (!worker?.sessionId) {
+          throw new Error("Expected the observed worker session");
+        }
+        browser.event("Inspector.targetCrashed", {}, worker.sessionId);
+      }
+    });
+    await screen.findByText("Browser disconnected");
+    expect(sentry.reports).toHaveLength(1);
+    expect(sentry.reports[0]).toMatchObject({
+      type: "exception",
+      error: {
+        name: "CdpFault",
+        kind: "extension",
+        cause: {
+          name: "BrowserBridgeError",
+          diagnostics: { stage: "ready", reason },
+        },
+      },
+      context: {
+        tags: { browser_event: "established-disconnect", logger: "Browser" },
+      },
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+    const reconnect = queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.trim() === "Reconnect";
+    });
+    if (!reconnect) {
+      throw new Error("Expected explicit reconnect");
+    }
+    click(reconnect);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(sentry.reports).toHaveLength(1);
+  },
+);
+
+test.each([
+  { failure: "epoch change", reason: "epoch-changed" },
+  { failure: "sequence gap", reason: "sequence-gap" },
+  { failure: "worker crash", reason: "worker-crashed" },
+])(
+  "A $failure during hello keeps its typed cause through the startup owner",
+  async ({ failure, reason }) => {
+    const startupErrors = recordBrowserStartupErrors();
+    let hello:
+      | ReturnType<ReturnType<typeof mockBrowserCdp>["holdNextNative"]>
+      | undefined;
+    const { browser } = await setupViewer(true, {
+      configure: (peer) => {
+        hello = peer.holdNextNative("hello");
+      },
+    });
+    if (!hello) {
+      throw new Error("Expected the pending hello response");
+    }
+    await hello.received;
+    act(() => {
+      if (failure === "epoch change") {
+        browser.resetWorker();
+      } else if (failure === "sequence gap") {
+        browser.skipNativeEvent();
+        browser.nativeEvent("tab-updated");
+      } else {
+        const worker = browser.requests.find((request) => {
+          return request.method === "Runtime.addBinding";
+        });
+        if (!worker?.sessionId) {
+          throw new Error("Expected the observed worker session");
+        }
+        browser.event("Inspector.targetCrashed", {}, worker.sessionId);
+      }
+    });
+    await hello.release();
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await waitFor(() => {
+      expect(startupErrors).toHaveLength(1);
+    });
+    expect(startupErrors[0]).toMatchObject({
+      name: "CdpFault",
+      kind: "extension",
+      cause: {
+        name: "BrowserBridgeError",
+        diagnostics: { stage: "hello", reason },
+      },
+    });
+  },
+);
 
 test("An opening failure preserves observations and supports explicit reconnect", async () => {
   const startupErrors = recordBrowserStartupErrors();

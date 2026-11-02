@@ -2383,7 +2383,7 @@ function createConnectionBootstrap(
       set(get(links$).nativeEvent$, event);
     });
     const unavailable = () => {
-      set(get(links$).disconnected$, nativeFault(), client);
+      set(get(links$).disconnected$, nativeFault(native.signal.reason), client);
     };
     native.signal.addEventListener("abort", unavailable, {
       once: true,
@@ -2391,7 +2391,7 @@ function createConnectionBootstrap(
     });
     if (native.signal.aborted) {
       unavailable();
-      throw nativeFault();
+      throw nativeFault(native.signal.reason);
     }
     await client.request(
       "Target.setDiscoverTargets",

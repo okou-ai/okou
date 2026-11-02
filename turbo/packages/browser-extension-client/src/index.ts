@@ -106,19 +106,99 @@ export interface TargetIdentity extends ProbeEvidence {
   readonly epoch: string;
 }
 
+export type BridgeStage =
+  | "attach-browser"
+  | "discover-targets"
+  | "list-targets"
+  | "start-worker"
+  | "enable-runtime"
+  | "bind-events"
+  | "hello"
+  | "ready";
+
+export type BridgeFailureReason =
+  | "bootstrap-failed"
+  | "cdp-request-failed"
+  | "cdp-connection-failed"
+  | "cdp-protocol-failed"
+  | "invalid-response"
+  | "worker-unobserved"
+  | "worker-readiness-timeout"
+  | "bridge-missing"
+  | "protocol-mismatch"
+  | "capability-missing"
+  | "native-operation-failed"
+  | "closed"
+  | "readiness-session-detached"
+  | "browser-session-detached"
+  | "worker-version-changed"
+  | "worker-crashed"
+  | "worker-detached"
+  | "worker-context-cleared"
+  | "worker-target-destroyed"
+  | "worker-session-detached"
+  | "worker-target-replaced"
+  | "binding-malformed"
+  | "bootstrap-event-overflow"
+  | "epoch-changed"
+  | "sequence-gap"
+  | "response-sequence-ahead";
+
+type BridgeCdpMethod =
+  | "Target.attachToBrowserTarget"
+  | "Target.attachToTarget"
+  | "Target.setDiscoverTargets"
+  | "Target.getTargets"
+  | "ServiceWorker.enable"
+  | "Extensions.triggerAction"
+  | "Runtime.enable"
+  | "Runtime.addBinding"
+  | "Runtime.evaluate";
+
+/** Only observations selected by this client; never transport messages or IDs. */
+export interface BridgeDiagnostics {
+  readonly stage?: BridgeStage;
+  readonly reason: BridgeFailureReason;
+  readonly request?: {
+    readonly method: BridgeCdpMethod;
+    readonly code?: number;
+  };
+}
+
 export class BrowserBridgeError extends Error {
   readonly kind: "unavailable" | "protocol" | "native";
+  readonly diagnostics: BridgeDiagnostics;
 
-  constructor(kind: BrowserBridgeError["kind"]) {
-    super(
+  constructor(
+    kind: BrowserBridgeError["kind"],
+    diagnostics: BridgeDiagnostics = {
+      reason: kind === "protocol" ? "invalid-response" : "closed",
+    },
+  ) {
+    const message =
       kind === "unavailable"
         ? "The Okou Browser bridge is unavailable."
         : kind === "native"
           ? "The native browser operation failed; its outcome may be uncertain."
-          : "The Okou Browser bridge returned an invalid response.",
-    );
+          : "The Okou Browser bridge returned an invalid response.";
+    const context = [
+      `reason=${diagnostics.reason}`,
+      ...(diagnostics.stage ? [`stage=${diagnostics.stage}`] : []),
+      ...(diagnostics.request ? [`method=${diagnostics.request.method}`] : []),
+      ...(diagnostics.request?.code !== undefined
+        ? [`code=${diagnostics.request.code}`]
+        : []),
+    ].join(", ");
+    // Linked-error reporters retain Error.message even when custom fields are omitted.
+    super(`${message} (${context})`);
     this.name = "BrowserBridgeError";
     this.kind = kind;
+    this.diagnostics = Object.freeze({
+      ...diagnostics,
+      ...(diagnostics.request
+        ? { request: Object.freeze({ ...diagnostics.request }) }
+        : {}),
+    });
   }
 }
 
@@ -142,6 +222,7 @@ interface Target {
 
 /** Each client owns only its CDP sessions; closing it never closes a tab. */
 export class OkouBrowserClient {
+  /** Unexpected loss retains a safe BrowserBridgeError; intentional close cancels. */
   readonly signal: AbortSignal;
   private readonly lifetime = new AbortController();
   private readonly transport: CdpTransport;
@@ -160,6 +241,7 @@ export class OkouBrowserClient {
   private readonly bootstrapEvents: NativeEvent[] = [];
   private workerAlive = true;
   private closing: Promise<void> | undefined;
+  private stage: BridgeStage = "attach-browser";
 
   private constructor(
     transport: CdpTransport,
@@ -203,15 +285,80 @@ export class OkouBrowserClient {
       );
       return client;
     } catch (error) {
-      await client.close();
-      throw error instanceof BrowserBridgeError
-        ? error
-        : new BrowserBridgeError("unavailable");
+      const reason: unknown = client.signal.aborted
+        ? client.signal.reason
+        : error;
+      const failure =
+        reason instanceof BrowserBridgeError
+          ? reason.diagnostics.stage
+            ? reason
+            : new BrowserBridgeError(reason.kind, {
+                ...reason.diagnostics,
+                stage: client.stage,
+              })
+          : client.failure(
+              "unavailable",
+              client.signal.aborted ? "closed" : "bootstrap-failed",
+            );
+      await client.close(failure);
+      throw failure;
     }
   }
 
   private current(): void {
-    if (this.signal.aborted) throw new BrowserBridgeError("unavailable");
+    if (this.signal.aborted) {
+      const reason: unknown = this.signal.reason;
+      throw reason instanceof BrowserBridgeError
+        ? reason
+        : this.failure("unavailable", "closed");
+    }
+  }
+
+  private failure(
+    kind: BrowserBridgeError["kind"],
+    reason: BridgeFailureReason,
+    request?: BridgeDiagnostics["request"],
+  ): BrowserBridgeError {
+    return new BrowserBridgeError(kind, {
+      stage: this.stage,
+      reason,
+      ...(request ? { request } : {}),
+    });
+  }
+
+  private invalidate(reason: BridgeFailureReason): void {
+    void this.close(this.failure("unavailable", reason));
+  }
+
+  private async request(
+    method: BridgeCdpMethod,
+    params: Readonly<Record<string, unknown>>,
+    sessionId?: string,
+    kind: BrowserBridgeError["kind"] = "unavailable",
+  ): Promise<unknown> {
+    try {
+      return await this.transport.request(method, params, sessionId);
+    } catch (error) {
+      this.current();
+      const code =
+        error instanceof Error && "code" in error ? error.code : undefined;
+      const observedKind =
+        error instanceof Error && "kind" in error ? error.kind : undefined;
+      throw this.failure(
+        kind,
+        observedKind === "connection"
+          ? "cdp-connection-failed"
+          : observedKind === "protocol"
+            ? "cdp-protocol-failed"
+            : "cdp-request-failed",
+        {
+          method,
+          ...(typeof code === "number" && Number.isSafeInteger(code)
+            ? { code }
+            : {}),
+        },
+      );
+    }
   }
 
   private workerUrl(value: unknown): boolean {
@@ -248,7 +395,7 @@ export class OkouBrowserClient {
     this.current();
     const parent = kind === "browser" ? undefined : this.browserSession;
     const id = session(
-      await this.transport.request(
+      await this.request(
         kind === "browser"
           ? "Target.attachToBrowserTarget"
           : "Target.attachToTarget",
@@ -272,14 +419,16 @@ export class OkouBrowserClient {
   ): Promise<void> {
     await this.attach("browser");
     this.current();
-    await this.transport.request(
+    this.stage = "discover-targets";
+    await this.request(
       "Target.setDiscoverTargets",
       { discover: true, filter: [{ exclude: false }] },
       this.browserSession,
     );
     this.current();
+    this.stage = "list-targets";
     const result = record(
-      await this.transport.request(
+      await this.request(
         "Target.getTargets",
         { filter: [{ exclude: false }] },
         this.browserSession,
@@ -290,33 +439,34 @@ export class OkouBrowserClient {
       throw new BrowserBridgeError("protocol");
     for (const info of result.targetInfos)
       this.workerTarget ??= this.worker(info);
+    this.stage = "start-worker";
     const worker = await this.startWorker(
       result.targetInfos,
       timeoutMs,
       wakeWorker,
     );
     this.current();
-    await this.transport.request("Runtime.enable", {}, worker);
+    this.stage = "enable-runtime";
+    await this.request("Runtime.enable", {}, worker);
     this.current();
-    await this.transport.request(
-      "Runtime.addBinding",
-      { name: EVENT_BINDING },
-      worker,
-    );
+    this.stage = "bind-events";
+    await this.request("Runtime.addBinding", { name: EVENT_BINDING }, worker);
     this.current();
+    this.stage = "hello";
     const hello = await this.call("hello", {});
     if (hello.value.protocol !== PROTOCOL_VERSION)
-      throw new BrowserBridgeError("unavailable");
+      throw this.failure("unavailable", "protocol-mismatch");
     if (
       !["windows", "tabs", "events"].every((capability) => {
         return hello.value.capabilities.includes(capability);
       })
     )
-      throw new BrowserBridgeError("unavailable");
+      throw this.failure("unavailable", "capability-missing");
     this.epoch = hello.epoch;
     this.sequence = hello.sequence;
     for (const event of this.bootstrapEvents.splice(0)) this.acceptEvent(event);
     this.current();
+    this.stage = "ready";
   }
 
   private async startWorker(
@@ -340,15 +490,11 @@ export class OkouBrowserClient {
         // A retained target and even a new Runtime context can precede module
         // evaluation. Native running status is published after script startup.
         this.workerTarget = undefined;
-        await this.transport.request(
-          "ServiceWorker.enable",
-          {},
-          this.readinessSession,
-        );
+        await this.request("ServiceWorker.enable", {}, this.readinessSession);
         this.current();
       }
       if (wakeWorker && tab) {
-        await this.transport.request(
+        await this.request(
           "Extensions.triggerAction",
           { id: this.runtimeId, targetId: record(tab).targetId },
           browser,
@@ -356,7 +502,7 @@ export class OkouBrowserClient {
         this.current();
       }
       if (!this.workerTarget && !this.readinessSession && (!wakeWorker || !tab))
-        throw new BrowserBridgeError("unavailable");
+        throw this.failure("unavailable", "worker-unobserved");
       if (!this.workerTarget) {
         await new Promise<void>((resolve, reject) => {
           const finish = () => {
@@ -366,7 +512,11 @@ export class OkouBrowserClient {
           };
           const aborted = () => {
             finish();
-            reject(new BrowserBridgeError("unavailable"));
+            reject(
+              this.signal.aborted
+                ? this.signal.reason
+                : this.failure("unavailable", "worker-readiness-timeout"),
+            );
           };
           const timer = setTimeout(aborted, timeoutMs);
           this.workerChanged = () => {
@@ -377,7 +527,8 @@ export class OkouBrowserClient {
         });
       }
       this.current();
-      if (!this.workerTarget) throw new BrowserBridgeError("unavailable");
+      if (!this.workerTarget)
+        throw this.failure("unavailable", "worker-unobserved");
       return await this.attach("worker", this.workerTarget.targetId);
     } finally {
       const page = this.readinessSession;
@@ -401,7 +552,7 @@ export class OkouBrowserClient {
       event.method === "Target.detachedFromTarget" &&
       event.params.sessionId === this.readinessSession
     ) {
-      void this.close();
+      this.invalidate("readiness-session-detached");
       return;
     }
     if (
@@ -427,7 +578,7 @@ export class OkouBrowserClient {
         target?.targetId !== this.workerTarget?.targetId
       ) {
         this.workerAlive = false;
-        void this.close();
+        this.invalidate("worker-version-changed");
         return;
       }
       this.workerTarget = target;
@@ -442,7 +593,7 @@ export class OkouBrowserClient {
       event.params.sessionId === this.browserSession
     ) {
       this.workerAlive = false;
-      void this.close();
+      this.invalidate("browser-session-detached");
       return;
     }
     if (
@@ -452,7 +603,13 @@ export class OkouBrowserClient {
         event.method === "Runtime.executionContextsCleared")
     ) {
       this.workerAlive = false;
-      void this.close();
+      this.invalidate(
+        event.method === "Inspector.targetCrashed"
+          ? "worker-crashed"
+          : event.method === "Inspector.detached"
+            ? "worker-detached"
+            : "worker-context-cleared",
+      );
       return;
     }
     if (event.sessionId === this.browserSession) {
@@ -464,7 +621,11 @@ export class OkouBrowserClient {
         (event.method === "Target.detachedFromTarget" &&
           event.params.sessionId === this.workerSession)
       ) {
-        void this.close();
+        this.invalidate(
+          event.method === "Target.targetDestroyed"
+            ? "worker-target-destroyed"
+            : "worker-session-detached",
+        );
       }
     }
   }
@@ -475,7 +636,7 @@ export class OkouBrowserClient {
     if (!target) return;
     if (this.workerSession && target.targetId !== this.workerTarget?.targetId) {
       this.workerAlive = false;
-      void this.close();
+      this.invalidate("worker-target-replaced");
       return;
     }
     this.workerTarget = target;
@@ -490,7 +651,7 @@ export class OkouBrowserClient {
     )
       return;
     if (typeof event.params.payload !== "string") {
-      void this.close();
+      this.invalidate("binding-malformed");
       return;
     }
     try {
@@ -502,31 +663,32 @@ export class OkouBrowserClient {
         typeof value.kind !== "string" ||
         !value.kind
       ) {
-        void this.close();
+        this.invalidate("binding-malformed");
         return;
       }
       const native = value as unknown as NativeEvent;
       if (this.sequence === undefined) {
-        if (this.bootstrapEvents.length >= 256) void this.close();
+        if (this.bootstrapEvents.length >= 256)
+          this.invalidate("bootstrap-event-overflow");
         else this.bootstrapEvents.push(native);
       } else {
         this.acceptEvent(native);
       }
     } catch {
       // A malformed event on our owned binding cannot retain inventory authority.
-      void this.close();
+      this.invalidate("binding-malformed");
     }
   }
 
   private acceptEvent(event: NativeEvent): void {
     if (this.signal.aborted) return;
     if (event.epoch !== this.epoch) {
-      void this.close();
+      this.invalidate("epoch-changed");
       return;
     }
     if (event.sequence <= this.sequence!) return;
     if (event.sequence !== this.sequence! + 1) {
-      void this.close();
+      this.invalidate("sequence-gap");
       return;
     }
     this.sequence = event.sequence;
@@ -555,32 +717,29 @@ export class OkouBrowserClient {
     args: Operations[M]["args"],
   ): Promise<Observation<Operations[M]["result"]>> {
     this.current();
-    if (!this.workerSession) throw new BrowserBridgeError("unavailable");
-    let response: unknown;
-    try {
-      response = await this.transport.request(
-        "Runtime.evaluate",
-        {
-          expression: `globalThis.${BRIDGE_NAME}?.invoke(${JSON.stringify({ method, ...args })})`,
-          awaitPromise: true,
-          returnByValue: true,
-        },
-        this.workerSession,
-      );
-    } catch {
-      this.current();
-      throw new BrowserBridgeError("native");
-    }
-    const result = record(response);
+    if (!this.workerSession)
+      throw this.failure("unavailable", "worker-unobserved");
+    const response = await this.request(
+      "Runtime.evaluate",
+      {
+        expression: `globalThis.${BRIDGE_NAME}?.invoke(${JSON.stringify({ method, ...args })})`,
+        awaitPromise: true,
+        returnByValue: true,
+      },
+      this.workerSession,
+      "native",
+    );
     this.current();
-    if (result.exceptionDetails) throw new BrowserBridgeError("native");
+    const result = record(response);
+    if (result.exceptionDetails)
+      throw this.failure("native", "native-operation-failed");
     const remote = record(result.result);
     if (method === "hello" && remote.type === "undefined")
-      throw new BrowserBridgeError("unavailable");
+      throw this.failure("unavailable", "bridge-missing");
     const value = record(remote.value);
     if (this.epoch !== undefined && this.epoch !== value.epoch) {
-      void this.close();
-      throw new BrowserBridgeError("unavailable");
+      this.invalidate("epoch-changed");
+      this.current();
     }
     if (
       (value.ok !== true && value.ok !== false) ||
@@ -590,17 +749,18 @@ export class OkouBrowserClient {
       (value.startedSequence as number) < 0 ||
       (value.sequence as number) < (value.startedSequence as number)
     )
-      throw new BrowserBridgeError("protocol");
+      throw this.failure("protocol", "invalid-response");
     // A response cannot repair a missed event. Native binding notifications
     // precede their operation response on the same ordered worker session.
     if (
       this.sequence !== undefined &&
       (value.sequence as number) > this.sequence
     ) {
-      void this.close();
-      throw new BrowserBridgeError("unavailable");
+      this.invalidate("response-sequence-ahead");
+      this.current();
     }
-    if (value.ok === false) throw new BrowserBridgeError("native");
+    if (value.ok === false)
+      throw this.failure("native", "native-operation-failed");
     return value as unknown as Observation<Operations[M]["result"]>;
   }
 
@@ -678,7 +838,7 @@ export class OkouBrowserClient {
       .catch(() => {});
   }
 
-  close(): Promise<void> {
+  close(reason?: BrowserBridgeError): Promise<void> {
     if (this.closing) return this.closing;
     const browser = this.browserSession;
     const worker = this.workerSession;
@@ -701,7 +861,7 @@ export class OkouBrowserClient {
       );
       if (browser) await this.detach(browser);
     });
-    this.lifetime.abort();
+    this.lifetime.abort(reason);
     this.unsubscribe();
     this.releaseOwner();
     this.listeners.clear();
