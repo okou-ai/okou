@@ -216,6 +216,80 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertEqual(writes.withLock { $0 }, 1)
   }
 
+  func testReadStartedBeforeAWriteCannotConfirmItsUncertainResult() async throws {
+    struct Server: Sendable {
+      var enabled = true
+      var writes = 0
+    }
+    let server = Mutex(Server())
+    let holdOld = Mutex(false)
+    let holdFresh = Mutex(false)
+    let oldReading = expectation(description: "Old settings captured before the write")
+    let freshReading = expectation(description: "Fresh settings read after the write")
+    let oldResponse = ConnectorResponseGate()
+    let freshResponse = ConnectorResponseGate()
+    let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "PUT" {
+        server.withLock {
+          $0.enabled = false
+          $0.writes += 1
+        }
+        throw URLError(.networkConnectionLost)
+      }
+      if request.url!.path.hasSuffix("/remote-access") {
+        let enabled = server.withLock { $0.enabled }
+        if holdOld.withLock({ value in
+          let held = value
+          value = false
+          return held
+        }) {
+          oldReading.fulfill()
+          await oldResponse.wait()
+        } else if holdFresh.withLock({ value in
+          let held = value
+          value = false
+          return held
+        }) {
+          freshReading.fulfill()
+          await freshResponse.wait()
+        }
+        return ChatHTTPResponse(
+          body: """
+            {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
+            """)
+      }
+      return try composerResponse(request)
+    }
+    let thread = ChatThread(
+      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+      pinnedAt: nil, pinOrder: nil, indicator: nil)
+    let store = makeStore(fixture, thread: thread)
+    defer { store.close() }
+    await store.refresh()
+    let host = try XCTUnwrap(store.hosts(.ssh).first)
+    holdOld.withLock { $0 = true }
+    let background = Task { await store.refresh() }
+    addTeardownBlock {
+      background.cancel()
+      oldResponse.open()
+      freshResponse.open()
+      await background.value
+    }
+    await fulfillment(of: [oldReading], timeout: 3)
+    holdFresh.withLock { $0 = true }
+    await store.setRemote(host, protocol: .ssh, enabled: false)
+    XCTAssertFalse(store.canSend)
+    oldResponse.open()
+    await fulfillment(of: [freshReading], timeout: 3)
+    XCTAssertFalse(store.canSend)
+    freshResponse.open()
+    await background.value
+    XCTAssertTrue(store.canSend)
+    XCTAssertEqual(store.hosts(.ssh).first?.enabled, false)
+    XCTAssertEqual(server.withLock { $0.writes }, 1)
+  }
+
   func testUnknownRemoteWriteRequiresReadbackBeforeSendingAndIsNeverReplayed() async throws {
     struct Server: Sendable {
       var enabled = true
