@@ -841,7 +841,6 @@ interface CreateChatThreadArgs {
   readonly cloudBrowserEnabled?: boolean;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
-  readonly connectorSelectionPolicy?: "required";
   readonly committedThread?: ExistingChatThread;
   readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   /** Welcome delivery seeds one immutable message only for the winning INSERT. */
@@ -951,10 +950,6 @@ function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
     userId: args.userId,
     agentId: args.agentId,
     selections: args.connectorSelections ?? [],
-    missingAccountPolicy:
-      args.connectorSelectionPolicy === "required"
-        ? ("reject" as const)
-        : ("omit" as const),
   };
 }
 
@@ -998,11 +993,11 @@ function failedChatThreadInitialization(error: unknown) {
   throw error;
 }
 
-function invalidInitialConnectorSelection(
-  prepared: { readonly message: string; readonly accountUnavailable?: true },
-  policy: CreateChatThreadArgs["connectorSelectionPolicy"],
-) {
-  if (prepared.accountUnavailable && policy === "required") {
+function invalidInitialConnectorSelection(prepared: {
+  readonly message: string;
+  readonly accountUnavailable?: true;
+}) {
+  if (prepared.accountUnavailable) {
     return { kind: "connector_account_unavailable" as const };
   }
   return {
@@ -1024,10 +1019,7 @@ export const createChatThread$ = command(
       signal,
     );
     if (preparedConnectorSelections.kind === "invalid") {
-      return invalidInitialConnectorSelection(
-        preparedConnectorSelections,
-        args.connectorSelectionPolicy,
-      );
+      return invalidInitialConnectorSelection(preparedConnectorSelections);
     }
     const thread = await settle(
       (async () => {
@@ -1070,7 +1062,6 @@ export const createChatThread$ = command(
               eventId: args.eventId,
               thread: prepared.thread,
               selections: preparedConnectorSelections.selections,
-              required: args.connectorSelectionPolicy === "required",
               remoteOverrides: args.initialRemoteAccessOverrides ?? [],
               assistantMessage: args.initialAssistantMessage,
             }),
