@@ -223,10 +223,12 @@ function PermissionsDrawerHeader({
 
   if (surface === "dialog") {
     return (
-      <DialogHeader>
+      <DialogHeader className="min-w-0 pr-8 text-left">
         <div className="flex items-center gap-3">
           <ConnectorIcon icon={icon} size={24} />
-          <DialogTitle className="text-base">{title}</DialogTitle>
+          <DialogTitle className="min-w-0 break-words text-base leading-snug">
+            {title}
+          </DialogTitle>
         </div>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
