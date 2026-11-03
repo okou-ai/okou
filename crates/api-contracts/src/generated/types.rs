@@ -3530,6 +3530,9 @@ pub mod webhooks {
                 /// The provider returned a server error.
                 #[serde(rename = "provider_server_error")]
                 ProviderServerError,
+                /// Local firewall authentication resolution failed.
+                #[serde(rename = "firewall_auth_failed")]
+                FirewallAuthFailed,
                 /// Codex returned an opaque HTTP 400 with no more specific cause.
                 #[serde(rename = "provider_bad_request")]
                 ProviderBadRequest,

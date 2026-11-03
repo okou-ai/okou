@@ -570,6 +570,7 @@ fn failure_reason_maps_exhaustively_to_the_public_completion_contract() {
             "provider_stream_timeout",
         ),
         (FailureReason::ProviderServerError, "provider_server_error"),
+        (FailureReason::FirewallAuthFailed, "firewall_auth_failed"),
         (FailureReason::ProviderBadRequest, "provider_bad_request"),
         (
             FailureReason::ProviderQueueTimeout,

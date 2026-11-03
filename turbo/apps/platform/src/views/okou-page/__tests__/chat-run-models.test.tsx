@@ -290,6 +290,10 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     title: "This run couldn't finish",
     description: "Oops, something went wrong.",
   },
+  firewall_auth_failed: {
+    title: "This run couldn't finish",
+    description: "Oops, something went wrong.",
+  },
   response_connection_lost: {
     title: "The response was interrupted",
     action: "Try again",

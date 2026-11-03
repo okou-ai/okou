@@ -1,0 +1,32 @@
+{
+  "response": {
+    "error": "auth_failed",
+    "authFailure": {
+      "source": "okou_firewall_auth",
+      "kind": "api_http_error",
+      "status": 500
+    }
+  },
+  "message": {
+    "role": "assistant",
+    "api": "openai-completions",
+    "content": [],
+    "stopReason": "error",
+    "errorMessage": "502 \"auth_failed\": local firewall auth api_http_error (API HTTP 500)",
+    "diagnostics": [
+      {
+        "type": "okou_model_request",
+        "details": {
+          "transportAttempts": 1,
+          "httpStatus": 502,
+          "failureReason": "firewall_auth_failed",
+          "firewallAuthFailure": {
+            "source": "okou_firewall_auth",
+            "kind": "api_http_error",
+            "status": 500
+          }
+        }
+      }
+    ]
+  }
+}

@@ -763,6 +763,8 @@ pub enum FailureReason {
     ProviderQueueTimeout,
     /// The provider returned a server error.
     ProviderServerError,
+    /// Local firewall authentication resolution failed.
+    FirewallAuthFailed,
     /// Codex returned an opaque HTTP 400 with no more specific cause.
     ProviderBadRequest,
     /// The response connection was lost.
@@ -803,6 +805,7 @@ impl FailureReason {
             Self::ProviderStreamTimeout => "provider_stream_timeout",
             Self::ProviderQueueTimeout => "provider_queue_timeout",
             Self::ProviderServerError => "provider_server_error",
+            Self::FirewallAuthFailed => "firewall_auth_failed",
             Self::ProviderBadRequest => "provider_bad_request",
             Self::ResponseConnectionLost => "response_connection_lost",
             Self::SafetyPolicyRefusal => "safety_policy_refusal",
@@ -837,6 +840,7 @@ impl From<FailureReason>
             FailureReason::ProviderStreamTimeout => Self::ProviderStreamTimeout,
             FailureReason::ProviderQueueTimeout => Self::ProviderQueueTimeout,
             FailureReason::ProviderServerError => Self::ProviderServerError,
+            FailureReason::FirewallAuthFailed => Self::FirewallAuthFailed,
             FailureReason::ProviderBadRequest => Self::ProviderBadRequest,
             FailureReason::ResponseConnectionLost => Self::ResponseConnectionLost,
             FailureReason::SafetyPolicyRefusal => Self::SafetyPolicyRefusal,
