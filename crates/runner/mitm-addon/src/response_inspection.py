@@ -9,12 +9,19 @@ batch limit; zlib and identity output deliveries are hard chunk-bounded.
 
 import asyncio
 from collections.abc import Callable, Generator, Iterator
+from typing import Protocol
 
 # Each step is at most one bounded row/event (including accounting), or a
 # bounded partial/discarded fragment. This is an aggregate quantum across ALL
 # decoded deliveries, not a new allowance for each feed.
 _STEPS_PER_TURN = 8
+_JSON_STEP_BYTES = 4 * 1024
 INSPECTION_INTERRUPTED = "response inspection interrupted"
+
+
+class _JsonFeed(Protocol):
+    def feed(self, chunk: bytes) -> None: ...
+    def accepts_more_input(self) -> bool: ...
 
 
 class CooperativeResponseInspection:
@@ -85,6 +92,15 @@ class CooperativeResponseInspection:
         if pending is not None:
             pending.close()
             self._fail(INSPECTION_INTERRUPTED)
+
+
+def json_steps(inspector: _JsonFeed, chunk: bytes) -> Generator[None]:
+    """Feed bounded HTTP JSON slices without replacing the inspector's state."""
+    for offset in range(0, len(chunk), _JSON_STEP_BYTES):
+        if not inspector.accepts_more_input():
+            return
+        inspector.feed(chunk[offset : offset + _JSON_STEP_BYTES])
+        yield
 
 
 def decoded_steps(
