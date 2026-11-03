@@ -362,21 +362,25 @@ attempts to fit the remaining budget. Two fresh GETs therefore consume at most
 whose 20-minute timeout also covers setup, validation, provisioning, and image
 preparation.
 
-Only these GETs set `AWS_MAX_ATTEMPTS=1` and `AWS_RETRY_MODE=standard`, so the
-helper owns whole-download retries without multiplying SDK request attempts.
+Required GETs and publication requests set `AWS_MAX_ATTEMPTS=1` and
+`AWS_RETRY_MODE=standard`, so their helpers own retries without multiplying SDK
+request attempts. Publication's shared deadline and verified write recovery are
+documented in the [Runner tool owner](../../.github/scripts/runner/README.md).
 Socket connect/read limits remain 5s/30s. Timeouts (exit 124), throttling,
 temporary service failures and recognized transport interruptions are retried.
 Authorization, configuration, missing artifacts, unknown errors and signal
 exits fail without another attempt. Validation failures are outside the retry
 loop. Exhaustion fails the required job; there is no compile fallback or
-automatic workflow rerun. PUT and cache lookup/publication policies are unchanged.
+automatic workflow rerun. Cache lookup and reference identity policies are unchanged.
 
-The helper requests `AWS_CLI_ERROR_FORMAT=json` and classifies service errors
+The shared R2 helper requests `AWS_CLI_ERROR_FORMAT=json` and classifies service errors
 by code, never provider message text. AWS CLI's general transport exceptions
 remain unstructured, so only known SDK-owned transport prefixes are recognized.
 Unsupported or changed error formats remain unknown rather than guessed.
 Logs contain only fixed operation/target labels, attempt count, elapsed time,
-byte count, exit status and a safe category. Raw provider output stays private
+local/download byte counts, exit status and a safe category. Connection and read
+timeouts have distinct categories; neither establishes an underlying network hop.
+Raw provider output stays private
 and is removed with temporary files. SIGINT/SIGTERM/SIGHUP interrupt both
 downloads and backoff, terminate owned work and prevent retry/publication.
 

@@ -2,44 +2,7 @@
 
 # Sourced by required Runner binary consumers. Publication and validation stay
 # with the caller; only complete, read-only GET attempts are retried here.
-runner_binary_download_category() {
-  local status=$1 error_file=$2 diagnostic code
-  if [ "$status" -eq 124 ]; then
-    echo timeout
-    return
-  fi
-  case "$status" in
-    252|253) echo configuration; return ;;
-    1[2-9][0-9]) echo process; return ;;
-  esac
-  diagnostic=$(head -c 8192 "$error_file")
-  if code=$(jq -er '(.Error.Code // .Code) | select(type == "string")' \
-    <<<"$diagnostic" 2>/dev/null); then
-    case "$code" in
-      SlowDown|Throttling|ThrottlingException|TooManyRequestsException|429)
-        echo throttled ;;
-      RequestTimeout|RequestTimeoutException|InternalError|InternalFailure|ServiceUnavailable|500|502|503|504)
-        echo service ;;
-      AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|ExpiredToken|InvalidToken|401|403)
-        echo authorization ;;
-      NoSuchKey|NoSuchBucket|NotFound|404) echo missing ;;
-      InvalidArgument|InvalidRequest|InvalidRange|ParamValidation|Configuration|NoCredentials|NoRegion)
-        echo configuration ;;
-      *) echo unknown ;;
-    esac
-  else
-    # AWS CLI structures service/configuration errors, but its general exception
-    # handler still prints Botocore transport errors as text. Match only these
-    # SDK-owned prefixes, never a substring from a provider's Message field.
-    local transport_pattern='^[[:space:]]*(aws: \[ERROR\]: )?(Could not connect to the endpoint URL:|Connection was closed before we received a valid response from endpoint URL:|Read timeout on endpoint URL:|Connect timeout on endpoint URL:|An error occurred while reading from response stream:)'
-    local incomplete_pattern='^[[:space:]]*(aws: \[ERROR\]: )?[0-9]+ read, but total bytes expected is [0-9]+[[:space:]]*$'
-    if [[ "$diagnostic" =~ $transport_pattern || "$diagnostic" =~ $incomplete_pattern ]]; then
-      echo transport
-    else
-      echo unknown
-    fi
-  fi
-}
+. "$(dirname "${BASH_SOURCE[0]}")/runner-binary-r2.sh"
 
 runner_binary_download_cancel() {
   local status=$1
@@ -99,7 +62,7 @@ runner_binary_download() {
     if [ "$status" -eq 0 ]; then
       category=success
     else
-      category=$(runner_binary_download_category "$status" "$errors")
+      category=$(runner_binary_r2_category "$status" "$errors")
     fi
     printf 'R2 GET operation=%s target=%s attempt=%s/3 elapsed=%ss bytes=%s exit=%s category=%s\n' \
       "$operation" "$EXPECTED_TARGET" "$attempt" "$((SECONDS - started))" \
@@ -109,10 +72,7 @@ runner_binary_download() {
       break
     fi
     rm -f "$partial" "$errors"
-    case "$category" in
-      timeout|throttled|service|transport) ;;
-      *) break ;;
-    esac
+    runner_binary_r2_retryable "$category" || break
     [ "$attempt" -lt 3 ] || break
     if [ "$((SECONDS - started + attempt + 5))" -ge "$budget" ]; then
       category=budget

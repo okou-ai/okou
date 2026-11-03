@@ -65,6 +65,14 @@ image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c 
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "download-only changes must be recognized as runner image inputs"
 
+base_ref=$(fixture_git rev-parse HEAD)
+cp "${SCRIPT_DIR}/runner/runner-binary-r2.sh" "${test_root}/.github/scripts/runner/"
+fixture_git add .github/scripts/runner/runner-binary-r2.sh
+fixture_git commit --quiet -m r2
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "R2 helper-only changes must be recognized as runner image inputs"
+
 # Host provisioning inputs must invalidate stable image reuse on their own.
 for path in \
   ansible/playbooks/provision-runner.yml \
