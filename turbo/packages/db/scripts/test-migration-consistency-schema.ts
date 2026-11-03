@@ -3137,6 +3137,14 @@ async function main(): Promise<void> {
       ),
     );
 
+    console.log("=== Registry resource backfill CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
     console.log("=== Presentation template copy CLI ===");
     console.log(
       execCommand(
