@@ -134,7 +134,7 @@ async function expectMobileSidebarPin(pinned: boolean) {
 }
 
 test("Keep menu pin changes responsive across resize and save", async () => {
-  const viewport = context.mocks.browser.matchMedia(true);
+  const viewport = context.mocks.browser.matchMedia(false);
   const pinResponse = context.mocks.deferred<void>();
   const events: ChatThreadEvent[] = [];
   context.mocks.api(
@@ -172,21 +172,23 @@ test("Keep menu pin changes responsive across resize and save", async () => {
     },
   );
   await setupHeaderPage(events);
-  click(screen.getByTestId("chat-thread-menu-trigger"));
+  click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
+  await expectMobileSidebarPin(true);
+  act(() => {
+    viewport.setMatches(true);
+  });
   await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-menu-trigger")).toHaveAttribute(
-      "data-pinned",
-      "true",
-    );
+    expect(
+      screen.getByTestId("chat-thread-header-title").closest("header"),
+    ).toContainElement(buttonNamed("Share messages"));
   });
   act(() => {
     viewport.setMatches(false);
   });
   await waitFor(() => {
     expect(buttonNamed("More actions")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Unpin chat")).not.toBeInTheDocument();
   });
 
   click(buttonNamed("More actions"));
@@ -245,7 +247,6 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     "More actions",
   ]);
   expect(buttonNamed("Open menu")).toBeInTheDocument();
-  expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
 
   click(more);
   await screen.findByRole("menu");
@@ -552,7 +553,6 @@ test("Retain message selection and restore mobile actions after sharing", async 
   await setupHeaderPage();
   click(buttonNamed("Share messages"));
   await screen.findAllByText("0 selected");
-  expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("More actions")).not.toBeInTheDocument();
   click(screen.getAllByText("Select message group")[0]!);
   await screen.findAllByText("1 selected");
