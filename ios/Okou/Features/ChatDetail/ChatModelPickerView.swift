@@ -143,6 +143,7 @@ struct ChatModelPickerView: View {
               }
               .pickerStyle(.menu)
               .accessibilityIdentifier("chat-model-effort")
+              .disabled(selection.uncertain)
               HStack {
                 Text("Faster · lower usage")
                 Spacer()
@@ -162,6 +163,7 @@ struct ChatModelPickerView: View {
               }
               .tint(.green)
               .accessibilityIdentifier("chat-model-fast")
+              .disabled(selection.uncertain)
               if let multiplier = configuration.catalog.fastMultiplier(selection.selection.model),
                 configuration.row(for: selection.selection)?.memberEffective.runtimeProviderType
                   == "codex-oauth-token"
@@ -179,6 +181,7 @@ struct ChatModelPickerView: View {
               Text("Changes apply to this chat.")
               Button("Use for future chats too") { Task { await selection.saveForFutureChats() } }
                 .accessibilityIdentifier("save-model-default")
+                .disabled(selection.uncertain)
               if selection.savedDefault { Label("Default saved", systemImage: "checkmark") }
             }
           }
@@ -260,7 +263,7 @@ struct ChatModelPickerView: View {
       }.frame(minHeight: 32).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .disabled(!row.isConfigurable)
+    .disabled(!row.isConfigurable || selection.uncertain)
     .accessibilityIdentifier("chat-model-\(row.id)")
     .accessibilityAddTraits(row.selectedModel == selection.selection.model ? [.isSelected] : [])
   }
