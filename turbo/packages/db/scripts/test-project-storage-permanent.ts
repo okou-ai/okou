@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { schema } from "../src/index";
 import { chatThreads } from "../src/runtime/chat-thread";
+import { chatThreadSnapshotGcState } from "../src/schema/chat-thread-snapshot";
 import { projects } from "../src/schema/project";
 import {
   projectEvents,
@@ -23,7 +24,57 @@ export async function validatePermanentProjectStorage(databaseUrl: string) {
   const owner = `project-owner-${projectId}`;
   const orgId = `project-org-${projectId}`;
   const otherOrgId = `${orgId}-other`;
+  const gcBucket = `project-gc-${projectId}`;
   try {
+    // Both snapshot families share durable, prefix-scoped GC progress.
+    for (const family of ["chat-thread", "project"]) {
+      const prefix = `${family}-snapshots/v1/ab`;
+      await db
+        .insert(chatThreadSnapshotGcState)
+        .values({ bucket: gcBucket, prefix });
+      const cursorObjectKey = `${prefix}/snapshot.json.gz`;
+      const cycleId = randomUUID();
+      await db
+        .update(chatThreadSnapshotGcState)
+        .set({ cursorObjectKey, cycleId })
+        .where(
+          and(
+            eq(chatThreadSnapshotGcState.bucket, gcBucket),
+            eq(chatThreadSnapshotGcState.prefix, prefix),
+          ),
+        );
+      await db
+        .insert(chatThreadSnapshotGcState)
+        .values({ bucket: gcBucket, prefix })
+        .onConflictDoNothing();
+      const progress = await db
+        .select({
+          cursorObjectKey: chatThreadSnapshotGcState.cursorObjectKey,
+          cycleId: chatThreadSnapshotGcState.cycleId,
+        })
+        .from(chatThreadSnapshotGcState)
+        .where(
+          and(
+            eq(chatThreadSnapshotGcState.bucket, gcBucket),
+            eq(chatThreadSnapshotGcState.prefix, prefix),
+          ),
+        );
+      assert.deepEqual(progress, [{ cursorObjectKey, cycleId }]);
+      await assert.rejects(
+        client.query(
+          "UPDATE chat_thread_snapshot_gc_state SET cursor_object_key = $1 WHERE bucket = $2 AND prefix = $3",
+          ["project-snapshots/v1/cd/snapshot.json.gz", gcBucket, prefix],
+        ),
+        { code: "23514", constraint: "chat_thread_snapshot_gc_cursor_check" },
+      );
+    }
+    await assert.rejects(
+      client.query(
+        "INSERT INTO chat_thread_snapshot_gc_state (bucket, prefix) VALUES ($1, $2)",
+        [gcBucket, "other-snapshots/v1/ab"],
+      ),
+      { code: "23514", constraint: "chat_thread_snapshot_gc_prefix_check" },
+    );
     await db.insert(projects).values([
       { id: projectId, userId: owner, orgId, name: "Launch" },
       { id: otherProjectId, userId: `${owner}-other`, orgId, name: "Launch" },
@@ -99,6 +150,9 @@ export async function validatePermanentProjectStorage(databaseUrl: string) {
     assert.equal(snapshot?.latestEventSeqId, 1);
   } finally {
     try {
+      await db
+        .delete(chatThreadSnapshotGcState)
+        .where(eq(chatThreadSnapshotGcState.bucket, gcBucket));
       await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
       await db.delete(projectEvents).where(eq(projectEvents.userId, owner));
       await db

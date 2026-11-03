@@ -1,0 +1,2 @@
+ALTER TABLE "chat_thread_snapshot_gc_state" DROP CONSTRAINT "chat_thread_snapshot_gc_prefix_check";--> statement-breakpoint
+ALTER TABLE "chat_thread_snapshot_gc_state" ADD CONSTRAINT "chat_thread_snapshot_gc_prefix_check" CHECK ("chat_thread_snapshot_gc_state"."prefix" ~ '^(chat-thread|project)-snapshots/v1/[0-9a-f]{2}$');
