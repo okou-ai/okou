@@ -278,6 +278,45 @@ test("A replacement image socket may fail during opening and retry without repla
   ).toHaveLength(2);
 });
 
+test("An empty viewer can create a tab after frames loss without replacing control", async () => {
+  const browser = await setupSplitViewer();
+  click(screen.getByLabelText("Close Other"));
+  await waitFor(() => {
+    expect(
+      screen.queryByLabelText("Other", { selector: '[role="tab"]' }),
+    ).not.toBeInTheDocument();
+  });
+  click(screen.getByLabelText("Close Example"));
+  await screen.findByText("No tabs open");
+  loseFrames(browser);
+  const create = screen.getByLabelText("New tab", { selector: "button" });
+  expect(create).toBeEnabled();
+  click(create);
+  await inputReady();
+  expect(queryAllByRoleFast("tab")).toHaveLength(1);
+  expect(
+    browser.requests.filter((request) => {
+      return request.method === "Runtime.addBinding";
+    }),
+  ).toHaveLength(2);
+});
+
+test("Frames loss during new-tab capture retries that tab without creating a duplicate", async () => {
+  const browser = await setupSplitViewer();
+  const capture = browser.holdNext("Page.startScreencast");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await capture.received;
+  loseFrames(browser);
+  const retry = await retryButton();
+  await act(async () => {
+    await capture.release();
+  });
+  click(retry);
+  await inputReady();
+  expect(queryAllByRoleFast("tab")).toHaveLength(3);
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+});
+
 test("Frames loss during an in-place image retry remains image-retryable", async () => {
   const browser = await setupSplitViewer();
   act(() => {
