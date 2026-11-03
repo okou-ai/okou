@@ -43,7 +43,7 @@ import {
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { isRetryableGmailReadError } from "./gmail-error";
+import { classifyGmailHistoryReadError } from "./gmail-error";
 import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
@@ -189,9 +189,7 @@ type GmailHistoryResult =
       readonly messagesAdded: readonly GmailHistoryMessageAdded[];
       readonly labelsAdded: readonly GmailHistoryLabelAdded[];
     }
-  | { readonly kind: "stale_cursor" }
-  | { readonly kind: "retryable_error" }
-  | { readonly kind: "gmail_error"; readonly status: number };
+  | ReturnType<typeof classifyGmailHistoryReadError>;
 
 interface PubSubOidcClaims {
   readonly email: string | null;
@@ -265,12 +263,7 @@ async function listGmailHistory(
     signal.throwIfAborted();
 
     if (result.kind !== "ok") {
-      if (result.status === 404) {
-        return { kind: "stale_cursor" };
-      }
-      return isRetryableGmailReadError(result.status, result.message)
-        ? { kind: "retryable_error" }
-        : { kind: "gmail_error", status: result.status };
+      return classifyGmailHistoryReadError(result.status, result.message);
     }
 
     for (const history of result.value.history ?? []) {

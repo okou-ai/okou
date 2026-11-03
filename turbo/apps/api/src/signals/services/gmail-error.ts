@@ -53,34 +53,44 @@ export class GmailAuthorizationError extends Error {
   }
 }
 
-export function isRetryableGmailReadError(
+type GmailHistoryReadFailure =
+  | { readonly kind: "stale_cursor" }
+  | { readonly kind: "retryable_error" }
+  | { readonly kind: "gmail_error"; readonly status: number };
+
+export function classifyGmailHistoryReadError(
   status: number,
   body: string,
-): boolean {
+): GmailHistoryReadFailure {
+  if (status === 404) {
+    return { kind: "stale_cursor" };
+  }
   if (
     status === 0 ||
     status === 408 ||
     status === 429 ||
     (status >= 500 && status < 600)
   ) {
-    return true;
+    return { kind: "retryable_error" };
   }
-  if (status !== 403) {
-    return false;
+  if (status === 403) {
+    const parsed = gmailErrorResponseSchema.safeParse(safeJsonParse(body));
+    if (
+      parsed.success &&
+      [
+        ...(parsed.data.error.errors ?? []),
+        ...(parsed.data.error.details ?? []),
+      ].some((detail) => {
+        return (
+          detail.reason === "rateLimitExceeded" ||
+          detail.reason === "userRateLimitExceeded"
+        );
+      })
+    ) {
+      return { kind: "retryable_error" };
+    }
   }
-  const parsed = gmailErrorResponseSchema.safeParse(safeJsonParse(body));
-  return (
-    parsed.success &&
-    [
-      ...(parsed.data.error.errors ?? []),
-      ...(parsed.data.error.details ?? []),
-    ].some((detail) => {
-      return (
-        detail.reason === "rateLimitExceeded" ||
-        detail.reason === "userRateLimitExceeded"
-      );
-    })
-  );
+  return { kind: "gmail_error", status };
 }
 
 async function readGmailErrorBody(response: Response): Promise<unknown> {
