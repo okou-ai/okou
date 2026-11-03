@@ -99,7 +99,7 @@ final class PermissionActionStore {
     return metadata.policy(for: action.permission, grants: snapshot.grants, at: .now).rawValue
       == action.action.rawValue
   }
-  var grant: ChatPermissionGrant? {
+  var grant: ChatPermissionRule? {
     snapshot?.grants.last {
       $0.connectorSlug == action.connectorSlug && $0.permission == action.permission
         && $0.action == action.action

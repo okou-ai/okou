@@ -49,7 +49,11 @@ struct PermissionActionCard: View {
           Text("Deny \(permission)")
         }
         Text(
-          "For \(store.snapshot?.agentName ?? String(localized: "this Agent")) · \(status)"
+          store.snapshot?.connectorScoped == true
+            ? status
+            : String(
+              localized:
+                "For \(store.snapshot?.agentName ?? String(localized: "this Agent")) · \(status)")
         )
         .font(.caption)
         .lineLimit(1, reservesSpace: true)
@@ -151,8 +155,12 @@ struct PermissionActionDetails: View {
         })?.description {
           Text(description).textSelection(.enabled)
         }
-        Text("These permissions apply to your account for this Agent.")
-          .font(.footnote).foregroundStyle(.secondary)
+        Text(
+          store.snapshot?.connectorScoped == true
+            ? "These permissions apply to this connector across your chats and accounts."
+            : "These permissions apply to your account for this Agent."
+        )
+        .font(.footnote).foregroundStyle(.secondary)
       }
       if let method = store.action.method, let path = store.action.path {
         Text("\(method) \(path)").font(.caption.monospaced()).textSelection(.enabled)

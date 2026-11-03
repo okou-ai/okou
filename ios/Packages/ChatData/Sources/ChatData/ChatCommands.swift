@@ -53,6 +53,18 @@ public actor ChatCommands {
       reasoningEffort: selection.reasoningEffort, composerOptions: composerOptions)
     let created: CreatedThread = try await client.request(
       "/api/chat-threads", method: "POST", body: JSONEncoder().encode(body))
+    if let options = composerOptions, options.chatAccountAccess {
+      let access = ChatComposerAccess(client: client)
+      for choice in options.initialConnectorAccessOverrides {
+        try await access.setConnectorAccess(
+          target: choice.target, connectionID: choice.connectionId,
+          threadID: created.id, enabled: choice.enabled)
+      }
+      for selection in options.connectorSelections {
+        try await access.setCurrentAccount(
+          target: selection.target, connectionID: selection.connectionId, threadID: created.id)
+      }
+    }
     return ChatThread(
       id: created.id, agentID: agent.agentId, title: created.title ?? "",
       selectedModel: created.selectedModel, createdAt: created.createdAt,
@@ -281,10 +293,12 @@ public actor ChatCommands {
       try container.encode(model, forKey: .model)
       try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
       try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
-      try container.encodeIfPresent(
-        composerOptions?.connectorSelections, forKey: .connectorSelections)
-      if composerOptions?.connectorSelections.isEmpty == false {
-        try container.encode("required", forKey: .connectorSelectionPolicy)
+      if composerOptions?.chatAccountAccess != true {
+        try container.encodeIfPresent(
+          composerOptions?.connectorSelections, forKey: .connectorSelections)
+        if composerOptions?.connectorSelections.isEmpty == false {
+          try container.encode("required", forKey: .connectorSelectionPolicy)
+        }
       }
       try container.encodeIfPresent(
         composerOptions?.initialRemoteAccessOverrides, forKey: .initialRemoteAccessOverrides)

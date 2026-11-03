@@ -430,6 +430,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
 private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse {
   typealias F = ConnectorHTTPFixtures
   switch request.url!.path {
+  case "/api/feature-switches":
+    return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
   case "/api/agents/\(F.agentID)":
     return ChatHTTPResponse(body: "{\"agentId\":\"\(F.agentID)\"}")
   case "/api/connectors/connected":

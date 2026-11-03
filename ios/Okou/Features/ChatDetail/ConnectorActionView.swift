@@ -72,8 +72,13 @@ struct ConnectorActionCard: View {
       }
     case .ready(let status):
       ChatCardHeader(title: status.label, systemImage: "link", titleLineLimit: 1) {
-        Text(status.account?.label ?? String(localized: "Connect an account for this Agent"))
-          .lineLimit(1, reservesSpace: true).textSelection(.enabled)
+        Text(
+          status.account?.label
+            ?? (status.chatAccountAccess
+              ? String(localized: "Connect an account")
+              : String(localized: "Connect an account for this Agent"))
+        )
+        .lineLimit(1, reservesSpace: true).textSelection(.enabled)
         (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
           .font(.caption).lineLimit(2, reservesSpace: true)
       }
@@ -92,7 +97,7 @@ struct ConnectorActionCard: View {
     case .select: return "Use this account"
     case .reconnect: return "Reconnect"
     default:
-      if status.connected { return "Authorize Agent" }
+      if status.connected { return status.chatAccountAccess ? "Connected" : "Authorize Agent" }
       return status.account == nil ? "Connect" : "Reconnect"
     }
   }
@@ -101,7 +106,10 @@ struct ConnectorActionCard: View {
     case .select: return "Confirm this account for the chat and continue."
     case .reconnect: return "Reconnect this exact account to continue."
     default:
-      if status.complete { return "Connected and authorized for this Agent." }
+      if status.complete {
+        return status.chatAccountAccess
+          ? "Account connected." : "Connected and authorized for this Agent."
+      }
       if status.connected { return "Allow this Agent to use the connected account." }
       if let reconnectReason = status.account?.reconnectReason {
         if reconnectReason == "configuration_incomplete"
@@ -136,7 +144,10 @@ struct ConnectorAuthorizationSheet: View {
             }
           }
         } footer: {
-          Text("Authorization applies to the Agent in this chat.")
+          Text(
+            flow.status.chatAccountAccess
+              ? "Connect this account to make it available in your account settings."
+              : "Authorization applies to the Agent in this chat.")
         }
         if flow.needsConnection {
           if flow.status.builtin != nil {
