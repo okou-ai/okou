@@ -51,7 +51,7 @@ import {
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { literal, object, uuid, type infer as zInfer } from "zod";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { alias, PgDialect } from "drizzle-orm/pg-core";
 import {
   normalChatInputConditionalValues,
   normalChatInputUpdateSet,
@@ -1391,6 +1391,8 @@ interface NormalSendInput {
   readonly thread: SendThread;
   readonly event: ReturnType<typeof normalSendEvent>;
   readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
+  /** The follow-up captured by an existing thread's revocation check. */
+  readonly replacementTarget: NormalReplacementTarget | undefined;
 }
 
 /** Prepare ordinary write facts without capturing the transaction owner. */
@@ -1407,6 +1409,7 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
     relationSource:
       args.auth.tokenType === "agent" ? input.agentRunSource : null,
     queueInput: { chatThreadId: thread.threadId, orgId: args.orgId },
+    replacementTarget: input.replacementTarget,
     existingPlan: existing && {
       ...existing,
       where: threadCondition,
@@ -1940,14 +1943,19 @@ const appendNormalSendInput$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const target = args.body.revokesEventId
-      ? parseRawRows(
-          chatEventReplacementTargetSchema,
-          await db.execute(
-            chatEventReplacementTargetSql(args.body.revokesEventId),
-          ),
-        )
-      : null;
+    // An existing thread's follow-up was captured by its revocation check and
+    // chat events are immutable, so only a new thread's revocation reads here.
+    const target =
+      input.replacementTarget === undefined
+        ? args.body.revokesEventId
+          ? parseRawRows(
+              chatEventReplacementTargetSchema,
+              await db.execute(
+                chatEventReplacementTargetSql(args.body.revokesEventId),
+              ),
+            )
+          : null
+        : [input.replacementTarget];
     signal.throwIfAborted();
     const snapshots: NormalInputAssetSnapshot[] = [];
     for (const [index, asset] of input.attachments.entries()) {
@@ -2429,7 +2437,7 @@ export const sendNormalEvent$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (revocation) {
+    if (revocation && "status" in revocation) {
       return revocation;
     }
     const input = await set(
@@ -2463,6 +2471,7 @@ export const sendNormalEvent$ = command(
             event,
             attachFileMetadata,
             agentRunSource: prepared.agentRunSource,
+            replacementTarget: revocation?.replacementTarget,
           }),
           signal,
         );
@@ -2678,6 +2687,11 @@ export const appendRecallChatEvent$ = command(
     return { ok: true, createdAt: resolved.createdAt };
   },
 );
+type NormalReplacementTarget = zInfer<typeof chatEventReplacementTargetSchema>;
+/** An unused follow-up, reused by the publication instead of re-read. */
+interface NormalRevocationTarget {
+  readonly replacementTarget: NormalReplacementTarget;
+}
 const validateNormalRevocationTarget$ = command(
   async (
     { get },
@@ -2687,17 +2701,47 @@ const validateNormalRevocationTarget$ = command(
       readonly clientEventId: string | undefined;
     },
     signal: AbortSignal,
-  ): Promise<NormalSendFailure | CreatedChatEventResponse | undefined> => {
+  ): Promise<
+    | NormalSendFailure
+    | CreatedChatEventResponse
+    | NormalRevocationTarget
+    | undefined
+  > => {
     const db = get(db$);
     if (!params.revokesEventId) {
       return undefined;
     }
+    // One statement reads the follow-up, its replacement projection and any
+    // input that already revoked it.
+    const revoker = alias(chatEvents, "followup_revoker");
+    const existingRevoker = db
+      .select({ id: revoker.id, createdAt: revoker.createdAt })
+      .from(revoker)
+      .where(
+        and(
+          eq(revoker.chatThreadId, params.threadId),
+          eq(revoker.revokesEventId, params.revokesEventId),
+        ),
+      )
+      .limit(1)
+      .as("followup_existing_revoker");
     const [target] = await db
       .select({
         id: chatEvents.id,
+        chatThreadId: chatEvents.chatThreadId,
+        createdAt: chatEvents.createdAt,
+        eventType: chatEvents.eventType,
+        contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        modelSelection: canonicalChatInputModelSelection(),
         content: canonicalChatEventContent(),
+        existingRevoker: {
+          id: existingRevoker.id,
+          createdAt: existingRevoker.createdAt,
+        },
       })
       .from(chatEvents)
+      .leftJoinLateral(existingRevoker, sql`true`)
       .where(
         and(
           eq(chatEvents.id, params.revokesEventId),
@@ -2710,24 +2754,28 @@ const validateNormalRevocationTarget$ = command(
     if (!target || resolveChatEventRecommendedFollowups(target).length === 0) {
       return badRequestMessage("Recommended follow-up is no longer available");
     }
-    const [existingRevoker] = await db
-      .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, params.threadId),
-          eq(chatEvents.revokesEventId, params.revokesEventId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (existingRevoker) {
+    if (target.existingRevoker) {
       // Postgres returns the uuid lowercase; the request may use any case.
-      return existingRevoker.id === params.clientEventId?.toLowerCase()
-        ? acceptedSendResponse(params.threadId, existingRevoker.createdAt, true)
+      return target.existingRevoker.id === params.clientEventId?.toLowerCase()
+        ? acceptedSendResponse(
+            params.threadId,
+            target.existingRevoker.createdAt,
+            true,
+          )
         : conflict("Recommended follow-up has already been used");
     }
-    return undefined;
+    // The publication's unique revokes index still guards single use.
+    return {
+      replacementTarget: {
+        id: target.id,
+        chatThreadId: target.chatThreadId,
+        createdAt: target.createdAt,
+        eventType: target.eventType,
+        contextType: target.contextType,
+        contextId: target.contextId,
+        modelSelection: target.modelSelection,
+      },
+    };
   },
 );
 export const appendInterruptUserMessage$ = command(
