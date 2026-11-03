@@ -1,4 +1,8 @@
-import { ProviderHttpError } from "../provider-error";
+import {
+  ProviderHttpError,
+  isProviderHttpError,
+  isProviderResponseError,
+} from "../provider-error";
 
 const MAX_DIAGNOSTIC_LENGTH = 500;
 
@@ -105,4 +109,40 @@ function truncatedDiagnostic(value: string): string {
   return value.length > MAX_DIAGNOSTIC_LENGTH
     ? `${value.slice(0, MAX_DIAGNOSTIC_LENGTH)}...`
     : value;
+}
+
+const STANDARD_OAUTH_ERRORS = Object.freeze([
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "unsupported_response_type",
+  "invalid_scope",
+  "access_denied",
+  "server_error",
+  "temporarily_unavailable",
+]);
+
+// Provider errors can contain credentials in their message, body, or cause.
+// Only retain typed status codes and allowlisted OAuth error identifiers.
+export function oauthFailureDiagnostics(
+  error: unknown,
+): Readonly<Record<string, string | number>> {
+  if (isOAuthProviderHttpError(error)) {
+    return {
+      failureKind: "oauth_http",
+      httpStatus: error.status,
+      ...(error.oauthError && STANDARD_OAUTH_ERRORS.includes(error.oauthError)
+        ? { oauthError: error.oauthError }
+        : {}),
+    };
+  }
+  if (isProviderHttpError(error)) {
+    return { failureKind: "provider_http", httpStatus: error.status };
+  }
+  if (isProviderResponseError(error)) {
+    return { failureKind: "provider_response" };
+  }
+  return { failureKind: "unexpected" };
 }
