@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import tailwindcss from "@tailwindcss/postcss";
 import { render, screen } from "@testing-library/react";
@@ -27,8 +27,12 @@ function globalCssPath(): string {
 
 async function compileSwitchCss(): Promise<string> {
   const path = globalCssPath();
+  const packageRoot = resolve(dirname(path), "../..");
   const source = `${readFileSync(path, "utf8")}\n@source "../components/ui/switch.tsx";`;
-  const result = await postcss([tailwindcss()]).process(source, { from: path });
+  const result = await postcss([tailwindcss({ base: packageRoot })]).process(
+    source,
+    { from: path },
+  );
   const rules: string[] = [];
 
   postcss.parse(result.css).walkRules((rule) => {
