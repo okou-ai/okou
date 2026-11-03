@@ -69,7 +69,9 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
 
 test("Open credit usage from the subscription row in the mobile account menu", async () => {
   mockAdminAccountSidebar();
-  context.mocks.browser.matchMedia(() => false);
+  context.mocks.browser.matchMedia(() => {
+    return false;
+  });
   context.mocks.data.personalModelProviders([connectedPersonalCodexProvider()]);
   await setupPage({
     context,
@@ -85,9 +87,7 @@ test("Open credit usage from the subscription row in the mobile account menu", a
   });
   click(screen.getByLabelText("Open menu"));
   const menu = await openAccountMenu();
-  const usage = await within(menu).findByRole("menuitem", {
-    name: "ChatGPT usage",
-  });
+  const usage = await within(menu).findByLabelText("ChatGPT usage");
   click(usage);
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   expect(
