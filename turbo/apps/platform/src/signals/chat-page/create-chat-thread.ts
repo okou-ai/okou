@@ -48,7 +48,7 @@ import {
   type DraftSignals,
 } from "../okou-page/chat-draft.ts";
 import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { resetSignal, settle } from "../utils.ts";
+import { debounceCommand, resetSignal, settle } from "../utils.ts";
 import type {
   ChatEvent,
   OptimisticChatEvent,
@@ -89,7 +89,6 @@ import {
 import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { apiClient$ } from "../api-client.ts";
-import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";

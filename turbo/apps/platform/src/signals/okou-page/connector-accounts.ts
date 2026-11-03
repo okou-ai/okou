@@ -6,7 +6,6 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { debounceCommand } from "../command-scheduling.ts";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/validators/connector-accounts";
 import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
 import type {
@@ -18,7 +17,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { isConnectorChangedPayloadFor } from "../connector-change.ts";
-import { resetSignal } from "../utils.ts";
+import { debounceCommand, resetSignal } from "../utils.ts";
 import { userConnectedConnectors$ } from "./connector-overview.ts";
 
 const CONNECTOR_ACCOUNT_PAGE_SIZE = 50;

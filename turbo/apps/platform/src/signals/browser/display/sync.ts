@@ -1,11 +1,11 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { throttleCommand } from "../../command-scheduling.ts";
 import {
   createDeferredPromise,
   detach,
   isAbortError,
   Reason,
   resetSignal,
+  throttleCommand,
   type DeferredPromise,
 } from "../../utils.ts";
 import type { CdpClient } from "../cdp/client.ts";

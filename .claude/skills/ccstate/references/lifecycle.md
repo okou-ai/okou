@@ -96,7 +96,7 @@ set(startLoop$, { runId }, resumeSignal);
 
 ## Debounced and Throttled Commands
 
-Use the factories in `signals/command-scheduling.ts` for command scheduling:
+Use the factories in `signals/utils.ts` for command scheduling:
 
 ```typescript
 const debouncedSearch$ = debounceCommand(search$, 300);
