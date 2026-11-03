@@ -10,6 +10,12 @@ final class MessageMarkdownCache {
     let content: AttributedString
     let cost: Int
     var lastUse: UInt64
+    var tables: (viewport: MessageTableLayout.Viewport, layouts: MessageTableLayouts)?
+  }
+
+  private struct TableKey: Hashable {
+    let text: String
+    let viewport: MessageTableLayout.Viewport
   }
 
   private let worker: MarkdownWorker
@@ -17,6 +23,7 @@ final class MessageMarkdownCache {
   private let entryLimit: Int
   private var entries: [String: Entry] = [:]
   private var inFlight: [String: Task<AttributedString, Never>] = [:]
+  private var tableTasks: [TableKey: Task<MessageTableLayouts, Never>] = [:]
   private var totalCost = 0
   private var clock: UInt64 = 0
   private var generation = UUID()
@@ -60,6 +67,28 @@ final class MessageMarkdownCache {
     return content
   }
 
+  func prepareTables(
+    for text: String, viewport: MessageTableLayout.Viewport
+  ) async -> MessageTableLayouts {
+    guard text.contains("|"), !Task.isCancelled else { return [:] }
+    let content = await content(for: text)
+    guard !Task.isCancelled else { return [:] }
+    if let tables = entries[text]?.tables, tables.viewport == viewport { return tables.layouts }
+    let key = TableKey(text: text, viewport: viewport)
+    let currentGeneration = generation
+    if let task = tableTasks[key] {
+      let layouts = await task.value
+      return currentGeneration == generation && !Task.isCancelled ? layouts : [:]
+    }
+    let task = Task { [worker] in await worker.prepareTables(content, viewport: viewport) }
+    tableTasks[key] = task
+    let layouts = await task.value
+    guard currentGeneration == generation else { return [:] }
+    tableTasks[key] = nil
+    entries[text]?.tables = (viewport, layouts)
+    return layouts
+  }
+
   func prepareLatest(_ messages: [ChatMessage]) async {
     // Prepare the landing viewport before publication; older rows are prepared on demand.
     let currentGeneration = generation
@@ -74,6 +103,8 @@ final class MessageMarkdownCache {
     generation = UUID()
     for task in inFlight.values { task.cancel() }
     inFlight.removeAll()
+    for task in tableTasks.values { task.cancel() }
+    tableTasks.removeAll()
     entries.removeAll()
     totalCost = 0
   }
@@ -83,6 +114,12 @@ private actor MarkdownWorker {
   let baseURL: URL
 
   init(baseURL: URL) { self.baseURL = baseURL }
+
+  func prepareTables(
+    _ content: AttributedString, viewport: MessageTableLayout.Viewport
+  ) -> MessageTableLayouts {
+    MessageTableLayout.prepare(content, viewport: viewport)
+  }
 
   func parse(_ text: String) -> AttributedString {
     guard !Task.isCancelled else { return AttributedString(text) }

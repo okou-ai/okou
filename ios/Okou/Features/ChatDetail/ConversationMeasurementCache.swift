@@ -9,6 +9,8 @@ final class ConversationMeasurementCache {
     let category: UIContentSizeCategory
     var height: CGFloat
     var diskKey: ConversationHeightDiskCache.Key? = nil
+    var tableViewport: MessageTableLayout.Viewport? = nil
+    var tables: MessageTableLayouts = [:]
   }
 
   let namespace: [String]?
@@ -22,10 +24,11 @@ final class ConversationMeasurementCache {
   private let limit = 256
 
   func measurement(
-    for row: ConversationCollectionRow, width: CGFloat, category: UIContentSizeCategory
+    for row: ConversationCollectionRow, width: CGFloat, category: UIContentSizeCategory,
+    tableViewport: MessageTableLayout.Viewport?
   ) -> Measurement? {
     guard let value = entries[row.id], value.row == row, value.width == width,
-      value.category == category
+      value.category == category, value.tableViewport == tableViewport
     else { return nil }
     return value
   }

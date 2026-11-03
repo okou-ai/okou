@@ -36,8 +36,8 @@ chat-specific choices and personal subscription account management.
 Workspace setup and Okou account management remain on the web.
 
 Conversation history renders durable user messages and assistant results using
-Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
-links, images, and code blocks, with text selection, code copying, and horizontal
+a pinned Okou fork of Textual 0.5.0. The renderer supports Markdown headings, lists,
+quotes, tables, links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output is not rendered. The native composer Connector sheet supports
 service access, conversation account choices, permission grants, discovery and

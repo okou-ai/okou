@@ -1,5 +1,5 @@
 {
-  "originHash" : "b2cbbbbed1f47c3071ee6420c16eafa9e4d4869b297cc760b20bae7b0cc89ddd",
+  "originHash" : "10ff92a2329b1cb8d6dbbb4b04a2817270b3e7e3d43a09aab0fa84481cca1775",
   "pins" : [
     {
       "identity" : "ably-cocoa",
@@ -103,10 +103,9 @@
     {
       "identity" : "textual",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gonzalezreal/textual.git",
+      "location" : "https://github.com/okou-ai/textual.git",
       "state" : {
-        "revision" : "01b51875a5406eefc95f52a058cb059e7bc94dc4",
-        "version" : "0.5.0"
+        "revision" : "7bfd355629ab8897b9d92e80de20db6d2f802ce9"
       }
     }
   ],

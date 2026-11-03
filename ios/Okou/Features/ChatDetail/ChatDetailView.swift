@@ -93,6 +93,7 @@ struct ChatDetailView: View {
         scrolling.rowsPresented(firstItemID: id)
         if let id { onFirstMessagePresented?(id) }
       },
+      earlierMessages: conversation.earlierWindowMessages,
       quote: conversation.quote,
       refresh: {
         await conversation.refresh()
@@ -290,7 +291,10 @@ struct ChatDetailView: View {
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
       }
-      .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
+      .padding(
+        EdgeInsets(
+          top: topSpacing, leading: ConversationCollectionRow.messageHorizontalInset,
+          bottom: 0, trailing: ConversationCollectionRow.messageHorizontalInset))
     case .footer(let executionState, let showsAvatar):
       VStack(alignment: .leading, spacing: 24) {
         if executionState.isActive {
@@ -387,7 +391,9 @@ struct ChatDetailView: View {
         .foregroundStyle(
           message.isError ? Color.red : (isWorkHistory ? Color.secondary : Color.primary)
         )
-        .padding(.leading, message.role == .assistant ? 6 : 0)
+        .padding(
+          .leading, message.role == .assistant ? ConversationCollectionRow.assistantLeadingInset : 0
+        )
       }
       ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, attachment in
         MessageAttachmentView(
