@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(unix)]
+use cli_test_support::child::KillAndWaitChild as ChildGuard;
 
 const STALE_RECORD_PID: u32 = u32::MAX;
 const STALE_RECORD_STARTTIME: u64 = 1;
@@ -8,30 +10,13 @@ const TEST_PROCFS_STARTTIME: u64 = 123456;
 const TEST_STARTED_AT: &str = "2026-01-01T00:00:00.000Z";
 
 #[cfg(unix)]
-struct ChildGuard(std::process::Child);
-
-#[cfg(unix)]
-impl ChildGuard {
-    fn spawn() -> Self {
-        Self(
-            std::process::Command::new("sleep")
-                .arg("30")
-                .spawn()
-                .unwrap(),
-        )
-    }
-
-    fn pid(&self) -> u32 {
-        self.0.id()
-    }
-}
-
-#[cfg(unix)]
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
+fn sleeping_child() -> ChildGuard {
+    ChildGuard(
+        std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap(),
+    )
 }
 
 struct TestProcfs {
@@ -402,10 +387,10 @@ async fn try_list_returns_valid_live_instance_metadata() {
 async fn try_list_sorts_multiple_live_instances() {
     let registry = TestRegistry::new();
     let _handle = publish(&registry.home, registry.metadata()).await.unwrap();
-    let child = ChildGuard::spawn();
-    let child_stat = process::read_process_stat(child.pid()).await.unwrap();
+    let child = sleeping_child();
+    let child_stat = process::read_process_stat(child.0.id()).await.unwrap();
     let child_record = registry
-        .other_live_process_record(child.pid(), child_stat.starttime)
+        .other_live_process_record(child.0.id(), child_stat.starttime)
         .await;
     registry.write_record_at_identity(&child_record).await;
 
@@ -798,8 +783,8 @@ async fn publish_removes_records_with_mismatched_file_identity() {
 #[cfg(unix)]
 #[tokio::test]
 async fn publish_keeps_other_live_runner_instance_records() {
-    let child = ChildGuard::spawn();
-    let child_pid = child.pid();
+    let child = sleeping_child();
+    let child_pid = child.0.id();
     let registry = TestRegistry::new();
     registry.ensure_dir();
     let child_stat = process::read_process_stat(child_pid).await.unwrap();

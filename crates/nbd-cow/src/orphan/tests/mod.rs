@@ -3,21 +3,13 @@ use std::process::{Command, Stdio};
 use std::rc::Rc;
 
 use super::*;
+use cli_test_support::child::KillAndWaitChild as ChildGuard;
 
 struct DropGuard(Rc<Cell<bool>>);
 
 impl Drop for DropGuard {
     fn drop(&mut self) {
         self.0.set(true);
-    }
-}
-
-struct ChildGuard(std::process::Child);
-
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
     }
 }
 

@@ -20,6 +20,7 @@ guest-control-proto.workspace = true
 test-support = []
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]
