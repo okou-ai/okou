@@ -9,6 +9,9 @@ import { db$ } from "../external/db";
 import { sendTeamsMessage } from "../external/teams-bot-client";
 import { teamsErrorResponse } from "../services/teams-message-target.service";
 import type { RouteEntry } from "../route-entry";
+import { resolveTeamsMessageSendPresentation$ } from "../services/integration-message-send-presentation.service";
+import { appendTeamsCardFooter } from "../../lib/integration-message-card-footer";
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
 
 const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -37,6 +40,11 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return target;
   }
   const { installation } = target;
+  const presentation = await set(
+    resolveTeamsMessageSendPresentation$,
+    installation.teamsTenantId,
+    signal,
+  );
 
   const result = await sendTeamsMessage(
     {
@@ -44,8 +52,16 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       conversationId: target.conversationId,
       activityId: target.activityId,
       tenantId: installation.teamsTenantId,
-      text: body.text ?? "Adaptive card",
-      card: body.card,
+      text: appendIntegrationMessageFooter(
+        body.text ?? "Adaptive card",
+        presentation.footerText,
+      ),
+      card: body.card
+        ? appendTeamsCardFooter(body.card, presentation)
+        : undefined,
+      ...(!body.card && presentation.entities.length > 0
+        ? { entities: presentation.entities }
+        : {}),
     },
     signal,
   );

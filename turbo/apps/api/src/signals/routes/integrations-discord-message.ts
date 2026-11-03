@@ -15,7 +15,7 @@ import {
 } from "../../lib/discord-message";
 import { requireDiscordBinding$ } from "../services/discord-access.service";
 import {
-  discordMessageSendFooterText,
+  integrationMessageSendFooterText,
   integrationMessageSendLabels$,
 } from "../services/integration-message-context.service";
 import { readDiscordContextMessage$ } from "../services/discord-context.service";
@@ -28,6 +28,7 @@ import {
   resolveDiscordOutputChannel$,
 } from "../services/discord-output-destination.service";
 import type { RouteEntry } from "../route-entry";
+import { escapeMarkdownFooterLabel } from "../../lib/integration-message-footer";
 
 function partialFailure(
   response: DiscordFailureResponse,
@@ -169,9 +170,12 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const labels = await get(integrationMessageSendLabels$);
   signal.throwIfAborted();
-  const footerText = discordMessageSendFooterText({
+  const footerText = integrationMessageSendFooterText({
     ...labels,
-    discordUserId: binding.binding.discordUserId,
+    agentLabel: escapeMarkdownFooterLabel(labels.agentLabel),
+    userLabel: labels.runOwner
+      ? `<@${binding.binding.discordUserId}>`
+      : undefined,
   });
   const text = footerText
     ? `${body.data.text}\n\n-# ${footerText}`

@@ -1066,7 +1066,9 @@ describe("WhatsApp through the shared AgentPhone number", () => {
               return request.body;
             })
             .join(""),
-        ).toBe("Your completed report. ".repeat(300));
+        ).toBe(
+          `${"Your completed report. ".repeat(300)}\n\nSent via Okou · Triggered by WhatsApp Test`,
+        );
       } else if (scenario === "closed") {
         expect(response.status).toBe(200);
         expect(response.body).toStrictEqual({

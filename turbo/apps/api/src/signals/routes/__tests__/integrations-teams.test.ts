@@ -183,7 +183,14 @@ describe("Microsoft Teams integration CLI routes", () => {
     expect(captured.authorization).toBe("Bearer bot-framework-token");
     expect(captured.body).toMatchObject({
       type: "message",
-      text: "Hello from Teams CLI",
+      text: "Hello from Teams CLI\n\nSent via API caller credential · Triggered by <at>Ada Lovelace</at>",
+      entities: [
+        {
+          type: "mention",
+          text: "<at>Ada Lovelace</at>",
+          mentioned: { id: fixture.teamsAadObjectId, name: "Ada Lovelace" },
+        },
+      ],
       textFormat: "markdown",
       replyToId: fixture.teamsThreadId,
       channelData: { tenant: { id: fixture.teamsTenantId } },
@@ -252,6 +259,7 @@ describe("Microsoft Teams integration CLI routes", () => {
             card: {
               type: "AdaptiveCard",
               version: "1.4",
+              msteams: { width: "Full" },
               body: [
                 {
                   type: "TextBlock",
@@ -287,13 +295,38 @@ describe("Microsoft Teams integration CLI routes", () => {
       expect(captured.conversationId).toBe(outgoing.dmConversationId);
       expect(captured.body).toMatchObject({
         type: "message",
-        summary: "Pick a workflow",
+        summary:
+          "Pick a workflow\n\nSent via API caller credential · Triggered by <at>Ada Lovelace</at>",
         attachments: [
           {
             contentType: "application/vnd.microsoft.card.adaptive",
             content: {
               type: "AdaptiveCard",
               version: "1.4",
+              body: [
+                { type: "TextBlock", text: "Pick a workflow", wrap: true },
+                {
+                  type: "TextBlock",
+                  text: "Sent via API caller credential · Triggered by <at>Ada Lovelace</at>",
+                  size: "Small",
+                  isSubtle: true,
+                  wrap: true,
+                  separator: true,
+                },
+              ],
+              msteams: {
+                width: "Full",
+                entities: [
+                  {
+                    type: "mention",
+                    text: "<at>Ada Lovelace</at>",
+                    mentioned: {
+                      id: fixture.teamsAadObjectId,
+                      name: "Ada Lovelace",
+                    },
+                  },
+                ],
+              },
             },
           },
         ],

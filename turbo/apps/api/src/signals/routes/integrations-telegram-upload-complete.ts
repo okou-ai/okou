@@ -1,3 +1,7 @@
+import {
+  telegramMessageSendFooterText$,
+  telegramMessageSendCaption,
+} from "../services/telegram-footer.service";
 import { command } from "ccstate";
 import {
   integrationsTelegramUploadCompleteContract,
@@ -148,8 +152,10 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return access.response;
   }
   const chatId = access.chatId;
+  const footerText = await get(telegramMessageSendFooterText$);
+  signal.throwIfAborted();
   const result = await sendDocument(botToken, chatId, fetchUrl, {
-    caption: body.caption,
+    ...telegramMessageSendCaption(body.caption, footerText),
     messageThreadId: body.messageThreadId,
   });
   signal.throwIfAborted();

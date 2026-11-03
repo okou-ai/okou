@@ -566,7 +566,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       files: [{ id: "F-MATERIALIZED", title: undefined }],
       channel_id: "C123",
       thread_ts: undefined,
-      initial_comment: undefined,
+      initial_comment: expect.stringMatching(
+        /^Sent via .+ · Triggered by <@[^>]+>$/u,
+      ),
     });
     expect(context.mocks.slack.files.info).toHaveBeenCalledTimes(1);
     expect(
@@ -1249,7 +1251,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             files: [{ id: fileId, title: undefined }],
             channel_id: channel,
             thread_ts: undefined,
-            initial_comment: undefined,
+            initial_comment: expect.stringMatching(
+              /^Sent via .+ · Triggered by <@[^>]+>$/u,
+            ),
           },
         ],
       ]);
@@ -1615,7 +1619,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         files: [{ id: fileId, title: "Quarterly report" }],
         channel_id: "C123",
         thread_ts: "123.456",
-        initial_comment: "Uploaded from a run",
+        initial_comment: expect.stringMatching(
+          /^Uploaded from a run\n\nSent via Computer Use public authorization · Triggered by <@[^>]+>$/u,
+        ),
       });
 
       const files = await fixture.run(() => {
@@ -1696,6 +1702,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ).toHaveBeenLastCalledWith({
           files: [{ id: fileId, title: "Self report" }],
           channel_id: "D-SELF",
+          thread_ts: undefined,
+          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
         });
       });
     },
@@ -1821,8 +1829,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         expect(
           context.mocks.slack.files.completeUploadExternal,
         ).toHaveBeenLastCalledWith({
-          files: [{ id: "F-SELF" }],
+          files: [{ id: "F-SELF", title: undefined }],
           channel_id: "D-SELF",
+          thread_ts: undefined,
+          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
         });
         expect(context.mocks.slack.conversations.open).toHaveBeenCalledTimes(1);
       });

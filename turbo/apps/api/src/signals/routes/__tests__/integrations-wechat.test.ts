@@ -464,7 +464,7 @@ describe("WeChat reply presentation and processing status", () => {
     },
   );
 
-  it("adds one model footer across long Unicode replies and keeps typing for queued follow-ups", async () => {
+  it("delivers long Unicode replies and keeps typing for queued follow-ups", async () => {
     const fixture = await responseFixture();
     await fixture.receive("First task");
     const first = await fixture.claim();
@@ -477,7 +477,7 @@ describe("WeChat reply presentation and processing status", () => {
     expect(fixture.sentTexts).toHaveLength(3);
     const [welcome, ...reply] = fixture.sentTexts;
     expect(welcome).toContain("You're connected");
-    expect(reply.join("")).toBe(`${text}\n\nClaude Fable 5.1`);
+    expect(reply.join("")).toBe(text);
     expect(
       fixture.sentTexts.every((part) => {
         return Array.from(part).length <= 2000;
@@ -507,7 +507,6 @@ describe("WeChat reply presentation and processing status", () => {
       }
       await flushWaitUntilForTest();
       expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
-      expect(fixture.sentTexts.join("")).toContain("Claude Fable 5.1");
     },
   );
 
@@ -536,7 +535,7 @@ describe("WeChat reply presentation and processing status", () => {
       await flushWaitUntilForTest();
       expect(fixture.sentTexts).toStrictEqual([
         expect.stringContaining("You're connected"),
-        "Still delivered\n\nClaude Fable 5.1",
+        "Still delivered",
       ]);
     },
   );
@@ -637,7 +636,7 @@ describe("WeChat reply presentation and processing status", () => {
         [200],
       );
       expect(chunks).toHaveLength(2);
-      expect(chunks.join("")).toBe(`${text}\n\nClaude Fable 5.1`);
+      expect(chunks.join("")).toBe(text);
     },
   );
 
@@ -728,7 +727,7 @@ describe("WeChat reply presentation and processing status", () => {
     if (!received.ok) {
       throw received.error;
     }
-    expect(replies).toStrictEqual(["Recovered answer\n\nClaude Fable 5.1"]);
+    expect(replies).toStrictEqual(["Recovered answer"]);
   });
 
   it.each([0, 91_000])(
@@ -851,7 +850,7 @@ describe("WeChat reply presentation and processing status", () => {
     await flushWaitUntilForTest();
     expect(fixture.sentTexts).toStrictEqual([
       expect.stringContaining("You're connected"),
-      "Done\n\nClaude Fable 5.1",
+      "Done",
     ]);
     expect(
       fixture.provider.typingStatuses.slice(completedStatus),
@@ -1359,7 +1358,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
       item_list: [
         {
           type: 1,
-          text_item: { text: "I will remember Orchid.\n\nClaude Fable 5.1" },
+          text_item: { text: "I will remember Orchid." },
         },
       ],
     },
@@ -1398,7 +1397,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   expect(history.body.messages[0]).toMatchObject({
     direction: "outbound",
     status: "sent",
-    content: "I will remember Orchid.\n\nClaude Fable 5.1",
+    content: "I will remember Orchid.",
   });
   const older = await accept(
     messages.history({

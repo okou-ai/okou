@@ -596,7 +596,6 @@ describe("Discord context parity through public OAuth bindings", () => {
     expect(content.startsWith(text)).toBeTruthy();
     expect(content.match(/Sent via /g)).toHaveLength(1);
     expect(content).toContain(`Triggered by <@${actor.discordUserId}>`);
-    expect(content).toContain("Claude Fable 5.1");
     expect(sent.body.messages.length).toBeGreaterThan(1);
   });
 });

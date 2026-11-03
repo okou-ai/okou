@@ -1,4 +1,3 @@
-import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -9,11 +8,7 @@ import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-u
 import { and, eq, isNotNull } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { logger } from "../../lib/log";
-import {
-  buildTelegramResponse,
-  escapeHtml,
-  splitMessage,
-} from "../../lib/telegram-format";
+import { buildTelegramResponse, splitMessage } from "../../lib/telegram-format";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -40,11 +35,6 @@ import {
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { storeTelegramBotMessage$ } from "./telegram-callback-persistence.service";
-import {
-  runModelSelectionColumns,
-  runModelSelectionCondition,
-  runModelSelectionFromRow,
-} from "./run-model-selection.service";
 
 const L = logger("InternalCallbacksTelegramChat");
 const TELEGRAM_COMPLETION_CHUNK_THROTTLE_MS = 1100;
@@ -397,14 +387,13 @@ const persistTelegramChatDelivery$ = command(
 
 const deliverClaimedTelegramChatCallback$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly callback: ClaimedTelegramChatDelivery;
       readonly status: "completed" | "failed";
     },
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
-    const db = get(db$);
     const { payload, run, messageContent, binding } = await set(
       loadTelegramChatDeliveryContext$,
       args,
@@ -423,33 +412,13 @@ const deliverClaimedTelegramChatCallback$ = command(
       sendChatAction(binding.botToken, payload.chatId, "typing"),
       signal,
     );
-    const footerText = await (async (): Promise<string | undefined> => {
-      // The official shared bot has no per-bot default agent, so replies never
-      // carry a "Responded by" label; only the model label is shown.
-      const runId = args.callback.runId;
-      const runModel = await (async () => {
-        const [row] = await db
-          .select(runModelSelectionColumns())
-          .from(agentRuns)
-          .where(runModelSelectionCondition(runId))
-          .limit(1);
-        return runModelSelectionFromRow(row);
-      })();
-      const model = runModel?.selectedModel;
-      const modelLabel = model
-        ? getRunModelDisplayName(model, runModel?.codexServiceTier)
-        : undefined;
-
-      return modelLabel ? escapeHtml(modelLabel) : undefined;
-    })();
-    signal.throwIfAborted();
     const responseText =
       args.status === "completed" ? messageContent : undefined;
     const sent = await sendTelegramCompletionMessages(
       {
         botToken: binding.botToken,
         target: payload,
-        htmlOutput: buildTelegramResponse(messageContent, footerText),
+        htmlOutput: buildTelegramResponse(messageContent),
       },
       signal,
     );
