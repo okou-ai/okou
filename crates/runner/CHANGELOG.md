@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.244.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.4...runner-rs-v0.244.5) (2026-11-03)
+
+
+### Refactoring
+
+* **python:** centralize classified header rejection termination ([#44913](https://github.com/okou-ai/okou/issues/44913)) ([b09d3a5](https://github.com/okou-ai/okou/commit/b09d3a50a46971e6709fe91e2c72dac48c066139))
+* **rust:** share blocking-worker release ownership in tests ([#44912](https://github.com/okou-ai/okou/issues/44912)) ([0c873d8](https://github.com/okou-ai/okou/commit/0c873d8254326de823cf8d42f5fe06489e555299))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.3...runner-rs-v0.244.4) (2026-11-03)
 
 ### Release Dependencies

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.813.0](https://github.com/okou-ai/okou/compare/core-v8.812.2...core-v8.813.0) (2026-11-03)
+
+
+### Features
+
+* prepare storage-independent registry resource archives ([#44895](https://github.com/okou-ai/okou/issues/44895)) ([e894e7e](https://github.com/okou-ai/okou/commit/e894e7e17a3a0e7285f537e50958051e4dbd13d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.0
+
 ## [8.812.2](https://github.com/okou-ai/okou/compare/core-v8.812.1...core-v8.812.2) (2026-11-03)
 
 

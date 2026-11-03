@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.57](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.56...runner-lifecycle-v0.17.57) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** use fixed home image disk watermarks ([#44905](https://github.com/okou-ai/okou/issues/44905)) ([36900c4](https://github.com/okou-ai/okou/commit/36900c44f1540184327ebbf803a6a01f3f3f8f28))
+
 ## [0.17.56](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.55...runner-lifecycle-v0.17.56) (2026-11-03)
 
 ## [0.17.55](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.54...runner-lifecycle-v0.17.55) (2026-11-03)

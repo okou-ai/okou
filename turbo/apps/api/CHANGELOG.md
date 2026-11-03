@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.45.0](https://github.com/okou-ai/okou/compare/api-v2.44.2...api-v2.45.0) (2026-11-03)
+
+
+### Features
+
+* **api:** show active connector catalog version in debug settings ([#44900](https://github.com/okou-ai/okou/issues/44900)) ([2e3fd47](https://github.com/okou-ai/okou/commit/2e3fd47a9993bfee38cba6607954b37e4ff1222c))
+* prepare storage-independent registry resource archives ([#44895](https://github.com/okou-ai/okou/issues/44895)) ([e894e7e](https://github.com/okou-ai/okou/commit/e894e7e17a3a0e7285f537e50958051e4dbd13d7))
+
+
+### Bug Fixes
+
+* record safe connector oauth callback failures ([#44922](https://github.com/okou-ai/okou/issues/44922)) ([32ca387](https://github.com/okou-ai/okou/commit/32ca387252ee3230930cd4baa694c9a7a87de88d))
+
+
+### Refactoring
+
+* **api:** remove browser window bookkeeping from prompts ([#44906](https://github.com/okou-ai/okou/issues/44906)) ([43da01e](https://github.com/okou-ai/okou/commit/43da01ebb58b43156fe6b0d3ae4ed96021a7253f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.0
+    * @okouai/connectors bumped to 3.21.1
+    * @okouai/core bumped to 8.813.0
+    * @okouai/db bumped to 2.19.0
+    * @okouai/pi-agent-runtime bumped to 1.51.58
+
 ## [2.44.2](https://github.com/okou-ai/okou/compare/api-v2.44.1...api-v2.44.2) (2026-11-03)
 
 

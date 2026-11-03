@@ -13,6 +13,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1088.0](https://github.com/okou-ai/okou/compare/app-v0.1087.4...app-v0.1088.0) (2026-11-03)
+
+
+### Features
+
+* **api:** show active connector catalog version in debug settings ([#44900](https://github.com/okou-ai/okou/issues/44900)) ([2e3fd47](https://github.com/okou-ai/okou/commit/2e3fd47a9993bfee38cba6607954b37e4ff1222c))
+* **platform:** show router capability families as published in onboarding ([#44914](https://github.com/okou-ai/okou/issues/44914)) ([2bf7b9b](https://github.com/okou-ai/okou/commit/2bf7b9b981609ab046ff167743ff949bddefe344))
+
+
+### Bug Fixes
+
+* **app:** preserve focus while saving remote host access ([#44896](https://github.com/okou-ai/okou/issues/44896)) ([a63393a](https://github.com/okou-ai/okou/commit/a63393a163ba7072ec32f692412e46be49cb1d93))
+* **app:** simplify markdown table footer actions ([#44911](https://github.com/okou-ai/okou/issues/44911)) ([6624aa7](https://github.com/okou-ai/okou/commit/6624aa77a3e85464a8573cbb524c13060f768683))
+* **app:** tighten spacing between projects and chats ([#44916](https://github.com/okou-ai/okou/issues/44916)) ([d16ecd5](https://github.com/okou-ai/okou/commit/d16ecd5a3abc7546cb4366647b79743da9e3171b))
+* **app:** use singular chart task label ([#44915](https://github.com/okou-ai/okou/issues/44915)) ([7c39d82](https://github.com/okou-ai/okou/commit/7c39d827ee9e32245c24387d94bb2f6dd8f6b2d8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.0
+    * @okouai/connectors bumped to 3.21.1
+    * @okouai/core bumped to 8.813.0
+
 ## [0.1087.4](https://github.com/okou-ai/okou/compare/app-v0.1087.3...app-v0.1087.4) (2026-11-03)
 
 
