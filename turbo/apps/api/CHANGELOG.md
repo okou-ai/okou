@@ -10,6 +10,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.43.0](https://github.com/okou-ai/okou/compare/api-v2.42.0...api-v2.43.0) (2026-11-03)
+
+
+### Features
+
+* add staff-gated tiktok oauth ([#44849](https://github.com/okou-ai/okou/issues/44849)) ([7176b11](https://github.com/okou-ai/okou/commit/7176b11ac1bd57ce3ff0f4c78fa41f58a1b67bb8))
+
+
+### Bug Fixes
+
+* **api:** classify snapshot local resource failures ([#44834](https://github.com/okou-ai/okou/issues/44834)) ([a14a92e](https://github.com/okou-ai/okou/commit/a14a92e7af4121ec64ec2c6e3a3027108405d025))
+* **api:** reuse lazy s3 clients and bound shared connections ([#44831](https://github.com/okou-ai/okou/issues/44831)) ([a547ff8](https://github.com/okou-ai/okou/commit/a547ff89ff469c2ca7053aee7a69837afc2c4f38))
+* **browser:** retain shared window reconciliation failure details ([#44838](https://github.com/okou-ai/okou/issues/44838)) ([c0d9fd9](https://github.com/okou-ai/okou/commit/c0d9fd98c6d8852558150802ba517d5342bfa551))
+* reuse marketing handoff S3 transport across requests ([#44752](https://github.com/okou-ai/okou/issues/44752)) ([daf6b22](https://github.com/okou-ai/okou/commit/daf6b223c62e0f8290e5fe40d3fc9e10bc6dd8bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.36.1
+    * @okouai/connectors bumped to 3.21.0
+    * @okouai/core bumped to 8.812.0
+    * @okouai/db bumped to 2.18.3
+    * @okouai/pi-agent-runtime bumped to 1.51.55
+
 ## [2.42.0](https://github.com/okou-ai/okou/compare/api-v2.41.1...api-v2.42.0) (2026-11-03)
 
 

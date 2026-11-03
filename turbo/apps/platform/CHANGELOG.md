@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1087.1](https://github.com/okou-ai/okou/compare/app-v0.1087.0...app-v0.1087.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **app:** rename visualization task label to charts ([#44830](https://github.com/okou-ai/okou/issues/44830)) ([53bf130](https://github.com/okou-ai/okou/commit/53bf13017bdddb74d3a4c13e598b3145b59287ba))
+* **app:** stabilize homepage discovery icons in safari ([#44832](https://github.com/okou-ai/okou/issues/44832)) ([017ff41](https://github.com/okou-ai/okou/commit/017ff4168b73f75145c07a1b74665667468fab15))
+* **browser:** attribute native navigation rejections safely ([#44836](https://github.com/okou-ai/okou/issues/44836)) ([c40af58](https://github.com/okou-ai/okou/commit/c40af58d91481b3ce3a3696de642d5dba61ee930))
+* **browser:** recover crashed page renderers without stale readiness ([#44805](https://github.com/okou-ai/okou/issues/44805)) ([7d8d433](https://github.com/okou-ai/okou/commit/7d8d43385447609e2f8f918e95f28bfa2935722f))
+* keep feed feedback in the original card position ([#44843](https://github.com/okou-ai/okou/issues/44843)) ([f6d7913](https://github.com/okou-ai/okou/commit/f6d79138acf010b3364fcba03465cfd9771c5716))
+* **platform:** classify owned browser input cancellations as aborts ([#44835](https://github.com/okou-ai/okou/issues/44835)) ([dd02549](https://github.com/okou-ai/okou/commit/dd02549e38443c14c1dc1f47510e5972cd4ef772))
+* use chat consistently in interface copy ([#44841](https://github.com/okou-ai/okou/issues/44841)) ([cab1f61](https://github.com/okou-ai/okou/commit/cab1f617736d9918070fae7060b92f01f7d7e1b1))
+
+
+### Refactoring
+
+* **browser:** derive presentation from owned resource state ([#44846](https://github.com/okou-ai/okou/issues/44846)) ([59a09de](https://github.com/okou-ai/okou/commit/59a09deb49960f01d76915963ba7b12af9e7674d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.36.1
+    * @okouai/connectors bumped to 3.21.0
+    * @okouai/core bumped to 8.812.0
+
 ## [0.1087.0](https://github.com/okou-ai/okou/compare/app-v0.1086.0...app-v0.1087.0) (2026-11-03)
 
 

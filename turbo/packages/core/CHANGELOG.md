@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.812.0](https://github.com/okou-ai/okou/compare/core-v8.811.1...core-v8.812.0) (2026-11-03)
+
+
+### Features
+
+* add staff-gated tiktok oauth ([#44849](https://github.com/okou-ai/okou/issues/44849)) ([7176b11](https://github.com/okou-ai/okou/commit/7176b11ac1bd57ce3ff0f4c78fa41f58a1b67bb8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.36.1
+
 ## [8.811.1](https://github.com/okou-ai/okou/compare/core-v8.811.0...core-v8.811.1) (2026-11-03)
 
 
