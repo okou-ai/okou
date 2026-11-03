@@ -7,6 +7,7 @@ struct ChatSidebarView: View {
   let workspaceID: String
   let notifications: NotificationService
   let headerHeight: CGFloat
+  var showsSynchronizationStatus = true
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: (String?) -> Void
@@ -57,21 +58,12 @@ struct ChatSidebarView: View {
   var body: some View {
     List {
       pinnedAgentsSection
-      if let error = store.list.navigationError {
-        Text(error)
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-      }
-      if let error = store.list.syncError {
-        VStack(alignment: .leading, spacing: 8) {
-          Text(error).font(.footnote).foregroundStyle(.secondary)
-          Button("Try again") { Task { await store.refresh() } }
-            .font(.footnote.weight(.semibold))
-        }
-      }
       if store.list.isLoading && !store.list.hasLoadedThreads {
         ProgressView("Loading chats…")
           .frame(maxWidth: .infinity)
+      } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
+        Text("Your chats could not be loaded. Try updating again.")
+          .font(.footnote).foregroundStyle(.secondary)
       } else {
         threadSection
         if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
@@ -90,8 +82,12 @@ struct ChatSidebarView: View {
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectHidden(true, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
-      header
-        .padding(.horizontal, 16)
+      VStack(spacing: 0) {
+        header.padding(.horizontal, 16)
+        ChatSyncStatusView(state: showsSynchronizationStatus ? store.synchronizationState : nil) {
+          await store.retrySynchronization()
+        }
+      }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
@@ -364,6 +360,11 @@ struct ChatSidebarView: View {
       Spacer()
       Menu {
         Link("Open Okou on web", destination: store.webURL)
+        if notifications.registrationError != nil {
+          Button("Retry notification setup", systemImage: "bell.badge") {
+            Task { await notifications.retryRegistration() }
+          }
+        }
         Button(
           notifications.status == .authorized ? "Notifications enabled" : "Enable notifications",
           systemImage: "bell"

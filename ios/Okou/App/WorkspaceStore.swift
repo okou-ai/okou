@@ -55,6 +55,25 @@ final class WorkspaceStore {
   private var agentDraftTask: Task<Void, Never>?
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
+  var synchronizationState: ChatSynchronizationState? {
+    guard !closed else { return nil }
+    if list.isLoading || selectedConversation?.isLoading == true { return .updating }
+    if list.syncError != nil || list.navigationError != nil || selectedConversation?.syncError != nil {
+      return .unavailable
+    }
+    guard realtime != nil else { return nil }
+    switch connectionStatus {
+    case .connecting: return .connecting
+    case .unavailable, .disconnected: return .unavailable
+    case .connected: return nil
+    }
+  }
+
+  func retrySynchronization() async {
+    await refreshNavigation()
+    await refresh()
+  }
+
   @ObservationIgnored lazy var modelStore = ChatModelStore(
     client: client, webURL: webURL, didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
@@ -250,7 +269,7 @@ final class WorkspaceStore {
       let composer = ComposerDraftStore(
         target: .agent(id), commands: commands,
         repository: draftRepository, storage: draftStorage,
-        didFail: { [weak self] in self?.handle($0) })
+        didFail: { [weak self] in self?.handle($0) }, syncSleep: readRetrySleep)
       // Preserve input entered before navigation resolves the default Agent.
       if !isCreating && newComposer.hasContent && agentDrafts.isEmpty {
         newComposer.move(to: composer)
