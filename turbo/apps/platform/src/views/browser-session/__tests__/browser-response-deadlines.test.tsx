@@ -2,7 +2,13 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
@@ -906,6 +912,83 @@ test.each(["shared", "split"] as const)(
     });
   },
 );
+
+test("A display capture restart has a first-image budget without a readiness caller", async () => {
+  mockCanvasViewport();
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  await waitFor(() => {
+    expect(viewer.browser.viewport).toStrictEqual({ width: 900, height: 600 });
+  });
+  act(() => {
+    viewer.browser.frame("AAAA");
+  });
+  viewer.browser.setWindowState("maximized", 101, { width: 1280, height: 720 });
+  const image = viewer.browser.holdTargetFrames("example-page");
+  click(screen.getByLabelText("Browser settings"));
+  const settings = await screen.findByRole("menu", {
+    name: "Browser settings",
+  });
+  click(within(settings).getByText("Window size"));
+  const sizing = await screen.findByRole("menu", { name: "Window size" });
+  click(within(sizing).getByText("Fit window to panel"));
+  await act(async () => {
+    await image.received;
+  });
+  viewer.advance(31_000);
+  await screen.findByText("Browser view unavailable");
+  const retry = await screen.findByText("Retry live image");
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
+  expect(viewer.browser.connections()).toBe(1);
+  act(() => {
+    image.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  click(retry);
+  await expectReady();
+  await insertText("after display capture timeout");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: viewer.browser.pageSession("example-page"),
+      params: { text: "after display capture timeout" },
+    });
+  });
+});
+
+test("A delayed capture acknowledgement keeps its later image timeout local", async () => {
+  const viewer = mockViewer();
+  viewer.browser.targets[1]!.windowId = 101;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const capture = viewer.browser.holdNext("Page.startScreencast");
+  const image = viewer.browser.holdTargetFrames("replacement");
+  click(screen.getByLabelText("Replacement", { selector: '[role="tab"]' }));
+  await act(async () => {
+    await capture.received;
+    await image.received;
+  });
+  viewer.advance(20_000);
+  await act(async () => {
+    await capture.release();
+  });
+  viewer.advance(31_000);
+  await screen.findByText("Browser view unavailable");
+  const retry = await screen.findByText("Retry live image");
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
+  expect(viewer.browser.connections()).toBe(1);
+  act(() => {
+    image.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  click(retry);
+  await expectReady("https://replacement.example.com");
+});
 
 test("A resumed viewer keeps a missing first frame local to capture recovery", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");

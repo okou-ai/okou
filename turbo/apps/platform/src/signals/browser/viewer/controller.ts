@@ -13,9 +13,7 @@ import {
   isAbortError,
   Reason,
   resetSignal,
-  setLoop,
 } from "../../utils.ts";
-import { monotonicNow } from "../../../lib/time.ts";
 import {
   createCdpClient,
   type CdpClient,
@@ -23,7 +21,6 @@ import {
 } from "../cdp/client.ts";
 import {
   CdpFault,
-  BrowserReadinessTimeout,
   isRecord,
   isRecoverableReadFailure,
   validateConfiguration,
@@ -229,6 +226,8 @@ function createSelectedSession(
   const captureStarted$ = command(
     ({ set }, settings: CaptureSettings, signal: AbortSignal) => {
       signal.throwIfAborted();
+      set(painted$, false);
+      set(nativeHost.synchronize$);
       set(geometry.setCapture$, {
         width: settings.maxWidth,
         height: settings.maxHeight,
@@ -242,6 +241,9 @@ function createSelectedSession(
       sessionId: attached.frameSessionId,
       sink: frameLease.sink,
       current$,
+      painted$: computed((get) => {
+        return get(painted$);
+      }),
       failed$: captureFailed$,
       starting$: captureStarted$,
     },
@@ -1624,48 +1626,20 @@ function createRetirementsGraph(
   return { ...receipts, retireCurrent$ };
 }
 
+/** Resource owners publish failures; readiness readers never initiate recovery. */
 function createReadinessWait(
   context: ControllerContext<
-    | "available$"
-    | "readinessFailure$"
-    | "selectedOwner$"
-    | "waitEvent$"
-    | "wake$"
+    "available$" | "readinessFailure$" | "selectedOwner$" | "waitEvent$"
   >,
-  links$: ControllerDependencies<"captureFailed$" | "selectedSession$">,
+  links$: ControllerDependencies<"selectedSession$">,
 ): ControllerLinks["waitReady$"] {
-  const { selectedOwner$, readinessFailure$, available$, wake$, waitEvent$ } =
-    context;
+  const { selectedOwner$, readinessFailure$, available$, waitEvent$ } = context;
   return command(
     async (
       { get, set },
       owner: SelectionOwner,
       signal: AbortSignal,
     ): Promise<void> => {
-      const deadline = monotonicNow() + 30_000;
-      let waiting = true;
-      using _deadline = {
-        [Symbol.dispose]() {
-          waiting = false;
-        },
-      };
-      // Only wake this finite readiness wait; an already painted static page
-      // has no inactivity deadline and never needs another changing frame.
-      setLoop(
-        () => {
-          if (!waiting || signal.aborted) {
-            return true;
-          }
-          if (monotonicNow() >= deadline) {
-            set(wake$);
-            return true;
-          }
-          return false;
-        },
-        1000,
-        signal,
-        { testIntervalMs: 10 },
-      );
       while (true) {
         signal.throwIfAborted();
         if (!get(available$) || get(selectedOwner$) !== owner) {
@@ -1689,26 +1663,6 @@ function createReadinessWait(
         if (failure) {
           throw failure;
         }
-        if (monotonicNow() >= deadline) {
-          if (
-            selected &&
-            get(selected.current$) &&
-            get(selected.inputReady$) &&
-            !get(selected.painted$)
-          ) {
-            const error = new CdpFault(
-              "frame",
-              "The browser did not receive a usable image in time.",
-            );
-            // Missing paint is a capture fault, not a lost healthy connection.
-            await set(get(links$).captureFailed$, owner, error, signal);
-            if (!get(available$) || get(selectedOwner$) !== owner) {
-              throw cancelled();
-            }
-            throw error;
-          }
-          throw new BrowserReadinessTimeout();
-        }
         await set(waitEvent$, signal);
       }
     },
@@ -1730,7 +1684,6 @@ function createReadinessGraph(
   >,
   links$: ControllerDependencies<
     | "canCreate$"
-    | "captureFailed$"
     | "displayGraph$"
     | "imageEvent$"
     | "refreshFavicon$"
@@ -2285,7 +2238,7 @@ function createSelectionAttempt(
       } else {
         completion =
           result.status === "fulfilled"
-            ? { status: "fulfilled", value: "ready" }
+            ? { status: "fulfilled", value: "completed" }
             : result;
       }
       set(owner.finish$, completion);
@@ -2386,7 +2339,7 @@ function createSelectionGraph(
         get(previous.inputReady$) &&
         !get(model.imageRecovery$)
       ) {
-        return "ready";
+        return "completed";
       }
       set(chosenOnce$, true);
       set(extensionRevision$, (value) => {
@@ -3403,7 +3356,7 @@ function createConnectionBootstrap(
       return set(get(links$).select$, first.id, signal);
     }
     set(model.transition$, { type: "target-lost", error: null });
-    return "ready" as const;
+    return "completed" as const;
   });
 }
 
@@ -4309,7 +4262,7 @@ function createSelectionSettingsGraph(
   const restore$: ControllerLinks["reconcileSelection$"] = command(
     async ({ get, set }, signal: AbortSignal): Promise<SelectionOutcome> => {
       if (!get(available$)) {
-        return "ready";
+        return "completed";
       }
       if (get(context.crashed$)) {
         set(model.transition$, {
@@ -4321,7 +4274,7 @@ function createSelectionSettingsGraph(
             }),
           },
         });
-        return "ready";
+        return "completed";
       }
       const targetId = get(model.selectedTabId$);
       if (
@@ -4345,14 +4298,14 @@ function createSelectionSettingsGraph(
       if (first && !get(chosenOnce$)) {
         return set(get(links$).select$, first.id, signal);
       }
-      return "ready";
+      return "completed";
     },
   );
   const reconcileSelection$: ControllerLinks["reconcileSelection$"] = command(
     async ({ get, set }, signal: AbortSignal): Promise<SelectionOutcome> => {
       signal.throwIfAborted();
       if (get(context.crashed$)) {
-        return "ready";
+        return "completed";
       }
       const failure = get(readinessFailure$);
       if (failure) {

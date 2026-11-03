@@ -12,7 +12,7 @@ import {
 import { pageSignal$ } from "../page-signal.ts";
 import { logger } from "../log.ts";
 import type { BrowserConnection, BrowserSignals } from "./browser.ts";
-import { BrowserReadinessTimeout, CdpFault } from "./cdp/errors.ts";
+import { CdpFault } from "./cdp/errors.ts";
 import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
@@ -811,10 +811,10 @@ function createConnectionAttempt(
     ) => {
       const recovery = get(context.recovery$);
       const generation = get(context.generation$);
-      const expired = createDeferredPromise<never>(
-        { rejection: "owner" },
-        signal,
-      );
+      const expired = createDeferredPromise<{
+        readonly kind: "expired";
+        readonly error: CdpFault;
+      }>({ rejection: "owner" }, signal);
       const deadline = monotonicNow() + 60_000;
       using _deadline = {
         [Symbol.dispose]() {
@@ -829,7 +829,13 @@ function createConnectionAttempt(
             return true;
           }
           if (monotonicNow() >= deadline) {
-            expired.reject(new BrowserReadinessTimeout());
+            expired.resolve({
+              kind: "expired",
+              error: new CdpFault(
+                "connection",
+                "The browser did not become ready in time. Reconnect the browser.",
+              ),
+            });
             return true;
           }
           return false;
@@ -838,8 +844,14 @@ function createConnectionAttempt(
         signal,
         { testIntervalMs: 10 },
       );
-      const [result] = await Promise.allSettled([
-        Promise.race([set(observe$, request, nodes, signal), expired.promise]),
+      const outcome = await Promise.race([
+        (async () => {
+          const [result] = await Promise.allSettled([
+            set(observe$, request, nodes, signal),
+          ]);
+          return { kind: "observed", result } as const;
+        })(),
+        expired.promise,
       ]);
       signal.throwIfAborted();
       if (
@@ -849,10 +861,14 @@ function createConnectionAttempt(
       ) {
         throw cancelled();
       }
-      if (
-        result.status === "rejected" &&
-        result.reason instanceof BrowserReadinessTimeout
-      ) {
+      const result: PromiseSettledResult<void> =
+        outcome.kind === "expired"
+          ? {
+              status: "rejected",
+              reason: outcome.error,
+            }
+          : outcome.result;
+      if (outcome.kind === "expired") {
         // Cancel the parked observer before retiring its resources. Its late API
         // response or paint cannot publish into this or a successor attempt.
         set(context.resetObservation$, AbortSignal.abort(cancelled()));
@@ -864,7 +880,7 @@ function createConnectionAttempt(
         set(context.confirmedRequest$, request);
         set(context.model.transition$, {
           type: "failed",
-          error: diagnostic(result.reason),
+          error: diagnostic(outcome.error),
         });
       }
       if (
