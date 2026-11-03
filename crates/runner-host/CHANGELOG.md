@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.23](https://github.com/okou-ai/okou/compare/runner-host-v0.10.22...runner-host-v0.10.23) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** retain service artifacts until shutdown is confirmed ([#44990](https://github.com/okou-ai/okou/issues/44990)) ([73f9c29](https://github.com/okou-ai/okou/commit/73f9c29a1b9378daad63d5b4c425240051afd7c4))
+
 ## [0.10.22](https://github.com/okou-ai/okou/compare/runner-host-v0.10.21...runner-host-v0.10.22) (2026-11-03)
 
 ## [0.10.21](https://github.com/okou-ai/okou/compare/runner-host-v0.10.20...runner-host-v0.10.21) (2026-11-03)

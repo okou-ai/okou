@@ -13,6 +13,38 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1090.0](https://github.com/okou-ai/okou/compare/app-v0.1089.0...app-v0.1090.0) (2026-11-03)
+
+
+### Features
+
+* add chat connector account controls to web ([#44897](https://github.com/okou-ai/okou/issues/44897)) ([5127205](https://github.com/okou-ai/okou/commit/512720518384529c210da187393419d31920b132))
+* add friend referrals with expiring credit rewards ([#44961](https://github.com/okou-ai/okou/issues/44961)) ([beaff0e](https://github.com/okou-ai/okou/commit/beaff0e0ddf72f5d2fcd835314f14d6661e721af))
+* **app:** add a compact sidebar subscription usage entry ([#44989](https://github.com/okou-ai/okou/issues/44989)) ([91a9aa7](https://github.com/okou-ai/okou/commit/91a9aa7b74dc003b9277c4a25d70e2b5e914368d))
+* shorten marketing handoff links to twelve characters ([#44980](https://github.com/okou-ai/okou/issues/44980)) ([046a7ba](https://github.com/okou-ai/okou/commit/046a7bac03cc5f5a94cc67394756f69be2eaf111))
+
+
+### Bug Fixes
+
+* **app:** match project chat row spacing to chat history ([#45000](https://github.com/okou-ai/okou/issues/45000)) ([f98b3c9](https://github.com/okou-ai/okou/commit/f98b3c9b82200bf2cfd4453a469b892ee96ccb8f))
+* **app:** open model settings from account menu subscriptions ([#45009](https://github.com/okou-ai/okou/issues/45009)) ([4d88fbd](https://github.com/okou-ai/okou/commit/4d88fbd3e77a62fea8b3a8c16af04a5ae1c6e375))
+* **app:** share capability icons between tools and onboarding ([#44977](https://github.com/okou-ai/okou/issues/44977)) ([33f7195](https://github.com/okou-ai/okou/commit/33f7195c708e82384730e2b5806d025646df4d56))
+* preserve project folders during chat navigation ([#45001](https://github.com/okou-ai/okou/issues/45001)) ([acc41bd](https://github.com/okou-ai/okou/commit/acc41bd16eb0edc770aacf8ab0a3e2018fa51766))
+
+
+### Refactoring
+
+* **platform:** centralize async utility helpers ([#44996](https://github.com/okou-ai/okou/issues/44996)) ([8adf870](https://github.com/okou-ai/okou/commit/8adf87014b3f6ffc58fd63ef8e14047be762a159))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.39.0
+    * @okouai/connectors bumped to 3.21.2
+    * @okouai/core bumped to 8.814.0
+
 ## [0.1089.0](https://github.com/okou-ai/okou/compare/app-v0.1088.0...app-v0.1089.0) (2026-11-03)
 
 

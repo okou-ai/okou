@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.5](https://github.com/okou-ai/okou/compare/ios-v0.23.4...ios-v0.23.5) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** suspend sidebar gestures while the account menu is open ([#44987](https://github.com/okou-ai/okou/issues/44987)) ([086ce99](https://github.com/okou-ai/okou/commit/086ce99e20d4057c356bc869f31125eb954c307f))
+
+
+### CI
+
+* **ios:** skip simulator job when release test evidence matches ([#44998](https://github.com/okou-ai/okou/issues/44998)) ([fefb76e](https://github.com/okou-ai/okou/commit/fefb76e40cdcf255ecc2aa057edbb7ad8f67514b))
+
 ## [0.23.4](https://github.com/okou-ai/okou/compare/ios-v0.23.3...ios-v0.23.4) (2026-11-03)
 
 

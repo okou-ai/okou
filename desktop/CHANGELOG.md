@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.6](https://github.com/okou-ai/okou/compare/desktop-v0.55.5...desktop-v0.55.6) (2026-11-03)
+
+
+### Bug Fixes
+
+* **desktop:** keep transient heartbeat retries at info ([#44984](https://github.com/okou-ai/okou/issues/44984)) ([219b95f](https://github.com/okou-ai/okou/commit/219b95f71b39aa16ef48c674b8d1222965d66b15))
+
 ## [0.55.5](https://github.com/okou-ai/okou/compare/desktop-v0.55.4...desktop-v0.55.5) (2026-11-03)
 
 
