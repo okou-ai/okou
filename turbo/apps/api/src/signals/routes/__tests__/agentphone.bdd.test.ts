@@ -918,7 +918,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   it.each(["phone", "email"] as const)(
-    "lets a current member send with a %s linked after the archived group history",
+    "lets a recipient read history and send with a %s connected later",
     async (handleType) => {
       const integrations = createBddIntegrationApi(context);
       const { ap, phone, sends } = await entitledLinkedActor();
@@ -929,7 +929,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           : uniquePhoneHandle();
       const conversationId = uniqueConversationId();
       const groupId = bddGroupId(conversationId);
-      await ap.postAgentPhoneInboundMessage({
+      const earlierMessageId = await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
         from: phone,
         body: "Group history from before the member connected",
@@ -953,7 +953,15 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         { groupId, limit: 100 },
         [200],
       );
-      expect(before.body).toMatchObject({ messages: [] });
+      expect(before.body).toMatchObject({
+        messages: [
+          {
+            id: earlierMessageId,
+            direction: "inbound",
+            body: "Group history from before the member connected",
+          },
+        ],
+      });
 
       const sent = await integrations.requestSendAgentPhoneGroupMessage(
         member,
@@ -977,6 +985,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       );
       expect(after.body).toMatchObject({
         messages: [
+          { id: earlierMessageId, direction: "inbound" },
           {
             id: sent.body.messageId,
             toNumber: groupId,
