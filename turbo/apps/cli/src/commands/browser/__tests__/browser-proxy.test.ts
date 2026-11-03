@@ -1816,6 +1816,46 @@ describe("chat-window CDP proxy protocol", () => {
     }
   });
 
+  it("does not count an acknowledged creation rollback as the surviving tab", async () => {
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const navigation = provider.holdReply("Page.navigate", "new-1");
+    const rollback = provider.holdClose("new-1");
+    const created = expect(
+      connection.request("Target.createTarget", {
+        url: "https://example.test/new",
+      }),
+    ).rejects.toMatchObject({
+      code: -32000,
+      message: "Native detach unavailable",
+    });
+    try {
+      await navigation.observed;
+      provider.rejectNextDetach();
+      navigation.resume();
+      await created;
+      await rollback.observed;
+      await peer.request("Target.closeTarget", { targetId: "A" });
+      rollback.resume();
+      const targets = (await peer.request("Target.getTargets")).targetInfos as {
+        targetId: string;
+        type: string;
+        url: string;
+      }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      navigation.resume();
+      rollback.resume();
+      await created;
+    }
+  });
+
   it("retains the original page when blank preparation fails and permits a later explicit close", async () => {
     const session = await connection.request("Target.attachToTarget", {
       targetId: "A",

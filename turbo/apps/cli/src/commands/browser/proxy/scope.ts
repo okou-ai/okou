@@ -559,6 +559,8 @@ export class WindowScope {
     } catch (error) {
       if (createdId) {
         try {
+          // A rollback acknowledgement can precede native retirement too.
+          this.closingTargets.add(createdId);
           await this.wire.request("Target.closeTarget", {
             targetId: createdId,
           });
