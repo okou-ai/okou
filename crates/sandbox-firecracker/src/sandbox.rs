@@ -2648,6 +2648,24 @@ impl FirecrackerSandbox {
 
 #[async_trait]
 impl Sandbox for FirecrackerSandbox {
+    async fn run_agent_instructions(
+        &self,
+        request: &sandbox::AgentInstructionsRequest<'_>,
+    ) -> sandbox::Result<ExecResult> {
+        self.run_bounded_guest_operation(SandboxOperation::Exec, |guest| async move {
+            let timeout_ms = request.timeout_ms();
+            validate_exec_capture_timeout(timeout_ms)?;
+            guest
+                .guest_agent_instructions(
+                    request,
+                    Duration::from_millis(u64::from(timeout_ms) + 5_000),
+                )
+                .await
+                .map(storage_manifest_exec_result)
+        })
+        .await
+    }
+
     // -- identity --
 
     fn id(&self) -> &str {

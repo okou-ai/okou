@@ -147,6 +147,7 @@ fn is_real_host_work_message(msg_type: u8) -> bool {
             | MSG_GUEST_DNS_READINESS
             | MSG_GUEST_STATE_RESTORE
             | MSG_GUEST_STORAGE_MANIFEST
+            | guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS
             | MSG_HOME_DRIVE_MOUNT
             | MSG_QUIESCE_OPERATIONS
             | MSG_RESUME_OPERATIONS
@@ -407,7 +408,9 @@ impl ConnectionDispatcher {
             MSG_WRITE_PRIVATE_FILES => self.handle_file_write(msg, FileWriteKind::PrivateFiles)?,
             MSG_GUEST_DNS_READINESS => self.handle_guest_dns_readiness(msg)?,
             MSG_GUEST_STATE_RESTORE => self.handle_guest_state_restore(msg)?,
-            MSG_GUEST_STORAGE_MANIFEST => self.handle_guest_storage_manifest(msg)?,
+            MSG_GUEST_STORAGE_MANIFEST | guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS => {
+                self.handle_guest_storage_manifest(msg)?
+            }
             MSG_HOME_DRIVE_MOUNT => self.handle_home_drive_mount(msg)?,
             MSG_QUIESCE_OPERATIONS => self.handle_quiesce_operations(msg)?,
             MSG_RESUME_OPERATIONS => self.handle_resume_operations(msg)?,
@@ -642,8 +645,14 @@ impl ConnectionDispatcher {
         if reject_operation_if_quiescing(&self.operation_state, msg.seq, &self.writer)? {
             return Ok(());
         }
-        let decoded = match guest_control_proto::decode_guest_storage_manifest_request(msg.payload)
-        {
+        let decoded = if msg.msg_type == guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS {
+            guest_control_proto::decode_guest_agent_instructions_request(msg.payload)
+                .map(|decoded| (decoded.input, Some(decoded.operation)))
+        } else {
+            guest_control_proto::decode_guest_storage_manifest_request(msg.payload)
+                .map(|decoded| (decoded, None))
+        };
+        let (decoded, instruction_operation) = match decoded {
             Ok(decoded) => decoded,
             Err(error) => {
                 send_error_response(msg.seq, &error.to_string(), &self.writer)?;
@@ -665,6 +674,7 @@ impl ConnectionDispatcher {
         };
         match self.guest_storage_manifest_worker.submit(
             GuestStorageManifestSubmission {
+                instruction_operation,
                 seq: msg.seq,
                 timeout_ms: decoded.timeout_ms,
                 run_id: decoded.run_id,

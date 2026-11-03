@@ -6,6 +6,7 @@
     clippy::unreachable
 )]
 
+mod agent_instructions;
 mod exec;
 mod exec_control;
 mod file_write_status;

@@ -10,7 +10,7 @@ use ::sandbox::*;
 use async_trait::async_trait;
 
 use crate::call_records::{
-    CopyFileCall, ExecCall, FinalizeStagedFileCall, GuestStateRestoreCall,
+    AgentInstructionsCall, CopyFileCall, ExecCall, FinalizeStagedFileCall, GuestStateRestoreCall,
     GuestStateRestoreTimezoneCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
     StagedFileDispositionCall, StartAgentProcessCall, StartProcessCall, StorageManifestCall,
     WaitProcessCall, WriteFileCall, WriteFilesCall,
@@ -32,6 +32,7 @@ use crate::support::{
 /// Sandboxes created by an override-enabled factory also record selected calls
 /// in the shared [`MockSandboxOverrides`] observations.
 pub struct MockSandbox {
+    agent_instructions_calls: Mutex<Vec<AgentInstructionsCall>>,
     id: String,
     source_ip: String,
     run_control_id: Option<String>,
@@ -84,6 +85,7 @@ impl MockSandbox {
 
     fn build(id: impl Into<String>, overrides: Option<Arc<MockSandboxOverrides>>) -> Self {
         Self {
+            agent_instructions_calls: Mutex::new(Vec::new()),
             id: id.into(),
             source_ip: "10.0.0.1".into(),
             run_control_id: None,
@@ -292,6 +294,54 @@ impl MockSandbox {
     /// Return this sandbox's recorded fixed storage-manifest calls.
     pub fn storage_manifest_calls(&self) -> Vec<StorageManifestCall> {
         self.storage_manifest_calls.lock_ignoring_poison().clone()
+    }
+
+    /// Return typed instruction requests, separate from generic exec calls.
+    pub fn agent_instructions_calls(&self) -> Vec<AgentInstructionsCall> {
+        self.agent_instructions_calls.lock_ignoring_poison().clone()
+    }
+
+    fn next_exec_result(&self, command: &str, limits: ExecOutputLimits) -> Result<ExecResult> {
+        // Fixed instruction helpers share the existing canonical-command matcher
+        // fixture API, but keep their actual typed call records separate.
+        let result = if let Some(overrides) = &self.overrides {
+            let matched = {
+                let mut matchers = overrides.exec.matchers.lock_ignoring_poison();
+                matchers
+                    .iter()
+                    .position(|matcher| command.contains(&matcher.pattern))
+                    .map(|index| matchers.remove(index).outcome)
+            };
+            match matched {
+                Some(ExecMatcherOutcome::Return(result)) => Ok(result),
+                Some(ExecMatcherOutcome::Error(error)) => Err(error),
+                Some(ExecMatcherOutcome::Panic(message)) => {
+                    std::panic::resume_unwind(Box::new(message))
+                }
+                None => {
+                    if let Some(matcher) = overrides
+                        .exec
+                        .persistent_matchers
+                        .lock_ignoring_poison()
+                        .iter()
+                        .find(|matcher| command.contains(&matcher.pattern))
+                    {
+                        Ok(clone_exec_result(&matcher.result))
+                    } else {
+                        self.exec_results
+                            .lock_ignoring_poison()
+                            .pop_front()
+                            .unwrap_or_else(|| Ok(default_exec_result()))
+                    }
+                }
+            }
+        } else {
+            self.exec_results
+                .lock_ignoring_poison()
+                .pop_front()
+                .unwrap_or_else(|| Ok(default_exec_result()))
+        }?;
+        Ok(apply_exec_output_limits(result, limits))
     }
 
     /// Queue a fixed home-drive mount result. Results are consumed in FIFO order.
@@ -896,45 +946,36 @@ impl Sandbox for MockSandbox {
             overrides.exec.call_notify.notify_waiters();
             wait_lifecycle_gate(&overrides.exec.lifecycle_gate).await;
         }
-        // Check pattern matchers before the FIFO queue.
-        let result = if let Some(overrides) = &self.overrides {
-            let matched = {
-                let mut matchers = overrides.exec.matchers.lock_ignoring_poison();
-                matchers
-                    .iter()
-                    .position(|matcher| request.cmd.contains(&matcher.pattern))
-                    .map(|index| matchers.remove(index).outcome)
-            };
-            match matched {
-                Some(ExecMatcherOutcome::Return(result)) => Ok(result),
-                Some(ExecMatcherOutcome::Error(error)) => Err(error),
-                Some(ExecMatcherOutcome::Panic(message)) => {
-                    std::panic::resume_unwind(Box::new(message))
-                }
-                None => {
-                    if let Some(matcher) = overrides
-                        .exec
-                        .persistent_matchers
-                        .lock_ignoring_poison()
-                        .iter()
-                        .find(|matcher| request.cmd.contains(&matcher.pattern))
-                    {
-                        Ok(clone_exec_result(&matcher.result))
-                    } else {
-                        self.exec_results
-                            .lock_ignoring_poison()
-                            .pop_front()
-                            .unwrap_or_else(|| Ok(default_exec_result()))
-                    }
-                }
-            }
-        } else {
-            self.exec_results
+        self.next_exec_result(request.cmd, request.output_limits)
+    }
+
+    async fn run_agent_instructions(
+        &self,
+        request: &AgentInstructionsRequest<'_>,
+    ) -> Result<ExecResult> {
+        let call = AgentInstructionsCall {
+            operation: request.operation,
+            metadata: request.metadata.to_vec(),
+            run_id: request.run_id.into(),
+            runtime_dir: request.runtime_dir.into(),
+            timeout: request.timeout,
+        };
+        self.agent_instructions_calls
+            .lock_ignoring_poison()
+            .push(call.clone());
+        if let Some(overrides) = &self.overrides {
+            overrides
+                .exec
+                .agent_instructions_calls
                 .lock_ignoring_poison()
-                .pop_front()
-                .unwrap_or_else(|| Ok(default_exec_result()))
-        }?;
-        Ok(apply_exec_output_limits(result, request.output_limits))
+                .push(call);
+        }
+        let command = format!(
+            "{} {}",
+            guest_contracts::guest_binary::STORAGE_APPLY_PATH,
+            request.operation.helper_argument()
+        );
+        self.next_exec_result(&command, EXEC_OUTPUT_LIMIT_64_KIB)
     }
 
     async fn apply_storage_manifest(

@@ -56,6 +56,7 @@ fn operation_messages_count_as_real_host_work() {
         MSG_WRITE_PRIVATE_FILES,
         MSG_GUEST_DNS_READINESS,
         MSG_GUEST_STORAGE_MANIFEST,
+        guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS,
         MSG_QUIESCE_OPERATIONS,
         MSG_RESUME_OPERATIONS,
     ] {

@@ -6,9 +6,10 @@ use ::sandbox::*;
 use tokio_util::sync::CancellationToken;
 
 use crate::call_records::{
-    CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall, GuestStateRestoreCall,
-    ProcessCancelCall, ProcessControlCall, ReadFileCall, StartAgentProcessCall, StartProcessCall,
-    StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
+    AgentInstructionsCall, CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall,
+    GuestStateRestoreCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
+    StartAgentProcessCall, StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall,
+    WriteFilesCall,
 };
 use crate::lifecycle::{DestroyBehavior, LifecycleBehaviors, MockLifecycleGate};
 use crate::support::LockIgnoringPoison;
@@ -45,6 +46,8 @@ impl GuestStateRestoreBehavior {
 
 #[derive(Default)]
 pub(crate) struct ExecOverrideState {
+    /// Typed instruction operations never appear in generic exec observations.
+    pub(crate) agent_instructions_calls: Mutex<Vec<AgentInstructionsCall>>,
     /// Pattern-matched exec behaviors. First matching pattern wins and is
     /// consumed (one-shot).
     pub(crate) matchers: Mutex<Vec<ExecMatcherBehavior>>,
@@ -595,6 +598,14 @@ impl MockSandboxOverrides {
     pub fn storage_manifest_calls(&self) -> Vec<StorageManifestCall> {
         self.exec
             .storage_manifest_calls
+            .lock_ignoring_poison()
+            .clone()
+    }
+
+    /// Return typed instruction operations across attached sandboxes.
+    pub fn agent_instructions_calls(&self) -> Vec<AgentInstructionsCall> {
+        self.exec
+            .agent_instructions_calls
             .lock_ignoring_poison()
             .clone()
     }
