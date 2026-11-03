@@ -24,13 +24,14 @@ import {
   or,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { joinAll, settleIncludingAbort } from "../utils";
 import {
+  BrowserUseCdpCommandError,
   BrowserUseProviderError,
   browserUseWindowExists,
   browserUseNativeConnection,
@@ -59,6 +60,58 @@ interface Candidate {
   readonly profile: Profile;
   readonly window: Window;
   readonly threadId: string | null;
+}
+
+interface RetirementProgress {
+  phase:
+    | "read-window"
+    | "find-provider"
+    | "check-native-window"
+    | "mark-provider-gone"
+    | "record-healthy-window"
+    | "prepare-snapshot"
+    | "claim-retirement"
+    | "close-native-window"
+    | "release-window"
+    | "publish-window-change";
+}
+
+const RETIREMENT_PROVIDER_ERROR_CODES = Object.freeze([
+  "BROWSER_USE_NOT_CONFIGURED",
+  "BROWSER_USE_AUTH_ERROR",
+  "BROWSER_USE_CAPACITY",
+  "BROWSER_USE_ERROR",
+  "BROWSER_USE_INVALID_RESPONSE",
+  "BROWSER_USE_OUTPUT_TOO_LARGE",
+]);
+
+/** Never pass provider messages, validation input or SQL to the logger. */
+function sharedWindowFailure(error: unknown) {
+  const sqlState = safeSqlStateCode(error);
+  if (sqlState) {
+    return { errorKind: "database", errorCode: sqlState };
+  }
+  if (error instanceof BrowserUseProviderError) {
+    return {
+      errorKind: "provider",
+      providerStatus: error.status,
+      ...(RETIREMENT_PROVIDER_ERROR_CODES.includes(error.code)
+        ? { errorCode: error.code }
+        : {}),
+    };
+  }
+  if (error instanceof BrowserUseCdpCommandError) {
+    return {
+      errorKind: "cdp",
+      ...(typeof error.code === "number" && Number.isSafeInteger(error.code)
+        ? { errorCode: error.code }
+        : {}),
+    };
+  }
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return { errorKind: "timeout" };
+  }
+  return { errorKind: error instanceof Error ? "error" : "unknown" };
 }
 
 function ownerScope(owner: Owner | null) {
@@ -152,9 +205,11 @@ type SharedWindowObservation =
 /** Remote observation cannot turn independently expired usage into live usage. */
 async function observeSharedWindow(
   target: Candidate,
+  progress: RetirementProgress,
   signal: AbortSignal,
 ): Promise<SharedWindowObservation> {
   const { profile, window } = target;
+  progress.phase = "find-provider";
   if (!profile.providerSessionId) {
     throw new Error("A shared Browser window has no provider session");
   }
@@ -192,6 +247,7 @@ async function observeSharedWindow(
   if (retirementDue) {
     return { kind: "retire", connection, nativeMissing: false };
   }
+  progress.phase = "check-native-window";
   const health = await settleIncludingAbort(
     browserUseWindowExists(connection, window.primaryWindowId, signal),
   );
@@ -223,6 +279,7 @@ const claimSharedWindowRetirement$ = command(
       readonly connection: BrowserUseNativeConnection | null;
       readonly nativeMissing: boolean;
     },
+    progress: RetirementProgress,
     signal: AbortSignal,
   ): Promise<Window | null> => {
     const { profile, window: current, connection, nativeMissing } = target;
@@ -233,6 +290,7 @@ const claimSharedWindowRetirement$ = command(
     };
     const identity = sharedBrowserLifetime(owner, profile, current);
     const db = set(writeDb$);
+    progress.phase = "prepare-snapshot";
     const capture =
       !nativeMissing && target.threadId !== null && connection !== null
         ? await set(
@@ -244,6 +302,7 @@ const claimSharedWindowRetirement$ = command(
     signal.throwIfAborted();
     const at = nowDate();
     // Claim retirement and publish recovery in one UPDATE of this chat row.
+    progress.phase = "claim-retirement";
     const [closing] = await db
       .update(windows)
       .set({
@@ -287,6 +346,7 @@ const retireSharedWindow$ = command(
   async (
     { get, set },
     target: Candidate,
+    progress: RetirementProgress,
     signal: AbortSignal,
   ): Promise<string | null> => {
     const { profile } = target;
@@ -296,6 +356,7 @@ const retireSharedWindow$ = command(
       chatThreadId: target.window.chatThreadId,
     };
     const identity = sharedBrowserLifetime(owner, profile, target.window);
+    progress.phase = "read-window";
     const [currentRow] = await get(db$)
       .select({
         chatThreadId: windows.chatThreadId,
@@ -314,6 +375,7 @@ const retireSharedWindow$ = command(
     }
     const observed = await observeSharedWindow(
       { ...target, window: current },
+      progress,
       signal,
     );
     signal.throwIfAborted();
@@ -321,6 +383,7 @@ const retireSharedWindow$ = command(
     if (observed.kind === "gone") {
       // The provider confirms that the whole instance is gone. Preserve every
       // chat's accepted snapshot; there is no live native state left to capture.
+      progress.phase = "mark-provider-gone";
       await db
         .update(windows)
         .set({ state: "closing", updatedAt: nowDate() })
@@ -341,6 +404,7 @@ const retireSharedWindow$ = command(
     }
     if (observed.kind === "healthy") {
       // Rotate healthy observations as well as failures in the bounded sweep.
+      progress.phase = "record-healthy-window";
       await db
         .update(windows)
         .set({ updatedAt: observed.observedAt })
@@ -353,6 +417,7 @@ const retireSharedWindow$ = command(
       const closing = await set(
         claimSharedWindowRetirement$,
         { ...target, window: current, connection, nativeMissing },
+        progress,
         signal,
       );
       signal.throwIfAborted();
@@ -362,6 +427,7 @@ const retireSharedWindow$ = command(
       current = closing;
     }
     if (connection && !nativeMissing) {
+      progress.phase = "close-native-window";
       await tryCloseBrowserUseWindow(
         connection,
         current.primaryWindowId,
@@ -369,6 +435,7 @@ const retireSharedWindow$ = command(
       );
     }
     // Recovery uses only an accepted snapshot, even if fresh capture failed.
+    progress.phase = "release-window";
     const [closed] = await db
       .update(windows)
       .set({
@@ -385,6 +452,7 @@ const retireSharedWindow$ = command(
       return null;
     }
     if (target.threadId !== null) {
+      progress.phase = "publish-window-change";
       await publishBrowserSessionChangedSafely(profile.userId, {
         threadId: current.chatThreadId,
       });
@@ -641,8 +709,10 @@ const reconcileSharedWindows$ = command(
         throw new Error("A bound Browser chat has no live window");
       }
       const row = { ...raw, window: binding };
+      // Each candidate owns its diagnostic progress, including concurrent sweeps.
+      const progress: RetirementProgress = { phase: "read-window" };
       const result = await settleIncludingAbort(
-        set(retireSharedWindow$, row, signal),
+        set(retireSharedWindow$, row, progress, signal),
       );
       signal.throwIfAborted();
       if (result.ok) {
@@ -651,6 +721,11 @@ const reconcileSharedWindows$ = command(
         }
       } else {
         errors += 1;
+        // Preserve the original failure even if timestamp rotation also fails.
+        L.warn("Shared Browser window reconciliation failed", {
+          phase: progress.phase,
+          ...sharedWindowFailure(result.error),
+        });
         await set(writeDb$)
           .update(windows)
           .set({ updatedAt: nowDate() })
@@ -669,10 +744,6 @@ const reconcileSharedWindows$ = command(
             ),
           );
         signal.throwIfAborted();
-        L.warn("Shared Browser window retirement could not be confirmed", {
-          chatThreadId: row.window.chatThreadId,
-          instanceId: row.profile.instanceId,
-        });
       }
     }
     const empty = await get(db$)
