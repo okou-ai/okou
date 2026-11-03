@@ -80,7 +80,13 @@ struct HeartbeatDiagnostics {
     let retryable: Bool
     switch error {
     case let failure as DesktopFailure where failure.code == "network_error":
-      if let status = requests.last?.status, !(200..<300).contains(status) {
+      if operation?.deadline != nil || operation?.phase == .tokenLookup
+        || operation?.phase == .tokenRefresh
+      {
+        // A retained 401 can belong to the attempt that triggered token refresh,
+        // not the provider/deadline failure that ended the operation.
+        retryable = true
+      } else if let status = requests.last?.status, !(200..<300).contains(status) {
         retryable = status == 408 || status == 429 || (500..<600).contains(status)
       } else {
         retryable = true
