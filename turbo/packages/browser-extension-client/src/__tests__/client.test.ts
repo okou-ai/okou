@@ -202,41 +202,57 @@ it("bootstrap failure retains only safe method/code/stage through cleanup", asyn
   ).toHaveLength(2);
 });
 
-it("replaces a lost page with fresh native readiness and ignores retired observer events", async () => {
+it("retired observer and wrong-runtime events cannot supply replacement readiness", async () => {
+  vi.useFakeTimers();
   const peer = bridgePeer(["left-page", "right-page"]);
-  const connecting = peer.connect();
-  const first = await peer.observer();
-  peer.losePage("left-page", first);
-  const second = await peer.observer();
-  peer.running(first);
-  peer.event({
-    method: "Target.detachedFromTarget",
-    sessionId: "private-browser-session",
-    params: { sessionId: first },
+  const owner = new AbortController();
+  const connecting = OkouBrowserClient.connect({
+    transport: peer.transport,
+    runtimeId: peer.runtimeId,
+    readinessTimeoutMs: 100,
+    signal: owner.signal,
   });
-  peer.event({
-    method: "Target.targetCreated",
-    sessionId: "private-browser-session",
-    params: {
-      targetInfo: {
-        targetId: "private-worker-target",
-        type: "service_worker",
-        url: `chrome-extension://${peer.runtimeId}/worker.js`,
+  const settled = connecting.catch((error: unknown) => {
+    return error;
+  });
+  try {
+    const first = await peer.observer();
+    peer.losePage("left-page", first);
+    const second = await peer.observer();
+    peer.running(first);
+    peer.event({
+      method: "Target.detachedFromTarget",
+      sessionId: "private-browser-session",
+      params: { sessionId: first },
+    });
+    peer.event({
+      method: "Target.targetCreated",
+      sessionId: "private-browser-session",
+      params: {
+        targetInfo: {
+          targetId: "private-worker-target",
+          type: "service_worker",
+          url: `chrome-extension://${peer.runtimeId}/worker.js`,
+        },
       },
-    },
-  });
-  peer.running(second, "b".repeat(32));
-  expect(
-    peer.requests.some((r) => {
-      return r.method === "Runtime.evaluate";
-    }),
-  ).toBe(false);
-  peer.running(second);
-  const client = await connecting;
-  expect((await client.call("hello", {})).value.protocol).toBe(1);
-  await client.close();
-  expect(peer.sessions.size).toBe(0);
-  expect(peer.listeners.size).toBe(0);
+    });
+    peer.running(second, "b".repeat(32));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await settled).toMatchObject({
+      diagnostics: { reason: "worker-readiness-timeout" },
+    });
+    expect(peer.sessions.size).toBe(0);
+    expect(peer.listeners.size).toBe(0);
+  } finally {
+    owner.abort();
+    await connecting.then(
+      (client) => {
+        return client.close();
+      },
+      () => {},
+    );
+    vi.useRealTimers();
+  }
 });
 
 it.each(["attach", "enable"])(
