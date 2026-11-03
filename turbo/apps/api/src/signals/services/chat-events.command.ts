@@ -2175,6 +2175,17 @@ const publishEnqueuedNormalSend$ = command(
       ),
     );
     signal.throwIfAborted();
+    // A claimed lease proves the thread had no active run, so no running run
+    // can steer this input: a launch consumes it and a full organization
+    // leaves it queued. Otherwise a running run may hold the lease.
+    const claimed =
+      picked.ok &&
+      (picked.value.kind === "launched" || picked.value.kind === "org-full");
+    if (!claimed) {
+      waitUntil(
+        set(notifyRunningChatRunOfPendingInput$, thread.threadId, signal),
+      );
+    }
     await set(normalSendThreadTouch$, args, thread, touchedAt, signal);
     signal.throwIfAborted();
     await publishChatEventCreated({
@@ -2482,7 +2493,8 @@ export const sendNormalEvent$ = command(
           inserted: { createdAt },
           enqueueCommit,
         } = committed;
-        // Schedule before observing abort; touch/realtime follow this pick's outcome.
+        // Schedule before observing abort; touch, realtime and the running-run
+        // notice follow this pick's outcome.
         waitUntil(
           set(
             publishEnqueuedNormalSend$,
@@ -2501,9 +2513,6 @@ export const sendNormalEvent$ = command(
             },
             signal,
           ),
-        );
-        waitUntil(
-          set(notifyRunningChatRunOfPendingInput$, thread.threadId, signal),
         );
         return createdAt;
       })(),
