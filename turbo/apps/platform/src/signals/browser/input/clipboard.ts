@@ -61,7 +61,7 @@ function createClipboardObservation(
     const attempt = get(attempt$);
     set(attempt$, null);
     if (attempt && !attempt.data.settled()) {
-      attempt.data.reject(new Error("Copy cancelled"));
+      attempt.data.reject(new DOMException("Copy cancelled", "AbortError"));
     }
     const recovery = get(internalRecovery$);
     if (keepRecovery && recovery && get(recovery$)) {
@@ -85,7 +85,7 @@ function createClipboardObservation(
     ) {
       set(attempt$, null);
       if (!attempt.data.settled()) {
-        attempt.data.reject(new Error("Copy cancelled"));
+        attempt.data.reject(new DOMException("Copy cancelled", "AbortError"));
       }
     }
     // Retire the actual private text, not merely its public projection. A later
@@ -197,7 +197,7 @@ function createClipboardTransfer(observation: ClipboardObservation) {
       const owner = get(binding.owner$);
       if (!owner) {
         if (!data.settled()) {
-          data.reject(new Error("Copy cancelled"));
+          data.reject(new DOMException("Copy cancelled", "AbortError"));
         }
         return;
       }
@@ -222,7 +222,7 @@ function createClipboardTransfer(observation: ClipboardObservation) {
       const attempt = set(currentAttempt$, data);
       if (!attempt) {
         if (!data.settled()) {
-          data.reject(new Error("Copy cancelled"));
+          data.reject(new DOMException("Copy cancelled", "AbortError"));
         }
         return;
       }
