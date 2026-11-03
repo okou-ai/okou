@@ -321,11 +321,6 @@ fn dispatch_started(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Re
                                     };
                                 None
                             }
-                            guest_control_proto::ExecProcessRole::SessionHistoryIdentityVerifier => {
-                                return Err(exec_operation_protocol_error(
-                                    "supervised start cannot use session history identity verifier role",
-                                ));
-                            }
                         }
                     }
                     lifecycle @ ExecOperationLifecycle::SupervisedAwaitingAgentReady {

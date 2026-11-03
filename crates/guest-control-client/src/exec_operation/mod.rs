@@ -15,8 +15,7 @@ pub use handle::{
 pub use types::{
     ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus, ExecControlOutcome,
     ExecOperationRequest, ExecOperationResult, ExecOutputEvent, ExecOwnedCapturedOutput,
-    ExecStreamRequest, SessionHistoryIdentityVerifyRequest, SupervisedExecControl,
-    SupervisedExecRequest, SupervisedExecStartTiming,
+    ExecStreamRequest, SupervisedExecControl, SupervisedExecRequest, SupervisedExecStartTiming,
 };
 
 pub(crate) use diagnostics::log_operations_closed;
@@ -29,8 +28,7 @@ pub(crate) use start::{
     exec_operation_capture_with_composite_on_shared_and_observer,
     exec_operation_cleanup_untracked_on_shared_with_write_observer,
     exec_operation_cleanup_with_composite_on_shared_and_observer, exec_operation_stream_on_shared,
-    exec_operation_stream_with_composite_on_shared_and_observer,
-    session_history_identity_verify_on_shared, start_exec_operation_on_shared,
+    exec_operation_stream_with_composite_on_shared_and_observer, start_exec_operation_on_shared,
     start_supervised_exec_on_shared, start_supervised_process_on_shared,
 };
 pub(crate) use state::Operations;

@@ -7,9 +7,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::call_records::{
     CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall, GuestStateRestoreCall,
-    ProcessCancelCall, ProcessControlCall, ReadFileCall, SessionHistoryIdentityVerifyCall,
-    StartAgentProcessCall, StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall,
-    WriteFilesCall,
+    ProcessCancelCall, ProcessControlCall, ReadFileCall, StartAgentProcessCall, StartProcessCall,
+    StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
 };
 use crate::lifecycle::{DestroyBehavior, LifecycleBehaviors, MockLifecycleGate};
 use crate::support::LockIgnoringPoison;
@@ -69,8 +68,6 @@ pub(crate) struct ExecOverrideState {
     /// Optional gate entered after every fixed home-drive mount call is
     /// recorded but before its configured result is selected.
     pub(crate) home_drive_mount_lifecycle_gate: Mutex<Option<MockLifecycleGate>>,
-    /// Recorded fixed live identity verifier calls across attached sandboxes.
-    pub(crate) session_history_identity_verify_calls: Mutex<Vec<SessionHistoryIdentityVerifyCall>>,
     /// Recorded fixed guest-state restore calls across all attached sandboxes.
     pub(crate) guest_state_restore_calls: Mutex<Vec<GuestStateRestoreCall>>,
     /// FIFO behaviors for fixed guest-state restore operations.
@@ -627,14 +624,6 @@ impl MockSandboxOverrides {
     /// sandboxes.
     pub fn home_drive_mount_calls(&self) -> u32 {
         *self.exec.home_drive_mount_calls.lock_ignoring_poison()
-    }
-
-    /// Return fixed live session-history identity verifier calls.
-    pub fn session_history_identity_verify_calls(&self) -> Vec<SessionHistoryIdentityVerifyCall> {
-        self.exec
-            .session_history_identity_verify_calls
-            .lock_ignoring_poison()
-            .clone()
     }
 
     /// Queue a result for the next fixed guest-state restore operation.

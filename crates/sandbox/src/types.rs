@@ -97,30 +97,6 @@ pub struct StorageManifestRequest<'a> {
     pub timeout: Duration,
 }
 
-/// Request for the fixed live session-history identity verifier.
-///
-/// The provider selects the executable, subcommand, process identity,
-/// containment, output bounds, and transport lifecycle. Callers supply only
-/// the identity values consumed by that helper.
-pub struct SessionHistoryIdentityVerifyRequest<'a> {
-    /// Absolute path to the final identity metadata inside the guest.
-    pub metadata_path: &'a str,
-    /// Absolute canonical runtime directory exposed to the helper.
-    pub runtime_dir: &'a str,
-    /// Stable CLI framework spelling expected by the helper.
-    pub framework: &'a str,
-    /// SHA-256 hash of the expected normalized session identifier.
-    pub session_id_hash: &'a str,
-    /// Stable history-reference-kind spelling expected by the helper.
-    pub history_ref_kind: &'a str,
-    /// SHA-256 hash of the expected final session-history bytes.
-    pub history_hash: &'a str,
-    /// Exact expected final session-history byte length.
-    pub history_size_bytes: u64,
-    /// Guest-side helper timeout.
-    pub timeout: Duration,
-}
-
 /// Timezone behavior for a fixed guest-state restore operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GuestStateRestoreTimezone<'a> {
@@ -161,16 +137,6 @@ impl GuestStateRestoreRequest<'_> {
 }
 
 impl StorageManifestRequest<'_> {
-    /// Return the timeout as milliseconds, saturating at `u32::MAX`.
-    ///
-    /// Non-zero sub-millisecond durations round up to 1ms so callers do not
-    /// accidentally turn a bounded operation into a zero-timeout request.
-    pub fn timeout_ms(&self) -> u32 {
-        duration_ms(self.timeout)
-    }
-}
-
-impl SessionHistoryIdentityVerifyRequest<'_> {
     /// Return the timeout as milliseconds, saturating at `u32::MAX`.
     ///
     /// Non-zero sub-millisecond durations round up to 1ms so callers do not

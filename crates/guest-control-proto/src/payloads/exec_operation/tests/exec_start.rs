@@ -1,6 +1,4 @@
-use super::super::start::{
-    EXEC_LIFECYCLE_SUPERVISED, EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER,
-};
+use super::super::start::EXEC_LIFECYCLE_SUPERVISED;
 use super::super::*;
 use super::shared::{
     ExecStartLayout, ExecStartLayoutRequest, set_byte_at, write_u16_at, write_u32_at,
@@ -9,11 +7,8 @@ use super::{NONCE, assert_invalid_payload};
 
 type ExecProcessContract = (ExecProcessRole, ExecLifecyclePolicy, ExecControlPolicy);
 
-const EXEC_PROCESS_ROLES: [ExecProcessRole; 3] = [
-    ExecProcessRole::Workload,
-    ExecProcessRole::Agent,
-    ExecProcessRole::SessionHistoryIdentityVerifier,
-];
+const EXEC_PROCESS_ROLES: [ExecProcessRole; 2] =
+    [ExecProcessRole::Workload, ExecProcessRole::Agent];
 const EXEC_LIFECYCLE_POLICIES: [ExecLifecyclePolicy; 2] = [
     ExecLifecyclePolicy::OneShot,
     ExecLifecyclePolicy::Supervised,
@@ -44,12 +39,6 @@ fn exec_process_diagnostic_labels_preserve_role_lifecycle_matrix() {
             "controlled_agent",
             "invalid",
             "start_agent_process",
-        ),
-        (
-            ExecProcessRole::SessionHistoryIdentityVerifier,
-            "session_history_identity_verifier",
-            "verify_session_history_identity",
-            "invalid",
         ),
     ] {
         assert_eq!(role.process_class(), process_class, "role={role:?}");
@@ -164,10 +153,6 @@ fn is_expected_valid_exec_process_contract(
             ExecProcessRole::Agent,
             ExecLifecyclePolicy::Supervised,
             ExecControlPolicy::Enabled { sink: true, .. },
-        ) | (
-            ExecProcessRole::SessionHistoryIdentityVerifier,
-            ExecLifecyclePolicy::OneShot,
-            ExecControlPolicy::Disabled,
         )
     )
 }
@@ -176,9 +161,6 @@ fn exec_process_role_wire_value(role: ExecProcessRole) -> u8 {
     match role {
         ExecProcessRole::Workload => EXEC_PROCESS_ROLE_WORKLOAD,
         ExecProcessRole::Agent => EXEC_PROCESS_ROLE_AGENT,
-        ExecProcessRole::SessionHistoryIdentityVerifier => {
-            EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER
-        }
     }
 }
 
@@ -544,8 +526,8 @@ fn exec_start_accepts_every_valid_process_contract() {
         accepted_count += 1;
     }
 
-    assert_eq!(contract_count, 18);
-    assert_eq!(accepted_count, 5);
+    assert_eq!(contract_count, 12);
+    assert_eq!(accepted_count, 4);
 }
 
 #[test]
@@ -564,7 +546,7 @@ fn exec_start_encoder_rejects_every_invalid_process_contract() {
         rejected_count += 1;
     }
 
-    assert_eq!(rejected_count, 13);
+    assert_eq!(rejected_count, 8);
 }
 
 #[test]
@@ -583,7 +565,7 @@ fn exec_start_decoder_rejects_every_invalid_process_contract() {
         rejected_count += 1;
     }
 
-    assert_eq!(rejected_count, 13);
+    assert_eq!(rejected_count, 8);
 }
 #[test]
 fn exec_start_rejects_zero_duration_timeout() {
@@ -1329,4 +1311,17 @@ fn exec_start_rejects_stdin_above_limit() {
     );
     let err = decode_exec_start(&payload).unwrap_err();
     assert_invalid_payload(err, "exec start stdin too large");
+}
+
+#[test]
+fn exec_start_rejects_retired_process_roles() {
+    let layout = ExecStartLayout::one_shot_duration_discard("cmd", &[], "");
+    for retired_role in [0x02, 0x03] {
+        let mut payload = default_exec_start_payload();
+        set_byte_at(&mut payload, layout.role_offset, retired_role);
+        assert_invalid_payload(
+            decode_exec_start(&payload).unwrap_err(),
+            "exec start process role invalid",
+        );
+    }
 }

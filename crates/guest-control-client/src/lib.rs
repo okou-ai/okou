@@ -117,9 +117,8 @@ pub use connection::{
 pub use exec_operation::{
     ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus, ExecControlHandle,
     ExecControlOutcome, ExecOperationHandle, ExecOperationRequest, ExecOperationResult,
-    ExecOutputEvent, ExecOwnedCapturedOutput, ExecStreamRequest,
-    SessionHistoryIdentityVerifyRequest, SupervisedExecCancelHandle, SupervisedExecControl,
-    SupervisedExecHandle, SupervisedExecRequest, SupervisedExecStartTiming,
+    ExecOutputEvent, ExecOwnedCapturedOutput, ExecStreamRequest, SupervisedExecCancelHandle,
+    SupervisedExecControl, SupervisedExecHandle, SupervisedExecRequest, SupervisedExecStartTiming,
 };
 pub use file::{COPY_FILE_STREAM_MAX_BYTES, CopyFileOptions, CopyFileResult, WriteFileEntry};
 pub use guest_dns_readiness::GuestDnsReadinessResult;
@@ -513,14 +512,6 @@ impl GuestControlClient {
         request: ExecCaptureRequest<'_>,
     ) -> io::Result<ExecOperationResult> {
         exec_operation::exec_operation_capture_on_shared(&self.shared, request).await
-    }
-
-    /// Run the fixed live session-history identity verifier without a guest shell.
-    pub async fn verify_session_history_identity(
-        &self,
-        request: SessionHistoryIdentityVerifyRequest<'_>,
-    ) -> io::Result<ExecOperationResult> {
-        exec_operation::session_history_identity_verify_on_shared(&self.shared, request).await
     }
 
     /// Run a capture-only exec operation with a synchronous admission check at

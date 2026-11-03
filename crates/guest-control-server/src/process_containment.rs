@@ -93,7 +93,6 @@ pub(crate) enum ProcessContainmentMode {
 
 enum ContainmentBackend {
     Cgroup(CgroupGuard),
-    ProcessGroup,
     TestNoop,
     TestResourceFiles {
         resource_path: PathBuf,
@@ -299,14 +298,6 @@ impl ExecProcessContainment {
         mode: ProcessContainmentMode,
         role: ExecProcessRole,
     ) -> Result<Self, ProcessContainmentError> {
-        // The exec request parser admits this role only after validating its
-        // fixed Runner-owned helper contract. Workload and Agent roles retain
-        // workload cgroup containment.
-        if role == ExecProcessRole::SessionHistoryIdentityVerifier {
-            return Ok(Self {
-                backend: ContainmentBackend::ProcessGroup,
-            });
-        }
         if use_test_noop_backend(mode) {
             return Ok(Self {
                 backend: ContainmentBackend::TestNoop,
@@ -321,12 +312,12 @@ impl ExecProcessContainment {
     pub(crate) fn prepare_command(&self) -> PreparedProcessContainmentCommand<'_> {
         match &self.backend {
             ContainmentBackend::Cgroup(guard) => guard.prepare_command(),
-            ContainmentBackend::ProcessGroup
-            | ContainmentBackend::TestNoop
-            | ContainmentBackend::TestResourceFiles { .. } => PreparedProcessContainmentCommand {
-                directory: None,
-                deny_process_inspection: false,
-            },
+            ContainmentBackend::TestNoop | ContainmentBackend::TestResourceFiles { .. } => {
+                PreparedProcessContainmentCommand {
+                    directory: None,
+                    deny_process_inspection: false,
+                }
+            }
             #[cfg(test)]
             ContainmentBackend::TestDirectory(_) => PreparedProcessContainmentCommand {
                 directory: None,
@@ -345,16 +336,12 @@ impl ExecProcessContainment {
     pub(crate) fn create_elapsed(&self) -> Duration {
         match &self.backend {
             ContainmentBackend::Cgroup(guard) => guard.create_elapsed,
-            ContainmentBackend::ProcessGroup
-            | ContainmentBackend::TestNoop
-            | ContainmentBackend::TestResourceFiles { .. } => Duration::ZERO,
+            ContainmentBackend::TestNoop | ContainmentBackend::TestResourceFiles { .. } => {
+                Duration::ZERO
+            }
             #[cfg(test)]
             ContainmentBackend::TestDirectory(_) => Duration::ZERO,
         }
-    }
-
-    pub(crate) fn requires_pre_reap_process_group_cleanup(&self) -> bool {
-        matches!(self.backend, ContainmentBackend::ProcessGroup)
     }
 
     pub(crate) fn start_workload_placement_bootstrap(
@@ -366,9 +353,7 @@ impl ExecProcessContainment {
             ContainmentBackend::Cgroup(guard) => guard
                 .start_workload_placement_bootstrap(control_endpoint, expected_uid)
                 .map(Some),
-            ContainmentBackend::ProcessGroup
-            | ContainmentBackend::TestNoop
-            | ContainmentBackend::TestResourceFiles { .. } => Ok(None),
+            ContainmentBackend::TestNoop | ContainmentBackend::TestResourceFiles { .. } => Ok(None),
             #[cfg(test)]
             ContainmentBackend::TestDirectory(_) => Ok(None),
         }
@@ -415,7 +400,7 @@ impl ExecProcessContainment {
     ) -> Result<Option<String>, ProcessContainmentError> {
         match self.backend {
             ContainmentBackend::Cgroup(guard) => guard.cleanup(mode, resources, process_completed),
-            ContainmentBackend::ProcessGroup | ContainmentBackend::TestNoop => Ok(None),
+            ContainmentBackend::TestNoop => Ok(None),
             ContainmentBackend::TestResourceFiles {
                 resource_path,
                 operation,

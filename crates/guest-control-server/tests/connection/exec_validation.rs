@@ -1,13 +1,5 @@
-use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 
-use guest_contracts::session_history_identity::{
-    SESSION_HISTORY_IDENTITY_VERIFY_DIAGNOSTIC_LABEL,
-    SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES, SessionHistoryFramework,
-    SessionHistoryIdentityExpectation, SessionHistoryIdentityVerifyRequest, SessionHistoryRefKind,
-};
 use guest_control_proto::{
     self, ExecControlPolicy, ExecLifecyclePolicy, ExecOutputPolicy, ExecTermination,
     ExecTimeoutPolicy, MSG_ERROR, MSG_EXEC_CONTROL, MSG_EXEC_START, MSG_OPERATIONS_QUIESCED,
@@ -16,57 +8,6 @@ use guest_control_proto::{
 
 use super::exec_helpers::{EXEC_CONTROL_NONCE, send_exec_control};
 use super::support::*;
-
-fn session_history_identity_verify_payload(metadata_path: &str, runtime_dir: &str) -> String {
-    serde_json::to_string(&SessionHistoryIdentityVerifyRequest {
-        metadata_path: metadata_path.to_owned(),
-        runtime_dir: runtime_dir.to_owned(),
-        expectation: SessionHistoryIdentityExpectation::new(
-            SessionHistoryFramework::ClaudeCode,
-            "a".repeat(64),
-            SessionHistoryRefKind::Blob,
-            "b".repeat(64),
-            42,
-        )
-        .unwrap(),
-    })
-    .unwrap()
-}
-
-fn verifier_exec_request<'a>(command: &'a str) -> guest_control_proto::ExecStartEncodeRequest<'a> {
-    verifier_exec_request_with_timeout(command, 5000)
-}
-
-fn verifier_exec_request_with_timeout(
-    command: &str,
-    timeout_ms: u32,
-) -> guest_control_proto::ExecStartEncodeRequest<'_> {
-    guest_control_proto::ExecStartEncodeRequest {
-        lifecycle: ExecLifecyclePolicy::OneShot,
-        role: guest_control_proto::ExecProcessRole::SessionHistoryIdentityVerifier,
-        timeout: ExecTimeoutPolicy::Duration { timeout_ms },
-        command,
-        env: &[],
-        sudo: false,
-        label: SESSION_HISTORY_IDENTITY_VERIFY_DIAGNOSTIC_LABEL,
-        stdout: ExecOutputPolicy::Capture {
-            limit_bytes: SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES,
-        },
-        stderr: ExecOutputPolicy::Capture {
-            limit_bytes: SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES,
-        },
-        expected_exit_codes: &[],
-        control: ExecControlPolicy::Disabled,
-        stdin_bytes: None,
-    }
-}
-
-fn write_executable_script(path: &str, contents: &str) {
-    fs::write(path, contents).unwrap();
-    let mut permissions = fs::metadata(path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(path, permissions).unwrap();
-}
 
 #[test]
 fn malformed_exec_control_payload_returns_error_and_keeps_connection_open() {
@@ -241,184 +182,6 @@ fn controlled_agent_rejects_command_sudo_and_stdin_authority() {
 }
 
 #[test]
-fn session_history_identity_verifier_directly_launches_fixed_helper_arguments() {
-    let agent_path = unique_tmp_path("session-history-identity-verifier", ".sh");
-    write_executable_script(
-        agent_path.as_str(),
-        r#"#!/bin/sh
-printf 'runtime=%s\n' "$OKOU_GUEST_RUNTIME_DIR"
-printf 'args'
-for arg in "$@"; do printf ' <%s>' "$arg"; done
-printf '\n'
-"#,
-    );
-    let metadata_path = "/tmp/final identity;printf should-not-run";
-    let runtime_dir = "/tmp/runtime $(printf should-not-run)";
-    let payload = session_history_identity_verify_payload(metadata_path, runtime_dir);
-    let (handle, mut host_stream) =
-        start_guest_connection_with_guest_agent_program(PathBuf::from(agent_path.as_str()));
-
-    send_exec_start_request(&mut host_stream, 137, verifier_exec_request(&payload));
-    let (chunks, result) = read_exec_result(&mut host_stream, 137);
-
-    assert!(chunks.is_empty());
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
-    let stdout = String::from_utf8(result.stdout.unwrap()).unwrap();
-    assert_eq!(
-        stdout,
-        format!(
-            "runtime={runtime_dir}\nargs <verify-session-history-identity> <{metadata_path}> <claude-code> <{}> <blob> <{}> <42>\n",
-            "a".repeat(64),
-            "b".repeat(64),
-        )
-    );
-    assert_eq!(result.stderr, Some(Vec::new()));
-
-    finish_guest_connection(handle, host_stream);
-}
-
-#[test]
-fn session_history_identity_verifier_natural_exit_cleans_descendants() {
-    let agent_path = unique_tmp_path("session-history-verifier-descendant", ".sh");
-    let pid_path = unique_pid_path("session-history-verifier-descendant");
-    let mut group_guard = ProcessGroupFileGuard::new(pid_path.as_str());
-    write_executable_script(
-        agent_path.as_str(),
-        &format!(
-            "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nsleep 30 >/dev/null 2>&1 &\nexit 0\n",
-            pid_path.as_str(),
-        ),
-    );
-    let payload = session_history_identity_verify_payload("/tmp/metadata", "/tmp/runtime");
-    let (handle, mut host_stream) =
-        start_guest_connection_with_guest_agent_program(PathBuf::from(agent_path.as_str()));
-
-    send_exec_start_request(&mut host_stream, 146, verifier_exec_request(&payload));
-    let (chunks, result) = read_exec_result(&mut host_stream, 146);
-    let pid = group_guard.read_pid();
-
-    assert!(chunks.is_empty());
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
-    wait_for_pid_exit(pid, "session history verifier natural exit");
-    group_guard.disarm();
-    finish_guest_connection(handle, host_stream);
-}
-
-#[test]
-fn session_history_identity_verifier_timeout_cleans_process_group() {
-    let agent_path = unique_tmp_path("session-history-verifier-timeout", ".sh");
-    let pid_path = unique_pid_path("session-history-verifier-timeout");
-    let mut group_guard = ProcessGroupFileGuard::new(pid_path.as_str());
-    write_executable_script(
-        agent_path.as_str(),
-        &format!(
-            "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nsleep 30\n",
-            pid_path.as_str(),
-        ),
-    );
-    let payload = session_history_identity_verify_payload("/tmp/metadata", "/tmp/runtime");
-    let (handle, mut host_stream) =
-        start_guest_connection_with_guest_agent_program(PathBuf::from(agent_path.as_str()));
-
-    send_exec_start_request(
-        &mut host_stream,
-        147,
-        verifier_exec_request_with_timeout(&payload, 200),
-    );
-    let (chunks, result) = read_exec_result(&mut host_stream, 147);
-    let pid = group_guard.read_pid();
-
-    assert!(chunks.is_empty());
-    assert_eq!(result.termination, ExecTermination::TimedOut);
-    wait_for_pid_exit(pid, "session history verifier timeout");
-    group_guard.disarm();
-    finish_guest_connection(handle, host_stream);
-}
-
-#[test]
-fn session_history_identity_verifier_disconnect_cleans_process_group() {
-    let agent_path = unique_tmp_path("session-history-verifier-disconnect", ".sh");
-    let pid_path = unique_pid_path("session-history-verifier-disconnect");
-    let mut group_guard = ProcessGroupFileGuard::new(pid_path.as_str());
-    write_executable_script(
-        agent_path.as_str(),
-        &format!(
-            "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nsleep 30\n",
-            pid_path.as_str(),
-        ),
-    );
-    let payload = session_history_identity_verify_payload("/tmp/metadata", "/tmp/runtime");
-    let (handle, mut host_stream) =
-        start_guest_connection_with_guest_agent_program(PathBuf::from(agent_path.as_str()));
-
-    send_exec_start_request(
-        &mut host_stream,
-        148,
-        verifier_exec_request_with_timeout(&payload, 60_000),
-    );
-    let pid = group_guard.read_pid();
-
-    drop(host_stream);
-    join_guest_connection(handle);
-    wait_for_pid_exit(pid, "session history verifier disconnect");
-    group_guard.disarm();
-}
-
-#[test]
-fn session_history_identity_verifier_rejects_generic_exec_authority() {
-    enum Mutation {
-        Environment,
-        Sudo,
-        Stdin,
-        Label,
-        Output,
-        ExpectedExit,
-    }
-
-    let payload = session_history_identity_verify_payload("/tmp/metadata", "/tmp/runtime");
-    let (handle, mut host_stream) = start_guest_connection();
-
-    for (seq, mutate) in [
-        (138, Mutation::Environment),
-        (139, Mutation::Sudo),
-        (140, Mutation::Stdin),
-        (141, Mutation::Label),
-        (142, Mutation::Output),
-        (143, Mutation::ExpectedExit),
-    ] {
-        let mut request = verifier_exec_request(&payload);
-        let env = [("UNTRUSTED", "value")];
-        let expected_exit_codes = [7];
-        match mutate {
-            Mutation::Environment => request.env = &env,
-            Mutation::Sudo => request.sudo = true,
-            Mutation::Stdin => request.stdin_bytes = Some(b"stdin"),
-            Mutation::Label => request.label = "caller-selected-label",
-            Mutation::Output => request.stdout = ExecOutputPolicy::Discard,
-            Mutation::ExpectedExit => request.expected_exit_codes = &expected_exit_codes,
-        }
-        send_exec_start_request(&mut host_stream, seq, request);
-        assert_eq!(
-            read_error_response(&mut host_stream, seq),
-            "session history identity verifier process contract is invalid"
-        );
-    }
-
-    send_exec_start_request(
-        &mut host_stream,
-        144,
-        verifier_exec_request("{\"unexpected\":true}"),
-    );
-    assert_eq!(
-        read_error_response(&mut host_stream, 144),
-        "session history identity verifier payload is invalid"
-    );
-
-    assert_ping_pong(&mut host_stream, 145);
-    finish_guest_connection(handle, host_stream);
-}
-
-#[test]
 fn exec_operation_rejects_output_policies_that_cannot_fit_protocol_frames_without_running() {
     let capture_marker = unique_tmp_path("exec-operation-huge-capture-policy", ".marker");
     let stream_marker = unique_tmp_path("exec-operation-huge-stream-policy", ".marker");
@@ -462,6 +225,36 @@ fn exec_operation_rejects_output_policies_that_cannot_fit_protocol_frames_withou
             .contains("stream chunk limit exceeds protocol frame budget")
     );
     assert!(std::fs::metadata(stream_marker.as_str()).is_err());
+
+    finish_guest_connection(handle, host_stream);
+}
+#[test]
+fn exec_operation_rejects_retired_process_roles_without_running() {
+    let marker = unique_tmp_path("exec-retired-process-role", ".marker");
+    let command = format!("printf ran > '{}'", marker.as_str());
+    let (handle, mut host_stream) = start_guest_connection();
+
+    for (seq, retired_role) in [(149, 0x02), (150, 0x03)] {
+        let mut payload = guest_control_proto::encode_exec_start(
+            5000,
+            &command,
+            &[],
+            false,
+            "test",
+            ExecOutputPolicy::Discard,
+            ExecOutputPolicy::Discard,
+        )
+        .unwrap();
+        // Exec start encodes lifecycle first, then process role.
+        payload[1] = retired_role;
+        send_control_payload(&mut host_stream, MSG_EXEC_START, seq, &payload);
+        assert_eq!(
+            read_error_response(&mut host_stream, seq),
+            "invalid payload: exec start process role invalid"
+        );
+        assert_ping_pong(&mut host_stream, seq + 2);
+        assert!(!std::path::Path::new(marker.as_str()).exists());
+    }
 
     finish_guest_connection(handle, host_stream);
 }
