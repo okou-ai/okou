@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   click,
   fill,
@@ -140,6 +140,158 @@ async function insertText(text: string) {
   fireEvent.input(input, { target: { value: text }, inputType: "insertText" });
 }
 
+test.each(["initially hidden", "hidden during native setup"] as const)(
+  "A viewer %s resumes through the existing native startup",
+  async (phase) => {
+    const visibility = context.mocks.browser.visibilityState(
+      phase === "initially hidden" ? "hidden" : "visible",
+    );
+    const viewer = mockViewer();
+    const hello =
+      phase === "hidden during native setup"
+        ? viewer.browser.holdNextNative("hello")
+        : null;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    if (hello) {
+      await hello.received;
+      act(() => {
+        visibility.changeTo("hidden");
+      });
+      await screen.findByText("Viewing paused");
+      await hello.release();
+      await screen.findByLabelText("Original", { selector: '[role="tab"]' });
+    }
+    await screen.findByText("Viewing paused");
+    expect(viewer.browser.activeConnections()).toBe(hello ? 1 : 0);
+    act(() => {
+      visibility.changeTo("visible");
+    });
+    await expectReady();
+    await insertText("after paused startup");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "after paused startup" },
+      });
+    });
+    expect(viewer.browser.connections()).toBe(1);
+    expect(viewer.startupErrors).toHaveLength(0);
+  },
+);
+
+test("A paused startup suspends its active budget and resumes without replaying old paint", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const viewer = mockViewer();
+  const image = viewer.browser.holdFrames("example-page-session");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await image.received;
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  viewer.advance(121_000);
+  act(() => {
+    image.release();
+    visibility.changeTo("visible");
+  });
+  await expectReady();
+  await insertText("after long pause");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after long pause" },
+    });
+  });
+  expect(viewer.browser.connections()).toBe(1);
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test("A viewport pause during native setup keeps its DOM-owned resume path", async () => {
+  const NativeIntersectionObserver = window.IntersectionObserver;
+  const visibilityEvents: ((visible: boolean) => void)[] = [];
+  vi.spyOn(window, "IntersectionObserver").mockImplementation(
+    class extends NativeIntersectionObserver {
+      constructor(
+        private readonly onChange: IntersectionObserverCallback,
+        options?: IntersectionObserverInit,
+      ) {
+        super(onChange, options);
+      }
+      override observe(target: Element) {
+        super.observe(target);
+        visibilityEvents.push((visible) => {
+          const rectangle = target.getBoundingClientRect();
+          this.onChange(
+            [
+              {
+                target,
+                isIntersecting: visible,
+                intersectionRatio: visible ? 1 : 0,
+                boundingClientRect: rectangle,
+                intersectionRect: rectangle,
+                rootBounds: null,
+                time: 0,
+              },
+            ],
+            this,
+          );
+        });
+      }
+    },
+  );
+  const viewer = mockViewer();
+  const hello = viewer.browser.holdNextNative("hello");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await hello.received;
+  const changeVisibility = visibilityEvents.at(-1);
+  if (!changeVisibility) {
+    throw new Error("Expected the mounted canvas to be observed");
+  }
+  act(() => {
+    changeVisibility(false);
+  });
+  await screen.findByText("Viewing paused");
+  await hello.release();
+  await screen.findByLabelText("Original", { selector: '[role="tab"]' });
+  viewer.advance(121_000);
+  act(() => {
+    changeVisibility(true);
+  });
+  await expectReady();
+  expect(viewer.browser.connections()).toBe(1);
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test("A startup failure while paused retires with its native owner and can resume", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const viewer = mockViewer();
+  const hello = viewer.browser.holdNextNative("hello");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await hello.received;
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  viewer.advance(31_000);
+  await waitFor(() => {
+    expect(viewer.browser.activeConnections()).toBe(0);
+  });
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await expectReady();
+  await hello.release();
+  await insertText("after retired startup");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after retired startup" },
+      sessionId: viewer.browser.pageSession("example-page"),
+    });
+  });
+  expect(viewer.browser.connections()).toBe(2);
+});
+
 test("Acknowledged startup without a first frame reaches a bounded failure and ignores late pixels", async () => {
   const viewer = mockViewer();
   const image = viewer.browser.holdFrames("example-page-session");
@@ -229,6 +381,42 @@ test("A whole startup budget bounds several individually timely setup phases", a
   await expectReady();
   await proof.release();
   expect(viewer.startupErrors).toHaveLength(1);
+});
+
+test("A transport change shares the root startup budget without refreshing its descriptor", async () => {
+  const viewer = mockViewer();
+  let descriptors = 0;
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    descriptors++;
+    return respond(200, {
+      browser: viewer.session(),
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const attachment = viewer.browser.holdNext("Target.attachToBrowserTarget");
+  const hello = viewer.browser.holdNextNative("hello");
+  const proof = viewer.browser.holdNextNative("getWindow");
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  click(await screen.findByText("Separate image connection"));
+  await attachment.received;
+  viewer.advance(21_000);
+  await attachment.release();
+  await hello.received;
+  viewer.advance(21_000);
+  await hello.release();
+  await proof.received;
+  viewer.advance(19_000);
+  await screen.findByText("Browser view unavailable");
+  expect(descriptors).toBe(1);
+  reconnect();
+  await expectReady();
+  await proof.release();
+  expect(descriptors).toBe(2);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test.each(["ready", "timeout"] as const)(
@@ -380,7 +568,12 @@ test.each(["same binding", "replacement window", "empty window"] as const)(
     reconnect();
     const failure =
       "The browser action could not be completed. Check the browser before trying again.";
-    await screen.findByText(failure);
+    await screen.findByText("Browser view unavailable");
+    await waitFor(() => {
+      expect(
+        screen.getByText("Reconnect", { selector: "button" }),
+      ).toBeEnabled();
+    });
     reject = false;
     if (recovered === "replacement window") {
       viewer.replaceBinding();
@@ -402,6 +595,11 @@ test.each(["same binding", "replacement window", "empty window"] as const)(
     expect(
       screen.getByLabelText("New tab", { selector: "button" }),
     ).toBeEnabled();
+    expect(screen.queryByText(failure)).not.toBeInTheDocument();
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await screen.findByText("Browser disconnected");
     expect(screen.queryByText(failure)).not.toBeInTheDocument();
   },
 );
@@ -440,36 +638,49 @@ test("An accepted static page has no inactivity deadline", async () => {
   expect(viewer.startupErrors).toHaveLength(0);
 });
 
-test("Changing chat cancels held recovery paint and its deadline cannot retire the next window", async () => {
-  const viewer = mockViewer();
-  await setupPage({ context, path: `/browsers/${threadId}` });
-  await expectReady();
-  act(() => {
-    viewer.browser.disconnect({ code: 1006, wasClean: false });
-  });
-  await screen.findByText("Browser disconnected");
-  const image = viewer.browser.holdTargetFrames("example-page");
-  reconnect();
-  await image.received;
-  act(() => {
-    window.history.pushState(null, "", `/browsers/${nextThreadId}`);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-  await expectReady("https://replacement.example.com");
-  viewer.advance(61_000);
-  act(() => {
-    image.release();
-  });
-  await insertText("next chat");
-  await waitFor(() => {
-    expect(viewer.browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "next chat" },
-      sessionId: viewer.browser.pageSession("replacement"),
+test.each([false, true])(
+  "Changing chat cancels recovery (paused: %s) without retiring the next window",
+  async (paused) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const viewer = mockViewer();
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await expectReady();
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false });
     });
-  });
-  expect(viewer.startupErrors).toHaveLength(0);
-});
+    await screen.findByText("Browser disconnected");
+    const image = viewer.browser.holdTargetFrames("example-page");
+    reconnect();
+    await image.received;
+    if (paused) {
+      act(() => {
+        visibility.changeTo("hidden");
+      });
+      await screen.findByText("Viewing paused");
+    }
+    act(() => {
+      window.history.pushState(null, "", `/browsers/${nextThreadId}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      if (paused) {
+        visibility.changeTo("visible");
+      }
+    });
+    await expectReady("https://replacement.example.com");
+    viewer.advance(61_000);
+    act(() => {
+      image.release();
+    });
+    await insertText("next chat");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "next chat" },
+        sessionId: viewer.browser.pageSession("replacement"),
+      });
+    });
+    expect(viewer.startupErrors).toHaveLength(0);
+  },
+);
 
 test.each(["shared", "split"] as const)(
   "A %s recovery with acknowledged capture but no paint settles as a retryable failure",

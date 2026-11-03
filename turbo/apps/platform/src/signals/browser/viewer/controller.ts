@@ -461,6 +461,7 @@ interface ControllerLinks {
   readonly retireCurrent$: Command<void, [InputStop, boolean, boolean?]>;
   readonly streaming$: Command<void, [SelectedSession]>;
   readonly waitReady$: Command<Promise<void>, [SelectionOwner, AbortSignal]>;
+  readonly waitForReady$: Command<Promise<void>, [AbortSignal]>;
   readonly waitSelection$: Command<
     Promise<SelectionOutcome>,
     [SelectionOwner, AbortSignal]
@@ -1700,6 +1701,9 @@ function createReadinessWait(
 function createReadinessGraph(
   context: ControllerContext<
     | "available$"
+    | "bootstrapping$"
+    | "crashed$"
+    | "disposedState$"
     | "model"
     | "nativeHost"
     | "readinessFailure$"
@@ -1708,9 +1712,16 @@ function createReadinessGraph(
     | "wake$"
   >,
   links$: ControllerDependencies<
-    "displayGraph$" | "imageEvent$" | "refreshFavicon$" | "selectedSession$"
+    | "canCreate$"
+    | "displayGraph$"
+    | "imageEvent$"
+    | "refreshFavicon$"
+    | "selectedSession$"
   >,
-): Pick<ControllerLinks, "streaming$" | "waitReady$" | "waitSelection$"> {
+): Pick<
+  ControllerLinks,
+  "streaming$" | "waitReady$" | "waitForReady$" | "waitSelection$"
+> {
   const { model, wake$, nativeHost } = context;
   const streaming$ = command(({ get, set }, selected: SelectedSession) => {
     if (
@@ -1746,6 +1757,39 @@ function createReadinessGraph(
     );
   });
   const waitReady$ = createReadinessWait(context, links$);
+  // Request observers need usable content, not a completed/no-op restoration.
+  const waitForReady$ = command(async ({ get, set }, signal: AbortSignal) => {
+    while (true) {
+      signal.throwIfAborted();
+      const failure = get(context.readinessFailure$);
+      if (get(context.disposedState$)) {
+        throw failure ?? cancelled();
+      }
+      if (failure) {
+        throw failure;
+      }
+      if (get(context.crashed$)) {
+        throw new CdpFault(
+          "target-crashed",
+          i18n.t(($) => {
+            return $.browserViewer.unavailable;
+          }),
+        );
+      }
+      if (!get(context.bootstrapping$) && get(context.available$)) {
+        const owner = get(context.selectedOwner$);
+        if (owner) {
+          await set(waitReady$, owner, signal);
+          return;
+        }
+        // Empty inventory is usable only after authoritative discovery proof.
+        if (get(get(links$).canCreate$)) {
+          return;
+        }
+      }
+      await set(context.waitEvent$, signal);
+    }
+  });
   const waitSelection$: ControllerLinks["waitSelection$"] = command(
     async (
       { get, set },
@@ -1765,7 +1809,7 @@ function createReadinessGraph(
       }
     },
   );
-  return { streaming$, waitReady$, waitSelection$ };
+  return { streaming$, waitReady$, waitForReady$, waitSelection$ };
 }
 
 function detachLateAttachment(source: CdpClient, value: unknown) {
@@ -3200,10 +3244,29 @@ function createFramesConnectionGraph(
   return { createFrames$, ensureFrames$ };
 }
 
+/** Temporary admission loss parks startup; actual failure or owner end rejects. */
+function createAdmissionWait(
+  context: ControllerContext<"available$" | "readinessFailure$" | "waitEvent$">,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    while (true) {
+      signal.throwIfAborted();
+      const failure = get(context.readinessFailure$);
+      if (failure) {
+        throw failure;
+      }
+      if (get(context.available$)) {
+        return;
+      }
+      await set(context.waitEvent$, signal);
+    }
+  });
+}
+
 function createConnectionBootstrap(
   context: ControllerContext<
-    | "assertAvailable$"
     | "authority$"
+    | "available$"
     | "bootstrapping$"
     | "clientState$"
     | "closingState$"
@@ -3215,6 +3278,7 @@ function createConnectionBootstrap(
     | "nativeState$"
     | "readinessFailure$"
     | "resetOwner$"
+    | "waitEvent$"
   >,
   links$: ControllerDependencies<
     | "createFrames$"
@@ -3238,9 +3302,8 @@ function createConnectionBootstrap(
     connectedState$,
     bootstrapping$,
     displaySize$,
-    readinessFailure$,
-    assertAvailable$,
   } = context;
+  const waitAvailable$ = createAdmissionWait(context);
   return command(async ({ get, set }, signal: AbortSignal) => {
     validateConfiguration(connection.cdpUrl, connection.windowId ?? undefined);
     const transport = get(model.transport$);
@@ -3315,12 +3378,8 @@ function createConnectionBootstrap(
     set(display.start$, client.signal);
     await set(get(get(links$).discovery$)!.start$, client.signal);
     signal.throwIfAborted();
+    await set(waitAvailable$, signal);
     set(bootstrapping$, false);
-    const failure = get(readinessFailure$);
-    if (failure) {
-      throw failure;
-    }
-    set(assertAvailable$, signal);
     const first = get(model.snapshot$).targets[0];
     if (first) {
       return set(get(links$).select$, first.id, signal);
@@ -3332,8 +3391,8 @@ function createConnectionBootstrap(
 
 function createConnectionGraph(
   context: ControllerContext<
-    | "assertAvailable$"
     | "authority$"
+    | "available$"
     | "bootstrapping$"
     | "clientState$"
     | "closingState$"
@@ -3349,6 +3408,7 @@ function createConnectionGraph(
     | "resetOwner$"
     | "selectedOwner$"
     | "startedState$"
+    | "waitEvent$"
     | "wake$"
   >,
   links$: ControllerDependencies<
@@ -4202,6 +4262,7 @@ function createSelectionSettingsGraph(
   context: ControllerContext<
     | "authority$"
     | "available$"
+    | "bootstrapping$"
     | "chosenOnce$"
     | "clientState$"
     | "crashed$"
@@ -4313,7 +4374,7 @@ function createSelectionSettingsGraph(
       if (display) {
         set(display.setSuspended$, paused || !get(authority$));
       }
-      if (!paused) {
+      if (!paused && !get(context.bootstrapping$)) {
         await set(restoreSelection$, signal);
       }
       signal.throwIfAborted();
@@ -4329,15 +4390,10 @@ function createAuthoritySettingsGraph(
     | "bootstrapping$"
     | "disposedState$"
     | "model"
-    | "readinessFailure$"
-    | "waitEvent$"
     | "wake$"
   >,
   links$: ControllerDependencies<
-    | "displayGraph$"
-    | "reconcileSelection$"
-    | "restoreSelection$"
-    | "retireCurrent$"
+    "displayGraph$" | "restoreSelection$" | "retireCurrent$"
   >,
 ) {
   const { model, authority$, disposedState$, authorityRevoked$, wake$ } =
@@ -4361,7 +4417,7 @@ function createAuthoritySettingsGraph(
       signal.throwIfAborted();
       if (!get(authority$)) {
         set(revokeAuthority$);
-        return;
+        throw cancelled();
       }
       if (get(disposedState$)) {
         throw cancelled();
@@ -4370,28 +4426,16 @@ function createAuthoritySettingsGraph(
         return;
       }
       set(authorityRevoked$, false);
+      set(wake$);
       const display = get(get(links$).displayGraph$);
       if (display) {
         set(display.setSuspended$, get(model.intent$).paused);
       }
-      // A fresh descriptor joins the unchanged native owner's startup; it
-      // must not complete merely because selection is not available yet.
-      if (get(context.bootstrapping$)) {
-        while (get(context.bootstrapping$)) {
-          await set(context.waitEvent$, signal);
-        }
-        signal.throwIfAborted();
-        if (get(disposedState$)) {
-          throw get(context.readinessFailure$) ?? cancelled();
-        }
-        const outcome = await set(get(links$).reconcileSelection$, signal);
-        signal.throwIfAborted();
-        if (outcome === "superseded") {
-          throw cancelled();
-        }
-        return;
+      // Bootstrap owns its initial selection; the runtime separately joins
+      // actual readiness after either installation or authority restoration.
+      if (!get(context.bootstrapping$)) {
+        await set(get(links$).restoreSelection$, signal);
       }
-      await set(get(links$).restoreSelection$, signal);
     },
   );
   return { revokeAuthority$, refreshAuthority$ };
@@ -4413,7 +4457,6 @@ function createSettingsGraph(
     | "model"
     | "readinessFailure$"
     | "selectedOwner$"
-    | "waitEvent$"
     | "wake$"
   >,
   links$: ControllerDependencies<
@@ -4421,7 +4464,6 @@ function createSettingsGraph(
     | "configureCapture$"
     | "discovery$"
     | "displayGraph$"
-    | "reconcileSelection$"
     | "restoreSelection$"
     | "retireCurrent$"
     | "scheduleCapture$"
@@ -4643,6 +4685,7 @@ export function createBrowserController(
     connected$: context.connected$,
     canRetryDiscovery$: graph.canRetryDiscovery$,
     start$: graph.start$,
+    waitForReady$: graph.waitForReady$,
     dispose$: graph.dispose$,
     waitForClosed$: graph.waitForClosed$,
     selectTab$: graph.selectTab$,
