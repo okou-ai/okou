@@ -58,7 +58,9 @@ final class WorkspaceStore {
   var synchronizationState: ChatSynchronizationState? {
     guard !closed else { return nil }
     if list.isLoading || selectedConversation?.isLoading == true { return .updating }
-    if list.syncError != nil || list.navigationError != nil || selectedConversation?.syncError != nil {
+    if list.syncError != nil || list.navigationError != nil
+      || selectedConversation?.syncError != nil
+    {
       return .unavailable
     }
     guard realtime != nil else { return nil }

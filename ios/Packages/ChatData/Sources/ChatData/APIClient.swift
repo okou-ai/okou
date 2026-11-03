@@ -31,7 +31,8 @@ public enum APIClientError: LocalizedError, Sendable {
     case .http(401, _, _, _): "Your session expired. Sign in again."
     case .http(426, _, _, _): "Update Okou in TestFlight to continue."
     case .http(402, let message, _, _): "\(message) Manage your plan on the Okou website."
-    case .http(403, let message, _, _): "\(message) Check your workspace access on the Okou website."
+    case .http(403, let message, _, _):
+      "\(message) Check your workspace access on the Okou website."
     case .http(429, let message, _, _): "\(message) Wait a moment, then refresh."
     case .http(_, let message, _, _): message
     case .invalidResponse: "The server returned an invalid response. Try refreshing."
