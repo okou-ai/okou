@@ -133,9 +133,8 @@ GMAIL_PUBSUB_TOPIC_NAME=op://Development/gmail/GMAIL_PUBSUB_TOPIC_NAME
 GMAIL_PUBSUB_PUSH_AUDIENCE=op://Development/gmail/GMAIL_PUBSUB_PUSH_AUDIENCE
 GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL=op://Development/gmail/GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
 
-# Optional: Google Ads API (developer token + login customer ID for MCC)
+# Optional: Google Ads API developer token
 GOOGLE_ADS_DEVELOPER_TOKEN=op://Development/google/GOOGLE_ADS_DEVELOPER_TOKEN
-GOOGLE_ADS_LOGIN_CUSTOMER_ID=op://Development/google/GOOGLE_ADS_LOGIN_CUSTOMER_ID
 
 # Managed browser provider (Browser Use)
 OKOU_BROWSER_USE_API_KEY=op://Development/browser-use/OKOU_BROWSER_USE_API_KEY
@@ -211,7 +210,6 @@ TODOIST_OAUTH_CLIENT_SECRET=op://Development/todoist/TODOIST_OAUTH_CLIENT_SECRET
 # Optional: Monday.com OAuth Connector
 MONDAY_OAUTH_CLIENT_ID=op://Development/monday/MONDAY_OAUTH_CLIENT_ID
 MONDAY_OAUTH_CLIENT_SECRET=op://Development/monday/MONDAY_OAUTH_CLIENT_SECRET
-MONDAY_OAUTH_APP_ID=op://Development/monday/MONDAY_OAUTH_APP_ID
 
 # Optional: Meta Ads OAuth Connector
 META_ADS_OAUTH_CLIENT_ID=op://Development/meta-ads/META_ADS_OAUTH_CLIENT_ID
