@@ -73,6 +73,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       needed: ${{ steps.changes.outputs.needed }}
+      release-only: ${{ steps.changes.outputs.release-only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,6 +81,7 @@ jobs:
           fetch-depth: 32
           sparse-checkout: |
             /ios/scripts/ci-changed.sh
+            /ios/scripts/archive-promotion.py
             /.github/scripts/checks/changed-base-ref.sh
           sparse-checkout-cone-mode: false
       - name: Detect iOS changes
@@ -94,6 +96,11 @@ jobs:
         run: |
           needed=$(bash ios/scripts/ci-changed.sh)
           echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          release_only=false
+          if [[ "$EVENT_NAME" == merge_group && "$needed" == true ]]; then
+            release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
+          fi
+          echo "release-only=$release_only" >> "$GITHUB_OUTPUT"
 
   script-checks:
     runs-on: ubuntu-latest
@@ -146,9 +153,70 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  prepare-package-sources:
+  resolve-test-evidence:
     needs: detect
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true' && needs.detect.outputs.release-only == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    outputs:
+      run-tests: ${{ steps.evidence.outputs.run_tests }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 32
+          sparse-checkout: /ios/scripts/archive-promotion.py
+          sparse-checkout-cone-mode: false
+      - name: Configure evidence workspace
+        run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+      - name: Capture current test inputs and toolchain
+        run: |
+          mkdir "$IOS_ARCHIVE_DIR"
+          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+      - name: Install AWS CLI
+        run: |
+          if ! command -v aws >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
+          fi
+          aws --version
+      - name: Resolve exact-input test evidence
+        id: evidence
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+        run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
+      - name: Prepare reused simulator evidence
+        if: steps.evidence.outputs.run_tests == 'false'
+        run: |
+          cp "$IOS_ARCHIVE_DIR/inputs.json" "$IOS_ARCHIVE_DIR/test-inputs.json"
+          echo false > "$IOS_ARCHIVE_DIR/ran-tests.txt"
+      - name: Transfer reused simulator evidence
+        if: steps.evidence.outputs.run_tests == 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.IOS_ARCHIVE_DIR }}/test-inputs.json
+            ${{ env.IOS_ARCHIVE_DIR }}/test-evidence.json
+            ${{ env.IOS_ARCHIVE_DIR }}/ran-tests.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  prepare-package-sources:
+    needs: [detect, resolve-test-evidence]
+    if: >-
+      !cancelled() && needs.detect.result == 'success' &&
+      needs.detect.outputs.needed == 'true' && github.event_name != 'push' &&
+      (needs.detect.outputs.release-only != 'true' ||
+       (needs.resolve-test-evidence.result == 'success' && needs.resolve-test-evidence.outputs.run-tests == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -172,8 +240,8 @@ jobs:
 
   build-test:
     needs: [detect, prepare-package-sources]
-    # Main pushes consume previously built archives in release-please; never rebuild/test.
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    # Release-only groups with verified evidence do not prepare sources or start this job.
+    if: "!cancelled() && needs.prepare-package-sources.result == 'success'"
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -210,40 +278,12 @@ jobs:
           mkdir "$IOS_ARCHIVE_DIR"
           cp "${{ steps.build-cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
-      - name: Classify the whole merge group
-        id: release-only
-        if: github.event_name == 'merge_group'
-        env:
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-        run: |
-          release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
-          echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
-      - name: Install AWS CLI
-        if: github.event_name == 'merge_group' && steps.release-only.outputs.release_only == 'true'
-        run: |
-          if ! command -v aws >/dev/null; then
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
-          fi
-          aws --version
-      - name: Resolve exact-input test evidence
-        id: evidence
-        if: github.event_name == 'merge_group'
-        env:
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
-        run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
       - name: Check Swift formatting and property lists
         run: |
           xcodebuild -version
           xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push
           plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Okou.xcodeproj/project.pbxproj
       - name: Build app and run isolated simulator tests
-        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
@@ -257,7 +297,7 @@ jobs:
         if: github.event_name == 'merge_group'
         run: |
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/test-inputs.json"
-          echo "${{ steps.evidence.outputs.run_tests }}" > "$IOS_ARCHIVE_DIR/ran-tests.txt"
+          echo true > "$IOS_ARCHIVE_DIR/ran-tests.txt"
       - name: Transfer simulator inputs and evidence
         if: github.event_name == 'merge_group'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -265,7 +305,6 @@ jobs:
           name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
           path: |
             ${{ env.IOS_ARCHIVE_DIR }}/test-inputs.json
-            ${{ env.IOS_ARCHIVE_DIR }}/test-evidence.json
             ${{ env.IOS_ARCHIVE_DIR }}/ran-tests.txt
           if-no-files-found: error
           retention-days: 7
@@ -317,8 +356,25 @@ jobs:
           retention-days: 7
 
   publish-archive:
-    needs: [detect, script-checks, test-packages, build-test, build-archive]
-    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
+    needs:
+      [
+        detect,
+        script-checks,
+        resolve-test-evidence,
+        test-packages,
+        build-test,
+        build-archive,
+      ]
+    if: >-
+      !cancelled() && github.event_name == 'merge_group' &&
+      needs.detect.result == 'success' && needs.detect.outputs.needed == 'true' &&
+      needs.script-checks.result == 'success' && needs.test-packages.result == 'success' &&
+      needs.build-archive.result == 'success' &&
+      ((needs.build-test.result == 'success' &&
+        (needs.resolve-test-evidence.result == 'skipped' ||
+         (needs.resolve-test-evidence.result == 'success' && needs.resolve-test-evidence.outputs.run-tests == 'true'))) ||
+       (needs.build-test.result == 'skipped' && needs.resolve-test-evidence.result == 'success' &&
+        needs.resolve-test-evidence.outputs.run-tests == 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -358,6 +414,7 @@ jobs:
       [
         detect,
         script-checks,
+        resolve-test-evidence,
         test-packages,
         build-test,
         build-archive,
@@ -380,6 +437,8 @@ jobs:
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
           PACKAGES_RESULT: ${{ needs.test-packages.result }}
           BUILD_RESULT: ${{ needs.build-test.result }}
+          TEST_EVIDENCE_RESULT: ${{ needs.resolve-test-evidence.result }}
+          RUN_SIMULATOR_TESTS: ${{ needs.resolve-test-evidence.outputs.run-tests }}
           ARCHIVE_RESULT: ${{ needs.build-archive.result }}
           PUBLISH_RESULT: ${{ needs.publish-archive.result }}
         run: bash ios/scripts/ci-gate.sh

@@ -182,4 +182,28 @@ for result in failure cancelled skipped; do
     exit 1
   fi
 done
+
+merge_gate() {
+  EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=$1 ARCHIVE_RESULT=success PUBLISH_RESULT=success TEST_EVIDENCE_RESULT=$2 RUN_SIMULATOR_TESTS=$3 bash "$script_dir/ci-gate.sh"
+}
+merge_gate skipped success false
+merge_gate success success true
+for evidence_result in failure cancelled skipped ''; do
+  if merge_gate skipped "$evidence_result" false > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted skipped simulator tests without verified evidence: $evidence_result" >&2
+    exit 1
+  fi
+done
+for build_result in success failure cancelled; do
+  if merge_gate "$build_result" success false > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted inconsistent simulator test selection: $build_result" >&2
+    exit 1
+  fi
+done
+for run_tests in true ''; do
+  if merge_gate skipped success "$run_tests" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted skipped simulator tests without an explicit reuse decision" >&2
+    exit 1
+  fi
+done
 echo "iOS CI change detection and gate tests passed."
