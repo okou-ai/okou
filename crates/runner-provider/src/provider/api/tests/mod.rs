@@ -31,6 +31,7 @@ const TEST_HEARTBEAT_GENERATION: u64 = 7;
 mod claim_observation;
 mod finalizing_source;
 mod parallel_claim;
+mod preferred_claim_retry;
 mod silent_connection;
 
 fn api_client_for_url(api_url: String) -> ApiClient {
