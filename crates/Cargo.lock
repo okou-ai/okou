@@ -5853,7 +5853,7 @@ dependencies = [
 [[package]]
 name = "ts_array256"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "heapless",
  "static_assertions",
@@ -5863,7 +5863,7 @@ dependencies = [
 [[package]]
 name = "ts_bart"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "cfg-if",
  "heapless",
@@ -5876,7 +5876,7 @@ dependencies = [
 [[package]]
 name = "ts_bitset"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "cfg-if",
  "static_assertions",
@@ -5885,7 +5885,7 @@ dependencies = [
 [[package]]
 name = "ts_capabilityversion"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "serde",
 ]
@@ -5893,7 +5893,7 @@ dependencies = [
 [[package]]
 name = "ts_control"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "bytes",
  "chrono",
@@ -5927,7 +5927,7 @@ dependencies = [
 [[package]]
 name = "ts_control_noise"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -5949,7 +5949,7 @@ dependencies = [
 [[package]]
 name = "ts_control_serde"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -5968,7 +5968,7 @@ dependencies = [
 [[package]]
 name = "ts_dataplane"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "bitrs",
  "bytes",
@@ -5989,7 +5989,7 @@ dependencies = [
 [[package]]
 name = "ts_derp"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "bytes",
  "crypto_box",
@@ -6015,7 +6015,7 @@ dependencies = [
 [[package]]
 name = "ts_disco_protocol"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "aead 0.5.2",
  "crypto_box",
@@ -6030,7 +6030,7 @@ dependencies = [
 [[package]]
 name = "ts_dynbitset"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "smallvec",
  "ts_bitset",
@@ -6039,7 +6039,7 @@ dependencies = [
 [[package]]
 name = "ts_hexdump"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "heapless",
 ]
@@ -6047,7 +6047,7 @@ dependencies = [
 [[package]]
 name = "ts_http_util"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "bytes",
  "futures",
@@ -6067,7 +6067,7 @@ dependencies = [
 [[package]]
 name = "ts_keys"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "crypto_box",
  "serde",
@@ -6080,7 +6080,7 @@ dependencies = [
 [[package]]
 name = "ts_netstack_smoltcp_core"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "bytes",
  "flume",
@@ -6093,7 +6093,7 @@ dependencies = [
 [[package]]
 name = "ts_netstack_smoltcp_socket"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "bytes",
  "tokio",
@@ -6104,7 +6104,7 @@ dependencies = [
 [[package]]
 name = "ts_nodecapability"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "cfg-if",
  "serde",
@@ -6114,7 +6114,7 @@ dependencies = [
 [[package]]
 name = "ts_noise"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "aead 0.5.2",
  "blake2 0.10.6",
@@ -6130,7 +6130,7 @@ dependencies = [
 [[package]]
 name = "ts_overlay_router"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "itertools",
  "tracing",
@@ -6142,7 +6142,7 @@ dependencies = [
 [[package]]
 name = "ts_packet"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "bytes",
  "crypto_box",
@@ -6154,7 +6154,7 @@ dependencies = [
 [[package]]
 name = "ts_packetfilter"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "hashbrown 0.17.1",
  "ipnet",
@@ -6165,7 +6165,7 @@ dependencies = [
 [[package]]
 name = "ts_packetfilter_serde"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "ipnet",
  "nom 8.0.0",
@@ -6178,7 +6178,7 @@ dependencies = [
 [[package]]
 name = "ts_packetfilter_state"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "ts_packetfilter",
  "ts_packetfilter_serde",
@@ -6187,7 +6187,7 @@ dependencies = [
 [[package]]
 name = "ts_peercapability"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "serde",
  "url",
@@ -6196,12 +6196,12 @@ dependencies = [
 [[package]]
 name = "ts_time"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 
 [[package]]
 name = "ts_tls_util"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "tokio",
  "tokio-rustls",
@@ -6213,7 +6213,7 @@ dependencies = [
 [[package]]
 name = "ts_transport"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "dyn-eq",
  "dyn-hash",
@@ -6227,7 +6227,7 @@ dependencies = [
 [[package]]
 name = "ts_tunnel"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "aead 0.5.2",
  "blake2 0.10.6",
@@ -6245,7 +6245,7 @@ dependencies = [
 [[package]]
 name = "ts_underlay_router"
 version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?rev=d34658bbb2eb4593ae6df959aa93e9ee1e0457c6#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "ts_packet",
  "ts_transport",
