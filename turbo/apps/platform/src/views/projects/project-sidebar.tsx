@@ -4,8 +4,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Archive,
-  ChevronDown,
-  ChevronRight,
   Ellipsis,
   Folder,
   FolderOpen,
@@ -67,8 +65,9 @@ function ProjectFolderMenu({
         render={
           <Button
             variant="quiet"
-            size="icon-2xs"
-            className={cn("rounded-md", touch && "min-h-11 min-w-11")}
+            size="icon-sm"
+            iconSize="md"
+            className={cn("shrink-0", touch && "min-h-11 min-w-11")}
             aria-label={t(
               ($) => {
                 return $.projects.options;
@@ -80,7 +79,7 @@ function ProjectFolderMenu({
           />
         }
       >
-        <Ellipsis size={16} />
+        <Ellipsis />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" finalFocus={dialog ? false : undefined}>
         <DropdownMenuItem
@@ -124,18 +123,23 @@ function ProjectFolderMenu({
   );
 }
 
+type ProjectSidebarLayout = "sidebar" | "list";
+
 function ProjectFolderEmpty({
   archived,
-  pending,
-  onNewChat,
+  layout,
 }: {
   archived: boolean;
-  pending: boolean;
-  onNewChat: () => void;
+  layout: ProjectSidebarLayout;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="px-2 py-2 text-xs text-nav-copy-muted">
+    <div
+      className={cn(
+        "py-2 text-xs text-nav-copy-muted",
+        layout === "list" ? "px-3" : "px-2",
+      )}
+    >
       <p>
         {archived
           ? t(($) => {
@@ -145,20 +149,6 @@ function ProjectFolderEmpty({
               return $.projects.empty;
             })}
       </p>
-      {!archived && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-1 -ml-2 text-xs"
-          disabled={pending}
-          onClick={onNewChat}
-        >
-          <Plus size={14} />
-          {t(($) => {
-            return $.projects.newChat;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -166,9 +156,10 @@ function ProjectFolderEmpty({
 interface ProjectFolderProps {
   readonly project: Project;
   readonly touch: boolean;
+  readonly layout: ProjectSidebarLayout;
 }
 
-function ProjectFolder({ project, touch }: ProjectFolderProps) {
+function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const { t } = useTranslation();
   const agent = useLastResolved(projectCreationAgentId$);
   const expanded = useGet(expandedProjectIds$).has(project.id);
@@ -199,28 +190,30 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
           className={cn(
             "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             touch ? "min-h-12" : "h-8",
+            layout === "list" && "h-14 px-3 text-base leading-5",
           )}
         >
-          {expanded ? (
-            <ChevronDown size={14} className="shrink-0 opacity-50" />
-          ) : (
-            <ChevronRight size={14} className="shrink-0 opacity-50" />
-          )}
           <Icon size={16} className="shrink-0 opacity-70" />
           <span className="truncate">{project.name}</span>
         </button>
-        <div className="flex shrink-0 items-center md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100">
+        <div
+          className={cn(
+            "flex shrink-0 items-center md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100",
+            layout === "list" ? "gap-1" : "gap-0.5",
+          )}
+        >
           <Button
             variant="quiet"
-            size="icon-2xs"
-            className={cn("rounded-md", touch && "min-h-11 min-w-11")}
+            size="icon-sm"
+            iconSize="md"
+            className={cn("shrink-0", touch && "min-h-11 min-w-11")}
             aria-label={t(($) => {
               return $.projects.newChat;
             })}
             disabled={creation.state === "loading"}
             onClick={newChat}
           >
-            <Plus size={16} />
+            <Plus />
           </Button>
           <ProjectFolderMenu
             project={project}
@@ -243,18 +236,19 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
           aria-label={project.name}
         >
           {archived && (
-            <p className="px-2 py-1 text-xs text-nav-copy-muted">
+            <p
+              className={cn(
+                "py-1 text-xs text-nav-copy-muted",
+                layout === "list" ? "px-3" : "px-2",
+              )}
+            >
               {t(($) => {
                 return $.projects.archived;
               })}
             </p>
           )}
           {items.length === 0 ? (
-            <ProjectFolderEmpty
-              archived={archived}
-              pending={creation.state === "loading"}
-              onNewChat={newChat}
-            />
+            <ProjectFolderEmpty archived={archived} layout={layout} />
           ) : (
             items.slice(0, limit).map(({ signals }, index) => {
               return (
@@ -292,7 +286,13 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
   );
 }
 
-export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
+export function ProjectSidebar({
+  touch = false,
+  layout = "sidebar",
+}: {
+  touch?: boolean;
+  layout?: ProjectSidebarLayout;
+}) {
   const { t } = useTranslation();
   const enabled = useGet(projectsEnabled$);
   const projects = useGet(projects$);
@@ -306,18 +306,28 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
       aria-label={t(($) => {
         return $.projects.projects;
       })}
-      className="min-h-0 shrink-0 px-2 pb-2"
+      className={cn(
+        "min-h-0 shrink-0 pb-2",
+        touch && layout === "sidebar" ? "px-2" : "px-3",
+      )}
     >
-      <div className="flex h-8 items-center justify-between px-2">
-        <span className="text-xs text-nav-copy-muted">
+      <div
+        className={cn(
+          "flex items-center justify-between",
+          touch ? "min-h-12 pl-2 pr-2" : "h-8 pl-2",
+          layout === "list" && "pl-3 pr-0",
+        )}
+      >
+        <span className="text-[13px] leading-4 text-nav-copy-muted">
           {t(($) => {
             return $.projects.projects;
           })}
         </span>
         <Button
           variant="quiet"
-          size="icon-2xs"
-          className="rounded-md"
+          size="icon-sm"
+          iconSize="md"
+          className={cn("shrink-0", touch && "min-h-11 min-w-11")}
           data-project-create=""
           aria-label={t(($) => {
             return $.projects.create;
@@ -326,13 +336,18 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
             return open();
           }}
         >
-          <Plus size={15} />
+          <Plus />
         </Button>
       </div>
       <div className="max-h-[45dvh] overflow-y-auto">
         {projects.map((project) => {
           return (
-            <ProjectFolder key={project.id} project={project} touch={touch} />
+            <ProjectFolder
+              key={project.id}
+              project={project}
+              touch={touch}
+              layout={layout}
+            />
           );
         })}
       </div>
