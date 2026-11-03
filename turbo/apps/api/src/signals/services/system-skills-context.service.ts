@@ -25,20 +25,19 @@ export function createSystemSkillsContext(
       }),
     );
     const skillVolumes = skills.flatMap((skillName): readonly SkillVolume[] => {
-      const skill = byUrl.get(resolveSkillRef(skillName));
-      if (
-        !skill ||
-        skill.versionHash === null ||
-        skill.contentBundle === null ||
-        skill.contentBundleSourceVersionHash !== skill.versionHash
-      ) {
+      // Only a usable bundle matters: a newer source version that is still
+      // being rebuilt does not block the run, which keeps this pointer.
+      const contentBundle = byUrl.get(
+        resolveSkillRef(skillName),
+      )?.contentBundle;
+      if (!contentBundle) {
         throw new Error(`Seed Skill bundle is not prepared: ${skillName}`);
       }
       return [
         {
           skillName,
           source: "system_skill",
-          contentBundle: contentBundleSchema.parse(skill.contentBundle),
+          contentBundle: contentBundleSchema.parse(contentBundle),
         },
       ];
     });

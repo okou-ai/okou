@@ -21,12 +21,10 @@ import { usagePricingByKey } from "./built-in-route-pricing";
 
 const seedSkillColumns = Object.freeze({
   url: skillCatalog.url,
-  versionHash: skillCatalog.versionHash,
   contentBundle: skillCatalog.contentBundle,
-  contentBundleSourceVersionHash: skillCatalog.contentBundleSourceVersionHash,
 });
 
-/** Every Seed Skill row; each run filters and validates its own selection. */
+/** Every Seed Skill bundle; each run filters and checks its own selection. */
 function seedSkillRows(builder: QueryBuilder) {
   return builder
     .select({
