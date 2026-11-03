@@ -706,23 +706,23 @@ function recordPollTimingMetrics(args: {
   ]);
 }
 
-function runnerPollPriorityOrder(args: {
+type RunnerPollReusePriority = ReturnType<
+  typeof runnerReusePreferencePollPriority
+>;
+
+function runnerPollReusePriority(args: {
   readonly runnerId: string | undefined;
   readonly runnerGroup: string;
   readonly currentDate: Date;
-}): SQL[] {
+}): RunnerPollReusePriority | null {
   if (!args.runnerId) {
-    return [];
+    return null;
   }
-  return [
-    desc(
-      runnerReusePreferencePollPriority({
-        runnerId: args.runnerId,
-        runnerGroup: args.runnerGroup,
-        currentDate: args.currentDate,
-      }),
-    ),
-  ];
+  return runnerReusePreferencePollPriority({
+    runnerId: args.runnerId,
+    runnerGroup: args.runnerGroup,
+    currentDate: args.currentDate,
+  });
 }
 
 const resolvePollRunnerReusePreference$ = command(
@@ -756,10 +756,10 @@ const findPendingRunnerJob$ = command(
     { get },
     args: {
       readonly conditions: readonly SQL[];
-      readonly priorityOrder: readonly SQL[];
+      readonly reusePriority: RunnerPollReusePriority | null;
     },
   ) => {
-    const [pendingJob] = await get(db$)
+    const pendingJobs = get(db$)
       .select({
         runId: runnerJobQueue.runId,
         prompt: agentRuns.prompt,
@@ -772,14 +772,24 @@ const findPendingRunnerJob$ = command(
         discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
       })
       .from(runnerJobQueue)
-      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-      .where(and(...args.conditions))
-      .orderBy(
-        ...args.priorityOrder,
-        runnerJobQueue.createdAt,
-        runnerJobQueue.runId,
-      )
-      .limit(1);
+      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id));
+    const where = and(...args.conditions);
+    const { reusePriority } = args;
+    // Every priority tier reads the job's Thread predecessor from one join.
+    const [pendingJob] = await (reusePriority
+      ? pendingJobs
+          .leftJoinLateral(reusePriority.predecessor, sql`true`)
+          .where(where)
+          .orderBy(
+            desc(reusePriority.priority),
+            runnerJobQueue.createdAt,
+            runnerJobQueue.runId,
+          )
+          .limit(1)
+      : pendingJobs
+          .where(where)
+          .orderBy(runnerJobQueue.createdAt, runnerJobQueue.runId)
+          .limit(1));
     return pendingJob;
   },
 );
@@ -823,14 +833,14 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(writeDb$);
   const pendingJobLookupStartedAtMs = now();
   const currentDate = nowDate();
-  const reusePreferencePriorityOrder = runnerPollPriorityOrder({
+  const reusePriority = runnerPollReusePriority({
     runnerId: body.data.runnerId,
     runnerGroup: group,
     currentDate,
   });
   const pendingJob = await set(findPendingRunnerJob$, {
     conditions: whereConditions,
-    priorityOrder: reusePreferencePriorityOrder,
+    reusePriority,
   });
   signal.throwIfAborted();
   const pendingJobLookupFinishedAtMs = now();
@@ -2001,7 +2011,7 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
-    const workflowInput = workflowClaimInput(storedContext, run.prompt);
+    const workflowInput = workflowClaimInput(storedContext);
 
     const baseResponseBody = await set(
       buildClaimResponseBodyForClaim$,

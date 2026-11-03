@@ -11,12 +11,12 @@ import {
   count,
   eq,
   isNotNull,
-  inArray,
   isNull,
   lte,
   notExists,
   or,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -68,7 +68,10 @@ export const notifyRunningChatRunOfPendingInput$ = command(
     if (!run) {
       return false;
     }
-    const candidates = await database
+    // Only an unrevoked runless input is pending; one statement excludes the
+    // revoked ones instead of reading every candidate's revokers.
+    const revoker = alias(chatEvents, "pending_input_revoker");
+    const pending = await database
       .select({ id: chatEvents.id })
       .from(chatEvents)
       .where(
@@ -86,34 +89,16 @@ export const notifyRunningChatRunOfPendingInput$ = command(
               eq(chatEvents.contextId, run.id),
             ),
           ),
+          notExists(
+            database
+              .select({ id: revoker.id })
+              .from(revoker)
+              .where(eq(revoker.revokesEventId, chatEvents.id)),
+          ),
         ),
       );
     signal.throwIfAborted();
-    if (candidates.length === 0) {
-      return false;
-    }
-    const revokers = await database
-      .select({ eventId: chatEvents.revokesEventId })
-      .from(chatEvents)
-      .where(
-        inArray(
-          chatEvents.revokesEventId,
-          candidates.map((event) => {
-            return event.id;
-          }),
-        ),
-      );
-    signal.throwIfAborted();
-    const revoked = new Set(
-      revokers.map((event) => {
-        return event.eventId;
-      }),
-    );
-    if (
-      candidates.every((event) => {
-        return revoked.has(event.id);
-      })
-    ) {
+    if (pending.length === 0) {
       return false;
     }
     if (run.runnerGroup) {

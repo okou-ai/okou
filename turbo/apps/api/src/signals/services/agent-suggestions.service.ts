@@ -45,6 +45,7 @@ import {
 } from "./agent-suggestions-lifecycle";
 import {
   storedSuggestion$,
+  storedSuggestions$,
   suggestionOwner,
 } from "./agent-suggestion-read.service";
 import {
@@ -811,13 +812,18 @@ export const validateSuggestionFollowup$ = command(
     ) {
       return null;
     }
-    for (const { context, part } of suggestionFeedbacks(document)) {
-      const entry = await set(
-        storedSuggestion$,
-        owner,
-        context.suggestionId,
-        signal,
-      );
+    const feedbacks = suggestionFeedbacks(document);
+    // One read serves every quoted card; parts are still checked in order.
+    const stored = await set(
+      storedSuggestions$,
+      owner,
+      feedbacks.map(({ context }) => {
+        return context.suggestionId;
+      }),
+      signal,
+    );
+    for (const { context, part } of feedbacks) {
+      const entry = stored.get(context.suggestionId);
       const item = entry?.status === "active" ? entry : null;
       // A saved quote is self-contained and can outlive its disposable card.
       // Retired or absent cards grant no new authority and keep their receipt.

@@ -1,10 +1,13 @@
 import { computed } from "ccstate";
-import { asc, sql } from "drizzle-orm";
+import { asc, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { resolveSkillRef } from "@okouai/core/github-url";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { modelRoutes } from "@okouai/db/schema/model-route";
+import { skills as skillCatalog } from "@okouai/db/schema/skill";
 import { array, unknown as zUnknown } from "zod";
 import { db$ } from "../external/db";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -15,6 +18,23 @@ import {
 } from "./context-rowset";
 import { validateModelCatalog } from "./model-catalog.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
+
+const seedSkillColumns = Object.freeze({
+  url: skillCatalog.url,
+  contentBundle: skillCatalog.contentBundle,
+});
+
+/** Every Seed Skill bundle; each run filters and checks its own selection. */
+function seedSkillRows(builder: QueryBuilder) {
+  return builder
+    .select({
+      payload: contextJsonProjection(seedSkillColumns)
+        .mapWith(zodDriverValueDecoder(zUnknown()))
+        .as("payload"),
+    })
+    .from(skillCatalog)
+    .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
+}
 
 /** One statement snapshot makes every global read gate enqueue with the catalog. */
 export function createGlobalModelContext() {
@@ -103,6 +123,9 @@ export function createGlobalModelContext() {
         routes: contextJsonRows(routeRows).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
+        seedSkills: contextJsonRows(seedSkillRows(builder)).mapWith(
+          zodDriverValueDecoder(zUnknown()),
+        ),
       })
       .from(sql`(values (1)) as context_seed(value)`);
     if (!row) {
@@ -129,5 +152,11 @@ export function createGlobalModelContext() {
       array(contextProjectionSchema(routes)).parse(row.routes),
     );
   });
-  return { managedModelKeys$, modelPricing$, catalog$ };
+  // Decoding never checks preparation; the consuming run validates its skills.
+  const seedSkills$ = computed(async (get) => {
+    return array(contextProjectionSchema(seedSkillColumns)).parse(
+      (await get(globalRaw$)).seedSkills,
+    );
+  });
+  return { managedModelKeys$, modelPricing$, catalog$, seedSkills$ };
 }

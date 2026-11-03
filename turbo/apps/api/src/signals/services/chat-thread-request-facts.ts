@@ -17,6 +17,8 @@ export function chatThreadRequestSelection() {
     framework: chatThreads.framework,
     frameworkSessionId: chatThreads.frameworkSessionId,
     frameworkSessionRunId: chatThreads.frameworkSessionRunId,
+    title: chatThreads.title,
+    renamedAt: chatThreads.renamedAt,
   };
 }
 

@@ -143,6 +143,9 @@ function createExecutionPromptSources(
   const disabledPaidTools$ = computed((get) => {
     return get(bootstrap.disabledPaidTools$);
   });
+  const seedSkills$ = computed((get) => {
+    return get(bootstrap.seedSkills$);
+  });
   return {
     agent$,
     memberMetadata$,
@@ -151,6 +154,7 @@ function createExecutionPromptSources(
     authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
+    seedSkills$,
   };
 }
 
@@ -168,6 +172,7 @@ export function createPromptAndSkillVolumesSignals(
     authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
+    seedSkills$,
   } = sources;
   const cloudBrowserEnabled$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;
@@ -199,7 +204,10 @@ export function createPromptAndSkillVolumesSignals(
     selectedImageModel$,
     disabledPaidTools$,
   );
-  const systemSkills$ = createSystemSkillsContext(disabledPaidTools$);
+  const systemSkills$ = createSystemSkillsContext(
+    disabledPaidTools$,
+    seedSkills$,
+  );
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
     const contextType = (await get(pickedEvent$))?.contextType;
