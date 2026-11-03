@@ -55,7 +55,9 @@ struct PermissionBatchCard: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
-    .task(id: store.isActive) { if loadsState { await store.loadIfNeeded() } }
+    .task(id: store.isActive) {
+      if loadsState && store.isActive { await store.loadIfNeeded() }
+    }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active && store.isActive && loadsState {
         Task { await store.refresh() }

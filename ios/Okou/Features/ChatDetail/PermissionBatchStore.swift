@@ -53,7 +53,7 @@ final class PermissionBatchStore {
   }
 
   func loadIfNeeded() async {
-    guard !closed, !requested else { return }
+    guard !closed, isActive, !requested, !Task.isCancelled else { return }
     requested = true
     await refresh()
   }
@@ -166,8 +166,12 @@ final class PermissionBatchStore {
           guard !closed, self.generation == generation else { return }
           snapshot = current
           requiresReadback = false
+        } catch is CancellationError {
         } catch {
           // Keep the reviewed list, but require a successful read before another write.
+          guard !closed, self.generation == generation else { return }
+          self.error = ChatRequestFailure.message(for: error)
+          didFail(error)
         }
       }
     }

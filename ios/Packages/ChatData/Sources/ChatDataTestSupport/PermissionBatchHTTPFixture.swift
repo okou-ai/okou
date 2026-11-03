@@ -58,7 +58,8 @@ public final class PermissionBatchHTTPFixture: Sendable {
   public let http: ChatHTTPFixture
 
   public static func actionURL(
-    items: [[String: String]] = Self.items, callback: Bool = true, duration: String? = nil
+    items: [[String: String]] = PermissionBatchHTTPFixture.items, callback: Bool = true,
+    duration: String? = nil
   ) -> String {
     var components = URLComponents()
     components.path = "/agents/\(agentID)/permissions/batch"
