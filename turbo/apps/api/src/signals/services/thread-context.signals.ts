@@ -196,8 +196,6 @@ export function createThreadContext(
     workflows$: workflowContext.workflows$,
     officialWorkflows$: workflowContext.officialWorkflows$,
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
-    workflowSkills$: workflowContext.workflowSkills$,
-    storage$: workflowContext.storage$,
     templates$,
     queuedModel$: model.queuedModel$,
     modelSelection$: model.modelSelection$,

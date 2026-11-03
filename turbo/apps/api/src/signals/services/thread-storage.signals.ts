@@ -82,7 +82,7 @@ export function createStorageSignals(
     threadContext,
     skillVolumeSources,
   );
-  const index = createStorageIndexSignals(threadContext, storageInput$);
+  const index = createStorageIndexSignals(bootstrap, storageInput$);
   const plan = createStoragePlanSignals(index);
   const objects = createStorageObjectSignals(threadContext, plan);
   const { selectedStorageMetadata$, executionStorageObjects$ } = objects;
@@ -244,7 +244,7 @@ function createStorageInputSignal(
 type StorageInput$ = ReturnType<typeof createStorageInputSignal>;
 
 function createStorageBaseIndexSignal(
-  threadContext: ThreadContext,
+  bootstrap: AgentRunContextSignals,
   storageInput$: StorageInput$,
 ) {
   const storageSelection$ = computed(
@@ -306,7 +306,7 @@ function createStorageBaseIndexSignal(
       requests: selection.requests,
       timing: selection.args.timing,
     };
-    const prefetched = await get(threadContext.storage$);
+    const prefetched = await get(bootstrap.storage$);
     const ownedRequests = input.requests.filter((request) => {
       return !prefetched.lookupKeys.has(
         storageIndexKey(
@@ -362,11 +362,11 @@ function createStorageBaseIndexSignal(
 }
 
 function createStorageIndexSignals(
-  threadContext: ThreadContext,
+  bootstrap: AgentRunContextSignals,
   storageInput$: StorageInput$,
 ) {
   const capturedStorageBaseIndex$ = createStorageBaseIndexSignal(
-    threadContext,
+    bootstrap,
     storageInput$,
   );
   const capturedStorageIndex$ = computed(async (get) => {

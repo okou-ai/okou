@@ -3,7 +3,6 @@ import type {
   OfficialWorkflowAcceptedDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { agents } from "@okouai/db/schema/agent";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
@@ -189,8 +188,6 @@ export function copyRevisionQuery(identity: {
   return new QueryBuilder()
     .select(plan.columns)
     .from(officialWorkflowDefinitionRevisions)
-    .leftJoin(storages, plan.storageJoin)
-    .leftJoin(storageVersions, plan.storageVersionJoin)
     .where(and(plan.condition, plan.deliveryCondition))
     .orderBy(
       asc(officialWorkflowDefinitionRevisions.definitionName),

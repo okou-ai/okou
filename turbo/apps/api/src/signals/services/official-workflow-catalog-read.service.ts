@@ -4,28 +4,24 @@ import {
   officialWorkflowDefinitionRevisionPayloadSchema,
   type OfficialWorkflowAcceptedRevision,
   type OfficialWorkflowCatalogReleasePayload,
+  type OfficialWorkflowDefinitionRevisionPayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
+import {
+  contentBundleSchema,
+  type ContentBundle,
+} from "@okouai/api-contracts/contracts/content-bundle";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { array, string } from "zod";
-import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { db$ } from "../external/db";
 
 export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
-
-/**
- * Schema v1 predates every supported reader: its accepted catalog reads as
- * absent so the writer republishes. Exact revision readers decode only the
- * supported immutable versions; any other version throws.
- */
-const OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION = 2;
 
 export interface AcceptedOfficialWorkflowCatalog {
   readonly releaseId: string;
@@ -37,30 +33,12 @@ interface OfficialWorkflowRevisionRow {
   readonly definitionName: string;
   readonly revision: string;
   readonly payload: unknown;
-  readonly storageName: string | null;
-  readonly storageId: string | null;
-  readonly storageVersion: string | null;
   readonly contentBundle: unknown;
 }
 
-function officialWorkflowPayloadSchemaVersion(payload: unknown): number {
-  if (
-    typeof payload !== "object" ||
-    payload === null ||
-    Array.isArray(payload) ||
-    !("schemaVersion" in payload) ||
-    typeof payload.schemaVersion !== "number" ||
-    !Number.isSafeInteger(payload.schemaVersion) ||
-    payload.schemaVersion < 1
-  ) {
-    throw new Error("Official Workflow payload version is invalid");
-  }
-  return payload.schemaVersion;
-}
-
-export function acceptedRevisionFromRow(
+function revisionDefinition(
   row: OfficialWorkflowRevisionRow,
-): OfficialWorkflowAcceptedRevision {
+): OfficialWorkflowDefinitionRevisionPayload {
   const definition = officialWorkflowDefinitionRevisionPayloadSchema.parse(
     row.payload,
   );
@@ -70,20 +48,15 @@ export function acceptedRevisionFromRow(
   ) {
     throw new Error("Official Workflow revision row identity is inconsistent");
   }
+  return definition;
+}
+
+export function acceptedRevisionFromRow(
+  row: OfficialWorkflowRevisionRow,
+): OfficialWorkflowAcceptedRevision {
   return officialWorkflowAcceptedRevisionSchema.parse({
-    definition,
-    ...(row.storageName === null &&
-    row.storageId === null &&
-    row.storageVersion === null
-      ? { contentBundle: row.contentBundle }
-      : {
-          artifact: {
-            storageName: row.storageName,
-            storageId: row.storageId,
-            storageVersion: row.storageVersion,
-          },
-          contentBundle: row.contentBundle,
-        }),
+    definition: revisionDefinition(row),
+    contentBundle: row.contentBundle,
   });
 }
 
@@ -116,12 +89,6 @@ export function acceptedCatalogFromRow(
     | undefined,
 ): AcceptedOfficialWorkflowCatalog | null {
   if (!row) {
-    return null;
-  }
-  if (
-    officialWorkflowPayloadSchemaVersion(row.payload) <
-    OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION
-  ) {
     return null;
   }
   return {
@@ -162,35 +129,9 @@ export function acceptedOfficialWorkflowRevisionReadPlan(args: {
       revision: officialWorkflowDefinitionRevisions.revision,
       payload: officialWorkflowDefinitionRevisions.payload,
       contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
-      storageName: officialWorkflowDefinitionRevisions.storageName,
-      storageId: officialWorkflowDefinitionRevisions.storageId,
-      storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
     },
-    storageJoin: and(
-      isNull(officialWorkflowDefinitionRevisions.contentBundle),
-      eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-      eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-      eq(storages.orgId, SYSTEM_ORG_ID),
-      eq(storages.userId, VOLUME_ORG_USER_ID),
-    ),
-    storageVersionJoin: and(
-      isNull(officialWorkflowDefinitionRevisions.contentBundle),
-      eq(
-        storageVersions.id,
-        officialWorkflowDefinitionRevisions.storageVersion,
-      ),
-      eq(
-        storageVersions.storageId,
-        officialWorkflowDefinitionRevisions.storageId,
-      ),
-    ),
-    deliveryCondition: or(
-      isNotNull(officialWorkflowDefinitionRevisions.contentBundle),
-      and(
-        isNull(officialWorkflowDefinitionRevisions.contentBundle),
-        isNotNull(storages.id),
-        isNotNull(storageVersions.id),
-      ),
+    deliveryCondition: isNotNull(
+      officialWorkflowDefinitionRevisions.contentBundle,
     ),
     condition: and(
       eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
@@ -208,27 +149,42 @@ export const readAcceptedOfficialWorkflowRevision$ = command(
     const db = get(db$);
     const plan = acceptedOfficialWorkflowRevisionReadPlan(args);
     const [row] = await db
-      .select({
-        ...plan.columns,
-        verifiedStorageId: storages.id,
-        verifiedStorageVersion: storageVersions.id,
-      })
+      .select(plan.columns)
       .from(officialWorkflowDefinitionRevisions)
-      .leftJoin(storages, plan.storageJoin)
-      .leftJoin(storageVersions, plan.storageVersionJoin)
       .where(plan.condition)
       .limit(1);
     signal.throwIfAborted();
-    if (
-      row &&
-      row.contentBundle === null &&
-      (row.verifiedStorageId !== row.storageId ||
-        row.verifiedStorageVersion !== row.storageVersion)
-    ) {
-      throw new Error(
-        "Official Workflow revision artifact registration is inconsistent",
-      );
-    }
     return row ? acceptedRevisionFromRow(row) : null;
+  },
+);
+
+export interface OfficialWorkflowRevisionForPublication {
+  readonly definition: OfficialWorkflowDefinitionRevisionPayload;
+  readonly contentBundle: ContentBundle | null;
+}
+
+/** A newly selected source may reuse an immutable revision not yet bundled. */
+export const readOfficialWorkflowRevisionForPublication$ = command(
+  async (
+    { get },
+    args: { readonly name: string; readonly revision: string },
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowRevisionForPublication | null> => {
+    const plan = acceptedOfficialWorkflowRevisionReadPlan(args);
+    const [row] = await get(db$)
+      .select(plan.columns)
+      .from(officialWorkflowDefinitionRevisions)
+      .where(plan.condition)
+      .limit(1);
+    signal.throwIfAborted();
+    return row
+      ? {
+          definition: revisionDefinition(row),
+          contentBundle:
+            row.contentBundle === null
+              ? null
+              : contentBundleSchema.parse(row.contentBundle),
+        }
+      : null;
   },
 );

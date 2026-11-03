@@ -344,7 +344,6 @@ import {
   type AdditionalVolumeSources,
   type AgentRunCreateAdditionalVolume,
   type MaterializedAgentRunStorage,
-  OfficialWorkflowArtifactResolutionError,
   type PreparedAgentRunStorage,
   prepareRunOutputMetadata,
   type ResolvedAgentExecution,
@@ -3830,36 +3829,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  /**
-   * An unresolvable Official Workflow artifact is a business rejection of the
-   * head; any other preparation error propagates.
-   */
-  const rejectUnresolvedOfficialArtifact$ = command(
-    async (
-      { get, set },
-      head: ChatQueueHeadContext,
-      error: unknown,
-      signal: AbortSignal,
-    ): Promise<{ readonly kind: "passed" }> => {
-      if (!(error instanceof OfficialWorkflowArtifactResolutionError)) {
-        throw error;
-      }
-      const assembly = await get(assembly$);
-      signal.throwIfAborted();
-      await set(
-        rejectChatQueueHead$,
-        {
-          head,
-          rejection: claimAssemblyRejection(assembly, head, {
-            code: "CONFLICT",
-            message: OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-          }),
-        },
-        signal,
-      );
-      return { kind: "passed" };
-    },
-  );
   const claimAdmissionFacts$ = computed(async (get) => {
     const selected = bootstrap;
     const [planCapabilities, featureSwitchContext] = await Promise.all([
@@ -3879,21 +3848,10 @@ export function createThreadClaimRunObjects(
       if (!head) {
         return { kind: "passed" };
       }
-      const resources = await settle(
-        set(prepareClaimResources$, head, signal),
-        signal,
-      );
-      if (!resources.ok) {
-        return await set(
-          rejectUnresolvedOfficialArtifact$,
-          head,
-          resources.error,
-          signal,
-        );
-      }
+      const resources = await set(prepareClaimResources$, head, signal);
       signal.throwIfAborted();
-      if (resources.value.kind === "rejected") {
-        const early = resources.value.assembly;
+      if (resources.kind === "rejected") {
+        const early = resources.assembly;
         await set(
           rejectChatQueueHead$,
           {
@@ -3915,7 +3873,7 @@ export function createThreadClaimRunObjects(
         assembly,
         identity,
         admission,
-      ] = resources.value.resources;
+      ] = resources.resources;
       if (assembly.kind !== "assembled") {
         await set(
           rejectChatQueueHead$,
@@ -5238,9 +5196,7 @@ function protectedWorkflowMountPaths(
 ) {
   return (volumes ?? []).flatMap((volume, index) => {
     const source = sources?.[index];
-    return source === "official_workflow" ||
-      source === "request_additional_volume" ||
-      source === "unknown"
+    return source === "request_additional_volume" || source === "unknown"
       ? [volume.mountPath]
       : [];
   });

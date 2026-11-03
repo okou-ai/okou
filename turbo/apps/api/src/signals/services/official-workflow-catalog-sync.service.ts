@@ -1,16 +1,10 @@
 import type {
-  OfficialWorkflowAcceptedRevision,
   OfficialWorkflowAcceptedDefinition,
-  OfficialWorkflowArtifactReference,
   OfficialWorkflowCatalogDiagnostic,
   OfficialWorkflowCatalogSyncResponse,
   OfficialWorkflowDefinitionRevisionPayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { getOfficialWorkflowDefinitionStorageName } from "@okouai/core/storage-names";
-import {
-  officialWorkflowArtifactFiles,
-  officialWorkflowExecutionFiles,
-} from "@okouai/core/official-workflow-artifact";
+import { officialWorkflowExecutionFiles } from "@okouai/core/official-workflow-artifact";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
@@ -27,10 +21,11 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  readAcceptedOfficialWorkflowRevision$,
+  readOfficialWorkflowRevisionForPublication$,
   readAcceptedOfficialWorkflowCatalog$,
   acceptedCatalogFromRow,
   type AcceptedOfficialWorkflowCatalog,
+  type OfficialWorkflowRevisionForPublication,
 } from "./official-workflow-catalog-read.service";
 import {
   OfficialWorkflowCatalogRegistrationError,
@@ -75,30 +70,18 @@ type DefinitionPreparationRejection = Extract<
   { readonly kind: "rejected" }
 >;
 
-function artifactReferencesMatch(
-  left: OfficialWorkflowArtifactReference,
-  right: OfficialWorkflowArtifactReference,
-): boolean {
-  return (
-    left.storageName === right.storageName &&
-    left.storageId === right.storageId &&
-    left.storageVersion === right.storageVersion
-  );
-}
-
 function registeredRevisionMatches(
   previous: OfficialWorkflowAcceptedDefinition,
-  registered: OfficialWorkflowAcceptedRevision | null,
+  registered: OfficialWorkflowRevisionForPublication | null,
 ): boolean {
   if (!registered) {
     return false;
   }
-  return previous.contentBundle
-    ? registered.contentBundle?.sha256 === previous.contentBundle.sha256 &&
-        registered.contentBundle.archiveBytes ===
-          previous.contentBundle.archiveBytes
-    : registered.artifact !== undefined &&
-        artifactReferencesMatch(registered.artifact, previous.artifact);
+  return (
+    registered.contentBundle?.sha256 === previous.contentBundle.sha256 &&
+    registered.contentBundle.archiveBytes ===
+      previous.contentBundle.archiveBytes
+  );
 }
 
 function artifactPreparationRejected(
@@ -141,7 +124,7 @@ const prepareDefinitionBundle$ = command(
     { set },
     args: {
       readonly definition: OfficialWorkflowDefinitionRevisionPayload;
-      readonly registered: OfficialWorkflowAcceptedRevision | null;
+      readonly registered: OfficialWorkflowRevisionForPublication | null;
       readonly path: readonly (string | number)[];
     },
     signal: AbortSignal,
@@ -151,22 +134,6 @@ const prepareDefinitionBundle$ = command(
       registered &&
       canonicalJsonString(registered.definition) !==
         canonicalJsonString(definition)
-    ) {
-      return artifactPreparationRejected(definition.name, path);
-    }
-    const artifact = registered?.artifact;
-    // Bundle delivery is authenticated below. Legacy-only revisions still need
-    // their exact Storage identity verified before conversion to a bundle.
-    if (
-      artifact &&
-      !registered?.contentBundle &&
-      (artifact.storageName !==
-        getOfficialWorkflowDefinitionStorageName(definition.name) ||
-        officialWorkflowArtifactFiles(definition, {
-          storageId: artifact.storageId,
-          storageVersion: artifact.storageVersion,
-          definitionManifest: `${canonicalJsonString(definition)}\n`,
-        }) === null)
     ) {
       return artifactPreparationRejected(definition.name, path);
     }
@@ -197,7 +164,7 @@ const prepareDefinitionBundle$ = command(
     }
     return {
       kind: "prepared",
-      definition: { definition, artifact, contentBundle },
+      definition: { definition, contentBundle },
     };
   },
 );
@@ -249,7 +216,7 @@ const prepareDefinitions$ = command(
       // Only revisions referenced by this candidate are publication dependencies.
       const registration = await settle(
         set(
-          readAcceptedOfficialWorkflowRevision$,
+          readOfficialWorkflowRevisionForPublication$,
           { name: sourceDefinition.name, revision },
           signal,
         ),
