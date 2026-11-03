@@ -907,6 +907,44 @@ test.each(["shared", "split"] as const)(
   },
 );
 
+test("A resumed viewer keeps a missing first frame local to capture recovery", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  await insertText("before resumed capture");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = viewer.browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  viewer.advance(31_000);
+  await screen.findByText("Browser view unavailable");
+  const retry = await screen.findByText("Retry live image");
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
+  act(() => {
+    image.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  click(retry);
+  await expectReady();
+  await insertText("after resumed capture timeout");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after resumed capture timeout" },
+    });
+  });
+});
+
 test("A tab selected during timed-out capture cleanup survives the old readiness result", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
   const viewer = mockViewer();

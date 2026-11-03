@@ -1690,20 +1690,24 @@ function createReadinessWait(
           throw failure;
         }
         if (monotonicNow() >= deadline) {
-          const error = new BrowserReadinessTimeout();
           if (
             selected &&
             get(selected.current$) &&
             get(selected.inputReady$) &&
             !get(selected.painted$)
           ) {
+            const error = new CdpFault(
+              "frame",
+              "The browser did not receive a usable image in time.",
+            );
             // Missing paint is a capture fault, not a lost healthy connection.
             await set(get(links$).captureFailed$, owner, error, signal);
             if (!get(available$) || get(selectedOwner$) !== owner) {
               throw cancelled();
             }
+            throw error;
           }
-          throw error;
+          throw new BrowserReadinessTimeout();
         }
         await set(waitEvent$, signal);
       }
