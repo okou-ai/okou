@@ -17,17 +17,15 @@ const context = testContext();
 const TITLE = "More ways to get your work done";
 const READY_TITLE = "Let’s start your first task";
 const FAMILY_IDS = Object.freeze([
-  "finance",
-  "maps",
-  "seo",
-  "scrape",
-  "data-search",
-  "people-search",
+  "web-extraction",
+  "company-contacts",
   "web-search",
   "social",
+  "finance",
+  "places-weather",
 ]);
 
-/** An external catalog whose order differs from the onboarding presentation. */
+/** An external catalog; Router's web-search family is shown as Okou's own row. */
 function mockCatalog(families: readonly string[] = FAMILY_IDS, status = 200) {
   for (const url of [
     "https://data.okou.ai/mcp",
@@ -94,7 +92,7 @@ async function openCapabilities({ isAdmin = true } = {}) {
 }
 
 test.each([false, true])(
-  "Capabilities educate with image and social first (mobile=%s)",
+  "Capabilities lead with Okou's tools, then follow Router order and text (mobile=%s)",
   async (mobile) => {
     context.mocks.browser.matchMedia((query) => {
       return mobile && query === "(width < 640px)";
@@ -105,26 +103,27 @@ test.each([false, true])(
     const list = await screen.findByRole("list", {
       name: "Built-in capabilities",
     });
-    const rows = within(list).getAllByRole("listitem");
-    expect(rows).toHaveLength(9);
-    const image = within(list).getByRole("switch", {
-      name: "Image generation",
+    const expected = [
+      "Image generation",
+      "Web search",
+      "Router web-extraction",
+      "Router company-contacts",
+      "Router social",
+      "Router finance",
+      "Router places-weather",
+    ].map((name) => {
+      return within(list).getByRole("switch", { name });
     });
-    const social = within(list).getByRole("switch", { name: "Social search" });
-    expect(within(list).getAllByRole("switch").slice(0, 2)).toStrictEqual([
-      image,
-      social,
-    ]);
-    expect(image).toBeChecked();
-    expect(social).toBeChecked();
-    expect(
-      within(list).getAllByRole("switch", { name: "Web search" }),
-    ).toHaveLength(1);
+    expect(within(list).getAllByRole("switch")).toStrictEqual(expected);
+    for (const toggle of expected) {
+      expect(toggle).toBeChecked();
+    }
     expect(
       screen.getByText(
-        "Research creators, posts, and engagement to guide your content.",
+        "Find up-to-date news and facts, with sources you can check.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText("Research with social.")).toBeInTheDocument();
     for (const progress of screen.getAllByRole("progressbar")) {
       expect(progress).toHaveAttribute("aria-valuenow", "5");
       expect(progress).toHaveAttribute("aria-valuemax", "6");
@@ -153,7 +152,7 @@ test("A member's saved choice stays visible while saving and survives Back", asy
     return respond(200, { toolId: params.toolId, disabled: body.disabled });
   });
   await openCapabilities({ isAdmin: false });
-  const social = await screen.findByRole("switch", { name: "Social search" });
+  const social = await screen.findByRole("switch", { name: "Router social" });
   expect(social).not.toBeChecked();
   click(social);
   await refreshing.promise;
@@ -175,7 +174,7 @@ test("A member's saved choice stays visible while saving and survives Back", asy
   expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
   click(button("Back"));
   await expect(
-    screen.findByRole("switch", { name: "Social search" }),
+    screen.findByRole("switch", { name: "Router social" }),
   ).resolves.toBeChecked();
 });
 
@@ -251,7 +250,7 @@ test("New Router families use their published text and unavailable families stay
   });
   expect(screen.getByText("Research with future-family.")).toBeInTheDocument();
   expect(
-    screen.queryByRole("switch", { name: "Social search" }),
+    screen.queryByRole("switch", { name: "Router social" }),
   ).not.toBeInTheDocument();
   click(toggle);
   await waitFor(() => {
@@ -309,7 +308,7 @@ test("Opening Settings does not replace the onboarding catalog", async () => {
   click(tools);
   await within(dialog).findByRole("switch", { name: "Router future-family" });
   expect(
-    within(list).getByRole("switch", { name: "Social search", hidden: true }),
+    within(list).getByRole("switch", { name: "Router social", hidden: true }),
   ).toBeInTheDocument();
   expect(
     within(list).queryByText("Router future-family"),

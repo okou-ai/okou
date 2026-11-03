@@ -4274,37 +4274,9 @@
       "capabilities": {
         "copy": "用 Okou 查資料、找人、產生圖片。這些工具預設開啟，你可以現在調整，也可以稍後再改。",
         "items": {
-          "data-search": {
-            "description": "比較公司、網站流量與廣告，發現商機。",
-            "name": "進階資料研究"
-          },
-          "finance": {
-            "description": "比較股價與市場趨勢，為投資研究提供依據。",
-            "name": "金融資料"
-          },
           "image-generation": {
             "description": "為社群貼文、行銷活動與簡報創作原創圖片。",
             "name": "圖像生成"
-          },
-          "maps": {
-            "description": "尋找商家與場地、比較位置並規劃路線。",
-            "name": "地圖與地點"
-          },
-          "people-search": {
-            "description": "依職位與公司尋找潛在客戶、合作夥伴或候選人。",
-            "name": "人物搜尋"
-          },
-          "scrape": {
-            "description": "從網頁擷取關鍵資訊，用於簡報與比較分析。",
-            "name": "網頁擷取"
-          },
-          "seo": {
-            "description": "發現客戶搜尋的關鍵字，了解競爭對手的排名。",
-            "name": "SEO 研究"
-          },
-          "social": {
-            "description": "研究創作者、貼文與互動表現，為內容決策提供依據。",
-            "name": "社群搜尋"
           },
           "web-search": {
             "description": "查找最新資訊與事實，並提供可查證的來源。",

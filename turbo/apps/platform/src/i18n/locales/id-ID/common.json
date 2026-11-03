@@ -4274,37 +4274,9 @@
       "capabilities": {
         "copy": "Riset web, temukan orang, dan buat gambar dengan Okou. Alat-alat ini aktif secara default; Anda bisa menyesuaikannya sekarang atau nanti.",
         "items": {
-          "data-search": {
-            "description": "Bandingkan perusahaan, trafik situs, dan iklan untuk menemukan peluang.",
-            "name": "Riset data lanjutan"
-          },
-          "finance": {
-            "description": "Bandingkan harga saham dan tren pasar untuk riset investasi.",
-            "name": "Data keuangan"
-          },
           "image-generation": {
             "description": "Buat visual orisinal untuk postingan, kampanye, dan presentasi.",
             "name": "Pembuatan gambar"
-          },
-          "maps": {
-            "description": "Cari bisnis dan lokasi, bandingkan tempat, dan rencanakan rute.",
-            "name": "Peta dan tempat"
-          },
-          "people-search": {
-            "description": "Temukan calon pelanggan, mitra, atau kandidat berdasarkan jabatan dan perusahaan.",
-            "name": "Pencarian orang"
-          },
-          "scrape": {
-            "description": "Ambil fakta penting dari halaman web untuk ringkasan dan perbandingan.",
-            "name": "Ekstraksi halaman"
-          },
-          "seo": {
-            "description": "Temukan kata kunci pelanggan dan peringkat pesaing.",
-            "name": "Riset SEO"
-          },
-          "social": {
-            "description": "Teliti kreator, postingan, dan interaksi untuk mengarahkan konten Anda.",
-            "name": "Pencarian sosial"
           },
           "web-search": {
             "description": "Temukan berita dan fakta terbaru dengan sumber yang dapat diperiksa.",
