@@ -158,6 +158,8 @@ function mockCanvasViewport() {
   let changeVisibility: ((visible?: boolean) => void) | undefined;
   vi.spyOn(window, "IntersectionObserver").mockImplementation(
     class extends NativeIntersectionObserver {
+      private layout: MutationObserver | null = null;
+
       constructor(
         private readonly onChange: IntersectionObserverCallback,
         options?: IntersectionObserverInit,
@@ -166,9 +168,19 @@ function mockCanvasViewport() {
       }
       override observe(target: Element) {
         super.observe(target);
-        changeVisibility = (visible) => {
+        this.layout?.disconnect();
+        let inViewport = true;
+        let previous: boolean | undefined;
+        const publish = (visible?: boolean) => {
+          if (visible !== undefined) {
+            inViewport = visible;
+          }
           const rectangle = target.getBoundingClientRect();
-          const intersects = visible ?? rectangle.width > 0;
+          const intersects = inViewport && rectangle.width > 0;
+          if (intersects === previous) {
+            return;
+          }
+          previous = intersects;
           this.onChange(
             [
               {
@@ -184,6 +196,32 @@ function mockCanvasViewport() {
             this,
           );
         };
+        changeVisibility = publish;
+        this.layout = new MutationObserver(() => {
+          publish();
+        });
+        this.layout.observe(document.body, {
+          attributes: true,
+          attributeFilter: ["hidden"],
+          subtree: true,
+        });
+        context.signal.addEventListener(
+          "abort",
+          () => {
+            this.disconnect();
+          },
+          { once: true },
+        );
+      }
+      override unobserve(target: Element) {
+        super.unobserve(target);
+        this.layout?.disconnect();
+        this.layout = null;
+      }
+      override disconnect() {
+        super.disconnect();
+        this.layout?.disconnect();
+        this.layout = null;
       }
     },
   );
