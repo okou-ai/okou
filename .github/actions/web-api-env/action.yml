@@ -200,7 +200,6 @@ runs:
           deploy_env="production"
           runner_default_group="vm0/production"
           concurrent_run_limit_cap="10"
-          slack_redirect_base_url="$(repo_var SLACK_REDIRECT_BASE_URL)"
           strapi_url="$(repo_var STRAPI_URL)"
           marketing_handoff_bucket="$(repo_var R2_MARKETING_HANDOFF_BUCKET_NAME)"
           marketing_handoff_access_key_id="$(repo_secret R2_MARKETING_HANDOFF_ACCESS_KEY_ID)"
@@ -222,7 +221,6 @@ runs:
           deploy_env="preview"
           runner_default_group="vm0/development-${INPUT_JOB_REF}"
           concurrent_run_limit_cap="0"
-          slack_redirect_base_url="$INPUT_WEB_URL"
           strapi_url=""
           marketing_handoff_bucket="$(repo_var R2_MARKETING_HANDOFF_BUCKET_NAME_DEV)"
           marketing_handoff_access_key_id="$(repo_secret R2_MARKETING_HANDOFF_ACCESS_KEY_ID_DEV)"
@@ -361,7 +359,6 @@ runs:
           add_doppler_config MICROSOFT_TEAMS_BOT_APP_PASSWORD
           add_doppler_config MICROSOFT_TEAMS_APP_TENANT_ID
         fi
-        add_env SLACK_REDIRECT_BASE_URL "$slack_redirect_base_url"
         if [[ "$INPUT_APP" == "web" && "$INPUT_ENVIRONMENT" == "production" ]]; then
           add_var POSTHOG_KEY POSTHOG_KEY
           add_var POSTHOG_HOST POSTHOG_HOST
@@ -430,7 +427,6 @@ runs:
         done
 
         add_doppler_config GOOGLE_ADS_DEVELOPER_TOKEN
-        add_secret GOOGLE_ADS_LOGIN_CUSTOMER_ID GOOGLE_ADS_LOGIN_CUSTOMER_ID
         if [[ "$INPUT_APP" == "api" ]]; then
           # Data Router credentials are configured per deployment.
           add_secret OKOU_DATA_ROUTER_URL OKOU_DATA_ROUTER_URL
@@ -454,7 +450,6 @@ runs:
         add_doppler_config FINICITY_PARTNER_ID
         add_doppler_config VERCEL_INTEGRATION_SLUG
         add_doppler_config MERCURY_OAUTH_ENVIRONMENT
-        add_var MONDAY_OAUTH_APP_ID MONDAY_OAUTH_APP_ID
         add_secret STRIPE_SECRET_KEY STRIPE_SECRET_KEY
         add_var STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID
         add_secret STRIPE_WEBHOOK_SECRET STRIPE_WEBHOOK_SECRET

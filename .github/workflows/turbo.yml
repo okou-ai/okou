@@ -40,8 +40,6 @@ on:
         required: false
       FAL_KEY:
         required: false
-      GOOGLE_ADS_LOGIN_CUSTOMER_ID:
-        required: false
       MARKETING_HANDOFF_PUBLISH_TOKEN_DEV:
         required: false
       NEON_API_KEY:
