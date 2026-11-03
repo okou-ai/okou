@@ -84,15 +84,32 @@ enum MessageTableLayout {
     // Keep compact labels on one line and let wrapped columns use their actual line widths.
     // The overflow viewport retains its original width even when the grid is narrower.
     let lineSpacing = viewport.fontSize * 0.25
-    for column in compact.indices where !compact[column] {
-      let usedWidth =
-        attributedRows.map {
+    var leading: CGFloat = 0
+    for column in widths.indices {
+      if !compact[column] {
+        let sizes = attributedRows.map {
           measure(
             $0[column], width: widths[column] - horizontalPadding, lineSpacing: lineSpacing,
-            scale: viewport.scale, fallbackFont: regular
-          ).width
-        }.max() ?? 0
-      widths[column] = min(widths[column], ceil(usedWidth) + horizontalPadding + 2)
+            scale: viewport.scale, fallbackFont: regular)
+        }
+        let usedWidth = sizes.map(\.width).max() ?? 0
+        widths[column] = min(widths[column], ceil(usedWidth) + horizontalPadding + 2)
+
+        // Leave part of the next compact column visible if no cell needs another line.
+        let visibleWidth = floor(viewport.width - leading - horizontalPadding - 2 * divider)
+        if column + 1 < columnCount, compact[column + 1],
+          visibleWidth >= minimum[column], visibleWidth < widths[column],
+          zip(attributedRows, sizes).allSatisfy({
+            measure(
+              $0[column], width: visibleWidth - horizontalPadding, lineSpacing: lineSpacing,
+              scale: viewport.scale, fallbackFont: regular
+            ).height <= $1.height
+          })
+        {
+          widths[column] = visibleWidth
+        }
+      }
+      leading += widths[column] + divider
     }
 
     let gridWidth = widths.reduce(0, +) + gaps

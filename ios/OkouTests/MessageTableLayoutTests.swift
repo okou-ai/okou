@@ -13,6 +13,7 @@ final class MessageTableLayoutTests: XCTestCase {
     let layout = try XCTUnwrap(MessageTableLayout.prepare(content, viewport: viewport).values.first)
     XCTAssertGreaterThan(layout.contentWidth, viewport.width)
     XCTAssertLessThanOrEqual(layout.size.width, layout.contentWidth)
+    XCTAssertLessThan(layout.cells[2].frame.minX + 13, viewport.width)
     XCTAssertEqual(
       layout.cells.suffix(4).map { String($0.content.characters) },
       ["Row 10", "A wide column with several inline values", "Status", "10"])
