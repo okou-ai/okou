@@ -1583,8 +1583,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     await integrations.installSlackWorkspace(other, {
       installerSlackUserId: slackUserId,
