@@ -1553,7 +1553,7 @@ function ChatThreadsTitle({
           </span>
         </Button>
       ) : (
-        <span className="min-w-0 flex-1 truncate px-2 text-[13px] leading-4 text-nav-copy-muted">
+        <span className="min-w-0 flex-1 truncate px-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
           {titleLabel}
         </span>
       )}
