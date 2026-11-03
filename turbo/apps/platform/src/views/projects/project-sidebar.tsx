@@ -161,6 +161,29 @@ interface ProjectFolderProps {
   readonly layout: ProjectSidebarLayout;
 }
 
+function ProjectFolderLabel({
+  name,
+  expanded,
+  layout,
+}: {
+  name: string;
+  expanded: boolean;
+  layout: ProjectSidebarLayout;
+}) {
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const Icon = expanded ? FolderOpen : Folder;
+  return (
+    <>
+      <Chevron
+        size={layout === "list" ? 16 : 14}
+        className="shrink-0 opacity-50"
+      />
+      <Icon size={16} className="shrink-0 opacity-70" />
+      <span className="truncate">{name}</span>
+    </>
+  );
+}
+
 function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const { t } = useTranslation();
   const agent = useLastResolved(projectCreationAgentId$);
@@ -174,7 +197,6 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const showMore = useSet(showMoreProjectThreads$);
   const [creation, create] = useLoadableSet(newProjectThread$);
   const signal = useGet(pageSignal$);
-  const Icon = expanded ? FolderOpen : Folder;
   const contentsId = `project-threads-${touch ? "touch" : "sidebar"}-${project.id}`;
   function newChat() {
     detach(create(project.id, signal), Reason.DomCallback);
@@ -195,19 +217,11 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
             layout === "list" && "h-14 px-3 text-base leading-5",
           )}
         >
-          {expanded ? (
-            <ChevronDown
-              size={layout === "list" ? 16 : 14}
-              className="shrink-0 opacity-50"
-            />
-          ) : (
-            <ChevronRight
-              size={layout === "list" ? 16 : 14}
-              className="shrink-0 opacity-50"
-            />
-          )}
-          <Icon size={16} className="shrink-0 opacity-70" />
-          <span className="truncate">{project.name}</span>
+          <ProjectFolderLabel
+            name={project.name}
+            expanded={expanded}
+            layout={layout}
+          />
         </button>
         <div
           className={cn(
