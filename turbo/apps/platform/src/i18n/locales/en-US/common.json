@@ -5462,6 +5462,12 @@
       "title": "Build information",
       "unavailable": "Unavailable"
     },
+    "connectorCatalog": {
+      "hash": "Catalog hash",
+      "schemaVersion": "Schema version",
+      "title": "Connector catalog",
+      "version": "Version"
+    },
     "dialog": {
       "description": "Manage your account, preferences, workspace, and billing settings.",
       "groups": {

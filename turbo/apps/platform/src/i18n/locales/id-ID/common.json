@@ -5447,6 +5447,12 @@
       "title": "Informasi build",
       "unavailable": "Tidak tersedia"
     },
+    "connectorCatalog": {
+      "hash": "Hash katalog",
+      "schemaVersion": "Versi skema",
+      "title": "Katalog konektor",
+      "version": "Versi"
+    },
     "dialog": {
       "description": "Kelola akun, preferensi, ruang kerja, dan setelan penagihan Anda.",
       "groups": {

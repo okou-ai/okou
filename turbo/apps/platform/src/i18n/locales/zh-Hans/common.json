@@ -5447,6 +5447,12 @@
       "title": "构建信息",
       "unavailable": "不可用"
     },
+    "connectorCatalog": {
+      "hash": "目录哈希",
+      "schemaVersion": "结构版本",
+      "title": "连接器目录",
+      "version": "版本"
+    },
     "dialog": {
       "description": "管理你的账号、偏好设置、工作区和账单设置。",
       "groups": {

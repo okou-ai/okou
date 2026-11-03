@@ -11,6 +11,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
+import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import {
   createUserFeatureSwitchContext,
@@ -43,6 +44,7 @@ import {
 import { notFound, providerUnavailable } from "../../lib/error";
 import { settle } from "../utils";
 import { builtinConnectorAccountSlugs } from "../services/connector-account-lifecycle.service";
+import { acceptedConnectorCatalogRelease$ } from "../services/connector-catalog-release.service";
 
 const savedBuiltinSlugs$ = builtinConnectorAccountSlugs(
   organizationAuthContext$,
@@ -381,6 +383,15 @@ const getConnectorCatalogPermissionsInner$ = command(
   },
 );
 
+const getConnectorCatalogReleaseInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const catalog = await get(acceptedConnectorCatalogRelease$);
+    signal.throwIfAborted();
+    set(setResHeader$, "Cache-Control", "no-store");
+    return { status: 200 as const, body: { catalog } };
+  },
+);
+
 export const connectorCatalogRoutes: readonly RouteEntry[] = [
   {
     route: connectorCatalogContract.list,
@@ -400,6 +411,10 @@ export const connectorCatalogRoutes: readonly RouteEntry[] = [
       connectorCatalogAuth,
       listOneClickConnectorCatalogInner$,
     ),
+  },
+  {
+    route: connectorCatalogContract.release,
+    handler: authRoute(connectorCatalogAuth, getConnectorCatalogReleaseInner$),
   },
   {
     route: connectorCatalogContract.get,

@@ -5525,6 +5525,12 @@
       "title": "Informações da compilação",
       "unavailable": "Indisponível"
     },
+    "connectorCatalog": {
+      "hash": "Hash do catálogo",
+      "schemaVersion": "Versão do esquema",
+      "title": "Catálogo de conectores",
+      "version": "Versão"
+    },
     "dialog": {
       "description": "Gerencie sua conta, preferências e configurações do espaço de trabalho e de faturamento.",
       "groups": {

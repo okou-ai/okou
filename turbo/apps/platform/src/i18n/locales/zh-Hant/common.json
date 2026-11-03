@@ -5447,6 +5447,12 @@
       "title": "構建資訊",
       "unavailable": "不可用"
     },
+    "connectorCatalog": {
+      "hash": "目錄雜湊",
+      "schemaVersion": "結構版本",
+      "title": "連接器目錄",
+      "version": "版本"
+    },
     "dialog": {
       "description": "管理你的帳號、偏好設定、工作區和帳單設定。",
       "groups": {

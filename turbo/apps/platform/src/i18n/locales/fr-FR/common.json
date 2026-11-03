@@ -5525,6 +5525,12 @@
       "title": "Informations sur la version",
       "unavailable": "Indisponible"
     },
+    "connectorCatalog": {
+      "hash": "Empreinte du catalogue",
+      "schemaVersion": "Version du schéma",
+      "title": "Catalogue des connecteurs",
+      "version": "Version"
+    },
     "dialog": {
       "description": "Gérez votre compte, vos préférences, votre espace de travail et vos paramètres de facturation.",
       "groups": {
