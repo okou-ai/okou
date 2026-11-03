@@ -860,9 +860,9 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .try_wait()
             .map_err(|error| format!("inspect task controller before OOM injection: {error}"))?
         {
-            return Err(format!(
+            return Err(fixture.with_task_diagnostics(format!(
                 "task controller exited before Guest OOM injection: {status}"
-            ));
+            )));
         }
     }
     if mode.injected() {
@@ -901,9 +901,9 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     } else {
         offender_status.signal() == Some(libc::SIGKILL)
     }) {
-        return Err(format!(
+        return Err(fixture.with_task_diagnostics(format!(
             "offender Bash tool was not killed as a group: {offender_status}"
-        ));
+        )));
     }
     while if mode.managed_tasks() {
         task_oom::root_path(&tools_relative)?
