@@ -188,7 +188,7 @@ final class ComposerConnectorStore {
       uncertain = true
       self.error = ChatRequestFailure.message(for: error)
       didFail(error)
-      if submitted {
+      if submitted && ChatRequestFailure.isTransient(error) {
         await refresh()
         guard !closed, !Task.isCancelled, request == generation else { return }
         if !uncertain {

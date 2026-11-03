@@ -185,6 +185,35 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertTrue(store.pendingOptions.initialRemoteAccessOverrides.isEmpty)
   }
 
+  func testRejectedRemoteWriteKeepsItsBusinessReasonUntilExplicitReadback() async throws {
+    let writes = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
+        request.httpMethod == "PUT"
+      {
+        writes.withLock { $0 += 1 }
+        return ChatHTTPResponse(
+          status: 403, body: #"{"error":{"message":"Remote access is blocked"}}"#)
+      }
+      return try composerResponse(request)
+    }
+    let thread = ChatThread(
+      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+      pinnedAt: nil, pinOrder: nil, indicator: nil)
+    let store = makeStore(fixture, thread: thread)
+    defer { store.close() }
+    await store.refresh()
+    let host = try XCTUnwrap(store.hosts(.ssh).first)
+    await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertTrue(store.error?.contains("Remote access is blocked") == true)
+    XCTAssertFalse(store.canSend)
+    await store.refresh()
+    XCTAssertTrue(store.canSend)
+    XCTAssertEqual(store.hosts(.ssh).first?.enabled, false)
+    XCTAssertEqual(writes.withLock { $0 }, 1)
+  }
+
   func testUnknownRemoteWriteRequiresReadbackBeforeSendingAndIsNeverReplayed() async throws {
     struct Server: Sendable {
       var enabled = true
