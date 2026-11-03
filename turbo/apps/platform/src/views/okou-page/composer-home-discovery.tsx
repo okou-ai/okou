@@ -164,9 +164,10 @@ function HomeDirectory({
       </EntryButton>
     );
   };
+  // Keep SVG pixel snapping stable when Safari composites nearby animations.
   return (
     <section
-      className="@container"
+      className="@container transform-gpu"
       aria-label={t(($) => {
         return $.chat.homeDiscovery.label;
       })}
