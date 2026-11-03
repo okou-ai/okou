@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.6...guest-contracts-v0.30.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+
 ## [0.29.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.5...guest-contracts-v0.29.6) (2026-11-02)
 
 

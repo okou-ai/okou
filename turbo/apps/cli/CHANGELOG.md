@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.14.0](https://github.com/okou-ai/okou/compare/cli-v10.13.2...cli-v10.14.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.35.0
+    * @okouai/core bumped to 8.811.0
+    * @okouai/pi-agent-runtime bumped to 1.51.53
+
 ## [10.13.2](https://github.com/okou-ai/okou/compare/cli-v10.13.1...cli-v10.13.2) (2026-11-02)
 
 

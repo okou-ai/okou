@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.22](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.21...runner-supervisor-v0.21.22) (2026-11-03)
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+
 ## [0.21.21](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.20...runner-supervisor-v0.21.21) (2026-11-02)
 
 

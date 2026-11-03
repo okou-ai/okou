@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.19](https://github.com/okou-ai/okou/compare/runner-host-v0.10.18...runner-host-v0.10.19) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
 ## [0.10.18](https://github.com/okou-ai/okou/compare/runner-host-v0.10.17...runner-host-v0.10.18) (2026-11-02)
 
 ## [0.10.17](https://github.com/okou-ai/okou/compare/runner-host-v0.10.16...runner-host-v0.10.17) (2026-11-02)

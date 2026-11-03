@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.19](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.18...runner-storage-v0.8.19) (2026-11-03)
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+* **rust:** type single-task abort ownership ([#44786](https://github.com/okou-ai/okou/issues/44786)) ([7883190](https://github.com/okou-ai/okou/commit/78831900d6af8fc1f0958b02e93052f8578c18bf))
+
 ## [0.8.18](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.17...runner-storage-v0.8.18) (2026-11-02)
 
 

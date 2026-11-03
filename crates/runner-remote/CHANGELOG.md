@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.22](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.21...runner-remote-v0.30.22) (2026-11-03)
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+* **rust:** type single-task abort ownership ([#44786](https://github.com/okou-ai/okou/issues/44786)) ([7883190](https://github.com/okou-ai/okou/commit/78831900d6af8fc1f0958b02e93052f8578c18bf))
+
 ## [0.30.21](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.20...runner-remote-v0.30.21) (2026-11-02)
 
 ## [0.30.20](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.19...runner-remote-v0.30.20) (2026-11-02)

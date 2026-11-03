@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.7](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.6...guest-storage-apply-v0.28.7) (2026-11-03)
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
 ## [0.28.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.5...guest-storage-apply-v0.28.6) (2026-11-02)
 
 

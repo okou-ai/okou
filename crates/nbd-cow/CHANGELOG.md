@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.10](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.9...nbd-cow-v0.5.10) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
 ## [0.5.9](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.8...nbd-cow-v0.5.9) (2026-11-02)
 
 
