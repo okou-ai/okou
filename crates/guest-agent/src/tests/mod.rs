@@ -17,6 +17,10 @@ fn finalization_history_limit_errors_have_a_stable_failure_reason() {
         Some(FailureReason::SessionHistoryLimit)
     );
     assert_eq!(
+        finalization_failure_reason(&AgentError::SessionHistoryEncodedTooLarge { max_bytes: 1 }),
+        Some(FailureReason::SessionHistoryLimit)
+    );
+    assert_eq!(
         finalization_failure_reason(&AgentError::Finalization(
             "Session history exceeds maximum size of 134217728 bytes".to_string(),
         )),
