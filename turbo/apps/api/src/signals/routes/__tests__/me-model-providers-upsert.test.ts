@@ -208,6 +208,59 @@ describe("POST /api/me/model-providers (upsert)", () => {
     });
   });
 
+  it.each([
+    ["default_claude_max_5x", "max"],
+    ["default_claude_max_20x", "ultra"],
+  ] as const)(
+    "names a Claude Max account on the %s tier as %s",
+    async (rateLimitTier, planType) => {
+      const fixture = uniqueOrgUser("zmmp-claude-max-plan");
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      server.use(
+        http.get("https://api.anthropic.com/api/oauth/profile", () => {
+          return HttpResponse.json({
+            account: {
+              uuid: randomUUID(),
+              email: `max.claude.${randomUUID()}@example.com`,
+              has_claude_max: true,
+            },
+            organization: {
+              uuid: randomUUID(),
+              name: "Claude Max Workspace",
+              organization_type: "claude_max",
+              rate_limit_tier: rateLimitTier,
+            },
+          });
+        }),
+        http.get("https://api.anthropic.com/api/oauth/usage", () => {
+          return HttpResponse.json({});
+        }),
+      );
+
+      const client = setupApp({
+        context,
+        routes: personalModelProvidersMainTestRoutes,
+      })(personalModelProvidersMainContract);
+      const created = await accept(
+        client.upsert({
+          body: {
+            type: "claude-code-oauth-token",
+            secret: "sk-ant-oat-max-plan",
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [201],
+      );
+      expect(created.body.provider).toMatchObject({ planType });
+
+      const listed = await accept(
+        client.list({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(listed.body.modelProviders).toMatchObject([{ planType }]);
+    },
+  );
+
   it.each(["uuid", "email-workspace"] as const)(
     "reuses a legacy Claude account after recovering its %s identity",
     async (identityKind) => {
