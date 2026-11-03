@@ -13,7 +13,12 @@ import {
 import { setBillingSubPage$ } from "../okou-page/settings/workspace-settings-state.ts";
 import { openSettingsDialogAt$ } from "../okou-page/settings/settings-dialog.ts";
 import { logger } from "../log.ts";
-import { bestEffort, settle, withCleanup } from "../utils.ts";
+import {
+  bestEffort,
+  createDeferredPromise,
+  settle,
+  withCleanup,
+} from "../utils.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../../lib/accept.ts";
 import { resolveAudioConfig } from "../../lib/voice-io/audio-config.ts";
@@ -112,6 +117,47 @@ function audioActivityNow(): number {
   return typeof performance !== "undefined"
     ? performance.now()
     : currentTimeMs();
+}
+
+export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
+  if (
+    typeof window === "undefined" ||
+    typeof window.requestAnimationFrame !== "function" ||
+    typeof window.cancelAnimationFrame !== "function"
+  ) {
+    return Promise.resolve();
+  }
+
+  const deferred = createDeferredPromise<void>(signal);
+  let firstFrameId: number | null = null;
+  let secondFrameId: number | null = null;
+
+  function cleanup(): void {
+    signal.removeEventListener("abort", handleAbort);
+  }
+
+  function finish(): void {
+    cleanup();
+    if (!deferred.settled()) {
+      deferred.resolve(undefined);
+    }
+  }
+
+  function handleAbort(): void {
+    if (firstFrameId !== null) {
+      window.cancelAnimationFrame(firstFrameId);
+    }
+    if (secondFrameId !== null) {
+      window.cancelAnimationFrame(secondFrameId);
+    }
+    finish();
+  }
+
+  signal.addEventListener("abort", handleAbort, { once: true });
+  firstFrameId = window.requestAnimationFrame(() => {
+    secondFrameId = window.requestAnimationFrame(finish);
+  });
+  return deferred.promise;
 }
 
 function rms(samples: Float32Array<ArrayBufferLike>): number {

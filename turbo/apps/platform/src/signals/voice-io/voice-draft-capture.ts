@@ -1,17 +1,11 @@
 import { command, computed, state, type State } from "ccstate";
 import { now } from "../../lib/time.ts";
-import {
-  detach,
-  Reason,
-  resetSignal,
-  settle,
-  withCleanup,
-  waitForBrowserPaint,
-} from "../utils.ts";
+import { detach, Reason, resetSignal, settle, withCleanup } from "../utils.ts";
 import {
   openMedia,
   startAudioActivityMonitor,
   stopAudioActivityMonitorAndWait,
+  waitForBrowserPaint,
 } from "./voice-io-stt.ts";
 import {
   startVoiceDraftPcmCapture,

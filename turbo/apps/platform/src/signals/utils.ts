@@ -419,49 +419,8 @@ export function createDeferredPromise<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Shared browser timing helpers
+// Shared timing helpers
 // ---------------------------------------------------------------------------
-
-export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
-  if (
-    typeof window === "undefined" ||
-    typeof window.requestAnimationFrame !== "function" ||
-    typeof window.cancelAnimationFrame !== "function"
-  ) {
-    return Promise.resolve();
-  }
-
-  const deferred = createDeferredPromise<void>(signal);
-  let firstFrameId: number | null = null;
-  let secondFrameId: number | null = null;
-
-  function cleanup(): void {
-    signal.removeEventListener("abort", handleAbort);
-  }
-
-  function finish(): void {
-    cleanup();
-    if (!deferred.settled()) {
-      deferred.resolve(undefined);
-    }
-  }
-
-  function handleAbort(): void {
-    if (firstFrameId !== null) {
-      window.cancelAnimationFrame(firstFrameId);
-    }
-    if (secondFrameId !== null) {
-      window.cancelAnimationFrame(secondFrameId);
-    }
-    finish();
-  }
-
-  signal.addEventListener("abort", handleAbort, { once: true });
-  firstFrameId = window.requestAnimationFrame(() => {
-    secondFrameId = window.requestAnimationFrame(finish);
-  });
-  return deferred.promise;
-}
 
 export async function waitForMailLayout(signal: AbortSignal): Promise<void> {
   // View Transitions pause animation frames while React and Floating UI commit.
