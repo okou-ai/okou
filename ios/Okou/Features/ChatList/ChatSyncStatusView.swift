@@ -12,7 +12,7 @@ struct ChatSyncStatusView: View {
       if let displayed {
         Group {
           if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
               statusLabel(displayed)
               retryButton(displayed)
             }
@@ -25,12 +25,14 @@ struct ChatSyncStatusView: View {
           }
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
         .background(
           Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16)
         )
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
         .accessibilityElement(children: .contain)
       }
     }
@@ -58,7 +60,7 @@ struct ChatSyncStatusView: View {
   @ViewBuilder private func retryButton(_ displayed: ChatSynchronizationState) -> some View {
     if displayed == .unavailable {
       Button("Try again") { Task { await retry() } }
-        .buttonStyle(ChatCardButtonStyle())
+        .buttonStyle(ChatCardButtonStyle(emphasis: .detail))
         .fixedSize(horizontal: true, vertical: false)
         .disabled(state != .unavailable)
     }
