@@ -147,7 +147,7 @@ async fn blocked_helper(disconnect: bool) {
     assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
     let started = state.path().join("started");
     let program = format!(
-        "#!/bin/sh\nprintf '%s' $$ > '{}'\nread value < '{}'\n",
+        "#!/bin/sh\n: > '{}'\nread value < '{}'\n",
         started.display(),
         fifo.display()
     );
@@ -171,7 +171,6 @@ async fn blocked_helper(disconnect: bool) {
             .await
     });
     wait_for_path(&started, Duration::from_secs(5)).await;
-    let pid: u32 = fs::read_to_string(&started).unwrap().parse().unwrap();
     // The control loop stays responsive, while both request types share one
     // helper admission slot. The first child's timeout is still gated here.
     let competing = host
@@ -186,7 +185,11 @@ async fn blocked_helper(disconnect: bool) {
         .unwrap_err();
     assert!(competing.to_string().contains("already active"));
     // Establish actual child readiness before releasing its process timeout.
-    assert_eq!(timeout_rx.recv().unwrap(), pid);
+    // Path creation is only a signal; receive the owned PID without racing a
+    // shell redirection's create-before-write window.
+    let pid = timeout_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("started instruction helper reaches its timeout gate");
     if disconnect {
         assert!(
             host.quiesce_operations(Duration::from_secs(2))
