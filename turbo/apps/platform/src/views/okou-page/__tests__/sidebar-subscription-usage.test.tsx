@@ -87,7 +87,9 @@ test("Open credit usage from the subscription row in the mobile account menu", a
   });
   click(screen.getByLabelText("Open menu"));
   const menu = await openAccountMenu();
-  const usage = await within(menu).findByLabelText("ChatGPT usage");
+  const usage = await within(menu).findByLabelText("ChatGPT usage", {
+    selector: '[role="menuitem"]',
+  });
   click(usage);
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   expect(
