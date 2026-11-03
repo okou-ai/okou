@@ -33,8 +33,17 @@ verification rejects a missing DSN so error reporting cannot silently disappear.
 ### Error diagnostics
 
 Host heartbeat failures upload a correlated episode to the Desktop Sentry project.
-The first failed attempt emits an error immediately; recovery, stopping the host,
-or rejection of its authority emits one summary with the same `episodeId`.
+The first retryable failed attempt emits an info event; recovery, stopping the host,
+or rejection of its authority emits an info summary with the same `episodeId`.
+Transient HTTP 408/429/5xx, ordinary network failures (including TLS connection
+failure), deadlines, and cancellation stay at info during normal retry/recovery.
+Unexpected failures, including malformed successful responses and other HTTP
+errors, emit an error immediately. An episode with at least 90 seconds of awake
+failure emits one error when a subsequent failure or terminal outcome observes
+that threshold, even if it ultimately recovers. Further retries do not repeat
+the error. System suspension does not count toward this threshold, and the
+threshold does not establish lease loss or command impact. Server-side errors
+remain independently reported by the API.
 Filter by `heartbeatOutcome` (`failed`, `recovered`, `stopped`, or
 `authority_rejected`) or `heartbeatEpisodeId` and inspect `contexts.heartbeat`.
 Normal heartbeats do not emit events, and the SDK's automatic heartbeat
@@ -43,6 +52,11 @@ capture for other routes is unchanged.
 
 Each episode retains its first failure and its ten most recent failed attempts,
 the total failure count, omitted-history count, retry delays, and observed duration.
+Episode `durationMs`, `awakeElapsedMs`, and `systemSuspendedMs` include the first
+failed operation when its timing is available, plus subsequent request/backoff
+time. `observedDurationMs` retains its original meaning: time since the first
+failure was captured, excluding that operation. The initial info event preserves
+correlation evidence when a process exits without delivering a terminal summary.
 Request diagnostics include client request/session IDs, HTTP status, response byte
 count, duration, and bounded response headers (`cf-ray`, `x-vercel-id`,
 `x-vercel-cache`, `x-request-id`, `server`, `content-type`, and `retry-after`).

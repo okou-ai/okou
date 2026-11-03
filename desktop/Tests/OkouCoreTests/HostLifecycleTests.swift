@@ -312,6 +312,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let events = try collector.events()
     let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
     let failure = failed["contexts"]["heartbeat"]["firstFailure"]
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
     XCTAssertEqual(failure["requests"].array?.count, 0)
     XCTAssertEqual(failure["operation"]["phase"].string, "token_lookup")
     let operation = failure["operation"]
@@ -392,6 +393,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
 
     let events = try collector.events()
     XCTAssertEqual(events.count, 2)
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
     let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
     let restored = try XCTUnwrap(
       events.first { $0["tags"]["heartbeatOutcome"].string == "recovered" })
@@ -1457,6 +1459,46 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   @MainActor
   func testAuthenticationDeadlineExplainsRefreshedTransportCancellation() async throws {
     try await assertAuthenticationDeadlineExplainsTransportCancellation(refreshesToken: true)
+  }
+
+  @MainActor
+  func testTokenRefreshDeadlineKeepsHeartbeatRecoveryAtInfo() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let refreshing = expectation(description: "A rejected token starts a forced SDK refresh")
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      connection.reply(.object([:]), status: 401)
+    }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.3", session: session)
+    let trace = APIRequestTrace()
+    do {
+      _ = try await api.authenticatedRequest(
+        ApiRoutes.computerUseHostHeartbeat(hostId: "host"), body: .object([:]),
+        timeout: 1, trace: trace,
+        tokenProvider: { force in
+          if force {
+            refreshing.fulfill()
+            try await Task.sleep(for: .seconds(10))
+          }
+          return "private-session"
+        })
+      XCTFail("The total budget must bound an unfinished token refresh")
+    } catch let error as DesktopFailure {
+      let operation = await trace.snapshot()
+      XCTAssertEqual(operation.phase, .tokenRefresh)
+      XCTAssertEqual(operation.deadline, .authenticatedRequest)
+      XCTAssertEqual(operation.requests.map(\.status), [401])
+      var diagnostics = HeartbeatDiagnostics()
+      diagnostics.failed(
+        error: error, requests: operation.requests, retryDelay: 2, operation: operation)
+      diagnostics.finish(outcome: .stopped)
+    }
+    await fulfillment(of: [refreshing], timeout: 1)
+    let events = try collector.events()
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
   }
 
   @MainActor
