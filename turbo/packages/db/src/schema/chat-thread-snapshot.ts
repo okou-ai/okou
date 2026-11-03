@@ -47,7 +47,7 @@ export const chatThreadSnapshotGcState = pgTable(
       primaryKey({ columns: [table.bucket, table.prefix] }),
       check(
         "chat_thread_snapshot_gc_prefix_check",
-        sql`${table.prefix} ~ '^chat-thread-snapshots/v1/[0-9a-f]{2}$'`,
+        sql`${table.prefix} ~ '^(chat-thread|project)-snapshots/v1/[0-9a-f]{2}$'`,
       ),
       check(
         "chat_thread_snapshot_gc_cursor_check",
