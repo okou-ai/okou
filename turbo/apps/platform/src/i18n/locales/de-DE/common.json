@@ -5464,6 +5464,12 @@
       "title": "Build-Informationen",
       "unavailable": "Nicht verfügbar"
     },
+    "connectorCatalog": {
+      "hash": "Katalog-Hash",
+      "schemaVersion": "Schemaversion",
+      "title": "Konnektorenkatalog",
+      "version": "Version"
+    },
     "dialog": {
       "description": "Verwalten Sie Ihr Konto, Ihre Einstellungen, Ihren Arbeitsbereich und Ihre Abrechnungseinstellungen.",
       "groups": {

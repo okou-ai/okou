@@ -396,6 +396,27 @@ async function servedConnectors() {
   return response.body.connectors;
 }
 
+async function servedRelease() {
+  routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  await accept(
+    setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    ).update({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+    }),
+    [200],
+  );
+  const response = await accept(
+    setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    ).release({ headers: { authorization: "Bearer clerk-session" } }),
+    [200],
+  );
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  return response.body.catalog;
+}
+
 beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockNow(new Date(FIRST_SYNC_TIME));
@@ -425,6 +446,19 @@ describe("connector catalog cron authentication", () => {
   });
 });
 
+describe("connector catalog release access", () => {
+  it("requires Debug to inspect the serving release", async () => {
+    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    const response = await accept(
+      setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      ).release({ headers: { authorization: "Bearer clerk-session" } }),
+      [403],
+    );
+    expect(response.body.error.code).toBe("FORBIDDEN");
+  });
+});
+
 describe("connector catalog valid lifecycle", () => {
   it("accepts, advances, rolls back, and serves the active database snapshot", async () => {
     const app = await setupApp({
@@ -447,10 +481,19 @@ describe("connector catalog valid lifecycle", () => {
       outcome: "accepted",
       failureCode: null,
     });
+    await expect(servedRelease()).resolves.toStrictEqual({
+      schemaVersion: 4,
+      catalogDigest: first.digest,
+      catalogVersion: first.version,
+    });
     const unchanged = await syncCatalog(app);
     expect(unchanged.body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,
+    });
+    await expect(servedRelease()).resolves.toMatchObject({
+      catalogDigest: first.digest,
+      catalogVersion: first.version,
     });
     serveObjects(catalogObjects([first, second], second));
     expect((await syncCatalog(app)).body).toMatchObject({
@@ -459,6 +502,18 @@ describe("connector catalog valid lifecycle", () => {
     await expect(servedConnectors()).resolves.toMatchObject([
       { slug: second.connectorSlug, label: "External Test Updated" },
     ]);
+    await expect(servedRelease()).resolves.toMatchObject({
+      catalogDigest: second.digest,
+      catalogVersion: second.version,
+    });
+
+    const unavailable = buildRelease({ version: "2026-07-15.3" });
+    serveObjects(new Map([[ACTIVE_KEY, unavailable.pointer]]));
+    expect((await syncCatalog(app)).body.outcome).toBe("rejected");
+    await expect(servedRelease()).resolves.toMatchObject({
+      catalogDigest: second.digest,
+      catalogVersion: second.version,
+    });
 
     // Rolling back publishes the first generation again rather than treating
     // it as unchanged.
@@ -470,6 +525,10 @@ describe("connector catalog valid lifecycle", () => {
     await expect(servedConnectors()).resolves.toMatchObject([
       { slug: first.connectorSlug, label: "Initial catalog" },
     ]);
+    await expect(servedRelease()).resolves.toMatchObject({
+      catalogDigest: first.digest,
+      catalogVersion: first.version,
+    });
   });
 
   it("uses a manual GitLab credential in a Run without optional host configuration", async () => {

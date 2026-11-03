@@ -1,6 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -11,6 +12,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
+import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import {
   createUserFeatureSwitchContext,
@@ -40,9 +42,14 @@ import {
   connectorCatalogSlugJoin,
   connectorCatalogSlugSourceFromRows,
 } from "../services/connector-catalog-slug-source.service";
-import { notFound, providerUnavailable } from "../../lib/error";
+import {
+  notFound,
+  providerUnavailable,
+  resourceUnavailable,
+} from "../../lib/error";
 import { settle } from "../utils";
 import { builtinConnectorAccountSlugs } from "../services/connector-account-lifecycle.service";
+import { acceptedConnectorCatalogRelease$ } from "../services/connector-catalog-release.service";
 
 const savedBuiltinSlugs$ = builtinConnectorAccountSlugs(
   organizationAuthContext$,
@@ -381,6 +388,22 @@ const getConnectorCatalogPermissionsInner$ = command(
   },
 );
 
+const getConnectorCatalogReleaseInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const { featureStates } = await set(connectorCatalogRequestContext$);
+    signal.throwIfAborted();
+    if (!featureStates[FeatureSwitchKey.OkouDebug]) {
+      return resourceUnavailable(
+        "Connector catalog release information requires Okou Debug",
+      );
+    }
+    const catalog = await get(acceptedConnectorCatalogRelease$);
+    signal.throwIfAborted();
+    set(setResHeader$, "Cache-Control", "no-store");
+    return { status: 200 as const, body: { catalog } };
+  },
+);
+
 export const connectorCatalogRoutes: readonly RouteEntry[] = [
   {
     route: connectorCatalogContract.list,
@@ -400,6 +423,10 @@ export const connectorCatalogRoutes: readonly RouteEntry[] = [
       connectorCatalogAuth,
       listOneClickConnectorCatalogInner$,
     ),
+  },
+  {
+    route: connectorCatalogContract.release,
+    handler: authRoute(connectorCatalogAuth, getConnectorCatalogReleaseInner$),
   },
   {
     route: connectorCatalogContract.get,

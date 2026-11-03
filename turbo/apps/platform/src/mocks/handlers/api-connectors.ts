@@ -423,6 +423,16 @@ export const apiConnectorsHandlers = [
     });
   }),
 
+  mockApi(connectorCatalogContract.release, ({ respond }) => {
+    return respond(200, {
+      catalog: {
+        schemaVersion: 4,
+        catalogVersion: "2026-11-03.1",
+        catalogDigest: `sha256:${"a".repeat(64)}`,
+      },
+    });
+  }),
+
   mockApi(connectorCatalogContract.status, ({ respond }) => {
     const connectors = mockConnectorCatalogStatus();
     return respond(200, { connectors });

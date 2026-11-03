@@ -5447,6 +5447,12 @@
       "title": "빌드 정보",
       "unavailable": "사용 불가"
     },
+    "connectorCatalog": {
+      "hash": "카탈로그 해시",
+      "schemaVersion": "스키마 버전",
+      "title": "커넥터 카탈로그",
+      "version": "버전"
+    },
     "dialog": {
       "description": "계정, 환경설정, 워크스페이스 및 결제 설정을 관리하세요.",
       "groups": {

@@ -4,7 +4,7 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-catalog-sync";
 import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import { command } from "ccstate";
-import { ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
@@ -28,10 +28,8 @@ import {
   S3ObjectSizeLimitError,
 } from "../external/s3";
 import { safeSync, settle } from "../utils";
-import {
-  immutableCatalogHash$,
-  prepareImmutableCatalogEntries$,
-} from "./connector-catalog-immutable.service";
+import { prepareImmutableCatalogEntries$ } from "./connector-catalog-immutable.service";
+import { acceptedConnectorCatalogRelease$ } from "./connector-catalog-release.service";
 import {
   connectorCatalogSkillFailure,
   type ConnectorCatalogSkillFailure,
@@ -183,16 +181,20 @@ type PublishResult =
 const publishCatalogPointer$ = command(
   async (
     { set },
-    args: { readonly schemaVersion: number; readonly hash: string },
+    args: {
+      readonly schemaVersion: number;
+      readonly hash: string;
+      readonly catalogVersion: string;
+    },
     signal: AbortSignal,
   ): Promise<{ readonly switched: boolean }> => {
     signal.throwIfAborted();
     const changed = await set(writeDb$)
       .insert(connectorCatalog)
-      .values({ schemaVersion: args.schemaVersion, hash: args.hash })
+      .values(args)
       .onConflictDoUpdate({
         target: connectorCatalog.schemaVersion,
-        set: { hash: args.hash },
+        set: { hash: args.hash, catalogVersion: args.catalogVersion },
         setWhere: ne(connectorCatalog.hash, args.hash),
       })
       .returning({ hash: connectorCatalog.hash });
@@ -228,6 +230,7 @@ const publishCandidate$ = command(
           {
             schemaVersion: args.candidate.artifact.artifactSchemaVersion,
             hash,
+            catalogVersion: args.candidate.identity.catalogVersion,
           },
           signal,
         );
@@ -259,11 +262,13 @@ const publishCandidate$ = command(
  */
 export const syncConnectorCatalog$ = command(
   async (
-    { set },
+    { get, set },
     signal: AbortSignal,
   ): Promise<ConnectorCatalogSyncAttemptReport> => {
     const source = connectorCatalogSource();
-    const servingHash = await set(immutableCatalogHash$, signal);
+    const servingCatalog = await get(acceptedConnectorCatalogRelease$);
+    signal.throwIfAborted();
+    const servingHash = servingCatalog?.catalogDigest ?? null;
     const pointerResult = await set(loadPointerForSync$, source, signal);
     if (pointerResult.kind === "rejected") {
       return rejectedAttempt({
@@ -273,9 +278,13 @@ export const syncConnectorCatalog$ = command(
       });
     }
     const { pointer } = pointerResult;
-    // The pointer only references complete generations, and every generation
-    // was validated before it was published, so an equal hash is unchanged.
-    if (pointer.catalogDigest === servingHash) {
+    // Published generations are already validated. Download only when the
+    // generation changes or its stored release version needs to be filled.
+    const unchanged = pointer.catalogDigest === servingHash;
+    if (
+      unchanged &&
+      servingCatalog?.catalogVersion === pointer.catalogVersion
+    ) {
       log.debug("Connector catalog unchanged", {
         sourceId: source.sourceId,
         catalogDigest: servingHash,
@@ -301,6 +310,26 @@ export const syncConnectorCatalog$ = command(
       });
     }
     const { candidate } = candidateResult;
+
+    if (unchanged) {
+      // Older catalog pointers have no version. Validate the original artifact
+      // before filling it, and never attach it to a concurrently switched hash.
+      signal.throwIfAborted();
+      await set(writeDb$)
+        .update(connectorCatalog)
+        .set({ catalogVersion: candidate.identity.catalogVersion })
+        .where(
+          and(
+            eq(
+              connectorCatalog.schemaVersion,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+            ),
+            eq(connectorCatalog.hash, candidate.identity.catalogDigest),
+          ),
+        );
+      signal.throwIfAborted();
+      return { outcome: "unchanged", failureCode: null };
+    }
 
     // Compare permission bundles against the generation serving before the
     // switch. A cold catalog has no previous runtime snapshot.

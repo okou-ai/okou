@@ -24,6 +24,12 @@ export { publicConnectorCatalogIconSchema } from "../validators/connector-catalo
 
 const c = initContract();
 
+export const connectorCatalogReleaseSchema = object({
+  schemaVersion: number().int().positive(),
+  catalogDigest: string().regex(/^sha256:[a-f0-9]{64}$/u),
+  catalogVersion: string().min(1).nullable(),
+});
+
 const publicConnectorCatalogAuthMethodSummarySchema = object({
   id: connectorAuthMethodIdSchema,
   label: string(),
@@ -322,6 +328,17 @@ export const connectorCatalogContract = c.router({
       503: apiErrorSchema,
     },
     summary: "List metadata for connectors that connect in one browser step",
+  },
+  release: {
+    method: "GET",
+    path: "/api/connector-catalog/release",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({ catalog: connectorCatalogReleaseSchema.nullable() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Get the accepted connector catalog release",
   },
   get: {
     method: "GET",

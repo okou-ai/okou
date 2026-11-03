@@ -6,6 +6,7 @@ import { connectorCatalogColumns } from "../columns/connector-catalog";
 export const connectorCatalog = pgTable("connector_catalog", {
   schemaVersion: integer("schema_version").primaryKey(),
   hash: text("hash").notNull(),
+  catalogVersion: text("catalog_version"),
 });
 
 export const connectorCatalogEntries = pgTable(

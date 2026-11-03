@@ -5447,6 +5447,12 @@
       "title": "ビルド情報",
       "unavailable": "利用不可"
     },
+    "connectorCatalog": {
+      "hash": "カタログハッシュ",
+      "schemaVersion": "スキーマバージョン",
+      "title": "コネクタカタログ",
+      "version": "バージョン"
+    },
     "dialog": {
       "description": "アカウント、設定、ワークスペース、および請求設定を管理します。",
       "groups": {

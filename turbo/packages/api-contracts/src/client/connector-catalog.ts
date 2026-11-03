@@ -47,6 +47,15 @@ export const connectorCatalogContract: ClientDescriptor<
       503: true,
     },
   },
+  release: {
+    method: "GET",
+    path: "/api/connector-catalog/release",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+    },
+  },
   get: {
     method: "GET",
     path: "/api/connector-catalog/:connectorSlug",
