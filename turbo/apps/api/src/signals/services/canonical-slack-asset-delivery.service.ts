@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { resolveSlackMessageSendFooter$ } from "./slack-message-context.service";
 import { command } from "ccstate";
 import type { CanonicalAssetSlackDeliveryDestination } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import {
@@ -289,13 +291,19 @@ function isUnuploadedSlackFile(result: { readonly error: string }): boolean {
 function slackCompletionRequest(
   fileId: string,
   row: Pick<CanonicalSlackDeliveryRow, "destination">,
+  footerText?: string,
 ): SlackCompletionRequest {
   return {
     fileId,
     channel: row.destination.channelId,
     threadTs: row.destination.threadTs,
     title: row.destination.title,
-    initialComment: row.destination.initialComment,
+    initialComment: footerText
+      ? appendIntegrationMessageFooter(
+          row.destination.initialComment,
+          footerText,
+        )
+      : row.destination.initialComment,
   };
 }
 
@@ -407,6 +415,27 @@ const resolveCanonicalSlackDelivery$ = command(
   },
 );
 
+// Record a provider-accepted receipt before observing caller cancellation.
+const recordReconciledSlackDelivery$ = command(
+  async (
+    { set },
+    row: CanonicalSlackDeliveryRow,
+    permalink: string,
+  ): Promise<CanonicalSlackDeliveryResult> => {
+    const db = set(writeDb$);
+    const fileId = requiredSlackFileId(row.externalId);
+    const deliveryUrl = requiredSlackPermalink(permalink);
+    const [delivered] = await db
+      .update(canonicalAssetDeliveries)
+      .set(deliveredUpdateFields(deliveryUrl))
+      .where(deliveryTransitionCondition(row))
+      .returning({ id: canonicalAssetDeliveries.id });
+    return delivered
+      ? successfulDeliveryResult(fileId, deliveryUrl)
+      : await set(readCanonicalSlackConflict$, row);
+  },
+);
+
 export const prepareCanonicalSlackDelivery$ = command(
   async (
     { set },
@@ -458,7 +487,7 @@ export const prepareCanonicalSlackDelivery$ = command(
       }
 
       const completed = await client.completeUploadExternal(
-        slackCompletionRequest(row.externalId, row),
+        slackCompletionRequest(row.externalId, row, footerText),
       );
       if (completed.kind === "slack_error") {
         if (isUnuploadedSlackFile(completed)) {
@@ -471,23 +500,18 @@ export const prepareCanonicalSlackDelivery$ = command(
       if (!permalinkResult.ok) {
         return await recordPreparationFailure(permalinkResult.error);
       }
-      const recordDeliverySuccess = async (
-        permalink: string,
-      ): Promise<CanonicalSlackDeliveryResult> => {
-        const fileId = requiredSlackFileId(row.externalId);
-        const deliveryUrl = requiredSlackPermalink(permalink);
-        const [delivered] = await db
-          .update(canonicalAssetDeliveries)
-          .set(deliveredUpdateFields(deliveryUrl))
-          .where(deliveryTransitionCondition(row))
-          .returning({ id: canonicalAssetDeliveries.id });
-        return delivered
-          ? successfulDeliveryResult(fileId, deliveryUrl)
-          : await readConflict();
-      };
-      return await recordDeliverySuccess(permalinkResult.permalink);
+      return await set(
+        recordReconciledSlackDelivery$,
+        row,
+        permalinkResult.permalink,
+      );
     };
     const client = access.client;
+    const footerText = await set(
+      resolveSlackMessageSendFooter$,
+      access.workspaceId,
+      signal,
+    );
     const reconciliation = await settle(reconcileExistingSlackFile(), signal);
     signal.throwIfAborted();
     if (!reconciliation.ok) {
@@ -591,6 +615,11 @@ export const completeCanonicalSlackDelivery$ = command(
       return { ...access, channelId: row.destination.channelId };
     }
     const client = access.client;
+    const footerText = await set(
+      resolveSlackMessageSendFooter$,
+      access.workspaceId,
+      signal,
+    );
     const readConflict = () => {
       return set(readCanonicalSlackConflict$, row);
     };
@@ -624,13 +653,9 @@ export const completeCanonicalSlackDelivery$ = command(
       }
 
       const completion = await settle(
-        client.completeUploadExternal({
-          fileId: args.fileId,
-          channel: row.destination.channelId,
-          threadTs: row.destination.threadTs,
-          title: row.destination.title,
-          initialComment: row.destination.initialComment,
-        }),
+        client.completeUploadExternal(
+          slackCompletionRequest(args.fileId, row, footerText),
+        ),
         deliverySignal,
       );
       deliverySignal.throwIfAborted();

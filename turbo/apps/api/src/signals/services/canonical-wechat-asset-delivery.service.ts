@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { integrationMessageSendFooterText$ } from "./integration-message-context.service";
 import type {
   CanonicalAssetWechatDeliveryDestination,
   CanonicalAssetWechatDeliveryState,
@@ -308,7 +310,7 @@ const recordFileReceipt$ = command(
 
 const deliverFile$ = command(
   async (
-    { set },
+    { get, set },
     args: Identity,
     row: Delivery,
     uploaded: NonNullable<WechatMessage["item_list"]>[number],
@@ -331,7 +333,14 @@ const deliverFile$ = command(
         JSON.stringify([row.filename, row.checksum, row.destination.comment]),
       )
       .digest("hex");
-    if (row.destination.comment) {
+    const footerText = await get(integrationMessageSendFooterText$);
+    signal.throwIfAborted();
+    const comment = appendIntegrationMessageFooter(
+      row.destination.comment,
+      footerText,
+      2000,
+    );
+    if (comment) {
       const caption = await set(
         sendArchivedWechatText$,
         {
@@ -339,7 +348,7 @@ const deliverFile$ = command(
           channelId: row.destination.channelId,
           generation: row.destination.generation,
           index: 0,
-          text: row.destination.comment,
+          text: comment,
           requestHash,
         },
         signal,

@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
 import {
   integrationsWhatsappContract as contract,
   type WhatsappFile,
@@ -415,10 +417,12 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Task-completion notifications require a current run with an owned chat thread",
     );
   }
+  const footerText = await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
   return await set(
     sendMessageParts$,
     {
-      text: result.data.text,
+      text: appendIntegrationMessageFooter(result.data.text, footerText),
       agentphoneAgentId,
       fromNumber,
       link,
@@ -509,13 +513,22 @@ const sendUploadedFile$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
   signal.throwIfAborted();
+  const footerText = object.contentType.startsWith("audio/")
+    ? undefined
+    : await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
+  const caption = appendIntegrationMessageFooter(
+    result.data.caption,
+    footerText,
+    1024,
+  );
   const sent = await settle(
     sendAgentPhoneMessage(
       {
         agentphoneAgentId,
         toNumber: link.phoneHandle,
         channel: "whatsapp",
-        body: result.data.caption ?? "",
+        body: caption,
         mediaUrls: [fetchUrl],
       },
       signal,
@@ -534,7 +547,7 @@ const sendUploadedFile$ = command(async ({ get, set }, signal: AbortSignal) => {
     phoneHandle: link.phoneHandle,
     fromNumber: sent.value.fromNumber ?? fromNumber,
     toNumber: sent.value.toNumber,
-    body: result.data.caption,
+    body: caption,
     mediaUrl: object.url,
     channel: "whatsapp",
     userChannel: "whatsapp",

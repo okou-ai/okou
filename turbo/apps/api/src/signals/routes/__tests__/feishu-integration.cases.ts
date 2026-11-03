@@ -6737,8 +6737,7 @@ export function registerFeishuIntegrationTests(
             elements: expect.arrayContaining([
               {
                 tag: "markdown",
-                content: "*Claude Fable 5.1*",
-                text_size: "notation",
+                content: "Canonical Feishu answer",
               },
             ]),
           },

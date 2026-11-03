@@ -5,7 +5,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
-import { slackMessageSendFooterText$ } from "../services/slack-message-context.service";
+import { resolveSlackMessageSendFooter$ } from "../services/slack-message-context.service";
 import { resolveSlackWriteTarget$ } from "../services/slack-write-access.service";
 import { buildFooterBlocks } from "../../lib/slack-blocks";
 import type { RouteEntry } from "../route-entry";
@@ -37,7 +37,11 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return target;
   }
   const targetChannel = target.channelId;
-  const footerText = await get(slackMessageSendFooterText$);
+  const footerText = await set(
+    resolveSlackMessageSendFooter$,
+    target.workspaceId,
+    signal,
+  );
   signal.throwIfAborted();
 
   let finalBlocks = body.blocks as SlackAnyBlock[] | undefined;

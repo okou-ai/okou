@@ -448,6 +448,7 @@ export async function sendDocument(
   document: string,
   options: {
     readonly caption?: string;
+    readonly parseMode?: "HTML";
     readonly messageThreadId?: number;
   } = {},
 ): Promise<SendTelegramDocumentResult> {
@@ -457,6 +458,9 @@ export async function sendDocument(
   };
   if (options.caption !== undefined) {
     payload.caption = options.caption;
+  }
+  if (options.parseMode !== undefined) {
+    payload.parse_mode = options.parseMode;
   }
   if (options.messageThreadId !== undefined) {
     payload.message_thread_id = options.messageThreadId;

@@ -70,7 +70,8 @@ async function seedSendableContext() {
     },
   );
   await fixture.onboard();
-  await fixture.link(String(randomInt(100_000_000, 999_999_999)));
+  const telegramUserId = String(randomInt(100_000_000, 999_999_999));
+  await fixture.link(telegramUserId);
   await fixture.run(() => {
     return runsApi.grantProEntitlement(fixture.actor, {
       onExternalStateReady: (restore) => {
@@ -107,6 +108,7 @@ async function seedSendableContext() {
     ...sent,
     token: okouTokenFromClaim(claim),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+    telegramUserId,
   };
 }
 
@@ -151,117 +153,130 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
     runsApi.acceptTelemetryIngest();
   });
 
-  it("delivers private file bytes through Telegram", async () => {
-    const fixture = await seedSendableContext();
-    await fixture.run(async () => {
-      const telegramFileId = `tg-doc-${randomUUID().slice(0, 8)}`;
-      installSharedThreadStorage(context);
-      fixture.session();
-      const initialized = await accept(
-        fixture.run(async () => {
-          return await setupApp({
-            context,
-            routes: integrationsTelegramUploadInitRoutes,
-          })(integrationsTelegramUploadInitContract).init({
-            headers: { authorization: "Bearer clerk-session" },
-            body: {
-              filename: "report.pdf",
-              contentType: "application/pdf",
-              length: 1234,
-            },
-          });
-        }),
-        [200],
-      );
-      const { uploadId, fileUrl } = initialized.body;
-      expect(
-        (
-          await fixture.run(async () => {
-            return await fetch(initialized.body.uploadUrl, {
-              method: "PUT",
-              headers: initialized.body.uploadHeaders,
-              body: Buffer.alloc(1234),
-            });
-          })
-        ).status,
-      ).toBe(200);
-
-      let telegramBody: Record<string, unknown> | undefined;
-      server.use(
-        http.post(
-          "https://api.telegram.org/bot987654:official-upload-token/sendDocument",
-          async ({ request }) => {
-            telegramBody = (await request.json()) as Record<string, unknown>;
-            return HttpResponse.json({
-              ok: true,
-              result: {
-                message_id: 321,
-                chat: { id: -1_001_234_567_890 },
-                document: {
-                  file_id: telegramFileId,
-                  file_unique_id: "tg-doc-unique",
-                  file_name: "report.pdf",
-                  mime_type: "application/pdf",
-                  file_size: 1234,
-                },
+  it.each([
+    { label: "with attribution", caption: "Daily report", fullCaption: false },
+    {
+      label: "at the caption limit",
+      caption: "R".repeat(1024),
+      fullCaption: true,
+    },
+  ])(
+    "delivers private file bytes through Telegram $label",
+    async ({ caption, fullCaption }) => {
+      const fixture = await seedSendableContext();
+      await fixture.run(async () => {
+        const telegramFileId = `tg-doc-${randomUUID().slice(0, 8)}`;
+        installSharedThreadStorage(context);
+        fixture.session();
+        const initialized = await accept(
+          fixture.run(async () => {
+            return await setupApp({
+              context,
+              routes: integrationsTelegramUploadInitRoutes,
+            })(integrationsTelegramUploadInitContract).init({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                filename: "report.pdf",
+                contentType: "application/pdf",
+                length: 1234,
               },
             });
-          },
-        ),
-      );
+          }),
+          [200],
+        );
+        const { uploadId, fileUrl } = initialized.body;
+        expect(
+          (
+            await fixture.run(async () => {
+              return await fetch(initialized.body.uploadUrl, {
+                method: "PUT",
+                headers: initialized.body.uploadHeaders,
+                body: Buffer.alloc(1234),
+              });
+            })
+          ).status,
+        ).toBe(200);
 
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramUploadCompleteRoutes,
-      })(integrationsTelegramUploadCompleteContract);
-      const response = await accept(
-        fixture.run(async () => {
-          return await client.complete({
-            body: {
-              uploadId,
-              botId: fixture.telegramBotId,
-              chatId: "-1001234567890",
-              contentType: "application/pdf",
-              caption: "Daily report",
-              messageThreadId: 42,
+        let telegramBody: Record<string, unknown> | undefined;
+        server.use(
+          http.post(
+            "https://api.telegram.org/bot987654:official-upload-token/sendDocument",
+            async ({ request }) => {
+              telegramBody = (await request.json()) as Record<string, unknown>;
+              return HttpResponse.json({
+                ok: true,
+                result: {
+                  message_id: 321,
+                  chat: { id: -1_001_234_567_890 },
+                  document: {
+                    file_id: telegramFileId,
+                    file_unique_id: "tg-doc-unique",
+                    file_name: "report.pdf",
+                    mime_type: "application/pdf",
+                    file_size: 1234,
+                  },
+                },
+              });
             },
-            headers: {
-              authorization: `Bearer ${fixture.token}`,
-            },
-          });
-        }),
-        [200],
-      );
+          ),
+        );
 
-      expect(telegramBody).toMatchObject({
-        chat_id: "-1001234567890",
-        document: expect.stringContaining(
-          "https://attachment-storage.example/test-private-artifacts/",
-        ),
-        caption: "Daily report",
-        message_thread_id: 42,
-      });
-      expect(response.body).toMatchObject({
-        messageId: 321,
-        chatId: "-1001234567890",
-        fileId: telegramFileId,
-        filename: "report.pdf",
-        mimetype: "application/pdf",
-        size: 1234,
-        url: fileUrl,
-      });
+        const client = setupApp({
+          context,
+          routes: integrationsTelegramUploadCompleteRoutes,
+        })(integrationsTelegramUploadCompleteContract);
+        const response = await accept(
+          fixture.run(async () => {
+            return await client.complete({
+              body: {
+                uploadId,
+                botId: fixture.telegramBotId,
+                chatId: "-1001234567890",
+                contentType: "application/pdf",
+                caption,
+                messageThreadId: 42,
+              },
+              headers: {
+                authorization: `Bearer ${fixture.token}`,
+              },
+            });
+          }),
+          [200],
+        );
 
-      const files = await visibleUploadedFiles(fixture);
-      expect(files).toHaveLength(1);
-      expect(files[0]).toMatchObject({
-        id: telegramFileId,
-        filename: "report.pdf",
-        contentType: "application/pdf",
-        size: 1234,
-        url: fileUrl,
+        expect(telegramBody).toMatchObject({
+          chat_id: "-1001234567890",
+          document: expect.stringContaining(
+            "https://attachment-storage.example/test-private-artifacts/",
+          ),
+          caption: fullCaption
+            ? caption
+            : `Daily report\n\n<i>Sent via Telegram upload · Triggered by <a href="tg://user?id=${fixture.telegramUserId}">Test</a></i>`,
+          parse_mode: "HTML",
+          message_thread_id: 42,
+        });
+        expect(response.body).toMatchObject({
+          messageId: 321,
+          chatId: "-1001234567890",
+          fileId: telegramFileId,
+          filename: "report.pdf",
+          mimetype: "application/pdf",
+          size: 1234,
+          url: fileUrl,
+        });
+
+        const files = await visibleUploadedFiles(fixture);
+        expect(files).toHaveLength(1);
+        expect(files[0]).toMatchObject({
+          id: telegramFileId,
+          filename: "report.pdf",
+          contentType: "application/pdf",
+          size: 1234,
+          url: fileUrl,
+        });
       });
-    });
-  });
+    },
+  );
 
   it("returns 403 when the token has no organization membership", async () => {
     const userId = `user_${randomUUID().slice(0, 8)}`;

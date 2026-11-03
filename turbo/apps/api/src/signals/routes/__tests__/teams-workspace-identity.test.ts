@@ -748,7 +748,9 @@ test.each([
         );
         expect(messages).toContainEqual({
           conversationId: sender.teamsConversationId,
-          text: "Run-scoped result",
+          text: expect.stringMatching(
+            /^Run-scoped result\n\nSent via .+ · Triggered by <at>.+<\/at>$/u,
+          ),
         });
         await accept(
           clients()(integrationsTeamsMessageContract).sendMessage({

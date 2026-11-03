@@ -13,7 +13,6 @@ import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
-import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   deleteTeamsReaction,
@@ -22,11 +21,6 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
 import { integrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
-import {
-  runModelSelectionColumns,
-  runModelSelectionCondition,
-  runModelSelectionFromRow,
-} from "./run-model-selection.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import {
@@ -214,44 +208,27 @@ const readTeamsResponsePresentation$ = command(
     signal: AbortSignal,
   ) => {
     const db = get(db$);
-    const [agentLabel, runModel] = await Promise.all([
-      (async () => {
-        const [org] = await db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, args.orgId))
-          .limit(1);
-        signal.throwIfAborted();
-        if (args.agentId === org?.defaultAgentId) {
-          return undefined;
-        }
-        const [agent] = await db
-          .select({ displayName: agents.displayName, name: agents.name })
-          .from(agents)
-          .where(eq(agents.id, args.agentId))
-          .limit(1);
-        signal.throwIfAborted();
-        return agent?.displayName ?? agent?.name;
-      })(),
-      (async () => {
-        const [row] = await db
-          .select(runModelSelectionColumns())
-          .from(agentRuns)
-          .where(runModelSelectionCondition(args.runId))
-          .limit(1);
-        signal.throwIfAborted();
-        return runModelSelectionFromRow(row);
-      })(),
-    ]);
+    const agentLabel = await (async () => {
+      const [org] = await db
+        .select({ defaultAgentId: orgMetadata.defaultAgentId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, args.orgId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (args.agentId === org?.defaultAgentId) {
+        return undefined;
+      }
+      const [agent] = await db
+        .select({ displayName: agents.displayName, name: agents.name })
+        .from(agents)
+        .where(eq(agents.id, args.agentId))
+        .limit(1);
+      signal.throwIfAborted();
+      return agent?.displayName ?? agent?.name;
+    })();
     signal.throwIfAborted();
     return integrationAgentResponsePresentation({
       agentLabel,
-      modelLabel: runModel?.selectedModel
-        ? getRunModelDisplayName(
-            runModel.selectedModel,
-            runModel.codexServiceTier,
-          )
-        : undefined,
       replyToMention: args.replyToMention,
     });
   },

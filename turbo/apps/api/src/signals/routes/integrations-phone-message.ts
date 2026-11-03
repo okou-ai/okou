@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { and, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
@@ -107,12 +109,15 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return routeError(404, "Phone agent not found", "NOT_FOUND");
   }
 
+  const footerText = await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
+  const text = appendIntegrationMessageFooter(body.text, footerText);
   const sendResult = await settle(
     sendAgentPhoneMessage(
       {
         agentphoneAgentId,
         toNumber: phoneHandle,
-        body: body.text,
+        body: text,
       },
       signal,
     ),
@@ -135,7 +140,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     phoneHandle,
     fromNumber: sent.fromNumber ?? "",
     toNumber: sent.toNumber ?? phoneHandle,
-    body: body.text,
+    body: text,
     channel: sent.channel,
     userChannel,
     visibilityRecipients: [],
@@ -395,13 +400,16 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return groupNotFound();
   }
 
+  const footerText = await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
+  const text = appendIntegrationMessageFooter(bodyResult.data.text, footerText);
   const sentResult = await settle(
     (async () => {
       const sent = await sendAgentPhoneMessage(
         {
           agentphoneAgentId: target.agentphoneAgentId,
           toNumber: bodyResult.data.groupId,
-          body: bodyResult.data.text,
+          body: text,
         },
         signal,
       );
@@ -413,7 +421,7 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
         phoneHandle: target.phoneHandle,
         fromNumber: sent.fromNumber ?? "",
         toNumber: bodyResult.data.groupId,
-        body: bodyResult.data.text,
+        body: text,
         channel: "imessage",
         userChannel: "imessage",
         visibilityRecipients: recipients,

@@ -1,6 +1,6 @@
 import { feishuRequestPlatform$ } from "../context/feishu-platform";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
   integrationsFeishuMessageContract,
@@ -16,11 +16,14 @@ import {
   type FeishuOutboundMessage,
   type FeishuSentMessage,
 } from "../external/feishu-client";
-import { writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { deliverFeishuMessage$ } from "../services/feishu-message-delivery.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 import { requireFeishuConversationAccess$ } from "../services/feishu-conversation-access.service";
+import { resolveFeishuMessageSendFooter$ } from "../services/integration-message-send-presentation.service";
+import { appendFeishuCardFooter } from "../../lib/integration-message-card-footer";
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
 
 function apiError(
   status: 400 | 403 | 404 | 502,
@@ -33,19 +36,17 @@ function apiError(
   } as const;
 }
 
-const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const bodyResult = await get(
-    bodyResultOf(integrationsFeishuMessageContract.sendMessage),
-  );
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
+const messageBody$ = bodyResultOf(
+  integrationsFeishuMessageContract.sendMessage,
+);
+const messageInstallations$ = computed(async (get) => {
+  const parsed = await get(messageBody$);
+  if (!parsed.ok) {
+    return [];
   }
-  const body = bodyResult.data;
-  const platformName = FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name;
-  const db = set(writeDb$);
-  const installations = await db
+  const body = parsed.data;
+  const auth = get(organizationAuthContext$);
+  return await get(db$)
     .select({ id: feishuOrgInstallations.id })
     .from(feishuOrgInstallations)
     .where(
@@ -59,6 +60,18 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     )
     .limit(2);
+});
+
+const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const bodyResult = await get(messageBody$);
+  signal.throwIfAborted();
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+  const body = bodyResult.data;
+  const platformName = FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name;
+  const installations = await get(messageInstallations$);
   signal.throwIfAborted();
   const installation = installations[0];
   if (!installation) {
@@ -78,9 +91,6 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const message: FeishuOutboundMessage = body.card
-    ? { msgType: "interactive", content: body.card }
-    : { msgType: "text", content: { text: body.text } };
   const access = await settle(
     set(
       requireFeishuConversationAccess$,
@@ -108,6 +118,25 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw access.error;
   }
   const userOpenId = access.value;
+  const footerText = await set(
+    resolveFeishuMessageSendFooter$,
+    {
+      installationId: installation.id,
+      format: body.card ? "card" : "text",
+    },
+    signal,
+  );
+  const message: FeishuOutboundMessage = body.card
+    ? {
+        msgType: "interactive",
+        content: appendFeishuCardFooter(body.card, footerText),
+      }
+    : {
+        msgType: "text",
+        content: {
+          text: appendIntegrationMessageFooter(body.text, footerText),
+        },
+      };
   const receiveId = userOpenId ?? body.chat;
   let delivery: Promise<FeishuSentMessage>;
   if (body.replyToMessageId) {

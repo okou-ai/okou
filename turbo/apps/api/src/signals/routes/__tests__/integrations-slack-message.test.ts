@@ -751,7 +751,7 @@ describe("POST /api/integrations/slack/message", () => {
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
     expect(footerCtx.elements![0]!.text).toMatch(
-      /^Sent via My Assistant · Triggered by <@U_.+> · Claude Sonnet 5\.5$/u,
+      /^Sent via My Assistant · Triggered by <@U_.+>$/u,
     );
   });
 
@@ -793,7 +793,7 @@ describe("POST /api/integrations/slack/message", () => {
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
     expect(footerCtx.elements![0]!.text).toBe(
-      `Sent via My Assistant · Triggered by <@${slackUserId}> · Claude Sonnet 5.5`,
+      `Sent via My Assistant · Triggered by <@${slackUserId}>`,
     );
   });
 });

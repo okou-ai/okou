@@ -1237,7 +1237,7 @@ describe("Teams chat callbacks", () => {
           },
         });
         expect(teamsApi.postedActivities[0]?.text).toBe(
-          "Task completed successfully.\n\n_Claude Fable 5.1_",
+          "Task completed successfully.",
         );
         expect(teamsApi.reactionRequests).toStrictEqual([
           {

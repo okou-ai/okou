@@ -247,7 +247,7 @@ describe("lazy Discord reply threads", () => {
     expect(started.provider.sentMessages).toHaveLength(1);
     expect(started.provider.sentMessages[0]).toMatchObject({
       channel_id: started.channelId,
-      content: `${firstText}\n\n_Claude Fable 5.1_`,
+      content: firstText,
     });
 
     const channelId = uniqueDiscordSnowflake();
@@ -322,7 +322,7 @@ describe("lazy Discord reply threads", () => {
       replies.map((message) => {
         return { channelId: message.channel_id, content: message.content };
       }),
-    ).toStrictEqual([{ channelId, content: `${text}\n\n_Claude Fable 5.1_` }]);
+    ).toStrictEqual([{ channelId, content: text }]);
     const completedEvents = await readProjectedChatEvents(context, {
       threadId: started.threadId,
       headers: { authorization: "Bearer clerk-session" },
@@ -346,9 +346,9 @@ describe("lazy Discord reply threads", () => {
     ).toStrictEqual([
       {
         channelId: started.channelId,
-        content: `${firstText}\n\n_Claude Fable 5.1_`,
+        content: firstText,
       },
-      { channelId, content: `${text}\n\n_Claude Fable 5.1_` },
+      { channelId, content: text },
     ]);
   });
 
@@ -507,8 +507,8 @@ describe("canonical Discord terminal replies", () => {
       channel_id: started.channelId,
       content: expect.stringContaining("The Discord task is complete."),
     });
-    expect(started.provider.sentMessages[0]?.content).toContain(
-      "Claude Fable 5.1",
+    expect(started.provider.sentMessages[0]?.content).toBe(
+      "The Discord task is complete.",
     );
     const events = await readProjectedChatEvents(context, {
       threadId: started.threadId,
@@ -589,7 +589,7 @@ describe("canonical Discord terminal replies", () => {
     });
   });
 
-  it("delivers a long reply in order to the original destination with one model footer", async () => {
+  it("delivers a long reply in order to the original destination", async () => {
     const started = await startDiscordRun();
     const claim = await claimRun(started.actor, started.runId);
     const text = "A long Discord answer. ".repeat(180);
@@ -606,9 +606,7 @@ describe("canonical Discord terminal replies", () => {
         }),
       ),
     ).toStrictEqual(new Set([started.channelId]));
-    expect(sentContents(started).join("")).toBe(
-      `${text}\n\n_Claude Fable 5.1_`,
-    );
+    expect(sentContents(started).join("")).toBe(text);
   });
 
   it("delivers the canonical safe run error without exposing the internal failure", async () => {

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  getModelDisplayName,
-  getRunModelDisplayName,
-} from "../model-display-name";
+import { getModelDisplayName } from "../model-display-name";
 import {
   AUTO_RUN_MODEL,
   AUTO_RUN_PRICING_PROVIDER,
@@ -38,7 +35,6 @@ describe("selected and runtime Auto identities", () => {
       };
       expect(userMessageDocumentSchema.parse(document)).toEqual(document);
       expect(getModelDisplayName(selectedModel)).toBe("Auto");
-      expect(getRunModelDisplayName(selectedModel, null)).toBeUndefined();
       expect(
         userMessageDocumentSchema.safeParse({
           version: 1,
