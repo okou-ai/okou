@@ -316,6 +316,7 @@ const groupMessageTarget$ = computed(async (get) => {
   if (!body.ok) {
     return undefined;
   }
+  // Archived messages locate the conversation; the provider roster authorizes sends.
   const [target] = await get(db$)
     .select({
       conversationId: agentphoneMessages.conversationId,
@@ -323,10 +324,6 @@ const groupMessageTarget$ = computed(async (get) => {
       phoneHandle: agentphoneUserLinks.phoneHandle,
     })
     .from(agentphoneMessages)
-    .innerJoin(
-      agentphoneMessageVisibility,
-      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-    )
     .innerJoin(
       agentphoneUserLinks,
       and(
@@ -336,8 +333,6 @@ const groupMessageTarget$ = computed(async (get) => {
     )
     .where(
       and(
-        eq(agentphoneMessageVisibility.orgId, auth.orgId),
-        eq(agentphoneMessageVisibility.userId, auth.userId),
         eq(agentphoneMessages.groupId, body.data.groupId),
         eq(agentphoneMessages.channel, "imessage"),
         isNotNull(agentphoneMessages.conversationId),
