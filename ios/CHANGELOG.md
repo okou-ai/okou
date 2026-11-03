@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.1](https://github.com/okou-ai/okou/compare/ios-v0.23.0...ios-v0.23.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** keep failures with their owning operation ([#44813](https://github.com/okou-ai/okou/issues/44813)) ([1c24557](https://github.com/okou-ai/okou/commit/1c2455761e6ddc487804be3168637a431a9c327f))
+* **ios:** recover background sync without blocking the composer ([#44815](https://github.com/okou-ai/okou/issues/44815)) ([ad45490](https://github.com/okou-ai/okou/commit/ad4549007c15462a926faafa1a107b63fc0c0d0a))
+* use chat consistently in interface copy ([#44841](https://github.com/okou-ai/okou/issues/44841)) ([cab1f61](https://github.com/okou-ai/okou/commit/cab1f617736d9918070fae7060b92f01f7d7e1b1))
+
 ## [0.23.0](https://github.com/okou-ai/okou/compare/ios-v0.22.6...ios-v0.23.0) (2026-11-02)
 
 

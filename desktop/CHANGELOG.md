@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.4](https://github.com/okou-ai/okou/compare/desktop-v0.55.3...desktop-v0.55.4) (2026-11-03)
+
+
+### Bug Fixes
+
+* **desktop:** give authenticated deadlines one cancellation owner ([#44842](https://github.com/okou-ai/okou/issues/44842)) ([efec2a8](https://github.com/okou-ai/okou/commit/efec2a86cb1ca396372f49361f3bb5a10b75cc8d))
+
 ## [0.55.3](https://github.com/okou-ai/okou/compare/desktop-v0.55.2...desktop-v0.55.3) (2026-11-02)
 
 
