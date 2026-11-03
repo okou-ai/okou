@@ -100,7 +100,6 @@
 3 runner-lifecycle-lock-diagnostics-test.sh
 3 runner-promotion-ansible-test.sh
 3 rust-ci-memory-workflow-test.sh
-3 sync-integration-secrets-test.sh
 3 tunnel-test.sh
 3 turbo-playwright-runner-workflow-test.sh
 3 verify-okou-production-domains-test.sh

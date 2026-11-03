@@ -51,5 +51,5 @@ jobs:
       - name: Read Discord discovery metadata without opening a bot session
         env:
           DISCORD_APPLICATION_ID: ${{ steps.doppler.outputs.DISCORD_APPLICATION_ID }}
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_BOT_TOKEN: ${{ steps.doppler.outputs.DISCORD_BOT_TOKEN }}
         run: python3 .github/scripts/diagnose-discord-gateway.py

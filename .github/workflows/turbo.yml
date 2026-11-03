@@ -16,10 +16,6 @@ on:
     secrets:
       ABLY_API_KEY:
         required: false
-      AGENTPHONE_API_KEY:
-        required: false
-      AGENTPHONE_WEBHOOK_SECRET:
-        required: false
       AWS_METAL_RUNNER_HOSTS:
         required: false
       AWS_METAL_RUNNER_SSH_KEY:
@@ -42,23 +38,11 @@ on:
         required: false
       CRON_SECRET:
         required: false
-      DISCORD_BOT_TOKEN:
-        required: false
-      DISCORD_GATEWAY_SECRET:
-        required: false
       FAL_KEY:
-        required: false
-      FINICITY_APP_KEY:
-        required: false
-      FINICITY_APP_SECRET:
-        required: false
-      GOOGLE_ADS_DEVELOPER_TOKEN:
         required: false
       GOOGLE_ADS_LOGIN_CUSTOMER_ID:
         required: false
       MARKETING_HANDOFF_PUBLISH_TOKEN_DEV:
-        required: false
-      MICROSOFT_TEAMS_BOT_APP_PASSWORD:
         required: false
       NEON_API_KEY:
         required: false
@@ -69,12 +53,6 @@ on:
       OKOU_DATA_TOKEN:
         required: false
       OKOU_BROWSER_USE_API_KEY:
-        required: false
-      OKOU_GITHUB_APP_CLIENT_SECRET:
-        required: false
-      OKOU_GITHUB_APP_PRIVATE_KEY:
-        required: false
-      OKOU_GITHUB_APP_WEBHOOK_SECRET:
         required: false
       OKOU_MACHINE_SECRET_KEY:
         required: false
@@ -112,10 +90,6 @@ on:
         required: false
       R2_USER_ARTIFACTS_SECRET_ACCESS_KEY:
         required: false
-      RESEND_API_KEY:
-        required: false
-      RESEND_WEBHOOK_SECRET:
-        required: false
       SECRETS_ENCRYPTION_KEY:
         required: false
       SENTRY_AUTH_TOKEN:
@@ -126,33 +100,15 @@ on:
         required: false
       SENTRY_DSN_WEB:
         required: false
-      SLACK_SIGNING_SECRET:
-        required: false
-      STEAM_WEB_API_KEY:
-        required: false
-      STRIPE_AUTOMATION_WEBHOOK_SECRET:
-        required: false
       STRIPE_SECRET_KEY:
         required: false
       STRIPE_WEBHOOK_SECRET:
-        required: false
-      TELEGRAM_OFFICIAL_BOT_TOKEN:
-        required: false
-      TELEGRAM_OFFICIAL_WEBHOOK_SECRET:
         required: false
       VAPID_PRIVATE_KEY:
         required: false
       VERCEL_AUTOMATION_BYPASS_SECRET:
         required: false
       VERCEL_TOKEN:
-        required: false
-      LINK_APPROVAL_WORKER_SECRET:
-        required: false
-      LINK_APPROVAL_CONTROL_SECRET:
-        required: false
-      WECHAT_GATEWAY_CONTROL_SECRET:
-        required: false
-      WECHAT_GATEWAY_SECRET:
         required: false
 
 # The staging caller holds its lock through E2E and cleanup. This per-run group

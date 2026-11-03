@@ -59,7 +59,7 @@ jobs:
       - name: Inspect, reconcile, and verify Discord commands
         env:
           DISCORD_APPLICATION_ID: ${{ steps.doppler.outputs.DISCORD_APPLICATION_ID }}
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_BOT_TOKEN: ${{ steps.doppler.outputs.DISCORD_BOT_TOKEN }}
           APPLY: ${{ inputs.apply }}
         run: |
           set -euo pipefail
