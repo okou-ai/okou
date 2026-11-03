@@ -36,6 +36,7 @@ export class WindowScope {
     { readonly parents: readonly string[] }
   >();
   private readonly creating = new Set<string>();
+  private readonly preparingTabs = new Set<number>();
   private readonly created = new Map<string, string>();
   private readonly closingTargets = new Set<string>();
   private closing = Promise.resolve();
@@ -379,6 +380,7 @@ export class WindowScope {
         const usable = window.tabs.filter((tab) => {
           const locations = [tab.url, tab.pendingUrl];
           return (
+            !this.preparingTabs.has(tab.id) &&
             locations.some(Boolean) &&
             !locations.some((url) => {
               return (
@@ -449,7 +451,7 @@ export class WindowScope {
     return { page, inventory: inventory.targetInfos.map(targetInfo) };
   }
 
-  private async place(createdId: string, marker: string): Promise<void> {
+  private async place(createdId: string, marker: string): Promise<number> {
     const location = await this.wire.request("Browser.getWindowForTarget", {
       targetId: createdId,
     });
@@ -482,6 +484,7 @@ export class WindowScope {
       )
         throw new Error("Created tab placement is unconfirmed");
     }
+    return tab.id;
   }
 
   private async navigateCreated(targetId: string, url: string): Promise<void> {
@@ -520,6 +523,7 @@ export class WindowScope {
     const marker = CREATION_PREFIX + randomUUID();
     let createdId: string | undefined;
     let createdPageId: string | undefined;
+    let preparingTabId: number | undefined;
     try {
       const result = await create({ ...params, url: marker });
       if (!record(result) || typeof result.targetId !== "string")
@@ -529,7 +533,10 @@ export class WindowScope {
       const { inventory, page } = await this.createdPage(marker);
       createdPageId = page.targetId;
       this.creating.add(page.targetId);
-      await this.place(createdId, marker);
+      preparingTabId = await this.place(createdId, marker);
+      // Native URLs can commit before navigation/detach/membership completes.
+      // Keep that exact tab out of close survivors until creation or rollback ends.
+      this.preparingTabs.add(preparingTabId);
       await this.navigateCreated(page.targetId, params.url || "about:blank");
       this.targets.set(page.targetId, {
         ...page,
@@ -561,6 +568,8 @@ export class WindowScope {
       }
       throw error;
     } finally {
+      if (preparingTabId !== undefined)
+        this.preparingTabs.delete(preparingTabId);
       if (createdId) this.creating.delete(createdId);
       if (createdPageId) this.creating.delete(createdPageId);
     }
@@ -576,6 +585,7 @@ export class WindowScope {
     this.membership.clear();
     this.descendants.clear();
     this.creating.clear();
+    this.preparingTabs.clear();
     this.created.clear();
     this.closingTargets.clear();
     this.targets.clear();

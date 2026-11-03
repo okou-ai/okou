@@ -179,6 +179,7 @@ export async function browserCdpProvider() {
   let nextSession = 0;
   let nextTarget = 0;
   let rejectRelated = false;
+  let rejectDetach = false;
   let heldWindowLookup: HeldWindowLookup | undefined;
   let heldNavigation: HeldAction | undefined;
   const heldCloses = new Map<string, HeldClose>();
@@ -476,6 +477,11 @@ export async function browserCdpProvider() {
           else reply(attach(connection, String(params.targetId), sessionId));
         },
         "Target.detachFromTarget": () => {
+          if (rejectDetach) {
+            rejectDetach = false;
+            fail(-32000, "Native detach unavailable");
+            return;
+          }
           if (!connection.sessions.has(String(params.sessionId))) {
             fail(-32602, "No session with given id");
             return;
@@ -789,6 +795,9 @@ export async function browserCdpProvider() {
     },
     rejectNextRelated() {
       rejectRelated = true;
+    },
+    rejectNextDetach() {
+      rejectDetach = true;
     },
     holdNextNavigation() {
       if (heldNavigation)
