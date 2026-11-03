@@ -23,21 +23,20 @@ export async function parseProviderTokenResponse<T>(
     throw error;
   }
 
-  if (payload !== null && typeof payload === "object" && "error" in payload) {
-    const oauthError = standardOAuthErrorCode(payload.error);
-    if (oauthError) {
-      // Some providers return OAuth errors with HTTP 200. Preserve the error
-      // code so callers can still require reconnection for invalid_grant.
-      throw new OAuthProviderHttpError(
-        failureMessage,
-        response.status,
-        oauthError,
-      );
-    }
-  }
-
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
+    if (payload !== null && typeof payload === "object" && "error" in payload) {
+      const oauthError = standardOAuthErrorCode(payload.error);
+      if (oauthError) {
+        // Preserve standard errors that otherwise look like an invalid token
+        // payload. Schema-valid error envelopes belong to the provider handler.
+        throw new OAuthProviderHttpError(
+          failureMessage,
+          response.status,
+          oauthError,
+        );
+      }
+    }
     throw new ProviderResponseError(
       failureMessage,
       {
