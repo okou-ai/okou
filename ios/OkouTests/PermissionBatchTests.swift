@@ -119,6 +119,28 @@ final class PermissionBatchTests: XCTestCase {
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
   }
 
+  func testContinueAfterRevocationRequiresAnotherExplicitGrantConfirmation() async throws {
+    var state = F.State()
+    state.loseBatchResponseOnce = true
+    let fixture = fixture(state)
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    await card.confirm()
+    XCTAssertTrue(card.needsContinuation)
+    fixture.state.withLock { $0.grants.removeAll { $0.permission == "mail.send" } }
+    await card.confirm()
+    XCTAssertNotNil(card.error)
+    XCTAssertFalse(card.allAllowed)
+    XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
+    XCTAssertEqual(
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
+    // The next confirmation now approves the missing permission, not a continuation.
+    await card.confirm()
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
+    XCTAssertEqual(
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
+  }
+
   func testLostContinuationReceiptReadsEventBeforeRetryingAndDoesNotRegrant() async throws {
     var state = F.State()
     state.loseResumeResponseOnce = true

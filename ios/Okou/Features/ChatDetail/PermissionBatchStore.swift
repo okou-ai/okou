@@ -96,6 +96,7 @@ final class PermissionBatchStore {
   func confirm() async {
     guard canConfirm, let reviewed = snapshot, operation == nil, !Task.isCancelled else { return }
     isSaving = true
+    isContinuing = reviewed.allAllowed && action.callbackPrompt != nil && !hasContinued
     error = nil
     let generation = generation
     let task = Task { [weak self] in
@@ -108,36 +109,28 @@ final class PermissionBatchStore {
         }
       }
       do {
-        try await commands.batchPermissions.validateContext(action)
-        let current = try await commands.batchPermissions.load(action)
-        try Task.checkCancellation()
-        guard !closed, self.generation == generation else { return }
-        snapshot = current
-        guard current.complete else {
-          throw ChatError.invalidContract("These permissions are no longer available.")
-        }
-        guard current.connectorScoped == reviewed.connectorScoped else {
-          throw ChatError.invalidContract("Permission scope changed. Review the request again.")
-        }
-        if !current.allAllowed {
-          let saved = try await commands.batchPermissions.apply(
-            action, duration: duration, expectedConnectorScoped: reviewed.connectorScoped)
-          try Task.checkCancellation()
-          guard !closed, self.generation == generation else { return }
-          snapshot = saved
-        }
-        try Task.checkCancellation()
-        guard !closed, self.generation == generation else { return }
-        if needsContinuation, let prompt = action.callbackPrompt {
-          isContinuing = true
-          // Revalidate effective grants before continuing, even after a successful save.
-          let verified = try await commands.batchPermissions.load(action)
-          try Task.checkCancellation()
-          guard !closed, self.generation == generation else { return }
-          snapshot = verified
-          guard allAllowed else {
+        let verified: ChatPermissionBatchSnapshot
+        if reviewed.allAllowed {
+          // "Continue chat" never silently re-grants a permission revoked after review.
+          try await commands.batchPermissions.validateContext(action)
+          let current = try await commands.batchPermissions.load(action)
+          guard current.connectorScoped == reviewed.connectorScoped else {
+            throw ChatError.invalidContract("Permission scope changed. Review the request again.")
+          }
+          guard current.allAllowed else {
             throw ChatError.invalidContract("Some permissions are no longer allowed. Review again.")
           }
+          verified = current
+        } else {
+          // The service verifies the current scope and grants, then reads back the save.
+          verified = try await commands.batchPermissions.apply(
+            action, duration: duration, expectedConnectorScoped: reviewed.connectorScoped)
+        }
+        try Task.checkCancellation()
+        guard !closed, self.generation == generation else { return }
+        snapshot = verified
+        if needsContinuation, let prompt = action.callbackPrompt {
+          isContinuing = true
           try await commands.batchPermissions.validateContext(action)
           let history = try await sync.history(threadID: action.threadID)
           if !history.persistedEventIDs.contains(clientEventID) {

@@ -138,6 +138,7 @@ public struct ChatBatchPermissions: Sendable {
           grants: missing.map { Grant(permission: $0.permission, expiresIn: duration) })
     }
     try Task.checkCancellation()
+    if groups.isEmpty { return current }
     if current.connectorScoped {
       let permissions = ChatPermissions(client: client)
       // This path can partially succeed across connectors. The owner must read back on failure.
@@ -157,7 +158,7 @@ public struct ChatBatchPermissions: Sendable {
           })
         else { throw APIClientError.invalidResponse }
       }
-    } else if !groups.isEmpty {
+    } else {
       struct Body: Encodable {
         let agentId: String
         let groups: [Group]
