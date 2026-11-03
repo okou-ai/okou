@@ -10,16 +10,9 @@ use tokio::runtime::Builder;
 
 use crate::gc::{ExistingLockProbe, probe_existing_lock};
 use crate::lock::lock_matches_path;
+use crate::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseWorkerOnDrop;
 
 const WAIT: Duration = Duration::from_secs(5);
-
-struct ReleaseWorkerOnDrop(mpsc::Sender<()>);
-
-impl Drop for ReleaseWorkerOnDrop {
-    fn drop(&mut self) {
-        let _ = self.0.send(());
-    }
-}
 
 /// Cancel the observer while physical removal is queued behind an occupied
 /// blocking worker. Verify the actual named locks remain held, then release the
@@ -36,7 +29,7 @@ pub fn cancel_queued_removal(
     let (started, started_rx) = mpsc::sync_channel(0);
     let (release, release_rx) = mpsc::channel();
     // Release on every exit, including assertion unwinding, before Runtime drops.
-    let gate = ReleaseWorkerOnDrop(release);
+    let gate = ReleaseWorkerOnDrop::new(release);
     let worker = runtime.spawn_blocking(move || {
         started
             .send(())

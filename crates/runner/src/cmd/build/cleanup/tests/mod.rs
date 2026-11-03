@@ -1,9 +1,10 @@
 use std::path::Path;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use nix::errno::Errno;
 use nix::fcntl::FlockArg;
+use runner_host::test_fixtures::blocking_worker::BlockingWorkerRelease;
 use runner_host::{lock, paths::HomePaths};
 
 use super::super::{
@@ -12,7 +13,8 @@ use super::super::{
 use super::*;
 
 struct BlockingSlot {
-    release: Option<Sender<()>>,
+    // Release before the task handle is dropped on every exit.
+    release: Option<BlockingWorkerRelease>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -26,22 +28,14 @@ impl BlockingSlot {
         });
         started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         Self {
-            release: Some(release),
+            release: Some(BlockingWorkerRelease::new(release)),
             task,
         }
     }
 
     fn finish(&mut self, runtime: &tokio::runtime::Runtime) {
-        self.release.take().unwrap().send(()).unwrap();
+        self.release.take().unwrap().release().unwrap();
         runtime.block_on(&mut self.task).unwrap();
-    }
-}
-
-impl Drop for BlockingSlot {
-    fn drop(&mut self) {
-        if let Some(release) = self.release.take() {
-            let _ = release.send(());
-        }
     }
 }
 

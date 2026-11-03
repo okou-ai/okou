@@ -1,21 +1,14 @@
 use std::os::unix::fs::PermissionsExt;
 use std::sync::mpsc;
 
+use runner_host::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseBlockingWorker;
+
 use super::*;
-
-// Releasing on unwind keeps a failing assertion from pinning runtime shutdown.
-struct ReleaseBlockingWorker(mpsc::Sender<()>);
-
-impl Drop for ReleaseBlockingWorker {
-    fn drop(&mut self) {
-        let _ = self.0.send(());
-    }
-}
 
 async fn occupy_blocking_worker() -> (ReleaseBlockingWorker, tokio::task::JoinHandle<()>) {
     let (entered, started) = tokio::sync::oneshot::channel();
     let (release, wait) = mpsc::channel();
-    let release = ReleaseBlockingWorker(release);
+    let release = ReleaseBlockingWorker::new(release);
     let worker = tokio::task::spawn_blocking(move || {
         entered.send(()).unwrap();
         wait.recv_timeout(Duration::from_secs(5))
