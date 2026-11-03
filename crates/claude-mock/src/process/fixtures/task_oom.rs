@@ -27,19 +27,19 @@ import json, math, os, select, subprocess, sys, time
 def task_stage(stage):
     print("task OOM stage: " + stage, file=sys.stderr, flush=True)
 
-def task_remaining(stage, cap=None):
+def task_remaining(stage):
     deadline = float(os.environ["VM0_TEST_TASK_DEADLINE"])
     remaining = deadline - time.monotonic()
     if not math.isfinite(deadline) or remaining <= 0:
         raise TimeoutError(stage + ": task fixture deadline expired")
-    return min(remaining, cap) if cap is not None else remaining
+    return remaining
 
 def wait_for_allocators(fd, count):
     task_stage("await all resident allocators")
     with os.fdopen(fd, "rb", buffering=0) as reports:
         pending = count
         while pending:
-            if not select.select([reports], [], [], task_remaining("allocator readiness", 5))[0]:
+            if not select.select([reports], [], [], task_remaining("allocator readiness"))[0]:
                 raise TimeoutError("allocator readiness: missing worker report")
             ready = os.read(reports.fileno(), pending)
             if not ready:
@@ -47,6 +47,7 @@ def wait_for_allocators(fd, count):
             if ready != b"R" * len(ready):
                 raise RuntimeError("allocator readiness: invalid worker report")
             pending -= len(ready)
+            task_stage("resident allocators: " + str(count - pending) + "/" + str(count))
 
 def launch(program, stdin=subprocess.DEVNULL):
     read_fd, report_fd = os.pipe()
@@ -58,7 +59,7 @@ def launch(program, stdin=subprocess.DEVNULL):
     os.close(report_fd)
     try:
         with os.fdopen(read_fd) as report:
-            assert select.select([report], [], [], task_remaining("task admission", 5))[0], "task admission timed out"
+            assert select.select([report], [], [], task_remaining("task admission"))[0], "task admission timed out"
             startup = json.loads(report.readline(4097))
         assert startup["pid"] == child.pid
         return child, startup

@@ -58,6 +58,32 @@ else:
 }
 
 #[test]
+fn allocator_readiness_consumes_the_operation_budget() -> Result<(), Box<dyn std::error::Error>> {
+    run_protocol(
+        r#"
+import os, time
+exec(os.environ["VM0_TEST_TASK_SUPPORT"])
+# Observe the actual select budget while retaining real pipe I/O. No clock
+# advancement or real-time wait is needed to catch a per-stage timeout cap.
+native_select = select.select
+observed = []
+def observe_select(readers, writers, errors, timeout):
+    observed.append((timeout, task_remaining("select observation")))
+    return native_select(readers, writers, errors, timeout)
+select.select = observe_select
+for budget in [15, 2]:
+    os.environ["VM0_TEST_TASK_DEADLINE"] = str(time.monotonic() + budget)
+    read_fd, write_fd = os.pipe()
+    os.write(write_fd, b"RRRR")
+    os.close(write_fd)
+    wait_for_allocators(read_fd, 4)
+    timeout, remaining = observed[-1]
+    assert remaining <= timeout <= budget, observed
+"#,
+    )
+}
+
+#[test]
 fn task_deadline_fails_with_stage_without_resetting_budget()
 -> Result<(), Box<dyn std::error::Error>> {
     run_protocol(

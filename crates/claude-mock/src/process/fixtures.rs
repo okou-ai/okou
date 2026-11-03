@@ -34,9 +34,7 @@ const OVERSIZED_RECORD_HEAD: &str =
 const TOOL_OOM_PARENT_HEADROOM_BYTES: u64 = 192 * 1024 * 1024;
 const TOOL_OOM_RUNTIME_BYTES: usize = 128 * 1024 * 1024;
 const TOOL_OOM_INJECTED_OFFENDER_BYTES: usize = 384 * 1024 * 1024;
-const TOOL_MARKER_TIMEOUT: Duration = Duration::from_secs(5);
-const TOOL_COMPLETION_TIMEOUT: Duration = Duration::from_secs(5);
-const TOOL_OOM_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
+const TOOL_OOM_TIMEOUT: Duration = Duration::from_secs(15);
 const TOOL_OOM_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const TOOL_OOM_SURVIVOR_CGROUP: &str = "/tmp/vm0-tool-oom-survivor.cgroup";
 const TOOL_OOM_OFFENDER_CGROUP: &str = "/tmp/vm0-tool-oom-offender.cgroup";
@@ -641,6 +639,9 @@ pub(super) fn run_parallel_shell_tool_oom_scenario(
 }
 
 fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
+    // Readiness is an observable prerequisite, not a separate allocation-speed
+    // requirement. Preparation and OOM recovery share one bounded operation.
+    let deadline = Instant::now() + TOOL_OOM_TIMEOUT;
     let guest_wide = mode.guest_wide();
     let runtime_relative = unified_cgroup_path(std::process::id())?;
     let runtime_suffix = "/workload/runtime";
@@ -754,6 +755,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .survivor
             .as_mut()
             .ok_or_else(|| "survivor process is missing".to_string())?,
+        deadline,
     )?;
 
     let offender_script = if mode.managed_tasks() {
@@ -789,7 +791,10 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             )
             .env(
                 "VM0_TEST_TASK_TIMEOUT_SECONDS",
-                TOOL_OOM_CONVERGENCE_TIMEOUT.as_secs().to_string(),
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_secs_f64()
+                    .to_string(),
             )
             .stderr(
                 fixture
@@ -813,7 +818,9 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .offender
             .as_mut()
             .ok_or_else(|| "offender process is missing".to_string())?,
-    )?;
+        deadline,
+    )
+    .map_err(|error| fixture.with_task_diagnostics(error))?;
 
     validate_tool_cgroup(&survivor_relative, &tools_relative)?;
     if mode.managed_tasks() {
@@ -841,11 +848,15 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .offender
             .as_mut()
             .ok_or("task controller is missing")?;
-        let ready_relative = wait_for_tool_marker(task_oom::READY, controller)?;
+        let ready = wait_for_tool_marker(task_oom::READY, controller, deadline);
+        let ready_relative = ready.map_err(|error| fixture.with_task_diagnostics(error))?;
         if ready_relative != offender_relative {
             return Err("resident task readiness belongs to a different cgroup".into());
         }
-        if let Some(status) = controller
+        if let Some(status) = fixture
+            .offender
+            .as_mut()
+            .ok_or("task controller is missing")?
             .try_wait()
             .map_err(|error| format!("inspect task controller before OOM injection: {error}"))?
         {
@@ -870,18 +881,19 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .offender
             .as_mut()
             .ok_or_else(|| "offender process is missing".to_string())?,
-        TOOL_OOM_CONVERGENCE_TIMEOUT,
+        deadline,
         "offender Bash tool",
     )
     .map_err(|error| {
-        if mode.guest_pressure() {
+        let error = if mode.guest_pressure() {
             format!(
                 "{error}; {}",
                 guest_pressure_diagnostics(workload_path, &offender_path)
             )
         } else {
             error
-        }
+        };
+        fixture.with_task_diagnostics(error)
     })?;
     fixture.offender = None;
     if !(if mode.managed_tasks() {
@@ -893,7 +905,6 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             "offender Bash tool was not killed as a group: {offender_status}"
         ));
     }
-    let deadline = Instant::now() + TOOL_COMPLETION_TIMEOUT;
     while if mode.managed_tasks() {
         task_oom::root_path(&tools_relative)?
             .try_exists()
@@ -940,8 +951,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
 
     std::fs::write(TOOL_OOM_SURVIVOR_RELEASE, b"release\n")
         .map_err(|error| format!("release survivor Bash tool: {error}"))?;
-    let survivor_status =
-        wait_for_child_exit(survivor, TOOL_COMPLETION_TIMEOUT, "survivor Bash tool")?;
+    let survivor_status = wait_for_child_exit(survivor, deadline, "survivor Bash tool")?;
     fixture.survivor = None;
     if !survivor_status.success() {
         return Err(format!(
@@ -1048,6 +1058,16 @@ impl ParallelToolOomFixture {
         self.memory_max_restored = true;
         Ok(())
     }
+
+    fn with_task_diagnostics(&self, error: String) -> String {
+        match &self.task_diagnostics {
+            Some(file) => format!(
+                "{error}; nested task OOM diagnostics (bounded tail):\n{}",
+                task_oom::diagnostics_tail(file).unwrap_or_else(|error| error)
+            ),
+            None => error,
+        }
+    }
 }
 
 impl Drop for ParallelToolOomFixture {
@@ -1095,8 +1115,11 @@ impl Drop for ParallelToolOomFixture {
     }
 }
 
-fn wait_for_tool_marker(path: &str, child: &mut Child) -> Result<String, String> {
-    let deadline = Instant::now() + TOOL_MARKER_TIMEOUT;
+fn wait_for_tool_marker(
+    path: &str,
+    child: &mut Child,
+    deadline: Instant,
+) -> Result<String, String> {
     loop {
         match std::fs::read_to_string(path) {
             Ok(contents) if !contents.trim().is_empty() => return Ok(contents.trim().to_string()),
@@ -1113,7 +1136,9 @@ fn wait_for_tool_marker(path: &str, child: &mut Child) -> Result<String, String>
             ));
         }
         if Instant::now() >= deadline {
-            return Err(format!("Bash tool did not publish cgroup marker {path}"));
+            return Err(format!(
+                "Bash tool did not publish cgroup marker {path} before the OOM fixture deadline"
+            ));
         }
         std::thread::sleep(TOOL_OOM_POLL_INTERVAL);
     }
@@ -1121,10 +1146,9 @@ fn wait_for_tool_marker(path: &str, child: &mut Child) -> Result<String, String>
 
 fn wait_for_child_exit(
     child: &mut Child,
-    timeout: Duration,
+    deadline: Instant,
     description: &str,
 ) -> Result<std::process::ExitStatus, String> {
-    let deadline = Instant::now() + timeout;
     loop {
         if let Some(status) = child
             .try_wait()
@@ -1133,7 +1157,9 @@ fn wait_for_child_exit(
             return Ok(status);
         }
         if Instant::now() >= deadline {
-            return Err(format!("{description} did not exit within {timeout:?}"));
+            return Err(format!(
+                "{description} did not exit before the OOM fixture deadline"
+            ));
         }
         std::thread::sleep(TOOL_OOM_POLL_INTERVAL);
     }
