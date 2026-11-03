@@ -3429,6 +3429,10 @@ function createNavigationGraph(
       : null;
   });
   const navigationScope$ = computed((get) => {
+    const crash = get(context.crashed$);
+    if (crash) {
+      return crash;
+    }
     const selected = get(get(links$).selectedSession$);
     return selected && get(selected.current$)
       ? selected.navigation.scope

@@ -352,7 +352,7 @@ test.each(["Target.attachToTarget", "Page.reload"])(
   },
 );
 
-test("A rejected reload stays unavailable until a deliberate new action", async () => {
+test("A rejected reload stays unavailable without carrying its error into another crashed tab", async () => {
   const browser = await openViewer();
   act(() => {
     browser.crash("example-page");
@@ -371,6 +371,18 @@ test("A rejected reload stays unavailable until a deliberate new action", async 
   ).toHaveLength(1);
   click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
   await ready("https://other.example.com");
+  act(() => {
+    browser.crash("other-page");
+  });
+  await unavailable();
+  expect(
+    screen.queryByText(
+      "The browser action could not be completed. Check the browser before trying again.",
+    ),
+  ).toBeNull();
+  click(screen.getByText("Reload", { selector: "button" }));
+  await ready("https://other.example.com");
+  await navigateTo("https://sibling-crash-recovery.example/");
 });
 
 test("Hiding the viewer cancels a pending crash reload even if visibility returns before its reply", async () => {
