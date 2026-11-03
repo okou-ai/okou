@@ -459,6 +459,127 @@ test("A handled background lookup stays quiet while the selected page remains us
   expect(sentry.reports).toHaveLength(0);
 });
 
+test.each([
+  "net::ERR_ABORTED",
+  "net::ERR_BLOCKED_BY_CLIENT",
+  "net::ERR_BLOCKED_BY_ADMINISTRATOR",
+])(
+  "A native %s retains local feedback without a product exception",
+  async (reason) => {
+    const { browser, sentry } = await setupViewer(true);
+    await expectInputReady();
+    browser.rejectNextNavigation(reason);
+    await fill(screen.getByLabelText("Address"), "private-page.example");
+    await userEvent.keyboard("{Enter}");
+    await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+      "The browser action could not be completed. Check the browser before trying again.",
+    );
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
+    expect(sentry.reports).toHaveLength(0);
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Page.navigate";
+      }),
+    ).toHaveLength(1);
+
+    await fill(screen.getByLabelText("Address"), "recovered.example");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "http://recovered.example/",
+      );
+      expect(screen.getByLabelText("Address")).toBeEnabled();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(sentry.reports).toHaveLength(0);
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Page.navigate";
+      }),
+    ).toHaveLength(2);
+  },
+);
+
+test.each([
+  {
+    label: "A known native failure",
+    errorText: "net::ERR_NAME_NOT_RESOLVED",
+    reason: "net::ERR_NAME_NOT_RESOLVED",
+  },
+  {
+    label: "An unknown native failure",
+    errorText: "Failed at https://private-page.example/?token=private-secret",
+    reason: "unknown",
+  },
+  {
+    label: "An expected token with extra native text",
+    errorText:
+      "net::ERR_ABORTED https://private-page.example/?token=private-secret",
+    reason: "unknown",
+  },
+])(
+  "$label reports safe attribution and leaves the viewer usable",
+  async ({ errorText, reason }) => {
+    const { browser, sentry } = await setupViewer(true);
+    await expectInputReady();
+    browser.rejectNextNavigation(errorText);
+    await fill(screen.getByLabelText("Address"), "private-page.example");
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("alert");
+    await waitFor(() => {
+      expect(sentry.reports).toHaveLength(1);
+    });
+    expect(sentry.reports[0]).toMatchObject({
+      type: "exception",
+      error: {
+        name: "NavigationFault",
+        cause: {
+          name: "NativeNavigationFault",
+          reason,
+          request: { method: "Page.navigate" },
+        },
+      },
+      context: {
+        tags: { logger: "Promise" },
+        contexts: { browser_navigation: { method: "Page.navigate", reason } },
+      },
+    });
+    const diagnostic = JSON.stringify(
+      sentry.reports,
+      (_key, value: unknown) => {
+        return value instanceof Error
+          ? {
+              ...value,
+              message: value.message,
+              stack: value.stack,
+              cause: value.cause,
+            }
+          : value;
+      },
+    );
+    expect(diagnostic).not.toContain("private-");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Page.navigate";
+      }),
+    ).toHaveLength(1);
+
+    await fill(screen.getByLabelText("Address"), "recovered.example");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "http://recovered.example/",
+      );
+      expect(screen.getByLabelText("Address")).toBeEnabled();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(sentry.reports).toHaveLength(1);
+  },
+);
+
 test("An unhandled navigation request failure still reports without disconnecting", async () => {
   const { browser, sentry } = await setupViewer(true);
   await expectInputReady();

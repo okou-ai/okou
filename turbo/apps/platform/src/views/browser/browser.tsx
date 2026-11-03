@@ -770,6 +770,34 @@ function BrowserTabs({
   );
 }
 
+function useBrowserRecovery(signals: BrowserSignals) {
+  const controls = useGet(signals.controls$);
+  const displayRecovery = useGet(signals.displayRecovery$);
+  const imageRecovery = useGet(signals.imageRecovery$);
+  const navigationScope = useGet(signals.navigationScope$);
+  const [retryOperation, retryImage] = useLoadableSet(signals.retryImage$);
+  const [reconnectOperation, reconnect] = useLoadableSet(signals.reconnect$);
+  const [reloadOperation, navigate] = useLoadableSet(signals.navigate$);
+  const pending =
+    retryOperation.state === "loading" ||
+    reloadOperation.state === "loading" ||
+    reconnectOperation.state === "loading";
+  const failed =
+    displayRecovery !== null ||
+    (retryOperation.state === "hasError" &&
+      isBrowserOperationFailure(retryOperation.error)) ||
+    (reloadOperation.state === "hasError" &&
+      isBrowserOperationFailure(reloadOperation.error) &&
+      (!(reloadOperation.error instanceof NavigationFault) ||
+        reloadOperation.error.scope === navigationScope)) ||
+    (reconnectOperation.state === "hasError" &&
+      isBrowserOperationFailure(
+        reconnectOperation.error,
+        imageRecovery !== null || controls.streaming,
+      ));
+  return { pending, failed, retryImage, reconnect, navigate };
+}
+
 function BrowserStatus({
   signals,
   creating,
@@ -784,23 +812,9 @@ function BrowserStatus({
   const { t } = useTranslation();
   const controls = useGet(signals.controls$);
   const presentation = useGet(signals.presentation$);
-  const displayRecovery = useGet(signals.displayRecovery$);
-  const imageRecovery = useGet(signals.imageRecovery$);
   const pageSignal = useGet(pageSignal$);
-  const [retryOperation, retryImage] = useLoadableSet(signals.retryImage$);
-  const [reconnectOperation, reconnect] = useLoadableSet(signals.reconnect$);
-  const pending =
-    retryOperation.state === "loading" ||
-    reconnectOperation.state === "loading";
-  const failed =
-    displayRecovery !== null ||
-    (retryOperation.state === "hasError" &&
-      isBrowserOperationFailure(retryOperation.error)) ||
-    (reconnectOperation.state === "hasError" &&
-      isBrowserOperationFailure(
-        reconnectOperation.error,
-        imageRecovery !== null || controls.streaming,
-      ));
+  const { pending, failed, retryImage, reconnect, navigate } =
+    useBrowserRecovery(signals);
   if (contentVisible) {
     return (
       <BrowserOperationError
@@ -838,6 +852,21 @@ function BrowserStatus({
         <Loader2 size={20} className="animate-spin" />
       )}
       <p>{text}</p>
+      {controls.canReload && (
+        <Button
+          type="button"
+          variant="neutral"
+          size="sm"
+          disabled={pending}
+          onClick={() => {
+            detach(navigate("reload", pageSignal), Reason.DomCallback);
+          }}
+        >
+          {t(($) => {
+            return $.browserViewer.reload;
+          })}
+        </Button>
+      )}
       {controls.showImageRetry ? (
         <Button
           type="button"

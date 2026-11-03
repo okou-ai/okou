@@ -103,7 +103,7 @@ function createQueueOwnership(
   });
   const cancel$ = command((_context, entry: QueuedJob) => {
     if (entry.result && !entry.result.settled()) {
-      entry.result.reject(new Error("Input cancelled"));
+      entry.result.reject(new DOMException("Input cancelled", "AbortError"));
     }
   });
   const cancelPreparation$ = command(({ get, set }) => {
@@ -134,7 +134,7 @@ function createQueueOwnership(
   });
   const check$ = command(({ set }, job: InputJob) => {
     if (!set(owns$, job.owner)) {
-      throw new Error("Input cancelled");
+      throw new DOMException("Input cancelled", "AbortError");
     }
   });
   return {
@@ -218,7 +218,7 @@ function createQueueProtocol(
           releaseResult(result);
         }
         if (!current) {
-          throw new Error("Input cancelled");
+          throw new DOMException("Input cancelled", "AbortError");
         }
         return result;
       },

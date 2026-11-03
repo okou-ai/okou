@@ -64,6 +64,7 @@ export function mockBrowserCdp(
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
     readonly unavailableTargets?: readonly string[];
+    readonly crashedTargets?: readonly string[];
     readonly extensionAvailable?: boolean;
     readonly extensionRuntimeId?: string;
   } = {},
@@ -106,6 +107,7 @@ export function mockBrowserCdp(
   const sessionPeers = new Map<string, BrowserWebSocketPeer>();
   const discoveryPeers = new Set<BrowserWebSocketPeer>();
   const capturing = new Set<string>();
+  const crashedTargets = new Set(options.crashedTargets);
   const captures: unknown[] = [];
   const heldReplies = new Map<string, (response: ProtocolReply) => void>();
   const heldFrames = new Map<string, (sessionId: string) => void>();
@@ -174,6 +176,9 @@ export function mockBrowserCdp(
     const target = targets.find((candidate) => {
       return candidate.targetId === sessionTargets.get(sessionId);
     });
+    if (target && crashedTargets.has(target.targetId)) {
+      return;
+    }
     if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
       return;
     }
@@ -548,6 +553,13 @@ export function mockBrowserCdp(
 
   function pageResult(request: BrowserRequest): unknown {
     switch (request.method) {
+      case "Page.reload": {
+        const target = targetForSession(request.sessionId);
+        if (crashedTargets.delete(target.targetId)) {
+          navigate(request, target.url);
+        }
+        return {};
+      }
       case "Page.createIsolatedWorld": {
         return { executionContextId: 1 };
       }
@@ -652,6 +664,18 @@ export function mockBrowserCdp(
       return next(request);
     }
     switch (request.method.split(".")[0]) {
+      case "Inspector": {
+        if (
+          request.method === "Inspector.enable" &&
+          request.sessionId &&
+          crashedTargets.has(targetForSession(request.sessionId).targetId)
+        ) {
+          queueMicrotask(() => {
+            event("Inspector.targetCrashed", {}, request.sessionId);
+          });
+        }
+        return { result: {} };
+      }
       case "Target": {
         return { result: targetResult(request, peer) };
       }
@@ -753,6 +777,28 @@ export function mockBrowserCdp(
 
   return {
     event,
+    crash(
+      targetId: string,
+      notification: "session" | "target" | "both" | "none" = "both",
+    ) {
+      crashedTargets.add(targetId);
+      for (const [sessionId, target] of sessionTargets) {
+        if (target !== targetId || retiredSessions.has(sessionId)) {
+          continue;
+        }
+        capturing.delete(sessionId);
+        if (notification === "session" || notification === "both") {
+          event("Inspector.targetCrashed", {}, sessionId);
+        }
+      }
+      if (notification === "target" || notification === "both") {
+        event("Target.targetCrashed", {
+          targetId,
+          status: "crashed",
+          errorCode: 5,
+        });
+      }
+    },
     frame,
     targets,
     input,
@@ -811,6 +857,11 @@ export function mockBrowserCdp(
     failNext(method: string, message: string, code = -32_000) {
       nextResponses.set(method, () => {
         return { error: { code, message } };
+      });
+    },
+    rejectNextNavigation(errorText: string) {
+      nextResponses.set("Page.navigate", () => {
+        return { result: { frameId: "example-frame", errorText } };
       });
     },
     downloadNextNavigation() {

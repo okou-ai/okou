@@ -4,6 +4,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  type S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -209,6 +210,48 @@ describe("Marketing content handoff", () => {
         })
       ).status,
     ).toBe(200);
+  });
+
+  it("reuses the handoff transport across independent publication requests", async () => {
+    for (const prompt of ["First preset", "Second preset", "Third preset"]) {
+      await accept(
+        api().publish({ headers: publisher, body: manifest(prompt) }),
+        [200],
+      );
+    }
+    const configs = context.mocks.s3.clientConfig.mock.calls.map(([config]) => {
+      return config as S3ClientConfig;
+    });
+    expect(configs).toHaveLength(3);
+    const transport = configs[1]?.requestHandler;
+    expect(transport).toBeDefined();
+    expect(transport).toHaveProperty("handle", expect.any(Function));
+    expect(configs[2]?.requestHandler).toBe(transport);
+    for (const config of configs) {
+      expect(config.credentials).toMatchObject({
+        accessKeyId: "test-marketing-key",
+        secretAccessKey: "test-marketing-secret",
+      });
+    }
+  });
+
+  it("still rejects missing handoff credentials after the transport is initialized", async () => {
+    await accept(
+      api().publish({
+        headers: publisher,
+        body: manifest("Initialize transport"),
+      }),
+      [200],
+    );
+    mockEnv("R2_MARKETING_HANDOFF_ACCESS_KEY_ID", undefined);
+    await accept(
+      api().publish({
+        headers: publisher,
+        body: manifest("Missing credentials"),
+      }),
+      [500],
+    );
+    expect(context.mocks.s3.clientConfig).toHaveBeenCalledTimes(1);
   });
 
   it("allows a trusted published preset to be used repeatedly across accounts", async () => {

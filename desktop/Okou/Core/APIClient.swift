@@ -1,8 +1,6 @@
 import Foundation
 
-private struct APIRequestDeadlineExceeded: Error {
-  let scope: APIRequestDeadline
-}
+private struct APIRequestDeadlineExceeded: Error {}
 
 public struct APIResponse: Sendable {
   public let status: Int
@@ -92,36 +90,51 @@ public actor APIClient {
     let started = now()
     let awakeStarted = awakeNow()
     do {
-      let response = try await withThrowingTaskGroup(of: APIResponse.self) { group in
-        group.addTask {
-          let token = try await self.readToken(
-            forceRefresh: false, trace: trace, provider: tokenProvider)
-          try Task.checkCancellation()
-          let response = try await self.request(
-            route, token: token, body: body, timeout: timeout, trace: trace)
-          guard response.status == 401 else { return response }
-          let renewed = try await self.readToken(
-            forceRefresh: true, trace: trace, provider: tokenProvider)
-          try Task.checkCancellation()
-          return try await self.request(
-            route, token: renewed, body: body, timeout: timeout, trace: trace)
-        }
-        group.addTask {
-          try await Task.sleep(for: .seconds(timeout))
-          throw APIRequestDeadlineExceeded(scope: .authenticatedRequest)
-        }
-        defer { group.cancelAll() }
-        return try await group.next()!
+      let response = try await withDeadline(
+        timeout: timeout, scope: .authenticatedRequest, trace: trace
+      ) {
+        let token = try await self.readToken(
+          forceRefresh: false, trace: trace, provider: tokenProvider)
+        try Task.checkCancellation()
+        let response = try await self.sendRequest(
+          route, token: token, body: body, timeout: timeout, trace: trace)
+        guard response.status == 401 else { return response }
+        let renewed = try await self.readToken(
+          forceRefresh: true, trace: trace, provider: tokenProvider)
+        try Task.checkCancellation()
+        return try await self.sendRequest(
+          route, token: renewed, body: body, timeout: timeout, trace: trace)
       }
       await trace?.recordOperation(timing(started, awakeStarted))
       return response
     } catch {
       await trace?.recordOperation(timing(started, awakeStarted))
-      if let expired = error as? APIRequestDeadlineExceeded {
-        await trace?.expired(expired.scope)
-        throw DesktopFailure("network_error", "Desktop authentication request timed out")
-      }
       throw error
+    }
+  }
+
+  /// One total deadline owns the whole operation, including cancellation of its transport.
+  private func withDeadline<Value: Sendable>(
+    timeout: TimeInterval, scope: APIRequestDeadline, trace: APIRequestTrace?,
+    operation: @escaping @Sendable () async throws -> Value
+  ) async throws -> Value {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
+    do {
+      return try await withThrowingTaskGroup(of: Value.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+          try await Task.sleep(until: deadline)
+          throw APIRequestDeadlineExceeded()
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
+      }
+    } catch is APIRequestDeadlineExceeded {
+      await trace?.expired(scope)
+      let message =
+        scope == .authenticatedRequest
+        ? "Desktop authentication request timed out" : "Desktop API request timed out"
+      throw DesktopFailure("network_error", message)
     }
   }
 
@@ -151,6 +164,16 @@ public actor APIClient {
     _ route: ApiRoute, token: String? = nil, body: JSONValue? = nil, timeout: TimeInterval = 30,
     trace: APIRequestTrace? = nil
   ) async throws -> APIResponse {
+    try await withDeadline(timeout: timeout, scope: .httpRequest, trace: trace) {
+      try await self.sendRequest(route, token: token, body: body, timeout: timeout, trace: trace)
+    }
+  }
+
+  /// Authenticated requests already have an earlier total deadline covering SDK reads and HTTP.
+  private func sendRequest(
+    _ route: ApiRoute, token: String?, body: JSONValue?, timeout: TimeInterval,
+    trace: APIRequestTrace?
+  ) async throws -> APIResponse {
     await trace?.begin(.httpRequest)
     var request = URLRequest(
       url: try Self.url(for: route, baseURL: baseURL), timeoutInterval: timeout)
@@ -166,8 +189,8 @@ public actor APIClient {
       request.httpBody = try JSONEncoder().encode(body)
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     }
-    // URLRequest's timeout is an inactivity timeout. Claims and completion
-    // reports require a total wall-clock deadline even if bytes keep arriving.
+    // URLRequest's timeout is an inactivity timeout. The public entry point owns
+    // the total wall-clock deadline even if bytes keep arriving.
     let started = now()
     let awakeStarted = awakeNow()
     let startedAt = Date()
@@ -175,30 +198,13 @@ public actor APIClient {
     let data: Data
     let response: URLResponse
     do {
-      (data, response) = try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
-        group.addTask { [session, request] in
-          try await session.data(for: request, delegate: metrics)
-        }
-        group.addTask {
-          try await Task.sleep(for: .seconds(timeout))
-          throw APIRequestDeadlineExceeded(scope: .httpRequest)
-        }
-        defer { group.cancelAll() }
-        return try await group.next()!
-      }
+      (data, response) = try await session.data(for: request, delegate: metrics)
     } catch {
-      let failure: Error
-      if let expired = error as? APIRequestDeadlineExceeded {
-        await trace?.expired(expired.scope)
-        failure = DesktopFailure("network_error", "Desktop API request timed out")
-      } else {
-        failure = error
-      }
       await trace?.record(
         APIRequestDiagnostic(
           requestId: requestId, sessionId: sessionId, startedAt: startedAt,
-          timing: timing(started, awakeStarted), error: failure, transport: metrics?.snapshot()))
-      throw failure
+          timing: timing(started, awakeStarted), error: error, transport: metrics?.snapshot()))
+      throw error
     }
     // Preserve HTTP evidence even when an edge's HTML error page fails JSON decoding.
     await trace?.record(

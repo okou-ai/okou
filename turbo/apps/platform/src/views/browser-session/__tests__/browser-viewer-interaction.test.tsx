@@ -2021,6 +2021,78 @@ test("An old image cleanup cannot replace a newly selected tab", async () => {
   );
 });
 
+test.each(["queued", "reading"])(
+  "Blur cancels a %s copy without reporting a failure and permits fresh input",
+  async (phase) => {
+    const sentry = context.mocks.sentry();
+    initSentry();
+    const write = context.mocks.deferred<PromiseSettledResult<Blob>>();
+    vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
+      const [result] = await Promise.allSettled(
+        items.map((item) => {
+          return item.getType("text/plain");
+        }),
+      );
+      if (!result) {
+        throw new Error("Expected a plain-text clipboard item");
+      }
+      write.resolve(result);
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    });
+    const browser = await setupViewer();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    const pending = browser.holdNext(
+      phase === "queued" ? "Input.insertText" : "Page.createIsolatedWorld",
+    );
+    if (phase === "queued") {
+      fireEvent.input(input, {
+        target: { value: "before-copy" },
+        inputType: "insertText",
+      });
+      await pending.received;
+    }
+    // Model the trusted native gesture at the browser event boundary; synthetic
+    // happy-dom clipboard events do not carry browser activation themselves.
+    const copy = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(copy, "isTrusted", { value: true });
+    fireEvent(input, copy);
+    if (phase === "reading") {
+      await pending.received;
+    }
+    await userEvent.click(screen.getByLabelText("Address"));
+    await expect(write.promise).resolves.toMatchObject({
+      status: "rejected",
+      reason: { name: "AbortError", message: "Copy cancelled" },
+    });
+    await act(async () => {
+      await pending.release();
+    });
+    await userEvent.click(input);
+    const fresh = browser.holdNext("Input.insertText");
+    fireEvent.input(input, {
+      target: { value: "after-blur" },
+      inputType: "insertText",
+    });
+    await fresh.received;
+    await act(async () => {
+      await fresh.release();
+    });
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after-blur" },
+      sessionId: "example-page-session",
+    });
+    expect(input).toBeEnabled();
+    expect(sentry.reports).toStrictEqual([]);
+  },
+);
+
 test("A late modifier cleanup stays on its original tab while the successor keeps editing", async () => {
   const browser = await setupViewer();
   const original = screen.getByLabelText("Remote browser input");

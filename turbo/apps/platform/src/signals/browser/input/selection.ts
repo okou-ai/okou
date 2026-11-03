@@ -98,7 +98,7 @@ export function createSelectionReader(
       snapshot.version !== get(clipboardEpoch$) ||
       snapshot.frameId !== get(frameId$)
     ) {
-      throw new Error("Selection cancelled");
+      throw new DOMException("Selection cancelled", "AbortError");
     }
   });
   const capture$ = command(

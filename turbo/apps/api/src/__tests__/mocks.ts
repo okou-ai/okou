@@ -1,3 +1,4 @@
+import type { S3ClientConfig } from "@aws-sdk/client-s3";
 import type {
   BatchPublishFailureResult,
   BatchPublishSpec,
@@ -881,8 +882,15 @@ vi.mock("@aws-sdk/client-s3", () => {
   class S3Client {
     readonly config: unknown;
 
-    constructor(config: unknown) {
-      this.config = config;
+    constructor(config: S3ClientConfig) {
+      this.config = {
+        ...config,
+        requestHandler: config.requestHandler ?? {
+          handle: (...args: unknown[]) => {
+            return apiTestMocks.s3.send(...args);
+          },
+        },
+      };
       apiTestMocks.s3.clientConfig(config);
     }
 
