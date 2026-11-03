@@ -99,7 +99,8 @@ struct MessageAttachmentView: View {
         prepared = Prepared(
           key: key, image: nil,
           message: ChatRequestFailure.isTransient(error)
-            ? String(localized: "Tap to download preview") : MessageAttachmentStore.message(for: error))
+            ? String(localized: "Tap to download preview")
+            : MessageAttachmentStore.message(for: error))
       }
     }
   }

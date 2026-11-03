@@ -521,7 +521,9 @@ final class ConversationStore {
           pending[index].needsRetry = true
         }
         let status = (error as? APIClientError)?.statusCode
-        if !submitted || status.map({ (400..<500).contains($0) && ![408, 409].contains($0) }) == true {
+        if !submitted
+          || status.map({ (400..<500).contains($0) && ![408, 409].contains($0) }) == true
+        {
           deliveryFailures[message.id] = .notSent(
             String(localized: "Message not sent. ") + ChatRequestFailure.message(for: error))
         } else {
