@@ -238,6 +238,7 @@ export interface BuildCustomConnectorRuntimeContextArgs {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly connectorCatalogSnapshot: ConnectorRuntimeLookup;
   readonly grants: readonly AgentCustomConnectorGrant[] | undefined;
+  readonly memberPermissionPolicies?: FirewallPolicies | null;
   readonly permissionBundlesByConnectorId?: ReadonlyMap<
     string,
     CustomConnectorPermissionBundle | null | undefined
@@ -314,6 +315,33 @@ function buildCustomConnectorPermissionPolicy(args: {
   };
 }
 
+function customRuntimePermissionPolicy(args: {
+  readonly row: CustomConnectorRuntimeDataRows[number];
+  readonly context: BuildCustomConnectorRuntimeContextArgs;
+  readonly selectedPermissionNames: readonly string[];
+  readonly permissionBundle: CustomConnectorPermissionBundle | null;
+}) {
+  const { permissionBundle } = args;
+  const defaultPolicy = permissionBundle
+    ? buildCustomConnectorPermissionPolicy({
+        bundle: permissionBundle,
+        selectedPermissionNames: args.selectedPermissionNames,
+      })
+    : undefined;
+  const overlay =
+    args.context.memberPermissionPolicies?.[
+      customConnectorInternalName(args.row.connector.id)
+    ];
+  const permissionPolicy = overlay
+    ? {
+        policies: { ...defaultPolicy?.policies, ...overlay.policies },
+        unknownPolicy:
+          overlay.unknownPolicy ?? defaultPolicy?.unknownPolicy ?? "allow",
+      }
+    : defaultPolicy;
+  return permissionPolicy;
+}
+
 async function buildCustomConnectorRuntimeRow(args: {
   readonly row: CustomConnectorRuntimeDataRows[number];
   readonly context: BuildCustomConnectorRuntimeContextArgs;
@@ -387,12 +415,10 @@ async function buildCustomConnectorRuntimeRow(args: {
       description: args.row.connector.displayName,
       apis,
     },
-    permissionPolicy: permissionBundle
-      ? buildCustomConnectorPermissionPolicy({
-          bundle: permissionBundle,
-          selectedPermissionNames: args.selectedPermissionNames,
-        })
-      : undefined,
+    permissionPolicy: customRuntimePermissionPolicy({
+      ...args,
+      permissionBundle,
+    }),
   };
 }
 

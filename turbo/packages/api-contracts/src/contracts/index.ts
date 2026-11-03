@@ -1476,3 +1476,4 @@ export {
 
 export { iosPushRegistrationsContract } from "./ios-push-registrations";
 export { iosNotificationsContract } from "./ios-notifications";
+export { runConnectorAccountsContract } from "./run-connector-accounts";

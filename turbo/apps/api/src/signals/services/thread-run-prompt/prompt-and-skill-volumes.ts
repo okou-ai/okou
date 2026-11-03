@@ -1,5 +1,7 @@
 import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
 import {
@@ -98,7 +100,10 @@ function createIntegrationPrompts(
   };
 }
 
-function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
+function createExecutionPromptSources(
+  bootstrap: AgentRunContextSignals,
+  threadContext: ThreadContext,
+) {
   const agent$ = computed((get) => {
     return get(bootstrap.agent$);
   });
@@ -111,8 +116,26 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
   const memberRoutes$ = computed((get) => {
     return get(bootstrap.memberRoutes$);
   });
-  const authorizedConnectors$ = computed((get) => {
-    return get(bootstrap.authorizedConnectors$);
+  const authorizedConnectors$ = computed(async (get) => {
+    const [connectors, features] = await Promise.all([
+      get(bootstrap.authorizedConnectors$),
+      get(bootstrap.featureSwitches$),
+    ]);
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
+    ) {
+      return connectors;
+    }
+    const selection = await get(threadContext.connectorSelection$);
+    if ("status" in selection) {
+      throw new Error("Connector prompt requires an available Chat");
+    }
+    const scope = selection.connectorScope;
+    return connectors.filter((connector) => {
+      return connector.kind === "builtin"
+        ? scope.allowedConnectorSlugs.includes(connector.connectorSlug)
+        : scope.allowedCustomConnectorIds.includes(connector.customConnectorId);
+    });
   });
   const selectedImageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
@@ -137,7 +160,7 @@ export function createPromptAndSkillVolumesSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ): Computed<Promise<PromptAndSkillVolumes>> {
-  const sources = createExecutionPromptSources(bootstrap);
+  const sources = createExecutionPromptSources(bootstrap, threadContext);
   const {
     agent$,
     memberMetadata$,

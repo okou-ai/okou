@@ -36,6 +36,7 @@ pub struct Runtime {
     pub ssh: Option<Arc<ssh::SshRuntime>>,
     pub vnc: Option<Arc<vnc::VncRuntime>>,
     pub usage: Option<run_usage::Runtime>,
+    connectors: Option<runner_provider::ConnectorRuntimeSyncHandle>,
 }
 
 impl runner_provider::AblySideMessageHandler for Runtime {
@@ -71,6 +72,7 @@ struct Consumers {
     ssh: Option<Arc<ssh::Run>>,
     vnc: Option<Arc<vnc::Run>>,
     usage: Option<Arc<run_usage::Run>>,
+    connectors: Option<runner_provider::ConnectorRuntimeSyncHandle>,
     diagnostics: crate::diagnostics::Handle,
     authority: Option<Arc<crate::diagnostics::Authority>>,
 }
@@ -86,7 +88,16 @@ impl Runtime {
             ssh,
             vnc,
             usage,
+            connectors: None,
         }
+    }
+
+    pub fn with_connector_runtime_sync(
+        mut self,
+        sync: runner_provider::ConnectorRuntimeSyncHandle,
+    ) -> Self {
+        self.connectors = Some(sync);
+        self
     }
 
     pub fn install(
@@ -180,6 +191,7 @@ impl Runtime {
                 ssh: task_ssh,
                 vnc: task_vnc,
                 usage,
+                connectors: self.connectors.clone(),
                 diagnostics: native.diagnostics.clone(),
                 authority,
             },
@@ -279,6 +291,7 @@ async fn dispatch(
         ssh,
         vnc,
         usage,
+        connectors,
         diagnostics,
         authority,
     } = consumers;
@@ -390,6 +403,25 @@ async fn dispatch(
                 sandbox_cancelled: scope.sandbox_cancelled,
                 request,
             })
+            .await;
+        } else {
+            scope.error(input, ErrorCode::Unavailable).await;
+        }
+    } else if request.method == "connector.account.sync" {
+        if let Some(sync) = connectors {
+            crate::connector_accounts::dispatch(
+                sync,
+                Request {
+                    input,
+                    lease,
+                    run,
+                    started,
+                    deadline: scope.deadline,
+                    cancelled: scope.cancelled,
+                    sandbox_cancelled: scope.sandbox_cancelled,
+                    request,
+                },
+            )
             .await;
         } else {
             scope.error(input, ErrorCode::Unavailable).await;

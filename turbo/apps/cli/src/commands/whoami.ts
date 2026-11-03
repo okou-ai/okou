@@ -13,6 +13,11 @@ import {
 import { getOrg } from "../lib/api/domains/orgs";
 import { withErrorHandler } from "../lib/command/with-error-handler";
 import { getOkouAgentId } from "../lib/okou-env";
+import {
+  chatConnectorAccountsEnabled,
+  listRunConnectorAccounts,
+} from "../lib/api/domains/run-connector-accounts";
+import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import { policyIcon } from "../lib/utils/format-utils";
 import {
   loadConnectorPermissionInfos,
@@ -219,6 +224,69 @@ async function resolveSandboxConnectorData(
   };
 }
 
+async function printChatConnectorPermissions() {
+  const inventory = await listRunConnectorAccounts();
+  const targets = new Map(
+    inventory.accounts.map((account) => {
+      return [connectorAccountTargetKey(account.target), account.target];
+    }),
+  );
+  const slugs = [...targets.values()].flatMap((target) => {
+    return target.kind === "builtin" ? [target.connectorSlug] : [];
+  });
+  const policies = connectorPermissionGrantsToFirewallPolicies(
+    inventory.permissionGrants.flatMap((grant) => {
+      return grant.target.kind === "builtin"
+        ? [
+            {
+              connectorSlug: grant.target.connectorSlug,
+              permission: grant.permission,
+              action: grant.action,
+            },
+          ]
+        : [];
+    }),
+  );
+  const infos = new Map(
+    (
+      await loadConnectorPermissionInfos({
+        displayConnectorSlugs: slugs,
+        defaultPolicyConnectorSlugs: slugs,
+        storedPolicies: policies,
+      })
+    ).map((info) => {
+      return [info.connectorSlug, info];
+    }),
+  );
+  console.log();
+  console.log(
+    chalk.bold(
+      "Chat connectors (member permissions shared across Chats and accounts):",
+    ),
+  );
+  for (const [key, target] of targets) {
+    const accounts = inventory.accounts.filter((account) => {
+      return connectorAccountTargetKey(account.target) === key;
+    });
+    const current = accounts.find((account) => {
+      return account.isCurrent;
+    });
+    console.log(
+      `  ${key}: ${current ? (current.displayName ?? current.connectionId) : "no allowed account"}`,
+    );
+    if (target.kind === "builtin") {
+      const info = infos.get(target.connectorSlug);
+      if (info) printConnectorPermissions(info);
+    } else console.log("    Unlisted permissions use connector defaults.");
+    for (const rule of inventory.permissionGrants.filter((grant) => {
+      return connectorAccountTargetKey(grant.target) === key;
+    }))
+      console.log(
+        `    ${rule.permission}: ${rule.action}${rule.expiresAt ? ` until ${rule.expiresAt}` : ""}`,
+      );
+  }
+}
+
 async function showSandboxInfo(showPermissions: boolean): Promise<void> {
   const agentId = getOkouAgentId();
   const payload = decodeSandboxTokenPayload();
@@ -236,6 +304,10 @@ async function showSandboxInfo(showPermissions: boolean): Promise<void> {
   }
 
   // Connected Services section
+  if (showPermissions && chatConnectorAccountsEnabled()) {
+    await printChatConnectorPermissions();
+    return;
+  }
   try {
     const { view, permissionSources } = await resolveSandboxConnectorData(
       showPermissions,
@@ -360,11 +432,11 @@ Examples:
 Notes:
   - Inside sandbox: shows agent ID, run ID, org ID, and granted capabilities
   - Connector account identity comes from the current run's admitted accounts
-  - --permissions shows builtin permission rules and custom connector Agent enablement
+  - ${chatConnectorAccountsEnabled() ? "--permissions shows shared member/connector rules and original absolute expiry across all Chats and accounts" : "--permissions shows builtin permission rules and custom connector Agent enablement"}
   - Custom HTTP permission bundles also show selections and effective policies
     when available. MCP connectors and custom HTTP connectors without bundles
     use connector-level authorization. Missing details do not establish access.
-  - Manage custom HTTP permissions in Connectors > agent access > Permissions
+  - ${chatConnectorAccountsEnabled() ? "Shared connector permission configuration requires a saved account; Agent grants are not used" : "Manage custom HTTP permissions in Connectors > agent access > Permissions"}
   - Outside a sandbox, shows authentication and org information;
     --permissions does not expand connector permissions
   - Your agent ID is also available as $OKOU_AGENT_ID`,

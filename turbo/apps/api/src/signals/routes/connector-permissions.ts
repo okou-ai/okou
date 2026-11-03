@@ -14,6 +14,8 @@ import {
   connectorPermissions,
 } from "../services/connector-permissions.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { publishConnectorRuntimeSyncWakeups$ } from "../services/connector-runtime-wakeup.service";
+import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
 
 const ownerAuth = {
   requireOrganization: true,
@@ -80,7 +82,14 @@ const applyHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result !== "updated") {
     return badRequestMessage(result);
   }
+  await set(
+    publishConnectorRuntimeSyncWakeups$,
+    { scope: get(owner$), targets: [body.data.target] },
+    signal,
+  );
   const response = await get(appliedPermissions$);
+  signal.throwIfAborted();
+  await publishConnectorPermissionUpdatedSafely(get(owner$).userId);
   signal.throwIfAborted();
   return response ? { status: 200 as const, body: response } : missing;
 });

@@ -8,6 +8,11 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { startCustomConnectorAutomaticOAuthReauthorization$ } from "../services/custom-connector-oauth2.service";
+import { db$ } from "../external/db";
+import {
+  chatConnectorExecutionReadPlan,
+  chatConnectorExecutionFromRows,
+} from "../services/chat-connector-execution";
 import { runMcpConnectorList } from "../services/run-mcp-connectors.service";
 
 const runMcpAuth$ = computed((get) => {
@@ -17,15 +22,44 @@ const runMcpAuth$ = computed((get) => {
   }
   return auth;
 });
-const runMcpScope$ = computed((get) => {
+const runMcpScope$ = computed(async (get) => {
   const auth = get(runMcpAuth$);
-  return Promise.resolve({
+  const scope = {
     orgId: auth.orgId,
     userId: auth.userId,
     runId: auth.runId,
     customConnectorSourceIds: auth.customConnectorSourceIds,
     builtinConnectorSourceIds: auth.builtinConnectorSourceIds,
-  });
+  };
+  if (!auth.capabilities.includes("connector-account:switch")) {
+    return scope;
+  }
+  const query = chatConnectorExecutionReadPlan({
+    orgId: auth.orgId,
+    userId: auth.userId,
+    kind: "run",
+    runId: auth.runId,
+  }).as("mcp_chat_accounts");
+  const execution = chatConnectorExecutionFromRows(
+    await get(db$).select().from(query),
+  );
+  return {
+    ...scope,
+    builtinConnectorSourceIds: Object.fromEntries(
+      execution.selections.flatMap(({ target, connectionId }) => {
+        return target.kind === "builtin"
+          ? [[target.connectorSlug, connectionId]]
+          : [];
+      }),
+    ),
+    customConnectorSourceIds: Object.fromEntries(
+      execution.selections.flatMap(({ target, connectionId }) => {
+        return target.kind === "custom"
+          ? [[target.customConnectorId, connectionId]]
+          : [];
+      }),
+    ),
+  };
 });
 const builtinMcpScope$ = computed(async (get) => {
   const scope = await get(runMcpScope$);
@@ -61,9 +95,11 @@ const reauthorizeMcpOAuthInner$ = command(
       return body.response;
     }
     const target = body.data.target;
+    const scope = await get(runMcpScope$);
+    signal.throwIfAborted();
     if (target.kind === "builtin") {
       const connectionId =
-        auth.builtinConnectorSourceIds?.[target.connectorSlug];
+        scope.builtinConnectorSourceIds?.[target.connectorSlug];
       const descriptors = await get(builtinMcpConnectors$);
       signal.throwIfAborted();
       if (
@@ -94,7 +130,7 @@ const reauthorizeMcpOAuthInner$ = command(
       };
     }
     const connectionId =
-      auth.customConnectorSourceIds?.[target.customConnectorId];
+      scope.customConnectorSourceIds?.[target.customConnectorId];
     if (!connectionId) {
       return conflict("MCP OAuth reauthorization is unavailable for this run");
     }

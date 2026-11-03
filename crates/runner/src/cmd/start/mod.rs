@@ -694,15 +694,11 @@ async fn run_start_observed(
         None
     };
     let (usage_flush_tx, usage_flush_rx) = mpsc::channel(1);
-    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| {
-        crate::guest_rpc::Runtime::new(
-            ssh,
-            vnc,
-            Some(crate::run_usage::Runtime::new(
-                crate::MitmUsageHandle::from(&mitm),
-            )),
-        )
-    });
+    let usage = (ssh.is_some() || vnc.is_some())
+        .then(|| crate::run_usage::Runtime::new(crate::MitmUsageHandle::from(&mitm)));
+    let guest_rpc = local_group_dir
+        .is_none()
+        .then(|| crate::guest_rpc::Runtime::new(ssh, vnc, usage));
     let host_telemetry = if args.local {
         None
     } else {
@@ -748,6 +744,10 @@ async fn run_start_observed(
         (provider, group_name, Some(connector_runtime_sync))
     };
 
+    let guest_rpc = guest_rpc.map(|runtime| match &connector_runtime_sync {
+        Some(sync) => runtime.with_connector_runtime_sync(sync.clone()),
+        None => runtime,
+    });
     let mut home_cache = HomeImageCache::shared(paths.clone(), &home, &group_name)
         .with_promotion_host_cpus(host_cpus);
     if let Some(telemetry) = &host_telemetry {

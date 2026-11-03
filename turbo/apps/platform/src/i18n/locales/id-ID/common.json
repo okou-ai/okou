@@ -1055,6 +1055,7 @@
       "notNow": "Tidak sekarang",
       "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
+      "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
       "title": "Berikan izin berikut"
     }
   },

@@ -246,6 +246,8 @@ function catalogMetadataSlugs(selection: AgentConnectorSelection) {
 export interface BootstrapConnectorAccount extends ConnectorSourceRow {
   readonly connectorId: string;
   readonly isDefault: boolean;
+  readonly defaultEnabledForChats: boolean;
+  readonly createdAt: Date;
   readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorStateRevision: bigint;
   readonly orgId: string;
@@ -502,7 +504,21 @@ function createIdentityContext(
       ]);
       return executionCreditBalance(org, executionExpiredCredits(rows), pack);
     });
-  const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
+  const featureSwitchContext$ =
+    sharedMember?.featureSwitches$ ??
+    computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
+      const [member, overrides] = await Promise.all([
+        get(memberMetadata$),
+        get(memberContext.overrides$),
+      ]);
+      return capturedFeatureSwitchContext(scope, member, overrides);
+    });
+  const connectorContext = createConnectorContextGroups(
+    userId,
+    orgId,
+    agentId,
+    featureSwitchContext$,
+  );
   const { workflows$ } = connectorContext.signals;
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
     const plan = agentStorageReadPlan(
@@ -536,15 +552,6 @@ function createIdentityContext(
   });
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
-  const featureSwitchContext$ =
-    sharedMember?.featureSwitches$ ??
-    computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
-      const [member, overrides] = await Promise.all([
-        get(memberMetadata$),
-        get(memberContext.overrides$),
-      ]);
-      return capturedFeatureSwitchContext(scope, member, overrides);
-    });
   const environment$ = computed(async (get) => {
     requirePreparedContextAgent(await get(agent$));
     const snapshot = await get(connectorContext.environmentSnapshot$);
@@ -770,6 +777,27 @@ const bootstrapCredentialsDecoder = zodDriverValueDecoder(
   ),
 );
 
+const bootstrapConnectorAccountColumns = Object.freeze({
+  id: connectors.id,
+  connectorSlug: connectors.connectorSlug,
+  customConnectorId: connectors.customConnectorId,
+  isDefault: connectors.isDefault,
+  defaultEnabledForChats: connectors.defaultEnabledForChats,
+  createdAt: connectors.createdAt,
+  automaticAuthType: connectors.automaticAuthType,
+  connectorStateRevision:
+    sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
+      pgInt8ToBigIntDecoder,
+    ),
+  needsReconnect: connectors.needsReconnect,
+  authMethod: connectors.authMethod,
+  storageVersion: connectors.storageVersion,
+  tokenExpiresAt: connectors.tokenExpiresAt,
+  updatedAt: connectors.updatedAt,
+  orgId: connectors.orgId,
+  userId: connectors.userId,
+});
+
 type BootstrapEnvironmentSnapshot =
   ReturnType<typeof createAgentEnvironment> extends Computed<Promise<infer T>>
     ? T
@@ -793,24 +821,7 @@ function createAgentEnvironment(userId: string, orgId: string) {
         credentialSnapshot,
       )
       .select({
-        account: {
-          id: connectors.id,
-          connectorSlug: connectors.connectorSlug,
-          customConnectorId: connectors.customConnectorId,
-          isDefault: connectors.isDefault,
-          automaticAuthType: connectors.automaticAuthType,
-          connectorStateRevision:
-            sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
-              pgInt8ToBigIntDecoder,
-            ),
-          needsReconnect: connectors.needsReconnect,
-          authMethod: connectors.authMethod,
-          storageVersion: connectors.storageVersion,
-          tokenExpiresAt: connectors.tokenExpiresAt,
-          updatedAt: connectors.updatedAt,
-          orgId: connectors.orgId,
-          userId: connectors.userId,
-        },
+        account: bootstrapConnectorAccountColumns,
         variableValues: variableSnapshot.values,
         connectorVariables: connectorVariableSnapshot.values,
         credentials: credentialSnapshot.values,
@@ -1003,13 +1014,17 @@ function createConnectorContextGroups(
   userId: string,
   orgId: string,
   agentId: string,
+  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
   const { connectorSelection$, permissionGrants$, workflows$ } =
-    createAgentSelectionContext({
-      userId,
-      orgId,
-      agentId,
-    });
+    createAgentSelectionContext(
+      {
+        userId,
+        orgId,
+        agentId,
+      },
+      featureSwitches$,
+    );
   const environmentSnapshot$ = createAgentEnvironment(userId, orgId);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;

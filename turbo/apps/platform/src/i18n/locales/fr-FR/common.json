@@ -1077,6 +1077,7 @@
       "notNow": "Pas maintenant",
       "review": "Examiner les autorisations",
       "scopeNote": "S’applique à cet agent, pas uniquement à la tâche en cours.",
+      "sharedScopeNote": "S’applique à ce connecteur dans tous vos chats et agents.",
       "title": "Accorder les autorisations suivantes"
     }
   },

@@ -1,4 +1,22 @@
 import { featureSwitchContextFromRows } from "./feature-switch-scope";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
+import { connectorAuthMethodRuntimeMetadata } from "@okouai/connectors/connector-auth-method";
+import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
+import { variables } from "@okouai/db/schema/variable";
+import { and, eq, inArray } from "drizzle-orm";
+import { nowDate } from "../../lib/time";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import {
+  activeMemberConnectorPermissionCondition,
+  memberConnectorPermissionColumns,
+} from "./member-connector-selection";
+import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
+import {
+  chatConnectorExecutionReadPlan,
+  chatConnectorExecutionFromRows,
+} from "./chat-connector-execution";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   connectorRuntimeTargetKey,
@@ -21,7 +39,10 @@ import {
   resolvedConnectorAccountIdsByTarget,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
-import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
+import {
+  getConnectorRuntimeMethod,
+  type ConnectorRuntimeLookup,
+} from "./connector-catalog-runtime.service";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -42,7 +63,10 @@ import {
   type CustomConnectorRuntimeDataRows,
 } from "./connector-runtime-preparation.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
-import { customConnectorRuntimeDataFromRows } from "./custom-connector.service";
+import {
+  customConnectorRuntimeDataFromRows,
+  customConnectorInternalName,
+} from "./custom-connector.service";
 import { customConnectorRuntimeStorageSnapshot } from "./custom-connector-credential-access.service";
 import {
   customRuntimeSnapshotReadQuery,
@@ -53,10 +77,31 @@ import { readActiveNetworkPolicyRefreshes$ } from "./user-permission-grants.serv
 
 const L = logger("connector-runtime-sync");
 
+function nextMemberPermissionSync(
+  rules: readonly ConnectorPermissionGrant[],
+  name: string,
+) {
+  const expiry = rules
+    .filter((rule) => {
+      return rule.connectorSlug === name && rule.expiresAt !== null;
+    })
+    .map((rule) => {
+      return rule.expiresAt;
+    })
+    .filter((at): at is Date => {
+      return at !== null;
+    })
+    .sort((a, b) => {
+      return a.getTime() - b.getTime();
+    })[0];
+  return expiry ? { nextSyncAt: expiry.toISOString() } : {};
+}
+
 interface ConnectorRuntimeScope {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
+  readonly runId?: string;
 }
 
 interface CustomTargetSnapshot {
@@ -108,6 +153,7 @@ export type ConnectorRuntimeDiagnosticResult =
       >;
       readonly state: "available";
       readonly credentialResolution?: "network-boundary" | "none";
+      readonly baseUrlVars?: Readonly<Record<string, string>>;
       readonly networkPolicy: Extract<
         ConnectorRuntimeSyncResult,
         {
@@ -276,10 +322,14 @@ const loadCustomSnapshot$ = command(
         ConnectorRuntimeTargetRegistration,
         { readonly kind: "custom" }
       >[];
+      readonly memberRules?: readonly ConnectorPermissionGrant[];
     },
   ) => {
     const db = get(db$);
-    const query = customRuntimeSnapshotReadQuery(args);
+    const query = customRuntimeSnapshotReadQuery({
+      ...args,
+      memberPermissions: args.memberRules !== undefined,
+    });
     const capture = db.$with("captured_custom_runtime_snapshot").as(query);
     const rows = await db.with(capture).select().from(capture);
     const sections = customRuntimeSnapshotSectionsFromRows(rows);
@@ -376,6 +426,7 @@ const loadCustomSnapshot$ = command(
       featureSwitchContext,
       customTargets,
       accountResolutions,
+      memberRules: args.memberRules,
     };
   },
 );
@@ -396,6 +447,7 @@ async function resolveCustomTarget(args: {
     readonly accountResolutions: ReturnType<
       typeof connectorAccountResolutionsFromRows
     >;
+    readonly memberRules?: readonly ConnectorPermissionGrant[];
   };
 }): Promise<ConnectorRuntimeCustomSyncResult> {
   const target = {
@@ -439,9 +491,12 @@ async function resolveCustomTarget(args: {
     return customUnresolvedResult(target, "permission-bundle-unavailable");
   }
 
-  const baseUrlVarsByConnectorId = new Map([
-    [target.customConnectorId, args.registration.baseUrlVars] as const,
-  ]);
+  const baseUrlVarsByConnectorId =
+    args.snapshot.memberRules === undefined
+      ? new Map([
+          [target.customConnectorId, args.registration.baseUrlVars] as const,
+        ])
+      : undefined;
 
   const context = await buildCustomConnectorRuntimeContext({
     rows: [row],
@@ -454,6 +509,10 @@ async function resolveCustomTarget(args: {
       },
     ],
     baseUrlVarsByConnectorId,
+    memberPermissionPolicies:
+      args.snapshot.memberRules === undefined
+        ? undefined
+        : permissionGrantsToFirewallPolicies(args.snapshot.memberRules),
   });
   const state = customConnectorRuntimeExecutionState({
     context,
@@ -477,6 +536,18 @@ async function resolveCustomTarget(args: {
     },
     networkPolicy: state.networkPolicy,
     baseUrlVars: { ...resolvedTarget.baseUrlVars },
+    ...(args.snapshot.memberRules === undefined
+      ? {}
+      : {
+          accountBinding: {
+            connectionId: accountResolution.account.connectorId,
+            baseUrlVars: { ...resolvedTarget.baseUrlVars },
+          },
+          ...nextMemberPermissionSync(
+            args.snapshot.memberRules,
+            customConnectorInternalName(target.customConnectorId),
+          ),
+        }),
   };
 }
 
@@ -513,6 +584,7 @@ function resolveBuiltinTarget(args: {
     string,
     Awaited<ReturnType<typeof readActiveNetworkPolicyRefreshes$.write>>[number]
   >;
+  readonly replaceAccount?: boolean;
 }): ResolvedConnectorRuntimeTarget {
   const { registration, scope, snapshot } = args;
   const target = {
@@ -555,6 +627,14 @@ function resolveBuiltinTarget(args: {
             target,
             state: "available",
             networkPolicy: refresh.networkPolicy,
+            ...(args.replaceAccount && registration.sourceId !== undefined
+              ? {
+                  accountBinding: {
+                    connectionId: registration.sourceId,
+                    baseUrlVars: { ...registration.baseUrlVars },
+                  },
+                }
+              : {}),
             ...(refresh.nextRefreshAt
               ? { nextSyncAt: refresh.nextRefreshAt }
               : {}),
@@ -593,21 +673,72 @@ const readRuntimeConnectorAccountResolutions$ = command(
   },
 );
 
-const resolveConnectorRuntimeTargetStates$ = command(
+const selectChatRuntimeAccounts$ = command(
   async (
     { get, set },
     args: {
       readonly scope: ConnectorRuntimeScope;
       readonly targets: readonly ConnectorRuntimeTargetRegistration[];
     },
-  ): Promise<readonly ResolvedConnectorRuntimeTarget[]> => {
+  ) => {
     const db = get(db$);
-    const builtinConnectorSlugs = args.targets.flatMap((target) => {
-      return target.kind === "builtin" ? [target.connectorSlug] : [];
-    });
-    const customRegistrations = args.targets.flatMap((target) => {
-      return target.kind === "custom" ? [target] : [];
-    });
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.scope.orgId,
+      args.scope.userId,
+    );
+    const chatMode = isFeatureEnabled(
+      FeatureSwitchKey.ConnectorChatAccountAccess,
+      features,
+    );
+    const memberRules = chatMode
+      ? await db
+          .select(memberConnectorPermissionColumns())
+          .from(connectorPermissionGrants)
+          .where(
+            activeMemberConnectorPermissionCondition(args.scope, nowDate()),
+          )
+      : undefined;
+    const unavailableTargets = new Set<string>();
+    if (chatMode) {
+      if (!args.scope.runId) {
+        throw new Error("Chat connector runtime requires a Run identity");
+      }
+      const read = chatConnectorExecutionReadPlan({
+        ...args.scope,
+        kind: "run",
+        runId: args.scope.runId,
+      }).as("chat_execution_accounts");
+      const execution = chatConnectorExecutionFromRows(
+        await db.select().from(read),
+      );
+      const selected = new Map(
+        execution.selections.map((selection) => {
+          return [
+            connectorAccountTargetKey(selection.target),
+            selection.connectionId,
+          ];
+        }),
+      );
+      args = {
+        ...args,
+        targets: args.targets.map((target) => {
+          const connectionId = selected.get(connectorRuntimeTargetKey(target));
+          if (!connectionId) {
+            unavailableTargets.add(connectorRuntimeTargetKey(target));
+            return target;
+          }
+          return { ...target, sourceId: connectionId };
+        }),
+      };
+    }
+    return { ...args, chatMode, memberRules, unavailableTargets };
+  },
+);
+
+const loadBuiltinRuntimeCatalog$ = command(
+  async ({ get }, builtinConnectorSlugs: readonly string[]) => {
+    const db = get(db$);
     const builtinCatalogSelection =
       builtinConnectorSlugs.length > 0
         ? connectorCatalogSlugRuntimeFromRows(
@@ -656,6 +787,119 @@ const resolveConnectorRuntimeTargetStates$ = command(
         }),
       });
     }
+    return {
+      builtinCatalogSelection,
+      builtinCatalogConnectorSlugs,
+      catalogBuiltinConnectorSlugs,
+    };
+  },
+);
+
+const resolveBuiltinRuntimeRouting$ = command(
+  async (
+    { get },
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+      readonly snapshot: ConnectorRuntimeLookup;
+      readonly accounts: ReturnType<typeof connectorAccountResolutionsFromRows>;
+    },
+  ) => {
+    const db = get(db$);
+    const ids = [...args.accounts.values()].flatMap((account) => {
+      return account.kind === "resolved" ? [account.account.connectorId] : [];
+    });
+    const values =
+      ids.length > 0
+        ? await db
+            .select({
+              connectionId: variables.connectorId,
+              name: variables.name,
+              value: variables.value,
+            })
+            .from(variables)
+            .where(
+              and(
+                eq(variables.orgId, args.scope.orgId),
+                eq(variables.userId, args.scope.userId),
+                eq(variables.type, "connector"),
+                inArray(variables.connectorId, ids),
+              ),
+            )
+        : [];
+    return args.targets.map((registration) => {
+      if (registration.kind !== "builtin") {
+        return registration;
+      }
+      const account = args.accounts.get(
+        connectorRuntimeTargetKey(registration),
+      );
+      if (account?.kind !== "resolved") {
+        return registration;
+      }
+      const method = getConnectorRuntimeMethod({
+        snapshot: args.snapshot,
+        connectorSlug: registration.connectorSlug,
+        authMethodId: account.account.authMethod,
+      });
+      if (!method) {
+        return registration;
+      }
+      const ownValues = new Map(
+        values
+          .filter((row) => {
+            return row.connectionId === account.account.connectorId;
+          })
+          .map((row) => {
+            return [row.name, row.value];
+          }),
+      );
+      const runtimeBindings = connectorAuthMethodRuntimeMetadata(
+        method.method,
+      ).runtimeBindings;
+      const names = new Set(
+        args.snapshot.serverFirewalls.getExecutionMetadata(
+          registration.connectorSlug,
+        )?.baseUrlVarNames ?? [],
+      );
+      const baseUrlVars = Object.fromEntries(
+        runtimeBindings.flatMap(({ envName, source }) => {
+          const value =
+            source.kind === "connector-variable"
+              ? ownValues.get(source.name)
+              : undefined;
+          return names.has(envName) && value !== undefined
+            ? [[envName, value]]
+            : [];
+        }),
+      );
+      return { ...registration, baseUrlVars };
+    });
+  },
+);
+
+const resolveConnectorRuntimeTargetStates$ = command(
+  async (
+    { set },
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+    },
+  ): Promise<readonly ResolvedConnectorRuntimeTarget[]> => {
+    const selected = await set(selectChatRuntimeAccounts$, args);
+    args = { ...args, targets: selected.targets };
+    const { chatMode, memberRules, unavailableTargets } = selected;
+    const builtinConnectorSlugs = args.targets.flatMap((target) => {
+      return target.kind === "builtin" ? [target.connectorSlug] : [];
+    });
+    const customRegistrations = args.targets.flatMap((target) => {
+      return target.kind === "custom" ? [target] : [];
+    });
+    const {
+      builtinCatalogSelection,
+      builtinCatalogConnectorSlugs,
+      catalogBuiltinConnectorSlugs,
+    } = await set(loadBuiltinRuntimeCatalog$, builtinConnectorSlugs);
     const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
       await Promise.all([
         builtinCatalogSelection
@@ -663,6 +907,7 @@ const resolveConnectorRuntimeTargetStates$ = command(
               scope: args.scope,
               connectorSlugs: catalogBuiltinConnectorSlugs,
               snapshot: builtinCatalogSelection,
+              memberRules,
             })
           : [],
         set(readRuntimeConnectorAccountResolutions$, {
@@ -677,9 +922,20 @@ const resolveConnectorRuntimeTargetStates$ = command(
           ? set(loadCustomSnapshot$, {
               scope: args.scope,
               registrations: customRegistrations,
+              memberRules,
             })
           : undefined,
       ]);
+    if (chatMode && builtinCatalogSelection) {
+      args = {
+        ...args,
+        targets: await set(resolveBuiltinRuntimeRouting$, {
+          ...args,
+          snapshot: builtinCatalogSelection,
+          accounts: builtinAccountResolutions,
+        }),
+      };
+    }
     const builtinByTarget = new Map(
       builtinRefreshes.map((refresh) => {
         return [
@@ -694,6 +950,30 @@ const resolveConnectorRuntimeTargetStates$ = command(
 
     const resolvedTargets: ResolvedConnectorRuntimeTarget[] = [];
     for (const registration of args.targets) {
+      if (unavailableTargets.has(connectorRuntimeTargetKey(registration))) {
+        resolvedTargets.push(
+          registration.kind === "builtin"
+            ? {
+                kind: "builtin",
+                result: builtinAbsentResult({
+                  kind: "builtin",
+                  connectorSlug: registration.connectorSlug,
+                }),
+              }
+            : {
+                kind: "custom",
+                result: customAbsentResult(
+                  {
+                    kind: "custom",
+                    customConnectorId: registration.customConnectorId,
+                  },
+                  "connector-unavailable",
+                ),
+                customSnapshot: undefined,
+              },
+        );
+        continue;
+      }
       if (registration.kind === "custom") {
         if (!customSnapshot) {
           throw new Error("Custom connector runtime snapshot is unavailable");
@@ -717,6 +997,7 @@ const resolveConnectorRuntimeTargetStates$ = command(
           snapshot: builtinCatalogSelection,
           accounts: builtinAccountResolutions,
           refreshes: builtinByTarget,
+          replaceAccount: chatMode,
         }),
       );
     }
@@ -833,6 +1114,9 @@ export const resolveConnectorRuntimeDiagnosticTargets$ = command(
           target: result.target,
           state: result.state,
           networkPolicy: result.networkPolicy,
+          ...(result.accountBinding
+            ? { baseUrlVars: result.accountBinding.baseUrlVars }
+            : {}),
           ...(resolved.credentialResolution !== undefined
             ? {
                 credentialResolution: resolved.credentialResolution,

@@ -39,6 +39,7 @@ export const CAPABILITIES = [
   "project:write",
   "connector:read",
   "connector:write",
+  "connector-account:switch",
   "billing:read",
   "billing:write",
   "banking:read",

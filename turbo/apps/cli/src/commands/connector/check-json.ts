@@ -1,5 +1,12 @@
 import type { ConnectorCheckDiagnosticResult } from "@okouai/api-contracts/contracts/connector-check";
-import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorAccountTargetKey,
+  type ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  chatConnectorAccountsEnabled,
+  listRunConnectorAccounts,
+} from "../../lib/api/domains/run-connector-accounts";
 import {
   customConnectorManagedStatusSchema,
   isIntegrationManagedCustomConnector,
@@ -182,15 +189,25 @@ async function loadCheckEvidence(
     runBound ? resolveRunConnectorAccountLookups([target]) : null,
     agentId === undefined
       ? null
-      : target.kind === "builtin"
-        ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
-            return slugs.includes(target.connectorSlug);
-          })
-        : getAgentCustomConnectorGrants(agentId).then((grants) => {
-            return grants.some((grant) => {
-              return grant.customConnectorId === target.customConnectorId;
+      : chatConnectorAccountsEnabled()
+        ? listRunConnectorAccounts().then((inventory) => {
+            return inventory.accounts.some((account) => {
+              return (
+                account.enabled &&
+                connectorAccountTargetKey(account.target) ===
+                  connectorAccountTargetKey(target)
+              );
             });
-          }),
+          })
+        : target.kind === "builtin"
+          ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
+              return slugs.includes(target.connectorSlug);
+            })
+          : getAgentCustomConnectorGrants(agentId).then((grants) => {
+              return grants.some((grant) => {
+                return grant.customConnectorId === target.customConnectorId;
+              });
+            }),
     getPlatformOrigin(),
   ]);
   const account = accounts === null ? null : accounts[0];
@@ -265,6 +282,14 @@ function checkConnectionActions(
     });
   }
   if (authorized === false) {
+    if (chatConnectorAccountsEnabled()) {
+      connectionActions.push({
+        label: `Review ${label} Chat account access`,
+        path: "/connectors",
+        supportsCallback: false,
+      });
+      return connectionActions;
+    }
     connectionActions.push(
       target.kind === "builtin"
         ? {

@@ -2224,6 +2224,7 @@ const connectorRuntimeSyncInner$ = command(
         orgId: run.orgId,
         userId: run.userId,
         agentId: run.agentId,
+        runId: run.runId,
       },
       targets: body.data.targets,
     });

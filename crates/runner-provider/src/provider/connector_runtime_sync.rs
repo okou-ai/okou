@@ -520,6 +520,46 @@ impl ConnectorRuntimeSyncHandle {
         Some(active_runs.get(&run_id)?.account_context.subscribe())
     }
 
+    /// Refresh one admitted target through the normal publication owner.
+    /// The caller supplies only an expected identity, never credentials or policy.
+    pub async fn sync_account_binding(
+        &self,
+        run_id: RunId,
+        target: ConnectorRuntimeTarget,
+        connection_id: &str,
+    ) -> bool {
+        let (cancel, mut context, expected) = {
+            let runs = self.core.inner.active_runs.lock().await;
+            let Some(run) = runs.get(&run_id) else {
+                return false;
+            };
+            let Some(connector) = run.connectors.get(&target) else {
+                return false;
+            };
+            let mut expected = connector.registration.clone();
+            match &mut expected {
+                ConnectorRuntimeTargetRegistration::Builtin { source_id, .. }
+                | ConnectorRuntimeTargetRegistration::Custom { source_id, .. } => {
+                    *source_id = Some(connection_id.to_owned());
+                }
+            }
+            (
+                run.cancel.clone(),
+                run.account_context.subscribe(),
+                expected.account_context_target(),
+            )
+        };
+        self.core
+            .notify_connector_runtime_sync_until_cancelled(run_id, target, &cancel)
+            .await;
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => false,
+            _ = self.core.inner.cancel.cancelled() => false,
+            result = context.wait_for(|current| current.targets.contains(&expected)) => result.is_ok(),
+        }
+    }
+
     pub async fn notify_connector_runtime_sync(
         &self,
         run_id: RunId,

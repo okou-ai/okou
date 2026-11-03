@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 import chalk from "chalk";
 import {
   listConnectorCatalog,
@@ -323,8 +324,7 @@ Scope:
   Agent authorization is reported separately.
   To choose another account, run connector account list <selector> --json and
   use only an exact returned connectionId. Never invent or reuse an ID from a
-  different connector. A switch applies to future runs in this chat; it cannot
-  replace the account already admitted to this Run.
+  different connector. ${chatConnectorAccountsEnabled() ? "Use connector account switch for an enabled account in this Run; use switch-request to ask the owner to enable a disabled account in this Chat." : "A switch applies to future runs in this chat; it cannot replace the account already admitted to this Run."}
   When status prints an action URL, return it verbatim. Add a callback only when
   this turn needs exactly one access action; otherwise return ordinary links.
 

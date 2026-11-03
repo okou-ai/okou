@@ -1057,6 +1057,7 @@
       "notNow": "Nicht jetzt",
       "review": "Berechtigungen prüfen",
       "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
+      "sharedScopeNote": "Die Berechtigungen für diesen Connector gelten für alle deine Chats und Agenten.",
       "title": "Folgende Berechtigungen erlauben"
     }
   },

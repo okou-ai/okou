@@ -14,7 +14,8 @@ import { firewallPermissionMetadataByConnector } from "../firewall-permission-me
 import {
   findPermissionInMetadata,
   resolveUserPermissionGrantPolicy,
-  userPermissionGrantsByAgent,
+  permissionGrantsForConnectors,
+  applyUserPermissionGrants$,
 } from "../permission-allow/permission-allow-signals.ts";
 import type {
   PlatformConnectorPermissionMetadata,
@@ -31,7 +32,12 @@ import {
 
 function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
   const agent$ = agentById(descriptor.agentId);
-  const grants$ = userPermissionGrantsByAgent({ agentId: descriptor.agentId });
+  const grants$ = permissionGrantsForConnectors({
+    agentId: descriptor.agentId,
+    connectorSlugs: descriptor.items.map((item) => {
+      return item.connectorSlug;
+    }),
+  });
   const metadataResources = [
     ...new Set(
       descriptor.items.map((item) => {
@@ -165,7 +171,7 @@ function allBatchPermissionsAllowed(
 }
 
 function mergeBatchAcknowledgements(
-  agentId: string,
+  agentId: string | undefined,
   groups: ApplyUserPermissionGrantsBatchRequest["groups"],
   previous: readonly PlatformUserPermissionGrant[],
   returned: readonly PlatformUserPermissionGrant[],
@@ -176,7 +182,10 @@ function mergeBatchAcknowledgements(
     for (const requested of group.grants) {
       const grant = returned.find((candidate) => {
         return (
-          chatActionIdMatches(candidate.agentId, agentId) &&
+          (agentId === undefined
+            ? candidate.agentId === undefined
+            : candidate.agentId !== undefined &&
+              chatActionIdMatches(candidate.agentId, agentId)) &&
           candidate.connectorSlug === group.connectorSlug &&
           candidate.permission === requested.permission
         );
@@ -233,7 +242,34 @@ function createBatchSaveCommand(
         expiresIn,
       );
       let acknowledged = grants;
-      if (groups.length) {
+      const features = await get(featureSwitch$);
+      signal.throwIfAborted();
+      if (
+        groups.length &&
+        features[FeatureSwitchKey.ConnectorChatAccountAccess]
+      ) {
+        const saved: PlatformUserPermissionGrant[] = [];
+        for (const group of groups) {
+          saved.push(
+            ...(await set(
+              applyUserPermissionGrants$,
+              {
+                agentId: descriptor.agentId,
+                connectorSlug: group.connectorSlug,
+                mode: "patch",
+                grants: group.grants,
+              },
+              signal,
+            )),
+          );
+        }
+        acknowledged = mergeBatchAcknowledgements(
+          undefined,
+          groups,
+          grants,
+          saved,
+        );
+      } else if (groups.length) {
         const client = get(apiClient$)(userPermissionGrantsContract);
         const result = await accept(
           client.applyBatch({

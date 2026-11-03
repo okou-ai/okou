@@ -56,6 +56,7 @@ import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorizat
 import { desktopShellAuthorizationRoutes } from "./routes/desktop-shell-authorization";
 import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { chatConnectorAccessRoutes } from "./routes/chat-connector-access";
+import { runConnectorAccountRoutes } from "./routes/run-connector-accounts";
 import { connectorPermissionsRoutes } from "./routes/connector-permissions";
 import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
@@ -360,6 +361,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...builtinConnectorsRoutes,
   ...connectorAccountRoutes,
   ...chatConnectorAccessRoutes,
+  ...runConnectorAccountRoutes,
   ...connectorPermissionsRoutes,
   ...customConnectorsRoutes,
   ...emailInboundRoutes,

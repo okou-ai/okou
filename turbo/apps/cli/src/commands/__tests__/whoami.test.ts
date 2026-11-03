@@ -210,6 +210,65 @@ describe("okou whoami command", () => {
   }
 
   describe("sandbox mode (OKOU_AGENT_ID set)", () => {
+    it("shows shared connector policy and absolute expiry without reading Agent permission sources", async () => {
+      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken({
+          userId: "user-1",
+          orgId: "org-1",
+          runId: "run-1",
+          scope: "okou",
+          capabilities: ["connector-account:switch"],
+        }),
+      );
+      let legacyReads = 0;
+      server.use(
+        http.get("http://localhost:3000/api/user-permission-grants", () => {
+          legacyReads += 1;
+          return HttpResponse.json([]);
+        }),
+        http.get(
+          "http://localhost:3000/api/agents/agent-123/user-connectors",
+          () => {
+            legacyReads += 1;
+            return HttpResponse.json({ enabledConnectorSlugs: [] });
+          },
+        ),
+        http.get("http://localhost:3000/api/run/connector-accounts", () => {
+          return HttpResponse.json({
+            chatThreadId: "22222222-2222-4222-8222-222222222222",
+            accounts: [
+              {
+                target: { kind: "builtin", connectorSlug: "github" },
+                connectionId: "11111111-1111-4111-8111-111111111111",
+                displayName: "Account B",
+                enabled: true,
+                isCurrent: true,
+                isDefault: false,
+              },
+            ],
+            permissionGrants: [
+              {
+                target: { kind: "builtin", connectorSlug: "github" },
+                permission: "contents:write",
+                action: "allow",
+                expiresAt: "2099-01-01T00:00:00.000Z",
+              },
+            ],
+          });
+        }),
+      );
+      await runWhoami(["--permissions"]);
+      const output = getAllOutput().join("\n");
+      expect(legacyReads).toBe(0);
+      expect(output).toContain("Account B");
+      expect(output).toContain(
+        "contents:write: allow until 2099-01-01T00:00:00.000Z",
+      );
+      expect(output).toContain("shared across Chats and accounts");
+    });
+
     it("should show agent ID, run context, and capabilities with full JWT", async () => {
       const token = buildOkouToken({
         userId: "user-1",

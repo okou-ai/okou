@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { Command, Option } from "commander";
+import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 import {
   getAgent,
   getAgentCustomConnectorGrants,
@@ -91,6 +92,10 @@ Notes:
   .action(
     withErrorHandler(
       async (selector: string, opts: { agent?: string; json?: boolean }) => {
+        if (chatConnectorAccountsEnabled())
+          throw new Error(
+            "Chat account access is enabled. Agent grants do not control this Run; manage this Chat's connector account allowance instead.",
+          );
         const agentId = opts.agent ?? getOkouAgentId();
         if (!agentId) {
           throw new Error(
