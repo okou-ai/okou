@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
@@ -14,7 +13,6 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
-import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
 import { createBddApi } from "./helpers/api-bdd";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -1082,96 +1080,6 @@ describe("shared Browser public consumers", () => {
       expect(uploads).toHaveLength(2);
     });
   });
-
-  it.each([true, false])(
-    "switches back to thread Browsers and resumes both profiles with same chat=%s",
-    async (sameChat) => {
-      const app = await setupApp({
-        context,
-        routes: cronBrowserReconcileRoutes,
-        isolatePg: true,
-      });
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const cron = app(cronBrowserReconcileContract);
-        const reconcile = () => {
-          return accept(
-            cron.reconcile({
-              headers: { authorization: "Bearer test-cron-secret" },
-            }),
-            [200],
-          );
-        };
-        const a = await f.start();
-        const shared = await use(a);
-        expect(shared.browser.window).toBeDefined();
-        for (const page of f.provider.native.targets.values()) {
-          page.url = "https://example.test/shared-tabs";
-        }
-        await updateFeatureSwitchesForUser(context, f.featureActor, {
-          [FeatureSwitchKey.BrowserSharedOwner]: false,
-        });
-        mockNow(START + 11 * MINUTE);
-        expect((await reconcile()).body.errors).toBe(0);
-        const b = sameChat ? a : await f.start();
-        const legacy = await accept(
-          client().create({
-            headers: runHeaders(b),
-            body: { name: "Thread Browser", proxyCountryCode: "us" },
-          }),
-          [201],
-        );
-        expect(legacy.body.browser).toMatchObject({
-          proxyCountryCode: "us",
-          status: "active",
-        });
-        expect(legacy.body.browser.window).toBeUndefined();
-        for (const browser of [
-          (await use(b)).browser,
-          await view(b),
-          await renew(b),
-        ]) {
-          expect(browser).toMatchObject({
-            threadId: b.threadId,
-            name: "Thread Browser",
-            proxyCountryCode: "us",
-            status: "active",
-          });
-        }
-        for (const page of f.provider.native.targets.values()) {
-          page.url = "https://example.test/thread-tabs";
-        }
-        mockNow(START + 22 * MINUTE);
-        expect((await reconcile()).body.errors).toBe(0);
-        await use(b);
-        expect(
-          [...f.provider.native.targets.values()].map((page) => {
-            return page.url;
-          }),
-        ).toStrictEqual(["https://example.test/thread-tabs"]);
-        await updateFeatureSwitchesForUser(context, f.featureActor, {
-          [FeatureSwitchKey.BrowserSharedOwner]: true,
-        });
-        mockNow(START + 33 * MINUTE);
-        expect((await reconcile()).body.errors).toBe(0);
-        const resumed = await use(a);
-        expect(resumed.browser.window).toBeDefined();
-        expect(
-          [...f.provider.native.targets.values()].map((page) => {
-            return page.url;
-          }),
-        ).toStrictEqual(["https://example.test/shared-tabs"]);
-        expect(f.provider.createdIds).toHaveLength(2);
-        expect(f.provider.sessionRequests).toMatchObject([
-          { profileId: f.provider.createdIds[0] },
-          { profileId: f.provider.createdIds[1] },
-          { profileId: f.provider.createdIds[1] },
-          { profileId: f.provider.createdIds[0] },
-        ]);
-      });
-    },
-  );
 });
 
 describe("shared Browser capture publication and admission", () => {

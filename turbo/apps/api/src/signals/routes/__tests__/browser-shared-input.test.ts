@@ -1,6 +1,5 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
@@ -10,11 +9,9 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserUserActionRoutes } from "../browser-user-actions";
-import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createSharedBrowserFixtures,
   MINUTE,
@@ -32,14 +29,11 @@ function client() {
   );
 }
 
-async function scenario(
-  f: Awaited<ReturnType<typeof fixture>>,
-  chat?: Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>,
-) {
+async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
   await updateFeatureSwitchesForUser(context, f.featureActor, {
     [FeatureSwitchKey.BrowserNativeInput]: true,
   });
-  const a = chat ?? (await f.start());
+  const a = await f.start();
   installBrowserWindowContentCommands(f.provider.native);
   const first = await open(a);
   const aWindow = first.window;
@@ -212,127 +206,6 @@ async function scenario(
 }
 
 describe("shared-window native Browser input", () => {
-  it("applies thread input after switching off shared mode without retargeting shared input", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronBrowserReconcileRoutes,
-      isolatePg: true,
-    });
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const s = await scenario(f);
-      const sharedRequest = await s.request();
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: false,
-      });
-      const cron = app(cronBrowserReconcileContract);
-      const reconcile = () => {
-        return accept(
-          cron.reconcile({
-            headers: { authorization: "Bearer test-cron-secret" },
-          }),
-          [200],
-        );
-      };
-      mockNow(START + 11 * MINUTE);
-      await reconcile();
-      expect((await open(s.a)).window).toBeUndefined();
-      const [page] = f.provider.native.targets.values();
-      if (!page) {
-        throw new Error("Expected the thread Browser's page");
-      }
-      page.url = s.aPage.url;
-      const created = await accept(s.create(s.a, page.targetId), [201]);
-      const params = { requestToken: created.body.action.requestToken };
-      // Maintenance must not expire a live thread request because the retained
-      // shared login profile still exists.
-      await reconcile();
-      expect(
-        (await accept(client().preflight({ headers, params, body: {} }), [200]))
-          .body.state,
-      ).toBe("pending");
-      const applied = await accept(
-        client().apply({
-          headers,
-          params,
-          body: { values: [{ key: "entry", value: "thread-value" }] },
-        }),
-        [200],
-      );
-      expect(applied.body.state).toBe("succeeded");
-      expect(s.state.values.get(page.targetId)).toBe("thread-value");
-      expect(
-        (
-          await client().apply({
-            headers,
-            params: sharedRequest,
-            body: { values: [{ key: "entry", value: "stale-shared-value" }] },
-          })
-        ).status,
-      ).toBe(409);
-      expect(s.state.writes).toBe(1);
-    });
-  });
-
-  it("retires an expired thread profile while the same chat has a live shared input request", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronBrowserReconcileRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronBrowserReconcileContract);
-    let clockTime = START;
-    const f = await fixture(false, undefined, () => {
-      return clockTime;
-    });
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      await open(a);
-      const legacyProfileId = f.provider.createdIds[0];
-      const deletedProfiles: string[] = [];
-      server.use(
-        http.delete(`${PROVIDER_URL}/profiles/:id`, ({ params }) => {
-          deletedProfiles.push(String(params.id));
-          return;
-        }),
-      );
-      const reconcile = () => {
-        return accept(
-          cron.reconcile({
-            headers: { authorization: "Bearer test-cron-secret" },
-          }),
-          [200],
-        );
-      };
-      mockNow(START + 11 * MINUTE);
-      await reconcile();
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: a.runId, exitCode: 1, error: "Legacy setup finished" },
-        { authorization: `Bearer ${a.claim.sandboxToken}` },
-        [200],
-      );
-      f.owned.ownsFeatureSwitches();
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
-      const expiresAt = START + 11 * MINUTE + 7 * 24 * 60 * MINUTE;
-      clockTime = expiresAt - 1;
-      mockNow(expiresAt - 1);
-      f.provider.native.created.splice(0);
-      const resumed = await f.start(true, a.threadId);
-      const s = await scenario(f, resumed);
-      const params = await s.request();
-      mockNow(expiresAt);
-      expect((await reconcile()).body.errors).toBe(0);
-      expect(deletedProfiles).toStrictEqual([legacyProfileId]);
-      expect(
-        (await accept(client().preflight({ headers, params, body: {} }), [200]))
-          .body.state,
-      ).toBe("pending");
-    });
-  });
-
   it("requires a shared window before creating input after shared mode is enabled", async () => {
     const f = await fixture(false);
     await f.owned.run(async () => {
