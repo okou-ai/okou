@@ -227,6 +227,12 @@ test("Closing the last established tab does not rely on an unfinished native cre
       screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
     ).not.toBeInTheDocument();
   });
+  await waitFor(() => {
+    expect(queryAllByRoleFast("tab")).toHaveLength(2);
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  // The confirmed replacement already keeps the window alive.
+  click(screen.getAllByLabelText("Close New tab")[0]!);
   await creation.release();
   await waitFor(() => {
     expect(

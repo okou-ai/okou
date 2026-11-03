@@ -573,28 +573,39 @@ function createTabOpeningGraph(
   model: ViewerSignals,
   creation$: Computed<ReturnType<typeof createTabCreation> | null>,
 ) {
-  const openings$ = state<ReadonlySet<ReadonlySet<string>>>(new Set());
+  const openings$ = state<ReadonlyMap<object, ReadonlySet<string>>>(new Map());
   const canKeepWindow$ = command(({ get }, targetId: string) => {
-    return [...get(openings$)].every((existing) => {
+    return [...get(openings$).values()].every((existing) => {
       return existing.has(targetId);
     });
   });
   const open$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const opening = {};
     const existing = new Set(
       get(model.snapshot$).targets.map((target) => {
         return target.id;
       }),
     );
-    set(openings$, new Set(get(openings$)).add(existing));
+    set(openings$, new Map(get(openings$)).set(opening, existing));
     using _opening = {
       [Symbol.dispose]: () => {
-        const openings = new Set(get(openings$));
-        openings.delete(existing);
+        const openings = new Map(get(openings$));
+        openings.delete(opening);
         set(openings$, openings);
       },
     };
     // New candidates cannot keep a window alive until preparation or cleanup ends.
-    return await set(get(creation$)!.open$, signal);
+    const targetId = await set(get(creation$)!.open$, signal);
+    // A confirmed tab is a keeper for every concurrent native opening.
+    set(
+      openings$,
+      new Map(
+        [...get(openings$)].map(([owner, keepers]) => {
+          return [owner, new Set(keepers).add(targetId)];
+        }),
+      ),
+    );
+    return targetId;
   });
   return { open$, canKeepWindow$ };
 }
