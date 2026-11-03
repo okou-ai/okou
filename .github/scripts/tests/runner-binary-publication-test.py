@@ -362,6 +362,8 @@ class PublicationTests(unittest.TestCase):
                             try:
                                 os.killpg(group, signal.SIGKILL)
                             except ProcessLookupError:
+                                # Normal cancellation may already have retired
+                                # this fixture's process group.
                                 pass
                     if process.poll() is None:
                         process.communicate()
