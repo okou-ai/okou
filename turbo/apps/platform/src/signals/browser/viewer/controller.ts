@@ -686,6 +686,28 @@ function createControllerState(
 }
 type ControllerContext = ReturnType<typeof createControllerState>;
 
+function createDiscoveryFailure(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+): ControllerLinks["discoveryFailed$"] {
+  const { model, readinessFailure$, connected$, wake$ } = context;
+  return command(({ get, set }, error: unknown, signal: AbortSignal): void => {
+    if (signal.aborted || !get(connected$)) {
+      return;
+    }
+    set(readinessFailure$, error);
+    set(context.connectedState$, false);
+    set(model.setConnected$, false);
+    set(get(links$).retireCurrent$, "target-replaced", false);
+    set(model.transition$, {
+      type: "discovery-failed",
+      error: diagnostic(error),
+    });
+    set(wake$);
+    set(get(links$).beginClosing$);
+  });
+}
+
 function createDiscoveryGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
@@ -697,7 +719,6 @@ function createDiscoveryGraph(
     model,
     bootstrapping$,
     chosenOnce$,
-    readinessFailure$,
     closingTargets$,
     connected$,
     available$,
@@ -705,23 +726,10 @@ function createDiscoveryGraph(
     directory$,
     nativeHost,
   } = context;
-  const discoveryFailed$ = command(
-    ({ get, set }, error: unknown, signal: AbortSignal): void => {
-      if (signal.aborted || !get(connected$)) {
-        return;
-      }
-      set(readinessFailure$, error);
-      set(context.connectedState$, false);
-      set(model.setConnected$, false);
-      set(get(links$).retireCurrent$, "target-replaced", false);
-      set(model.transition$, {
-        type: "discovery-failed",
-        error: diagnostic(error),
-      });
-      set(wake$);
-      set(get(links$).beginClosing$);
-    },
-  );
+  const hasSelectionRecovery$ = computed((get) => {
+    return get(model.imageRecovery$) !== null || get(context.crashed$) !== null;
+  });
+  const discoveryFailed$ = createDiscoveryFailure(context, links$);
   const discoveryChanged$ = command(
     ({ get, set }, signal: AbortSignal): void => {
       if (signal.aborted || !get(connected$)) {
@@ -753,8 +761,7 @@ function createDiscoveryGraph(
       if (
         selected &&
         !get(get(links$).selectedSession$) &&
-        !get(model.imageRecovery$) &&
-        !get(context.crashed$) &&
+        !get(hasSelectionRecovery$) &&
         !get(context.creationOwner$) &&
         get(available$)
       ) {
