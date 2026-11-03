@@ -234,6 +234,8 @@ const DIRECT_CANDIDATE_INBOX_CAPACITY: usize = 128;
 const CLAIM_COOLDOWN_CAPACITY: usize = RUNNER_POLL_EXCLUDED_RUN_IDS_MAX as usize;
 const CLAIM_TRANSIENT_COOLDOWN: Duration = POLL_FAST;
 const CLAIM_DETERMINISTIC_COOLDOWN: Duration = POLL_SLOW;
+/// Keep one brief platform failure inside the existing local reuse admission.
+const PREFERRED_CLAIM_RETRY_DELAY: Duration = Duration::from_millis(100);
 /// Matches the existing sustained Ably-disconnection reporting boundary.
 const POLL_DEGRADED_AFTER: Duration = Duration::from_secs(60);
 /// Runner reuse requires a heartbeat observed within this freshness window.
@@ -342,6 +344,9 @@ enum DiscoveryWakeup {
 /// clears any per-run cooldown; an unavailable claim promptly polls the backlog.
 /// Other failures are classified as transient or deterministic and give that run
 /// a corresponding runner-local cooldown.
+/// An active preference for this process can recover one HTTP 500 inside the
+/// original claim future before cooldown, retaining its local reuse reservation
+/// and in-flight exclusion. Expiry and shutdown stop admission of that retry.
 ///
 /// While a run is cooling down, matching direct candidates are skipped and the
 /// bounded active run IDs are sent as optional poll exclusions. Recording a
@@ -547,6 +552,55 @@ impl ApiProvider {
                 self.poll_wakeups.request_deferred_poll_after(POLL_FAST);
             }
         }
+    }
+
+    async fn claim_with_preference_recovery(
+        &self,
+        candidate: &JobCandidate,
+    ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
+        let claim = || {
+            self.api.claim(
+                candidate,
+                &self.runner_identity,
+                self.runner_hostname.as_deref(),
+                self.installed_okou_cli.as_ref(),
+            )
+        };
+        let result = claim().await;
+        if !matches!(
+            &result,
+            Err(ClaimApiError::Request(ProviderError::ApiStatus(error)))
+                if error.status == StatusCode::INTERNAL_SERVER_ERROR
+        ) {
+            return result;
+        }
+        let Some(preference) = candidate.runner_preference().filter(|preference| {
+            preference.targets(self.runner_identity)
+                && preference.remaining() > PREFERRED_CLAIM_RETRY_DELAY
+        }) else {
+            return result;
+        };
+        if candidate.reuse_key().is_none() || self.cancel.is_cancelled() {
+            return result;
+        }
+
+        tokio::select! {
+            biased;
+            () = self.cancel.cancelled() => return result,
+            () = tokio::time::sleep(PREFERRED_CLAIM_RETRY_DELAY) => {}
+        }
+        if self.cancel.is_cancelled() || preference.is_expired() {
+            return result;
+        }
+        warn!(
+            run_id = %candidate.run_id(),
+            status = 500,
+            retry_after_ms = duration_ms(PREFERRED_CLAIM_RETRY_DELAY),
+            "claim failed, retrying preferred candidate"
+        );
+        // Keep this inside the caller's original admission and in-flight guard.
+        // The API still decides ownership; a committed/lost claim can return 404.
+        claim().await
     }
 
     async fn wait_for_direct_candidate(&self) -> Option<DirectJobCandidate> {
@@ -878,15 +932,7 @@ impl JobProvider for ApiProvider {
         // Legacy/notification candidates omit the claim capability, so even a
         // stale hint cannot claim a v4 Run without the durable barrier.
         let claim_request_started_at = Instant::now();
-        let claim_result = self
-            .api
-            .claim(
-                &candidate,
-                &self.runner_identity,
-                self.runner_hostname.as_deref(),
-                self.installed_okou_cli.as_ref(),
-            )
-            .await;
+        let claim_result = self.claim_with_preference_recovery(&candidate).await;
         let claim_request_elapsed = claim_request_started_at.elapsed();
         match claim_result {
             Ok(Some(SuccessfulClaimResponse {
