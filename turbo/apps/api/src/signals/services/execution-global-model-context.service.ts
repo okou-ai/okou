@@ -1,10 +1,13 @@
 import { computed } from "ccstate";
-import { asc, sql } from "drizzle-orm";
+import { asc, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { resolveSkillRef } from "@okouai/core/github-url";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { modelRoutes } from "@okouai/db/schema/model-route";
+import { skills as skillCatalog } from "@okouai/db/schema/skill";
 import { array, unknown as zUnknown } from "zod";
 import { db$ } from "../external/db";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -52,6 +55,12 @@ export function createGlobalModelContext() {
     pricingProvider: modelRoutes.pricingProvider,
     longContextMinTotalInputTokens: modelRoutes.longContextMinTotalInputTokens,
   };
+  const seedSkills = {
+    url: skillCatalog.url,
+    versionHash: skillCatalog.versionHash,
+    contentBundle: skillCatalog.contentBundle,
+    contentBundleSourceVersionHash: skillCatalog.contentBundleSourceVersionHash,
+  };
   const builder = new QueryBuilder();
   const globalRaw$ = computed(async (get) => {
     const keyRows = builder
@@ -89,6 +98,15 @@ export function createGlobalModelContext() {
         sql`${modelRoutes.subscriptionType} asc nulls first`,
         asc(modelRoutes.priority),
       );
+    // Every Seed Skill row; each run filters and validates its own selection.
+    const seedSkillRows = builder
+      .select({
+        payload: contextJsonProjection(seedSkills)
+          .mapWith(zodDriverValueDecoder(zUnknown()))
+          .as("payload"),
+      })
+      .from(skillCatalog)
+      .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
     const [row] = await get(db$)
       .select({
         keys: contextJsonRows(keyRows).mapWith(
@@ -101,6 +119,9 @@ export function createGlobalModelContext() {
           zodDriverValueDecoder(zUnknown()),
         ),
         routes: contextJsonRows(routeRows).mapWith(
+          zodDriverValueDecoder(zUnknown()),
+        ),
+        seedSkills: contextJsonRows(seedSkillRows).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
       })
@@ -129,5 +150,11 @@ export function createGlobalModelContext() {
       array(contextProjectionSchema(routes)).parse(row.routes),
     );
   });
-  return { managedModelKeys$, modelPricing$, catalog$ };
+  // Decoding never checks preparation; the consuming run validates its skills.
+  const seedSkills$ = computed(async (get) => {
+    return array(contextProjectionSchema(seedSkills)).parse(
+      (await get(globalRaw$)).seedSkills,
+    );
+  });
+  return { managedModelKeys$, modelPricing$, catalog$, seedSkills$ };
 }

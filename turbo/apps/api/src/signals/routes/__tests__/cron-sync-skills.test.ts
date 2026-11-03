@@ -25,9 +25,15 @@ import { setPaidToolDisabled } from "./helpers/paid-tools";
 const context = testContext();
 const CRON_SECRET = "seed-bundle-preparation-cron";
 
-async function sourceArchive(revision = "first") {
+async function sourceArchive(
+  revision = "first",
+  unpublished: readonly string[] = [],
+) {
   const files = new Map<string, Buffer>();
-  for (const name of [...SEED_SKILLS, "ordinary-skill"]) {
+  const names = [...SEED_SKILLS, "ordinary-skill"].filter((name) => {
+    return !unpublished.includes(name);
+  });
+  for (const name of names) {
     files.set(
       `${name}/SKILL.md`,
       Buffer.from(
@@ -346,7 +352,7 @@ describe("Seed Skill bundles through sync-skills", () => {
     },
   );
 
-  it("keeps image generation capability filtering when selecting Seed bundles", async () => {
+  it("filters image generation before validating Seed bundle preparation", async () => {
     const app = await setupApp({
       context,
       routes: cronSyncSkillsRoutes,
@@ -354,7 +360,8 @@ describe("Seed Skill bundles through sync-skills", () => {
     });
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
-    const source = await sourceArchive();
+    // gen is never published, so only the filter keeps this run launchable.
+    const source = await sourceArchive("first", ["gen"]);
     const s3 = await owned.run(async () => {
       const storage = installWorkflowVolumeS3Fixture(context);
       githubSource("e".repeat(40), source.archive);
