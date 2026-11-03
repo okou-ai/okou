@@ -8,6 +8,7 @@ import * as dataRouterRequestSchema from "./schema/data-router-request";
 import * as wechatSchema from "./schema/wechat";
 import * as whatsappSchema from "./schema/whatsapp";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
+import * as friendReferralSchema from "./schema/friend-referral";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
@@ -183,6 +184,7 @@ export const schema = {
   ...wechatSchema,
   ...whatsappSchema,
   ...getStartedClaimSchema,
+  ...friendReferralSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
   ...userSchema,

@@ -1539,7 +1539,7 @@
           "unit": "per member"
         },
         "pendingState": "{{amount}} pending",
-        "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
+        "rewardsNote": "Task rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
         "slack": {
           "action": "Add",
           "description": "Where your team already works",
@@ -4169,6 +4169,23 @@
     "emptyDescription": "New suggestions will appear here.",
     "emptyTitle": "You’re all caught up",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "copied": "Copied",
+    "copy": "Copy link",
+    "copyFailed": "Copy failed. Select and copy the link above.",
+    "description": "Earn $20 in credits when a friend signs up with your link, buys a usage pack, and upgrades to Pro or above.",
+    "earned": "Credits earned",
+    "expiryNote": "Friend referral rewards expire one month after they are granted.",
+    "invite": "Invite",
+    "linkLabel": "Your referral link",
+    "loadFailed": "Your referral link could not be loaded. Try again.",
+    "loading": "Getting your referral link…",
+    "perFriend": "per paying friend",
+    "registered": "Friends signed up",
+    "retry": "Try again",
+    "terms": "For new users only. Each friend can earn you one reward. Credits go to your personal balance in this workspace and expire one month after they are granted.",
+    "title": "Invite your friends"
   },
   "global": {
     "errors": {

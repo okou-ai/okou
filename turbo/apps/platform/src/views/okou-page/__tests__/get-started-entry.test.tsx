@@ -2,6 +2,8 @@ import {
   catalogFixture,
   requireConnectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
+import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GET_STARTED_REWARDS,
   GET_STARTED_REWARDS_CHANGED_EVENT,
@@ -17,7 +19,13 @@ import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   integrationsSlackContract,
@@ -44,6 +52,142 @@ import {
 
 const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
+
+test("Friends have a separate referral link with paid-pack qualification and one-month rewards", async () => {
+  configureQuestPage(context, "admin");
+  const linkReady = context.mocks.deferred<void>();
+  context.mocks.api(friendReferralsContract.link, async ({ respond }) => {
+    await linkReady.promise;
+    return respond(200, {
+      code: "a7k2p9",
+      registeredCount: 3,
+      rewardedCount: 2,
+      earnedCredits: 40_000,
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(await screen.findByTestId("get-started-entry"));
+  const panel = await screen.findByRole("menu");
+  expect(within(panel).getByText("Invite your team")).toBeInTheDocument();
+  await user.keyboard("{End}");
+  expect(document.activeElement).toHaveTextContent("Invite your friends");
+  expect(document.activeElement).toHaveAttribute("role", "menuitem");
+  await user.keyboard("{Enter}");
+  const dialog = await screen.findByRole("dialog", {
+    name: "Invite your friends",
+  });
+  expect(
+    within(dialog).getByText(
+      /buys a usage pack, and upgrades to Pro or above/u,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(/expire one month after they are granted/u),
+  ).toBeInTheDocument();
+  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
+    "Getting your referral link…",
+  );
+  linkReady.resolve();
+  const link = await within(dialog).findByLabelText("Your referral link");
+  expect(link).toHaveValue(`${location.origin}/sign-up?friend_referral=a7k2p9`);
+  expect(within(dialog).getByText("40,000")).toBeInTheDocument();
+  click(buttonNamed("Copy link", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
+  await expect(navigator.clipboard.readText()).resolves.toBe(
+    `${location.origin}/sign-up?friend_referral=a7k2p9`,
+  );
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(screen.getByTestId("get-started-entry")).toHaveFocus();
+  });
+  await user.click(linkNamed("Workflows", document.body));
+  await screen.findByRole("heading", { name: "Workflows" });
+  act(() => {
+    window.history.back();
+  });
+  await user.click(await screen.findByTestId("get-started-entry"));
+  await screen.findByRole("menu");
+  await user.keyboard("{End}{Enter}");
+  await screen.findByRole("dialog", { name: "Invite your friends" });
+  act(() => {
+    window.history.forward();
+  });
+  await screen.findByRole("heading", { name: "Workflows" });
+  act(() => {
+    window.history.back();
+  });
+  await waitFor(() => {
+    expect(pathname()).toBe(questChatPath());
+    expect(
+      screen.queryByRole("dialog", { name: "Invite your friends" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Referral link failures can be retried in the same dialog", async () => {
+  configureQuestPage(context, "admin");
+  let failed = true;
+  context.mocks.api(friendReferralsContract.link, ({ respond }) => {
+    return failed
+      ? respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Friend referrals are not available",
+          },
+        })
+      : respond(200, {
+          code: "a7k2p9",
+          registeredCount: 0,
+          rewardedCount: 0,
+          earnedCredits: 0,
+        });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  click(within(await openQuestPanel()).getByText("Invite your friends"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Invite your friends",
+  });
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Your referral link could not be loaded. Try again.",
+  );
+  failed = false;
+  click(buttonNamed("Try again", dialog));
+  await expect(
+    within(dialog).findByLabelText("Your referral link"),
+  ).resolves.toBeInTheDocument();
+});
 
 function normalizedText(element: Element): string {
   return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";

@@ -1562,7 +1562,7 @@
           "unit": "par membre"
         },
         "pendingState": "{{amount}} en attente",
-        "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
+        "rewardsNote": "Les récompenses de tâches expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
         "slack": {
           "action": "Ajouter",
           "description": "Là où votre équipe travaille déjà",
@@ -4224,6 +4224,23 @@
     "emptyDescription": "Les nouvelles suggestions apparaîtront ici.",
     "emptyTitle": "Vous êtes à jour",
     "title": "Fil"
+  },
+  "friendReferrals": {
+    "copied": "Copié",
+    "copy": "Copier le lien",
+    "copyFailed": "La copie a échoué. Sélectionnez et copiez le lien ci-dessus.",
+    "description": "Gagnez $20 de crédits lorsqu’un ami s’inscrit avec votre lien, achète un usage pack et passe à Pro ou à une offre supérieure.",
+    "earned": "Crédits gagnés",
+    "expiryNote": "Les récompenses de parrainage expirent un mois après leur attribution.",
+    "invite": "Inviter",
+    "linkLabel": "Votre lien de parrainage",
+    "loadFailed": "Impossible de charger votre lien de parrainage. Réessayez.",
+    "loading": "Chargement de votre lien de parrainage…",
+    "perFriend": "par ami payant",
+    "registered": "Amis inscrits",
+    "retry": "Réessayer",
+    "terms": "Réservé aux nouveaux utilisateurs. Une récompense par ami. Les crédits sont versés sur votre solde personnel dans cet espace et expirent un mois après leur attribution.",
+    "title": "Inviter vos amis"
   },
   "global": {
     "errors": {

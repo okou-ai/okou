@@ -1,6 +1,8 @@
 import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
 import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { ReactNode } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { FRIEND_REFERRAL_REWARD_CREDITS } from "@okouai/api-contracts/validators/friend-referrals";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -9,6 +11,7 @@ import {
   Check,
   ChevronRight,
   Coins,
+  Gift,
   Hash,
   Link2,
   MessageCircle,
@@ -24,6 +27,12 @@ import {
   DropdownMenuTrigger,
 } from "@okouai/ui";
 import { assistantName$ } from "../../signals/branding.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import {
+  loadFriendReferral$,
+  setFriendReferralOpen$,
+} from "../../signals/friend-referrals.ts";
+import { FriendReferralDialog } from "./friend-referral-dialog.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
@@ -472,7 +481,7 @@ function useQuestActions(
 }
 
 /** The reward rules, unfolded in place rather than behind another surface. */
-function RewardsNote() {
+function RewardsNote({ referralsEnabled }: { referralsEnabled: boolean }) {
   const { t } = useTranslation();
   const open = useGet(rewardsNoteOpen$);
   const setOpen = useSet(setRewardsNoteOpen$);
@@ -500,6 +509,14 @@ function RewardsNote() {
           {t(($) => {
             return $.chat.agentPage.getStarted.rewardsNote;
           })}
+          {referralsEnabled && (
+            <>
+              {" "}
+              {t(($) => {
+                return $.friendReferrals.expiryNote;
+              })}
+            </>
+          )}
         </p>
       )}
     </div>
@@ -510,10 +527,14 @@ function GetStartedPanel({
   quests,
   summary,
   handoffs,
+  referralsEnabled,
+  onReferral,
 }: {
   quests: readonly GetStartedQuest[];
   summary: GetStartedSummary;
   handoffs: ReturnType<typeof useQuestHandoffs>;
+  referralsEnabled: boolean;
+  onReferral: () => void;
 }) {
   const { t } = useTranslation();
   const copy = useQuestCopy();
@@ -580,7 +601,41 @@ function GetStartedPanel({
           );
         })}
       </div>
-      <RewardsNote />
+      {referralsEnabled && (
+        <DropdownMenuItem
+          className={`${QUEST_ROW_CLASS} mt-2 border-t border-divider pt-3`}
+          onClick={onReferral}
+          data-testid="get-started-friend-referral"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill">
+            <Gift className="text-muted-foreground" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate">
+              {t(($) => {
+                return $.friendReferrals.title;
+              })}
+            </span>
+            <span className="mt-0.5 flex items-center gap-1.5 text-xs">
+              <QuestReward
+                amount={FRIEND_REFERRAL_REWARD_CREDITS}
+                earned={false}
+              />
+              <span className="text-muted-foreground">
+                {t(($) => {
+                  return $.friendReferrals.perFriend;
+                })}
+              </span>
+            </span>
+          </span>
+          <QuestAction
+            label={t(($) => {
+              return $.friendReferrals.invite;
+            })}
+          />
+        </DropdownMenuItem>
+      )}
+      <RewardsNote referralsEnabled={referralsEnabled} />
     </DropdownMenuContent>
   );
 }
@@ -597,12 +652,23 @@ export function GetStartedEntry() {
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
   const setMenuOpen = useSet(setGetStartedMenuOpen$);
+  const referralsEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.FriendReferrals];
+  const setReferralOpen = useSet(setFriendReferralOpen$);
+  const [referralLoadable, loadReferral] = useLoadableSet(loadFriendReferral$);
   // The phone dialog outlives the dropdown that opened it, so its connection
   // code stays with this shared owner.
   const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
     createAgentPhoneLinkCode$,
   );
   const pageSignal = useGet(pageSignal$);
+  const reloadReferral = () => {
+    detach(loadReferral(pageSignal), Reason.DomCallback);
+  };
+  const openReferral = () => {
+    setReferralOpen(true);
+    reloadReferral();
+  };
   const setConnectOpen = useSet(setAgentPhoneConnectDialogOpen$);
   const requestConnectionCode = () => {
     detach(createConnectionCode(pageSignal), Reason.DomCallback);
@@ -663,8 +729,20 @@ export function GetStartedEntry() {
           quests={questsLoadable.data}
           summary={summary}
           handoffs={handoffs}
+          referralsEnabled={referralsEnabled}
+          onReferral={openReferral}
         />
       </DropdownMenu>
+      {referralsEnabled && (
+        <FriendReferralDialog
+          data={
+            referralLoadable.state === "hasData" ? referralLoadable.data : null
+          }
+          loading={referralLoadable.state === "loading"}
+          failed={referralLoadable.state === "hasError"}
+          onRetry={reloadReferral}
+        />
+      )}
       <GetStartedQuestIntroDialog onInvite={handoffs.invite} />
       {/* The quest the dialog reports on is the one the panel just checked in,
           so the dialog exists exactly when that quest does. */}

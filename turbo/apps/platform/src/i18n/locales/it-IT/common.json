@@ -1562,7 +1562,7 @@
           "unit": "per membro"
         },
         "pendingState": "{{amount}} in sospeso",
-        "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
+        "rewardsNote": "I premi delle attività scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "slack": {
           "action": "Aggiungi",
           "description": "Dove il tuo team lavora già",
@@ -4224,6 +4224,23 @@
     "emptyDescription": "I nuovi suggerimenti appariranno qui.",
     "emptyTitle": "Sei in pari",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "copied": "Copiato",
+    "copy": "Copia link",
+    "copyFailed": "Copia non riuscita. Seleziona e copia il link qui sopra.",
+    "description": "Guadagna $20 in crediti quando un amico si registra tramite il tuo link, acquista un usage pack e passa a Pro o a un piano superiore.",
+    "earned": "Crediti guadagnati",
+    "expiryNote": "I premi per gli inviti scadono un mese dopo l’assegnazione.",
+    "invite": "Invita",
+    "linkLabel": "Il tuo link di invito",
+    "loadFailed": "Impossibile caricare il tuo link di invito. Riprova.",
+    "loading": "Caricamento del tuo link di invito…",
+    "perFriend": "per amico pagante",
+    "registered": "Amici registrati",
+    "retry": "Riprova",
+    "terms": "Solo per nuovi utenti. Un premio per amico. I crediti vengono aggiunti al tuo saldo personale in questo spazio e scadono un mese dopo l’assegnazione.",
+    "title": "Invita i tuoi amici"
   },
   "global": {
     "errors": {
