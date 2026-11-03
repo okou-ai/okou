@@ -5071,6 +5071,7 @@
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
+    "moveTo": "Mover para {{name}}",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",

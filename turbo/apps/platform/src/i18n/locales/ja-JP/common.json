@@ -4998,6 +4998,7 @@
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
+    "moveTo": "{{name}} に移動",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",

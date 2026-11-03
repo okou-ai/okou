@@ -494,6 +494,9 @@ export function createDataTransferStub(
     get dragImage() {
       return dragImage;
     },
+    get types() {
+      return [...values.keys()];
+    },
     effectAllowed: "none",
     dropEffect: "none",
     clearData: (format?: string) => {

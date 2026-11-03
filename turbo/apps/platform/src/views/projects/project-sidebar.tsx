@@ -43,6 +43,9 @@ import { projectCreationAgentId$ } from "../../signals/projects/project-selected
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadItem } from "../okou-page/sidebar-threads.tsx";
+import { projectThreadDragEventsRef$ } from "../../signals/projects/project-thread-drag.ts";
+import { ProjectThreadDropZone } from "./project-thread-drop-zone.tsx";
+import { ProjectThreadDragHint } from "./project-thread-drag-hint.tsx";
 
 function ProjectFolderMenu({
   project,
@@ -178,7 +181,7 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
     detach(create(project.id, signal), Reason.DomCallback);
   }
   return (
-    <div data-project-folder-id={project.id}>
+    <ProjectThreadDropZone project={project} touch={touch}>
       <div className="group/project flex min-w-0 items-center rounded-lg hover:bg-state-hover">
         <button
           type="button"
@@ -282,7 +285,7 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
           )}
         </div>
       )}
-    </div>
+    </ProjectThreadDropZone>
   );
 }
 
@@ -297,11 +300,13 @@ export function ProjectSidebar({
   const enabled = useGet(projectsEnabled$);
   const projects = useGet(projects$);
   const open = useSet(openProjectEditor$);
+  const dragEventsRef = useSet(projectThreadDragEventsRef$);
   if (!enabled) {
     return null;
   }
   return (
     <section
+      ref={touch ? undefined : dragEventsRef}
       data-project-sidebar=""
       aria-label={t(($) => {
         return $.projects.projects;
@@ -351,6 +356,7 @@ export function ProjectSidebar({
           );
         })}
       </div>
+      {!touch && <ProjectThreadDragHint />}
     </section>
   );
 }
