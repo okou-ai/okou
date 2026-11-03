@@ -76,7 +76,7 @@ struct ComposerConnectorSheet: View {
             Label("Add connectors", systemImage: "plus")
           }
         } header: {
-          Text("Services").textCase(nil)
+          Text("Services").font(.subheadline).fontWeight(.regular).textCase(nil)
         } footer: {
           Text("Service access applies to this Agent. Account choices apply to this chat.")
         }
@@ -198,6 +198,7 @@ struct ComposerConnectorSheet: View {
         .padding(.leading, 32)
       }
     }
+    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
   }
 
   @ViewBuilder
