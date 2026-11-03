@@ -654,36 +654,27 @@ impl FactoryCleanupGroup {
 
 impl Drop for FactoryCleanupGroup {
     fn drop(&mut self) {
-        match self.state.try_lock() {
-            Ok(mut state) => {
-                Self::reap_completed_locked(&mut state);
-                if state.tasks.is_empty() {
-                    return;
-                }
-                warn!(
-                    task_count = state.tasks.len(),
-                    "factory cleanup group dropped with in-flight tasks; aborting without await"
-                );
-                for task in state.tasks.iter() {
-                    task.abort();
-                }
-            }
+        let (mut state, message) = match self.state.try_lock() {
+            Ok(state) => (
+                state,
+                "factory cleanup group dropped with in-flight tasks; aborting without await",
+            ),
             Err(TryLockError::WouldBlock) => {
                 warn!("factory cleanup group dropped while locked; cleanup tasks may keep running");
+                return;
             }
-            Err(TryLockError::Poisoned(poisoned)) => {
-                let mut state = poisoned.into_inner();
-                Self::reap_completed_locked(&mut state);
-                if !state.tasks.is_empty() {
-                    warn!(
-                        task_count = state.tasks.len(),
-                        "factory cleanup group dropped with poisoned state and in-flight tasks; aborting without await"
-                    );
-                    for task in state.tasks.iter() {
-                        task.abort();
-                    }
-                }
-            }
+            Err(TryLockError::Poisoned(poisoned)) => (
+                poisoned.into_inner(),
+                "factory cleanup group dropped with poisoned state and in-flight tasks; aborting without await",
+            ),
+        };
+        Self::reap_completed_locked(&mut state);
+        if state.tasks.is_empty() {
+            return;
+        }
+        warn!(task_count = state.tasks.len(), "{message}");
+        for task in state.tasks.iter() {
+            task.abort();
         }
     }
 }
