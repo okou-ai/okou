@@ -1,5 +1,27 @@
 # Changelog
 
+## [10.17.2](https://github.com/okou-ai/okou/compare/cli-v10.17.1...cli-v10.17.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **cli:** release browser proxy output capture after foreground exit ([#44964](https://github.com/okou-ai/okou/issues/44964)) ([482abbb](https://github.com/okou-ai/okou/commit/482abbbf7df432eed52994e40b1c1ba90a7c66c4))
+
+
+### Refactoring
+
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.38.1
+    * @okouai/browser-extension-client bumped to 0.4.4
+    * @okouai/core bumped to 8.813.1
+    * @okouai/pi-agent-runtime bumped to 1.51.59
+
 ## [10.17.1](https://github.com/okou-ai/okou/compare/cli-v10.17.0...cli-v10.17.1) (2026-11-03)
 
 

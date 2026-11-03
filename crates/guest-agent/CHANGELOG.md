@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.35](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.34...guest-agent-v0.109.35) (2026-11-03)
+
+
+### Performance Improvements
+
+* **guest-agent:** bound encoded session history reads ([#44944](https://github.com/okou-ai/okou/issues/44944)) ([345c6d2](https://github.com/okou-ai/okou/commit/345c6d253e5128e170cbb16b76a7a90a0af07014))
+
 ## [0.109.34](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.33...guest-agent-v0.109.34) (2026-11-03)
 
 
