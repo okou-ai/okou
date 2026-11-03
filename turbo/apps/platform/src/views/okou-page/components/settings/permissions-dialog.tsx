@@ -363,18 +363,6 @@ function hasDraftExpirationSelections({
   return false;
 }
 
-function canApplyPermissionPolicies({
-  metadata,
-  saving,
-  hasChanges,
-}: {
-  metadata: PlatformConnectorPermissionMetadata;
-  saving: boolean;
-  hasChanges: boolean;
-}): boolean {
-  return metadata.permissionCount > 0 && !saving && hasChanges;
-}
-
 function UnknownEndpointsToggle({
   policyControl,
 }: {
@@ -1193,11 +1181,7 @@ function LoadedPermissionsDrawerContent({
         permissions,
         explicitGrants,
       }));
-  const canApply = canApplyPermissionPolicies({
-    metadata,
-    saving,
-    hasChanges: hasPermissionChanges,
-  });
+  const canApply = !saving && hasPermissionChanges;
   const unknownGrant = effectiveExplicitGrants.get(UNKNOWN_PERMISSION_GRANT);
   const unknownSelectedExpiration = draft.unknownExpiration;
 

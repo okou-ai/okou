@@ -57,6 +57,7 @@ function installAccess(
     personalOff?: boolean;
     rejectSelection?: boolean;
     custom?: boolean;
+    withoutBundle?: boolean;
   } = {},
 ) {
   const accessTarget = options.custom
@@ -81,7 +82,9 @@ function installAccess(
               displayName: "Acme",
               hasAccount: true,
             }),
-            permissionBundleRef: "builtin:github@1",
+            permissionBundleRef: options.withoutBundle
+              ? null
+              : "builtin:github@1",
           },
         ]
       : [],
@@ -350,6 +353,45 @@ test.each([
     ).resolves.toHaveAttribute("aria-pressed", "true");
   },
 );
+
+test("Save custom connector endpoint rules without named permissions or enabled accounts", async () => {
+  const user = userEvent.setup({ delay: null });
+  installAccess({ allOff: true, custom: true, withoutBundle: true });
+  await setup();
+  await user.click(await openMenu("Acme"));
+  await user.click(await findFastControl("button", "Permissions"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Acme permissions",
+  });
+  await within(dialog).findByText("Other endpoints");
+  const deny = queryAllByRoleFast("button", dialog)
+    .filter((button) => {
+      return button.textContent?.trim() === "Deny";
+    })
+    .at(-1)!;
+  await user.click(deny);
+  const apply = await findFastControl("button", "Apply", dialog);
+  expect(apply).toBeEnabled();
+  await user.click(apply);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Acme permissions" }),
+    ).toBeNull();
+  });
+  const row = await openMenu("Acme");
+  expect(row).toHaveTextContent("0 on");
+  await user.click(row);
+  await user.click(await findFastControl("button", "Permissions"));
+  const saved = await screen.findByRole("dialog", { name: "Acme permissions" });
+  await within(saved).findByText("Other endpoints");
+  expect(
+    queryAllByRoleFast("button", saved)
+      .filter((button) => {
+        return button.textContent?.trim() === "Deny";
+      })
+      .at(-1),
+  ).toHaveAttribute("aria-pressed", "true");
+});
 
 function expectRetainedDraft(path: string, composer: HTMLElement) {
   expect(window.location.pathname).toBe(path);
