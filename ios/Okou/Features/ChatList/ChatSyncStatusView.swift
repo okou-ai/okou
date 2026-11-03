@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One visible navigation surface presents the workspace's shared synchronization state.
+/// One visible navigation surface presents synchronization failures; routine updates stay silent.
 struct ChatSyncStatusView: View {
   let state: ChatSynchronizationState?
   let retry: @MainActor () async -> Void
@@ -37,7 +37,7 @@ struct ChatSyncStatusView: View {
       }
     }
     .task(id: state) {
-      guard let state else {
+      guard let state, state == .unavailable else {
         displayed = nil
         return
       }
