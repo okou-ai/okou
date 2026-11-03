@@ -34,6 +34,7 @@ export interface CdpEvent {
 }
 interface Pending {
   readonly method: string;
+  readonly readOnly: boolean;
   readonly sessionId: string | undefined;
   readonly deadline: number;
   readonly resolve: (result: unknown) => void;
@@ -58,6 +59,13 @@ export interface CdpClient {
     params: unknown,
     sessionId?: string,
     late?: (result: unknown) => void | Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
+  /** Only an owning typed adapter may establish that an opaque request is pure. */
+  readRaw(
+    method: string,
+    params: unknown,
+    sessionId?: string,
     signal?: AbortSignal,
   ): Promise<unknown>;
   notify<M extends Method>(
@@ -135,18 +143,37 @@ function createWire(connection: Connection) {
 type Wire = ReturnType<typeof createWire>;
 type ConnectionRole = "control" | "frames";
 
-function createRequests(
+function isReadMethod(method: string): boolean {
+  switch (method) {
+    case "Target.getTargets":
+    case "Browser.getWindowForTarget":
+    case "Page.getFrameTree":
+    case "Page.getLayoutMetrics":
+    case "Page.getNavigationHistory": {
+      return true;
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
+function createRequestSender(
   connection: Connection,
   wire: Wire,
   signal: AbortSignal,
 ) {
-  async function requestRaw(
+  async function sendRequest(
     method: string,
     params: unknown,
-    sessionId?: string,
-    late?: (result: unknown) => void | Promise<void>,
+    sessionId: string | undefined,
+    options: {
+      readonly late: ((result: unknown) => void | Promise<void>) | undefined;
+      readonly readOnly: boolean;
+    },
     operation?: AbortSignal,
   ): Promise<unknown> {
+    const { late, readOnly } = options;
     operation?.throwIfAborted();
     if (connection.failure || connection.socket.readyState !== 1) {
       throw new CdpFault(
@@ -185,6 +212,7 @@ function createRequests(
     );
     const entry: Pending = {
       method,
+      readOnly: readOnly && !late,
       sessionId,
       deadline: monotonicNow() + responseTimeoutMs,
       resolve: (result) => {
@@ -221,6 +249,44 @@ function createRequests(
     }
     return await deferred.promise;
   }
+  return sendRequest;
+}
+
+function createRequests(
+  connection: Connection,
+  wire: Wire,
+  signal: AbortSignal,
+) {
+  const sendRequest = createRequestSender(connection, wire, signal);
+  function requestRaw(
+    method: string,
+    params: unknown,
+    sessionId?: string,
+    late?: (result: unknown) => void | Promise<void>,
+    operation?: AbortSignal,
+  ): Promise<unknown> {
+    return sendRequest(
+      method,
+      params,
+      sessionId,
+      { late, readOnly: isReadMethod(method) },
+      operation,
+    );
+  }
+  function readRaw(
+    method: string,
+    params: unknown,
+    sessionId?: string,
+    operation?: AbortSignal,
+  ): Promise<unknown> {
+    return sendRequest(
+      method,
+      params,
+      sessionId,
+      { late: undefined, readOnly: true },
+      operation,
+    );
+  }
   function notify<M extends Method>(
     method: M,
     params: Params<M>,
@@ -243,7 +309,7 @@ function createRequests(
       operation,
     )) as Result<M>;
   }
-  return { request, requestRaw, notify };
+  return { request, requestRaw, readRaw, notify };
 }
 
 async function releaseLate(
@@ -301,6 +367,7 @@ function receiveResponse(
               ? { code }
               : {}),
           }),
+          { readOnly: entry.readOnly },
         ),
       );
     }
@@ -494,9 +561,28 @@ function observeDeadlines(
       }
       const opening = !connection.opening.settled();
       const time = monotonicNow();
-      const expired = [...connection.pending.values()].find((entry) => {
-        return time >= entry.deadline;
-      });
+      let expired: Pending | undefined;
+      for (const [id, entry] of connection.pending) {
+        if (time < entry.deadline) {
+          continue;
+        }
+        if (!entry.readOnly) {
+          expired = entry;
+          break;
+        }
+        connection.pending.delete(id);
+        entry.unwatch?.();
+        entry.settled = true;
+        entry.reject(
+          new CdpFault(
+            "protocol",
+            "The browser read did not respond in time.",
+            undefined,
+            Object.freeze({ method: entry.method }),
+            { readOnly: true },
+          ),
+        );
+      }
       if ((opening && time >= openingDeadline) || expired) {
         // An unanswered write has an unknown outcome. Retire its original wire;
         // never retry it or let a late reply authorize a replacement connection.

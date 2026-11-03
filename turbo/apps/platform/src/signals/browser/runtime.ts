@@ -984,16 +984,23 @@ function createConfigurationActions(
   lifecycle: NativeLifecycle,
   reloadConnection$: Command<void, []>,
 ) {
-  const { model, connection$, generation$ } = context;
+  const { model, connection$, generation$, installed$, authority$ } = context;
   const { requireController$, nodes$, native } = graph;
   const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (!get(nodes$)) {
       throw cancelled();
     }
-    set(generation$, (value) => {
-      return value + 1;
-    });
+    const lease = get(installed$);
+    if (
+      !get(authority$) ||
+      !lease ||
+      !get(lease.controller.canRetryDiscovery$)
+    ) {
+      set(generation$, (value) => {
+        return value + 1;
+      });
+    }
     set(reloadConnection$);
     const interrupted = createDeferredPromise<void>(signal);
     using _interruption = {

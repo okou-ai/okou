@@ -3195,7 +3195,7 @@ test("Losing the last scoped target keeps foreign tabs excluded and permits a na
 });
 
 test.each(["present target", "failed inventory", "unsupported membership"])(
-  "A selected membership failure with %s retains the connection-wide failure boundary",
+  "A selected membership failure with %s revokes input until fresh proof",
   async (failure) => {
     const browser = await setupViewer(0);
     const membership = browser.holdNextMembership("example-page");
@@ -3216,6 +3216,26 @@ test.each(["present target", "failed inventory", "unsupported membership"])(
     expect(
       screen.getByLabelText("New tab", { selector: "button" }),
     ).toBeDisabled();
+    const reconnect = queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.trim() === "Reconnect";
+    });
+    expect(reconnect).toBeDefined();
+    click(reconnect!);
+    if (failure === "failed inventory") {
+      await screen.findByText("No tabs open");
+    }
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("New tab", { selector: "button" }),
+      ).toBeEnabled();
+      expect(screen.getByLabelText("Remote browser input")).toHaveProperty(
+        "disabled",
+        failure === "failed inventory",
+      );
+    });
+    expect(browser.connections()).toBe(
+      failure === "unsupported membership" ? 2 : 1,
+    );
   },
 );
 

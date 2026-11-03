@@ -18,6 +18,30 @@ export function nativeFault(error?: unknown): CdpFault {
   );
 }
 
+/** Only called at a known native read boundary, never for an unknown effect. */
+export function nativeReadFault(error: unknown): CdpFault {
+  if (
+    error instanceof BrowserBridgeError &&
+    error.kind === "native" &&
+    [
+      "native-operation-failed",
+      "cdp-request-failed",
+      "cdp-protocol-failed",
+    ].includes(error.diagnostics.reason)
+  ) {
+    return new CdpFault(
+      error.diagnostics.request?.code === -32_601
+        ? "unsupported-capability"
+        : "scope",
+      "The native browser state could not be read.",
+      error.diagnostics.request?.code,
+      error.diagnostics.request,
+      { cause: error, readOnly: true },
+    );
+  }
+  return nativeFault(error);
+}
+
 /** Native membership invalidations have no authority over CDP page identities. */
 export function changesMembership(
   event: NativeEvent,
@@ -51,7 +75,7 @@ export async function connectNative(
       runtimeId,
       signal,
       transport: {
-        request: (method, params, sessionId) => {
+        request: (method, params, sessionId, options) => {
           const late = async (value: unknown) => {
             if (isRecord(value) && typeof value.sessionId === "string") {
               await client.requestRaw(
@@ -61,6 +85,9 @@ export async function connectNative(
               );
             }
           };
+          if (options?.readOnly) {
+            return client.readRaw(method, params, sessionId, signal);
+          }
           return client.requestRaw(
             method,
             params,

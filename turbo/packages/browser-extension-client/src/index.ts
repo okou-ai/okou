@@ -90,11 +90,15 @@ export interface CdpEvent {
 }
 
 export interface CdpTransport {
-  /** The caller owns request IDs, IO deadlines and the underlying connection. */
+  /**
+   * The caller owns request IDs, IO deadlines and the underlying connection.
+   * readOnly is in-process evidence for independent expiry of a pure native read.
+   */
   readonly request: (
     method: string,
     params: Readonly<Record<string, unknown>>,
     sessionId?: string,
+    options?: { readonly readOnly: true },
   ) => Promise<unknown>;
   readonly onEvent: (listener: (event: CdpEvent) => void) => () => void;
 }
@@ -340,9 +344,10 @@ export class OkouBrowserClient {
     params: Readonly<Record<string, unknown>>,
     sessionId?: string,
     kind: BrowserBridgeError["kind"] = "unavailable",
+    options?: { readonly readOnly: true },
   ): Promise<unknown> {
     try {
-      return await this.transport.request(method, params, sessionId);
+      return await this.transport.request(method, params, sessionId, options);
     } catch (error) {
       this.current();
       const code =
@@ -822,6 +827,11 @@ export class OkouBrowserClient {
       },
       this.workerSession,
       "native",
+      ["hello", "getWindow", "listWindows", "listTabs", "getTab"].includes(
+        method,
+      )
+        ? { readOnly: true }
+        : undefined,
     );
     this.current();
     const result = record(response);

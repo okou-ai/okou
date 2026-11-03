@@ -1,6 +1,6 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { createDeferredPromise } from "../../utils.ts";
-import { CdpFault, isRecord } from "../cdp/errors.ts";
+import { CdpFault, isRecord, isRecoverableReadFailure } from "../cdp/errors.ts";
 import { pageTarget, type TargetDirectory } from "../cdp/targets.ts";
 import type { CdpEvent } from "../cdp/client.ts";
 import type { ViewerSnapshot, ViewerTarget } from "./types.ts";
@@ -109,7 +109,12 @@ function createDiscoveryLifecycle(
     if (!get(active$) || signal.aborted) {
       return;
     }
-    set(close$);
+    if (isRecoverableReadFailure(error)) {
+      // Failed proof revokes admission, not the healthy transport or epoch.
+      set(validating$, true);
+    } else {
+      set(close$);
+    }
     set(options.failed$, error, signal);
   });
   const commit$ = command(
