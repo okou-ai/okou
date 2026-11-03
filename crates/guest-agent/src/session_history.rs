@@ -29,6 +29,11 @@ use std::path::{Path, PathBuf};
 // unbounded synchronous walk.
 const CODEX_SESSION_LOOKUP_SCAN_BUDGET: usize = 16_384;
 
+// Keep encoded work independent of decoded output: skippable and empty frames
+// produce no output. Allow normal frame overhead even for tiny/empty histories,
+// but reject excessively padded or fragmented encodings.
+const SESSION_HISTORY_ENCODED_OVERHEAD_BYTES: u64 = 1024 * 1024;
+
 pub(crate) fn session_history_exceeds_max_error(max_bytes: u64) -> AgentError {
     AgentError::SessionHistoryTooLarge { max_bytes }
 }
@@ -65,8 +70,11 @@ impl ResolvedSessionHistory {
         read_open_codex_content_bounded(self.path, self.file, self.is_zstd, max_bytes)
     }
 
-    fn into_decoded_reader(self) -> Result<DecodedSessionHistoryReader, AgentError> {
-        DecodedSessionHistoryReader::open(self.path, self.file)
+    fn into_decoded_reader(
+        self,
+        max_bytes: u64,
+    ) -> Result<DecodedSessionHistoryReader, AgentError> {
+        DecodedSessionHistoryReader::open(self.path, self.file, max_bytes)
     }
 
     /// Digest the actual named source only while it remains on the retained home mount.
@@ -101,8 +109,8 @@ impl ResolvedSessionHistory {
                 .file
                 .try_clone()
                 .map_err(|error| read_history_error(&self.path, error))?;
-            let digest =
-                DecodedSessionHistoryReader::open(self.path.clone(), file)?.digest(max_bytes)?;
+            let digest = DecodedSessionHistoryReader::open(self.path.clone(), file, max_bytes)?
+                .digest(max_bytes)?;
             let current_parent = Dir::open_absolute(&self.location.parent_path)
                 .map_err(|error| read_history_error(&self.path, error))?;
             let named = current_parent
@@ -226,7 +234,7 @@ pub(crate) fn digest_session_history_from_source_bounded(
     max_bytes: u64,
 ) -> Result<SessionHistoryDigest, SessionHistoryDigestError> {
     resolve_session_history_from_source(source)?
-        .into_decoded_reader()?
+        .into_decoded_reader(max_bytes)?
         .digest(max_bytes)
 }
 
@@ -328,7 +336,7 @@ fn read_open_codex_content_bounded(
         return Err(session_history_exceeds_max_error(max_bytes));
     }
 
-    DecodedSessionHistoryReader::open(path, file)?
+    DecodedSessionHistoryReader::open(path, file, max_bytes)?
         .read(Some(max_bytes))
         .map(SessionHistoryContent::Decoded)
 }
@@ -744,16 +752,58 @@ fn read_history_error(_path: &Path, source: io::Error) -> AgentError {
     AgentError::SessionHistoryRead(source)
 }
 
+struct EncodedSessionHistoryReader {
+    reader: io::Take<File>,
+    max_bytes: u64,
+}
+
+impl Read for EncodedSessionHistoryReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        if self.reader.limit() > 0 {
+            return self.reader.read(buffer);
+        }
+        // Take alone would fabricate EOF and could accept a complete frame with
+        // trailing skippable data. Probe real EOF without traversing that tail.
+        if self.reader.get_mut().read(&mut [0])? == 0 {
+            Ok(0)
+        } else {
+            Err(io::Error::other(
+                AgentError::SessionHistoryEncodedTooLarge {
+                    max_bytes: self.max_bytes,
+                },
+            ))
+        }
+    }
+}
+
 enum DecodedSessionHistoryReader {
     Plain { path: PathBuf, reader: File },
-    Zstd(zstd::stream::read::Decoder<'static, BufReader<File>>),
+    Zstd(zstd::stream::read::Decoder<'static, BufReader<EncodedSessionHistoryReader>>),
 }
 
 impl DecodedSessionHistoryReader {
-    fn open(path: PathBuf, file: File) -> Result<Self, AgentError> {
+    fn open(path: PathBuf, file: File, max_bytes: u64) -> Result<Self, AgentError> {
         if is_zstd_session_history(&path) {
+            let max_encoded_bytes =
+                max_bytes.saturating_add(SESSION_HISTORY_ENCODED_OVERHEAD_BYTES);
+            let source_len = file
+                .metadata()
+                .map_err(|error| read_history_error(&path, error))?
+                .len();
+            if source_len > max_encoded_bytes {
+                return Err(AgentError::SessionHistoryEncodedTooLarge {
+                    max_bytes: max_encoded_bytes,
+                });
+            }
+            let reader = EncodedSessionHistoryReader {
+                reader: file.take(max_encoded_bytes),
+                max_bytes: max_encoded_bytes,
+            };
             let decoder =
-                zstd::stream::read::Decoder::new(file).map_err(zstd_session_history_error)?;
+                zstd::stream::read::Decoder::new(reader).map_err(zstd_session_history_error)?;
             return Ok(Self::Zstd(decoder));
         }
 
@@ -784,6 +834,14 @@ impl DecodedSessionHistoryReader {
 }
 
 fn zstd_session_history_error(source: io::Error) -> AgentError {
+    if let Some(AgentError::SessionHistoryEncodedTooLarge { max_bytes }) = source
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<AgentError>())
+    {
+        return AgentError::SessionHistoryEncodedTooLarge {
+            max_bytes: *max_bytes,
+        };
+    }
     AgentError::Finalization(format!(
         "Failed to decompress zstd session history: {source}"
     ))

@@ -39,8 +39,12 @@ use tokio_util::task::AbortOnDropHandle;
 const LOG_TAG: &str = "sandbox:guest-agent";
 
 fn finalization_failure_reason(error: &AgentError) -> Option<FailureReason> {
-    matches!(error, AgentError::SessionHistoryTooLarge { .. })
-        .then_some(FailureReason::SessionHistoryLimit)
+    matches!(
+        error,
+        AgentError::SessionHistoryTooLarge { .. }
+            | AgentError::SessionHistoryEncodedTooLarge { .. }
+    )
+    .then_some(FailureReason::SessionHistoryLimit)
 }
 
 fn main() {
