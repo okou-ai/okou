@@ -169,7 +169,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Browser tab continuity: When resuming a page after `okou browser use`, do not trust the selected tab or a prior run's `t<N>` ID. Use `okou browser tab list` for safe current IDs and redacted origins. Keep the selected tab only if non-sensitive page evidence confirms it; otherwise inspect a candidate via `okou browser tab select <id>` and confirm it before navigating or submitting. Origin or selection alone is not proof, even with one match. Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`): tool output may expose full URLs, titles or OAuth parameters. If safe commands are unavailable or the page remains unclear, stop without navigating, submitting, repeating input or echoing values.",
           ...(args.browserSharedOwnerEnabled
             ? [
-                "- Browser shared profile: Each chat has its own tabs; website login state is shared across chats.",
+                "- Browser shared profile: Each chat has its own window and tabs; website login state is shared across chats.",
               ]
             : []),
           ...(args.browserNativeInputEnabled === true

@@ -7726,7 +7726,9 @@ describe("okou browser route", () => {
       const claim = await runs.claimRunnerJob(sent.runId);
       const appendSystemPrompt = claim.appendSystemPrompt ?? "";
       expect(appendSystemPrompt).toContain("this chat's managed Browser");
-      expect(appendSystemPrompt).toContain("Each chat has its own tabs");
+      expect(appendSystemPrompt).toContain(
+        "Each chat has its own window and tabs",
+      );
       expect(appendSystemPrompt).toContain(
         "website login state is shared across chats",
       );
