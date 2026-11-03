@@ -29,7 +29,8 @@ struct ChatSidebarAccountButton: UIViewRepresentable {
     if notifications.registrationError != nil {
       actions.append(
         UIAction(
-          title: String(localized: "Retry notification setup"), image: UIImage(systemName: "bell.badge")
+          title: String(localized: "Retry notification setup"),
+          image: UIImage(systemName: "bell.badge")
         ) { _ in Task { await notifications.retryRegistration() } })
     }
     actions.append(
@@ -76,7 +77,8 @@ final class SidebarMenuButton: UIButton {
   required init?(coder: NSCoder) { nil }
 
   override func contextMenuInteraction(
-    _ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration,
+    _ interaction: UIContextMenuInteraction,
+    willDisplayMenuFor configuration: UIContextMenuConfiguration,
     animator: (any UIContextMenuInteractionAnimating)?
   ) {
     let id = sidebar.beginMenuPresentation()
