@@ -1699,6 +1699,9 @@ function createReadinessWait(
           ) {
             // Missing paint is a capture fault, not a lost healthy connection.
             await set(get(links$).captureFailed$, owner, error, signal);
+            if (!get(available$) || get(selectedOwner$) !== owner) {
+              throw cancelled();
+            }
           }
           throw error;
         }

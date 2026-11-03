@@ -907,6 +907,50 @@ test.each(["shared", "split"] as const)(
   },
 );
 
+test("A tab selected during timed-out capture cleanup survives the old readiness result", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const viewer = mockViewer();
+  viewer.browser.targets[1]!.windowId = 101;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  await insertText("before paused selection");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "before paused selection" },
+    });
+  });
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = viewer.browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  const capture = viewer.browser.holdNext("Page.stopScreencast");
+  viewer.advance(31_000);
+  await capture.received;
+  click(screen.getByLabelText("Replacement", { selector: '[role="tab"]' }));
+  await expectReady("https://replacement.example.com");
+  await act(async () => {
+    await capture.release();
+    image.release();
+  });
+  await expectReady("https://replacement.example.com");
+  await insertText("after old capture cleanup");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: viewer.browser.pageSession("replacement"),
+      params: { text: "after old capture cleanup" },
+    });
+  });
+});
+
 test("Selecting a ready tab cancels the old first-frame deadline without failing startup", async () => {
   const viewer = mockViewer();
   viewer.browser.targets[1]!.windowId = 101;
