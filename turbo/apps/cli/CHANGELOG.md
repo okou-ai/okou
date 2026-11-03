@@ -1,5 +1,31 @@
 # Changelog
 
+## [10.17.0](https://github.com/okou-ai/okou/compare/cli-v10.16.1...cli-v10.17.0) (2026-11-03)
+
+
+### Features
+
+* **browser:** proxy cdp for each chat window ([#44723](https://github.com/okou-ai/okou/issues/44723)) ([cf22c21](https://github.com/okou-ai/okou/commit/cf22c21f886bfc17840970a906712e449a79a802))
+
+
+### Bug Fixes
+
+* **cli:** explain scoped browser protocol rejections ([#44894](https://github.com/okou-ai/okou/issues/44894)) ([1e1423b](https://github.com/okou-ai/okou/commit/1e1423b00b98d77a687ea777cd57cd537e13940e))
+
+
+### Refactoring
+
+* retire shared-chat link, site title and telegram bot list compatibility ([#44887](https://github.com/okou-ai/okou/issues/44887)) ([d8f4e29](https://github.com/okou-ai/okou/commit/d8f4e29836f9a70ea4f1c2ee54de79c2380a37f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.37.1
+    * @okouai/core bumped to 8.812.2
+    * @okouai/pi-agent-runtime bumped to 1.51.57
+
 ## [10.16.1](https://github.com/okou-ai/okou/compare/cli-v10.16.0...cli-v10.16.1) (2026-11-03)
 
 

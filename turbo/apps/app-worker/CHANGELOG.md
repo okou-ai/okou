@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.120](https://github.com/okou-ai/okou/compare/app-worker-v1.10.119...app-worker-v1.10.120) (2026-11-03)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.37.1
+    * @okouai/core bumped to 8.812.2
+
 ## [1.10.119](https://github.com/okou-ai/okou/compare/app-worker-v1.10.118...app-worker-v1.10.119) (2026-11-03)
 
 
