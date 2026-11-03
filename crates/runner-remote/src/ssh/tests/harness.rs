@@ -646,6 +646,30 @@ async fn control_connection() -> (
 }
 
 pub(crate) fn key(algorithm: Algorithm) -> PrivateKey {
+    if matches!(&algorithm, Algorithm::Rsa { .. }) {
+        // Fixture generation is not the contract; retain fresh 4096-bit keys
+        // without running prime generation in the unoptimized Rust test binary.
+        let output = std::process::Command::new("openssl")
+            .args([
+                "genpkey",
+                "-algorithm",
+                "RSA",
+                "-pkeyopt",
+                "rsa_keygen_bits:4096",
+                "-pkeyopt",
+                "rsa_keygen_pubexp:65537",
+            ])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "generate RSA fixture: {}",
+            output.status
+        );
+        return russh::keys::decode_secret_key(std::str::from_utf8(&output.stdout).unwrap(), None)
+            .unwrap();
+    }
     PrivateKey::random(&mut russh::keys::key::safe_rng(), algorithm).unwrap()
 }
 
