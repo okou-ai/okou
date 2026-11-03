@@ -1,8 +1,7 @@
-use std::collections::HashSet;
-
 use api_contracts::generated::types::runners::storage::{
     ArtifactEntryMissingRootPolicy, StorageMountEntry,
 };
+use guest_contracts::storage_manifest::validate_unique_mount_paths;
 use serde::Deserialize;
 
 /// Business cache namespace for complete Workflow packages.
@@ -86,7 +85,7 @@ impl<'de> Deserialize<'de> for StorageManifest {
 fn normalize_storage_mounts(
     storage_mounts: Vec<StorageMountEntry>,
 ) -> Result<StorageManifest, String> {
-    validate_unique_mount_paths(&storage_mounts)?;
+    validate_unique_mount_paths(storage_mounts.iter().map(|mount| mount.mount_path.as_str()))?;
 
     let mut storages = Vec::new();
     let mut artifacts = Vec::new();
@@ -138,17 +137,4 @@ fn normalize_storage_mounts(
         storages,
         artifacts,
     })
-}
-
-fn validate_unique_mount_paths(storage_mounts: &[StorageMountEntry]) -> Result<(), String> {
-    let mut mount_paths = HashSet::with_capacity(storage_mounts.len());
-    for mount in storage_mounts {
-        if !mount_paths.insert(mount.mount_path.as_str()) {
-            return Err(format!(
-                "storage manifest contains duplicate mountPath \"{}\"",
-                mount.mount_path
-            ));
-        }
-    }
-    Ok(())
 }
