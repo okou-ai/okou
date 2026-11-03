@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.1...runner-provider-v0.16.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** recover preferred reuse claims from brief http 500 failures ([#44864](https://github.com/okou-ai/okou/issues/44864)) ([e24ac90](https://github.com/okou-ai/okou/commit/e24ac90952cc86d43197eee5c8094527f3e2e5fa))
+
 ## [0.16.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.0...runner-provider-v0.16.1) (2026-11-03)
 
 ## [0.16.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.15.0...runner-provider-v0.16.0) (2026-11-03)

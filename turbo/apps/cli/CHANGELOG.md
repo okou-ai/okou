@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.16.1](https://github.com/okou-ai/okou/compare/cli-v10.16.0...cli-v10.16.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* authorize imessage group sends by current membership ([#44868](https://github.com/okou-ai/okou/issues/44868)) ([94a8911](https://github.com/okou-ai/okou/commit/94a8911769d50d1949ce207669c90ef389353c85))
+
 ## [10.16.0](https://github.com/okou-ai/okou/compare/cli-v10.15.1...cli-v10.16.0) (2026-11-03)
 
 

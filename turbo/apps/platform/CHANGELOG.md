@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1087.3](https://github.com/okou-ai/okou/compare/app-v0.1087.2...app-v0.1087.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* **app:** align project sidebar with chat navigation ([#44839](https://github.com/okou-ai/okou/issues/44839)) ([7aa9fee](https://github.com/okou-ai/okou/commit/7aa9fee9aca40a016a019fe587b2421eeb4551bb))
+
 ## [0.1087.2](https://github.com/okou-ai/okou/compare/app-v0.1087.1...app-v0.1087.2) (2026-11-03)
 
 
