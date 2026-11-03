@@ -314,7 +314,7 @@ export class ProxyPeer {
   private async nested(
     params: Message,
     channel: string | undefined,
-    respond: (value: Message) => void,
+    respond: (value: Message) => Promise<void>,
   ): Promise<void> {
     let child =
       typeof params.sessionId === "string" ? params.sessionId : undefined;
@@ -336,7 +336,7 @@ export class ProxyPeer {
         code: -32602,
         message: "Invalid nested protocol command",
       });
-    respond({ result: {} });
+    await respond({ result: {} });
     await this.command(nested, raw, child);
   }
   private async configureAutomatic(
@@ -468,7 +468,7 @@ export class ProxyPeer {
     method: string,
     params: Message,
     channel: string | undefined,
-    respond: (value: Message) => void,
+    respond: (value: Message) => Promise<void>,
   ): Promise<boolean> {
     if (await this.closesWindow(method, params)) {
       throw new ProtocolError({
@@ -491,7 +491,7 @@ export class ProxyPeer {
       (closingInfo?.type === "page" ||
         (method === "Target.closeTarget" && closingInfo?.type === "tab"))
     ) {
-      respond({
+      await respond({
         result: await this.scope.closeTarget(closingTarget, () => {
           if (this.ended) throw new Error("Browser peer connection closed");
           return this.inject(method, params, channel);
@@ -506,7 +506,7 @@ export class ProxyPeer {
     method: string,
     params: Message,
     channel: string | undefined,
-    respond: (value: Message) => void,
+    respond: (value: Message) => Promise<void>,
   ): Promise<boolean> {
     if (
       CLOSE_COMMANDS.has(method) &&
@@ -514,7 +514,7 @@ export class ProxyPeer {
     )
       return true;
     if (method === "Target.createTarget") {
-      respond({
+      await respond({
         result: await this.scope.create(params, (value) => {
           return this.inject(method, value, channel);
         }),
@@ -537,7 +537,7 @@ export class ProxyPeer {
         () => {},
         () => {},
       );
-      respond({ result: await operation });
+      await respond({ result: await operation });
       return true;
     }
     if (
@@ -552,7 +552,7 @@ export class ProxyPeer {
       });
       this.control = operation.catch(() => {});
       await operation;
-      respond({ result: {} });
+      await respond({ result: {} });
       return true;
     }
     return false;
@@ -608,16 +608,31 @@ export class ProxyPeer {
       typeof message.sessionId === "string" ? message.sessionId : inherited;
     const params = record(message.params) ? message.params : {};
     const method = String(message.method);
-    let closeReply: ((message: Message) => void) | undefined;
-    const respond = (value: Message) => {
-      const reply = { id: message.id, ...value };
-      if (closeReply) closeReply(reply);
-      else this.emit(channel, reply);
-    };
+    let reply: ((message: Message) => void) | undefined;
     const requestKey = key(channel, message.id);
     // Reserve before authorization yields so private control IDs cannot race ingress.
     this.reserved.add(requestKey);
     try {
+      // Authorization and private-ID release can yield across native retirement.
+      // Keep only the accepted request's encoding, never its old admission.
+      const accepted: Pending = {
+        command: message,
+        channel,
+        reply: this.replyRoute(channel),
+      };
+      reply = accepted.reply;
+      const respond = async (value: Message) => {
+        const response = { id: message.id, ...value };
+        // A close may itself retire its reply channel. Other completed control
+        // commands keep the same admission checks as ordinary upstream replies.
+        if (
+          method !== "Page.close" &&
+          method !== "Target.closeTarget" &&
+          (await this.settleRetiredReply(accepted, response, channel))
+        )
+          return;
+        accepted.reply(response);
+      };
       const conflict = this.internal.get(key(channel, message.id));
       // Only wait for private ID release; its outcome belongs to its caller.
       if (conflict)
@@ -626,7 +641,6 @@ export class ProxyPeer {
           () => {},
         );
       await this.authorize(method, params, channel);
-      if (method === "Page.close") closeReply = this.replyRoute(channel);
       if (
         method === "Target.sendMessageToTarget" &&
         typeof params.message === "string"
@@ -641,11 +655,7 @@ export class ProxyPeer {
           ...(JSON.parse(raw) as Message),
           sessionId: channel,
         });
-      this.requests.set(key(channel, message.id), {
-        command: message,
-        channel,
-        reply: this.replyRoute(channel),
-      });
+      this.requests.set(key(channel, message.id), accepted);
       this.upstream.send(raw);
     } catch (error) {
       const failure = {
@@ -659,7 +669,7 @@ export class ProxyPeer {
                   "Scoped Browser operation could not be confirmed; inspect before retrying",
               },
       };
-      if (closeReply) closeReply(failure);
+      if (reply) reply(failure);
       else if (typeof message.sessionId === "string")
         this.send(JSON.stringify({ ...failure, sessionId: channel }));
       else this.emit(channel, failure);

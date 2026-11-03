@@ -1326,24 +1326,35 @@ describe("chat-window CDP proxy protocol", () => {
     },
   );
 
-  it("preserves its assigned window when the final page session closes", async () => {
-    const session = await connection.request("Target.attachToTarget", {
-      targetId: "A",
-      flatten: true,
-    });
-    expect(
-      await connection.request("Page.close", {}, String(session.sessionId)),
-    ).toStrictEqual({});
-    const targets = (await connection.request("Target.getTargets"))
-      .targetInfos as { targetId: string; type: string; url: string }[];
-    expect(
-      targets.filter((target) => {
-        return target.type === "page";
-      }),
-    ).toEqual([expect.objectContaining({ url: "about:blank" })]);
-    expect(provider.hasWindow(0)).toBe(true);
-    expect(provider.hasWindow(1)).toBe(true);
-  });
+  it.each([
+    { method: "Page.close", targetId: undefined },
+    { method: "Target.closeTarget", targetId: "A" },
+    { method: "Target.closeTarget", targetId: "TAB-A" },
+  ])(
+    "preserves its assigned window and reply when its page session calls $method ($targetId)",
+    async ({ method, targetId }) => {
+      const session = await connection.request("Target.attachToTarget", {
+        targetId: "A",
+        flatten: true,
+      });
+      expect(
+        await connection.request(
+          method,
+          targetId ? { targetId } : {},
+          String(session.sessionId),
+        ),
+      ).toStrictEqual(method === "Page.close" ? {} : { success: true });
+      const targets = (await connection.request("Target.getTargets"))
+        .targetInfos as { targetId: string; type: string; url: string }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    },
+  );
 
   it.each(["A", "TAB-A"])(
     "closes a non-final target %s without adding a blank",
@@ -1551,6 +1562,121 @@ describe("chat-window CDP proxy protocol", () => {
     },
   );
 
+  it("settles an accepted nested command when its session retires during authorization", async () => {
+    provider.addPage("C", 0);
+    const session = String(
+      (
+        await connection.request("Target.attachToTarget", {
+          targetId: "A",
+          flatten: false,
+        })
+      ).sessionId,
+    );
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const lookup = provider.holdWindowLookup("LATE");
+    provider.addPage("LATE", 1);
+    const reply = connection.event((message) => {
+      return (
+        message.method === "Target.receivedMessageFromTarget" &&
+        message.params?.sessionId === session &&
+        (JSON.parse(String(message.params?.message)) as Message).id === 52
+      );
+    });
+    try {
+      await connection.request("Target.sendMessageToTarget", {
+        sessionId: session,
+        message: JSON.stringify({
+          id: 52,
+          method: "Target.getTargetInfo",
+          params: { targetId: "LATE" },
+        }),
+      });
+      await lookup.observed;
+      await peer.request("Target.closeTarget", { targetId: "A" });
+      lookup.resume();
+      expect(JSON.parse(String((await reply).params?.message))).toMatchObject({
+        id: 52,
+        error: { code: -32000 },
+      });
+      expect(
+        (await peer.request("Browser.getWindowForTarget", { targetId: "C" }))
+          .windowId,
+      ).toBe(0);
+    } finally {
+      lookup.resume();
+    }
+  });
+
+  it.each([true, false])(
+    "settles a control reply after its source session retires (flatten=%s)",
+    async (flatten) => {
+      const session = String(
+        (
+          await connection.request("Target.attachToTarget", {
+            targetId: "A",
+            flatten,
+          })
+        ).sessionId,
+      );
+      const peer = await client(proxy.endpoint);
+      clients.push(peer);
+      const preparation = provider.holdNextNavigation();
+      let result: Promise<void>;
+      if (flatten) {
+        result = expect(
+          connection.request(
+            "Target.createTarget",
+            { url: "https://example.test/new" },
+            session,
+          ),
+        ).rejects.toMatchObject({ code: -32000 });
+      } else {
+        const reply = connection.event((message) => {
+          return (
+            message.method === "Target.receivedMessageFromTarget" &&
+            message.params?.sessionId === session &&
+            (JSON.parse(String(message.params?.message)) as Message).id === 53
+          );
+        });
+        result = reply.then((message) => {
+          expect(JSON.parse(String(message.params?.message))).toMatchObject({
+            id: 53,
+            error: { code: -32000 },
+          });
+        });
+        await connection.request("Target.sendMessageToTarget", {
+          sessionId: session,
+          message: JSON.stringify({
+            id: 53,
+            method: "Target.createTarget",
+            params: { url: "https://example.test/new" },
+          }),
+        });
+      }
+      try {
+        await preparation.observed;
+        await peer.request("Target.closeTarget", { targetId: "A" });
+        preparation.resume();
+        await result;
+        const targets = (await peer.request("Target.getTargets"))
+          .targetInfos as { targetId: string; type: string; url: string }[];
+        expect(targets).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: "page",
+              url: "https://example.test/new",
+            }),
+          ]),
+        );
+        expect(provider.hasWindow(0)).toBe(true);
+        expect(provider.hasWindow(1)).toBe(true);
+      } finally {
+        preparation.resume();
+      }
+    },
+  );
+
   it("settles a discovery reply when its page retires during window filtering", async () => {
     provider.addPage("C", 0);
     const session = String(
@@ -1723,31 +1849,42 @@ describe("chat-window CDP proxy protocol", () => {
     }
   });
 
-  it("delivers the nested Page.close reply even after native session retirement", async () => {
-    const session = await connection.request("Target.attachToTarget", {
-      targetId: "A",
-      flatten: false,
-    });
-    const id = 67;
-    const reply = connection.event((message) => {
-      return (
-        message.method === "Target.receivedMessageFromTarget" &&
-        message.params !== undefined &&
-        message.params?.sessionId === session.sessionId &&
-        (JSON.parse(String(message.params.message)) as Message).id === id
-      );
-    });
-    await connection.request("Target.sendMessageToTarget", {
-      sessionId: session.sessionId,
-      message: JSON.stringify({ id, method: "Page.close", params: {} }),
-    });
-    expect(JSON.parse(String((await reply).params?.message))).toStrictEqual({
-      id,
-      result: {},
-    });
-    expect(provider.hasWindow(0)).toBe(true);
-    expect(provider.hasWindow(1)).toBe(true);
-  });
+  it.each([
+    { method: "Page.close", targetId: undefined },
+    { method: "Target.closeTarget", targetId: "A" },
+    { method: "Target.closeTarget", targetId: "TAB-A" },
+  ])(
+    "delivers the nested $method ($targetId) reply even after native session retirement",
+    async ({ method, targetId }) => {
+      const session = await connection.request("Target.attachToTarget", {
+        targetId: "A",
+        flatten: false,
+      });
+      const id = 67;
+      const reply = connection.event((message) => {
+        return (
+          message.method === "Target.receivedMessageFromTarget" &&
+          message.params !== undefined &&
+          message.params?.sessionId === session.sessionId &&
+          (JSON.parse(String(message.params.message)) as Message).id === id
+        );
+      });
+      await connection.request("Target.sendMessageToTarget", {
+        sessionId: session.sessionId,
+        message: JSON.stringify({
+          id,
+          method,
+          params: targetId ? { targetId } : {},
+        }),
+      });
+      expect(JSON.parse(String((await reply).params?.message))).toStrictEqual({
+        id,
+        result: method === "Page.close" ? {} : { success: true },
+      });
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    },
+  );
 
   it("rejects physical window creation and destruction while keeping both windows usable", async () => {
     await expect(

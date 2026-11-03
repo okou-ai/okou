@@ -1369,6 +1369,42 @@ try {
     retained = await pages(scopedA);
     assert.equal(retained.length, 1);
     assert.equal(retained[0].url, "about:blank");
+    for (const targetType of ["page", "tab"]) {
+      const pageId = retained[0].targetId;
+      const targetId =
+        targetType === "page" ? pageId : await tabTargetForPage(direct, pageId);
+      const ownSession = await pageSession(scopedA, pageId);
+      await observe(
+        direct,
+        (event) => {
+          return (
+            event.method === "Target.targetDestroyed" &&
+            event.params.targetId === pageId
+          );
+        },
+        async () => {
+          assert.deepEqual(
+            await scopedA.request(
+              "Target.closeTarget",
+              { targetId },
+              ownSession,
+            ),
+            { success: true },
+          );
+        },
+      );
+      retained = await pages(scopedA);
+      assert.equal(retained.length, 1);
+      assert.equal(retained[0].url, "about:blank");
+      assert.equal(
+        (
+          await direct.request("Browser.getWindowForTarget", {
+            targetId: retained[0].targetId,
+          })
+        ).windowId,
+        winA,
+      );
+    }
     assert.equal(
       (
         await direct.request("Browser.getWindowForTarget", {
@@ -1431,6 +1467,7 @@ try {
         pageClosePreservesWindowAndReply: true,
         nativeChildFrameCloseErrorPreserved: true,
         finalTabTargetClosePreservesWindow: true,
+        selfTargetClosePreservesWindowAndReply: true,
         replacementNavigationAndInput: true,
         browserDestructionRejected: true,
         closePreservesSibling: true,
