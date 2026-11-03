@@ -9,7 +9,7 @@ import type {
   PlatformUserPermissionGrant,
   PlatformConnectorPermissionMetadata,
 } from "../../connector-domain.ts";
-import { resetSignal } from "../../utils.ts";
+import { onRef, resetSignal } from "../../utils.ts";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PermissionDraftIntent } from "./permission-draft-intent.ts";
 import { connectorPermissionDraftChanges } from "./permission-grant-save.ts";
@@ -74,6 +74,24 @@ function permissionRequests(
 export function createConnectorPermissionsSignals(
   entry: ConnectorPermissionsTarget,
 ) {
+  const dialogElement$ = state<HTMLElement | null>(null);
+  const bindDialog$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      set(dialogElement$, element);
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(dialogElement$, null);
+        },
+        { once: true },
+      );
+    }),
+  );
+  // The loading footer is replaced after the rules arrive. Keep initial focus
+  // on the mounted popup so that this replacement cannot drop it onto the page.
+  const initialFocus$ = command(({ get }) => {
+    return get(dialogElement$) ?? false;
+  });
   const requests$ = state<ReturnType<typeof permissionRequests> | null>(null);
   const resetOwner$ = resetSignal();
   const metadata$ = computed(async (get) => {
@@ -146,5 +164,13 @@ export function createConnectorPermissionsSignals(
       );
     },
   );
-  return { editorMetadata$, grants$, open$, close$, save$ };
+  return {
+    editorMetadata$,
+    grants$,
+    open$,
+    close$,
+    save$,
+    bindDialog$,
+    initialFocus$,
+  };
 }

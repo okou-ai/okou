@@ -9,6 +9,8 @@ import {
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   click,
   fill,
@@ -23,6 +25,7 @@ import {
   connectorAccount,
   createComposerConnectorHelpers,
   permissionDetail,
+  noAuthMethod,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
@@ -252,6 +255,158 @@ async function chooseAccess(
   );
   await user.click(await screen.findByRole("option", { name: value }));
 }
+
+async function openDirectory(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await findFastControl("button", "Connectors"));
+  await user.click(await findFastControl("button", "Add connectors"));
+  return await screen.findByRole("dialog", { name: "Connectors" });
+}
+
+test("Directory permissions use the same connector rules without enabling accounts", async () => {
+  const user = userEvent.setup({ delay: null });
+  installAccess({ allOff: true });
+  await setup();
+  const trigger = await findFastControl("button", "Connectors");
+  const directory = await openDirectory(user);
+  await fill(
+    within(directory).getByPlaceholderText("Find connectors..."),
+    "GitHub",
+  );
+  await user.click(
+    await findFastControl("button", "Open GitHub details", directory),
+  );
+  await user.click(await findFastControl("button", "Configure", directory));
+  const editor = await screen.findByRole("dialog", {
+    name: "GitHub permissions",
+  });
+  const permission = await within(editor).findByRole("group", {
+    name: "repos|write",
+  });
+  await waitFor(() => {
+    expect(editor.contains(document.activeElement)).toBeTruthy();
+  });
+  await user.click(await findFastControl("button", "Deny", permission));
+  await user.click(await findFastControl("button", "Apply", editor));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "GitHub permissions" }),
+    ).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+  const row = await openMenu();
+  expect(row).toHaveTextContent("0 on");
+  await user.click(row);
+  await user.click(await findFastControl("button", "Permissions"));
+  const saved = await screen.findByRole("dialog", {
+    name: "GitHub permissions",
+  });
+  const savedPermission = await within(saved).findByRole("group", {
+    name: "repos|write",
+  });
+  await expect(
+    findFastControl("button", "Deny", savedPermission),
+  ).resolves.toHaveAttribute("aria-pressed", "true");
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "GitHub permissions" }),
+    ).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+});
+
+test("Directory details omit unavailable permission configuration", async () => {
+  const user = userEvent.setup({ delay: null });
+  installAccess({ noPermissions: true });
+  await setup();
+  const directory = await openDirectory(user);
+  await fill(
+    within(directory).getByPlaceholderText("Find connectors..."),
+    "GitHub",
+  );
+  await user.click(
+    await findFastControl("button", "Open GitHub details", directory),
+  );
+  expect(within(directory).queryByText("Permissions")).toBeNull();
+  expect(within(directory).queryByText("Configure")).toBeNull();
+});
+
+test.each([false, true])(
+  "Connect an account without Agent authorization, custom=%s",
+  async (custom) => {
+    const user = userEvent.setup({ delay: null });
+    const label = custom ? "Public Custom" : "Public Tools";
+    const fixture = installComposerConnectorFixture({
+      catalog: custom
+        ? []
+        : [
+            builtinConnector({
+              slug: "public-tools",
+              label,
+              hasAccount: false,
+              authMethods: [noAuthMethod()],
+            }),
+          ],
+      customConnectors: custom
+        ? [
+            httpConnector({
+              id: ACME_CONNECTOR_ID,
+              slug: "public-custom",
+              displayName: label,
+              authMode: "none",
+              hasAccount: false,
+            }),
+          ]
+        : [],
+    });
+    context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
+      return respond(403, {
+        error: {
+          code: "FORBIDDEN",
+          message: "Agent connector settings unavailable",
+        },
+      });
+    });
+    context.mocks.api(agentCustomConnectorsContract.update, ({ respond }) => {
+      return respond(403, {
+        error: {
+          code: "FORBIDDEN",
+          message: "Agent connector settings unavailable",
+        },
+      });
+    });
+    await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
+    const directory = await openDirectory(user);
+    if (custom) {
+      await user.click(await findFastControl("radio", "Custom", directory));
+    }
+    await user.click(
+      await findFastControl("button", `Connect ${label}`, directory),
+    );
+    if (custom) {
+      const dialog = await screen.findByRole("dialog", {
+        name: `Connect ${label}`,
+      });
+      await user.click(await findFastControl("button", "Connect", dialog));
+    }
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    await expect(openMenu(label)).resolves.toHaveTextContent("1 on");
+    expect(fixture.noAuthConnectionRequests).toStrictEqual(
+      custom
+        ? []
+        : [
+            {
+              connectorSlug: "public-tools",
+              authMethod: "public",
+              agentId: undefined,
+              authorizeAgent: undefined,
+            },
+          ],
+    );
+  },
+);
 
 test("Refresh the displayed account after a Run changes the Chat selection", async () => {
   const fixture = installAccess();

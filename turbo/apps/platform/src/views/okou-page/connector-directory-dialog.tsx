@@ -1077,6 +1077,9 @@ function DirectoryDetailSlot({
 }
 
 interface ConnectorDirectoryDialogProps {
+  readonly finalFocus?: React.ComponentProps<
+    typeof DialogContent
+  >["finalFocus"];
   readonly state: ComposerConnectorUiState;
   readonly onUpdateState: UpdateDirectoryState;
   /** Category totals from discovery; a shelf's closing cell stands for these. */
@@ -1117,6 +1120,7 @@ function useDirectoryDialogOpenChange(
 }
 
 export function ConnectorDirectoryDialog({
+  finalFocus,
   state,
   onUpdateState,
   categoryCounts,
@@ -1197,6 +1201,7 @@ export function ConnectorDirectoryDialog({
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent
+        finalFocus={finalFocus}
         maxWidth="2xl"
         height={600}
         contentClassName="flex flex-col gap-0 p-0"

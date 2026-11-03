@@ -114,6 +114,8 @@ export interface ComposerConnectorSignals {
   >;
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
   readonly openAddConnectorsDialog$: Command<void, []>;
+  readonly openConnectorPermissions$: Command<void, [BuiltinConnectorBrief]>;
+  readonly directoryFinalFocus$: Command<HTMLElement | boolean, []>;
   readonly setPopoverOpen$: Command<void, [boolean]>;
   readonly openRemoteAccessDialog$: Command<void, []>;
   readonly closeRemoteAccessDialog$: Command<void, []>;
@@ -290,6 +292,45 @@ function createConnectorAuthorizationCommand(
   );
 }
 
+function createConnectorDialogNavigation(
+  chatAccess: ReturnType<typeof createChatConnectorAccessSignals>,
+  ui: Pick<
+    ComposerConnectorSignals,
+    "connectorUiState$" | "updateConnectorUiState$" | "triggerElement$"
+  >,
+) {
+  const openConnectorPermissions$ = command(
+    ({ get, set }, connector: BuiltinConnectorBrief) => {
+      const chatAccounts =
+        get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+      if (chatAccounts) {
+        set(chatAccess.setPermissions$, {
+          target: { kind: "builtin", connectorSlug: connector.slug },
+          label: connector.label,
+        });
+      }
+      set(ui.updateConnectorUiState$, {
+        showAddDialog: false,
+        permissionConnectorSlug: chatAccounts ? null : connector.slug,
+        permissionConnector: chatAccounts ? null : connector,
+      });
+    },
+  );
+  const directoryFinalFocus$ = command(({ get }) => {
+    const state = get(ui.connectorUiState$);
+    if (
+      get(chatAccess.permissions$) ||
+      state.permissionConnectorSlug ||
+      state.selectedConnectorSlug ||
+      state.selectedCustomConnectorId
+    ) {
+      return false;
+    }
+    return get(ui.triggerElement$) ?? true;
+  });
+  return { openConnectorPermissions$, directoryFinalFocus$ };
+}
+
 function createConnectorUiSignals(
   resources: ReturnType<typeof createConnectorResourceSignals>,
   accounts: ComposerConnectorAccountSignals,
@@ -299,6 +340,8 @@ function createConnectorUiSignals(
   | "connectorUiState$"
   | "updateConnectorUiState$"
   | "openAddConnectorsDialog$"
+  | "openConnectorPermissions$"
+  | "directoryFinalFocus$"
   | "setPopoverOpen$"
   | "openRemoteAccessDialog$"
   | "closeRemoteAccessDialog$"
@@ -399,6 +442,11 @@ function createConnectorUiSignals(
     connectorUiState$,
     updateConnectorUiState$,
     openAddConnectorsDialog$,
+    ...createConnectorDialogNavigation(chatAccess, {
+      connectorUiState$,
+      updateConnectorUiState$,
+      triggerElement$,
+    }),
     setPopoverOpen$,
     openRemoteAccessDialog$,
     closeRemoteAccessDialog$,

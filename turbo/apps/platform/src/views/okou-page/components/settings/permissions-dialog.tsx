@@ -105,6 +105,9 @@ interface ConnectorPermission {
 }
 
 interface PermissionsDrawerProps {
+  finalFocus?: React.ComponentProps<typeof DialogContent>["finalFocus"];
+  initialFocus?: React.ComponentProps<typeof DialogContent>["initialFocus"];
+  dialogRef?: React.Ref<HTMLDivElement>;
   agentId?: string;
   scopeKey?: string;
   connectorScope?: boolean;
@@ -1628,6 +1631,9 @@ export function PermissionsDialog(props: PermissionsDrawerProps) {
       }}
     >
       <DialogContent
+        ref={props.dialogRef}
+        initialFocus={props.initialFocus}
+        finalFocus={props.finalFocus}
         maxWidth={760}
         height={720}
         contentClassName="flex flex-col overflow-hidden"

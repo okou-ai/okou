@@ -13,13 +13,17 @@ export function ConnectorPermissionsDialog({
   entry,
   signals,
   onClose,
+  finalFocus,
 }: {
   readonly entry: ConnectorPermissionsTarget;
   readonly signals: ReturnType<typeof createConnectorPermissionsSignals>;
   readonly onClose: () => void;
+  readonly finalFocus?: HTMLElement | null;
 }) {
   const grants = useLoadable(signals.grants$);
   const save = useSet(signals.save$);
+  const bindDialog = useSet(signals.bindDialog$);
+  const initialFocus = useSet(signals.initialFocus$);
   const signal = useGet(pageSignal$);
   const owner = useGet(authenticatedSessionKey$);
   const snapshot =
@@ -28,6 +32,15 @@ export function ConnectorPermissionsDialog({
       : null;
   return (
     <PermissionsDialog
+      dialogRef={bindDialog}
+      initialFocus={initialFocus}
+      finalFocus={
+        finalFocus
+          ? () => {
+              return finalFocus.isConnected ? finalFocus : false;
+            }
+          : undefined
+      }
       connectorScope
       scopeKey={`${owner}:${connectorAccountTargetKey(entry.target)}`}
       connectorSlug={entry.target.connectorSlug}

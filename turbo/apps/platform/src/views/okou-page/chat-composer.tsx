@@ -6811,6 +6811,7 @@ function ComposerConnectorsSlot({
   actions: ComposerConnectorActions;
 }) {
   const connectorUi = useGet(signals.connector.connectorUiState$);
+  const triggerElement = useGet(signals.connector.triggerElement$);
   const permissions = useGet(signals.connector.chatAccess.permissions$);
   const permissionSignals = useGet(
     signals.connector.chatAccess.permissionSignals$,
@@ -6833,6 +6834,7 @@ function ComposerConnectorsSlot({
       <ThreadRemoteAccessDialog signals={signals} />
       {permissions && permissionSignals && (
         <ConnectorPermissionsDialog
+          finalFocus={triggerElement}
           entry={permissions}
           signals={permissionSignals}
           onClose={() => {
@@ -6866,8 +6868,8 @@ function ComposerConnectorDialogsSlot({
 }) {
   const { t } = useTranslation();
   const lastAuthorization = useLastResolved(
-    signals.connector.connectorAuthorization$,
-  );
+    signals.connector.data$,
+  )?.authorization;
   const authorization =
     lastAuthorization?.agentId === signals.agentId
       ? lastAuthorization
@@ -6890,6 +6892,10 @@ function ComposerConnectorDialogsSlot({
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const openConnectorPermissions = useSet(
+    signals.connector.openConnectorPermissions$,
+  );
+  const directoryFinalFocus = useSet(signals.connector.directoryFinalFocus$);
   const completeAddition = useSet(
     signals.connectorCompletion.completeConnectorAddition$,
   );
@@ -7053,6 +7059,7 @@ function ComposerConnectorDialogsSlot({
       />
       {connectorUi.showAddDialog && (
         <ConnectorDirectoryDialog
+          finalFocus={directoryFinalFocus}
           state={connectorUi}
           onUpdateState={updateConnectorUi}
           categoryCounts={directoryBrowse.categoryCounts}
@@ -7077,15 +7084,11 @@ function ComposerConnectorDialogsSlot({
             if (!connector) {
               return;
             }
-            updateConnectorUi({
-              showAddDialog: false,
-              permissionConnectorSlug: connectorSlug,
-              permissionConnector: {
-                slug: connector.slug,
-                label: connector.label,
-                icon: connector.icon,
-                hasPermissions: connector.permissionSummary.hasPermissions,
-              },
+            openConnectorPermissions({
+              slug: connector.slug,
+              label: connector.label,
+              icon: connector.icon,
+              hasPermissions: connector.permissionSummary.hasPermissions,
             });
           }}
           onClose={() => {

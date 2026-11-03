@@ -1,4 +1,7 @@
 import { useTranslation } from "react-i18next";
+import { useGet } from "ccstate-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ChevronLeft, SlidersHorizontal } from "lucide-react";
 import { Button, buttonVariants } from "@okouai/ui";
 import { Link } from "../router/link.tsx";
@@ -142,6 +145,8 @@ export function ConnectorDetailPanel({
 }) {
   const { t } = useTranslation();
   const authMethodLabel = connector.authMethods[0]?.label;
+  const chatAccounts =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
 
   return (
     <>
@@ -164,41 +169,43 @@ export function ConnectorDetailPanel({
           </div>
         </div>
 
-        {connector.mcp === undefined && (
-          <>
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-              {t(($) => {
-                return $.chat.connectors.directory.detailPermissions;
-              })}
-            </h3>
-            <div className="mb-5 rounded-xl border border-[hsl(var(--gray-400))]">
-              <div className="flex items-center gap-3 px-4 py-2.5">
-                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                  {t(
-                    ($) => {
-                      return $.chat.connectors.directory.permissionCount;
-                    },
-                    { count: connector.permissionSummary.permissionCount },
+        {connector.mcp === undefined &&
+          (!chatAccounts || connector.permissionSummary.hasPermissions) && (
+            <>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                {t(($) => {
+                  return $.chat.connectors.directory.detailPermissions;
+                })}
+              </h3>
+              <div className="mb-5 rounded-xl border border-[hsl(var(--gray-400))]">
+                <div className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                    {t(
+                      ($) => {
+                        return $.chat.connectors.directory.permissionCount;
+                      },
+                      { count: connector.permissionSummary.permissionCount },
+                    )}
+                  </span>
+                  {connector.permissionSummary.hasPermissions && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="gap-1.5"
+                      disabled={chatAccounts && !hasAccounts}
+                      onClick={onConfigurePermissions}
+                    >
+                      <SlidersHorizontal size={14} aria-hidden="true" />
+                      {t(($) => {
+                        return $.chat.connectors.directory.configure;
+                      })}
+                    </Button>
                   )}
-                </span>
-                {connector.permissionSummary.hasPermissions && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    className="gap-1.5"
-                    onClick={onConfigurePermissions}
-                  >
-                    <SlidersHorizontal size={14} aria-hidden="true" />
-                    {t(($) => {
-                      return $.chat.connectors.directory.configure;
-                    })}
-                  </Button>
-                )}
+                </div>
               </div>
-            </div>
-          </>
-        )}
+            </>
+          )}
 
         <h3 className="mb-2 text-xs font-medium text-muted-foreground">
           {t(($) => {
