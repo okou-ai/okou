@@ -684,6 +684,7 @@ export function mockBrowserCdp(
     return { result: {} };
   }
 
+  const socketOptions = { autoOpen: options.autoOpen };
   const socket = context.mocks.browser.webSocket((data, url, peer) => {
     if (url !== cdpUrl) {
       throw new Error("Unexpected viewer endpoint");
@@ -729,7 +730,7 @@ export function mockBrowserCdp(
       return null;
     }
     return response;
-  }, options);
+  }, socketOptions);
 
   function holdFrames(key: string) {
     const requested = context.mocks.deferred<void>();
@@ -794,6 +795,10 @@ export function mockBrowserCdp(
       });
     },
     connections: socket.connections,
+    activeConnections: socket.activeConnections,
+    setAutoOpen(autoOpen: boolean) {
+      socketOptions.autoOpen = autoOpen;
+    },
     openConnection() {
       socket.open(cdpUrl);
     },

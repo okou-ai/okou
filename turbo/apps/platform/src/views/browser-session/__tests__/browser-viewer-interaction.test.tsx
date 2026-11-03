@@ -2453,7 +2453,7 @@ test.each(["Page.enable", "Page.getFrameTree"])(
   },
 );
 
-test("A split viewer reconnects after image-connection loss during page admission", async () => {
+test("A split viewer retries its selected image after frames loss during page admission", async () => {
   const browser = await setupScopedPair();
   await userEvent.click(screen.getByLabelText("Browser settings"));
   await userEvent.click(await screen.findByText("Connection mode"));
@@ -2468,18 +2468,19 @@ test("A split viewer reconnects after image-connection loss during page admissio
   act(() => {
     browser.disconnect({ code: 1006, wasClean: false }, 1);
   });
-  await screen.findByText("Browser disconnected");
+  await screen.findByText("Retry live image");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   const reconnect = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Reconnect";
+    return button.textContent?.trim() === "Retry live image";
   });
   if (!reconnect) {
-    throw new Error("Missing reconnect control");
+    throw new Error("Missing image recovery control");
   }
   click(reconnect);
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
-  const current = browser.pageSession("example-page");
+  const current = browser.pageSession("other-page");
   await act(async () => {
     await admission.release();
   });

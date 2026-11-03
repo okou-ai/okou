@@ -335,14 +335,11 @@ test("Revalidating an opening viewer retains its native startup and keeps cancel
   expect(sentry.reports).toStrictEqual([]);
 });
 
-test.each(["error", "close", "frames-close"] as const)(
+test.each(["error", "close"] as const)(
   "A native %s during navigation reports the established failure once",
   async (event) => {
     const { browser, sentry } = await setupViewer(true);
     await expectInputReady();
-    if (event === "frames-close") {
-      await useSplitTransport();
-    }
     const navigation = browser.holdNext("Page.navigate");
     await fill(screen.getByLabelText("Address"), "next.example");
     await userEvent.keyboard("{Enter}");
@@ -351,10 +348,7 @@ test.each(["error", "close", "frames-close"] as const)(
       if (event === "error") {
         browser.failConnection();
       } else {
-        browser.disconnect(
-          { code: 1001, wasClean: true, reason: endpoint },
-          event === "frames-close" ? 1 : undefined,
-        );
+        browser.disconnect({ code: 1001, wasClean: true, reason: endpoint });
       }
     });
     await screen.findByText("Browser disconnected");
@@ -490,7 +484,7 @@ test("An unhandled navigation request failure still reports without disconnectin
   expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
 });
 
-test("Changing transport retires intentionally, then frames loss reports once", async () => {
+test("Frames loss stays isolated, while a subsequent control loss reports once", async () => {
   const { browser, sentry } = await setupViewer(true);
   await expectInputReady();
   await useSplitTransport();
@@ -502,20 +496,22 @@ test("Changing transport retires intentionally, then frames loss reports once", 
   act(() => {
     browser.disconnect({ code: 1001, wasClean: true }, 1);
   });
-  await screen.findByText("Browser disconnected");
-  // A concurrent control close belongs to the same viewer incident.
+  await screen.findByText("Retry live image");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(sentry.reports).toHaveLength(0);
   act(() => {
     browser.disconnect({ code: 1006, wasClean: false });
   });
+  await screen.findByText("Browser disconnected");
   expect(sentry.reports).toHaveLength(1);
   expect(sentry.reports[0]).toMatchObject({
     context: {
       contexts: {
-        browser_viewer: { kind: "connection", role: "frames" },
+        browser_viewer: { kind: "connection", role: "control" },
         browser_connection: {
           source: "native-close",
-          role: "frames",
-          code: 1001,
+          role: "control",
+          code: 1006,
         },
       },
     },
