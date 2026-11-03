@@ -213,6 +213,35 @@ test.each([0, 1])(
   },
 );
 
+test("Closing the last established tab does not rely on an unfinished native creation", async () => {
+  const browser = await setupViewer(0);
+  const creation = browser.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await creation.received;
+  await waitFor(() => {
+    expect(queryAllByRoleFast("tab")).toHaveLength(2);
+  });
+  click(screen.getByLabelText("Close Example"));
+  await waitFor(() => {
+    expect(
+      screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
+    ).not.toBeInTheDocument();
+  });
+  await creation.release();
+  await waitFor(() => {
+    expect(
+      browser.targets.some((target) => {
+        return target.targetId === "created-1";
+      }),
+    ).toBeFalsy();
+  });
+  await waitFor(() => {
+    expect(queryAllByRoleFast("tab")).toHaveLength(1);
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+});
+
 test("The last tab stays open until its blank replacement is confirmed", async () => {
   const browser = await setupViewer(0);
   const preparation = browser.holdNext("Page.navigate");
