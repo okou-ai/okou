@@ -35,12 +35,12 @@ public enum ConnectorHTTPFixtures {
   }
   public static func response(
     _ request: URLRequest, connected: Bool = true, authorized: Bool = true,
-    grantKind: String = "none", customMode: String = "none", chatAccountAccess: Bool = false
+    grantKind: String = "none", customMode: String = "none"
   ) -> ChatHTTPResponse? {
     let path = request.url?.path ?? ""
     if path == "/api/feature-switches" {
       return ChatHTTPResponse(
-        body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":\(chatAccountAccess)}}")
+        body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
     }
     if path.hasSuffix("/metadata") { return ChatHTTPResponse(body: metadata) }
     if path == "/api/connector-catalog/slack" {
