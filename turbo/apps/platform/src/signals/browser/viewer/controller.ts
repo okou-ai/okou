@@ -576,6 +576,47 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   };
 }
 
+function createTabOpeningGraph(
+  model: ViewerSignals,
+  creation$: Computed<ReturnType<typeof createTabCreation> | null>,
+) {
+  const openings$ = state<ReadonlyMap<object, ReadonlySet<string>>>(new Map());
+  const canKeepWindow$ = command(({ get }, targetId: string) => {
+    return [...get(openings$).values()].every((existing) => {
+      return existing.has(targetId);
+    });
+  });
+  const open$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const opening = {};
+    const existing = new Set(
+      get(model.snapshot$).targets.map((target) => {
+        return target.id;
+      }),
+    );
+    set(openings$, new Map(get(openings$)).set(opening, existing));
+    using _opening = {
+      [Symbol.dispose]: () => {
+        const openings = new Map(get(openings$));
+        openings.delete(opening);
+        set(openings$, openings);
+      },
+    };
+    // New candidates cannot keep a window alive until preparation or cleanup ends.
+    const targetId = await set(get(creation$)!.open$, signal);
+    // A confirmed tab is a keeper for every concurrent native opening.
+    set(
+      openings$,
+      new Map(
+        [...get(openings$)].map(([owner, keepers]) => {
+          return [owner, new Set(keepers).add(targetId)];
+        }),
+      ),
+    );
+    return targetId;
+  });
+  return { open$, canKeepWindow$ };
+}
+
 function createControllerState(
   model: ViewerSignals,
   connection: BrowserConnection,
@@ -681,7 +722,7 @@ function createControllerState(
     waitEvent$,
     assertAvailable$,
     directory$,
-    creation$,
+    tabOpening: createTabOpeningGraph(model, creation$),
   };
 }
 type ControllerContext = ReturnType<typeof createControllerState>;
@@ -3111,7 +3152,7 @@ function createTabCreationGraph(
     clientState$,
     creationOwner$,
     assertAvailable$,
-    creation$,
+    tabOpening,
   } = context;
   const publish$ = createTabPublication(context, links$);
   const resume$ = createCreationResumption(context, links$);
@@ -3132,7 +3173,6 @@ function createTabCreationGraph(
       }
       const intent = get(model.intent$);
       const client = get(clientState$)!;
-      const nativeCreation = get(creation$)!;
       const operation = set(resetCreate$, client.signal, signal);
       const creation = {};
       set(creationOwner$, creation);
@@ -3146,7 +3186,7 @@ function createTabCreationGraph(
       let createdId: string | null = null;
       const [result] = await Promise.allSettled([
         (async (): Promise<string> => {
-          createdId = await set(nativeCreation.open$, operation);
+          createdId = await set(tabOpening.open$, operation);
           return set(
             publish$,
             createdId,
@@ -3208,6 +3248,7 @@ function createTabClosingGraph(
     closingTargets$,
     assertAvailable$,
     directory$,
+    tabOpening,
   } = context;
   const closeTab$ = command(
     async (
@@ -3239,7 +3280,23 @@ function createTabClosingGraph(
           set(get(links$).discoveryChanged$, client.signal);
         },
       };
+      // Reserve the replacement before awaiting: other pending closes cannot
+      // keep the assigned native window alive once their requests complete.
+      const preserveWindow =
+        context.connection.windowId !== null &&
+        context.connection.windowId !== undefined &&
+        snapshot.targets.every((target) => {
+          return (
+            get(closingTargets$).has(target.id) ||
+            !set(tabOpening.canKeepWindow$, target.id)
+          );
+        });
       await set(directory.assertMember$, targetId, signal);
+      if (preserveWindow) {
+        await set(tabOpening.open$, signal);
+        await set(discovery.refresh$, signal);
+        await set(directory.assertMember$, targetId, signal);
+      }
       signal.throwIfAborted();
       set(assertAvailable$, signal);
       const receipt = await client.request(

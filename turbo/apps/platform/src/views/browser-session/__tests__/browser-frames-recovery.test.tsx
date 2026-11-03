@@ -278,7 +278,7 @@ test("A replacement image socket may fail during opening and retry without repla
   ).toHaveLength(2);
 });
 
-test("An empty viewer can create a tab after frames loss without replacing control", async () => {
+test("Closing the last tab after frames loss retains a blank without replacing control", async () => {
   const browser = await setupSplitViewer();
   click(screen.getByLabelText("Close Other"));
   await waitFor(() => {
@@ -286,14 +286,18 @@ test("An empty viewer can create a tab after frames loss without replacing contr
       screen.queryByLabelText("Other", { selector: '[role="tab"]' }),
     ).not.toBeInTheDocument();
   });
-  click(screen.getByLabelText("Close Example"));
-  await screen.findByText("No tabs open");
   loseFrames(browser);
-  const create = screen.getByLabelText("New tab", { selector: "button" });
-  expect(create).toBeEnabled();
-  click(create);
+  await retryButton();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  const close = screen.getByLabelText("Close Example");
+  expect(close).toBeEnabled();
+  click(close);
   await inputReady();
   expect(queryAllByRoleFast("tab")).toHaveLength(1);
+  expect(
+    screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("Address")).toHaveValue("");
   expect(
     browser.requests.filter((request) => {
       return request.method === "Runtime.addBinding";

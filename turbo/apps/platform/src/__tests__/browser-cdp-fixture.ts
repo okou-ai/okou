@@ -78,6 +78,7 @@ export function mockBrowserCdp(
   const viewport = { width: 1440, height: 900 };
   let focusedEditing: unknown = null;
   const windowStates = new Map<number, string>();
+  const closedWindows = new Set<number>();
   const restoredSizes = new Map<number, { width: number; height: number }>();
   const targets: BrowserTarget[] = (
     options.targets ?? [
@@ -281,7 +282,9 @@ export function mockBrowserCdp(
         break;
       }
       case "getWindow": {
-        value = { id: request.windowId, focused: false };
+        value = closedWindows.has(request.windowId!)
+          ? null
+          : { id: request.windowId, focused: false };
         break;
       }
       case "createTab": {
@@ -304,9 +307,7 @@ export function mockBrowserCdp(
           return nativeTab(target).id === request.tabId;
         });
         if (index !== -1) {
-          const target = targets.splice(index, 1)[0]!;
-          event("Target.targetDestroyed", { targetId: target.targetId });
-          nativeEvent("tab-removed", target);
+          removeTarget(index);
         }
         value = null;
         break;
@@ -327,6 +328,21 @@ export function mockBrowserCdp(
         },
       },
     };
+  }
+
+  function removeTarget(index: number) {
+    const target = targets.splice(index, 1)[0]!;
+    event("Target.targetDestroyed", { targetId: target.targetId });
+    nativeEvent("tab-removed", target);
+    const windowId = target.windowId ?? 0;
+    if (
+      !targets.some((remaining) => {
+        return (remaining.windowId ?? 0) === windowId;
+      })
+    ) {
+      closedWindows.add(windowId);
+      nativeEvent("window-removed", undefined, { windowId });
+    }
   }
 
   function targetForSession(sessionId: string | undefined) {
@@ -414,9 +430,7 @@ export function mockBrowserCdp(
         if (index === -1) {
           throw new Error("Unknown tab to close");
         }
-        const target = targets.splice(index, 1)[0]!;
-        event("Target.targetDestroyed", { targetId: target.targetId });
-        nativeEvent("tab-removed", target);
+        removeTarget(index);
         return { success: true };
       }
       case "Target.detachFromTarget": {
