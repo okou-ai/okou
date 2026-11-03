@@ -7709,7 +7709,7 @@ describe("okou browser route", () => {
   });
 
   it.each([false, true])(
-    "guides ordinary shared Browser operations with native input %s",
+    "describes shared Browser tabs and login state with native input %s",
     async (nativeInput) => {
       const { runs, chat, actor, agent } = await setupBrowserScenario();
       await updateFeatureSwitchesForUser(context, actor, {
@@ -7726,20 +7726,9 @@ describe("okou browser route", () => {
       const claim = await runs.claimRunnerJob(sent.runId);
       const appendSystemPrompt = claim.appendSystemPrompt ?? "";
       expect(appendSystemPrompt).toContain("this chat's managed Browser");
+      expect(appendSystemPrompt).toContain("Each chat has its own tabs");
       expect(appendSystemPrompt).toContain(
-        "The connection automatically scopes tabs and new pages to this chat",
-      );
-      expect(appendSystemPrompt).toContain(
-        "Use ordinary browser and tab operations",
-      );
-      expect(appendSystemPrompt).toContain(
-        "Chats sharing a Browser profile share cookies and localStorage",
-      );
-      expect(appendSystemPrompt).toContain(
-        "login, logout and account switching affect other chats",
-      );
-      expect(appendSystemPrompt).toContain(
-        "separate chats do not provide separate website accounts",
+        "website login state is shared across chats",
       );
       expect(appendSystemPrompt).toContain(
         "Browser tab continuity: When resuming a page after `okou browser use`",
