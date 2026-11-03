@@ -135,7 +135,7 @@ function openPage({
 test.each([
   {
     outcome: "success",
-    message: "The conversation has continued.",
+    message: "The chat has continued.",
     chatAccounts: false,
   },
   {
@@ -145,7 +145,7 @@ test.each([
   },
   {
     outcome: "success",
-    message: "The conversation has continued.",
+    message: "The chat has continued.",
     chatAccounts: true,
   },
 ] as const)(
@@ -335,7 +335,7 @@ test.each(["dismissed", "continued"] as const)(
       await screen.findByText("No permissions were changed.");
     } else {
       click(button("Allow all 2 permissions"));
-      await screen.findByText("The conversation has continued.");
+      await screen.findByText("The chat has continued.");
     }
 
     const nextParams = new URLSearchParams({
@@ -362,7 +362,7 @@ test.each(["dismissed", "continued"] as const)(
       "1 hour",
     );
     click(button("Allow 1 permission"));
-    await screen.findByText("The conversation has continued.");
+    await screen.findByText("The chat has continued.");
     expect(applied.at(-1)).toStrictEqual({
       agentId: nextAgentId,
       groups: [

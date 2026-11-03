@@ -366,7 +366,7 @@ final class ConnectorActionStore {
     notices[flow.action.id] =
       flow.action.callbackPrompt == nil
       ? String(localized: "Connected and authorized for this Agent.")
-      : String(localized: "Connected. Conversation continued.")
+      : String(localized: "Connected. Chat continued.")
     flow.browserURL = nil
     flow.session = nil
     flow.values = [:]

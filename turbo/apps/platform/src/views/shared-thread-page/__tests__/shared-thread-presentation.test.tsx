@@ -31,7 +31,7 @@ test("A missing public conversation uses the Okou presentation", async () => {
 
   await expect(
     screen.findByRole("heading", {
-      name: "You can’t view this conversation",
+      name: "You can’t view this chat",
     }),
   ).resolves.toBeInTheDocument();
   for (const link of linksByName("Sign in")) {

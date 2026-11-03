@@ -272,7 +272,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     loading.hidesWhenStopped = true
     loading.isUserInteractionEnabled = false
     loading.isAccessibilityElement = true
-    loading.accessibilityLabel = "Loading conversation"
+    loading.accessibilityLabel = "Loading chat"
     view.addSubview(loading)
     source.sidebar?.attach(self)
     registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {

@@ -75,7 +75,7 @@ struct ChatSidebarView: View {
       } else {
         threadSection
         if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
-          Text("Your conversations will appear here.")
+          Text("Your chats will appear here.")
             .font(.subheadline)
             .foregroundStyle(.secondary)
         }

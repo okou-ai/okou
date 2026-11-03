@@ -223,7 +223,7 @@ async function setupMessageSharing(
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(
-        "Choose who can view this conversation. Only you can change access.",
+        "Choose who can view this chat. Only you can change access.",
       ).length,
     ).toBeGreaterThan(0);
   });
@@ -408,7 +408,7 @@ test("A growing selected message group becomes partial and can select its new me
   expect(selection).toBeChecked();
   expect(selection).not.toBePartiallyChecked();
   click(requiredButtonNamed("Share"));
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  await screen.findByRole("textbox", { name: "Shared chat link" });
   expect(createRequests).toStrictEqual([
     [PROMPT_EVENT_ID, FOLLOW_UP_PROMPT_EVENT_ID],
   ]);
@@ -428,7 +428,7 @@ test("Share selected message groups as a public conversation snapshot", async ()
     expect(createRequests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
   });
   const shareLink = await screen.findByRole("textbox", {
-    name: "Shared conversation link",
+    name: "Shared chat link",
   });
   expect(shareLink).toHaveValue(
     `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
@@ -480,7 +480,7 @@ test("Hide passage actions throughout sharing and restore them afterward", async
   await screen.findAllByText("1 selected");
 
   click(requiredButtonNamed("Share"));
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  await screen.findByRole("textbox", { name: "Shared chat link" });
   expect(clipboard.writes).toStrictEqual([
     `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
   ]);
@@ -646,7 +646,7 @@ test("Replacing a selected live answer clears it before the next answer is share
   expect.soft(shareButton.closest("footer")).toHaveTextContent("1 selected");
   click(requiredButtonNamed("Share"));
 
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  await screen.findByRole("textbox", { name: "Shared chat link" });
   expect(createRequests).toStrictEqual([[nextAnswerId]]);
 });
 
@@ -744,7 +744,7 @@ test("A selected answer remains shareable after later turns move it outside the 
   expect(shareButton).toBeEnabled();
   click(shareButton);
 
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  await screen.findByRole("textbox", { name: "Shared chat link" });
   expect(createRequests).toStrictEqual([[ANSWER_EVENT_ID]]);
 });
 
@@ -845,7 +845,7 @@ test.each(["running", "failed"] as const)(
     ).toHaveLength(1);
 
     click(requiredButtonNamed("Share"));
-    await screen.findByRole("textbox", { name: "Shared conversation link" });
+    await screen.findByRole("textbox", { name: "Shared chat link" });
     expect(createRequests).toStrictEqual([[GROUPED_ANSWER_EVENT_IDS.at(-1)]]);
     expect(screen.queryByTestId("chat-event-actions")).toBeNull();
     expect(screen.queryByText("Launch answer 1")).toBeNull();
@@ -985,10 +985,10 @@ test("Select an audience before creating a share and change it after creation", 
   await userEvent.keyboard("{Escape}");
   click(within(answerGroup).getByText("Select message group"));
   click(requiredButtonNamed("Share"));
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  await screen.findByRole("textbox", { name: "Shared chat link" });
   expect(created).toStrictEqual(["organization"]);
   const footer = screen
-    .getByRole("textbox", { name: "Shared conversation link" })
+    .getByRole("textbox", { name: "Shared chat link" })
     .closest("footer")!;
   const manage = queryAllByRoleFast("button", footer).find((button) => {
     return button.getAttribute("aria-label") === "Share";
@@ -1113,7 +1113,7 @@ test.each([
     ]);
     expect(composer).toBeInTheDocument();
     expect(
-      screen.queryByRole("textbox", { name: "Shared conversation link" }),
+      screen.queryByRole("textbox", { name: "Shared chat link" }),
     ).not.toBeInTheDocument();
     response.resolve();
     await waitFor(() => {
@@ -1123,7 +1123,7 @@ test.each([
       screen.getByRole("textbox", { name: "Message" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("textbox", { name: "Shared conversation link" }),
+      screen.queryByRole("textbox", { name: "Shared chat link" }),
     ).not.toBeInTheDocument();
   },
 );
@@ -1178,7 +1178,7 @@ test.each([403, 404, 409, 503] as const)(
       screen.getByRole("textbox", { name: "Message" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("textbox", { name: "Shared conversation link" }),
+      screen.queryByRole("textbox", { name: "Shared chat link" }),
     ).not.toBeInTheDocument();
   },
 );
@@ -1197,7 +1197,7 @@ test("A denied clipboard write reverts the optimistic message share confirmation
   expect(requiredButtonNamed("Share message")).toBeEnabled();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
   expect(
-    screen.queryByRole("textbox", { name: "Shared conversation link" }),
+    screen.queryByRole("textbox", { name: "Shared chat link" }),
   ).not.toBeInTheDocument();
 });
 
@@ -1255,8 +1255,8 @@ test("A visibility share fails without publishing when its API is unavailable", 
   );
   click(within(answerGroup).getByText("Select message group"));
   click(requiredButtonNamed("Share"));
-  await screen.findByText("Could not create the shared conversation.");
+  await screen.findByText("Could not create the shared chat.");
   expect(
-    screen.queryByRole("textbox", { name: "Shared conversation link" }),
+    screen.queryByRole("textbox", { name: "Shared chat link" }),
   ).not.toBeInTheDocument();
 });

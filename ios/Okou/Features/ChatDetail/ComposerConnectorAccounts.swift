@@ -56,8 +56,7 @@ struct ComposerConnectorAccounts: View {
         }
         Button("Add account") { store.connect(target: connector.target) }.disabled(store.isSaving)
       } footer: {
-        Text(
-          "This account choice applies to this conversation. The default account stays unchanged.")
+        Text("This account choice applies to this chat. The default account stays unchanged.")
       }
     }
     .searchable(text: $search, prompt: "Find accounts")

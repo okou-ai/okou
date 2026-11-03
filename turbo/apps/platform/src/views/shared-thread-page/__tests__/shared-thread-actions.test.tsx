@@ -31,7 +31,7 @@ test.each([403, 404] as const)(
 
     await expect(
       screen.findByRole("heading", {
-        name: "You can’t view this conversation",
+        name: "You can’t view this chat",
       }),
     ).resolves.toBeInTheDocument();
     expect(
@@ -76,7 +76,7 @@ test("A visitor can continue a shared idea in Platform", async () => {
   await setupSharedThreadPage(context, { host: "app.okou.ai" });
 
   await expect(
-    screen.findByText("Make this conversation yours"),
+    screen.findByText("Make this chat yours"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Try it yourself")).toBeInTheDocument();
 
@@ -117,7 +117,7 @@ test("A signed-in viewer is not asked to sign in or sign up", async () => {
   });
 
   await expect(
-    screen.findByText("Make this conversation yours"),
+    screen.findByText("Make this chat yours"),
   ).resolves.toBeInTheDocument();
   // The handoff itself stays: it carries this conversation into a new chat,
   // which is exactly what an account holder can act on.
