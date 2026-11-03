@@ -28,7 +28,7 @@ struct ComposerConnectorAccounts: View {
           accountLabel(
             "Use default", detail: defaultAccount?.label ?? "No usable default account",
             checked: selection == nil)
-        }.disabled(store.isSaving || loading)
+        }.disabled(store.isSaving || store.uncertain || loading)
         ForEach(accounts) { account in
           VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -38,7 +38,7 @@ struct ComposerConnectorAccounts: View {
                 account.label,
                 detail: account.ready ? "Connected" : "Reconnect required",
                 checked: selection == account.id)
-            }.disabled(store.isSaving || loading)
+            }.disabled(store.isSaving || store.uncertain || loading)
             if !account.ready {
               Button("Reconnect this account") {
                 store.connect(target: connector.target, accountID: account.id)

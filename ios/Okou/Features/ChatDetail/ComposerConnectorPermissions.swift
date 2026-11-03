@@ -53,7 +53,7 @@ struct ComposerConnectorPermissions: View {
                   })
               }
             }
-          }.disabled(store.isSaving || filteredPermissions(state.metadata).isEmpty)
+          }.disabled(store.isSaving || store.uncertain || filteredPermissions(state.metadata).isEmpty)
         } footer: {
           Text("These permissions apply to this Agent across its conversations.")
         }
@@ -70,7 +70,7 @@ struct ComposerConnectorPermissions: View {
         }
         Section {
           Button("Reset to defaults", role: .destructive) { confirmsReset = true }.disabled(
-            store.isSaving)
+            store.isSaving || store.uncertain)
         } footer: {
           Text(
             "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
@@ -86,6 +86,7 @@ struct ComposerConnectorPermissions: View {
       "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
     ) {
       Button("Reset to defaults", role: .destructive) { Task { await save([], reset: true) } }
+        .disabled(store.isSaving || store.uncertain)
     }
   }
   private func filteredPermissions(_ metadata: ChatPermissionMetadata)
@@ -123,7 +124,7 @@ struct ComposerConnectorPermissions: View {
         }
       } label: {
         Text(policy.rawValue.capitalized).frame(minHeight: 44)
-      }.disabled(store.isSaving || loading)
+      }.disabled(store.isSaving || store.uncertain || loading)
     }
   }
   private func load() async {

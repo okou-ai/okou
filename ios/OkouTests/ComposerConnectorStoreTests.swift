@@ -208,6 +208,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     await store.setRemote(host, protocol: .ssh, enabled: true)
     XCTAssertTrue(store.error?.contains("Remote access is blocked") == true)
     XCTAssertFalse(store.canSend)
+    await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertEqual(writes.withLock { $0 }, 1)
     await store.refresh()
     XCTAssertTrue(store.canSend)
     XCTAssertEqual(store.hosts(.ssh).first?.enabled, false)
