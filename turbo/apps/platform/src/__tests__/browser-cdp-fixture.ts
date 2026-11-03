@@ -813,6 +813,11 @@ export function mockBrowserCdp(
         return { error: { code, message } };
       });
     },
+    rejectNextNavigation(errorText: string) {
+      nextResponses.set("Page.navigate", () => {
+        return { result: { frameId: "example-frame", errorText } };
+      });
+    },
     downloadNextNavigation() {
       nextResponses.set("Page.navigate", () => {
         // CDP accepts the download without replacing the current document.

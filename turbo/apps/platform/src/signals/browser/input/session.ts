@@ -6,6 +6,7 @@ import { CdpFault, isRecord, requestDetails } from "../cdp/errors.ts";
 import type { NavigationAction, NavigationReceipt } from "../viewer/types.ts";
 import type { DisplayViewport } from "../display/viewport.ts";
 import type { NavigationData } from "../navigation/data.ts";
+import { NativeNavigationFault } from "../navigation/rejection.ts";
 import type { EditingContext, NativeInputHost } from "./port.ts";
 import type { InputGeometry, Point } from "../display/geometry.ts";
 import { navigationAddress } from "./address.ts";
@@ -1166,7 +1167,7 @@ function createSessionNavigation(graph: SessionActions) {
       // this protocol receipt. Authority/scope revocation still cancels it.
       set(checkNavigation$, gate, lifetime);
       if (isRecord(result) && result.errorText) {
-        throw new CdpFault("input", "The remote page could not be navigated.");
+        throw new NativeNavigationFault(result.errorText);
       }
       if (typeof action === "string") {
         return { kind: "ack" };
