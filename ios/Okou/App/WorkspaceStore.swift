@@ -516,12 +516,14 @@ final class WorkspaceStore {
     // Creation already owns the next navigation when its response arrives.
     guard !isCreating || (!leaving && !reopenOnSuccess) else { return false }
     let restore = leaving || restoreOnUndo
-    let succeeded = await list.setArchived(thread, archived: archived, eventID: eventID) {
+    var failure: String?
+    let succeeded = await list.setArchived(
+      thread, archived: archived, eventID: eventID, onFailure: { failure = $0 }
+    ) {
       // The list owns the write, so leaving the detail cannot cancel it.
       if leaving { self.startNewChat(agentID: thread.agentID) }
     }
     guard !closed, !needsUpgrade else { return false }
-    let failure = list.consumeActionError()
     if succeeded {
       if reopenOnSuccess { selectChat(id) }
       let message =
@@ -552,9 +554,10 @@ final class WorkspaceStore {
 
   func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
     guard !closed, !needsUpgrade, list.canMute(id) else { return }
-    let succeeded = await list.setMuted(id, muted: muted, markRead: markRead)
+    var failure: String?
+    let succeeded = await list.setMuted(
+      id, muted: muted, markRead: markRead, onFailure: { failure = $0 })
     guard !closed, !needsUpgrade else { return }
-    let failure = list.consumeActionError()
     if succeeded {
       let message =
         muted

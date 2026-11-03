@@ -447,11 +447,6 @@ final class ThreadListStore {
     actionError = nil
   }
 
-  func consumeActionError() -> String? {
-    defer { actionError = nil }
-    return actionError
-  }
-
   func canUpdate(_ id: String) -> Bool {
     !closed && !blocked && !updatingThreads.contains(id) && !markingAgentRead
       && threads.contains(where: { $0.id == id })
@@ -464,6 +459,7 @@ final class ThreadListStore {
   @discardableResult
   func setArchived(
     _ thread: ChatThread, archived: Bool, eventID: String = UUID().uuidString.lowercased(),
+    onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
     guard canArchiveChats, canUpdate(thread.id), !Task.isCancelled else { return false }
@@ -478,16 +474,19 @@ final class ThreadListStore {
     }
     projectThreads(threads)
     didBegin()
-    return await updateThread(thread.id) { [commands] in
+    return await updateThread(thread.id, onFailure: onFailure) { [commands] in
       try await commands.setArchived(threadID: thread.id, archived: archived, eventID: eventID)
     }
   }
 
   @discardableResult
-  func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async -> Bool {
+  func setMuted(
+    _ id: String, muted: Bool, markRead: Bool = true,
+    onFailure: (@MainActor (String) -> Void)? = nil
+  ) async -> Bool {
     guard canMute(id), !Task.isCancelled else { return false }
     readRevision += 1
-    return await updateThread(id) { [self, commands] in
+    return await updateThread(id, onFailure: onFailure) { [self, commands] in
       // Replies suppressed while muted must not reappear as unread. Keep the chat
       // muted if marking read fails; retry can safely repeat both operations.
       if !muted && markRead {
@@ -569,9 +568,10 @@ final class ThreadListStore {
   }
 
   @discardableResult
-  private func updateThread(_ id: String, command: @escaping @MainActor () async throws -> Void)
-    async -> Bool
-  {
+  private func updateThread(
+    _ id: String, onFailure: (@MainActor (String) -> Void)? = nil,
+    command: @escaping @MainActor () async throws -> Void
+  ) async -> Bool {
     guard !updatingThreads.contains(id), !closed, !blocked, !Task.isCancelled else { return false }
     updatingThreads.insert(id)
     var succeeded = false
@@ -589,7 +589,16 @@ final class ThreadListStore {
         succeeded = true
         await refresh(waitForCurrent: true)
       } catch is CancellationError {
-      } catch { show(error) }
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        if let onFailure {
+          blocked = (error as? APIClientError)?.statusCode == 426
+          didFail(error)
+          onFailure(error.localizedDescription)
+        } else {
+          show(error)
+        }
+      }
     }
     updateTasks[id] = task
     await task.value
