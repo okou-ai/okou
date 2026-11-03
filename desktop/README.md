@@ -76,10 +76,10 @@ Malformed native helper responses and responses without a numeric request ID
 automatically attach `native-helper-response.bin` and
 `native-helper-diagnostics.txt` to their Sentry error event. The binary file
 preserves the exact bytes passed to the decoder, excluding the terminating
-newline, up to 4 MiB. The report includes the original byte count and SHA-256,
-explicit truncation flags, the decoder error, decode duration, and up to 256
-read fragments with their read sequence and offsets in parser order. This can
-identify framing boundaries without treating them as the established cause.
+newline, up to 4 MiB. The report includes the failure category, helper generation,
+pending request IDs, original/captured byte counts, explicit truncation flags,
+and a bounded decoder error. Successful reads do not accumulate diagnostic
+fragment histories or decoding timings.
 The transport sequences reads before parsing and bounds queued plus partial
 output to 32 MiB before decoding, including when a read contains a newline.
 Framing scans only newly received bytes for delimiters.
@@ -96,6 +96,12 @@ Each native transport allows three diagnostic bundles per one-hour window,
 including across helper restarts. Further protocol errors still emit their
 summary events with `diagnosticAttachments=rate_limited`. Restarting the app
 starts a new window. The SDK's per-attachment limit is 5 MiB.
+
+Helper timeout events retain the allowlisted operation, caller intent, original
+budget, total elapsed time, awake time, and system-suspended time. Exit events
+retain Foundation's termination reason and status. Deadline enforcement and
+sleep-interrupted permission handling belong to the transport; telemetry only
+formats the resulting summary.
 
 `--auth-smoke-test` separately initializes the real Clerk SDK and reports its
 Keychain namespace and whether a session was restored, without opening a login

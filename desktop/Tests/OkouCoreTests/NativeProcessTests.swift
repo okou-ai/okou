@@ -148,7 +148,6 @@ final class NativeProcessTests: XCTestCase {
       decoding: try XCTUnwrap(attachments["native-helper-diagnostics.txt"]), as: UTF8.self)
     XCTAssertTrue(details.contains("failure=invalid_json"))
     XCTAssertTrue(details.contains("decoderError="))
-    XCTAssertTrue(details.contains("readSequence="))
 
     DesktopTelemetry.captureStartupFailure()
     let startup = try XCTUnwrap(
@@ -224,8 +223,6 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertTrue(details.contains("responseBytes=\(expected.count)"))
     XCTAssertTrue(details.contains("responseTruncated=false"))
     XCTAssertTrue(details.contains("DecodingError"))
-    XCTAssertTrue(details.contains("readTraceComplete="))
-    XCTAssertTrue(details.contains("readSequence="))
   }
 
   func testProtocolAttachmentsAreBoundedAcrossHelperRestartsWithoutDroppingErrorEvents()
@@ -274,8 +271,6 @@ final class NativeProcessTests: XCTestCase {
         let report = try XCTUnwrap(attachments["native-helper-diagnostics.txt"])
         XCTAssertLessThan(report.count, 65_536)
         let details = String(decoding: report, as: UTF8.self)
-        XCTAssertLessThanOrEqual(
-          details.components(separatedBy: "\n").filter { $0.hasPrefix("readSequence=") }.count, 256)
         if event["contexts"]["nativeHelper"]["responseBytes"].number
           == Double(4 * 1024 * 1024 + 4096)
         {
@@ -406,18 +401,7 @@ final class NativeProcessTests: XCTestCase {
       XCTAssertEqual(diagnostics["operation"].string, operation)
       XCTAssertEqual(diagnostics["timeoutMs"].number, 100)
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["elapsedMs"].number), 100)
-      XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "timer")
-      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["deadlineOverrunMs"].number), 0)
-      XCTAssertGreaterThanOrEqual(
-        try XCTUnwrap(diagnostics["deadlineDetectedElapsedMs"].number), 100)
-      XCTAssertGreaterThanOrEqual(
-        try XCTUnwrap(diagnostics["helperRetiredElapsedMs"].number),
-        try XCTUnwrap(diagnostics["deadlineDetectedElapsedMs"].number))
-      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["timeoutSettlementDelayMs"].number), 0)
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["awakeElapsedMs"].number), 0)
-      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["writeElapsedMs"].number), 0)
-      XCTAssertEqual(diagnostics["stdoutBytesRead"].number, 0)
-      XCTAssertEqual(diagnostics["stdoutBytesProcessed"].number, 0)
       XCTAssertFalse(event.formatted.contains("private-operation-content"))
       XCTAssertFalse(event.formatted.contains("private-input-content"))
     }
@@ -457,7 +441,6 @@ final class NativeProcessTests: XCTestCase {
     let diagnostics = event["contexts"]["nativeHelper"]
     XCTAssertEqual(diagnostics["requestIntent"].string, "permission_refresh")
     XCTAssertEqual(diagnostics["outcome"].string, "expired_during_system_suspension")
-    XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "response")
     XCTAssertEqual(diagnostics["timeoutMs"].number, 10000)
     XCTAssertLessThan(try XCTUnwrap(diagnostics["awakeElapsedMs"].number), 10000)
     XCTAssertGreaterThan(try XCTUnwrap(diagnostics["systemSuspendedMs"].number), 100000)
@@ -481,7 +464,6 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(errno, ESRCH)
     let event = try XCTUnwrap(collector.events().first)
     XCTAssertEqual(event["level"].string, "info")
-    XCTAssertEqual(event["contexts"]["nativeHelper"]["timeoutDetectedBy"].string, "timer")
   }
 
   func testAwakePermissionRefreshTimeoutStillPropagatesAnError() async throws {
@@ -564,7 +546,6 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(event["level"].string, "error")
     XCTAssertEqual(event["contexts"]["nativeHelper"]["pendingRequests"].number, 2)
     XCTAssertEqual(event["contexts"]["nativeHelper"]["operation"].string, "permissions.state")
-    XCTAssertEqual(event["contexts"]["nativeHelper"]["timeoutDetectedBy"].string, "response")
   }
 
   func testBlockedStdinWriteExpiresAndReapsTheHelperBeforeRecovery() async throws {
@@ -609,9 +590,7 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(events.count, 1)
     let event = try XCTUnwrap(events.first)
     XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "timeout")
-    XCTAssertEqual(event["contexts"]["nativeHelper"]["timeoutDetectedBy"].string, "timer")
     XCTAssertEqual(event["contexts"]["nativeHelper"]["operation"].string, "keyboard.type_text")
-    XCTAssertNil(event["contexts"]["nativeHelper"]["writeElapsedMs"].number)
   }
 
   func testReadyResponseCannotSucceedAfterDeadlineAndOnlyANewCommandRestartsHelper() async throws {
@@ -673,19 +652,10 @@ final class NativeProcessTests: XCTestCase {
     let diagnostics = event["contexts"]["nativeHelper"]
     XCTAssertEqual(diagnostics["operation"].string, "keyboard.type_text")
     XCTAssertEqual(event["level"].string, "error")
-    XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "response")
     XCTAssertEqual(diagnostics["timeoutMs"].number, 30000)
     XCTAssertEqual(diagnostics["elapsedMs"].number, 31000)
-    XCTAssertEqual(diagnostics["deadlineOverrunMs"].number, 1000)
-    XCTAssertEqual(diagnostics["deadlineDetectedElapsedMs"].number, 31000)
-    XCTAssertEqual(diagnostics["deadlineDetectionOverrunMs"].number, 1000)
     XCTAssertEqual(diagnostics["awakeElapsedMs"].number, 1000)
     XCTAssertEqual(diagnostics["systemSuspendedMs"].number, 30000)
-    XCTAssertEqual(diagnostics["timeoutSettlementDelayMs"].number, 0)
-    XCTAssertGreaterThan(try XCTUnwrap(diagnostics["stdoutBytesRead"].number), 0)
-    XCTAssertEqual(diagnostics["stdoutBytesRead"], diagnostics["stdoutBytesProcessed"])
-    XCTAssertEqual(diagnostics["lastStdoutReadElapsedMs"].number, 31000)
-    XCTAssertEqual(diagnostics["lastStdoutProcessedElapsedMs"].number, 31000)
     XCTAssertFalse(event.formatted.contains("private-input-content"))
     XCTAssertFalse(event.formatted.contains(marker.path))
     XCTAssertTrue(try collector.attachments(for: event).isEmpty)

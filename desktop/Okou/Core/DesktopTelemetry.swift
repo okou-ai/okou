@@ -3,6 +3,14 @@ import OSLog
 import Sentry
 
 public enum DesktopTelemetry {
+  struct HelperTimeout {
+    let operation: String
+    let intent: NativeProcess.RequestIntent
+    let budget: TimeInterval
+    let elapsed: TimeInterval
+    let awakeElapsed: TimeInterval
+  }
+
   public static func start(
     dsn: String?, version: String?, environment: String, cacheDirectory: URL
   ) {
@@ -54,8 +62,7 @@ public enum DesktopTelemetry {
     _ reason: NativeHelperFailure, purpose: NativeProcess.Purpose, generation: Int,
     pendingRequests: Int, stderrBytes: Int,
     responseBytes: Int? = nil, termination: NativeHelperTermination? = nil,
-    request: NativeHelperRequestDiagnostics? = nil,
-    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil,
+    attachments: NativeHelperDiagnostics? = nil, timeout: HelperTimeout? = nil,
     interruption: DesktopFailure.Interruption? = nil
   ) {
     let suspendedPermissionCheck =
@@ -80,43 +87,14 @@ public enum DesktopTelemetry {
       diagnostics["exitStatus"] = termination.status
       diagnostics["terminationReason"] = termination.reason
     }
-    if let request {
-      diagnostics["operation"] = request.operation.rawValue
-      diagnostics["requestIntent"] = request.intent.rawValue
+    if let timeout {
+      diagnostics["operation"] = timeout.operation
+      diagnostics["requestIntent"] = timeout.intent.rawValue
       if suspendedPermissionCheck { diagnostics["outcome"] = "expired_during_system_suspension" }
-      diagnostics["timeoutMs"] = request.timeout * 1000
-      let observed = timeout?.observedAt ?? .now
-      diagnostics["elapsedMs"] = request.started.duration(to: observed).seconds * 1000
-      if let written = request.writtenAt {
-        diagnostics["writeElapsedMs"] = request.started.duration(to: written).seconds * 1000
-      }
-      if let timeout {
-        diagnostics["timeoutDetectedBy"] = timeout.trigger.rawValue
-        let elapsed = request.started.duration(to: observed).seconds * 1000
-        let awakeElapsed = request.awakeStarted.duration(to: timeout.awakeObservedAt).seconds * 1000
-        diagnostics["awakeElapsedMs"] = awakeElapsed
-        diagnostics["systemSuspendedMs"] = max(0, elapsed - awakeElapsed)
-        diagnostics["deadlineDetectedElapsedMs"] =
-          request.started.duration(to: timeout.detectedAt).seconds * 1000
-        diagnostics["deadlineDetectionOverrunMs"] = max(
-          0, request.deadline.duration(to: timeout.detectedAt).seconds * 1000)
-        diagnostics["helperRetiredElapsedMs"] =
-          request.started.duration(to: timeout.retiredAt).seconds * 1000
-        diagnostics["timeoutSettlementDelayMs"] = max(
-          0, timeout.detectedAt.duration(to: observed).seconds * 1000)
-        diagnostics["deadlineOverrunMs"] = max(
-          0, request.deadline.duration(to: observed).seconds * 1000)
-        // Stdout counters describe this helper generation, not a particular request.
-        diagnostics["stdoutBytesRead"] = timeout.output.bytes
-        diagnostics["stdoutBytesProcessed"] = timeout.processedBytes
-        if let read = timeout.output.readAt, read >= request.started {
-          diagnostics["lastStdoutReadElapsedMs"] = request.started.duration(to: read).seconds * 1000
-        }
-        if let processed = timeout.processedAt, processed >= request.started {
-          diagnostics["lastStdoutProcessedElapsedMs"] =
-            request.started.duration(to: processed).seconds * 1000
-        }
-      }
+      diagnostics["timeoutMs"] = timeout.budget * 1000
+      diagnostics["elapsedMs"] = timeout.elapsed * 1000
+      diagnostics["awakeElapsedMs"] = timeout.awakeElapsed * 1000
+      diagnostics["systemSuspendedMs"] = max(0, timeout.elapsed * 1000 - timeout.awakeElapsed * 1000)
     }
     if reason == .invalidJSON || reason == .missingRequestID {
       diagnostics["diagnosticAttachments"] = attachments == nil ? "rate_limited" : "included"

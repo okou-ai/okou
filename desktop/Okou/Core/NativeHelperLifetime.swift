@@ -1,10 +1,23 @@
 import Foundation
 
+struct NativeHelperTermination: Sendable {
+  let status: Int32
+  let reason: String
+
+  init(_ process: Process) {
+    status = process.terminationStatus
+    switch process.terminationReason {
+    case .exit: reason = "exit"
+    case .uncaughtSignal: reason = "uncaught_signal"
+    @unknown default: reason = "unknown"
+    }
+  }
+}
+
 // Process retirement must remain available when the Swift executor or stdin write is blocked.
 final class NativeHelperLifetime: @unchecked Sendable {
   struct Expiration: Sendable {
     let requestID: Int
-    let trigger: NativeHelperTimeoutDiagnostics.Trigger
     let detectedAt: ContinuousClock.Instant
     let retiredAt: ContinuousClock.Instant
   }
@@ -39,7 +52,7 @@ final class NativeHelperLifetime: @unchecked Sendable {
       guard !closed else { return false }
       let timer = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
       timer.setEventHandler { [weak self] in
-        if self?.expire(id, detectedBy: .timer) != nil { onExpiration() }
+        if self?.expire(id) != nil { onExpiration() }
       }
       timer.schedule(deadline: .now() + max(0, now().duration(to: deadline).seconds))
       deadlines[id] = Deadline(instant: deadline, timer: timer)
@@ -53,7 +66,7 @@ final class NativeHelperLifetime: @unchecked Sendable {
       if let expiration { return expiration }
       // Completing a response and committing its timeout must be one decision.
       if let deadline = deadlines[id], now() >= deadline.instant {
-        return expireLocked(id, detectedBy: .response)
+        return expireLocked(id)
       }
       deadlines.removeValue(forKey: id)?.timer.cancel()
       return nil
@@ -61,22 +74,19 @@ final class NativeHelperLifetime: @unchecked Sendable {
   }
 
   @discardableResult
-  func expire(_ id: Int, detectedBy trigger: NativeHelperTimeoutDiagnostics.Trigger) -> Expiration?
-  {
+  func expire(_ id: Int) -> Expiration? {
     lock.withLock {
       if let expiration { return expiration }
       guard let deadline = deadlines[id], now() >= deadline.instant else { return nil }
-      return expireLocked(id, detectedBy: trigger)
+      return expireLocked(id)
     }
   }
 
-  private func expireLocked(
-    _ id: Int, detectedBy trigger: NativeHelperTimeoutDiagnostics.Trigger
-  ) -> Expiration {
+  private func expireLocked(_ id: Int) -> Expiration {
     let detected = now()
     retireLocked()
     let result = Expiration(
-      requestID: id, trigger: trigger, detectedAt: detected, retiredAt: now())
+      requestID: id, detectedAt: detected, retiredAt: now())
     expiration = result
     return result
   }

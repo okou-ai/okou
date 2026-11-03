@@ -1,6 +1,38 @@
 import Foundation
 import OSLog
 
+private final class NativeHelperOutputReader: @unchecked Sendable {
+  private let lock = NSLock()
+  private var sequence = 0
+
+  func read(_ handle: FileHandle) -> (data: Data, sequence: Int) {
+    lock.withLock {
+      let data = handle.availableData
+      sequence += 1
+      return (data, sequence)
+    }
+  }
+}
+
+// Never report arbitrary request names or payloads as operation labels.
+private enum NativeHelperOperation: String, Sendable {
+  case permissionsState = "permissions.state"
+  case requestAccessibility = "permissions.request_accessibility"
+  case requestScreenRecording = "permissions.request_screen_recording"
+  case probeAutomation = "permissions.probe_automation"
+  case listApps = "apps.list"
+  case appState = "app.state"
+  case openApp = "app.open"
+  case click = "element.click"
+  case clickPoint = "element.click_point"
+  case scroll = "element.scroll"
+  case setValue = "element.set_value"
+  case performAction = "element.perform_action"
+  case typeText = "keyboard.type_text"
+  case pressKey = "keyboard.press_key"
+  case unknown
+}
+
 private final class NativeHelperStandardError: @unchecked Sendable {
   private let lock = NSLock()
   private var byteCount = 0
@@ -32,7 +64,14 @@ public actor NativeProcess {
 
   private struct PendingRequest {
     let continuation: CheckedContinuation<JSONValue, Error>
-    var diagnostics: NativeHelperRequestDiagnostics
+    let operation: NativeHelperOperation
+    let intent: RequestIntent
+    let timeout: TimeInterval
+    let started: ContinuousClock.Instant
+    let awakeStarted: SuspendingClock.Instant
+    var written = false
+
+    var deadline: ContinuousClock.Instant { started.advanced(by: .seconds(timeout)) }
   }
 
   private let logger = Logger(subsystem: "ai.okou.desktop", category: "computer-use-helper")
@@ -46,17 +85,11 @@ public actor NativeProcess {
   private var output: FileHandle?
   private var errors: FileHandle?
   private var standardError = NativeHelperStandardError()
-  private var outputReader: NativeHelperOutputReader
-  private var outputProcessedAt: ContinuousClock.Instant?
   private var timeouts: [Int: Task<Void, Never>] = [:]
   private var buffer = Data()
   private var nextReadSequence = 1
   private var queuedReads: [Int: Data] = [:]
   private var queuedReadBytes = 0
-  private var readFragments: [NativeHelperReadFragment] = []
-  private var receivedBytes = 0
-  private var responseStart = 0
-  private var omittedReadsThrough = 0
   private var diagnosticWindowStart = ContinuousClock.now
   private var diagnosticsInWindow = 0
   private var sequence = 0
@@ -75,7 +108,6 @@ public actor NativeProcess {
     self.purpose = purpose
     self.now = now
     self.awakeNow = awakeNow
-    outputReader = NativeHelperOutputReader(now: now)
   }
   private func start() throws {
     if lifetime?.isRunning == true { return }
@@ -91,7 +123,7 @@ public actor NativeProcess {
     let stdout = Pipe()
     let stderr = Pipe()
     let standardError = NativeHelperStandardError()
-    let reader = NativeHelperOutputReader(now: now)
+    let reader = NativeHelperOutputReader()
     child.executableURL = executable
     child.arguments = ["serve"]
     child.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value
@@ -128,7 +160,6 @@ public actor NativeProcess {
     output = stdout.fileHandleForReading
     errors = stderr.fileHandleForReading
     self.standardError = standardError
-    outputReader = reader
   }
   public func request(
     _ values: JSONValue, timeout: TimeInterval = 30, intent: RequestIntent = .unspecified
@@ -143,14 +174,15 @@ public actor NativeProcess {
     data.append(10)
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
-        let diagnostics = NativeHelperRequestDiagnostics(
-          values, intent: intent, timeout: timeout, started: now(), awakeStarted: awakeNow())
-        pending[id] = PendingRequest(
-          continuation: continuation, diagnostics: diagnostics)
+        let request = PendingRequest(
+          continuation: continuation,
+          operation: NativeHelperOperation(rawValue: values["kind"].string ?? "") ?? .unknown,
+          intent: intent, timeout: timeout, started: now(), awakeStarted: awakeNow())
+        pending[id] = request
         let current = generation
         guard
           lifetime?.watch(
-            id, until: diagnostics.deadline,
+            id, until: request.deadline,
             onExpiration: {
               Task { await self.expire(id, generation: current) }
             }) == true
@@ -159,7 +191,7 @@ public actor NativeProcess {
           return
         }
         // Dispatch uses an awake clock. Keep ContinuousClock's timer for system sleep/wake.
-        let deadline = diagnostics.deadline
+        let deadline = request.deadline
         timeouts[id] = Task {
           do { try await Task.sleep(until: deadline) } catch { return }
           self.expire(id, generation: current)
@@ -170,7 +202,7 @@ public actor NativeProcess {
             failure: .write)
           return
         }
-        pending[id]?.diagnostics.writtenAt = now()
+        pending[id]?.written = true
       }
     } onCancel: {
       Task { await self.cancel(id) }
@@ -192,26 +224,17 @@ public actor NativeProcess {
       return
     }
     while let next = queuedReads.removeValue(forKey: nextReadSequence) {
-      let readSequence = nextReadSequence
       nextReadSequence += 1
       queuedReadBytes -= next.count
-      consume(next, sequence: readSequence, generation: current)
+      consume(next, generation: current)
       guard current == generation else { return }
     }
   }
-  private func consume(_ data: Data, sequence: Int, generation current: Int) {
+  private func consume(_ data: Data, generation current: Int) {
     if data.isEmpty {
       outputClosed = true
       if let termination { exited(generation: current, termination: termination) }
       return
-    }
-    outputProcessedAt = now()
-    readFragments.append(
-      NativeHelperReadFragment(
-        sequence: sequence, streamOffset: receivedBytes, byteCount: data.count))
-    receivedBytes += data.count
-    if readFragments.count > NativeHelperDiagnostics.maximumReadFragments {
-      omittedReadsThrough = readFragments.removeFirst().endOffset
     }
     var start = data.startIndex
     while let newline = data[start...].firstIndex(of: 10) {
@@ -219,21 +242,16 @@ public actor NativeProcess {
       let line = buffer
       buffer = Data()
       start = data.index(after: newline)
-      let frameStart = responseStart
-      responseStart += line.count + 1
       let response: JSONValue
-      let decodeStarted = ContinuousClock.now
       do { response = try JSONDecoder().decode(JSONValue.self, from: line) } catch {
         protocolFailure(
-          .invalidJSON, reason: "invalid JSON", response: line, responseStart: frameStart,
-          decoderError: error, decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
+          .invalidJSON, reason: "invalid JSON", response: line, decoderError: error)
         return
       }
       guard let number = response["id"].number, let responseId = Int(exactly: number) else {
         protocolFailure(
           .missingRequestID, reason: "missing or invalid request ID", response: line,
-          responseStart: frameStart, decoderError: nil,
-          decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
+          decoderError: nil)
         return
       }
       // A ready response must not bypass the deadline when the client resumes late.
@@ -253,15 +271,13 @@ public actor NativeProcess {
           ))
         return
       }
-      readFragments.removeAll { $0.endOffset <= responseStart }
       timeouts.removeValue(forKey: responseId)?.cancel()
       pending.removeValue(forKey: responseId)?.continuation.resume(returning: response)
     }
     buffer.append(data[start...])
   }
   private func protocolFailure(
-    _ failure: NativeHelperFailure, reason: String, response: Data, responseStart: Int,
-    decoderError: Error?, decodeDurationMs: Double
+    _ failure: NativeHelperFailure, reason: String, response: Data, decoderError: Error?
   ) {
     // Raw app data belongs only in the bounded, event-local Sentry attachments.
     let diagnostics = "responseBytes=\(response.count), \(standardError.summary)"
@@ -276,9 +292,7 @@ public actor NativeProcess {
       diagnosticsInWindow += 1
       attachments = NativeHelperDiagnostics(
         response: response, reason: failure, generation: generation,
-        pendingIDs: pending.keys.sorted(),
-        responseStart: responseStart, reads: readFragments, omittedThrough: omittedReadsThrough,
-        decoderError: decoderError, decodeDurationMs: decodeDurationMs)
+        pendingIDs: pending.keys.sorted(), decoderError: decoderError)
     }
     stop(
       error: DesktopFailure(
@@ -298,8 +312,26 @@ public actor NativeProcess {
     )
   }
   private func expire(_ id: Int, generation current: Int) {
-    guard current == generation, lifetime?.expire(id, detectedBy: .timer) != nil else { return }
+    guard current == generation, lifetime?.expire(id) != nil else { return }
     stop(error: Self.timeoutFailure())
+  }
+  private func interruption(
+    for request: PendingRequest, expiration: NativeHelperLifetime.Expiration,
+    observedAt: ContinuousClock.Instant, awakeObservedAt: SuspendingClock.Instant
+  ) -> DesktopFailure.Interruption? {
+    let elapsed = request.started.duration(to: observedAt).seconds
+    let awake = request.awakeStarted.duration(to: awakeObservedAt).seconds
+    guard purpose == .computerUse, request.operation == .permissionsState,
+      request.intent == .permissionRefresh || request.intent == .commandPreflight,
+      pending.count == 1, request.written,
+      request.timeout > 0, request.timeout.isFinite,
+      expiration.detectedAt >= request.deadline, expiration.retiredAt >= expiration.detectedAt,
+      observedAt >= expiration.retiredAt,
+      elapsed.isFinite, awake.isFinite,
+      awake >= 0, awake < request.timeout, elapsed >= request.timeout, elapsed > awake
+    else { return nil }
+    return request.intent == .permissionRefresh
+      ? .suspendedPermissionRefresh : .suspendedCommandPreflight
   }
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
   private func exited(generation current: Int, termination: NativeHelperTermination) {
@@ -313,14 +345,14 @@ public actor NativeProcess {
   }
   private func reportFailure(
     _ reason: NativeHelperFailure, responseBytes: Int? = nil,
-    termination: NativeHelperTermination? = nil, request: NativeHelperRequestDiagnostics? = nil,
-    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil,
+    termination: NativeHelperTermination? = nil,
+    attachments: NativeHelperDiagnostics? = nil, timeout: DesktopTelemetry.HelperTimeout? = nil,
     interruption: DesktopFailure.Interruption? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
       reason, purpose: purpose, generation: generation,
       pendingRequests: pending.count, stderrBytes: standardError.count,
-      responseBytes: responseBytes, termination: termination, request: request,
+      responseBytes: responseBytes, termination: termination,
       attachments: attachments, timeout: timeout, interruption: interruption)
   }
   public func stop() { stop(error: CancellationError()) }
@@ -332,16 +364,18 @@ public actor NativeProcess {
     let expiration = lifetime?.retire()
     var error = error
     if let expiration, let request = pending[expiration.requestID] {
-      let timeout = NativeHelperTimeoutDiagnostics(
-        trigger: expiration.trigger, output: outputReader.snapshot, processedBytes: receivedBytes,
-        processedAt: outputProcessedAt, observedAt: now(), awakeObservedAt: awakeNow(),
-        detectedAt: expiration.detectedAt, retiredAt: expiration.retiredAt)
-      let interruption = timeout.interruption(
-        request: request.diagnostics, purpose: purpose, pendingRequests: pending.count)
+      let observedAt = now()
+      let awakeObservedAt = awakeNow()
+      let interruption = self.interruption(
+        for: request, expiration: expiration, observedAt: observedAt, awakeObservedAt: awakeObservedAt)
       error = Self.timeoutFailure(interruption: interruption)
       reportFailure(
-        .timeout, request: request.diagnostics,
-        timeout: timeout, interruption: interruption)
+        .timeout,
+        timeout: DesktopTelemetry.HelperTimeout(
+          operation: request.operation.rawValue, intent: request.intent, budget: request.timeout,
+          elapsed: request.started.duration(to: observedAt).seconds,
+          awakeElapsed: request.awakeStarted.duration(to: awakeObservedAt).seconds),
+        interruption: interruption)
     } else if let failure {
       reportFailure(
         failure, responseBytes: responseBytes, termination: termination, attachments: attachments)
@@ -355,16 +389,10 @@ public actor NativeProcess {
     output = nil
     errors = nil
     standardError = NativeHelperStandardError()
-    outputReader = NativeHelperOutputReader(now: now)
-    outputProcessedAt = nil
     buffer.removeAll()
     queuedReads.removeAll()
     queuedReadBytes = 0
     nextReadSequence = 1
-    readFragments.removeAll()
-    receivedBytes = 0
-    responseStart = 0
-    omittedReadsThrough = 0
     outputClosed = false
     self.termination = nil
     for timeout in timeouts.values { timeout.cancel() }
