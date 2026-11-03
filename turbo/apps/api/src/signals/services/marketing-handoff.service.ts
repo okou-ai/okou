@@ -15,11 +15,14 @@ import {
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import { conflict } from "../../lib/error";
 import { db$, writeDb$ } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
+  isS3NotFoundError,
   putImmutableS3Object,
 } from "../external/s3";
+import { settle } from "../utils";
 import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
@@ -232,6 +235,28 @@ export const storeMarketingManifest$ = command(
   ) => {
     const body = serializeMarketingHandoff(args.manifest);
     const hash = marketingContentHash(body);
+    const shortHash = hash.slice(0, 8);
+    await get(
+      putImmutableS3Object(
+        args.bucket,
+        `manifest/${shortHash}.json`,
+        body,
+        "application/json",
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    // Conditional writes reserve the short address; compare full digests before granting access.
+    const stored = await set(
+      readMarketingManifest$,
+      { bucket: args.bucket, hash: shortHash },
+      signal,
+    );
+    if (!stored || stored.hash !== hash) {
+      return conflict(
+        "This handoff address is already in use. Edit your request and try again.",
+      );
+    }
     await get(
       putImmutableS3Object(
         args.bucket,
@@ -247,7 +272,7 @@ export const storeMarketingManifest$ = command(
       { resourceType: "manifest", resourceHash: hash, subject: args.subject },
       signal,
     );
-    return hash;
+    return { hash, shortHash };
   },
 );
 
@@ -256,22 +281,35 @@ export const readMarketingManifest$ = command(
     { get },
     args: { bucket: string; hash: string },
     signal: AbortSignal,
-  ): Promise<MarketingHandoffManifest> => {
-    const body = await get(
-      downloadS3BufferWithMaxBytes(
-        args.bucket,
-        `manifest/${args.hash}.json`,
-        128 * 1024,
-        signal,
+  ): Promise<{ hash: string; manifest: MarketingHandoffManifest } | null> => {
+    const downloaded = await settle(
+      get(
+        downloadS3BufferWithMaxBytes(
+          args.bucket,
+          `manifest/${args.hash}.json`,
+          128 * 1024,
+          signal,
+        ),
       ),
+      signal,
     );
-    signal.throwIfAborted();
-    if (marketingContentHash(body) !== args.hash) {
+    if (!downloaded.ok) {
+      if (isS3NotFoundError(downloaded.error)) {
+        return null;
+      }
+      throw downloaded.error;
+    }
+    const body = downloaded.value;
+    const hash = marketingContentHash(body);
+    if (hash.slice(0, args.hash.length) !== args.hash) {
       throw new Error("Marketing manifest digest mismatch");
     }
-    return marketingHandoffManifestSchema.parse(
-      JSON.parse(body.toString("utf8")),
-    );
+    return {
+      hash,
+      manifest: marketingHandoffManifestSchema.parse(
+        JSON.parse(body.toString("utf8")),
+      ),
+    };
   },
 );
 

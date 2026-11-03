@@ -167,6 +167,7 @@ describe("Marketing content handoff", () => {
     const first = await create();
     const duplicate = await create();
     const edited = await create(manifest("A different task"));
+    expect(first.body.shortHash).toBe(first.body.hash.slice(0, 8));
     expect(duplicate.body.hash).toBe(first.body.hash);
     expect(edited.body.hash).not.toBe(first.body.hash);
     const resolved = await accept(
@@ -179,13 +180,108 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(resolved.body).toStrictEqual(manifest());
+    const short = await accept(
+      api().resolve({
+        params: { hash: first.body.shortHash! },
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    expect(short.body).toStrictEqual(resolved.body);
+  });
+
+  it("rejects a colliding short address without overwriting or granting access to the first task", async () => {
+    const firstActor = actor;
+    const firstManifest = manifest("Short handoff collision 5888");
+    const first = await create(firstManifest);
+    const colliding = manifest("Short handoff collision 98319");
+    await enableActor();
+    const rejected = await api().create({
+      body: colliding,
+      headers: auth,
+      extraHeaders: { origin },
+    });
+    expect(rejected.status).toBe(409);
+    const rejectedPublication = await api().publish({
+      headers: publisher,
+      body: colliding,
+    });
+    expect(rejectedPublication.status).toBe(409);
+    expect(
+      (
+        await api().resolve({
+          params: { hash: first.body.shortHash! },
+          body: {},
+          headers: auth,
+          extraHeaders: { origin },
+        })
+      ).status,
+    ).toBe(404);
+    mocks.clerk.session(firstActor.userId, firstActor.orgId);
+    const resolved = await accept(
+      api().resolve({
+        params: { hash: first.body.shortHash! },
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(firstManifest);
+  });
+
+  it("reserves a short address for only one of two concurrent colliding tasks", async () => {
+    const bodies = [
+      manifest("Short handoff collision 29089"),
+      manifest("Short handoff collision 106361"),
+    ];
+    const responses = await Promise.all(
+      bodies.map((body) => {
+        return api().create({ body, headers: auth, extraHeaders: { origin } });
+      }),
+    );
+    expect(
+      responses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toEqual([200, 409]);
+    const resolved = await accept(
+      api().resolve({
+        params: { hash: "3cc245bc" },
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(
+      bodies[
+        responses.findIndex((response) => {
+          return response.status === 200;
+        })
+      ],
+    );
+  });
+
+  it("returns not found for an unknown short address", async () => {
+    const response = await api().resolve({
+      params: { hash: "00000000" },
+      body: {},
+      headers: auth,
+      extraHeaders: { origin },
+    });
+    expect(response.status).toBe(404);
   });
 
   it("does not grant another user access merely because they know the hash", async () => {
     const created = await create();
     await enableActor();
     const result = await api().resolve({
-      params: created.body,
+      params: { hash: created.body.shortHash! },
       body: {},
       headers: auth,
       extraHeaders: { origin },
@@ -224,11 +320,10 @@ describe("Marketing content handoff", () => {
         return config as S3ClientConfig;
       },
     );
-    expect(configs).toHaveLength(3);
-    const transport = configs[1]?.requestHandler;
+    const transport = configs[0]?.requestHandler;
     expect(transport).toBeDefined();
-    expect(configs[2]?.requestHandler).toBe(transport);
     for (const config of configs) {
+      expect(config.requestHandler).toBe(transport);
       expect(config.credentials).toMatchObject({
         accessKeyId: "test-marketing-key",
         secretAccessKey: "test-marketing-secret",
@@ -472,7 +567,7 @@ describe("Marketing content handoff", () => {
     );
     const retry = await accept(
       api().import({
-        params: created.body,
+        params: { hash: created.body.shortHash! },
         body: { intentId },
         headers: auth,
         extraHeaders: { origin },

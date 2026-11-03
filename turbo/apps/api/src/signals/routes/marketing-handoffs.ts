@@ -333,12 +333,12 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       return badRequestMessage("File size does not match uploaded content");
     }
   }
-  const hash = await set(
+  const result = await set(
     storeMarketingManifest$,
     { bucket: context.bucket, manifest: body.data, subject: context.subject },
     signal,
   );
-  return { status: 200 as const, body: { hash } };
+  return "status" in result ? result : { status: 200 as const, body: result };
 });
 
 const authorizedManifest$ = command(
@@ -350,6 +350,15 @@ const authorizedManifest$ = command(
     if (!context.userId) {
       return resourceUnavailable("Sign in to receive this content");
     }
+    const stored = await set(
+      readMarketingManifest$,
+      { bucket: context.bucket, hash },
+      signal,
+    );
+    if (!stored) {
+      return notFound("Content not found");
+    }
+    const { hash: resourceHash, manifest } = stored;
     const subjects = [context.subject, context.sessionSubject].filter(
       (subject): subject is string => {
         return subject !== null;
@@ -358,21 +367,16 @@ const authorizedManifest$ = command(
     if (
       !(await set(
         canReadMarketingContent$,
-        { resourceType: "manifest", resourceHash: hash, subjects },
+        { resourceType: "manifest", resourceHash, subjects },
         signal,
       ))
     ) {
       return notFound("Content not found");
     }
-    const manifest = await set(
-      readMarketingManifest$,
-      { bucket: context.bucket, hash },
-      signal,
-    );
     const claimed = await set(
       claimMarketingManifest$,
       {
-        hash,
+        hash: resourceHash,
         userId: context.userId,
         sessionSubject: context.sessionSubject,
         manifest,
@@ -382,7 +386,7 @@ const authorizedManifest$ = command(
     if (!claimed) {
       return notFound("Content not found");
     }
-    return { ...context, userId: context.userId, manifest };
+    return { ...context, userId: context.userId, manifest, hash: resourceHash };
   },
 );
 
@@ -442,7 +446,7 @@ const import$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const files = await set(
     importMarketingFiles$,
-    { ...result, hash, orgId: result.orgId, intentId: body.data.intentId },
+    { ...result, orgId: result.orgId, intentId: body.data.intentId },
     signal,
   );
   return { status: 200 as const, body: { files } };
@@ -529,12 +533,12 @@ const publish$ = command(async ({ get, set }, signal: AbortSignal) => {
       return notFound("Publish files before publishing a manifest");
     }
   }
-  const hash = await set(
+  const result = await set(
     storeMarketingManifest$,
     { bucket, manifest: body.data, subject: "public" },
     signal,
   );
-  return { status: 200 as const, body: { hash } };
+  return "status" in result ? result : { status: 200 as const, body: result };
 });
 
 const manifestPolicy: Readonly<{ maxBytes: number; tooLargeMessage: string }> =
