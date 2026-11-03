@@ -57,6 +57,8 @@ struct ComposerConnectorSheet: View {
         Section {
           if let error = store.connectorError, store.error == nil {
             ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
+          } else if store.isLoading && store.connectors.isEmpty && store.error == nil {
+            ProgressView("Loading connectors…")
           } else {
             ForEach(
               store.connectors.filter {
@@ -89,13 +91,6 @@ struct ComposerConnectorSheet: View {
         }
       }
       .listSectionSpacing(16)
-      .overlay {
-        if store.isLoading && store.connectors.isEmpty && store.connectorError == nil
-          && store.error == nil
-        {
-          ChatSettingsLoadingView(title: "Loading connectors…")
-        }
-      }
       .searchable(text: $search, prompt: "Find connectors")
       .navigationTitle("Connectors")
       .navigationBarTitleDisplayMode(.inline)
