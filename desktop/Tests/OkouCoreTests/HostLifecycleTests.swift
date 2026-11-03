@@ -312,6 +312,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let events = try collector.events()
     let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
     let failure = failed["contexts"]["heartbeat"]["firstFailure"]
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
     XCTAssertEqual(failure["requests"].array?.count, 0)
     XCTAssertEqual(failure["operation"]["phase"].string, "token_lookup")
     let operation = failure["operation"]
@@ -392,6 +393,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
 
     let events = try collector.events()
     XCTAssertEqual(events.count, 2)
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
     let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
     let restored = try XCTUnwrap(
       events.first { $0["tags"]["heartbeatOutcome"].string == "recovered" })
