@@ -60,7 +60,7 @@ struct ConnectorActionCard: View {
         title: String(localized: "Action unavailable"), systemImage: "link.badge.plus",
         titleLineLimit: 1
       ) {
-        Text("This action no longer matches an available connector in this conversation.")
+        Text("This action no longer matches an available connector in this chat.")
           .lineLimit(2, reservesSpace: true)
       }
     case .failed(let error):
@@ -98,7 +98,7 @@ struct ConnectorActionCard: View {
   }
   private func reason(_ status: ChatConnectorStatus) -> LocalizedStringKey {
     switch action.kind {
-    case .select: return "Confirm this account for the conversation and continue."
+    case .select: return "Confirm this account for the chat and continue."
     case .reconnect: return "Reconnect this exact account to continue."
     default:
       if status.complete { return "Connected and authorized for this Agent." }
@@ -112,7 +112,7 @@ struct ConnectorActionCard: View {
         return "Your service authorization expired or was revoked. Sign in again."
       }
       if let description = status.builtin?.description { return LocalizedStringKey(description) }
-      return "Connect this service to continue the conversation."
+      return "Connect this service to continue the chat."
     }
   }
 
@@ -135,7 +135,7 @@ struct ConnectorAuthorizationSheet: View {
               LabeledContent("Service account", value: identity).textSelection(.enabled)
             }
           }
-          Text("Authorization applies to the Agent in this conversation.")
+          Text("Authorization applies to the Agent in this chat.")
             .font(.footnote).foregroundStyle(.secondary)
         }
         if flow.needsConnection {

@@ -140,7 +140,7 @@ test("Project folders show cross-Agent chats inline without leaving the current 
   expect(namedLink(folder(), "Archived research")).toBeNull();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   await user.click(button("Options for Launch", folder()));
-  await user.click(await findMenuItem("Archived conversations"));
+  await user.click(await findMenuItem("Archived chats"));
   expect(namedLink(folder(), "Archived research")).toBeVisible();
   await user.click(button("Launch", folder()));
   expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "false");
@@ -376,10 +376,7 @@ test("Thread menu searches and changes Project membership while preserving the o
   ).resolves.toBeInTheDocument();
   await fill(search, "laun");
   await user.click(
-    button(
-      "Launch",
-      await screen.findByRole("dialog", { name: "Move conversation" }),
-    ),
+    button("Launch", await screen.findByRole("dialog", { name: "Move chat" })),
   );
   await waitFor(() => {
     return expect(namedLink(folder(), "Ordinary chat")).toBeInTheDocument();
@@ -395,7 +392,7 @@ test("Thread menu searches and changes Project membership while preserving the o
   await user.click(
     button(
       "Research",
-      await screen.findByRole("dialog", { name: "Move conversation" }),
+      await screen.findByRole("dialog", { name: "Move chat" }),
     ),
   );
   await waitFor(() => {
@@ -409,7 +406,7 @@ test("Thread menu searches and changes Project membership while preserving the o
   await user.click(
     button(
       "Remove from Project",
-      await screen.findByRole("dialog", { name: "Move conversation" }),
+      await screen.findByRole("dialog", { name: "Move chat" }),
     ),
   );
   await waitFor(() => {
@@ -594,7 +591,7 @@ test("PWA uses the same folders and a bottom sheet for Thread membership", async
   await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
   await user.click(await findMenuItem("Move to Project"));
   const sheet = await screen.findByRole("dialog", {
-    name: "Move conversation",
+    name: "Move chat",
   });
   expect(sheet).toHaveAttribute("data-slot", "drawer-popup");
   expect(
@@ -603,7 +600,7 @@ test("PWA uses the same folders and a bottom sheet for Thread membership", async
   await user.keyboard("{Escape}");
   await waitFor(() => {
     return expect(
-      screen.queryByRole("dialog", { name: "Move conversation" }),
+      screen.queryByRole("dialog", { name: "Move chat" }),
     ).not.toBeInTheDocument();
   });
   const link = namedLink(folder(), "Launch planning");

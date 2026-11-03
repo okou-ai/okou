@@ -137,7 +137,7 @@ public struct ChatPermissions: Sendable {
       "/api/chat-threads/\(action.threadID)/metadata")
     guard UUID(uuidString: thread.id) == UUID(uuidString: action.threadID),
       UUID(uuidString: thread.agentId) == UUID(uuidString: action.agentID)
-    else { throw ChatError.invalidContract("This request no longer belongs to this conversation.") }
+    else { throw ChatError.invalidContract("This request no longer belongs to this chat.") }
   }
 
   private func grants(_ action: ChatPermissionAction) async throws -> [ChatPermissionGrant] {

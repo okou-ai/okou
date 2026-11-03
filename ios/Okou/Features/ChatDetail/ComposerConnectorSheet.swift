@@ -69,7 +69,7 @@ struct ComposerConnectorSheet: View {
         } header: {
           Text("Services")
         } footer: {
-          Text("Service access applies to this Agent. Account choices apply to this conversation.")
+          Text("Service access applies to this Agent. Account choices apply to this chat.")
         }
       }
       .searchable(text: $search, prompt: "Find connectors")
@@ -270,7 +270,7 @@ private struct ComposerRemoteControls: View {
         } header: {
           Text("Your computer")
         } footer: {
-          Text("Choose Cloud Browser or one computer for this conversation.")
+          Text("Choose Cloud Browser or one computer for this chat.")
         }
         ForEach(ChatRemoteProtocol.allCases, id: \.rawValue) { proto in
           Section(proto.rawValue.uppercased()) {

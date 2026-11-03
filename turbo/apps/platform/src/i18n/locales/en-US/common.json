@@ -512,8 +512,8 @@
         "label": "Artifact kind filters",
         "presentation": "Presentations",
         "presentationAria": "Show presentation artifacts",
-        "sharedConversation": "Shared conversations",
-        "sharedConversationAria": "Show shared conversation artifacts",
+        "sharedConversation": "Shared chats",
+        "sharedConversationAria": "Show shared chat artifacts",
         "video": "Videos",
         "videoAria": "Show video artifacts",
         "website": "Websites",
@@ -529,7 +529,7 @@
       "description": "This removes the artifact and disables its Okou links. Copies already downloaded or saved to other services will remain.",
       "hostedDescription": "This takes the website and all its published versions offline. Copies saved to other services will remain.",
       "menu": "More actions for {{title}}",
-      "sharedDescription": "Delete this shared conversation from your artifacts. Its shared link will stop working. Your original conversation will stay available.",
+      "sharedDescription": "Delete this shared chat from your artifacts. Its shared link will stop working. Your original chat will stay available.",
       "success": "Artifact deleted",
       "title": "Delete {{title}}?"
     },
@@ -588,7 +588,7 @@
       "json": "JSON",
       "markdown": "Markdown",
       "presentation": "Presentation",
-      "sharedConversation": "Shared conversation",
+      "sharedConversation": "Shared chat",
       "spreadsheet": "Spreadsheet",
       "text": "Text",
       "video": "Video"
@@ -636,7 +636,7 @@
       "updateFailed": "Couldn’t update access"
     },
     "sidebar": {
-      "openSharedConversation": "Open shared conversation",
+      "openSharedConversation": "Open shared chat",
       "panelTitle": "Artifacts",
       "singularTitle": "Artifact",
       "unavailable": "This artifact is no longer available."
@@ -1047,7 +1047,7 @@
       "allowed": "Permissions allowed",
       "allowedCount": "{{allowed}} of {{total}} permissions allowed",
       "alwaysNote": "These permissions stay allowed until you change or revoke them.",
-      "continued": "The conversation has continued.",
+      "continued": "The chat has continued.",
       "continueFailed": "Permissions allowed, but could not continue.",
       "details": "View permission details",
       "dismissed": "No permissions were changed.",
@@ -1867,7 +1867,7 @@
         "scheduleEveryWeekday": "Every weekday",
         "scheduleHint": "Run this on a schedule",
         "share": "Share chat",
-        "shareHint": "Share a link to this conversation",
+        "shareHint": "Share a link to this chat",
         "templates": "Templates",
         "unpin": "Unpin chat"
       },
@@ -2401,7 +2401,7 @@
       "close": "Close",
       "copyFailed": "Could not copy the link",
       "create": "Share",
-      "createFailed": "Could not create the shared conversation.",
+      "createFailed": "Could not create the shared chat.",
       "deselectGroup": "Deselect message group",
       "everyone": "Everyone",
       "linkCopied": "Link copied",
@@ -2410,10 +2410,10 @@
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
-      "shareLink": "Shared conversation link",
+      "shareLink": "Shared chat link",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share",
-      "visibilityDescription": "Choose who can view this conversation. Only you can change access."
+      "visibilityDescription": "Choose who can view this chat. Only you can change access."
     },
     "shortcuts": {
       "number": "number"
@@ -5022,23 +5022,23 @@
     }
   },
   "projects": {
-    "active": "Active conversations",
-    "archived": "Archived conversations",
+    "active": "Active chats",
+    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
-    "deleteDescription": "Your conversations and their histories will be kept. They return to their original Agent lists.",
+    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
     "deleteError": "Could not delete Project",
     "deleteProject": "Delete Project",
     "deleteTitle": "Delete Project?",
-    "description": "Keep related conversations together across Agents",
-    "empty": "No conversations here yet",
+    "description": "Keep related chats together across Agents",
+    "empty": "No chats here yet",
     "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
-    "moveError": "Could not move conversation",
-    "moveTitle": "Move conversation",
+    "moveError": "Could not move chat",
+    "moveTitle": "Move chat",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",
@@ -5407,7 +5407,7 @@
     "claudeTerms": "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.",
     "codexOverloaded": "Selected model is at capacity. Please try a different model.",
     "codexReconnect": "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
-    "contentPolicyRejected": "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
+    "contentPolicyRejected": "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new chat, or switching to a different model.",
     "executionTimeout": "This run reached its execution time limit.",
     "failed": "Run failed",
     "modelRoutesUnavailable": "Every built-in model route for this model is temporarily unavailable.",
@@ -5522,7 +5522,7 @@
         "starting": "Starting export"
       },
       "backToAssistant": "Back to {{assistantName}}",
-      "description": "Download your conversations, memory, and the agent and workflow instructions you can access in {{assistantName}}.",
+      "description": "Download your chats, memory, and the agent and workflow instructions you can access in {{assistantName}}.",
       "documentTitle": "Export data",
       "duration": {
         "soon": "soon"
@@ -5810,15 +5810,15 @@
         },
         "morningBrief": {
           "description": "Run Morning Brief once using your account’s enabled workflow. This can update suggestions and send a real email. Your daily schedule stays unchanged.",
-          "openChat": "Open conversation",
+          "openChat": "Open chat",
           "requestFailed": "The request could not be confirmed.",
           "run": "Run Morning Brief",
           "runAgain": "Run another Morning Brief",
           "starting": "Starting…",
           "status": {
             "completed": "Morning Brief completed.",
-            "failed": "Morning Brief failed. Open the conversation for details.",
-            "queued": "Queued. Open the conversation to follow this Morning Brief.",
+            "failed": "Morning Brief failed. Open the chat for details.",
+            "queued": "Queued. Open the chat to follow this Morning Brief.",
             "running": "Morning Brief is running."
           },
           "title": "Morning Brief"
@@ -6174,11 +6174,11 @@
     }
   },
   "sharedThread": {
-    "accessTitle": "You can’t view this conversation",
+    "accessTitle": "You can’t view this chat",
     "handoffDescription": "{{assistantName}} carries the context into a new chat",
-    "handoffPrompt": "Continue this shared conversation with me: {{url}}",
-    "makeConversationYours": "Make this conversation yours",
-    "notFoundTitle": "Shared conversation not found",
+    "handoffPrompt": "Continue this shared chat with me: {{url}}",
+    "makeConversationYours": "Make this chat yours",
+    "notFoundTitle": "Shared chat not found",
     "share": "Share",
     "signIn": "Sign in",
     "signUp": "Sign up",
@@ -7047,7 +7047,7 @@
       "chooseWorkflow": "Choose a workflow to automate, or create one in chat.",
       "createAutomation": "Create Automation",
       "createInChat": "Create in chat",
-      "createInChatDescription": "Start from a conversation when no workflow fits yet.",
+      "createInChatDescription": "Start from a chat when no workflow fits yet.",
       "createWorkflow": "Create workflow",
       "noAgents": "No agents yet",
       "noAgentsFound": "No agents found",

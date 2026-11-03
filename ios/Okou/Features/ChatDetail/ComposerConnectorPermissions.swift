@@ -50,7 +50,7 @@ struct ComposerConnectorPermissions: View {
             }
           }.disabled(store.isSaving || filteredPermissions(state.metadata).isEmpty)
         } footer: {
-          Text("These permissions apply to this Agent across its conversations.")
+          Text("These permissions apply to this Agent across its chats.")
         }
         Section("Permissions") {
           ForEach(

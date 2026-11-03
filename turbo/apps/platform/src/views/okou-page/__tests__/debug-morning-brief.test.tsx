@@ -53,7 +53,7 @@ test("a member runs a real brief, sees its conversation link and requests anothe
     screen.getByText(/Your daily schedule stays unchanged/u),
   ).toBeInTheDocument();
   const conversation = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "Open conversation";
+    return link.textContent?.trim() === "Open chat";
   });
   expect(conversation).toHaveAttribute(
     "href",
@@ -83,7 +83,7 @@ test("a queued brief links to its conversation", async () => {
     return expect(send).toBeEnabled();
   });
   click(send);
-  await screen.findByText(/Queued. Open the conversation/u);
+  await screen.findByText(/Queued. Open the chat/u);
   expect(button("Run another Morning Brief")).toBeDisabled();
 });
 
@@ -102,9 +102,7 @@ test("reports a failed run with its conversation for details", async () => {
     return expect(run).toBeEnabled();
   });
   click(run);
-  await screen.findByText(
-    "Morning Brief failed. Open the conversation for details.",
-  );
+  await screen.findByText("Morning Brief failed. Open the chat for details.");
   expect(button("Run another Morning Brief")).toBeEnabled();
 });
 

@@ -155,13 +155,13 @@ struct PermissionActionDetails: View {
               .accessibilityIdentifier("permission-duration")
             }
             if store.action.callbackPrompt != nil {
-              Text("The conversation will continue after confirmation.").font(.caption)
+              Text("The chat will continue after confirmation.").font(.caption)
             }
             Button {
               Task { await store.confirm() }
             } label: {
               if store.needsContinuation {
-                Text("Continue conversation")
+                Text("Continue chat")
               } else if store.action.action == .allow {
                 Text("Allow permission")
               } else {

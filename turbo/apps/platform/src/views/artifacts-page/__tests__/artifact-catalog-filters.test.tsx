@@ -53,7 +53,7 @@ test("Artifact kind filters remain available while switching catalogs", async ()
     "Images",
     "Videos",
     "Avatars",
-    "Shared conversations",
+    "Shared chats",
     "Files",
   ]);
   expect(
@@ -120,7 +120,7 @@ test.each([false, true])(
       findArtifactAction("launch-deck"),
     ).resolves.toBeInTheDocument();
     const filters = screen.getByLabelText("Artifact kind filters");
-    click(getButtonByName("Show shared conversation artifacts", filters));
+    click(getButtonByName("Show shared chat artifacts", filters));
     await sharedRequestStarted.promise;
 
     await expect(
