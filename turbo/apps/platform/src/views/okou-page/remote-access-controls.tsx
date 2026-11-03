@@ -206,13 +206,13 @@ function HostChoiceSelect({
   protocol,
   host,
   value,
-  disabled,
+  readOnly,
   onChange,
 }: {
   protocol: RemoteAccessProtocol;
   host: ThreadRemoteHostAccess;
   value: "default" | "on" | "off";
-  disabled: boolean;
+  readOnly: boolean;
   onChange: (enabled: boolean | null) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -247,7 +247,8 @@ function HostChoiceSelect({
       <Select
         items={items}
         value={value}
-        disabled={disabled}
+        // A pending save must block edits without blocking Select's focus return.
+        readOnly={readOnly}
         onValueChange={(next, details) => {
           if (next !== "default" && next !== "on" && next !== "off") {
             details.cancel();
@@ -274,8 +275,9 @@ function HostChoiceSelect({
           })}
           <SelectTrigger
             variant="neutral"
-            className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm"
+            className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm aria-readonly:cursor-wait aria-readonly:opacity-50"
             aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+            aria-busy={readOnly || undefined}
           >
             <SelectValue className="min-w-0">
               {value === "default" ? (
@@ -308,7 +310,7 @@ function HostChoiceSelect({
 }
 
 interface RemoteHostChoiceActions {
-  disabled: boolean;
+  readOnly: boolean;
   onChange: (
     protocol: RemoteAccessProtocol,
     connectionId: string,
@@ -336,7 +338,7 @@ function RemoteHostChoiceRow({
             ? "on"
             : "off"
       }
-      disabled={choiceActions.disabled}
+      readOnly={choiceActions.readOnly}
       onChange={(enabled) => {
         return choiceActions.onChange(protocol, host.connectionId, enabled);
       }}
@@ -552,7 +554,7 @@ function OwnerThreadRemoteAccessDialog({
   const [saving, update] = useLoadableSet(setThreadRemoteAccess$);
   const updatePending = useSet(signals.pendingRemoteAccess.setOverride$);
   const choiceActions: RemoteHostChoiceActions = {
-    disabled: saving.state === "loading",
+    readOnly: saving.state === "loading",
     onChange: async (protocol, connectionId, enabled) => {
       if (signals.threadId) {
         await update(
