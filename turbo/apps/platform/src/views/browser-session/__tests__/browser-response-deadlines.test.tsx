@@ -231,6 +231,60 @@ test("A whole startup budget bounds several individually timely setup phases", a
   expect(viewer.startupErrors).toHaveLength(1);
 });
 
+test.each(["ready", "timeout"] as const)(
+  "A same-binding refresh during native setup observes %s startup",
+  async (outcome) => {
+    const viewer = mockViewer();
+    const refreshed = context.mocks.deferred<void>();
+    let requests = 0;
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      if (++requests === 2) {
+        refreshed.resolve();
+      }
+      return respond(200, {
+        browser: viewer.session(),
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      });
+    });
+    const attachment = viewer.browser.holdNext("Target.attachToBrowserTarget");
+    const hello = viewer.browser.holdNextNative("hello");
+    const proof = viewer.browser.holdNextNative("getWindow");
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await attachment.received;
+    await act(async () => {
+      context.mocks.ably.trigger("browserSessionChanged", { threadId });
+      await refreshed.promise;
+    });
+    viewer.advance(21_000);
+    await attachment.release();
+    await hello.received;
+    viewer.advance(21_000);
+    await hello.release();
+    await proof.received;
+    if (outcome === "timeout") {
+      viewer.advance(19_000);
+      await screen.findByText("Browser view unavailable");
+      reconnect();
+    } else {
+      await proof.release();
+    }
+    await expectReady();
+    if (outcome === "timeout") {
+      await proof.release();
+    }
+    viewer.advance(61_000);
+    await insertText("after startup revalidation");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "after startup revalidation" },
+      });
+    });
+    expect(viewer.browser.connections()).toBe(outcome === "timeout" ? 2 : 1);
+  },
+);
+
 test.each(["shared", "split"] as const)(
   "Reconnect stays pending through native proof on a healthy %s wire and then waits for paint",
   async (mode) => {

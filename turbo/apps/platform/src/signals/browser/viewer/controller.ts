@@ -4324,10 +4324,20 @@ function createSelectionSettingsGraph(
 
 function createAuthoritySettingsGraph(
   context: ControllerContext<
-    "authority$" | "authorityRevoked$" | "disposedState$" | "model" | "wake$"
+    | "authority$"
+    | "authorityRevoked$"
+    | "bootstrapping$"
+    | "disposedState$"
+    | "model"
+    | "readinessFailure$"
+    | "waitEvent$"
+    | "wake$"
   >,
   links$: ControllerDependencies<
-    "displayGraph$" | "restoreSelection$" | "retireCurrent$"
+    | "displayGraph$"
+    | "reconcileSelection$"
+    | "restoreSelection$"
+    | "retireCurrent$"
   >,
 ) {
   const { model, authority$, disposedState$, authorityRevoked$, wake$ } =
@@ -4364,6 +4374,23 @@ function createAuthoritySettingsGraph(
       if (display) {
         set(display.setSuspended$, get(model.intent$).paused);
       }
+      // A fresh descriptor joins the unchanged native owner's startup; it
+      // must not complete merely because selection is not available yet.
+      if (get(context.bootstrapping$)) {
+        while (get(context.bootstrapping$)) {
+          await set(context.waitEvent$, signal);
+        }
+        signal.throwIfAborted();
+        if (get(disposedState$)) {
+          throw get(context.readinessFailure$) ?? cancelled();
+        }
+        const outcome = await set(get(links$).reconcileSelection$, signal);
+        signal.throwIfAborted();
+        if (outcome === "superseded") {
+          throw cancelled();
+        }
+        return;
+      }
       await set(get(links$).restoreSelection$, signal);
     },
   );
@@ -4376,6 +4403,7 @@ function createSettingsGraph(
     | "authority$"
     | "authorityRevoked$"
     | "available$"
+    | "bootstrapping$"
     | "captureSize$"
     | "chosenOnce$"
     | "clientState$"
@@ -4385,6 +4413,7 @@ function createSettingsGraph(
     | "model"
     | "readinessFailure$"
     | "selectedOwner$"
+    | "waitEvent$"
     | "wake$"
   >,
   links$: ControllerDependencies<
@@ -4392,6 +4421,7 @@ function createSettingsGraph(
     | "configureCapture$"
     | "discovery$"
     | "displayGraph$"
+    | "reconcileSelection$"
     | "restoreSelection$"
     | "retireCurrent$"
     | "scheduleCapture$"
