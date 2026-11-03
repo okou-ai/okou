@@ -230,8 +230,9 @@ static SANDBOX_OPS_TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::cons
 
 #[cfg(test)]
 pub(crate) struct SandboxOpsTestGuard {
+    // Clear the destination before releasing the test-state lock.
+    _override: Option<guest_telemetry::test_support::SandboxOpsOverrideGuard>,
     _ownership: tokio::sync::MutexGuard<'static, ()>,
-    override_installed: bool,
 }
 
 #[cfg(test)]
@@ -239,8 +240,8 @@ impl SandboxOpsTestGuard {
     pub(crate) async fn lock() -> Self {
         let ownership = SANDBOX_OPS_TEST_MUTEX.lock().await;
         Self {
+            _override: None,
             _ownership: ownership,
-            override_installed: false,
         }
     }
 
@@ -252,16 +253,9 @@ impl SandboxOpsTestGuard {
 
     pub(crate) fn install_override(&mut self, path: &std::path::Path) {
         guest_telemetry::telemetry::set_sandbox_ops_log_file(path);
-        self.override_installed = true;
-    }
-}
-
-#[cfg(test)]
-impl Drop for SandboxOpsTestGuard {
-    fn drop(&mut self) {
-        if self.override_installed {
-            guest_telemetry::telemetry::clear_sandbox_ops_log_file();
-        }
+        // A temporary guard on repeated installation would clear the new sink.
+        self._override
+            .get_or_insert_with(|| guest_telemetry::test_support::SandboxOpsOverrideGuard);
     }
 }
 

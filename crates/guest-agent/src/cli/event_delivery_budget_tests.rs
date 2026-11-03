@@ -5,6 +5,7 @@ use crate::env::Framework;
 use crate::events;
 use crate::http::HttpClient;
 use crate::masker::SecretMasker;
+use guest_telemetry::test_support::SystemLogOverrideGuard;
 use httpmock::prelude::*;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -435,21 +436,6 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
     let requests = seen.lock().unwrap();
     assert!(requests.len() > 1);
     assert!(requests.iter().all(|body| body == &requests[0]));
-}
-
-struct SystemLogOverrideGuard;
-
-impl SystemLogOverrideGuard {
-    fn set(path: &std::path::Path) -> Self {
-        guest_telemetry::log::set_system_log_file(path);
-        Self
-    }
-}
-
-impl Drop for SystemLogOverrideGuard {
-    fn drop(&mut self) {
-        guest_telemetry::log::clear_system_log_file();
-    }
 }
 
 #[tokio::test]

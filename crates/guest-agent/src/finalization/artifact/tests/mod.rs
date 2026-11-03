@@ -12,6 +12,35 @@ use tokio::net::{TcpListener, TcpStream};
 
 const REQUEST_OVERLAP_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[tokio::test]
+async fn telemetry_owner_reinstallation_retains_latest_destination() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.jsonl");
+    let second = dir.path().join("second.jsonl");
+    let mut owner = crate::SandboxOpsTestGuard::with_override(&first).await;
+    guest_telemetry::telemetry::record_sandbox_op(
+        "first-owned-destination",
+        Duration::ZERO,
+        true,
+        None,
+    );
+
+    owner.install_override(&second);
+    guest_telemetry::telemetry::record_sandbox_op(
+        "second-owned-destination",
+        Duration::ZERO,
+        true,
+        None,
+    );
+
+    let first_contents = std::fs::read_to_string(first).unwrap();
+    let second_contents = std::fs::read_to_string(second).unwrap();
+    assert_eq!(first_contents.lines().count(), 1);
+    assert!(first_contents.contains("first-owned-destination"));
+    assert_eq!(second_contents.lines().count(), 1);
+    assert!(second_contents.contains("second-owned-destination"));
+}
+
 fn assert_artifact_hash_failure(telemetry_path: &std::path::Path, expected_error: &str) {
     let expected_error = expected_error
         .strip_prefix("finalization: ")

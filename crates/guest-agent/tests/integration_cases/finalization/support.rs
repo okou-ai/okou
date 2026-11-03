@@ -13,21 +13,26 @@ pub(super) fn finalization_runtime() -> Result<guest_agent::run_context::GuestRu
 // The shared API fixture owns both these files and the producer lock. Clear
 // the process-global sink before that fixture cleans its files or unlocks.
 pub(super) struct FinalizationTelemetryGuard<'a> {
+    override_guard: Option<guest_telemetry::test_support::SandboxOpsOverrideGuard>,
     _api: &'a SharedApiMock,
 }
 
 impl<'a> FinalizationTelemetryGuard<'a> {
     pub(super) fn new(api: &'a SharedApiMock) -> Self {
-        guest_telemetry::telemetry::set_sandbox_ops_log_file(
+        let override_guard = guest_telemetry::test_support::SandboxOpsOverrideGuard::set(
             shared_guest_paths().sandbox_ops_file(),
         );
-        Self { _api: api }
+        Self {
+            override_guard: Some(override_guard),
+            _api: api,
+        }
     }
 }
 
 impl Drop for FinalizationTelemetryGuard<'_> {
     fn drop(&mut self) {
-        guest_telemetry::telemetry::clear_sandbox_ops_log_file();
+        // Retain Drop so the borrowed API/files owner outlives sink cleanup.
+        drop(self.override_guard.take());
     }
 }
 

@@ -1,21 +1,23 @@
 use super::*;
+use crate::test_support::SystemLogOverrideGuard as SystemLogFileGuard;
 use std::collections::HashSet;
 
 static LOG_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
-struct SystemLogFileGuard;
+#[test]
+fn telemetry_owner_clears_system_log_destination() {
+    let _lock = LOG_TEST_MUTEX.lock().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("system.log");
+    let owner = SystemLogFileGuard::set(&path);
+    emit("INFO", "test", format_args!("before-owned-clear"));
 
-impl SystemLogFileGuard {
-    fn set(path: impl AsRef<Path>) -> Self {
-        set_system_log_file(path);
-        Self
-    }
-}
+    drop(owner);
+    emit("INFO", "test", format_args!("after-owned-clear"));
 
-impl Drop for SystemLogFileGuard {
-    fn drop(&mut self) {
-        clear_system_log_file();
-    }
+    let contents = std::fs::read_to_string(path).unwrap();
+    assert_eq!(contents.lines().count(), 1);
+    assert!(contents.contains("before-owned-clear"));
 }
 
 #[test]
