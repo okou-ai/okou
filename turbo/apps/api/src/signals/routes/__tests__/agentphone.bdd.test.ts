@@ -919,6 +919,77 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
   });
 
+  it.each(["phone", "email"] as const)(
+    "lets a current member send with a %s linked after the archived group history",
+    async (handleType) => {
+      const integrations = createBddIntegrationApi(context);
+      const { ap, phone, sends } = await entitledLinkedActor();
+      const member = createBddApi(context).user();
+      const memberHandle =
+        handleType === "email"
+          ? `bdd-${randomUUID()}@example.com`
+          : uniquePhoneHandle();
+      const conversationId = uniqueConversationId();
+      const groupId = bddGroupId(conversationId);
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "Group history from before the member connected",
+        conversationId,
+        isGroup: true,
+        participants: [{ identifier: phone }, { identifier: memberHandle }],
+      });
+
+      const issued = await integrations.requestCreateAgentPhoneLinkCode(
+        member,
+        [200],
+      );
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: memberHandle,
+        body: issued.body.code,
+        conversationId: uniqueConversationId(),
+      });
+      const before = await integrations.requestAgentPhoneGroupHistory(
+        member,
+        { groupId, limit: 100 },
+        [200],
+      );
+      expect(before.body).toMatchObject({ messages: [] });
+
+      const sent = await integrations.requestSendAgentPhoneGroupMessage(
+        member,
+        { groupId, text: "Hello from the newly connected member" },
+        [200],
+      );
+      if (sent.status !== 200) {
+        throw new Error("Expected the current member's group send to succeed");
+      }
+      expect(sent.body).toMatchObject({ ok: true, toNumber: groupId });
+      expect(lastSend(sends)).toMatchObject({
+        agentId: AGENTPHONE_BDD_AGENT_ID,
+        toNumber: groupId,
+        body: "Hello from the newly connected member",
+      });
+
+      const after = await integrations.requestAgentPhoneGroupHistory(
+        member,
+        { groupId, limit: 100 },
+        [200],
+      );
+      expect(after.body).toMatchObject({
+        messages: [
+          {
+            id: sent.body.messageId,
+            toNumber: groupId,
+            direction: "outbound",
+            body: "Hello from the newly connected member",
+          },
+        ],
+      });
+    },
+  );
+
   it.each([
     "unknown group",
     "foreign workspace",

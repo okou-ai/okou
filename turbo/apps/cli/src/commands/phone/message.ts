@@ -66,7 +66,7 @@ Notes:
   - --as selects the official bot or an agent already used in your linked conversation
   - --as is inferred from the conversation when omitted${
     integration === "imessage"
-      ? "\n  - Group sends require a group already visible to your account and current membership\n  - Use the Group ID in the current integration context; group sends never fall back to a DM"
+      ? "\n  - Group sends require your connected phone or email to be a current group member\n  - Use the Group ID in the current integration context; group sends never fall back to a DM"
       : ""
   }`,
     )
