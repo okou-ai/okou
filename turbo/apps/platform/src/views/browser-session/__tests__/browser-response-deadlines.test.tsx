@@ -140,6 +140,101 @@ async function insertText(text: string) {
   fireEvent.input(input, { target: { value: text }, inputType: "insertText" });
 }
 
+function mockCanvasViewport() {
+  const originalBounds = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (!(this instanceof HTMLCanvasElement)) {
+        return originalBounds.call(this);
+      }
+      // Model browser layout: display-none ancestors remove the canvas box;
+      // visual concealment alone preserves its intersection with the viewport.
+      return this.closest("[hidden]")
+        ? new DOMRect(0, 0, 0, 0)
+        : new DOMRect(0, 0, 900, 600);
+    },
+  );
+  const NativeIntersectionObserver = window.IntersectionObserver;
+  let changeVisibility: ((visible?: boolean) => void) | undefined;
+  vi.spyOn(window, "IntersectionObserver").mockImplementation(
+    class extends NativeIntersectionObserver {
+      constructor(
+        private readonly onChange: IntersectionObserverCallback,
+        options?: IntersectionObserverInit,
+      ) {
+        super(onChange, options);
+      }
+      override observe(target: Element) {
+        super.observe(target);
+        changeVisibility = (visible) => {
+          const rectangle = target.getBoundingClientRect();
+          const intersects = visible ?? rectangle.width > 0;
+          this.onChange(
+            [
+              {
+                target,
+                isIntersecting: intersects,
+                intersectionRatio: intersects ? 1 : 0,
+                boundingClientRect: rectangle,
+                intersectionRect: rectangle,
+                rootBounds: null,
+                time: 0,
+              },
+            ],
+            this,
+          );
+        };
+      }
+    },
+  );
+  return (visible?: boolean) => {
+    const publish = changeVisibility;
+    if (!publish) {
+      throw new Error("Expected the mounted canvas to be observed");
+    }
+    act(() => {
+      publish(visible);
+    });
+  };
+}
+
+async function concealReplacement() {
+  const updateViewport = mockCanvasViewport();
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  updateViewport();
+  const requested = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  let hold = true;
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    const browser = viewer.session();
+    if (hold) {
+      hold = false;
+      requested.resolve();
+      await response.promise;
+    }
+    return respond(200, {
+      browser,
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  viewer.replaceBinding();
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await requested.promise;
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Remote browser viewer" }),
+    ).not.toBeInTheDocument();
+  });
+  // Deliver the layout intersection Chrome would observe during concealment.
+  updateViewport();
+  return { viewer, response };
+}
+
 test.each(["initially hidden", "hidden during native setup"] as const)(
   "A viewer %s resumes through the existing native startup",
   async (phase) => {
@@ -207,59 +302,53 @@ test("A paused startup suspends its active budget and resumes without replaying 
 });
 
 test("A viewport pause during native setup keeps its DOM-owned resume path", async () => {
-  const NativeIntersectionObserver = window.IntersectionObserver;
-  const visibilityEvents: ((visible: boolean) => void)[] = [];
-  vi.spyOn(window, "IntersectionObserver").mockImplementation(
-    class extends NativeIntersectionObserver {
-      constructor(
-        private readonly onChange: IntersectionObserverCallback,
-        options?: IntersectionObserverInit,
-      ) {
-        super(onChange, options);
-      }
-      override observe(target: Element) {
-        super.observe(target);
-        visibilityEvents.push((visible) => {
-          const rectangle = target.getBoundingClientRect();
-          this.onChange(
-            [
-              {
-                target,
-                isIntersecting: visible,
-                intersectionRatio: visible ? 1 : 0,
-                boundingClientRect: rectangle,
-                intersectionRect: rectangle,
-                rootBounds: null,
-                time: 0,
-              },
-            ],
-            this,
-          );
-        });
-      }
-    },
-  );
+  const changeVisibility = mockCanvasViewport();
   const viewer = mockViewer();
   const hello = viewer.browser.holdNextNative("hello");
   await setupPage({ context, path: `/browsers/${threadId}` });
   await hello.received;
-  const changeVisibility = visibilityEvents.at(-1);
-  if (!changeVisibility) {
-    throw new Error("Expected the mounted canvas to be observed");
-  }
-  act(() => {
-    changeVisibility(false);
-  });
+  changeVisibility(false);
   await screen.findByText("Viewing paused");
   await hello.release();
   await screen.findByLabelText("Original", { selector: '[role="tab"]' });
   viewer.advance(121_000);
-  act(() => {
-    changeVisibility(true);
-  });
+  changeVisibility(true);
   await expectReady();
   expect(viewer.browser.connections()).toBe(1);
   expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test("A concealed replacement becomes usable when its descriptor arrives", async () => {
+  const { viewer, response } = await concealReplacement();
+  response.resolve();
+  await expectReady("https://replacement.example.com");
+  await insertText("replacement after concealment");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: viewer.browser.pageSession("replacement"),
+      params: { text: "replacement after concealment" },
+    });
+  });
+});
+
+test("A concealed replacement reveals descriptor timeout and permits recovery", async () => {
+  const { viewer, response } = await concealReplacement();
+  viewer.advance(61_000);
+  await expect(
+    screen.findByText("Browser view unavailable"),
+  ).resolves.toBeVisible();
+  reconnect();
+  await expectReady("https://replacement.example.com");
+  response.resolve();
+  await insertText("replacement after timeout");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: viewer.browser.pageSession("replacement"),
+      params: { text: "replacement after timeout" },
+    });
+  });
 });
 
 test("A startup failure while paused retires with its native owner and can resume", async () => {

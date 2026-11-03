@@ -185,25 +185,32 @@ function BrowserCdpViewer({
   return (
     <>
       {refined ? null : <PanelActions actions={actions} />}
-      {connecting && <LoadingBody />}
-      {/* Revealing the preserved viewer is a layout change this panel owns. */}
-      <LayoutPanel
-        active={!connecting}
-        layoutKey="browser-viewer"
-        onLayoutCommit={syncLayout}
-        hidden={connecting}
-        data-browser-session-cdp-viewer
-        className={cn(
-          "relative isolate min-h-0 flex-1",
-          connecting ? "hidden" : "flex",
+      <div className="relative flex min-h-0 flex-1">
+        {connecting && (
+          <div className="absolute inset-0 flex">
+            <LoadingBody />
+          </div>
         )}
-      >
-        <Browser
-          signals={signals.browser}
-          actions={refined ? actions : null}
-          presence={overlay}
-        />
-      </LayoutPanel>
+        {/* Preserve geometry so concealment cannot pause its own connection wait. */}
+        <LayoutPanel
+          active={!connecting}
+          layoutKey="browser-viewer"
+          onLayoutCommit={syncLayout}
+          aria-hidden={connecting}
+          inert={connecting}
+          data-browser-session-cdp-viewer
+          className={cn(
+            "relative isolate flex min-h-0 flex-1",
+            connecting && "invisible",
+          )}
+        >
+          <Browser
+            signals={signals.browser}
+            actions={refined ? actions : null}
+            presence={overlay}
+          />
+        </LayoutPanel>
+      </div>
     </>
   );
 }
