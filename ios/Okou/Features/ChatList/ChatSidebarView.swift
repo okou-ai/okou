@@ -7,7 +7,6 @@ struct ChatSidebarView: View {
   let workspaceID: String
   let notifications: NotificationService
   let headerHeight: CGFloat
-  var showsSynchronizationStatus = true
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: (String?) -> Void
@@ -84,9 +83,6 @@ struct ChatSidebarView: View {
     .safeAreaBar(edge: .top, spacing: 0) {
       VStack(spacing: 0) {
         header.padding(.horizontal, 16)
-        ChatSyncStatusView(state: showsSynchronizationStatus ? store.synchronizationState : nil) {
-          await store.retrySynchronization()
-        }
       }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
