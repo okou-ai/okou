@@ -50,7 +50,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
     private let storage: Mutex<State>
     init(_ initial: State) { storage = Mutex(initial) }
     public func withLock<T>(_ operation: (inout State) throws -> T) rethrows -> T {
-      try storage.withLock(operation)
+      try storage.withLock { try operation(&$0) }
     }
   }
 
