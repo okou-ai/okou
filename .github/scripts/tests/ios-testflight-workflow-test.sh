@@ -87,35 +87,85 @@ ios_path = sys.argv[1].replace('release-please.yml', 'ios.yml')
 ios = json.loads(subprocess.check_output(['yq', '-o=json', '.', ios_path], text=True))
 assert 'publish-archive' in ios['jobs']['ci-gate-ios']['needs']
 assert ios['jobs']['ci-gate-ios']['if'] == 'always()'
+def selected(name, event, needed='true', release_only='false', evidence='skipped',
+             run_tests='', sources='success', build='success', cancelled=False, **results):
+    context = {
+        'github.event_name': event,
+        'needs.detect.outputs.needed': needed,
+        'needs.detect.outputs.release-only': release_only,
+        'needs.resolve-test-evidence.outputs.run-tests': run_tests,
+    }
+    statuses = dict.fromkeys(['detect', 'script-checks', 'test-packages', 'build-archive'], 'success')
+    statuses.update({'resolve-test-evidence': evidence, 'prepare-package-sources': sources, 'build-test': build})
+    statuses.update(results)
+    context.update({f'needs.{job}.result': result for job, result in statuses.items()})
+    condition = ios['jobs'][name]['if']
+    # Jobs without an explicit status function retain Actions' success() default.
+    if '!cancelled()' not in condition and 'always()' not in condition:
+        needs = ios['jobs'][name]['needs']
+        if any(statuses[job] != 'success' for job in ([needs] if isinstance(needs, str) else needs)):
+            return False
+    expression = condition.replace('!cancelled()', repr(not cancelled))
+    for key, value in context.items():
+        expression = expression.replace(key, repr(value))
+    expression = expression.replace('&&', 'and').replace('||', 'or')
+    return eval(expression, {'__builtins__': {}}, {})
+
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
     for needed in ['true', 'false']:
+        simulator_needed = needed == 'true' and event != 'push'
         for name, expected in [
-            ('prepare-package-sources', needed == 'true' and event != 'push'),
-            ('test-packages', needed == 'true' and event != 'push'),
-            ('build-test', needed == 'true' and event != 'push'),
+            ('resolve-test-evidence', False),
+            ('prepare-package-sources', simulator_needed),
+            ('test-packages', simulator_needed),
+            ('build-test', simulator_needed),
             ('build-archive', needed == 'true' and event == 'merge_group'),
             ('publish-archive', needed == 'true' and event == 'merge_group'),
         ]:
-            condition = ios['jobs'][name]['if']
-            expression = (condition.replace('needs.detect.outputs.needed', repr(needed))
-                .replace('github.event_name', repr(event)).replace('&&', 'and'))
-            assert eval(expression, {'__builtins__': {}}, {}) is expected
-for name in ['prepare-package-sources', 'test-packages', 'build-test', 'build-archive', 'publish-archive']:
+            result = 'success' if simulator_needed else 'skipped'
+            assert selected(name, event, needed, sources=result, build=result) is expected, (name, event, needed)
+
+# A verified hit skips the entire simulator job while preserving archive publication.
+# A missing record runs the simulator; failed or incomplete resolution blocks both paths.
+for evidence_result, decision, run_simulator, publish in [
+    ('success', 'false', False, True),
+    ('success', 'true', True, True),
+    ('success', '', False, False),
+    ('failure', '', False, False),
+    ('cancelled', '', False, False),
+    ('skipped', '', False, False),
+]:
+    values = dict(event='merge_group', release_only='true', evidence=evidence_result,
+                  run_tests=decision, sources='success' if run_simulator else 'skipped',
+                  build='success' if run_simulator else 'skipped')
+    assert selected('resolve-test-evidence', **values)
+    for name in ['prepare-package-sources', 'build-test']:
+        assert selected(name, **values) is run_simulator, (name, evidence_result, decision)
+    assert selected('build-archive', **values)
+    assert selected('test-packages', **values)
+    assert selected('publish-archive', **values) is publish, (evidence_result, decision)
+
+for producer in ['detect', 'script-checks', 'test-packages', 'build-archive', 'build-test']:
+    for result in ['failure', 'cancelled', 'skipped']:
+        assert not selected('publish-archive', 'merge_group', **{producer: result})
+for result in ['failure', 'cancelled']:
+    assert not selected('publish-archive', 'merge_group', evidence=result)
+assert not selected('publish-archive', 'merge_group', evidence='success', run_tests='false', build='success')
+assert not selected('build-test', 'merge_group', sources='failure')
+assert not selected('publish-archive', 'merge_group', cancelled=True)
+for name in ['resolve-test-evidence', 'prepare-package-sources', 'test-packages', 'build-test', 'build-archive', 'publish-archive']:
     assert 'environment' not in ios['jobs'][name]
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
     assert 'APP_STORE_CONNECT_API' not in json.dumps(ios['jobs'][name])
 native = ios['jobs']['build-test']['steps']
-evidence = next(step for step in native if step.get('id') == 'evidence')
+evidence = next(step for step in ios['jobs']['resolve-test-evidence']['steps'] if step.get('id') == 'evidence')
 for env in [evidence['env'], ios['jobs']['publish-archive']['env']]:
     for key, value in artifact_env.items():
         assert env[key] == value
-simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
-assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']
 package_job = ios['jobs']['test-packages']
 assert test_job['needs'] == ['detect', 'prepare-package-sources']
-assert ios['jobs']['prepare-package-sources']['needs'] == 'detect'
 assert archive_job['needs'] == package_job['needs'] == 'detect'
 source_upload = next(step for step in ios['jobs']['prepare-package-sources']['steps'] if step.get('uses', '').startswith('actions/upload-artifact'))['with']
 source_download = next(step for step in native if step.get('uses', '').startswith('actions/download-artifact'))['with']
@@ -141,7 +191,6 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         expected = event == 'workflow_dispatch' and enabled
         assert evaluate(sampling) == ('true' if expected else 'false')
         assert evaluate(upload['if']) is expected
-assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']
 gate = ios['jobs']['ci-gate-ios']['steps'][-1]
@@ -150,8 +199,6 @@ assert gate['env']['SCRIPT_CHECKS_RESULT'] == '${{ needs.script-checks.result }}
 assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
 archive = next(step for step in archive_job['steps'] if 'build-archive.sh' in step.get('run', ''))
 assert 'build-archive.sh' in archive['run']
-aws = next(step for step in native if 'aws --version' in step.get('run', ''))
-assert "steps.release-only.outputs.release_only == 'true'" in aws['if']
 PY
 # Fail before touching the keychain when release identity is wrong.
 work=$(mktemp -d)
