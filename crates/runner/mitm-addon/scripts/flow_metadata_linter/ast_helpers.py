@@ -165,7 +165,7 @@ def _static_iterable_first_outcomes(
     if isinstance(node, ast.Dict | ast.DictComp):
         return _static_mapping_first_key_outcomes(node, reverse=reverse)
     if isinstance(node, ast.Set):
-        return _static_set_outcomes(node)
+        return _static_iterable_element_outcomes(node)
     if isinstance(node, ast.SetComp):
         return _static_outcomes((node.elt,), may_be_empty=True)
     if isinstance(node, ast.Call):
@@ -313,19 +313,6 @@ def _static_ordered_sequence_first_outcomes(
                 next_outcomes.append(outcome)
         outcomes = _deduplicate_ordered_outcomes(next_outcomes)
     return _StaticIterableOutcomes(tuple(outcomes))
-
-
-def _static_set_outcomes(node: ast.Set) -> _StaticIterableOutcomes:
-    result: list[ast.AST] = []
-    may_be_empty = True
-    for element in node.elts:
-        if isinstance(element, ast.Starred):
-            outcomes = _static_iterable_element_outcomes(element.value)
-        else:
-            outcomes = _static_outcomes((element,), may_be_empty=False)
-        result.extend(outcomes.nodes)
-        may_be_empty = may_be_empty and outcomes.may_be_empty
-    return _static_outcomes(result, may_be_empty=may_be_empty)
 
 
 def _static_iterable_element_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
