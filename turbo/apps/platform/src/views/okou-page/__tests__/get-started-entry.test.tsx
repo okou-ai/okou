@@ -88,7 +88,7 @@ test("Friends have a separate referral link with paid-pack qualification and one
   expect(
     within(dialog).getByText(/expire one month after they are granted/u),
   ).toBeInTheDocument();
-  expect(await within(dialog).findByRole("status")).toHaveTextContent(
+  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
     "Getting your referral link…",
   );
   linkReady.resolve();
@@ -101,7 +101,7 @@ test("Friends have a separate referral link with paid-pack qualification and one
   await waitFor(() => {
     expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
   });
-  expect(await navigator.clipboard.readText()).toBe(
+  await expect(navigator.clipboard.readText()).resolves.toBe(
     `${location.origin}/sign-up?friend_referral=77777777-7777-4777-a777-777777777777`,
   );
 });
@@ -143,14 +143,14 @@ test("Referral link failures can be retried in the same dialog", async () => {
   const dialog = await screen.findByRole("dialog", {
     name: "Invite your friends",
   });
-  expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
     "Your referral link could not be loaded. Try again.",
   );
   failed = false;
   click(buttonNamed("Try again", dialog));
-  expect(
-    await within(dialog).findByLabelText("Your referral link"),
-  ).toBeInTheDocument();
+  await expect(
+    within(dialog).findByLabelText("Your referral link"),
+  ).resolves.toBeInTheDocument();
 });
 
 function normalizedText(element: Element): string {

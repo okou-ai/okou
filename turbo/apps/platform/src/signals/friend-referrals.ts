@@ -26,8 +26,8 @@ export const captureFriendReferral$ = command(
       return;
     }
     const client = get(apiClient$)(friendReferralsContract, {
-      getToken: async () => {
-        return null;
+      getToken: () => {
+        return Promise.resolve(null);
       },
     });
     const response = await accept(

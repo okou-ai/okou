@@ -65,40 +65,44 @@ test("links are reusable and registration attribution is immutable, without rewa
     links.map((link) => {
       return link.code;
     }),
-  ).toStrictEqual(Array(4).fill(original.code));
+  ).toStrictEqual(
+    Array.from({ length: 4 }, () => {
+      return original.code;
+    }),
+  );
   const firstToken = await visit(original.code);
   const otherReferrer = `user_${randomUUID()}`;
   const other = await referralLink(otherReferrer);
   const otherToken = await visit(other.code);
   const invitee = `user_${randomUUID()}`;
-  expect(await register(invitee, firstToken)).toStrictEqual({
+  await expect(register(invitee, firstToken)).resolves.toStrictEqual({
     status: "registered",
   });
-  expect(await register(invitee, otherToken)).toStrictEqual({
+  await expect(register(invitee, otherToken)).resolves.toStrictEqual({
     status: "registered",
   });
-  expect(await register(referrer, firstToken)).toStrictEqual({
+  await expect(register(referrer, firstToken)).resolves.toStrictEqual({
     status: "ineligible",
   });
-  expect(
-    await register(
+  await expect(
+    register(
       `user_${randomUUID()}`,
       firstToken,
       new Date("2025-12-01T00:00:00Z"),
     ),
-  ).toStrictEqual({ status: "ineligible" });
-  expect(
-    await register(
+  ).resolves.toStrictEqual({ status: "ineligible" });
+  await expect(
+    register(
       `user_${randomUUID()}`,
       firstToken.replace(/\.[0-9]{13}\./u, ".1577836800000."),
     ),
-  ).toStrictEqual({ status: "ineligible" });
-  expect(await referralLink(referrer)).toMatchObject({
+  ).resolves.toStrictEqual({ status: "ineligible" });
+  await expect(referralLink(referrer)).resolves.toMatchObject({
     registeredCount: 1,
     rewardedCount: 0,
     earnedCredits: 0,
   });
-  expect(await referralLink(otherReferrer)).toMatchObject({
+  await expect(referralLink(otherReferrer)).resolves.toMatchObject({
     registeredCount: 0,
     rewardedCount: 0,
   });
@@ -138,7 +142,7 @@ test.each(["pro", "team"] as const)(
       [{ userId: invitee.userId, usd: 20 }],
       { deliveries: 3, tier },
     );
-    expect(await referralLink(referrer)).toMatchObject({
+    await expect(referralLink(referrer)).resolves.toMatchObject({
       registeredCount: 1,
       rewardedCount: 1,
       earnedCredits: 20_000,
@@ -189,7 +193,7 @@ test.each(["pro", "team"] as const)(
         expiresAt: "2026-02-28T10:00:01.000Z",
       }),
     ]);
-    expect(await referralLink(referrer)).toMatchObject({
+    await expect(referralLink(referrer)).resolves.toMatchObject({
       rewardedCount: 1,
       earnedCredits: 20_000,
     });
@@ -218,7 +222,7 @@ test("a zero-dollar usage-pack invoice does not reward its referrer", async () =
     [{ userId: invitee.userId, usd: 20 }],
     { amountPaid: 0 },
   );
-  expect(await referralLink(referrer)).toMatchObject({
+  await expect(referralLink(referrer)).resolves.toMatchObject({
     registeredCount: 1,
     rewardedCount: 0,
     earnedCredits: 0,
