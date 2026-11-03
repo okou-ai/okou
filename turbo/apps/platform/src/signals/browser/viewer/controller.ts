@@ -2428,11 +2428,10 @@ function createCrashedEvent(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const { model, selection, clientState$, crashedSelection$, closingTargets$ } =
-    context;
+  const { model, selection, clientState$, crashedSelection$ } = context;
   return command(({ get, set }, event: CdpEvent, source: CdpClient) => {
     const owner = get(selection.owner$);
-    if (!owner || get(closingTargets$).has(owner.targetId)) {
+    if (!owner) {
       return;
     }
     const sessions = get(selection.sessions$);

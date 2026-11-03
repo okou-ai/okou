@@ -404,3 +404,26 @@ test("Hiding the viewer cancels a pending crash reload even if visibility return
   await ready();
   expect(browser.connections()).toBe(1);
 });
+
+test("A renderer crash during a rejected tab close remains unavailable until explicit recovery", async () => {
+  const browser = await openViewer();
+  browser.failNext(
+    "Target.closeTarget",
+    "The browser could not close the page",
+  );
+  const closing = browser.holdNext("Target.closeTarget");
+  click(screen.getByLabelText("Close Example"));
+  await closing.received;
+  act(() => {
+    browser.crash("example-page");
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(async () => {
+    await closing.release();
+  });
+  await unavailable();
+  click(screen.getByText("Reload", { selector: "button" }));
+  await ready();
+  await navigateTo("https://close-failure-recovery.example/");
+  expect(browser.connections()).toBe(1);
+});
