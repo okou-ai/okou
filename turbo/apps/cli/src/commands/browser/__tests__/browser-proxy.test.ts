@@ -1589,6 +1589,70 @@ describe("chat-window CDP proxy protocol", () => {
     }
   });
 
+  it("keeps a usable blank instead of relying on an internal extension control tab", async () => {
+    provider.addPage("CONTROL", 0);
+    const native = await client(provider.endpoint);
+    clients.push(native);
+    const session = String(
+      (
+        await native.request("Target.attachToTarget", {
+          targetId: "CONTROL",
+          flatten: true,
+        })
+      ).sessionId,
+    );
+    await native.request(
+      "Page.navigate",
+      { url: `chrome-extension://${EXTENSION_RUNTIME}/control.html` },
+      session,
+    );
+    await connection.request("Target.closeTarget", { targetId: "A" });
+    const targets = (await connection.request("Target.getTargets"))
+      .targetInfos as { targetId: string; type: string; url: string }[];
+    expect(
+      targets.filter((target) => {
+        return target.type === "page";
+      }),
+    ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+    expect(provider.hasWindow(0)).toBe(true);
+    expect(provider.hasWindow(1)).toBe(true);
+  });
+
+  it("does not count another client's unfinished creation as the surviving tab", async () => {
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const preparation = provider.holdNextNavigation();
+    const created = expect(
+      connection.request("Target.createTarget", {
+        url: "https://example.test/new",
+      }),
+    ).rejects.toMatchObject({
+      code: -32000,
+      message: "Native navigation failed",
+    });
+    try {
+      await preparation.observed;
+      await peer.request("Target.closeTarget", { targetId: "A" });
+      preparation.resume(true);
+      await created;
+      const targets = (await peer.request("Target.getTargets")).targetInfos as {
+        targetId: string;
+        type: string;
+        url: string;
+      }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      preparation.resume(true);
+      await created;
+    }
+  });
+
   it("retains the original page when blank preparation fails and permits a later explicit close", async () => {
     const session = await connection.request("Target.attachToTarget", {
       targetId: "A",

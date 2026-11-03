@@ -666,7 +666,7 @@ export async function browserCdpProvider() {
             }
             reply({ frameId: selected });
           };
-          if (heldNavigation) {
+          if (heldNavigation && !heldNavigation.respond) {
             heldNavigation.respond = navigate;
             heldNavigation.requested();
           } else navigate();

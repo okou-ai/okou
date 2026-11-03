@@ -374,8 +374,22 @@ export class WindowScope {
         } while (revision !== this.generation);
         if (window?.id !== this.windowId || !window.tabs?.length)
           throw new Error("Assigned Browser window is unavailable");
+        // An unfinished creation can still be rolled back; internal control tabs
+        // also cannot serve as the client's usable surviving page.
+        const usable = window.tabs.filter((tab) => {
+          const locations = [tab.url, tab.pendingUrl];
+          return (
+            locations.some(Boolean) &&
+            !locations.some((url) => {
+              return (
+                url?.startsWith(CREATION_PREFIX) ||
+                url?.startsWith("chrome-extension://" + this.runtimeId + "/")
+              );
+            })
+          );
+        });
         // Keep the pre-query reservation count: retirement can overtake its reply.
-        if (window.tabs.length <= Math.max(closing, this.closingTargets.size)) {
+        if (usable.length <= Math.max(closing, this.closingTargets.size)) {
           await this.create(
             { url: "about:blank", background: true },
             (params) => {
