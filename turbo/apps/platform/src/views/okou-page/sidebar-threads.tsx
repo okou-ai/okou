@@ -1837,9 +1837,12 @@ export function ChatThreadsSection({
 }) {
   const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
+  const projectsEnabled = useGet(projectsEnabled$);
 
   return (
-    <div className="mt-4 flex flex-col min-h-0 flex-1">
+    <div
+      className={cn("flex flex-col min-h-0 flex-1", !projectsEnabled && "mt-4")}
+    >
       <div className={contentClassName}>
         <ChatThreadsTitle
           key={agentScope ?? "no-agent"}
