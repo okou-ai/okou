@@ -97,7 +97,10 @@ function buttonNamed(name: string, container: ParentNode = document.body) {
 
 function menuItemNamed(name: string) {
   const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.trim() === name;
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
   });
   if (!item) {
     throw new Error(`Menu item not found: ${name}`);
@@ -130,7 +133,7 @@ async function expectMobileSidebarPin(pinned: boolean) {
   });
 }
 
-test("Keep rapid pin changes responsive across resize and save", async () => {
+test("Keep menu pin changes responsive across resize and save", async () => {
   const viewport = context.mocks.browser.matchMedia(true);
   const pinResponse = context.mocks.deferred<void>();
   const events: ChatThreadEvent[] = [];
@@ -169,13 +172,10 @@ test("Keep rapid pin changes responsive across resize and save", async () => {
     },
   );
   await setupHeaderPage(events);
-  const title = screen.getByTestId("chat-thread-header-title");
-  expect(title.closest("header")).toContainElement(buttonNamed("Pin chat"));
-
-  click(buttonNamed("Pin chat"));
+  click(screen.getByTestId("chat-thread-menu-trigger"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Pin chat"));
   await waitFor(() => {
-    expect(buttonNamed("Unpin chat")).toBeEnabled();
-    expect(buttonNamed("Unpin chat")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("chat-thread-menu-trigger")).toHaveAttribute(
       "data-pinned",
       "true",
@@ -410,7 +410,6 @@ test("Mute from the mobile header and unmute from the desktop header", async () 
   click(unmute);
   await expect(screen.findByText("Chat unmuted")).resolves.toBeInTheDocument();
   expect(screen.queryByLabelText("Unmute chat")).not.toBeInTheDocument();
-  expect(buttonNamed("Pin chat")).toBeInTheDocument();
 });
 
 test("Show the archive API error after leaving the thread", async () => {
@@ -573,11 +572,14 @@ test("Show the existing API error without undoing an optimistic pin", async () =
     return respond(500, { error: { message: "Pin request failed" } });
   });
   await setupHeaderPage();
-  click(buttonNamed("Pin chat"));
+  click(screen.getByTestId("chat-thread-menu-trigger"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Pin chat"));
   const error = await screen.findByText("Pin request failed");
   expect(error).toBeInTheDocument();
-  expect(buttonNamed("Unpin chat")).toBeEnabled();
-  expect(buttonNamed("Unpin chat")).toHaveAttribute("aria-pressed", "true");
+  click(screen.getByTestId("chat-thread-menu-trigger"));
+  await screen.findByRole("menu");
+  expect(menuItemNamed("Unpin chat")).toBeEnabled();
 });
 
 test("Continue saving the next pin change after an earlier request fails", async () => {
