@@ -519,7 +519,6 @@ function createIdentityContext(
     agentId,
     featureSwitchContext$,
   );
-  const { workflows$ } = connectorContext.signals;
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
     const requests = agentStorageReadPlan(
       scope,
