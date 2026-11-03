@@ -17,7 +17,7 @@ final class NotificationExtensionTests: XCTestCase {
       beforeRequest: {
         if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
       })
-    let (session, user, directory) = try await session(fixture)
+    let (session, user, directory, _) = try await session(fixture)
     let service = NotificationServiceExtension(session: session)
     let delivered = expectation(description: "Original alert delivered after prefetch")
     service.didReceive(request(user: user)) { content in
@@ -25,11 +25,9 @@ final class NotificationExtensionTests: XCTestCase {
       delivered.fulfill()
     }
     await fulfillment(of: [delivered], timeout: 5)
-    let cache = ChatCache(
+    let cache = directory.cache(
       scope: ChatCacheScope(
-        apiBaseURL: fixture.http.baseURL, userID: user, workspaceID: "org_one"),
-      directory: directory)
-    addTeardownBlock { await cache.close() }
+        apiBaseURL: fixture.http.baseURL, userID: user, workspaceID: "org_one"))
     let sync = ChatSync(client: fixture.http.client, cache: cache)
     let history = await sync.cachedHistory(threadID: ConversationHistoryFixture.threadID)
     XCTAssertEqual(history?.messages.count, 2)
@@ -59,17 +57,23 @@ final class NotificationExtensionTests: XCTestCase {
   }
 
   func testExpiryDeliversTheOriginalAlertWhileTheNetworkIsStillHeld() async throws {
-    let started = expectation(description: "History request held")
-    let gate = AuthenticationRequestGate()
-    await gate.hold()
-    addTeardownBlock { await gate.releaseAll() }
-    let fixture = ConversationHistoryFixture(
-      count: 2,
-      beforeEventRows: { _ in
+    let fixture = ConversationHistoryFixture(count: 2)
+    let (session, user, _, provider) = try await session(fixture)
+    await provider.clientReads.hold()
+    let arrivals = await provider.clientReads.observeRequests()
+    let started = expectation(description: "The identity refresh is held before opening storage")
+    let observer = Task {
+      for await _ in arrivals.arrivals {
         started.fulfill()
-        await gate.enter()
-      })
-    let (session, user, directory) = try await session(fixture)
+        return
+      }
+    }
+    addTeardownBlock {
+      observer.cancel()
+      await provider.clientReads.releaseAll()
+      await provider.clientReads.stopObserving(arrivals.id)
+      await observer.value
+    }
     let service = NotificationServiceExtension(session: session)
     let delivered = expectation(description: "Expiry delivers without waiting for HTTP")
     delivered.assertForOverFulfill = true
@@ -80,25 +84,53 @@ final class NotificationExtensionTests: XCTestCase {
     await fulfillment(of: [started], timeout: 5)
     service.serviceExtensionTimeWillExpire()
     await fulfillment(of: [delivered], timeout: 1)
-    await gate.releaseAll()
-    let cache = ChatCache(
-      scope: ChatCacheScope(
-        apiBaseURL: fixture.http.baseURL, userID: user, workspaceID: "org_one"),
-      directory: directory)
-    addTeardownBlock { await cache.close() }
-    let deadline = ContinuousClock.now + .seconds(3)
-    var receipts = try await cache.prefetchReports()
-    while receipts.isEmpty, ContinuousClock.now < deadline {
-      try await Task.sleep(for: .milliseconds(10))
-      receipts = try await cache.prefetchReports()
+    // Releasing identity HTTP cannot open storage: the production session checks
+    // cancellation immediately after this refresh returns.
+    await provider.clientReads.releaseAll()
+  }
+
+  func testCancelledPrefetchPersistsItsExpiredReceiptBeforeTheOperationCompletes() async throws {
+    let started = expectation(description: "The history request is held during prefetch")
+    let gate = AuthenticationRequestGate()
+    await gate.hold()
+    addTeardownBlock { await gate.releaseAll() }
+    let fixture = ConversationHistoryFixture(
+      count: 2,
+      beforeEventRows: { _ in
+        started.fulfill()
+        await gate.enter()
+      })
+    let (session, user, directory, _) = try await session(fixture)
+    let destination = try XCTUnwrap(
+      NotificationDestination(userInfo: request(user: user).content.userInfo))
+    let prefetch = Task { try await session.synchronize(destination) }
+    addTeardownBlock {
+      prefetch.cancel()
+      await gate.releaseAll()
+      _ = await prefetch.result
     }
+    await fulfillment(of: [started], timeout: 5)
+    prefetch.cancel()
+    await gate.releaseAll()
+    do {
+      try await prefetch.value
+      XCTFail("Cancelled prefetch must not finish successfully")
+    } catch {
+      XCTAssertTrue(error is CancellationError || (error as? URLError)?.code == .cancelled)
+    }
+    let cache = directory.cache(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.http.baseURL, userID: user, workspaceID: "org_one"))
+    let receipts = try await cache.prefetchReports()
+    XCTAssertEqual(receipts.count, 1)
+    XCTAssertEqual(receipts.first?.report.source, "extension")
     XCTAssertEqual(receipts.first?.report.outcome, "expired")
   }
 
   func testUnavailableAccountOrWorkspaceDeliversTheAlertWithoutCachingForeignHistory() async throws
   {
     let fixture = ConversationHistoryFixture(count: 2)
-    let (session, user, directory) = try await session(fixture)
+    let (session, user, directory, _) = try await session(fixture)
     for (targetUser, targetWorkspace) in [("user_foreign", "org_one"), (user, "org_elsewhere")] {
       let service = NotificationServiceExtension(session: session)
       let delivered = expectation(description: "Unavailable scope still displays its alert")
@@ -107,10 +139,10 @@ final class NotificationExtensionTests: XCTestCase {
         delivered.fulfill()
       }
       await fulfillment(of: [delivered], timeout: 5)
-      let cache = ChatCache(
+      let cache = directory.cache(
         scope: ChatCacheScope(
           apiBaseURL: fixture.http.baseURL,
-          userID: targetUser, workspaceID: targetWorkspace), directory: directory)
+          userID: targetUser, workspaceID: targetWorkspace))
       let history = try await cache.loadHistory(threadID: ConversationHistoryFixture.threadID)
       await cache.close()
       XCTAssertNil(history)
@@ -118,20 +150,18 @@ final class NotificationExtensionTests: XCTestCase {
   }
 
   private func session(_ fixture: ConversationHistoryFixture) async throws -> (
-    NotificationExtensionSession, String, URL
+    NotificationExtensionSession, String, CacheTestDirectory, AuthenticationHTTPFixture
   ) {
     let provider = try AuthenticationHTTPFixture()
     addTeardownBlock { await provider.close() }
     let auth = try await provider.authentication(
       restoredAccessGroup: PushConfiguration.keychain().accessGroup)
-    let directory = FileManager.default.temporaryDirectory.appending(
-      path: "nse-" + UUID().uuidString)
-    addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     return (
       NotificationExtensionSession(
         clerk: try XCTUnwrap(auth.clerk), apiURL: fixture.http.baseURL,
-        version: "1.0.0", directory: directory, session: fixture.http.session),
-      provider.state.withLock { $0.userID }, directory
+        version: "1.0.0", directory: directory.url, session: fixture.http.session),
+      provider.state.withLock { $0.userID }, directory, provider
     )
   }
 

@@ -15,7 +15,6 @@ public final class ChatFileHTTPServer: Sendable {
     }
   }
   private static let origins = Mutex<Set<String>>([])
-  private let registeredOrigin = Mutex<String?>(nil)
   static func owns(_ url: URL) -> Bool {
     guard let scheme = url.scheme, let host = url.host, let port = url.port else { return false }
     return origins.withLock { $0.contains("\(scheme)://\(host):\(port)") }
@@ -23,75 +22,104 @@ public final class ChatFileHTTPServer: Sendable {
   private let listener: NWListener
   private let handler: @Sendable (URLRequest) async -> Response
   private let queue = DispatchQueue(label: "ai.okou.tests.file-http")
-  private let connections = Mutex<[NWConnection]>([])
-  private let tasks = Mutex<[Task<Void, Never>]>([])
-  private let startup = Mutex<CheckedContinuation<URL, Error>?>(nil)
+  private struct State: Sendable {
+    var closed = false
+    var origin: String?
+    var connections: [NWConnection] = []
+    var tasks: [Task<Void, Never>] = []
+    var startup: CheckedContinuation<URL, Error>?
+  }
+  private let state = Mutex(State())
 
   public init(handler: @escaping @Sendable (URLRequest) async -> Response) throws {
     self.handler = handler
     let parameters = NWParameters.tcp
     parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
     listener = try NWListener(using: parameters)
+    listener.stateUpdateHandler = { [weak self] status in
+      guard let self else { return }
+      switch status {
+      case .ready:
+        guard let port = listener.port else { return }
+        let origin = "http://127.0.0.1:\(port.rawValue)"
+        let registered = state.withLock { value in
+          guard !value.closed else { return false }
+          value.origin = origin
+          _ = Self.origins.withLock { $0.insert(origin) }
+          return true
+        }
+        if registered { finish(.success(URL(string: origin)!)) }
+      case .failed(let error), .waiting(let error): finish(.failure(error))
+      case .cancelled: finish(.failure(CancellationError()))
+      default: break
+      }
+    }
+    listener.newConnectionHandler = { [weak self] connection in
+      guard let self else {
+        connection.cancel()
+        return
+      }
+      let accepted = state.withLock { value in
+        guard !value.closed else { return false }
+        value.connections.append(connection)
+        return true
+      }
+      guard accepted else {
+        connection.cancel()
+        return
+      }
+      connection.start(queue: queue)
+      receive(connection, bytes: Data())
+    }
   }
 
   public func start() async throws -> URL {
-    try await withCheckedThrowingContinuation { continuation in
-      startup.withLock { $0 = continuation }
-      listener.stateUpdateHandler = { [weak self] state in
-        guard let self else { return }
-        switch state {
-        case .ready:
-          guard let port = listener.port else { return }
-          let origin = "http://127.0.0.1:\(port.rawValue)"
-          registeredOrigin.withLock { $0 = origin }
-          _ = Self.origins.withLock { $0.insert(origin) }
-          finish(.success(URL(string: origin)!))
-        case .failed(let error), .waiting(let error): finish(.failure(error))
-        case .cancelled: finish(.failure(CancellationError()))
-        default: break
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        state.withLock { value in
+          guard !value.closed else {
+            continuation.resume(throwing: CancellationError())
+            return
+          }
+          value.startup = continuation
+          listener.start(queue: queue)
         }
       }
-      listener.newConnectionHandler = { [weak self] connection in
-        guard let self else {
-          connection.cancel()
-          return
-        }
-        connections.withLock { $0.append(connection) }
-        connection.start(queue: queue)
-        receive(connection, bytes: Data())
-      }
-      listener.start(queue: queue)
+    } onCancel: {
+      self.cancel()
     }
   }
 
-  public func stop() {
-    if let origin = registeredOrigin.withLock({ value in
-      let origin = value
-      value = nil
-      return origin
-    }) {
-      _ = Self.origins.withLock { $0.remove(origin) }
-    }
-    listener.cancel()
-    finish(.failure(CancellationError()))
-    let active = connections.withLock { values in
-      let active = values
-      values.removeAll()
-      return active
-    }
-    for connection in active { connection.cancel() }
-    let pending = tasks.withLock { values in
-      let pending = values
-      values.removeAll()
+  public func stop() async {
+    cancel()
+    let pending = state.withLock { $0.tasks }
+    for task in pending { await task.value }
+    state.withLock { $0.tasks.removeAll() }
+  }
+
+  private func cancel() {
+    let pending = state.withLock { value in
+      value.closed = true
+      let pending = (
+        origin: value.origin, startup: value.startup,
+        connections: value.connections, tasks: value.tasks
+      )
+      value.origin = nil
+      value.startup = nil
+      value.connections.removeAll()
       return pending
     }
-    for task in pending { task.cancel() }
+    if let origin = pending.origin { _ = Self.origins.withLock { $0.remove(origin) } }
+    listener.cancel()
+    pending.startup?.resume(throwing: CancellationError())
+    for connection in pending.connections { connection.cancel() }
+    for task in pending.tasks { task.cancel() }
   }
 
   private func finish(_ result: Result<URL, Error>) {
-    let pending = startup.withLock { value in
-      let pending = value
-      value = nil
+    let pending = state.withLock { value in
+      let pending = value.startup
+      value.startup = nil
       return pending
     }
     pending?.resume(with: result)
@@ -102,6 +130,10 @@ public final class ChatFileHTTPServer: Sendable {
       [weak self] data, _, complete, error in
       guard let self else {
         connection.cancel()
+        return
+      }
+      guard !state.withLock({ $0.closed }) else {
+        close(connection)
         return
       }
       var bytes = bytes
@@ -140,32 +172,41 @@ public final class ChatFileHTTPServer: Sendable {
       }
       request.httpBody = body.prefix(length)
       let received = request
-      let task = Task { @Sendable [self] in
-        let result = await handler(received)
-        guard !Task.isCancelled else {
-          close(connection)
-          return
+      let accepted = state.withLock { value in
+        guard !value.closed else { return false }
+        let task = Task { @Sendable [self] in
+          guard !Task.isCancelled else {
+            close(connection)
+            return
+          }
+          let result = await handler(received)
+          guard !Task.isCancelled else {
+            close(connection)
+            return
+          }
+          var headers = result.headers
+          if headers["Content-Length"] == nil {
+            headers["Content-Length"] = String(result.body.count)
+          }
+          headers["Connection"] = "close"
+          let header = headers.map { "\($0.key): \($0.value)\r\n" }.joined()
+          var response = Data("HTTP/1.1 \(result.status) Response\r\n\(header)\r\n".utf8)
+          response.append(result.body)
+          connection.send(
+            content: response, contentContext: .finalMessage, isComplete: true,
+            completion: .contentProcessed { [weak self] _ in
+              if let self { close(connection) } else { connection.cancel() }
+            })
         }
-        var headers = result.headers
-        if headers["Content-Length"] == nil {
-          headers["Content-Length"] = String(result.body.count)
-        }
-        headers["Connection"] = "close"
-        let header = headers.map { "\($0.key): \($0.value)\r\n" }.joined()
-        var response = Data("HTTP/1.1 \(result.status) Response\r\n\(header)\r\n".utf8)
-        response.append(result.body)
-        connection.send(
-          content: response, contentContext: .finalMessage, isComplete: true,
-          completion: .contentProcessed { [weak self] _ in
-            if let self { close(connection) } else { connection.cancel() }
-          })
+        value.tasks.append(task)
+        return true
       }
-      tasks.withLock { $0.append(task) }
+      if !accepted { close(connection) }
     }
   }
 
   private func close(_ connection: NWConnection) {
     connection.cancel()
-    connections.withLock { $0.removeAll { $0 === connection } }
+    state.withLock { $0.connections.removeAll { $0 === connection } }
   }
 }

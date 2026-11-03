@@ -153,8 +153,8 @@ final class ChatArtifactTests: XCTestCase {
         ? .init(status: 403)
         : .init(headers: ["Content-Type": "text/plain"], body: Data("Authorized result".utf8))
     }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let authorizations = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       XCTAssertEqual(
