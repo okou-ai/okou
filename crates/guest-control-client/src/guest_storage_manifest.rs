@@ -12,6 +12,7 @@ use guest_control_proto::{
 
 use crate::{
     FrameWriteObserver, GuestControlClient, normal_request_on_shared_with_timing_frame_builder,
+    validate_fixed_helper_response,
 };
 
 const TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT];
@@ -149,20 +150,11 @@ fn decode_storage_manifest_response(
     run_id: &str,
     timing: Option<&mut StorageManifestRequestTiming>,
 ) -> io::Result<GuestStorageManifestResult> {
-    if response.msg_type == MSG_ERROR {
-        let message =
-            guest_control_proto::decode_error(&response.payload).map_err(protocol_invalid_data)?;
-        return Err(io::Error::other(message.to_owned()));
-    }
-    if response.msg_type != MSG_GUEST_STORAGE_MANIFEST_RESULT {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "unexpected guest storage manifest response type: 0x{:02X}",
-                response.msg_type
-            ),
-        ));
-    }
+    validate_fixed_helper_response(
+        &response,
+        MSG_GUEST_STORAGE_MANIFEST_RESULT,
+        "guest storage manifest",
+    )?;
 
     let decoded =
         decode_guest_storage_manifest_result(&response.payload).map_err(protocol_invalid_data)?;
