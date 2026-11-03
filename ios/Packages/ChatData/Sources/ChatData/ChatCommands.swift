@@ -5,6 +5,7 @@ import Foundation
 public actor ChatCommands {
   public nonisolated let artifacts: ChatArtifacts
   public nonisolated let permissions: ChatPermissions
+  public nonisolated let batchPermissions: ChatBatchPermissions
   let client: APIClient
   public nonisolated let connectorActions: ChatConnectorService
   private let sync: ChatSync
@@ -15,6 +16,7 @@ public actor ChatCommands {
   public init(client: APIClient, sync: ChatSync) {
     artifacts = ChatArtifacts(client: client)
     permissions = ChatPermissions(client: client)
+    batchPermissions = ChatBatchPermissions(client: client)
     self.client = client
     connectorActions = ChatConnectorService(client: client)
     self.sync = sync

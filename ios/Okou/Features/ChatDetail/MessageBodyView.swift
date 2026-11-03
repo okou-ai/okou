@@ -75,6 +75,10 @@ struct MessageBodyView: View, Equatable {
             if let permissionActions {
               PermissionActionCard(store: permissionActions.card(action), loadsState: loadsActions)
             }
+          case .permissionBatch(let action):
+            if let permissionActions {
+              PermissionBatchCard(store: permissionActions.card(action), loadsState: loadsActions)
+            }
           case .unavailablePermission:
             ChatCardHeader(
               title: String(localized: "Permission request unavailable"),
