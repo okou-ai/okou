@@ -1,4 +1,4 @@
-import { projectMessageDocumentSchema as userMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { i18n } from "../../i18n/index.ts";
 import { CHAT_ATTACHMENT_HEADINGS } from "../../i18n/resources.ts";

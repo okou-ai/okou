@@ -1,7 +1,5 @@
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import { projectAccess$ } from "./projects";
-import { projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/contracts/project-readers";
-import { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed } from "ccstate";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { agentDrafts } from "@okouai/db/schema/agent-draft";
@@ -15,6 +13,7 @@ import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
 import { visibleAgentIdentityCondition } from "../services/agent-data.service";
+import { projectReferenceWritesEnabled } from "../services/project-reference.service";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -35,10 +34,10 @@ type AgentDraftContract =
     };
 function createAgentDraftReader(
   contract: AgentDraftContract,
-  prepared: boolean,
+  projectEndpoint: boolean,
 ) {
   const getAgentDraftInner$ = computed(async (get) => {
-    if (prepared && !(await get(projectAccess$))) {
+    if (projectEndpoint && !(await get(projectAccess$))) {
       return notFound("Projects unavailable");
     }
     const auth = get(organizationAuthContext$);
@@ -77,15 +76,7 @@ function createAgentDraftReader(
     return {
       status: 200 as const,
       body: {
-        draftUserMessage: draft?.draftUserMessage
-          ? prepared
-            ? draft.draftUserMessage
-            : userMessageInputDocumentSchema.parse(
-                projectAwareUserMessageDocumentSchema.parse(
-                  draft.draftUserMessage,
-                ),
-              )
-          : null,
+        draftUserMessage: draft?.draftUserMessage ?? null,
         draftAttachments: draft?.draftAttachments ?? null,
       },
     };
@@ -95,12 +86,12 @@ function createAgentDraftReader(
 }
 function createAgentDraftRoutes(
   contract: AgentDraftContract,
-  prepared: boolean,
+  projectEndpoint: boolean,
 ): readonly RouteEntry[] {
-  const getAgentDraftInner$ = createAgentDraftReader(contract, prepared);
+  const getAgentDraftInner$ = createAgentDraftReader(contract, projectEndpoint);
   const patchAgentDraftInner$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      if (prepared && !(await get(projectAccess$))) {
+      if (projectEndpoint && !(await get(projectAccess$))) {
         return notFound("Projects unavailable");
       }
       const auth = get(organizationAuthContext$);
@@ -111,6 +102,14 @@ function createAgentDraftRoutes(
       if (!bodyResult.ok) {
         return bodyResult.response;
       }
+      if (
+        !(await get(
+          projectReferenceWritesEnabled(auth, bodyResult.data.draftUserMessage),
+        ))
+      ) {
+        return notFound("Projects unavailable");
+      }
+      signal.throwIfAborted();
 
       const agentScope = {
         orgId: auth.orgId,

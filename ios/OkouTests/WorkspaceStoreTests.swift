@@ -521,6 +521,9 @@ final class WorkspaceStoreTests: XCTestCase {
             body: """
               [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
               """)
+        case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/realtime/token":
           return ChatHTTPResponse(
             status: 403, body: "{\"error\":{\"message\":\"No live updates\"}}")
@@ -530,9 +533,8 @@ final class WorkspaceStoreTests: XCTestCase {
       let cache = cacheDirectory.cache(
         scope: ChatCacheScope(
           apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
-      try await cache.replaceThreadList(
-        snapshot: Data(threadSnapshot(title: "Cached chat").body.utf8),
-        cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
+      try await ChatSync(client: fixture.client, cache: cache).prefetchThreadList()
+      requests.withLock { $0.removeAll() }
       let store = WorkspaceStore(
         client: fixture.client, webURL: fixture.baseURL, cache: cache)
       defer { store.close() }

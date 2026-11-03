@@ -103,6 +103,10 @@ case "${1:-}" in
       else
         [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_FLOOR_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "c146c146c146c146c146c146c146c146c146c146" ]; then
+      [ "${MOCK_PROJECT_WIRE_CONTRACTS_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "428f46154beb1a11cdf09f150650c388826e539c" ]; then
+      [ "${MOCK_PROJECT_RUNNER_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6161616161616161616161616161616161616161" ]; then
       [ "${MOCK_STORAGE_DEBUG_CONTRACTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2eff576ad75d328676834643c1380ff35c2297e2" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
@@ -344,6 +348,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *.github/rollback-floors/project-wire-contracts* ]]; then
+      printf '%s\n' "${MOCK_PROJECT_WIRE_CONTRACTS_COMMIT-c146c146c146c146c146c146c146c146c146c146}"
     elif [[ "$*" == *.github/rollback-floors/storage-debug-contracts* ]]; then
       printf '%s\n' "${MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT-6161616161616161616161616161616161616161}"
     elif [[ "$*" == *.github/rollback-floors/vnc-native-networks-canonical-metadata* ]]; then
@@ -888,6 +894,20 @@ fi
 : >"${tmp_dir}/boundaries.log"
 run_resolver "${tmp_dir}/context-exact.output" "MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT=${target_commit}" >"${tmp_dir}/context-exact.log"
 [ -s "${tmp_dir}/context-exact.output" ] || fail "exact context cleanup artifact must remain eligible"
+
+for project_commit in "" invalid; do
+  assert_failure "Cannot resolve the merged Project wire contract activation on main" \
+    run_resolver "${tmp_dir}/project-policy.output" "MOCK_PROJECT_WIRE_CONTRACTS_COMMIT=${project_commit}"
+  [ ! -s "${tmp_dir}/project-policy.output" ] || fail "invalid Project policy must not publish outputs"
+done
+
+assert_failure "Rollback target predates the Project wire contract activation" \
+  run_resolver "${tmp_dir}/project-api.output" MOCK_PROJECT_WIRE_CONTRACTS_VALID=0
+[ ! -s "${tmp_dir}/project-api.output" ] || fail "pre-activation API must not publish outputs"
+
+assert_failure "predates the Project CLI readers" \
+  run_resolver "${tmp_dir}/project-runner.output" MOCK_PROJECT_RUNNER_READER_VALID=0
+[ ! -s "${tmp_dir}/project-runner.output" ] || fail "unprepared Runner must not publish outputs"
 
 for completion_reader_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"

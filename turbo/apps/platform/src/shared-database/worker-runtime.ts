@@ -5,7 +5,7 @@ import {
   chatThreadEventsContract,
 } from "@okouai/api-contracts/client/chat-threads";
 import { chatThreadSnapshotArchiveSchema } from "@okouai/api-contracts/validators/chat-threads";
-import type { ProjectAwareChatThreadEvent as ChatThreadEvent } from "@okouai/api-contracts/contracts/project-readers";
+import type { ChatThreadEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   chatEventRowSchema,
   type ChatEventRow,

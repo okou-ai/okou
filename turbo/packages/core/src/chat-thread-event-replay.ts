@@ -1,12 +1,12 @@
-import type { ChatThreadSnapshotProjection } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ChatThreadSnapshotProjection,
+  ChatThreadEvent,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
-import type { ProjectAwareChatThreadEvent } from "@okouai/api-contracts/contracts/project-readers";
-
 type WithoutSequence<T> = T extends unknown ? Omit<T, "seqId"> : never;
-export type ReplayChatThreadEvent =
-  WithoutSequence<ProjectAwareChatThreadEvent>;
+export type ReplayChatThreadEvent = WithoutSequence<ChatThreadEvent>;
 
 export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly projectId: string | null;
@@ -55,11 +55,8 @@ function updatedThreadFields(
   event: ReplayChatThreadEvent,
   thread: EventDrivenChatThread,
 ): Partial<EventDrivenChatThread> | null {
-  if (
-    event.kind === "project_updated" ||
-    (event.kind === "sort_touched" && event.projectMembershipUpdated)
-  ) {
-    return { projectId: event.projectId ?? null };
+  if (event.kind === "project_updated") {
+    return { projectId: event.projectId };
   }
   if (event.kind === "renamed") {
     return { title: event.title, renamedAt: event.createdAt };
@@ -165,7 +162,7 @@ function applyEvent(
 
   const thread = threads.get(event.chatThreadId);
   if (!thread) {
-    if (isDeferrableUpdate(event.kind) || event.projectMembershipUpdated) {
+    if (isDeferrableUpdate(event.kind)) {
       const pendingUpdates = pendingThreadUpdates.get(event.chatThreadId) ?? [];
       pendingThreadUpdates.set(event.chatThreadId, [...pendingUpdates, event]);
     }

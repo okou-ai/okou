@@ -10,6 +10,9 @@ readonly IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT=01d21f7c5857795104c27cd54e724f2ce
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
+# Project lifecycle events require the CLI reader installed by #44617.
+readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
+readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
 # #40206 migrates encrypted Link grants before requiring their metadata. Old
 # writers must never recreate the retired shape after the migration.
 readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
@@ -806,6 +809,17 @@ if ! git merge-base --is-ancestor "$storage_debug_contracts_commit" "$TARGET_COM
   fail "Rollback target predates the Storage debug contract cleanup: ${storage_debug_contracts_commit}."
 fi
 
+# Canonical Project parts now use ordinary chat/draft contracts. Earlier APIs
+# reject those writes and restore reader floors below the prepared clients.
+project_wire_contracts_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PROJECT_WIRE_CONTRACTS_PATH" | sed -n '1p')
+if [[ ! "$project_wire_contracts_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Project wire contract activation on main."
+fi
+if ! git merge-base --is-ancestor "$project_wire_contracts_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Project wire contract activation: ${project_wire_contracts_commit}."
+fi
+
 # Pi memory's private tables no longer exist. Earlier APIs still name them
 # during ordinary native memory writes, even though producers were retired.
 pi_memory_retired_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
@@ -1030,6 +1044,9 @@ if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_co
 fi
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates DAV firewall method support: ${DAV_FIREWALL_READER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PROJECT_READER_PREPARATION_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the Project CLI readers: ${PROJECT_READER_PREPARATION_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the blank sandbox status reader: ${BLANK_SANDBOX_STATUS_READER_COMMIT}."

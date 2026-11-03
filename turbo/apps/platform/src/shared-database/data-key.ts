@@ -1,6 +1,6 @@
 import { projectEventQueryResultSchema } from "@okouai/api-contracts/validators/projects";
-import { projectAwareChatThreadEventSchema as chatThreadEventSchema } from "@okouai/api-contracts/contracts/project-readers";
 import {
+  chatThreadEventSchema,
   chatThreadSnapshotProjectionSchema,
   indicatorsSchema,
 } from "@okouai/api-contracts/validators/chat-threads";

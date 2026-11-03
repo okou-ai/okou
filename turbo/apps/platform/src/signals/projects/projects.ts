@@ -201,11 +201,10 @@ export const moveProjectThread$ = command(
     if (thread) {
       set(registerOptimisticChatThreadEvent$, {
         id: eventId,
-        kind: "sort_touched",
+        kind: "project_updated",
         chatThreadId: threadId,
         agentId: thread.agentId,
         projectId,
-        projectMembershipUpdated: true,
         createdAt: thread.sortAt,
       });
     }

@@ -1,7 +1,4 @@
-import { projectChatContract } from "@okouai/api-contracts/client/project-chat";
-import { projectsEnabled$ } from "../projects/projects.ts";
 import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
-import { projectComposerDraftSchema } from "@okouai/api-contracts/validators/project-message";
 import { command, computed, state, type Command } from "ccstate";
 import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/validators/artifact-catalog";
 import {
@@ -126,27 +123,15 @@ export const patchChatThreadDraft$ = command(
       draftUserMessage: userMessage,
       draftAttachments: attachments,
     };
-    if (get(projectsEnabled$)) {
-      await accept(
-        get(apiClient$)(projectChatContract).saveDraft({
-          params: { id: threadId },
-          body,
-          fetchOptions: { signal },
-        }),
-        [204],
-        signal,
-      );
-    } else {
-      await accept(
-        client.patch({
-          params: { id: threadId },
-          body: composerDraftSchema.parse(body),
-          fetchOptions: { signal },
-        }),
-        [200, 204],
-        signal,
-      );
-    }
+    await accept(
+      client.patch({
+        params: { id: threadId },
+        body,
+        fetchOptions: { signal },
+      }),
+      [200, 204],
+      signal,
+    );
     signal.throwIfAborted();
     // Most saves only change the text of a draft that is already listed.
     // Refetch the sidebar draft ids only when this save adds or removes one.
@@ -369,19 +354,12 @@ export function createRemoteChatThreadDraft(threadId: string) {
     if (get(optimisticCreateUnsettled$)) {
       return null;
     }
-    const result = get(projectsEnabled$)
-      ? await accept(
-          get(apiClient$)(projectChatContract).draft({
-            params: { id: threadId },
-          }),
-          [200],
-        )
-      : await accept(
-          get(apiClient$)(chatThreadDraftContract).get({
-            params: { id: threadId },
-          }),
-          [200],
-        );
-    return projectComposerDraftSchema.parse(result.body);
+    const result = await accept(
+      get(apiClient$)(chatThreadDraftContract).get({
+        params: { id: threadId },
+      }),
+      [200],
+    );
+    return composerDraftSchema.parse(result.body);
   });
 }

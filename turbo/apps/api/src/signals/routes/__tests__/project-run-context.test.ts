@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
+import {
+  chatEventsContract,
+  type ChatEventSendBody,
+} from "@okouai/api-contracts/contracts/chat-event-send";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -9,7 +12,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { projectRoutes } from "../projects";
-import { projectChatRoutes } from "../project-chat";
+import { chatEventsRoutes } from "../chat-events";
 import {
   createChatEventsFixture,
   userMessages,
@@ -59,31 +62,66 @@ test("prepares queued inputs from current membership while preserving an already
     [201],
   );
   const inputId = randomUUID();
-  const send = setupApp({ context, routes: projectChatRoutes })(
-    projectChatContract,
+  const send = setupApp({ context, routes: chatEventsRoutes })(
+    chatEventsContract,
   );
-  await accept(
-    send.send({
-      headers: fixture.sessionHeaders(actor),
-      body: {
-        agentId,
-        threadId: first.threadId,
-        clientEventId: inputId,
-        prompt: "Review research",
-        hasTextContent: true,
-        userMessage: {
-          version: 1,
-          parts: [
-            { type: "text", text: "Review " },
-            {
-              type: "project",
-              projectId: mentionId,
-              nameSnapshot: "Original research",
-            },
-          ],
+  const body: ChatEventSendBody = {
+    agentId,
+    threadId: first.threadId,
+    clientEventId: inputId,
+    prompt: "Review research",
+    hasTextContent: true,
+    userMessage: {
+      version: 1,
+      parts: [
+        { type: "text", text: "Review " },
+        {
+          type: "project",
+          projectId: mentionId,
+          nameSnapshot: "Original research",
         },
-      },
-    }),
+      ],
+    },
+  };
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    {
+      [FeatureSwitchKey.Projects]: false,
+    },
+  );
+  expect(
+    (await send.send({ headers: fixture.sessionHeaders(actor), body })).status,
+  ).toBe(404);
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    {
+      [FeatureSwitchKey.Projects]: true,
+    },
+  );
+  expect(
+    (
+      await send.send({
+        headers: fixture.sessionHeaders(actor),
+        body: {
+          ...body,
+          userMessage: {
+            version: 1 as const,
+            parts: [
+              {
+                type: "project" as const,
+                projectId: randomUUID(),
+                nameSnapshot: "Unavailable",
+              },
+            ],
+          },
+        },
+      })
+    ).status,
+  ).toBe(404);
+  await accept(
+    send.send({ headers: fixture.sessionHeaders(actor), body }),
     [201],
   );
   const latestId = operation();
