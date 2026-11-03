@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.34](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.33...guest-agent-v0.109.34) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share telemetry destination cleanup ownership ([#44860](https://github.com/okou-ai/okou/issues/44860)) ([27e972b](https://github.com/okou-ai/okou/commit/27e972ba025e79d7d7f1c67d004e9963459867f4))
+
 ## [0.109.33](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.32...guest-agent-v0.109.33) (2026-11-03)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.2](https://github.com/okou-ai/okou/compare/ios-v0.23.1...ios-v0.23.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** preserve object-owned failure recovery ([#44829](https://github.com/okou-ai/okou/issues/44829)) ([e3efe07](https://github.com/okou-ai/okou/commit/e3efe076313b47d01778f22560578de190e74bff))
+
 ## [0.23.1](https://github.com/okou-ai/okou/compare/ios-v0.23.0...ios-v0.23.1) (2026-11-03)
 
 

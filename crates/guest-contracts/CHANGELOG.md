@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.0...guest-contracts-v0.30.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* attribute local firewall auth failures through run completion ([#44847](https://github.com/okou-ai/okou/issues/44847)) ([d672c61](https://github.com/okou-ai/okou/commit/d672c6141ad26b6f19522363841b7659a7c38673))
+
 ## [0.30.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.6...guest-contracts-v0.30.0) (2026-11-03)
 
 

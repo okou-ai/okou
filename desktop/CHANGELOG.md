@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.5](https://github.com/okou-ai/okou/compare/desktop-v0.55.4...desktop-v0.55.5) (2026-11-03)
+
+
+### Refactoring
+
+* **desktop:** simplify native helper diagnostics ([#44857](https://github.com/okou-ai/okou/issues/44857)) ([735bed3](https://github.com/okou-ai/okou/commit/735bed32f45dae6b2f46ff31a74046739f4971ff))
+
 ## [0.55.4](https://github.com/okou-ai/okou/compare/desktop-v0.55.3...desktop-v0.55.4) (2026-11-03)
 
 
