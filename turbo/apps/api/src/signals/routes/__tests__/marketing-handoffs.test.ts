@@ -248,7 +248,7 @@ describe("Marketing content handoff", () => {
           return response.status;
         })
         .sort(),
-    ).toEqual([200, 409]);
+    ).toStrictEqual([200, 409]);
     const resolved = await accept(
       api().resolve({
         params: { hash: "23aab54ca8ed" },
