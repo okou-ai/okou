@@ -7,7 +7,7 @@ struct ChatSyncStatusView: View {
   @State private var displayed: ChatSynchronizationState?
 
   var body: some View {
-    Group {
+    VStack(alignment: .leading, spacing: 0) {
       if let displayed {
         HStack(spacing: 12) {
           Text(displayed.label)
