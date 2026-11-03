@@ -236,6 +236,19 @@ set_runner_agent_instructions() {
         >/dev/null
 }
 
+set_runner_model_test_instructions() {
+    local agent_id="$1" instructions
+    instructions=$(cat <<'EOF'
+You are participating in an automated end-to-end test in an isolated sandbox.
+Follow the procedure in each user message literally.
+Use tools only when explicitly requested.
+When asked for an exact reply, output only that reply, without Markdown or explanation.
+If a required operation fails, report the failure instead of claiming success.
+EOF
+)
+    set_runner_agent_instructions "$agent_id" "$instructions"
+}
+
 delete_runner_agent() {
     local agent_id="$1"
     runner_api_curl "/api/agents/$agent_id" -X DELETE >/dev/null
