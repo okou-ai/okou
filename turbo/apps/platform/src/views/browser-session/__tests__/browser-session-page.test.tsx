@@ -742,7 +742,14 @@ function mockSharedViewer(liveUrl: string | null = null) {
   return { session, cdpUrl, browser };
 }
 
-test.each([502, 503, "network", "gateway"] as const)(
+test.each([
+  502,
+  503,
+  "network",
+  "gateway",
+  "gateway-500",
+  "gateway-504",
+] as const)(
   "A mounted panel renews after a transient %s lease failure and remains usable",
   async (failure) => {
     const failures = recordHeartbeatFailures();
@@ -791,7 +798,14 @@ test.each([502, 503, "network", "gateway"] as const)(
         return respond(200, { browser: session });
       },
     );
-    if (failure === "network" || failure === "gateway") {
+    const gatewayStatus =
+      failure === "gateway-500" ? 500 : failure === "gateway-504" ? 504 : 502;
+    if (
+      failure === "network" ||
+      failure === "gateway" ||
+      failure === "gateway-500" ||
+      failure === "gateway-504"
+    ) {
       // Transport and gateway failures do not have an application error body.
       context.mocks.http.post(
         `*/api/chat-threads/${THREAD_ID}/browser/lease`,
@@ -806,7 +820,7 @@ test.each([502, 503, "network", "gateway"] as const)(
           return failure === "network"
             ? HttpResponse.error()
             : HttpResponse.html("<html><body>Bad Gateway</body></html>", {
-                status: 502,
+                status: gatewayStatus,
               });
         },
       );
@@ -815,7 +829,11 @@ test.each([502, 503, "network", "gateway"] as const)(
     await expectStreamingViewer();
     await first.promise;
     fail.resolve();
-    if (failure === 502) {
+    if (
+      failure === 502 ||
+      failure === "gateway-500" ||
+      failure === "gateway-504"
+    ) {
       act(() => {
         browser.disconnect({ code: 1006, reason: "temporary connection loss" });
       });
@@ -830,7 +848,10 @@ test.each([502, 503, "network", "gateway"] as const)(
     expect(failures).toStrictEqual([
       {
         threadId: THREAD_ID,
-        status: failure === "gateway" ? 502 : failure,
+        status:
+          typeof failure === "number" || failure === "network"
+            ? failure
+            : gatewayStatus,
       },
     ]);
     await userEvent.keyboard("{End}x");
