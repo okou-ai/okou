@@ -173,11 +173,16 @@ it.each(["startup", "driver"] as const)(
     const runtime = await launch("use", true, failure);
     expect(await runtime.closed).toEqual([1, null]);
     expect(runtime.output().stdout).toBe("");
-    expect(runtime.output().stderr).toContain(
-      failure === "startup"
-        ? "Scoped Browser startup failed"
-        : "agent-browser connect exited with status 7",
-    );
+    if (failure === "startup") {
+      // IPC failure and child exit are independent terminal notifications.
+      expect(runtime.output().stderr).toMatch(
+        /Scoped Browser (?:startup failed|exited during startup)/u,
+      );
+    } else {
+      expect(runtime.output().stderr).toContain(
+        "agent-browser connect exited with status 7",
+      );
+    }
     expect(
       (await readdir(directory)).filter((file) => {
         return file.endsWith(".stopped");
