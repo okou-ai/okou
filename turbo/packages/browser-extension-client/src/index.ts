@@ -502,13 +502,7 @@ export class OkouBrowserClient {
               return record(info).type === "tab";
             });
             if (wakeWorker && tab && !woken) {
-              // Wake once; observer recovery never replays an uncertain action.
-              woken = true;
-              await this.request(
-                "Extensions.triggerAction",
-                { id: this.runtimeId, targetId: record(tab).targetId },
-                browser,
-              );
+              woken = await this.wakeWorker(record(tab).targetId, observer);
               this.current();
             }
             if (!this.workerTarget && !observer && (!wakeWorker || !tab))
@@ -533,6 +527,31 @@ export class OkouBrowserClient {
     } finally {
       clearTimeout(timer);
       this.observingReadiness = false;
+    }
+  }
+
+  private async wakeWorker(
+    targetId: unknown,
+    observer?: ReadinessObserver,
+  ): Promise<boolean> {
+    try {
+      await this.request(
+        "Extensions.triggerAction",
+        { id: this.runtimeId, targetId },
+        this.browserSession,
+      );
+      return true;
+    } catch (error) {
+      this.current();
+      if (
+        !observer?.lost ||
+        !(error instanceof BrowserBridgeError) ||
+        error.diagnostics.reason !== "cdp-request-failed"
+      )
+        throw error;
+      // With proven observer loss, repeat only this no-op startup trigger on
+      // fresh inventory. Caller mutations never retry.
+      return false;
     }
   }
 

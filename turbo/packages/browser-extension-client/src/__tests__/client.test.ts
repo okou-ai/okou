@@ -88,6 +88,13 @@ function bridgePeer(pages: string[] = []) {
                 url: "about:blank",
               };
             }),
+            ...pages.map((targetId) => {
+              return {
+                targetId: `tab-${targetId}`,
+                type: "tab",
+                url: "about:blank",
+              };
+            }),
           ],
         };
       if (method === "Runtime.evaluate") return result;
@@ -308,6 +315,54 @@ it("does not use a retained worker target when no replacement page survives", as
   expect(peer.listeners.size).toBe(0);
 });
 
+it.each([false, true])(
+  "wake failure recovers only proven observer loss: %s",
+  async (lost) => {
+    const peer = bridgePeer(["left-page", "right-page"]);
+    let wakes = 0;
+    const connecting = OkouBrowserClient.connect({
+      runtimeId: peer.runtimeId,
+      transport: {
+        onEvent: peer.transport.onEvent,
+        async request(method, params, sessionId) {
+          const result = await peer.transport.request(
+            method,
+            params,
+            sessionId,
+          );
+          if (method === "Extensions.triggerAction") {
+            wakes++;
+            if (wakes === 1) {
+              if (lost) peer.losePage("left-page");
+              throw Object.assign(new Error("Wake failed"), { code: -32602 });
+            }
+            // This peer's stopped worker runs only after a successful wake.
+            peer.running(await peer.observer());
+          }
+          return result;
+        },
+      },
+    });
+    await peer.observer();
+    if (lost) {
+      const client = await connecting;
+      expect((await client.call("hello", {})).value.protocol).toBe(1);
+      expect(wakes).toBe(2);
+      await client.close();
+    } else {
+      await expect(connecting).rejects.toMatchObject({
+        diagnostics: {
+          reason: "cdp-request-failed",
+          request: { method: "Extensions.triggerAction" },
+        },
+      });
+      expect(wakes).toBe(1);
+    }
+    expect(peer.sessions.size).toBe(0);
+    expect(peer.listeners.size).toBe(0);
+  },
+);
+
 it("reconciles a page that disappeared before observation began", async () => {
   const peer = bridgePeer(["left-page", "right-page"]);
   let listed = false;
@@ -422,9 +477,14 @@ it("an observer request failure without page loss is not retried", async () => {
   expect(peer.sessions.size).toBe(0);
 });
 
-it.each(["connection", "protocol"])(
-  "page loss cannot conceal a %s transport failure",
-  async (kind) => {
+it.each([
+  { kind: "connection", method: "ServiceWorker.enable" },
+  { kind: "protocol", method: "ServiceWorker.enable" },
+  { kind: "connection", method: "Extensions.triggerAction" },
+  { kind: "protocol", method: "Extensions.triggerAction" },
+])(
+  "page loss cannot conceal a $kind transport failure during $method",
+  async ({ kind, method: failingMethod }) => {
     const peer = bridgePeer(["left-page", "right-page"]);
     const connecting = OkouBrowserClient.connect({
       runtimeId: peer.runtimeId,
@@ -436,7 +496,7 @@ it.each(["connection", "protocol"])(
             params,
             sessionId,
           );
-          if (method === "ServiceWorker.enable") {
+          if (method === failingMethod) {
             peer.losePage("left-page");
             throw Object.assign(new Error("Transport failure"), { kind });
           }

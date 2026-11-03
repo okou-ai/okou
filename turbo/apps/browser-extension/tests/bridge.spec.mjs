@@ -234,77 +234,99 @@ test("native window operations and event subscriptions preserve independent clie
   }
 });
 
-test("closing an auxiliary readiness page preserves a healthy client and the desired window", async () => {
-  const f = await fixture();
-  let client;
-  try {
-    const sibling = await f.client();
-    const desired = await f.window(`${origin}/desired`);
-    const auxiliary = await f.target(
-      f.context.pages().find((page) => {
-        return page.url() === "about:blank";
-      }),
-    );
-    expect(
-      (
-        await f.wire.request("Browser.getWindowForTarget", {
-          targetId: auxiliary,
-        })
-      ).windowId,
-    ).not.toBe(desired.id);
-    const detached = Promise.withResolvers();
-    const observers = [];
-    client = await OkouBrowserClient.connect({
-      runtimeId: f.runtimeId,
-      transport: {
-        onEvent(listener) {
-          return f.wire.onEvent((event) => {
-            if (
-              event.method === "Target.detachedFromTarget" &&
-              event.params.sessionId === observers[0]
-            )
-              detached.resolve();
-            listener(event);
-          });
-        },
-        async request(method, params, sessionId) {
-          const result = await f.wire.request(method, params, sessionId);
-          if (method === "Target.getTargets") {
-            result.targetInfos.sort((a, b) => {
-              return (
-                Number(b.targetId === auxiliary) -
-                Number(a.targetId === auxiliary)
-              );
+for (const boundary of ["enable", "wake"]) {
+  test(`closing an auxiliary readiness page during ${boundary} preserves clients and the desired window`, async () => {
+    const f = await fixture();
+    let client;
+    try {
+      const sibling = await f.client();
+      const desired = await f.window(`${origin}/desired`);
+      const auxiliary = await f.target(
+        f.context.pages().find((page) => {
+          return page.url() === "about:blank";
+        }),
+      );
+      const auxiliaryTab = await tabTargetForPage(f.wire, auxiliary);
+      expect(
+        (
+          await f.wire.request("Browser.getWindowForTarget", {
+            targetId: auxiliary,
+          })
+        ).windowId,
+      ).not.toBe(desired.id);
+      const detached = Promise.withResolvers();
+      const observers = [];
+      let closed = false;
+      let wakeCount = 0;
+      client = await OkouBrowserClient.connect({
+        runtimeId: f.runtimeId,
+        transport: {
+          onEvent(listener) {
+            return f.wire.onEvent((event) => {
+              if (
+                event.method === "Target.detachedFromTarget" &&
+                event.params.sessionId === observers[0]
+              )
+                detached.resolve();
+              listener(event);
             });
-          }
-          if (method === "ServiceWorker.enable") {
-            observers.push(sessionId);
-            if (observers.length === 1) {
-              await f.wire.request("Target.closeTarget", {
-                targetId: auxiliary,
-              });
-              await detached.promise;
+          },
+          async request(method, params, sessionId) {
+            if (method === "Extensions.triggerAction") {
+              wakeCount++;
+              if (boundary === "wake" && !closed) {
+                expect(params.targetId).toBe(auxiliaryTab);
+                closed = true;
+                await f.wire.request("Target.closeTarget", {
+                  targetId: auxiliary,
+                });
+                await detached.promise;
+              }
             }
-          }
-          return result;
+            const result = await f.wire.request(method, params, sessionId);
+            if (method === "Target.getTargets") {
+              result.targetInfos.sort((a, b) => {
+                return (
+                  Number(
+                    b.targetId === auxiliary || b.targetId === auxiliaryTab,
+                  ) -
+                  Number(
+                    a.targetId === auxiliary || a.targetId === auxiliaryTab,
+                  )
+                );
+              });
+            }
+            if (method === "ServiceWorker.enable") {
+              observers.push(sessionId);
+              if (boundary === "enable" && !closed) {
+                closed = true;
+                await f.wire.request("Target.closeTarget", {
+                  targetId: auxiliary,
+                });
+                await detached.promise;
+              }
+            }
+            return result;
+          },
         },
-      },
-    });
-    expect(observers).toHaveLength(2);
-    expect(observers[1]).not.toBe(observers[0]);
-    expect(
-      (await client.call("getWindow", { windowId: desired.id })).value.id,
-    ).toBe(desired.id);
-    expect(
-      (await sibling.call("getWindow", { windowId: desired.id })).value.id,
-    ).toBe(desired.id);
-    await client.close();
-    expect((await sibling.call("hello", {})).value.protocol).toBe(1);
-  } finally {
-    await client?.close();
-    await f.close();
-  }
-});
+      });
+      expect(observers).toHaveLength(2);
+      expect(wakeCount).toBe(boundary === "wake" ? 2 : 1);
+      expect(observers[1]).not.toBe(observers[0]);
+      expect(
+        (await client.call("getWindow", { windowId: desired.id })).value.id,
+      ).toBe(desired.id);
+      expect(
+        (await sibling.call("getWindow", { windowId: desired.id })).value.id,
+      ).toBe(desired.id);
+      await client.close();
+      expect((await sibling.call("hello", {})).value.protocol).toBe(1);
+    } finally {
+      await client?.close();
+      await f.close();
+    }
+  });
+}
 
 test("events overtaking the hello response establish a contiguous fresh baseline", async () => {
   const f = await fixture();
