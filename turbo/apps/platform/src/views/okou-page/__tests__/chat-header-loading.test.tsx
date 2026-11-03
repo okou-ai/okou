@@ -263,6 +263,33 @@ test("Ignore the destination's late result after navigating to another chat", as
   expect(entry("Automations")).toBeUndefined();
 });
 
+test.each([true, false])(
+  "Release the preceding workspace's header while an organization changes (desktop=%s)",
+  async (desktop) => {
+    const mail = context.mocks.deferred<void>();
+    await setupHeaders({
+      desktop,
+      mailGates: new Map([[destination.id, mail.promise]]),
+    });
+    await navigate(destination.id, desktop);
+    expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "true");
+    act(() => {
+      context.mocks.clerk().organization({
+        activeOrg: { id: "org_header_changed", name: "Changed workspace" },
+      });
+      context.mocks.clerk().stateChanged();
+    });
+    await waitFor(() => {
+      expect(entry("Manage emails")).toBeUndefined();
+    });
+    expect(pane(destination.id)).toBeInTheDocument();
+    mail.resolve();
+    await waitFor(() => {
+      expect(fastButton("Share messages")).toBeEnabled();
+    });
+  },
+);
+
 test("Let the primary header settle independently of a pending secondary pane", async () => {
   const mail = context.mocks.deferred<void>();
   await setupHeaders({

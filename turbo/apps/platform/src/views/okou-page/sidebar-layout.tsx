@@ -305,6 +305,7 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
 
 function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
   const { t } = useTranslation();
+  const sessionKey = useGet(authenticatedSessionKey$);
 
   const breadcrumbLoadable = useLastLoadable(mobileBreadcrumb$);
   const breadcrumb =
@@ -375,7 +376,7 @@ function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
       ) : (
         <div className="flex-1" />
       )}
-      <MobileTopBarActions activeId={activeId} />
+      <MobileTopBarActions key={sessionKey} activeId={activeId} />
     </div>
   );
 }
@@ -600,12 +601,11 @@ function SidebarRouteGuard({ children }: { children: ReactNode }) {
 }
 
 export function SidebarLayout({ children }: { children: ReactNode }) {
-  const sessionKey = useGet(authenticatedSessionKey$);
   // Route availability updates the guard while the shell keeps its element
   // identity. Route-specific workspace and navigation own their subscriptions.
   return (
     <SidebarRouteGuard>
-      <SidebarLayoutInner key={sessionKey}>{children}</SidebarLayoutInner>
+      <SidebarLayoutInner>{children}</SidebarLayoutInner>
     </SidebarRouteGuard>
   );
 }

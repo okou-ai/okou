@@ -13,6 +13,7 @@ import {
   type ChatHeaderActionsState,
 } from "./chat-header-actions.ts";
 import { ThreadMailButton } from "./thread-mail.tsx";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -2979,17 +2980,20 @@ function ChatThreadArea({
   rightPane: ChatThreadPaneState;
 }) {
   const setKeyboardScrollRoot = useSet(setChatKeyboardScrollRoot$);
+  const sessionKey = useGet(authenticatedSessionKey$);
 
   return (
     <div
       ref={setKeyboardScrollRoot}
       className="flex w-full flex-1 min-w-0 min-h-0 bg-transparent"
     >
-      {leftPane && <ChatThreadPane isMain pane={leftPane} />}
+      {leftPane && (
+        <ChatThreadPane key={`primary:${sessionKey}`} isMain pane={leftPane} />
+      )}
       {rightPane && (
         <>
           <div className="w-px shrink-0 bg-divider/60" aria-hidden="true" />
-          <ChatThreadPane pane={rightPane} />
+          <ChatThreadPane key={`secondary:${sessionKey}`} pane={rightPane} />
         </>
       )}
     </div>
