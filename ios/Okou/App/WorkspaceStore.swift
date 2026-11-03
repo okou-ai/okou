@@ -568,7 +568,7 @@ final class WorkspaceStore {
     } else {
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: failure ?? "The archive change was not confirmed.",
-        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess
+        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess, kind: .error
       ) { [weak self] in
         await self?.setArchived(
           id, archived: archived, restoreOnUndo: restore,
@@ -587,8 +587,8 @@ final class WorkspaceStore {
     if succeeded {
       let message =
         muted
-        ? "Chat muted. Notifications and unread badges are off; tasks keep running."
-        : "Chat unmuted. Notifications and unread badges are on."
+        ? "Chat muted"
+        : "Chat unmuted"
       let canUndo = muted || list.canMuteChats
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: message, actionTitle: canUndo ? "Undo" : nil
@@ -599,7 +599,7 @@ final class WorkspaceStore {
     } else {
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: failure ?? "The mute change was not confirmed.",
-        actionTitle: "Retry", persists: true
+        actionTitle: "Retry", persists: true, kind: .error
       ) { [weak self] in
         await self?.setMuted(id, muted: muted, markRead: markRead)
       }

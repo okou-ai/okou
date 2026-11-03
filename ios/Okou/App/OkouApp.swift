@@ -186,7 +186,7 @@ private struct WorkspaceRootView: View {
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
           notifications: notifications,
-          headerHeight: headerHeight, showsSynchronizationStatus: sidebar.isOpen,
+          headerHeight: headerHeight,
           accountError: $accountError,
           close: closeSidebar,
           newChat: startNewChat
@@ -243,9 +243,6 @@ private struct WorkspaceRootView: View {
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
             ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
-            ChatSyncStatusView(state: sidebar.isOpen ? nil : store.synchronizationState) {
-              await store.retrySynchronization()
-            }
           }
           .onGeometryChange(for: CGFloat.self) {
             $0.size.height
@@ -306,16 +303,16 @@ private struct WorkspaceRootView: View {
           })
       )
       .composerWorkflowOverlay(
-        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil)
+        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
+      )
+      .overlay(alignment: .topLeading) {
+        ChatFeedbackOverlay(store: store)
+          .frame(width: sidebar.isOpen ? sidebarWidth : geometry.size.width)
+          .padding(.top, headerHeight + 8)
+      }
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
-    .overlay(alignment: .bottom) {
-      if let feedback = store.threadFeedback {
-        ChatThreadFeedbackView(store: store, feedback: feedback)
-          .padding(.bottom, 100)
-      }
-    }
     .task {
       let target = store
       notifications.didSynchronize = { [weak target] in
