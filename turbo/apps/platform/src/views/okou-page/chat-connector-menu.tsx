@@ -6,13 +6,16 @@ import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validato
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import {
-  ChevronLeft,
-  ChevronRight,
-  Settings2,
-  SlidersHorizontal,
-} from "lucide-react";
-import { Button, Input, Radio, RadioGroup, PopoverClose } from "@okouai/ui";
+  Button,
+  buttonVariants,
+  cn,
+  Input,
+  Radio,
+  RadioGroup,
+  PopoverClose,
+} from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
   ChatConnectorOverview,
@@ -365,28 +368,25 @@ function AccountPanelFooter({
       ? { target: target.target, label: target.label }
       : null;
   return (
-    <div className="mt-1 flex shrink-0 items-center justify-between border-t border-border/50 p-1">
-      <div>
-        {permissionTarget && (
-          <PopoverClose
-            render={
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!savedAccounts}
-                onClick={() => {
-                  permissions(permissionTarget);
-                }}
-              >
-                <SlidersHorizontal size={15} />
-                {t(($) => {
-                  return $.connectorChatAccess.permissions;
-                })}
-              </Button>
-            }
-          />
-        )}
-      </div>
+    <div className="mt-1 flex shrink-0 flex-col border-t border-border/50 p-1">
+      {permissionTarget && (
+        <PopoverClose
+          render={
+            <Button
+              variant="quiet"
+              className="w-full justify-start px-2 text-foreground"
+              disabled={!savedAccounts}
+              onClick={() => {
+                permissions(permissionTarget);
+              }}
+            >
+              {t(($) => {
+                return $.connectorChatAccess.permissions;
+              })}
+            </Button>
+          }
+        />
+      )}
       <Link
         pathname="/connectors"
         options={{
@@ -395,9 +395,14 @@ function AccountPanelFooter({
         aria-label={t(($) => {
           return $.connectorChatAccess.manageAccounts;
         })}
-        className="rounded-md p-2 text-muted-foreground hover:bg-state-hover"
+        className={cn(
+          buttonVariants({ variant: "quiet" }),
+          "w-full justify-start px-2 text-foreground",
+        )}
       >
-        <Settings2 size={15} />
+        {t(($) => {
+          return $.connectorChatAccess.manageAccounts;
+        })}
       </Link>
     </div>
   );
@@ -492,12 +497,15 @@ export function ChatConnectorMenu({
             <PopoverClose
               render={
                 <Button
-                  variant="ghost"
-                  className="w-full justify-start"
+                  variant="quiet"
+                  className="w-full justify-start px-2 text-foreground"
                   onClick={() => {
                     onOpenAddDialog();
                   }}
                 >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
+                    <Plus size={13} />
+                  </span>
                   {t(($) => {
                     return $.chat.connectors.addConnectors;
                   })}
