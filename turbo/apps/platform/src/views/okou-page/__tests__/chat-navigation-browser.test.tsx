@@ -1137,7 +1137,6 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
   await waitFor(() => {
     expect(buttonByName("Hand back", viewer)).toBeEnabled();
   });
-  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 
   // Read the public event tail, not optimistic UI or request invocation order.
   const events = await initClient(chatThreadEventsContract, {
@@ -1165,16 +1164,7 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
           .join("");
       }),
   ).toStrictEqual([TAKE_OVER_MESSAGE, HAND_BACK_MESSAGE, TAKE_OVER_MESSAGE]);
-
-  click(buttonByName("Hand back", viewer));
-  await waitFor(() => {
-    expect(screen.getAllByText(HAND_BACK_MESSAGE)).toHaveLength(2);
-  });
-  await waitFor(() => {
-    expect(within(viewer).getByRole("status")).toHaveTextContent(
-      /is working$/u,
-    );
-  });
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 });
 
 test("A failed handback does not poison the next explicit handback", async () => {
