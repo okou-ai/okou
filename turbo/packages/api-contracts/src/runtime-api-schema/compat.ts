@@ -160,17 +160,21 @@ function compareResponses(
   current: RuntimeApiRouteSnapshot,
   findings: RuntimeApiCompatFinding[],
 ): void {
-  for (const [status, onlineSchema] of Object.entries(online.responses)) {
+  const nativeClient = online.owner === "desktop" || online.owner === "ios";
+  const statuses = nativeClient
+    ? new Set([
+        ...Object.keys(online.responses),
+        ...Object.keys(current.responses),
+      ])
+    : Object.keys(online.responses);
+  for (const status of statuses) {
     // Native clients also decode error bodies, such as the 426 upgrade floor and
     // the 409 completion code, so its routes compare every status.
-    if (
-      !status.startsWith("2") &&
-      online.owner !== "desktop" &&
-      online.owner !== "ios"
-    ) {
+    if (!status.startsWith("2") && !nativeClient) {
       continue;
     }
 
+    const onlineSchema = online.responses[status];
     const currentSchema = current.responses[status];
     const context: CompareContext = {
       online,
@@ -178,6 +182,17 @@ function compareResponses(
       responseStatus: Number(status),
       findings,
     };
+
+    if (!onlineSchema && currentSchema) {
+      pushFinding(context, {
+        path: `responses.${status}`,
+        kind: "response-status-added",
+        problem: `The current API can return HTTP ${status}, which the production native client response contract does not declare.`,
+        recommendation:
+          "Keep the production response statuses until installed native clients support the added response, or provide an accepted native compatibility proof.",
+      });
+      continue;
+    }
 
     compareSchemaSubset(
       currentSchema,
@@ -629,7 +644,10 @@ function buildFinding(
   responseStatus: number | undefined,
   input: FindingInput,
 ): RuntimeApiCompatFinding {
-  const impact = impactFor(input.direction, route.owner);
+  const impact =
+    input.kind === "response-status-added"
+      ? "Compatibility of the added response status and body with installed native clients has not been established."
+      : impactFor(input.direction, route.owner);
   const agentPrompt = [
     "You are fixing a one-version runtime API compatibility break.",
     `Route: ${routeLabel(route)}.`,

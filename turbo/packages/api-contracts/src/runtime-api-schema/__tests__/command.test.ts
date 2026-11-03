@@ -92,16 +92,133 @@ async function lint(
 async function floors(
   floor: string | null,
   baseFloor: string | null,
+  client: "desktop" | "ios" = "desktop",
 ): Promise<readonly string[]> {
   return [
-    "--desktop-floor",
+    `--${client}-floor`,
     await writeJson("floor.json", { minimumSupportedVersion: floor }),
-    "--desktop-base-floor",
+    `--${client}-base-floor`,
     await writeJson("base-floor.json", { minimumSupportedVersion: baseFloor }),
   ];
 }
 
+function withAddedStatus(
+  online: RuntimeApiSchemaDocument,
+  status: string,
+): RuntimeApiSchemaDocument {
+  return {
+    ...online,
+    routes: online.routes.map((route) => {
+      return {
+        ...route,
+        responses: {
+          ...route.responses,
+          [status]: {
+            kind: "json-schema" as const,
+            schema: {
+              type: "object",
+              properties: { status: { type: "string", const: "pending" } },
+              required: ["status"],
+            },
+          },
+        },
+      };
+    }),
+  };
+}
+
+async function lintAddedStatus(
+  owner: RuntimeApiRouteOwner,
+  status: string,
+  extra: readonly string[],
+): Promise<number> {
+  const online = document(owner, ["minimumSupportedVersion"]);
+  return runRuntimeApiSchemaCli([
+    "lint",
+    "--against",
+    await writeJson("online.json", online),
+    "--base-schema",
+    await writeJson("base.json", online),
+    "--current",
+    await writeJson("current.json", withAddedStatus(online, status)),
+    "--block-owner",
+    owner,
+    "--report-out",
+    join(dir, "report.json"),
+    ...extra,
+  ]);
+}
+
 describe("runtime API schema CLI lint", () => {
+  it.each([
+    ["desktop", "202"],
+    ["ios", "202"],
+    ["desktop", "429"],
+    ["ios", "429"],
+  ] as const)(
+    "blocks a newly declared %s response status %s without a proof",
+    async (client, status) => {
+      await expect(
+        lintAddedStatus(client, status, await floors("1.0.0", "1.0.0", client)),
+      ).resolves.toBe(1);
+
+      expect(
+        JSON.parse(await readFile(join(dir, "report.json"), "utf8")),
+      ).toMatchObject({
+        passed: false,
+        findings: [
+          {
+            owner: client,
+            responseStatus: Number(status),
+            kind: "response-status-added",
+            outcome: "blocking",
+          },
+        ],
+      });
+      expect(stderr.join("\n")).toContain("responses." + status);
+    },
+  );
+
+  it.each(["desktop", "ios"] as const)(
+    "accepts a newly declared %s response with a published client floor proof",
+    async (client) => {
+      await expect(
+        lintAddedStatus(client, "202", [
+          ...(await floors("1.0.1", "1.0.0", client)),
+          `--${client}-published-version`,
+          "1.0.1",
+        ]),
+      ).resolves.toBe(0);
+
+      expect(
+        JSON.parse(await readFile(join(dir, "report.json"), "utf8")),
+      ).toMatchObject({
+        passed: true,
+        findings: [{ owner: client, responseStatus: 202, outcome: "proven" }],
+      });
+    },
+  );
+
+  it("allows a native response variant to stop being produced", async () => {
+    const current = document("ios", ["minimumSupportedVersion"]);
+    await expect(
+      runRuntimeApiSchemaCli([
+        "lint",
+        "--against",
+        await writeJson("online.json", withAddedStatus(current, "202")),
+        "--current",
+        await writeJson("current.json", current),
+        "--block-owner",
+        "ios",
+        ...(await floors("1.0.0", "1.0.0", "ios")),
+      ]),
+    ).resolves.toBe(0);
+  });
+
+  it("keeps service response additions outside native client proof policy", async () => {
+    await expect(lintAddedStatus("runner", "202", [])).resolves.toBe(0);
+  });
+
   it("exits 1 for an unproven Desktop finding and prints both proofs", async () => {
     const reportOut = join(dir, "report.json");
 
