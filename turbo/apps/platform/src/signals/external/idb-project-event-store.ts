@@ -38,7 +38,8 @@ export async function queryProjectEventStore(
     }
     const client = createClient(projectsContract);
     let refreshed = false;
-    for (;;) {
+    let hasMore = true;
+    while (hasMore) {
       signal.throwIfAborted();
       if (state.snapshot === null) {
         const response = await client.snapshot({ fetchOptions: { signal } });
@@ -88,9 +89,7 @@ export async function queryProjectEventStore(
         throw new Error("Project event cursor did not advance");
       }
       state = { snapshot: state.snapshot, events: [...state.events, ...page] };
-      if (!response.body.hasMore) {
-        break;
-      }
+      hasMore = response.body.hasMore;
     }
     signal.throwIfAborted();
     const transaction = db.transaction("metadata", "readwrite");
