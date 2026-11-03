@@ -124,25 +124,54 @@ const STANDARD_OAUTH_ERRORS = Object.freeze([
   "temporarily_unavailable",
 ]);
 
+export function standardOAuthErrorCode(value: unknown): string | undefined {
+  return typeof value === "string" && STANDARD_OAUTH_ERRORS.includes(value)
+    ? value
+    : undefined;
+}
+
 // Provider errors can contain credentials in their message, body, or cause.
 // Only retain typed status codes and allowlisted OAuth error identifiers.
 export function oauthFailureDiagnostics(
   error: unknown,
 ): Readonly<Record<string, string | number>> {
   if (isOAuthProviderHttpError(error)) {
+    const oauthError = standardOAuthErrorCode(error.oauthError);
     return {
       failureKind: "oauth_http",
       httpStatus: error.status,
-      ...(error.oauthError && STANDARD_OAUTH_ERRORS.includes(error.oauthError)
-        ? { oauthError: error.oauthError }
-        : {}),
+      ...(oauthError ? { oauthError } : {}),
     };
   }
   if (isProviderHttpError(error)) {
     return { failureKind: "provider_http", httpStatus: error.status };
   }
   if (isProviderResponseError(error)) {
-    return { failureKind: "provider_response" };
+    const diagnostics = error.diagnostics;
+    return {
+      failureKind: "provider_response",
+      ...(diagnostics
+        ? {
+            responseStage: diagnostics.stage,
+            responseReason: diagnostics.reason,
+            ...(diagnostics.httpStatus === undefined
+              ? {}
+              : { httpStatus: diagnostics.httpStatus }),
+            ...(diagnostics.contentType
+              ? { contentType: diagnostics.contentType }
+              : {}),
+            ...(diagnostics.invalidFields?.length
+              ? { invalidFields: diagnostics.invalidFields.join(",") }
+              : {}),
+            ...(diagnostics.providerCode
+              ? { providerCode: diagnostics.providerCode }
+              : {}),
+            ...(diagnostics.responseShape
+              ? { responseShape: diagnostics.responseShape }
+              : {}),
+          }
+        : {}),
+    };
   }
   return { failureKind: "unexpected" };
 }

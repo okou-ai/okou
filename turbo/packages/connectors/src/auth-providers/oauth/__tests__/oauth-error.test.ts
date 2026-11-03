@@ -202,6 +202,17 @@ describe("oauthFailureDiagnostics", () => {
       new OAuthProviderHttpError(secret, 400, secret, secret, secret),
       new ProviderHttpError(secret, 403),
       new ProviderResponseError(secret),
+      new ProviderResponseError(
+        secret,
+        {
+          stage: "profile",
+          reason: "provider_error",
+          invalidFields: [secret],
+          providerCode: secret,
+          contentType: secret,
+        },
+        { access_token: secret, [secret]: secret },
+      ),
       new Error(secret, { cause: secret }),
       { message: secret, status: secret, oauthError: secret },
     ];

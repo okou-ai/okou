@@ -1,7 +1,7 @@
 import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "../../../connector-config";
-import { ProviderResponseError } from "../../provider-error";
+import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 import { parseProviderTokenResponse } from "../../token-response";
 import { throwOAuthError } from "../../oauth/error";
 
@@ -92,9 +92,26 @@ export async function exchangeTikTokCode(
     { headers: { Authorization: `Bearer ${token.outputs.accessToken}` } },
   );
   if (!response.ok) {
-    throw new Error(`TikTok profile request failed: ${response.status}`);
+    throw new ProviderHttpError(
+      "TikTok profile request failed",
+      response.status,
+    );
   }
-  const profile = object({
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new ProviderResponseError("Invalid TikTok profile response", {
+        stage: "profile",
+        reason: "invalid_json",
+        httpStatus: response.status,
+        contentType: response.headers.get("content-type"),
+      });
+    }
+    throw error;
+  }
+  const parsed = object({
     data: object({
       user: object({
         open_id: string().min(1),
@@ -102,10 +119,53 @@ export async function exchangeTikTokCode(
       }).optional(),
     }).optional(),
     error: object({ code: string() }),
-  }).parse(await response.json());
+  }).safeParse(payload);
+  if (!parsed.success) {
+    throw new ProviderResponseError(
+      "Invalid TikTok profile response",
+      {
+        stage: "profile",
+        reason: "invalid_schema",
+        httpStatus: response.status,
+        contentType: response.headers.get("content-type"),
+        invalidFields: parsed.error.issues.map((issue) => {
+          return issue.path.map(String).join(".");
+        }),
+      },
+      payload,
+    );
+  }
+  const profile = parsed.data;
   const user = profile.data?.user;
-  if (profile.error.code !== "ok" || !user || user.open_id !== token.openId) {
-    throw new ProviderResponseError("Invalid TikTok profile response");
+  if (profile.error.code !== "ok") {
+    throw new ProviderResponseError(
+      "Invalid TikTok profile response",
+      {
+        stage: "profile",
+        reason: "provider_error",
+        httpStatus: response.status,
+        contentType: response.headers.get("content-type"),
+        providerCode: profile.error.code,
+      },
+      payload,
+    );
+  }
+  if (!user) {
+    throw new ProviderResponseError("Invalid TikTok profile response", {
+      stage: "profile",
+      reason: "invalid_schema",
+      httpStatus: response.status,
+      contentType: response.headers.get("content-type"),
+      invalidFields: ["data.user"],
+    });
+  }
+  if (user.open_id !== token.openId) {
+    throw new ProviderResponseError("Invalid TikTok profile response", {
+      stage: "profile",
+      reason: "identity_mismatch",
+      httpStatus: response.status,
+      contentType: response.headers.get("content-type"),
+    });
   }
   return {
     outputs: token.outputs,
