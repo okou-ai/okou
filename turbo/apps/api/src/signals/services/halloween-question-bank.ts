@@ -1,6 +1,7 @@
 import type { HalloweenStoredQuestions } from "@okouai/db/jsonb-contracts/halloween";
 
-// Approved sheet 52026, aligned with V1 on October 29, 2026. Each round stores its own immutable copy.
+// Based on approved sheet 52026 (V1), with the final four-petal logo answer.
+// Each round stores its own immutable copy.
 export const HALLOWEEN_QUESTION_BANK = Object.freeze([
   {
     id: "QUIZ-01",
@@ -36,7 +37,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
       {
         id: "B",
-        text: "Eight",
+        text: "Four",
         correct: true,
       },
       {
@@ -46,7 +47,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
     ],
     explanation:
-      "Eight petals around an open middle. It’s a flower, not a gear in costume.",
+      "Four petals around an open middle. It’s a flower, not a gear in costume.",
   },
   {
     id: "QUIZ-03",
