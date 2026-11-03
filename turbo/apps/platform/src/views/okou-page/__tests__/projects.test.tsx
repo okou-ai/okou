@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import {
+  click,
   fill,
   setupPage,
   queryAllByRoleFast,
@@ -444,7 +445,9 @@ test("Project deep links open the Chat workspace with the folder expanded", asyn
   expect(location.pathname).toContain("/chat");
 });
 
-test("Folder new chat retains its entry Agent after opening another Agent's member", async () => {
+test("Folder new chat opens before confirmation and retains its entry Agent", async () => {
+  const confirmation = context.mocks.deferred<void>();
+  const persisted = context.mocks.deferred<void>();
   const ordinary = continuityThread(95, 1, "Ordinary chat");
   const other = {
     ...continuityThread(95, 2, "Other Agent research"),
@@ -488,13 +491,14 @@ test("Folder new chat retains its entry Agent after opening another Agent's memb
       cancellationRecoveryPending: false,
     });
   });
-  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+  context.mocks.api(chatThreadsContract.create, async ({ body, respond }) => {
     if (!body.clientThreadId) {
       throw new Error("Client chat identity missing");
     }
     expect(body.agentId).toBe(ordinary.agentId);
     expect(body.projectId).toBe(id);
     createdId = body.clientThreadId;
+    await confirmation.promise;
     const thread = {
       ...continuityThread(95, 3, "New folder chat"),
       id: body.clientThreadId,
@@ -515,6 +519,7 @@ test("Folder new chat retains its entry Agent after opening another Agent's memb
       computerUseHostId: null,
       createdAt: at,
     });
+    persisted.resolve();
     return respond(201, {
       id: thread.id,
       title: thread.title,
@@ -548,12 +553,291 @@ test("Folder new chat retains its entry Agent after opening another Agent's memb
   expect(location.search).toContain(`projectAgent=${ordinary.agentId}`);
   await user.click(button("New chat", folder()));
   await waitFor(() => {
+    expect(namedLink(folder(), "New chat")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(createdId).toBeDefined();
+    expect(location.pathname).toBe(`/chats/${createdId}`);
+  });
+  expect(location.search).toContain(`project=${id}`);
+  expect(location.search).toContain(`projectAgent=${ordinary.agentId}`);
+  expect(confirmation.settled()).toBeFalsy();
+  confirmation.resolve();
+  await persisted.promise;
+  context.mocks.ably.trigger("threadListChanged");
+  await waitFor(() => {
     return expect(namedLink(folder(), "New folder chat")).toHaveAttribute(
       "aria-current",
       "page",
     );
   });
   expect(location.pathname).toBe(`/chats/${createdId}`);
+  expect(
+    folder().querySelectorAll(`[data-sidebar-chat-thread-id="${createdId}"]`),
+  ).toHaveLength(1);
+});
+
+test("Project rename closes immediately and yields to persisted events", async () => {
+  const confirmation = context.mocks.deferred<void>();
+  const ordinary = continuityThread(98, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 98,
+    threads: [ordinary],
+  });
+  metadata();
+  const events: {
+    id: string;
+    seqId: number;
+    projectId: string;
+    kind: "renamed";
+    name: string;
+    createdAt: string;
+  }[] = [];
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(projectsContract.update, async ({ body, respond }) => {
+    await confirmation.promise;
+    events.push(
+      {
+        id: body.eventId,
+        seqId: 2,
+        projectId: id,
+        kind: "renamed",
+        name: body.name,
+        createdAt: at,
+      },
+      {
+        id: crypto.randomUUID(),
+        seqId: 3,
+        projectId: id,
+        kind: "renamed",
+        name: "Launch confirmed",
+        createdAt: at,
+      },
+    );
+    return respond(200, {
+      id,
+      name: body.name,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Options for Launch", folder()));
+  click(await findMenuItem("Rename"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Launch renamed",
+  );
+  click(button("Save"));
+  await waitFor(() => {
+    expect(button("Launch renamed", folder())).toBeInTheDocument();
+    expect(button("Options for Launch renamed", folder())).toHaveFocus();
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(confirmation.settled()).toBeFalsy();
+  confirmation.resolve();
+  await waitFor(() => {
+    expect(button("Launch confirmed", folder())).toBeInTheDocument();
+  });
+});
+
+test.each([
+  {
+    name: "join",
+    initialProjectId: null,
+    projectId: id,
+    target: "Launch",
+    mobile: false,
+  },
+  {
+    name: "move",
+    initialProjectId: id,
+    projectId: "30000000-0000-4000-8000-000000000072",
+    target: "Research",
+    mobile: false,
+  },
+  {
+    name: "leave",
+    initialProjectId: id,
+    projectId: null,
+    target: "Remove from Project",
+    mobile: false,
+  },
+  {
+    name: "join on PWA",
+    initialProjectId: null,
+    projectId: id,
+    target: "Launch",
+    mobile: true,
+  },
+])(
+  "Project membership $name updates before confirmation",
+  async ({ initialProjectId, projectId, target, mobile }) => {
+    if (mobile) {
+      context.mocks.browser.matchMedia(false);
+    }
+    const confirmation = context.mocks.deferred<void>();
+    const thread = {
+      ...continuityThread(99, 1, "Planning chat"),
+      projectId: initialProjectId,
+    };
+    const initialPath = mobile
+      ? `/agents/${thread.agentId}/chat`
+      : `/chats/${thread.id}`;
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 99,
+      threads: [thread],
+    });
+    metadata([
+      { id: "30000000-0000-4000-8000-000000000072", name: "Research" },
+    ]);
+    const events: ChatThreadEvent[] = [];
+    context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+      return respond(200, {
+        events: events.filter((event) => {
+          return event.seqId > (query.sinceSeqId ?? 0);
+        }),
+        hasMore: false,
+      });
+    });
+    context.mocks.api(
+      projectsContract.membership,
+      async ({ params, body, respond }) => {
+        await confirmation.promise;
+        const committed: ChatThreadEvent = {
+          id: body.eventId,
+          seqId: 2,
+          kind: "sort_touched",
+          chatThreadId: params.id,
+          agentId: thread.agentId,
+          projectId: body.projectId,
+          projectMembershipUpdated: true,
+          title: thread.title,
+          selectedModel: thread.selectedModel,
+          serviceTier: null,
+          computerUseHostId: null,
+          createdAt: at,
+        };
+        events.push(committed, {
+          ...committed,
+          id: crypto.randomUUID(),
+          seqId: 3,
+          projectId: projectId === null ? id : null,
+        });
+        return respond(200, { threadId: params.id, projectId: body.projectId });
+      },
+    );
+    await setupPage({
+      context,
+      path: initialPath,
+      ...workspace.pageOptions,
+      featureSwitches: {
+        [FeatureSwitchKey.Projects]: true,
+        [FeatureSwitchKey.PwaNavigation]: mobile,
+      },
+    });
+    const row = await waitFor(() => {
+      const candidate = document.querySelector<HTMLElement>(
+        `[data-sidebar-chat-thread-row-id="${thread.id}"]`,
+      );
+      if (!candidate) {
+        throw new Error("Chat row missing");
+      }
+      return candidate;
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
+    await user.click(await findMenuItem("Move to Project"));
+    await user.click(
+      button(target, await screen.findByRole("dialog", { name: "Move chat" })),
+    );
+    await waitFor(() => {
+      const link = projectId
+        ? namedLink(folder(projectId), thread.title!)
+        : document.querySelector(
+            `[data-sidebar-chat-thread-id="${thread.id}"]`,
+          );
+      expect(link).toHaveFocus();
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Move chat" }),
+    ).not.toBeInTheDocument();
+    expect(location.pathname).toBe(initialPath);
+    expect(confirmation.settled()).toBeFalsy();
+    confirmation.resolve();
+    await waitFor(() => {
+      const link =
+        projectId === null
+          ? namedLink(folder(), "Planning chat")
+          : document.querySelector(
+              `[data-sidebar-chat-thread-id="${thread.id}"]`,
+            );
+      expect(link).toHaveTextContent("Planning chat");
+      expect(link?.closest("[data-project-folder-id]")).toBe(
+        projectId === null ? folder() : null,
+      );
+    });
+  },
+);
+
+test("Deleting another Agent's Project chat removes it before confirmation", async () => {
+  const confirmation = context.mocks.deferred<void>();
+  const ordinary = continuityThread(100, 1, "Current chat");
+  const member = {
+    ...continuityThread(100, 2, "Project research"),
+    agentId: "c7000000-0000-4000-a000-000000000009",
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 100,
+    threads: [ordinary, member],
+  });
+  metadata();
+  context.mocks.api(chatThreadByIdContract.delete, async ({ respond }) => {
+    await confirmation.promise;
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Launch", folder()));
+  const row = document.querySelector<HTMLElement>(
+    `[data-sidebar-chat-thread-row-id="${member.id}"]`,
+  );
+  if (!row) {
+    throw new Error("Project chat row missing");
+  }
+  click(within(row).getByTestId("chat-thread-menu-trigger"));
+  click(await findMenuItem("Delete chat"));
+  click(
+    button(
+      "Delete",
+      await screen.findByRole("dialog", { name: "Delete chat?" }),
+    ),
+  );
+  await expect(
+    within(folder()).findByText("No chats here yet"),
+  ).resolves.toBeInTheDocument();
+  expect(namedLink(folder(), "Project research")).toBeNull();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  expect(confirmation.settled()).toBeFalsy();
+  confirmation.resolve();
 });
 
 test("PWA uses the same folders and a bottom sheet for Thread membership", async () => {

@@ -24,8 +24,8 @@ import type { Project } from "@okouai/api-contracts/validators/projects";
 import {
   projects$,
   projectsEnabled$,
-  newProjectThread$,
 } from "../../signals/projects/projects.ts";
+import { newProjectThread$ } from "../../signals/projects/project-new-thread.ts";
 import {
   openProjectEditor$,
   setProjectDialog$,
@@ -40,7 +40,7 @@ import {
   toggleProjectArchive$,
 } from "../../signals/projects/project-folders.ts";
 import { projectCreationAgentId$ } from "../../signals/projects/project-selected-agent.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadItem } from "../okou-page/sidebar-threads.tsx";
 
@@ -171,7 +171,7 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const toggle = useSet(toggleProject$);
   const showMore = useSet(showMoreProjectThreads$);
   const [creation, create] = useLoadableSet(newProjectThread$);
-  const signal = useGet(pageSignal$);
+  const signal = useGet(rootSignal$);
   const Icon = expanded ? FolderOpen : Folder;
   const contentsId = `project-threads-${touch ? "touch" : "sidebar"}-${project.id}`;
   function newChat() {

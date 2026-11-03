@@ -67,6 +67,11 @@ import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 
 export type NewChatThreadPane = "main" | "sidebar";
 
+interface NewChatThreadTarget {
+  readonly agentId: string;
+  readonly projectId?: string;
+}
+
 const SIDEBAR_PARAM = "sidebar";
 const PWA_COMPOSE_PARAM = "compose";
 
@@ -344,6 +349,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly threadId: string;
       readonly eventId: string;
       readonly agentId: string;
+      readonly projectId?: string;
       readonly selectedModel: string | null;
       readonly serviceTier: "priority" | null;
       readonly modelSettings: ModelSettings;
@@ -362,6 +368,7 @@ const mintOptimisticThreadWithEvent$ = command(
       kind: "created",
       chatThreadId: args.threadId,
       agentId: args.agentId,
+      projectId: args.projectId,
       selectedModel: args.selectedModel,
       modelSettings: args.modelSettings,
       serviceTier: args.serviceTier,
@@ -375,6 +382,7 @@ async function createChatThread(
   args: {
     readonly createClient: ApiClientFactory;
     readonly agentId: string;
+    readonly projectId?: string;
     readonly title: string | undefined;
     readonly clientThreadId: string;
     readonly eventId: string;
@@ -401,6 +409,7 @@ async function createChatThread(
     client.create({
       body: {
         agentId: args.agentId,
+        projectId: args.projectId,
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,
         model: selectedModel,
@@ -435,12 +444,13 @@ async function createChatThread(
 const startNewChatThreadCreate$ = command(
   async (
     { get, set },
-    agentId: string,
+    target: NewChatThreadTarget,
     signal: AbortSignal,
   ): Promise<{
     readonly threadId: string;
     readonly createResult: Promise<void>;
   }> => {
+    const { agentId, projectId } = target;
     const threadId = crypto.randomUUID();
     const eventId = crypto.randomUUID();
     const models = await get(availableRunModels$);
@@ -464,6 +474,7 @@ const startNewChatThreadCreate$ = command(
         threadId,
         eventId,
         agentId,
+        projectId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
         serviceTier: apiServiceTierFromSelection(modelSelection),
@@ -480,6 +491,7 @@ const startNewChatThreadCreate$ = command(
         {
           createClient,
           agentId,
+          projectId,
           title: undefined,
           clientThreadId: threadId,
           eventId,
@@ -501,17 +513,28 @@ const startNewChatThreadCreate$ = command(
 export const createNewChatThread$ = command(
   async (
     { get, set },
-    agentId: string,
+    target: NewChatThreadTarget,
     pane: NewChatThreadPane,
     signal: AbortSignal,
   ) => {
     const targetPane =
       pane === "sidebar" && get(currentChatThreadId$) ? "sidebar" : "main";
-    const result = await set(startNewChatThreadCreate$, agentId, signal);
+    const result = await set(startNewChatThreadCreate$, target, signal);
 
     await set(
       routeChatThread$,
-      { pane: targetPane, threadId: result.threadId },
+      {
+        pane: targetPane,
+        threadId: result.threadId,
+        ...(target.projectId
+          ? {
+              searchParams: new URLSearchParams({
+                project: target.projectId,
+                projectAgent: target.agentId,
+              }),
+            }
+          : {}),
+      },
       signal,
     );
     await result.createResult;

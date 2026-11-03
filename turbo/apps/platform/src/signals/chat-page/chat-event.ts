@@ -166,7 +166,7 @@ export const deleteChatThread$ = command(
     const threads = await get(chatThreads$);
     signal.throwIfAborted();
     const eventId = crypto.randomUUID();
-    const existingThread = threads.find((thread) => {
+    const existingThread = get(eventDrivenChatThreads$).find((thread) => {
       return thread.id === threadId;
     });
     if (existingThread) {
