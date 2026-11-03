@@ -70,6 +70,19 @@ interface HeldWindowLookup {
   requested(): void;
   respond?: () => void;
 }
+interface HeldAction {
+  requested(): void;
+  respond?: (fail?: boolean) => void;
+}
+interface HeldClose extends HeldAction {
+  readonly disconnect: boolean;
+}
+interface HeldReply {
+  readonly method: string;
+  readonly targetId: string;
+  requested(): void;
+  respond?: () => void;
+}
 
 /** External Chrome/extension protocol fixture, with real loopback WebSockets. */
 export async function browserCdpProvider() {
@@ -167,6 +180,9 @@ export async function browserCdpProvider() {
   let nextTarget = 0;
   let rejectRelated = false;
   let heldWindowLookup: HeldWindowLookup | undefined;
+  let heldNavigation: HeldAction | undefined;
+  const heldCloses = new Map<string, HeldClose>();
+  let heldReply: HeldReply | undefined;
   const bounds = new Map<number, Record<string, unknown>>([
     [0, {}],
     [1, {}],
@@ -316,35 +332,53 @@ export async function browserCdpProvider() {
     deferDestroyed = false,
   ) {
     const target = targets.get(targetId);
-    targets.delete(targetId);
-    if (target?.type === "page")
+    const retired =
+      target && ["page", "tab"].includes(target.type)
+        ? [...targets.values()].filter((candidate) => {
+            return candidate.tab === target.tab;
+          })
+        : target
+          ? [target]
+          : [];
+    for (const candidate of retired) targets.delete(candidate.id);
+    if (target && ["page", "tab"].includes(target.type))
       native("tab-removed", { tabId: target.tab, windowId: target.window });
     const notifications: (() => void)[] = [];
-    for (const connection of connections) {
-      for (const handler of connection.related.values())
-        handler.roots.delete(targetId);
-      for (const [sessionId, target] of connection.sessions)
-        if (target === targetId)
-          detach(
-            connection,
-            sessionId,
-            connection.parents.get(sessionId),
-            (event) => {
-              notifications.push(() => {
-                return send(connection, event);
-              });
-            },
-          );
+    for (const candidate of retired) {
+      for (const connection of connections) {
+        for (const handler of connection.related.values())
+          handler.roots.delete(candidate.id);
+        for (const [sessionId, target] of connection.sessions)
+          if (target === candidate.id)
+            detach(
+              connection,
+              sessionId,
+              connection.parents.get(sessionId),
+              (event) => {
+                notifications.push(() => {
+                  return send(connection, event);
+                });
+              },
+            );
+      }
+      const notify = () => {
+        return broadcast("Target.targetDestroyed", { targetId: candidate.id });
+      };
+      if (deferDestroyed) notifications.push(notify);
+      else notify();
     }
     const resume = () => {
       for (const notify of notifications.splice(0)) notify();
     };
     if (!deferDetach) resume();
-    if (deferDestroyed)
-      notifications.push(() => {
-        return broadcast("Target.targetDestroyed", { targetId });
-      });
-    else broadcast("Target.targetDestroyed", { targetId });
+    if (
+      target &&
+      target.window >= 0 &&
+      ![...targets.values()].some((candidate) => {
+        return candidate.type === "page" && candidate.window === target.window;
+      })
+    )
+      native("window-removed", { windowId: target.window });
     return { resume };
   }
   server.on("connection", (socket) => {
@@ -365,6 +399,14 @@ export async function browserCdpProvider() {
       const { id, method, params, sessionId } = command;
       commands.push({ method, params, sessionId });
       const reply = (result: unknown) => {
+        const held = heldReply;
+        if (held && held.method === method && held.targetId === selected) {
+          held.respond = () => {
+            send(connection, { id, sessionId, result });
+          };
+          held.requested();
+          return;
+        }
         return send(connection, { id, sessionId, result });
       };
       const fail = (code: number, message: string, extra?: unknown) => {
@@ -568,16 +610,66 @@ export async function browserCdpProvider() {
           reply({ targetId: target.id });
         },
         "Target.closeTarget": () => {
-          destroyTarget(String(params.targetId));
+          if (!targets.has(String(params.targetId))) {
+            fail(-32000, "No target with given id");
+            return;
+          }
+          const held = heldCloses.get(String(params.targetId));
+          if (held) {
+            held.respond = () => {
+              destroyTarget(String(params.targetId));
+            };
+            held.requested();
+          } else destroyTarget(String(params.targetId));
+          if (held?.disconnect) {
+            connection.socket.close();
+            return;
+          }
           reply({ success: true });
         },
-        "Page.navigate": () => {
+        "Page.close": () => {
           const target = targets.get(selected ?? "");
-          if (target) {
-            target.url = String(params.url);
-            broadcast("Target.targetInfoChanged", { targetInfo: info(target) });
+          if (target?.type === "iframe") {
+            fail(-32000, "Command can only be executed on top-level targets");
+            return;
           }
-          reply({ frameId: selected });
+          const page = target;
+          if (page?.type !== "page") {
+            fail(-32601, "Page.close is unavailable");
+            return;
+          }
+          const held = heldCloses.get(page.id);
+          if (held) {
+            held.respond = () => {
+              destroyTarget(page.id);
+            };
+            held.requested();
+          } else destroyTarget(page.id);
+          if (held?.disconnect) {
+            connection.socket.close();
+            return;
+          }
+          reply({});
+        },
+        "Page.navigate": () => {
+          const navigate = (reject = false) => {
+            if (reject) {
+              fail(-32000, "Native navigation failed");
+              return;
+            }
+            const target = targets.get(selected ?? "");
+            if (target) {
+              target.url = String(params.url);
+              broadcast("Target.targetInfoChanged", {
+                targetInfo: info(target),
+              });
+            }
+            reply({ frameId: selected });
+          };
+          if (heldNavigation) {
+            heldNavigation.respond = navigate;
+            heldNavigation.requested();
+          } else navigate();
         },
         "Runtime.evaluate": () => {
           if (
@@ -604,16 +696,23 @@ export async function browserCdpProvider() {
               capabilities: ["windows", "tabs", "events"],
             };
           else if (request.method === "getWindow")
-            value = {
-              id: request.windowId,
-              tabs: [...targets.values()]
-                .filter((target) => {
-                  return (
-                    target.type === "page" && target.window === request.windowId
-                  );
-                })
-                .map(tab),
-            };
+            value = [...targets.values()].some((target) => {
+              return (
+                target.type === "page" && target.window === request.windowId
+              );
+            })
+              ? {
+                  id: request.windowId,
+                  tabs: [...targets.values()]
+                    .filter((target) => {
+                      return (
+                        target.type === "page" &&
+                        target.window === request.windowId
+                      );
+                    })
+                    .map(tab),
+                }
+              : null;
           else if (request.method === "moveTabs") {
             const ids = request.tabIds;
             const candidate = [...targets.values()].find((target) => {
@@ -691,6 +790,62 @@ export async function browserCdpProvider() {
     rejectNextRelated() {
       rejectRelated = true;
     },
+    holdNextNavigation() {
+      if (heldNavigation)
+        throw new Error("A native navigation is already held");
+      let requested!: () => void;
+      const observed = new Promise<void>((resolve) => {
+        requested = resolve;
+      });
+      const held: HeldAction = { requested };
+      heldNavigation = held;
+      return {
+        observed,
+        resume(fail = false) {
+          heldNavigation = undefined;
+          const respond = held.respond;
+          held.respond = undefined;
+          respond?.(fail);
+        },
+      };
+    },
+    holdReply(method: string, targetId: string) {
+      if (heldReply) throw new Error("A native reply is already held");
+      let requested!: () => void;
+      const observed = new Promise<void>((resolve) => {
+        requested = resolve;
+      });
+      const held: HeldReply = { method, targetId, requested };
+      heldReply = held;
+      return {
+        observed,
+        resume() {
+          heldReply = undefined;
+          const respond = held.respond;
+          held.respond = undefined;
+          respond?.();
+        },
+      };
+    },
+    holdClose(targetId: string, disconnect = false) {
+      if (heldCloses.has(targetId))
+        throw new Error("A native close is already held");
+      let requested!: () => void;
+      const observed = new Promise<void>((resolve) => {
+        requested = resolve;
+      });
+      const held: HeldClose = { requested, disconnect };
+      heldCloses.set(targetId, held);
+      return {
+        observed,
+        resume() {
+          heldCloses.delete(targetId);
+          const respond = held.respond;
+          held.respond = undefined;
+          respond?.();
+        },
+      };
+    },
     holdWindowLookup(targetId: string) {
       if (heldWindowLookup) throw new Error("A window lookup is already held");
       let requested!: () => void;
@@ -713,6 +868,12 @@ export async function browserCdpProvider() {
       });
     },
     async close() {
+      heldReply?.respond?.();
+      heldReply = undefined;
+      heldNavigation?.respond?.(true);
+      heldNavigation = undefined;
+      for (const held of heldCloses.values()) held.respond?.();
+      heldCloses.clear();
       heldWindowLookup?.respond?.();
       heldWindowLookup = undefined;
       for (const connection of connections) connection.socket.terminate();

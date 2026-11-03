@@ -1235,7 +1235,457 @@ describe("chat-window CDP proxy protocol", () => {
     ).rejects.toMatchObject({ code: -32000 });
   });
 
-  it("rejects creating a physical window and closes only its assigned window", async () => {
+  it("preserves native tab-session close errors without creating an unnecessary tab", async () => {
+    const session = String(
+      (
+        await connection.request("Target.attachToTarget", {
+          targetId: "TAB-A",
+          flatten: true,
+        })
+      ).sessionId,
+    );
+    await expect(
+      connection.request("Page.close", {}, session),
+    ).rejects.toMatchObject({ code: -32601 });
+    const targets = (await connection.request("Target.getTargets"))
+      .targetInfos as { targetId: string; type: string }[];
+    expect(
+      targets.filter((target) => {
+        return target.type === "page";
+      }),
+    ).toEqual([expect.objectContaining({ targetId: "A" })]);
+  });
+
+  it("preserves native child-frame close errors without creating an unnecessary tab", async () => {
+    const attached = connection.event((message) => {
+      return (
+        message.method === "Target.attachedToTarget" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId ===
+          "IFRAME-A"
+      );
+    });
+    await connection.request("Target.autoAttachRelated", {
+      targetId: "A",
+      waitForDebuggerOnStart: false,
+      filter: [{ type: "iframe" }],
+    });
+    const session = String((await attached).params?.sessionId);
+    await expect(
+      connection.request("Page.close", {}, session),
+    ).rejects.toMatchObject({
+      code: -32000,
+      message: "Command can only be executed on top-level targets",
+    });
+    const targets = (await connection.request("Target.getTargets"))
+      .targetInfos as { targetId: string; type: string; url: string }[];
+    expect(
+      targets.filter((target) => {
+        return target.type === "page";
+      }),
+    ).toEqual([
+      expect.objectContaining({ targetId: "A", url: "https://example.test/a" }),
+    ]);
+    expect(provider.hasWindow(0)).toBe(true);
+    expect(provider.hasWindow(1)).toBe(true);
+  });
+
+  it.each(["A", "TAB-A"])(
+    "preserves its assigned window after closing its final target %s",
+    async (targetId) => {
+      expect(
+        await connection.request("Target.closeTarget", { targetId }),
+      ).toStrictEqual({ success: true });
+      const pages = (await connection.request("Target.getTargets"))
+        .targetInfos as { targetId: string; type: string; url: string }[];
+      const blank = pages.filter((target) => {
+        return target.type === "page";
+      });
+      expect(blank).toHaveLength(1);
+      expect(blank[0]?.url).toBe("about:blank");
+      expect(blank[0]?.targetId).not.toBe("A");
+      expect(
+        (
+          await connection.request("Browser.getWindowForTarget", {
+            targetId: blank[0]!.targetId,
+          })
+        ).windowId,
+      ).toBe(0);
+      const session = await connection.request("Target.attachToTarget", {
+        targetId: blank[0]!.targetId,
+        flatten: true,
+      });
+      expect(
+        await connection.request(
+          "Runtime.evaluate",
+          { expression: "continued input" },
+          String(session.sessionId),
+        ),
+      ).toStrictEqual({ result: { type: "string", value: "continued input" } });
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    },
+  );
+
+  it("preserves its assigned window when the final page session closes", async () => {
+    const session = await connection.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: true,
+    });
+    expect(
+      await connection.request("Page.close", {}, String(session.sessionId)),
+    ).toStrictEqual({});
+    const targets = (await connection.request("Target.getTargets"))
+      .targetInfos as { targetId: string; type: string; url: string }[];
+    expect(
+      targets.filter((target) => {
+        return target.type === "page";
+      }),
+    ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+    expect(provider.hasWindow(0)).toBe(true);
+    expect(provider.hasWindow(1)).toBe(true);
+  });
+
+  it.each(["A", "TAB-A"])(
+    "closes a non-final target %s without adding a blank",
+    async (targetId) => {
+      provider.addPage("C", 0);
+      await connection.request("Target.closeTarget", { targetId });
+      const targets = (await connection.request("Target.getTargets"))
+        .targetInfos as { targetId: string; type: string }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ targetId: "C" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    },
+  );
+
+  it("coordinates overlapping closes across peers without blocking ordinary input", async () => {
+    provider.addPage("C", 0);
+    await connection.request("Target.getTargets");
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const session = await connection.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: true,
+    });
+    const preparation = provider.holdNextNavigation();
+    const closes = Promise.all([
+      connection.request("Target.closeTarget", { targetId: "A" }),
+      peer.request("Target.closeTarget", { targetId: "C" }),
+    ]);
+    try {
+      await preparation.observed;
+      expect(
+        await connection.request(
+          "Runtime.enable",
+          {},
+          String(session.sessionId),
+        ),
+      ).toStrictEqual({});
+      expect(
+        (
+          await connection.request("Browser.getWindowForTarget", {
+            targetId: "A",
+          })
+        ).windowId,
+      ).toBe(0);
+      preparation.resume();
+      expect(await closes).toStrictEqual([
+        { success: true },
+        { success: true },
+      ]);
+      const targets = (await peer.request("Target.getTargets")).targetInfos as {
+        targetId: string;
+        type: string;
+        url: string;
+      }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      preparation.resume();
+      await closes.catch(() => {});
+    }
+  });
+
+  it.each(["Target.closeTarget", "Page.close"])(
+    "does not count an acknowledged pending %s as a surviving tab",
+    async (method) => {
+      provider.addPage("C", 0);
+      await connection.request("Target.getTargets");
+      const peer = await client(proxy.endpoint);
+      clients.push(peer);
+      const held = provider.holdClose("A");
+      const session =
+        method === "Page.close"
+          ? String(
+              (
+                await connection.request("Target.attachToTarget", {
+                  targetId: "A",
+                  flatten: true,
+                })
+              ).sessionId,
+            )
+          : undefined;
+      try {
+        await connection.request(
+          method,
+          method === "Target.closeTarget" ? { targetId: "A" } : {},
+          session,
+        );
+        await held.observed;
+        await peer.request("Target.closeTarget", { targetId: "C" });
+        held.resume();
+        const targets = (await peer.request("Target.getTargets"))
+          .targetInfos as { targetId: string; type: string; url: string }[];
+        expect(
+          targets.filter((target) => {
+            return target.type === "page";
+          }),
+        ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+        expect(provider.hasWindow(0)).toBe(true);
+        expect(provider.hasWindow(1)).toBe(true);
+      } finally {
+        held.resume();
+      }
+    },
+  );
+
+  it("preserves the window when an earlier close loses its native acknowledgement", async () => {
+    provider.addPage("C", 0);
+    await connection.request("Target.getTargets");
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const held = provider.holdClose("A", true);
+    try {
+      await expect(
+        connection.request("Target.closeTarget", { targetId: "A" }),
+      ).rejects.toThrow("Fixture connection closed");
+      await held.observed;
+      await peer.request("Target.closeTarget", { targetId: "C" });
+      held.resume();
+      const targets = (await peer.request("Target.getTargets")).targetInfos as {
+        targetId: string;
+        type: string;
+        url: string;
+      }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      held.resume();
+    }
+  });
+
+  it.each([true, false])(
+    "settles a reply overtaken by tab retirement (flatten=%s)",
+    async (flatten) => {
+      provider.addPage("C", 0);
+      const session = String(
+        (
+          await connection.request("Target.attachToTarget", {
+            targetId: "A",
+            flatten,
+          })
+        ).sessionId,
+      );
+      const held = provider.holdReply("Runtime.evaluate", "A");
+      const peer = await client(proxy.endpoint);
+      clients.push(peer);
+      let result: Promise<void>;
+      if (flatten) {
+        result = expect(
+          connection.request(
+            "Runtime.evaluate",
+            { expression: "stale result" },
+            session,
+          ),
+        ).rejects.toMatchObject({ code: -32000 });
+      } else {
+        const reply = connection.event((message) => {
+          return (
+            message.method === "Target.receivedMessageFromTarget" &&
+            message.params?.sessionId === session &&
+            (JSON.parse(String(message.params?.message)) as Message).id === 49
+          );
+        });
+        result = reply.then((message) => {
+          expect(JSON.parse(String(message.params?.message))).toMatchObject({
+            id: 49,
+            error: { code: -32000 },
+          });
+        });
+        await connection.request("Target.sendMessageToTarget", {
+          sessionId: session,
+          message: JSON.stringify({
+            id: 49,
+            method: "Runtime.evaluate",
+            params: { expression: "stale result" },
+          }),
+        });
+      }
+      try {
+        await held.observed;
+        await peer.request("Target.closeTarget", { targetId: "A" });
+        held.resume();
+        await result;
+        expect(
+          (await peer.request("Browser.getWindowForTarget", { targetId: "C" }))
+            .windowId,
+        ).toBe(0);
+        expect(provider.hasWindow(1)).toBe(true);
+      } finally {
+        held.resume();
+      }
+    },
+  );
+
+  it("settles a discovery reply when its page retires during window filtering", async () => {
+    provider.addPage("C", 0);
+    const session = String(
+      (
+        await connection.request("Target.attachToTarget", {
+          targetId: "A",
+          flatten: true,
+        })
+      ).sessionId,
+    );
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const lookup = provider.holdWindowLookup("LATE");
+    const reply = provider.holdReply("Target.getTargets", "A");
+    provider.addPage("LATE", 0);
+    const result = expect(
+      connection.request("Target.getTargets", {}, session),
+    ).rejects.toMatchObject({ code: -32000 });
+    try {
+      await Promise.all([lookup.observed, reply.observed]);
+      reply.resume();
+      // A later ordinary reply confirms ingress ran while discovery awaited IO.
+      expect(
+        await connection.request("Future.echo", { barrier: true }, session),
+      ).toStrictEqual({ opaque: { barrier: true } });
+      await peer.request("Target.closeTarget", { targetId: "A" });
+      lookup.resume();
+      await result;
+      expect(
+        (await peer.request("Browser.getWindowForTarget", { targetId: "C" }))
+          .windowId,
+      ).toBe(0);
+    } finally {
+      lookup.resume();
+      reply.resume();
+    }
+  });
+
+  it("retains the original page when blank preparation fails and permits a later explicit close", async () => {
+    const session = await connection.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: true,
+    });
+    const held = provider.holdNextNavigation();
+    const result = expect(
+      connection.request("Target.closeTarget", { targetId: "A" }),
+    ).rejects.toMatchObject({
+      code: -32000,
+      message: "Native navigation failed",
+    });
+    try {
+      await held.observed;
+      held.resume(true);
+      await result;
+      expect(
+        await connection.request(
+          "Runtime.enable",
+          {},
+          String(session.sessionId),
+        ),
+      ).toStrictEqual({});
+      const targets = (await connection.request("Target.getTargets"))
+        .targetInfos as { targetId: string; type: string }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ targetId: "A" })]);
+      await connection.request("Target.closeTarget", { targetId: "A" });
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      held.resume(true);
+      await result;
+    }
+  });
+
+  it("revalidates the source after replacement preparation instead of closing a moved page", async () => {
+    const held = provider.holdNextNavigation();
+    const result = expect(
+      connection.request("Target.closeTarget", { targetId: "A" }),
+    ).rejects.toMatchObject({ code: -32000 });
+    try {
+      await held.observed;
+      provider.move("A", 1);
+      held.resume();
+      await result;
+      const peer = await client(provider.endpoint);
+      clients.push(peer);
+      expect(
+        (await peer.request("Browser.getWindowForTarget", { targetId: "A" }))
+          .windowId,
+      ).toBe(1);
+      const targets = (await connection.request("Target.getTargets"))
+        .targetInfos as { targetId: string; type: string; url: string }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      held.resume();
+      await result;
+    }
+  });
+
+  it("delivers the nested Page.close reply even after native session retirement", async () => {
+    const session = await connection.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: false,
+    });
+    const id = 67;
+    const reply = connection.event((message) => {
+      return (
+        message.method === "Target.receivedMessageFromTarget" &&
+        message.params !== undefined &&
+        message.params?.sessionId === session.sessionId &&
+        (JSON.parse(String(message.params.message)) as Message).id === id
+      );
+    });
+    await connection.request("Target.sendMessageToTarget", {
+      sessionId: session.sessionId,
+      message: JSON.stringify({ id, method: "Page.close", params: {} }),
+    });
+    expect(JSON.parse(String((await reply).params?.message))).toStrictEqual({
+      id,
+      result: {},
+    });
+    expect(provider.hasWindow(0)).toBe(true);
+    expect(provider.hasWindow(1)).toBe(true);
+  });
+
+  it("rejects physical window creation and destruction while keeping both windows usable", async () => {
     await expect(
       connection.request("Target.createTarget", {
         url: "about:blank",
@@ -1250,14 +1700,33 @@ describe("chat-window CDP proxy protocol", () => {
         return command.method === "Target.openDevTools";
       }),
     ).toBe(false);
-    const closed = new Promise((resolve) => {
-      return connection.socket.addEventListener("close", resolve, {
-        once: true,
-      });
+    await expect(connection.request("Browser.crash")).rejects.toMatchObject({
+      code: -32000,
     });
-    void connection.request("Browser.close").catch(() => {});
-    await closed;
-    expect(provider.hasWindow(0)).toBe(false);
+    await expect(
+      connection.request("Target.disposeBrowserContext", {
+        browserContextId: "default",
+      }),
+    ).rejects.toMatchObject({ code: -32000 });
+    expect(
+      await connection.request("Target.disposeBrowserContext", {
+        browserContextId: "unrelated",
+      }),
+    ).toStrictEqual({});
+    await expect(connection.request("Browser.close")).rejects.toMatchObject({
+      code: -32000,
+    });
+    await expect(
+      connection.request("Target.closeTarget", { targetId: "BROWSER" }),
+    ).rejects.toMatchObject({ code: -32000 });
+    expect(
+      (
+        await connection.request("Browser.getWindowForTarget", {
+          targetId: "A",
+        })
+      ).windowId,
+    ).toBe(0);
+    expect(provider.hasWindow(0)).toBe(true);
     expect(provider.hasWindow(1)).toBe(true);
   });
 

@@ -16,6 +16,7 @@ interface Session {
 interface Pending {
   readonly command: Message;
   readonly channel?: string;
+  readonly reply: (message: Message) => void;
 }
 interface Internal {
   readonly promise: Promise<unknown>;
@@ -61,6 +62,13 @@ const ADAPTED_REPLIES = new Set([
   "Target.setDiscoverTargets",
   "Target.setAutoAttach",
   "Target.autoAttachRelated",
+]);
+const CLOSE_COMMANDS = new Set([
+  "Browser.close",
+  "Browser.crash",
+  "Target.closeTarget",
+  "Target.disposeBrowserContext",
+  "Page.close",
 ]);
 
 function relatedParameters(params: Message): boolean {
@@ -153,15 +161,10 @@ export class ProxyPeer {
         (!request || !ADAPTED_REPLIES.has(String(request.command.method)))
       ) {
         this.requests.delete(key(channel, value.id));
-        if (
-          channel &&
-          this.sessions.has(channel) &&
-          !this.liveSession(channel)
-        ) {
-          this.scope
-            .stable()
-            .then(() => {
-              return this.emit(channel, value, data);
+        if (channel && request && !this.liveSession(channel)) {
+          this.settleRetiredReply(request, value, channel)
+            .then((settled) => {
+              if (!settled) this.emit(channel, value, data);
             })
             .catch(() => {
               return this.close();
@@ -232,6 +235,45 @@ export class ProxyPeer {
         params: { sessionId: channel, message: JSON.stringify(inner) },
       });
     }
+  }
+
+  /** Capture encoding, not authority: accepted requests must settle after retirement. */
+  private replyRoute(channel?: string): (message: Message) => void {
+    if (!channel)
+      return (message) => {
+        return this.send(JSON.stringify(message));
+      };
+    const session = this.sessions.get(channel);
+    if (!session) throw outsideWindow();
+    if (session.flatten)
+      return (message) => {
+        return this.send(JSON.stringify({ ...message, sessionId: channel }));
+      };
+    const parent = this.replyRoute(session.parent);
+    return (message) => {
+      return parent({
+        method: "Target.receivedMessageFromTarget",
+        params: { sessionId: channel, message: JSON.stringify(message) },
+      });
+    };
+  }
+
+  private async settleRetiredReply(
+    pending: Pending,
+    message: Message,
+    channel?: string,
+  ): Promise<boolean> {
+    if (!channel || this.liveSession(channel)) return false;
+    const session = this.sessions.get(channel);
+    // Definitive native retirement must not wait for unrelated discovery IO.
+    if (session?.target && this.scope.targets.has(session.target))
+      await this.scope.stable();
+    if (this.liveSession(channel)) return false;
+    pending.reply({
+      id: message.id,
+      error: record(message.error) ? message.error : outsideWindow().detail,
+    });
+    return true;
   }
 
   private async client(raw: string): Promise<void> {
@@ -401,30 +443,82 @@ export class ProxyPeer {
       throw error;
     }
   }
+  private async closesWindow(
+    method: string,
+    params: Message,
+  ): Promise<boolean> {
+    if (["Browser.close", "Browser.crash"].includes(method)) return true;
+    if (method === "Target.closeTarget")
+      return (
+        typeof params.targetId === "string" &&
+        this.scope.targets.get(params.targetId)?.type === "browser"
+      );
+    if (
+      method === "Target.disposeBrowserContext" &&
+      typeof params.browserContextId === "string"
+    )
+      return (
+        this.scope.targets.get(await this.scope.firstPage())
+          ?.browserContextId === params.browserContextId
+      );
+    return false;
+  }
+
+  private async closeCommand(
+    method: string,
+    params: Message,
+    channel: string | undefined,
+    respond: (value: Message) => void,
+  ): Promise<boolean> {
+    if (await this.closesWindow(method, params)) {
+      throw new ProtocolError({
+        code: -32000,
+        message:
+          "This chat's Browser window must remain open; close individual tabs instead",
+      });
+    }
+    const closingTarget =
+      method === "Target.closeTarget" && typeof params.targetId === "string"
+        ? params.targetId
+        : method === "Page.close" && channel
+          ? this.sessions.get(channel)?.target
+          : undefined;
+    const closingInfo = closingTarget
+      ? this.scope.targets.get(closingTarget)
+      : undefined;
+    if (
+      closingTarget &&
+      (closingInfo?.type === "page" ||
+        (method === "Target.closeTarget" && closingInfo?.type === "tab"))
+    ) {
+      respond({
+        result: await this.scope.closeTarget(closingTarget, () => {
+          if (this.ended) throw new Error("Browser peer connection closed");
+          return this.inject(method, params, channel);
+        }),
+      });
+      return true;
+    }
+    return false;
+  }
+
   private async controlCommand(
     method: string,
     params: Message,
     channel: string | undefined,
     respond: (value: Message) => void,
   ): Promise<boolean> {
+    if (
+      CLOSE_COMMANDS.has(method) &&
+      (await this.closeCommand(method, params, channel, respond))
+    )
+      return true;
     if (method === "Target.createTarget") {
       respond({
         result: await this.scope.create(params, (value) => {
           return this.inject(method, value, channel);
         }),
       });
-      return true;
-    }
-    if (
-      method === "Browser.close" ||
-      (method === "Target.closeTarget" &&
-        typeof params.targetId === "string" &&
-        this.scope.targets.get(params.targetId)?.type === "browser")
-    ) {
-      await this.scope.native.call("closeWindow", {
-        windowId: this.scope.windowId,
-      });
-      respond({ result: {} });
       return true;
     }
     const browser = !channel || this.sessions.get(channel)?.target === null;
@@ -514,8 +608,11 @@ export class ProxyPeer {
       typeof message.sessionId === "string" ? message.sessionId : inherited;
     const params = record(message.params) ? message.params : {};
     const method = String(message.method);
+    let closeReply: ((message: Message) => void) | undefined;
     const respond = (value: Message) => {
-      this.emit(channel, { id: message.id, ...value });
+      const reply = { id: message.id, ...value };
+      if (closeReply) closeReply(reply);
+      else this.emit(channel, reply);
     };
     const requestKey = key(channel, message.id);
     // Reserve before authorization yields so private control IDs cannot race ingress.
@@ -529,6 +626,7 @@ export class ProxyPeer {
           () => {},
         );
       await this.authorize(method, params, channel);
+      if (method === "Page.close") closeReply = this.replyRoute(channel);
       if (
         method === "Target.sendMessageToTarget" &&
         typeof params.message === "string"
@@ -546,6 +644,7 @@ export class ProxyPeer {
       this.requests.set(key(channel, message.id), {
         command: message,
         channel,
+        reply: this.replyRoute(channel),
       });
       this.upstream.send(raw);
     } catch (error) {
@@ -560,7 +659,8 @@ export class ProxyPeer {
                   "Scoped Browser operation could not be confirmed; inspect before retrying",
               },
       };
-      if (typeof message.sessionId === "string")
+      if (closeReply) closeReply(failure);
+      else if (typeof message.sessionId === "string")
         this.send(JSON.stringify({ ...failure, sessionId: channel }));
       else this.emit(channel, failure);
     } finally {
@@ -631,6 +731,8 @@ export class ProxyPeer {
   ): Promise<void> {
     const pending = this.requests.get(key(channel, message.id));
     this.requests.delete(key(channel, message.id));
+    if (pending && (await this.settleRetiredReply(pending, message, channel)))
+      return;
     if (!message.error && pending) {
       const request = pending.command;
       const result = record(message.result) ? message.result : {};
@@ -644,16 +746,19 @@ export class ProxyPeer {
           if (info && (await this.scope.contains(info)))
             allowed.push(this.scope.publicInfo(info));
         }
-        this.emit(channel, {
+        const reply = {
           ...message,
           result: { ...result, targetInfos: allowed },
-        });
+        };
+        if (!(await this.settleRetiredReply(pending, reply, channel)))
+          this.emit(channel, reply);
         return;
       }
 
       this.rememberResponse(request, result, channel);
     }
-    this.emit(channel, message, raw);
+    if (!pending || !(await this.settleRetiredReply(pending, message, channel)))
+      this.emit(channel, message, raw);
   }
 
   private provenance(info: TargetInfo, channel?: string): { flatten: boolean } {

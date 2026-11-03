@@ -1174,15 +1174,232 @@ try {
   const retired = once(reconnected.child, "exit");
   fresh.close();
   await retired;
-  // A browser-scope close is a logical close of this chat's existing native window.
-  const proxyExited = once(proxyA.child, "exit");
-  void scopedA.request("Browser.close").catch(() => {});
-  await proxyExited;
-  assert.equal(
-    (await direct.request("Browser.getWindowForTarget", { targetId: b }))
-      .windowId,
-    winB,
-  );
+  // Concurrent clients must not count each other's pending closes as survivors.
+  try {
+    // A child-frame Page.close is natively rejected; do not add a blank for it.
+    const frameParent = (
+      await direct.request("Target.createTarget", {
+        url: origin + "/close-parent",
+        newWindow: true,
+      })
+    ).targetId;
+    const frameWindow = (
+      await direct.request("Browser.getWindowForTarget", {
+        targetId: frameParent,
+      })
+    ).windowId;
+    const frameProxy = await proxy(endpoint, runtimeId, frameWindow);
+    const frameWire = await wire(frameProxy.endpoint);
+    const page = await pageSession(frameWire, frameParent);
+    await value(
+      frameWire,
+      page,
+      `new Promise(resolve => {
+      const frame = document.createElement('iframe');
+      frame.onload = () => resolve(true);
+      frame.src = location.origin.replace('127.0.0.1', 'frame.test') + '/close-child';
+      document.body.append(frame);
+    })`,
+    );
+    const child = await observe(
+      frameWire,
+      (event) => {
+        return (
+          event.method === "Target.attachedToTarget" &&
+          event.params.targetInfo.type === "iframe"
+        );
+      },
+      () => {
+        return frameWire.request("Target.autoAttachRelated", {
+          targetId: frameParent,
+          waitForDebuggerOnStart: false,
+          filter: [{ type: "iframe" }],
+        });
+      },
+    );
+    await assert.rejects(
+      frameWire.request("Page.close", {}, child.params.sessionId),
+      /\(-32000\)/u,
+    );
+    const childBlank = await pages(frameWire);
+    assert.equal(childBlank.length, 1);
+    assert.equal(childBlank[0].targetId, frameParent);
+    assert.equal(
+      (
+        await direct.request("Browser.getWindowForTarget", {
+          targetId: childBlank[0].targetId,
+        })
+      ).windowId,
+      frameWindow,
+    );
+    const frameExited = once(frameProxy.child, "exit");
+    frameWire.close();
+    await frameExited;
+    const closeDriver = `proxy-close-smoke-${process.pid}`;
+    sessions.push(closeDriver);
+    await run(
+      "agent-browser",
+      ["--session", closeDriver, "--no-pin-tab", "connect", proxyA.endpoint],
+      { timeout: 15000 },
+    );
+    const closePeer = await wire(proxyA.endpoint);
+    const originals = await pages(scopedA);
+    assert.ok(originals.length > 1);
+    await Promise.all(
+      originals.map((page, index) => {
+        return observe(
+          direct,
+          (event) => {
+            return (
+              event.method === "Target.targetDestroyed" &&
+              event.params.targetId === page.targetId
+            );
+          },
+          () => {
+            return (index % 2 ? closePeer : scopedA).request(
+              "Target.closeTarget",
+              {
+                targetId: page.targetId,
+              },
+            );
+          },
+        );
+      }),
+    );
+    let retained = await pages(scopedA);
+    assert.equal(retained.length, 1);
+    assert.equal(retained[0].url, "about:blank");
+    const driverBlank = await run(
+      "agent-browser",
+      ["--session", closeDriver, "get", "url", "--json"],
+      { timeout: 15000 },
+    );
+    assert.equal(JSON.parse(driverBlank.stdout).data.url, "about:blank");
+    await run(
+      "agent-browser",
+      ["--session", closeDriver, "open", origin + "/driver-retained", "--json"],
+      { timeout: 15000 },
+    );
+    await run(
+      "agent-browser",
+      ["--session", closeDriver, "fill", "#text", "driver retained", "--json"],
+      { timeout: 15000 },
+    );
+    const driverSession = await pageSession(scopedA, retained[0].targetId);
+    assert.equal(
+      await value(
+        scopedA,
+        driverSession,
+        "document.querySelector('#text').value",
+      ),
+      "driver retained",
+    );
+    assert.equal(
+      (
+        await direct.request("Browser.getWindowForTarget", {
+          targetId: retained[0].targetId,
+        })
+      ).windowId,
+      winA,
+    );
+    const retainedSession = await pageSession(scopedA, retained[0].targetId);
+    await scopedA.request("Page.enable", {}, retainedSession);
+    await observe(
+      scopedA,
+      (event) => {
+        return (
+          event.method === "Page.loadEventFired" &&
+          event.sessionId === retainedSession
+        );
+      },
+      () => {
+        return scopedA.request(
+          "Page.navigate",
+          { url: origin + "/after-close" },
+          retainedSession,
+        );
+      },
+    );
+    await value(
+      scopedA,
+      retainedSession,
+      "document.querySelector('#text').focus();true",
+    );
+    await scopedA.request(
+      "Input.insertText",
+      { text: "window retained" },
+      retainedSession,
+    );
+    assert.equal(
+      await value(
+        scopedA,
+        retainedSession,
+        "document.querySelector('#text').value",
+      ),
+      "window retained",
+    );
+    await observe(
+      direct,
+      (event) => {
+        return (
+          event.method === "Target.targetDestroyed" &&
+          event.params.targetId === retained[0].targetId
+        );
+      },
+      () => {
+        return scopedA.request("Page.close", {}, retainedSession);
+      },
+    );
+    retained = await pages(scopedA);
+    assert.equal(retained.length, 1);
+    assert.equal(retained[0].url, "about:blank");
+    const lastTab = await tabTargetForPage(direct, retained[0].targetId);
+    await observe(
+      direct,
+      (event) => {
+        return (
+          event.method === "Target.targetDestroyed" &&
+          event.params.targetId === retained[0].targetId
+        );
+      },
+      () => {
+        return closePeer.request("Target.closeTarget", { targetId: lastTab });
+      },
+    );
+    retained = await pages(scopedA);
+    assert.equal(retained.length, 1);
+    assert.equal(retained[0].url, "about:blank");
+    assert.equal(
+      (
+        await direct.request("Browser.getWindowForTarget", {
+          targetId: retained[0].targetId,
+        })
+      ).windowId,
+      winA,
+    );
+    await assert.rejects(scopedA.request("Browser.close"), /\(-32000\)/u);
+    await assert.rejects(scopedA.request("Browser.crash"), /\(-32000\)/u);
+    const ownedBrowser = (await scopedA.request("Target.getTargetInfo"))
+      .targetInfo;
+    await assert.rejects(
+      scopedA.request("Target.closeTarget", {
+        targetId: ownedBrowser.targetId,
+      }),
+      /\(-32000\)/u,
+    );
+    assert.equal(
+      (await invoke({ method: "getWindow", windowId: winA, populate: true }))
+        .id,
+      winA,
+    );
+    assert.equal(
+      (await direct.request("Browser.getWindowForTarget", { targetId: b }))
+        .windowId,
+      winB,
+    );
+  } catch (error) {
+    throw new Error("Assigned-window retention smoke failed", { cause: error });
+  }
   console.log(
     JSON.stringify(
       {
@@ -1209,7 +1426,14 @@ try {
         unrelatedMovePreservesIframe: true,
         parentMoveRetiresIframe: true,
         reconnect: true,
-        logicalClosePreservesSibling: true,
+        concurrentCloseToBlankPreservesWindow: true,
+        agentBrowserRetainedPageUsable: true,
+        pageClosePreservesWindowAndReply: true,
+        nativeChildFrameCloseErrorPreserved: true,
+        finalTabTargetClosePreservesWindow: true,
+        replacementNavigationAndInput: true,
+        browserDestructionRejected: true,
+        closePreservesSibling: true,
         setupMs: [proxyA.setupMs, proxyB.setupMs],
         proxyRssKiB: Number(/VmRSS:\s+(\d+)/u.exec(status)?.[1]),
         metrics,

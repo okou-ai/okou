@@ -37,6 +37,8 @@ export class WindowScope {
   >();
   private readonly creating = new Set<string>();
   private readonly created = new Map<string, string>();
+  private readonly closingTargets = new Set<string>();
+  private closing = Promise.resolve();
   private readonly listeners = new Set<() => void>();
   private generation = 0;
   private stopped = false;
@@ -120,6 +122,7 @@ export class WindowScope {
     this.descendants.delete(id);
     this.created.delete(id);
     this.creating.delete(id);
+    this.closingTargets.delete(id);
     this.scheduleRefresh();
   }
 
@@ -346,6 +349,72 @@ export class WindowScope {
     throw new Error("Assigned Browser window has no page");
   }
 
+  /** One close owner across peers; a pending native close is not a survivor. */
+  closeTarget(id: string, close: () => Promise<unknown>): Promise<unknown> {
+    const reserved = this.closingTargets.has(id);
+    this.closingTargets.add(id);
+    let dispatched = false;
+    const operation = this.closing
+      .then(async () => {
+        await this.confirmWindow(id);
+        let window;
+        let revision: number;
+        let closing: number;
+        do {
+          if (this.stopped)
+            throw new Error("Assigned Browser window is unavailable");
+          revision = this.generation;
+          closing = this.closingTargets.size;
+          window = (
+            await this.native.call("getWindow", {
+              windowId: this.windowId,
+              populate: true,
+            })
+          ).value;
+        } while (revision !== this.generation);
+        if (window?.id !== this.windowId || !window.tabs?.length)
+          throw new Error("Assigned Browser window is unavailable");
+        // Keep the pre-query reservation count: retirement can overtake its reply.
+        if (window.tabs.length <= Math.max(closing, this.closingTargets.size)) {
+          await this.create(
+            { url: "about:blank", background: true },
+            (params) => {
+              return this.wire.request("Target.createTarget", params);
+            },
+          );
+        }
+        await this.confirmWindow(id);
+        dispatched = true;
+        const result = await close();
+        if (!reserved && record(result) && result.success === false)
+          this.closingTargets.delete(id);
+        // A successful acknowledgement can precede destruction (Page.close may
+        // also await beforeunload). Native retirement owns reservation release.
+        return result;
+      })
+      .catch((error: unknown) => {
+        // Once sent, a failed/disconnected reply does not prove that native close
+        // was cancelled. Keep its reservation until authoritative retirement.
+        if (!reserved && !dispatched) this.closingTargets.delete(id);
+        throw error;
+      });
+    this.closing = operation.then(
+      () => {},
+      () => {},
+    );
+    return operation;
+  }
+
+  private async confirmWindow(targetId: string): Promise<void> {
+    if (this.stopped) throw new Error("Assigned Browser window is unavailable");
+    const location = await this.wire.request("Browser.getWindowForTarget", {
+      targetId,
+    });
+    if (!record(location) || typeof location.windowId !== "number")
+      throw new Error("Invalid Browser window");
+    if (location.windowId !== this.windowId) throw outsideWindow();
+  }
+
   private async createdPage(
     marker: string,
   ): Promise<{ page: TargetInfo; inventory: (TargetInfo | null)[] }> {
@@ -494,6 +563,7 @@ export class WindowScope {
     this.descendants.clear();
     this.creating.clear();
     this.created.clear();
+    this.closingTargets.clear();
     this.targets.clear();
   }
 }
