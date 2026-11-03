@@ -105,7 +105,12 @@ interface ConnectorPermission {
 }
 
 interface PermissionsDrawerProps {
-  agentId: string;
+  finalFocus?: React.ComponentProps<typeof DialogContent>["finalFocus"];
+  initialFocus?: React.ComponentProps<typeof DialogContent>["initialFocus"];
+  dialogRef?: React.Ref<HTMLDivElement>;
+  agentId?: string;
+  scopeKey?: string;
+  connectorScope?: boolean;
   connectorSlug: ConnectorSlug;
   connectorLabel: string;
   metadata$: Computed<Promise<PlatformConnectorPermissionMetadata | null>>;
@@ -153,13 +158,14 @@ type LoadedPermissionsDrawerContentProps = Pick<
 
 function buildInitialPermissionDrawerState({
   agentId,
+  scopeKey,
   connectorSlug,
   metadata,
   initialPolicies,
   initialGrants,
 }: Pick<
   PermissionsDrawerProps,
-  "agentId" | "connectorSlug" | "initialPolicies" | "initialGrants"
+  "agentId" | "scopeKey" | "connectorSlug" | "initialPolicies" | "initialGrants"
 > & {
   readonly metadata: PlatformConnectorPermissionMetadata;
 }): InitialPermissionDrawerState {
@@ -169,7 +175,7 @@ function buildInitialPermissionDrawerState({
   const initialPolicyStateKey = permissionDraftInitialPolicyKey(context);
   return {
     explicitGrants,
-    initialPolicyKey: `${agentId}\u0000${connectorSlug}\u0000${permissionDraftMetadataKey(metadata)}\u0000${initialPolicyStateKey}\u0000${grantStateKey}`,
+    initialPolicyKey: `${scopeKey ?? agentId}\u0000${connectorSlug}\u0000${permissionDraftMetadataKey(metadata)}\u0000${initialPolicyStateKey}\u0000${grantStateKey}`,
   };
 }
 
@@ -178,7 +184,11 @@ function PermissionsDrawerHeader({
   connectorLabel,
   displayName,
   surface,
-}: Pick<PermissionsDrawerProps, "connectorLabel" | "displayName"> & {
+  connectorScope,
+}: Pick<
+  PermissionsDrawerProps,
+  "connectorLabel" | "displayName" | "connectorScope"
+> & {
   readonly icon: PublicConnectorCatalogIcon | undefined;
   readonly surface: PermissionsSurface;
 }) {
@@ -191,26 +201,34 @@ function PermissionsDrawerHeader({
         },
         { connector: connectorLabel },
       )}
-      <span className="text-sm font-normal text-muted-foreground ml-1">
-        {t(
-          ($) => {
-            return $.connectors.permissions.forTarget;
-          },
-          { target: displayName },
-        )}
-      </span>
+      {!connectorScope && (
+        <span className="text-sm font-normal text-muted-foreground ml-1">
+          {t(
+            ($) => {
+              return $.connectors.permissions.forTarget;
+            },
+            { target: displayName },
+          )}
+        </span>
+      )}
     </>
   );
-  const description = t(($) => {
-    return $.connectors.permissions.descriptionAgent;
-  });
+  const description = connectorScope
+    ? t(($) => {
+        return $.connectorChatAccess.permissionsDescription;
+      })
+    : t(($) => {
+        return $.connectors.permissions.descriptionAgent;
+      });
 
   if (surface === "dialog") {
     return (
-      <DialogHeader>
+      <DialogHeader className="min-w-0 pr-8 text-left">
         <div className="flex items-center gap-3">
           <ConnectorIcon icon={icon} size={24} />
-          <DialogTitle className="text-base">{title}</DialogTitle>
+          <DialogTitle className="min-w-0 break-words text-base leading-snug">
+            {title}
+          </DialogTitle>
         </div>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
@@ -368,7 +386,7 @@ function UnknownEndpointsToggle({
   const { t } = useTranslation();
   return (
     <div className="border-t border-border/40 -mx-6 px-3 pt-3 pb-1">
-      <div className="flex items-center justify-between px-3">
+      <div className="flex flex-col items-stretch gap-2.5 px-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
           <span className="text-xs font-medium text-foreground">
             {t(($) => {
@@ -974,7 +992,9 @@ function PermissionRow({
     <div>
       {showSeparator && <div className="mx-3 border-t border-border/40" />}
       <div
-        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-state-hover transition-colors ${indent ? "pl-8" : ""}`}
+        role="group"
+        aria-label={permission.name}
+        className={`flex flex-col items-stretch gap-2.5 px-3 py-2.5 rounded-md hover:bg-state-hover transition-colors sm:flex-row sm:items-center ${indent ? "pl-8" : ""}`}
       >
         <div className="min-w-0 flex-1">
           <code className="block whitespace-normal break-words text-xs font-medium text-foreground [overflow-wrap:anywhere]">
@@ -1502,6 +1522,7 @@ function PermissionsContent({
   const loadedInitialState = loadedMetadata
     ? buildInitialPermissionDrawerState({
         agentId: props.agentId,
+        scopeKey: props.scopeKey,
         connectorSlug: props.connectorSlug,
         metadata: loadedMetadata,
         initialPolicies: props.initialPolicies,
@@ -1527,6 +1548,7 @@ function PermissionsContent({
         icon={loadedMetadata?.icon}
         connectorLabel={props.connectorLabel}
         displayName={props.displayName}
+        connectorScope={props.connectorScope}
         surface={surface}
       />
 
@@ -1611,6 +1633,9 @@ export function PermissionsDialog(props: PermissionsDrawerProps) {
       }}
     >
       <DialogContent
+        ref={props.dialogRef}
+        initialFocus={props.initialFocus}
+        finalFocus={props.finalFocus}
         maxWidth={760}
         height={720}
         contentClassName="flex flex-col overflow-hidden"

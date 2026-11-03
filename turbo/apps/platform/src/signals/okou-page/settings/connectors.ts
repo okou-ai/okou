@@ -1,6 +1,8 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
 
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
@@ -136,6 +138,14 @@ const resolveConnectorPostConnectOptions$ = command(
       } else {
         account = { intent: "add" };
       }
+    }
+    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      return {
+        ...options,
+        account,
+        authorizeVisibleAgents: false,
+        agentId: undefined,
+      };
     }
     if (!options.authorizeVisibleAgents) {
       return { ...options, account };
@@ -976,12 +986,15 @@ const authorizeConnectorForVisibleAgents$ = command(
 
 const finishConnectorConnection$ = command(
   async (
-    { set },
+    { get, set },
     connectorSlug: ConnectorSlug,
     options: FinishConnectorConnectionOptions,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    if (options.authorizeVisibleAgents) {
+    if (
+      options.authorizeVisibleAgents &&
+      !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
+    ) {
       await set(authorizeConnectorForVisibleAgents$, connectorSlug, signal);
     }
 
@@ -1832,7 +1845,7 @@ const connectConnectorExternalCodeCommand$ = command(
             ...(shouldAuthorizeAgent(options)
               ? { authorizeAgent: true as const }
               : {}),
-            ...(args.agentId ? { agentId: args.agentId } : {}),
+            ...(options.agentId ? { agentId: options.agentId } : {}),
           },
           fetchOptions: { signal: flowSignal },
         }),
@@ -2217,7 +2230,6 @@ const startConnectorBrowserAuthorization$ = command(
     args: {
       readonly connectorSlug: ConnectorSlug;
       readonly method: PublicConnectorCatalogAuthMethodDetail;
-      readonly agentId: string | undefined;
       readonly options: PostConnectOptions;
     },
     signal: AbortSignal,
@@ -2228,7 +2240,7 @@ const startConnectorBrowserAuthorization$ = command(
       ...(shouldAuthorizeAgent(args.options)
         ? { authorizeAgent: true as const }
         : {}),
-      ...(args.agentId ? { agentId: args.agentId } : {}),
+      ...(args.options.agentId ? { agentId: args.options.agentId } : {}),
     };
     const request = {
       params: { connectorSlug: args.connectorSlug },
@@ -2287,7 +2299,6 @@ const openConnectorOAuthAuthCodeWindow$ = command(
       readonly method: PublicConnectorCatalogAuthMethodDetail;
       readonly connectorLabel: string;
       readonly connectorIcon: PublicConnectorCatalogIcon;
-      readonly agentId: string | undefined;
       readonly beforeStart: (
         signal: AbortSignal,
       ) => Promise<PostConnectOptions>;
@@ -2573,7 +2584,6 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
           method,
           connectorLabel: options.connectorLabel ?? connectorSlug,
           connectorIcon: options.connectorIcon,
-          agentId: options.agentId,
           beforeStart: async (sig) => {
             const resolvedOptions = await set(
               resolveConnectorPostConnectOptions$,

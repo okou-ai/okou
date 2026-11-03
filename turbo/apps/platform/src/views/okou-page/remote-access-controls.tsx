@@ -202,15 +202,15 @@ function resolvedDuringRefresh<T>(
   return loadable.state === "loading" ? (previous ?? null) : null;
 }
 
-function HostChoiceSelect({
-  protocol,
-  host,
+export function AccessChoiceSelect({
+  ariaLabel,
+  defaultEnabled,
   value,
   readOnly,
   onChange,
 }: {
-  protocol: RemoteAccessProtocol;
-  host: ThreadRemoteHostAccess;
+  ariaLabel: string;
+  defaultEnabled: boolean;
   value: "default" | "on" | "off";
   readOnly: boolean;
   onChange: (enabled: boolean | null) => void | Promise<void>;
@@ -230,12 +230,89 @@ function HostChoiceSelect({
   const items = [
     {
       value: "default",
-      label: host.defaultEnabled ? defaultOnLabel : defaultOffLabel,
+      label: defaultEnabled ? defaultOnLabel : defaultOffLabel,
     },
     { value: "on", label: onLabel },
     { value: "off", label: offLabel },
   ];
   const sizingLabels = [defaultOnLabel, defaultOffLabel, onLabel, offLabel];
+  return (
+    <Select
+      items={items}
+      value={value}
+      readOnly={readOnly}
+      onValueChange={(next, details) => {
+        if (next !== "default" && next !== "on" && next !== "off") {
+          details.cancel();
+          return;
+        }
+        detach(
+          onChange(next === "default" ? null : next === "on"),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]">
+        {sizingLabels.map((label) => {
+          return (
+            <span
+              key={label}
+              aria-hidden="true"
+              className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 pr-3.5 text-sm"
+            >
+              {label}
+              <span className="h-4 w-4 shrink-0" />
+            </span>
+          );
+        })}
+        <SelectTrigger
+          variant="neutral"
+          className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm aria-readonly:cursor-wait aria-readonly:opacity-50"
+          aria-label={ariaLabel}
+          aria-busy={readOnly || undefined}
+        >
+          <SelectValue className="min-w-0">
+            {value === "default" ? (
+              <span className="flex min-w-0 w-full items-center">
+                <span className="min-w-0 truncate">{defaultLabel}</span>
+                <span className="shrink-0 whitespace-pre">
+                  {` (${defaultEnabled ? onLabel : offLabel})`}
+                </span>
+              </span>
+            ) : value === "on" ? (
+              onLabel
+            ) : (
+              offLabel
+            )}
+          </SelectValue>
+        </SelectTrigger>
+      </div>
+      <SelectContent align="start" className="w-max max-w-[calc(100vw-2rem)]">
+        {items.map((item) => {
+          return (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function HostChoiceSelect({
+  protocol,
+  host,
+  value,
+  readOnly,
+  onChange,
+}: {
+  protocol: RemoteAccessProtocol;
+  host: ThreadRemoteHostAccess;
+  value: "default" | "on" | "off";
+  readOnly: boolean;
+  onChange: (enabled: boolean | null) => void | Promise<void>;
+}) {
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
       {protocol === "ssh" ? (
@@ -244,67 +321,13 @@ function HostChoiceSelect({
         <Monitor size={15} className="shrink-0 text-muted-foreground" />
       )}
       <span className="min-w-0 flex-1 truncate">{host.displayName}</span>
-      <Select
-        items={items}
+      <AccessChoiceSelect
+        ariaLabel={`${protocol.toUpperCase()} ${host.displayName}`}
+        defaultEnabled={host.defaultEnabled}
         value={value}
-        // A pending save must block edits without blocking Select's focus return.
         readOnly={readOnly}
-        onValueChange={(next, details) => {
-          if (next !== "default" && next !== "on" && next !== "off") {
-            details.cancel();
-            return;
-          }
-          detach(
-            onChange(next === "default" ? null : next === "on"),
-            Reason.DomCallback,
-          );
-        }}
-      >
-        <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]">
-          {sizingLabels.map((label) => {
-            return (
-              <span
-                key={label}
-                aria-hidden="true"
-                className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 pr-3.5 text-sm"
-              >
-                {label}
-                <span className="h-4 w-4 shrink-0" />
-              </span>
-            );
-          })}
-          <SelectTrigger
-            variant="neutral"
-            className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm aria-readonly:cursor-wait aria-readonly:opacity-50"
-            aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
-            aria-busy={readOnly || undefined}
-          >
-            <SelectValue className="min-w-0">
-              {value === "default" ? (
-                <span className="flex min-w-0 w-full items-center">
-                  <span className="min-w-0 truncate">{defaultLabel}</span>
-                  <span className="shrink-0 whitespace-pre">
-                    {` (${host.defaultEnabled ? onLabel : offLabel})`}
-                  </span>
-                </span>
-              ) : value === "on" ? (
-                onLabel
-              ) : (
-                offLabel
-              )}
-            </SelectValue>
-          </SelectTrigger>
-        </div>
-        <SelectContent align="start" className="w-max max-w-[calc(100vw-2rem)]">
-          {items.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
+        onChange={onChange}
+      />
     </div>
   );
 }

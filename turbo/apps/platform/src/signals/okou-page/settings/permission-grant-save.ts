@@ -410,3 +410,28 @@ export async function savePermissionDraftPolicies(
     pageSignal,
   );
 }
+
+/** Serialize the same editor intent for the member/connector grant endpoint. */
+export function connectorPermissionDraftChanges(args: {
+  readonly connectorSlug: string;
+  readonly metadata: PlatformConnectorPermissionMetadata;
+  readonly initialPolicies: FirewallPolicies;
+  readonly initialGrants: readonly PlatformUserPermissionGrant[];
+  readonly intent: PermissionDraftIntent;
+}) {
+  const { policies, expiresInByPermission } =
+    materializePermissionDraftForLegacySave({
+      context: createPermissionDraftContext(args),
+      draft: args.intent,
+      permissions: args.metadata.permissions,
+    });
+  return {
+    mode: args.intent.resetPending ? ("replace" as const) : ("patch" as const),
+    grants: buildAppliedUserGrantPolicies({
+      ...args,
+      policies,
+      expiresInByPermission,
+      resetPending: args.intent.resetPending,
+    }),
+  };
+}

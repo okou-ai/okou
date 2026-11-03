@@ -3182,6 +3182,18 @@
     "usedBy_one": "Von {{count}} deiner Hosts verwendet:",
     "usedBy_other": "Von {{count}} deiner Hosts verwendet:"
   },
+  "connectorChatAccess": {
+    "accountAccess": "Zugriff für {{account}}",
+    "enableByDefault": "{{account}} standardmäßig aktivieren",
+    "enabledAccounts": "{{value}} aktiviert",
+    "manageAccounts": "Konten verwalten",
+    "noAccount": "Kein Konto ausgewählt",
+    "noEnabledAccount": "Für diesen Chat ist kein Konto aktiviert",
+    "permissions": "Berechtigungen",
+    "permissionsDescription": "Diese Regeln gelten für diesen Connector in allen deinen Chats und Konten.",
+    "settingsDescription": "Wähle die standardmäßig aktivierten Konten und das Standardkonto für neue Chats.",
+    "thisChat": "Dieser Chat"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{action}} {{connector}} Zugriff für {{agent}}",
