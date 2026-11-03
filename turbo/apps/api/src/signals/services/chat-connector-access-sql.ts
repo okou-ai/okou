@@ -31,6 +31,12 @@ export function connectorAccessSelectionTarget(target: ConnectorAccountTarget) {
       );
 }
 
+function selectionConflictTarget(target: ConnectorAccountTarget) {
+  return target.kind === "builtin"
+    ? sql`(chat_thread_id, connector_slug) WHERE connector_slug IS NOT NULL`
+    : sql`(chat_thread_id, custom_connector_id) WHERE custom_connector_id IS NOT NULL`;
+}
+
 /** A default transition uses the same ordered clear/promote ownership as account lifecycle. */
 export function accountDefaultEnabledSql(
   owner: ConnectorAccessOwner,
@@ -63,7 +69,7 @@ export function accountDefaultEnabledSql(
     WHERE (SELECT ${count()} FROM promoted) >= 0`;
 }
 
-/** Repair stored invalid choices on normal configuration writes, without touching Runs. */
+/** Persist allowed current choices after configuration changes, without touching Runs. */
 export function repairChatConnectorSelectionsSql(
   owner: ConnectorAccessOwner,
   chatThreadId?: string,
@@ -72,6 +78,18 @@ export function repairChatConnectorSelectionsSql(
     chatThreadId === undefined
       ? sql.empty()
       : sql`AND ${eq(chatThreads.id, chatThreadId)}`;
+  const missingSelection =
+    chatThreadId === undefined
+      ? sql.empty()
+      : sql`UNION ALL
+        SELECT ${chatThreads.id} AS chat_thread_id
+        FROM ${chatThreads} JOIN ${agents} ON ${eq(agents.id, chatThreads.agentId)}
+        WHERE ${connectorAccessThreadOwner({ ...owner, chatThreadId })}
+          AND NOT EXISTS (
+            SELECT 1 FROM ${chatThreadConnectorSelections}
+            WHERE ${eq(chatThreadConnectorSelections.chatThreadId, chatThreads.id)}
+              AND ${connectorAccessSelectionTarget(owner.target)}
+          )`;
   return sql`WITH invalid AS MATERIALIZED (
     SELECT ${chatThreads.id} AS chat_thread_id
     FROM ${chatThreadConnectorSelections}
@@ -83,6 +101,7 @@ export function repairChatConnectorSelectionsSql(
       ${eq(chatThreadConnectorAccessOverrides.connectorId, connectors.id)}
     WHERE ${and(eq(chatThreads.userId, owner.userId), eq(agents.orgId, owner.orgId), connectorAccessAccountOwner(owner))}
       AND NOT coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats}) ${thread}
+    ${missingSelection}
   ), choices AS MATERIALIZED (
     SELECT DISTINCT ON (invalid.chat_thread_id) invalid.chat_thread_id, ${connectors.id} AS connector_id
     FROM invalid JOIN ${connectors} ON ${connectorAccessAccountOwner(owner)}
@@ -92,9 +111,12 @@ export function repairChatConnectorSelectionsSql(
     WHERE coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})
     ORDER BY invalid.chat_thread_id, ${connectors.isDefault} DESC, ${connectors.createdAt}, ${connectors.id}
   ), replaced AS (
-    UPDATE ${chatThreadConnectorSelections} SET connector_id = choices.connector_id
-    FROM choices WHERE ${chatThreadConnectorSelections.chatThreadId} = choices.chat_thread_id
-      AND ${connectorAccessSelectionTarget(owner.target)} RETURNING ${chatThreadConnectorSelections.chatThreadId}
+    INSERT INTO ${chatThreadConnectorSelections} (chat_thread_id, connector_id, connector_slug, custom_connector_id)
+    SELECT choices.chat_thread_id, ${connectors.id}, ${connectors.connectorSlug}, ${connectors.customConnectorId}
+    FROM choices JOIN ${connectors} ON ${connectors.id} = choices.connector_id
+    WHERE ${connectorAccessAccountOwner(owner)}
+    ON CONFLICT ${selectionConflictTarget(owner.target)} DO UPDATE SET connector_id = excluded.connector_id
+    RETURNING ${chatThreadConnectorSelections.chatThreadId}
   ) DELETE FROM ${chatThreadConnectorSelections} USING invalid
     WHERE ${chatThreadConnectorSelections.chatThreadId} = invalid.chat_thread_id
       AND ${connectorAccessSelectionTarget(owner.target)}
@@ -106,10 +128,6 @@ export function saveChatConnectorCurrentSql(
   owner: ChatConnectorAccessOwner,
   connectionId: string,
 ) {
-  const conflict =
-    owner.target.kind === "builtin"
-      ? sql`(chat_thread_id, connector_slug) WHERE connector_slug IS NOT NULL`
-      : sql`(chat_thread_id, custom_connector_id) WHERE custom_connector_id IS NOT NULL`;
   return sql`INSERT INTO ${chatThreadConnectorSelections} (chat_thread_id, connector_id, connector_slug, custom_connector_id)
     SELECT ${chatThreads.id}, ${connectors.id}, ${connectors.connectorSlug}, ${connectors.customConnectorId}
     FROM ${chatThreads} JOIN ${agents} ON ${eq(agents.id, chatThreads.agentId)}
@@ -119,6 +137,6 @@ export function saveChatConnectorCurrentSql(
       ${eq(chatThreadConnectorAccessOverrides.connectorId, connectors.id)}
     WHERE ${connectorAccessThreadOwner(owner)} AND ${eq(connectors.id, connectionId)}
       AND coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})
-    ON CONFLICT ${conflict} DO UPDATE SET connector_id = excluded.connector_id
+    ON CONFLICT ${selectionConflictTarget(owner.target)} DO UPDATE SET connector_id = excluded.connector_id
     RETURNING connector_id`;
 }

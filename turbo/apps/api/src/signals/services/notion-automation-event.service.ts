@@ -576,6 +576,40 @@ const repairNotionAutomationProjection$ = command(
   },
 );
 
+export const repairNotionAutomationAccountProjectionsForOwner$ = command(
+  async (
+    { set },
+    owner: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, owner.orgId),
+          eq(workflowAutomations.ownerUserId, owner.userId),
+          eq(workflowAutomations.kind, "event"),
+          inArray(workflowAutomations.eventType, [
+            "notion-child-page-created",
+            "notion-database-item-created",
+            "notion-page-content-updated",
+          ]),
+        ),
+      )
+      .orderBy(asc(workflowAutomations.id));
+    signal.throwIfAborted();
+    for (const row of rows) {
+      await set(
+        repairNotionAutomationProjection$,
+        { ...owner, automationId: row.id },
+        signal,
+      );
+    }
+  },
+);
+
 const repairNotionAutomationProjections$ = command(
   async (
     { set },
@@ -605,32 +639,12 @@ const repairNotionAutomationProjections$ = command(
         left.userId.localeCompare(right.userId)
       );
     });
-    const db = set(writeDb$);
     for (const owner of orderedOwners) {
-      const rows = await db
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.orgId, owner.orgId),
-            eq(workflowAutomations.ownerUserId, owner.userId),
-            eq(workflowAutomations.kind, "event"),
-            inArray(workflowAutomations.eventType, [
-              "notion-child-page-created",
-              "notion-database-item-created",
-              "notion-page-content-updated",
-            ]),
-          ),
-        )
-        .orderBy(asc(workflowAutomations.id));
-      signal.throwIfAborted();
-      for (const row of rows) {
-        await set(
-          repairNotionAutomationProjection$,
-          { ...owner, automationId: row.id },
-          signal,
-        );
-      }
+      await set(
+        repairNotionAutomationAccountProjectionsForOwner$,
+        owner,
+        signal,
+      );
     }
     return orderedOwners.length > 0;
   },
