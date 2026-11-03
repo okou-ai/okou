@@ -286,7 +286,7 @@ function AccountRow({
       className="flex items-center justify-between gap-4 px-5 py-4"
     >
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <p className="truncate text-sm font-medium text-foreground">
             {label}
           </p>
