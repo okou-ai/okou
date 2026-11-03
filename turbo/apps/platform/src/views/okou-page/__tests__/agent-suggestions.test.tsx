@@ -635,6 +635,15 @@ function numberedSuggestions(count: number): Suggestion[] {
     };
   });
 }
+function feedItemLabels(): (string | null)[] {
+  return within(screen.getByRole("region", { name: "Suggestions" }))
+    .getAllByRole("listitem")
+    .map((row) => {
+      const content =
+        within(row).queryByRole("heading") ?? within(row).getByRole("status");
+      return content.textContent;
+    });
+}
 test("The Feed lists every suggestion card and opens the chosen card's draft", async () => {
   const items = numberedSuggestions(3).map((item, index) => {
     return {
@@ -1080,6 +1089,33 @@ test("Feedback stays available after the last card, accepts an optional reason, 
   await screen.findByText(EMPTY_FEED);
 });
 
+test("Not planned replaces its card in the Feed and Undo restores it in place", async () => {
+  const items = numberedSuggestions(3);
+  mockPool(items);
+  await openFeed();
+  await screen.findByText(items[1].title);
+  click(
+    button(
+      "Not planned",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  );
+  await screen.findByText("Noted — this is not planned");
+  expect(feedItemLabels()).toStrictEqual([
+    items[0].title,
+    "Noted — this is not planned",
+    items[2].title,
+  ]);
+  click(button("Undo"));
+  await screen.findByText(items[1].title);
+  expect(feedItemLabels()).toStrictEqual(
+    items.map((item) => {
+      return item.title;
+    }),
+  );
+});
+
 test("Failed feedback keeps the local choice and can retry the same feedback identity", async () => {
   const item = makeSuggestion();
   mockPool([item]);
@@ -1150,6 +1186,11 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
   click(button("Already done"));
   await requested.promise;
   await screen.findByText("Noted — this is already done");
+  expect(feedItemLabels()).toStrictEqual([
+    "Noted — this is already done",
+    items[1].title,
+    items[2].title,
+  ]);
   expect(
     button(
       "Not planned",

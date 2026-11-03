@@ -1,10 +1,7 @@
-import { useGet, useLastLoadable } from "ccstate-react";
+import { useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Lightbulb } from "lucide-react";
-import {
-  suggestionFeedbackConfirmation$,
-  visibleAgentSuggestions$,
-} from "../../signals/okou-page/agent-suggestion-session.ts";
+import { agentSuggestionFeedItems$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
   AgentSuggestions,
   SuggestionSaveErrors,
@@ -31,8 +28,7 @@ function FeedEmptyState() {
 
 function FeedSuggestions() {
   const { t } = useTranslation();
-  const result = useLastLoadable(visibleAgentSuggestions$);
-  const feedback = useGet(suggestionFeedbackConfirmation$);
+  const result = useLastLoadable(agentSuggestionFeedItems$);
   if (result.state === "loading") {
     return null;
   }
@@ -45,8 +41,7 @@ function FeedSuggestions() {
       </p>
     );
   }
-  // The feedback notice outlives the last card so its Undo stays reachable.
-  if (result.data.length === 0 && feedback === null) {
+  if (result.data.length === 0) {
     return <FeedEmptyState />;
   }
   return <AgentSuggestions />;

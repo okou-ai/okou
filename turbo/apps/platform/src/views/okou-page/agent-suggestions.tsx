@@ -19,7 +19,7 @@ import { Button, Textarea } from "@okouai/ui";
 import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
-  visibleAgentSuggestions$,
+  agentSuggestionFeedItems$,
   submitAgentSuggestionFeedback$,
   suggestionFeedbackConfirmation$,
   suggestionFeedbackReasonOpen$,
@@ -175,7 +175,7 @@ function SuggestionFeedbackNotice() {
               return $.chat.agentSuggestions.dismissRecorded;
             });
   return (
-    <div className="mt-4 rounded-xl border border-border bg-card p-3">
+    <div className="rounded-xl border border-border bg-card p-3">
       <div className="flex items-center gap-2">
         <Check aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <p
@@ -424,31 +424,33 @@ function AgentSuggestionCard({ item }: { readonly item: Suggestion }) {
 
 export function AgentSuggestions() {
   const { t } = useTranslation();
-  const result = useLastLoadable(visibleAgentSuggestions$);
+  const result = useLastLoadable(agentSuggestionFeedItems$);
+  const feedback = useGet(suggestionFeedbackConfirmation$);
   if (result.state !== "hasData" || result.data.length === 0) {
-    return <SuggestionFeedbackNotice />;
+    return null;
   }
   return (
-    <>
-      <section
-        aria-label={t(($) => {
-          return $.chat.agentSuggestions.label;
-        })}
-      >
-        <ul className="flex flex-col gap-4">
-          {result.data.map((item) => {
-            return (
-              <li
-                key={item.id}
-                className="@container/suggestion relative min-w-0"
-              >
+    <section
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.label;
+      })}
+    >
+      <ul className="flex flex-col gap-4">
+        {result.data.map((item) => {
+          return (
+            <li
+              key={item.id}
+              className="@container/suggestion relative min-w-0"
+            >
+              {feedback?.item.id === item.id ? (
+                <SuggestionFeedbackNotice />
+              ) : (
                 <AgentSuggestionCard item={item} />
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-      <SuggestionFeedbackNotice />
-    </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
