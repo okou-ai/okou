@@ -353,7 +353,9 @@ publish() {
   fi
 
   local temp_root compressed retained decompressed compression_started=$SECONDS
-  temp_root=$(mktemp -d "${RUNNER_TEMP:-${OUTPUT_DIR}}/runner-binary-publish.XXXXXX")
+  # Keep intermediates inside the transport-owned output tree so its cleanup
+  # also contains a publisher forcibly retired before its own EXIT trap runs.
+  temp_root=$(mktemp -d "${OUTPUT_DIR}/.runner-binary-publish.XXXXXX")
   compressed="${temp_root}/runner.zst"
   retained="${temp_root}/retained.zst"
   decompressed="${temp_root}/retained-runner"
@@ -364,7 +366,8 @@ publish() {
   trap 'exit 129' HUP
 
   printf 'R2 publication stage=compress target=%s event=start\n' "$EXPECTED_TARGET" >&2
-  if ! zstd -q -3 -T0 -f -o "$compressed" "$RUNNER_PATH"; then
+  if ! runner_binary_r2_run compress 180 - - kill \
+    zstd -q -3 -T0 -f -o "$compressed" "$RUNNER_PATH"; then
     publish_failure "compression-failed" "runner compression failed"
   fi
   local compressed_size

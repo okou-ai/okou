@@ -121,6 +121,14 @@ if "aws" in args:
 os.execv(os.environ["REAL_TIMEOUT"], ["timeout", *args])
 """
 
+COMPRESSOR = r"""#!/usr/bin/env python3
+import os, pathlib, signal, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+with (pathlib.Path(os.environ["FIXTURE_ROOT"]) / "ready").open("w") as output:
+    output.write(str(os.getpid()) + "\n")
+time.sleep(300)
+"""
+
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
@@ -316,6 +324,7 @@ class PublicationTests(unittest.TestCase):
 
     def test_cancellation_retires_requests_and_backoff(self):
         for stage, mode in (
+            ("compress", "cancel"),
             ("binary-put", "cancel"),
             ("reference-put", "cancel"),
             ("binary-put", "cancel-backoff"),
@@ -324,6 +333,10 @@ class PublicationTests(unittest.TestCase):
                 # Each subcase owns a fresh store and request log.
                 shutil.rmtree(self.root / "store", ignore_errors=True)
                 (self.root / "requests").unlink(missing_ok=True)
+                compressor = self.root / "bin/zstd"
+                if stage == "compress":
+                    compressor.write_text(COMPRESSOR)
+                    compressor.chmod(0o755)
                 ready = self.root / "ready"
                 os.mkfifo(ready)
                 descriptor = os.open(ready, os.O_RDONLY | os.O_NONBLOCK)
@@ -371,6 +384,7 @@ class PublicationTests(unittest.TestCase):
                         os.close(child_descriptor)
                     os.close(descriptor)
                     ready.unlink()
+                    compressor.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

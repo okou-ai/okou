@@ -41,7 +41,9 @@ stages with request attempts, elapsed seconds and safe categories, including
 `connect-timeout` and `read-timeout`. A request `timeout` means the whole attempt
 deadline expired; it does not prove connection failure or upload progress. Local
 compressed bytes are not a network byte count. Raw AWS errors remain private and
-temporary. Cancellation retires owned requests/backoff and publisher children.
+temporary. Cancellation retires owned compression, requests/backoff and publisher
+children. Compression and other publisher intermediates stay inside the
+transport-owned output tree, so cleanup also contains a forcibly retired publisher.
 
 Build inventory includes the complete `runner-binary-build/` module and production
 crate inputs by committed Git mode, path and blob identity. Materialized commands
