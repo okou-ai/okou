@@ -71,6 +71,11 @@ import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import {
+  type ChatHeaderActionsState,
+  useChatHeaderActions,
+} from "./chat-header-actions.ts";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
+import {
   pwaChatListVisible$,
   pwaNavigationEnabled$,
 } from "../../signals/okou-page/pwa-navigation.ts";
@@ -146,6 +151,7 @@ function MobileResourcesButtonLeaf() {
 function MobileAutomationButtonLeaf() {
   const thread = useCurrentThread();
   const { t } = useTranslation();
+  const header = useChatHeaderActions(thread);
 
   if (!thread) {
     return null;
@@ -154,6 +160,7 @@ function MobileAutomationButtonLeaf() {
   return (
     <AutomationMenuButton
       thread={thread}
+      header={header}
       ariaLabel={t(($) => {
         return $.appShell.sidebar.mobile.openAutomations;
       })}
@@ -172,6 +179,7 @@ function MobileShareButtonInner({
   const phase = useGet(thread.sharing.phase$);
   const start = useSet(thread.sharing.start$);
   const pageSignal = useGet(pageSignal$);
+  const { transitioning } = useChatHeaderActions(thread);
   if (phase !== "idle") {
     return null;
   }
@@ -179,6 +187,7 @@ function MobileShareButtonInner({
     <Button
       showTooltip
       type="button"
+      disabled={transitioning}
       onClick={() => {
         detach(
           start(pageSignal),
@@ -247,7 +256,13 @@ function MobileSharingOverlayLeaf() {
   return thread ? <MobileSharingOverlayInner thread={thread} /> : null;
 }
 
-function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
+function MobileChatThreadActions({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const phase = useGet(thread.sharing.phase$);
   if (phase !== "idle") {
     return null;
@@ -255,7 +270,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
-      <ThreadMailButton thread={thread} />
+      <ThreadMailButton thread={thread} header={header} />
       <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
@@ -264,10 +279,11 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
 
 function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
   const thread = useCurrentThread();
+  const header = useChatHeaderActions(thread);
   if (activeId === "chat" && thread) {
     return (
       <SettledChatThreadActions thread={thread}>
-        <MobileChatThreadActions thread={thread} />
+        <MobileChatThreadActions thread={thread} header={header} />
       </SettledChatThreadActions>
     );
   }
@@ -584,11 +600,12 @@ function SidebarRouteGuard({ children }: { children: ReactNode }) {
 }
 
 export function SidebarLayout({ children }: { children: ReactNode }) {
+  const sessionKey = useGet(authenticatedSessionKey$);
   // Route availability updates the guard while the shell keeps its element
   // identity. Route-specific workspace and navigation own their subscriptions.
   return (
     <SidebarRouteGuard>
-      <SidebarLayoutInner>{children}</SidebarLayoutInner>
+      <SidebarLayoutInner key={sessionKey}>{children}</SidebarLayoutInner>
     </SidebarRouteGuard>
   );
 }

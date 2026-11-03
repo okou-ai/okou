@@ -8,6 +8,10 @@ import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/share
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
+import {
+  useChatHeaderActions,
+  type ChatHeaderActionsState,
+} from "./chat-header-actions.ts";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -572,12 +576,16 @@ function ChatThreadHeaderIconButton({
   tooltip = label,
   open,
   onClick,
+  disabled = false,
+  busy = false,
 }: {
   icon: ReactNode;
   label: string;
   tooltip?: string;
   open: boolean;
   onClick: () => void;
+  disabled?: boolean;
+  busy?: boolean;
 }) {
   return (
     <TooltipProvider delay={300}>
@@ -586,6 +594,8 @@ function ChatThreadHeaderIconButton({
           render={
             <Button
               type="button"
+              disabled={disabled}
+              aria-busy={busy}
               variant="quiet"
               size="icon-sm"
               iconSize="md"
@@ -613,25 +623,20 @@ function ChatThreadHeaderIconButton({
 export function AutomationMenuButton({
   thread,
   ariaLabel,
+  header,
 }: {
   thread: ChatPanelSignals;
   ariaLabel?: string;
+  header: ChatHeaderActionsState;
 }) {
   const { t } = useTranslation();
   const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
   const openAutomationSidebar = useSet(openThreadAutomations$);
   const sidebarTarget = useGet(thread.sidebar.target$);
-  const workflowAutomations$ = thread.headerAutomations.automations$;
-  const workflowAutomationsLoadable = useLastLoadable(workflowAutomations$);
-  const lastResolvedAutomations = useLastResolved(workflowAutomations$);
-  const workflowAutomations =
-    workflowAutomationsLoadable.state === "hasData"
-      ? workflowAutomationsLoadable.data
-      : (lastResolvedAutomations ?? []);
   const open = sidebarTarget?.type === "automations";
 
   // Show the opener when the thread has a workflow automation.
-  if (workflowAutomations.length === 0) {
+  if (!header.automations) {
     return null;
   }
 
@@ -648,6 +653,8 @@ export function AutomationMenuButton({
         return $.chat.automations.open;
       })}
       open={open}
+      disabled={header.pending}
+      busy={header.pending}
       onClick={() => {
         reloadAutomations();
         openAutomationSidebar(thread);
@@ -660,6 +667,7 @@ function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const sidebarTarget = useGet(thread.sidebar.target$);
   const openBrowserSidebar = useSet(openThreadBrowserSession$);
+  const { transitioning } = useChatHeaderActions(thread);
   return (
     <ChatThreadHeaderIconButton
       icon={<Globe size={18} />}
@@ -667,6 +675,7 @@ function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
         return $.chat.thread.openBrowser;
       })}
       open={sidebarTarget?.type === "browser"}
+      disabled={transitioning}
       onClick={() => {
         openBrowserSidebar(thread.threadId);
       }}
@@ -723,10 +732,18 @@ export function ChatThreadHeaderTitle({
 const CHAT_THREAD_HEADER_CLASS =
   "flex h-14 shrink-0 items-center justify-between bg-transparent px-6";
 
-function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadHeader({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Only mount one emoji picker for the thread's shared menu state.
-  return isDesktop ? <DesktopChatThreadHeader thread={thread} /> : null;
+  return isDesktop ? (
+    <DesktopChatThreadHeader thread={thread} header={header} />
+  ) : null;
 }
 
 export function SettledChatThreadActions({
@@ -739,13 +756,20 @@ export function SettledChatThreadActions({
   return useGet(thread.optimisticCreateUnsettled$) ? null : children;
 }
 
-function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
+function DesktopChatThreadHeader({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const startSharing = useSet(thread.sharing.start$);
   const closeSharing = useSet(thread.sharing.close$);
+  const { transitioning } = header;
   if (sharingPhase !== "idle") {
     return (
       <header className={CHAT_THREAD_HEADER_CLASS}>
@@ -792,6 +816,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
                 render={
                   <Button
                     type="button"
+                    disabled={transitioning}
                     onClick={() => {
                       detach(
                         startSharing(pageSignal),
@@ -818,8 +843,8 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <AutomationMenuButton thread={thread} />
-          <ThreadMailButton thread={thread} />
+          <AutomationMenuButton thread={thread} header={header} />
+          <ThreadMailButton thread={thread} header={header} />
           <BrowserMenuButton thread={thread} />
           <ChatResourcesButton thread={thread} />
         </div>
@@ -2880,9 +2905,11 @@ function ChatThreadAppSkeletonHandoff({
 function ChatThread({
   isMain,
   thread,
+  header,
 }: {
   isMain?: boolean;
   thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
 }) {
   const { t } = useTranslation();
   const setContainerRef = useSet(
@@ -2899,7 +2926,7 @@ function ChatThread({
       ref={setContainerRef}
       tabIndex={-1}
     >
-      <ChatThreadContent thread={thread} />
+      <ChatThreadContent thread={thread} header={header} />
       {isMain ? <ChatThreadAppSkeletonHandoff thread={thread} /> : null}
     </section>
   );
@@ -2928,11 +2955,16 @@ function ChatThreadPane({
   isMain?: boolean;
   pane: Exclude<ChatThreadPaneState, null>;
 }) {
+  const header = useChatHeaderActions(
+    pane.kind === "thread" ? pane.thread : null,
+    !isMain,
+  );
   return pane.kind === "thread" ? (
     <ChatThread
       key={pane.thread.threadId}
       isMain={isMain}
       thread={pane.thread}
+      header={header}
     />
   ) : (
     <MissingChatThread threadId={pane.threadId} />
@@ -3912,7 +3944,13 @@ function ChatThreadResourceLayout({
   );
 }
 
-function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadContent({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const exists = useGet(thread.threadExists$);
   if (!exists) {
     return <ChatThreadNotFound />;
@@ -3920,7 +3958,7 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
 
   return (
     <>
-      <ChatThreadHeader thread={thread} />
+      <ChatThreadHeader thread={thread} header={header} />
       <ChatThreadResourceLayout thread={thread}>
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />

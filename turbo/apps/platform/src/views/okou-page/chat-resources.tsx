@@ -34,6 +34,7 @@ import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { emptyArtifactImg } from "./platform-assets.ts";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { useChatHeaderActions } from "./chat-header-actions.ts";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -56,23 +57,27 @@ export function ChatResourcesButton({
   const current =
     mainThreadId !== null &&
     (thread.threadId === mainThreadId || thread.threadId === secondaryThreadId);
-  return current ? (
+  return (
     <ChatResourcesButtonInner
       key={thread.threadId}
       thread={thread}
       largeTarget={largeTarget}
+      current={current}
     />
-  ) : null;
+  );
 }
 
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
+  current,
 }: {
   readonly thread: ChatPanelSignals;
   readonly largeTarget: boolean;
+  readonly current: boolean;
 }) {
   const { t } = useTranslation();
+  const { transitioning } = useChatHeaderActions(thread);
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
@@ -84,7 +89,10 @@ function ChatResourcesButtonInner({
   // Only a current request waits for resources. A narrower layout releases the
   // button while the underlying sources keep loading into their caches.
   const loading =
-    (requested && settled === null) || preference.state === "loading";
+    !current ||
+    transitioning ||
+    (requested && settled === null) ||
+    preference.state === "loading";
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown = settled !== null && requested && (settled || chosen !== null);
@@ -96,7 +104,7 @@ function ChatResourcesButtonInner({
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
   const rootSignal = useGet(rootSignal$);
-  const visible = shown && boundary !== null;
+  const visible = current && !transitioning && shown && boundary !== null;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
   });
