@@ -33,8 +33,8 @@ fn assert_complete_delivery(sandbox: &MockSandbox, expected: &serde_json::Value,
         let (json, payload) = storage_files::split_input(&call.manifest_json).unwrap();
         assert!(json.len() <= storage_files::MAX_MANIFEST_BYTES);
         let manifest: Manifest = serde_json::from_slice(json).unwrap();
-        let value: serde_json::Value = serde_json::from_slice(json).unwrap();
-        mounts.extend(value["storageMounts"].as_array().unwrap().iter().cloned());
+        let mut value: serde_json::Value = serde_json::from_slice(json).unwrap();
+        mounts.append(value["storageMounts"].as_array_mut().unwrap());
         assert_eq!(value["cleanupPaths"], serde_json::json!([]));
         let groups = storage_files::decode(payload).unwrap();
         storage_files::validate_bindings(
