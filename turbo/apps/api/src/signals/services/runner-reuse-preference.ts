@@ -25,7 +25,11 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  alias,
+  QueryBuilder,
+  type SubqueryWithSelection,
+} from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 
 import {
@@ -60,17 +64,27 @@ const predecessorHomeEvidenceKindSchema = zEnum([
   "location",
 ]);
 
+type RunnerThreadPredecessor = SubqueryWithSelection<
+  { id: typeof chatThreads.frameworkSessionRunId },
+  "reuse_pred"
+>;
+
 /**
  * Pending discovery reads the owned Thread's durable predecessor, independently
  * of its native readiness or a retained producer row. The first claim advances
  * the Thread to this Run; discovery must stop treating it as the predecessor.
  * Native intent is already frozen in the job's execution context before claim.
+ *
+ * Callers left-join the result laterally `ON true` and every reuse condition
+ * reads its `id` column. Primary-key joins yield at most one row, so a missing
+ * predecessor is NULL, as with a scalar subquery, while PostgreSQL plans the
+ * lookup once instead of once per referencing condition.
  */
-function runnerThreadPredecessorRunId(args: {
+function runnerThreadPredecessor(args: {
   readonly runId: SQLWrapper;
   readonly reuseKey: SQLWrapper;
-}): SQL {
-  const predecessorQuery = new QueryBuilder()
+}): RunnerThreadPredecessor {
+  return new QueryBuilder()
     .select({ id: chatThreads.frameworkSessionRunId })
     .from(currentRun)
     .innerJoin(
@@ -97,8 +111,8 @@ function runnerThreadPredecessorRunId(args: {
           sql`'thread:' || cast(${currentRun.chatThreadId} as text)`,
         ),
       ),
-    );
-  return sql`(${predecessorQuery})`;
+    )
+    .as("reuse_pred");
 }
 
 function runnerReuseStateFreshAfter(currentDate: Date): Date {
@@ -388,7 +402,7 @@ function discoveryWindowCondition(after: Date): SQL | undefined {
 function finalizingPollCandidates(args: {
   readonly runnerId: string;
   readonly runnerGroup: string;
-  readonly predecessorRunId: SQL;
+  readonly predecessorRunId: SQLWrapper;
   readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
   readonly freshAfter: Date;
@@ -466,13 +480,17 @@ function advertisedReusePollCandidates(args: {
 /**
  * Poll ordering runs before a job is selected, so any runner with qualifying
  * local reuse may prioritize the job independently of the globally selected
- * preference identity.
+ * preference identity. `priority` reads each job's Thread predecessor from
+ * `predecessor`, which the caller left-joins laterally after the job queue.
  */
 export function runnerReusePreferencePollPriority(args: {
   readonly runnerId: string;
   readonly runnerGroup: string;
   readonly currentDate: Date;
-}): SQL {
+}): {
+  readonly predecessor: RunnerThreadPredecessor;
+  readonly priority: SQL;
+} {
   const reuseRoutingAfter = new Date(
     args.currentDate.getTime() - RUNNER_REUSE_ROUTING_WINDOW_MS,
   );
@@ -487,10 +505,11 @@ export function runnerReusePreferencePollPriority(args: {
   );
   const freshAfter = runnerReuseStateFreshAfter(args.currentDate);
   const { reuseKey, profile } = runnerJobQueue;
-  const predecessorRunId = runnerThreadPredecessorRunId({
+  const predecessor = runnerThreadPredecessor({
     runId: runnerJobQueue.runId,
     reuseKey,
   });
+  const predecessorRunId = predecessor.id;
   const advertised = advertisedReusePollCandidates({
     runnerId: args.runnerId,
     runnerGroup: args.runnerGroup,
@@ -518,7 +537,7 @@ export function runnerReusePreferencePollPriority(args: {
     completedAfter: finalizingCompletedAfter,
     protectedAfter: finalizingWaitAfter,
   });
-  return sql`CASE
+  const priority = sql`CASE
     WHEN ${and(
       discoveryWindowCondition(exactSandboxRoutingAfter),
       isNotNull(runnerJobQueue.reuseKey),
@@ -581,6 +600,7 @@ export function runnerReusePreferencePollPriority(args: {
     THEN CASE WHEN ${predecessorHome.hostLocation.local} THEN 1 ELSE 0 END
     ELSE 0
   END`;
+  return { predecessor, priority };
 }
 
 type PositiveRunnerPreference = Extract<
@@ -677,7 +697,7 @@ function advertisedReuseConditions(
     readonly shouldLookUpExactSandbox: boolean;
     readonly shouldLookUpGenericReuse: boolean;
   },
-  predecessorRunId: SQL,
+  predecessorRunId: SQLWrapper,
 ) {
   const identity = {
     reuseKey: sql.param(args.reuseKey),
@@ -713,10 +733,11 @@ function runnerReuseCandidatePlan(args: {
   readonly finalizingCompletedAfter: Date;
   readonly shouldLookUpFinalizingProducer: boolean;
 }) {
-  const predecessorRunId = runnerThreadPredecessorRunId({
+  const predecessor = runnerThreadPredecessor({
     runId: sql.param(args.runId),
     reuseKey: sql.param(args.reuseKey),
   });
+  const predecessorRunId = predecessor.id;
   const {
     reusableCondition,
     homeCondition,
@@ -795,10 +816,9 @@ function runnerReuseCandidatePlan(args: {
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
       predecessorCompletedAt: predecessorRun.completedAt,
       // Ready sandbox/home provenance survives deletion of the settled Run.
-      predecessorRunId: predecessorRunId.mapWith(
-        nullableDriverValueDecoder(chatThreads.frameworkSessionRunId),
-      ),
+      predecessorRunId,
     },
+    predecessor,
     // Only unsettled finalization needs the producer's completion/process facts.
     joinCondition: eq(predecessorRun.id, predecessorRunId),
     where: and(
@@ -921,6 +941,7 @@ const findRunnerReuseCandidate$ = command(
     const [row] = await get(db$)
       .select(plan.fields)
       .from(runnerState)
+      .leftJoinLateral(plan.predecessor, sql`true`)
       .leftJoin(predecessorRun, plan.joinCondition)
       .leftJoin(
         predecessorRunnerState,
