@@ -105,7 +105,13 @@ async function traceRelay(endpoint) {
   return relay;
 }
 
-function observe(wire, predicate, operation) {
+function observe(
+  wire,
+  predicate,
+  operation = () => {
+    return Promise.resolve();
+  },
+) {
   let off;
   const observed = new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -822,8 +828,10 @@ try {
     const observers = [await wire(endpoint), await wire(proxyA.endpoint)];
     const originals = [];
     const listeners = [];
+    const attachments = [];
     for (const connection of observers) {
       const attached = new Map();
+      attachments.push(attached);
       listeners.push(
         connection.onEvent((event) => {
           if (event.method === "Target.attachedToTarget")
@@ -859,18 +867,16 @@ try {
     let ownedBarrier;
     if (automatic) {
       const url = origin + "/root-close-owned";
-      await observe(
-        observers[1],
-        (event) => {
+      ownedBarrier = await scopedA.request("Target.createTarget", { url });
+      // Native attachment can precede the create reply or navigation commit.
+      // Correlate the returned target ID against observations retained above.
+      if (!attachments[1].has(ownedBarrier.targetId))
+        await observe(observers[1], (event) => {
           return (
             event.method === "Target.attachedToTarget" &&
-            event.params.targetInfo.url === url
+            event.params.targetInfo.targetId === ownedBarrier.targetId
           );
-        },
-        async () => {
-          ownedBarrier = await scopedA.request("Target.createTarget", { url });
-        },
-      );
+        });
     }
     for (const [index, connection] of observers.entries()) {
       // The new foreign target requires a scope-control observation after the
@@ -904,7 +910,10 @@ try {
   const selectedTab = (
     await invoke({ method: "getWindow", windowId: winA, populate: true })
   ).tabs.find((tab) => {
-    return tab.url === origin + "/filter-root";
+    return (
+      tab.url === origin + "/filter-root" ||
+      tab.pendingUrl === origin + "/filter-root"
+    );
   });
   assert.ok(selectedTab);
   const nativeFilters = await wire(endpoint);

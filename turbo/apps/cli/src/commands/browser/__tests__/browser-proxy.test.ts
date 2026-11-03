@@ -963,6 +963,10 @@ describe("chat-window CDP proxy protocol", () => {
   ])(
     "preserves an owned session when another tab moves during root observation: %j",
     async ({ browserSession, survivor }) => {
+      // Chrome removes a window when its last tab leaves; both destinations
+      // must remain available throughout the round trip.
+      provider.addPage("KEEP-ASSIGNED-WINDOW", 0);
+      provider.addPage("KEEP-OTHER-WINDOW", 1);
       if (survivor === "B") {
         provider.move("A", 1);
         provider.move("B", 0);
