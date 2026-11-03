@@ -152,11 +152,7 @@ def _match_segment_literal(runtime: str, prefix: str, suffix: str) -> str | None
     Returns the captured middle on success, None if either the prefix/suffix
     don't match or the middle would be empty.
     """
-    if not runtime.startswith(prefix):
-        return None
-    if not runtime.endswith(suffix):
-        return None
-    if len(runtime) <= len(prefix) + len(suffix):
+    if not _segment_literal_matches(runtime, prefix, suffix):
         return None
     return runtime[len(prefix) : len(runtime) - len(suffix)]
 
