@@ -1435,6 +1435,107 @@ describe("Suggestion custom follow-ups", () => {
         .suggestions,
     ).toHaveLength(1);
   });
+  it("checks every quoted card in one follow-up, including an uppercase UUID alias", async () => {
+    const fixture = await primaryRun();
+    const first = input();
+    const second = input();
+    for (const body of [first, second]) {
+      await accept(client().create({ headers: fixture.headers, body }), [200]);
+    }
+    const quote = first.customOption.draft.draftUserMessage?.parts[0];
+    if (quote?.type !== "feedback") {
+      throw new Error("Expected complete background");
+    }
+    const currentVersion = createHash("sha256")
+      .update(JSON.stringify(first.customOption.draft))
+      .digest("hex");
+    const followup = (secondVersion: string): UserMessageDocument => {
+      return {
+        version: 1,
+        parts: [
+          suggestionContextPart({
+            suggestionId: first.id,
+            draftId: randomUUID(),
+            optionId: "custom",
+            titleSnapshot: first.title,
+            rationaleSnapshot: first.rationale,
+            contextVersion: currentVersion,
+            attachmentIds: [],
+          }),
+          {
+            ...quote,
+            note: [{ type: "text", text: "Compare both decisions" }],
+          },
+          suggestionContextPart({
+            suggestionId: second.id.toUpperCase(),
+            draftId: randomUUID(),
+            optionId: "custom",
+            titleSnapshot: second.title,
+            rationaleSnapshot: second.rationale,
+            contextVersion: secondVersion,
+            attachmentIds: [],
+          }),
+          {
+            ...quote,
+            note: [{ type: "text", text: "Compare both decisions" }],
+          },
+        ],
+      };
+    };
+    const thread = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      [201],
+    );
+    const events = setupApp({ context, routes: chatEventsRoutes })(
+      chatEventsContract,
+    );
+    const body = {
+      agentId: fixture.agentId,
+      threadId: thread.body.id,
+      prompt: "Compare both decisions",
+      hasTextContent: true,
+      model: "claude-fable-5-1",
+    };
+    await accept(
+      events.send({
+        headers: humanHeaders,
+        body: {
+          ...body,
+          clientEventId: randomUUID(),
+          userMessage: followup("outdated-version"),
+        },
+      }),
+      [409],
+    );
+    expect(
+      (await accept(client().list({ headers: humanHeaders }), [200])).body
+        .suggestions,
+    ).toHaveLength(2);
+    await accept(
+      events.send({
+        headers: humanHeaders,
+        body: {
+          ...body,
+          clientEventId: randomUUID(),
+          userMessage: followup(currentVersion),
+        },
+      }),
+      [201],
+    );
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(pool.body.suggestions).toStrictEqual([]);
+    for (const { id } of [first, second]) {
+      expect(pool.body.receipts).toContainEqual(
+        expect.objectContaining({
+          id,
+          status: "consumed",
+          selectedOptionId: "custom",
+        }),
+      );
+    }
+  });
   it("can send a saved complete quote after its disposable card has been dismissed and compacted", async () => {
     const fixture = await primaryRun();
     const value = input();
