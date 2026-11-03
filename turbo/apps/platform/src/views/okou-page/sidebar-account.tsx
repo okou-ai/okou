@@ -67,6 +67,7 @@ import {
 import { ThumbnailPlaceholder, UserAvatar } from "../components/avatar.tsx";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
+import { SidebarSubscriptionUsage } from "./sidebar-subscription-entry.tsx";
 import { SubscriptionLinkingMenuItem } from "./subscription-linking.tsx";
 import { subscriptionLinkingEnabled$ } from "../../signals/okou-page/subscription-linking.ts";
 import { refreshThirdPartySubscriptionsIfStale$ } from "../../signals/external/third-party-subscriptions.ts";
@@ -772,11 +773,13 @@ export function AccountDropdown({
   collapsed = false,
   hidePreferences = false,
   renderCodexResetDialog = true,
+  showSubscriptionEntry = false,
 }: {
   onAccountAction?: (action: AccountAction) => void;
   collapsed?: boolean;
   hidePreferences?: boolean;
   renderCodexResetDialog?: boolean;
+  showSubscriptionEntry?: boolean;
 }) {
   const profile = useAccountProfile();
   const linkingEnabled = useGet(subscriptionLinkingEnabled$);
@@ -828,7 +831,7 @@ export function AccountDropdown({
       Reason.DomCallback,
       "reload account menu credit balances",
     );
-    if (!subscriptionsEnabled) {
+    if (!subscriptionsEnabled || showSubscriptionEntry) {
       return;
     }
 
@@ -841,6 +844,9 @@ export function AccountDropdown({
 
   return (
     <>
+      {!hidePreferences && showSubscriptionEntry && subscriptionsEnabled && (
+        <SidebarSubscriptionUsage resetPending={resetAction.actionPending} />
+      )}
       <DropdownMenu onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger
           render={renderAccountTrigger(
@@ -867,7 +873,9 @@ export function AccountDropdown({
               onResetCodexUsage={handleOpenCodexReset}
               resetPending={resetAction.actionPending}
               subscriptionRowsCacheKey={subscriptionRowsCacheKey}
-              subscriptionsEnabled={subscriptionsEnabled}
+              subscriptionsEnabled={
+                subscriptionsEnabled && !showSubscriptionEntry
+              }
             />
           )}
           {!hidePreferences && (

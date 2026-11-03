@@ -297,10 +297,15 @@ test.each([false, true])(
     });
     expect(findAction("Use more models")).toBeUndefined();
     const menu = await openAccountMenu();
-    await within(menu).findByRole("region", {
-      name: "ChatGPT usage",
-    });
     expect(menu).not.toHaveTextContent("Use more models");
+    const user = userEvent.setup();
+    await user.keyboard("{Escape}");
+    await user.hover(
+      await within(screen.getByTestId("labeled-nav-rail")).findByLabelText(
+        /^Subscription usage/,
+      ),
+    );
+    await screen.findByRole("region", { name: "ChatGPT usage" });
   },
 );
 

@@ -253,6 +253,7 @@ function AccountDropdownContainer({
       onAccountAction={onAccountAction}
       collapsed={collapsed}
       renderCodexResetDialog={renderCodexResetDialog}
+      showSubscriptionEntry={collapsed}
     />
   );
 }

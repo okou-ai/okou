@@ -5421,6 +5421,8 @@
       "subscriptions": {
         "credits": "點數",
         "fiveHourLimit": "5 小時額度",
+        "label": "訂閱用量",
+        "lowUsage": "訂閱用量：剩餘額度低於 20%",
         "resetTimeUnavailable": "重置時間不可用",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩餘用量",

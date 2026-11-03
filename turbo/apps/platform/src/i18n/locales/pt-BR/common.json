@@ -5499,6 +5499,8 @@
       "subscriptions": {
         "credits": "Créditos",
         "fiveHourLimit": "Limite de 5 horas",
+        "label": "Uso de assinaturas",
+        "lowUsage": "Uso de assinaturas: menos de 20% restante",
         "resetTimeUnavailable": "Horário de redefinição indisponível",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{provider}}: {{window}} restante",
