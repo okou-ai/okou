@@ -202,11 +202,14 @@ test.each([0, 1])(
       "https://continued.example.com/ready",
     );
     await userEvent.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(screen.getByLabelText("Address")).toHaveValue(
-        "https://continued.example.com/ready",
-      );
-    });
+    await expect(
+      screen.findByLabelText("continued.example.com", {
+        selector: '[role="tab"]',
+      }),
+    ).resolves.toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://continued.example.com/ready",
+    );
   },
 );
 
