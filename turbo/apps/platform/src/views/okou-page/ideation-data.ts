@@ -276,7 +276,7 @@ const categories: readonly Category[] = [
         id: "cloudinary-media-optimizer",
         prompt:
           "Set up a workflow that takes images from Google Drive, optimizes them with Cloudinary for web use, and logs the results in Notion",
-        connectorSlugs: ["cloudinary", "google-drive", "notion"],
+        connectorSlugs: ["cloudinary-mcp", "google-drive", "notion"],
       },
     ],
   },
