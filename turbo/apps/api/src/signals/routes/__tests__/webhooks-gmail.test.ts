@@ -1255,22 +1255,32 @@ describe("POST /api/webhooks/gmail", () => {
   });
 
   it.each([
-    { name: "transport failure", failure: () => HttpResponse.error() },
+    {
+      name: "transport failure",
+      failure: () => {
+        return HttpResponse.error();
+      },
+    },
     {
       name: "rate limiting",
-      failure: () => HttpResponse.json({ error: {} }, { status: 429 }),
+      failure: () => {
+        return HttpResponse.json({ error: {} }, { status: 429 });
+      },
     },
     {
       name: "server failure",
-      failure: () => HttpResponse.json({ error: {} }, { status: 503 }),
+      failure: () => {
+        return HttpResponse.json({ error: {} }, { status: 503 });
+      },
     },
     {
       name: "Gmail's HTTP 403 user rate limit",
-      failure: () =>
-        HttpResponse.json(
+      failure: () => {
+        return HttpResponse.json(
           { error: { errors: [{ reason: "userRateLimitExceeded" }] } },
           { status: 403 },
-        ),
+        );
+      },
     },
   ])(
     "retries history pagination after $name without losing or duplicating events",
