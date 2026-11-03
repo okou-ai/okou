@@ -74,6 +74,7 @@ import type {
   ViewerNavigation,
   ViewerCaptureOptions,
   ViewerError,
+  ViewerTarget,
   WindowSizeSync,
 } from "./types.ts";
 import {
@@ -632,13 +633,19 @@ function createTabOpeningGraph(
   return { open$, canKeepWindow$ };
 }
 
+interface ControllerOwner {
+  readonly authority$: Computed<boolean>;
+  readonly nativeHost: NativeInputHost;
+  readonly preferredTargetId: string | null;
+}
+
 function createControllerState(
   model: ViewerSignals,
   connection: BrowserConnection,
   canvas: HTMLCanvasElement,
-  authority$: Computed<boolean>,
-  nativeHost: NativeInputHost,
+  owner: ControllerOwner,
 ) {
+  const { authority$, nativeHost, preferredTargetId } = owner;
   const atoms = createControllerAtoms(canvas);
   const {
     clientState$,
@@ -725,6 +732,7 @@ function createControllerState(
   return {
     model,
     connection,
+    preferredTargetId,
     authority$,
     nativeHost,
     ...atoms,
@@ -3234,6 +3242,17 @@ function createAdmissionWait(
   });
 }
 
+function initialTarget(
+  targets: readonly ViewerTarget[],
+  preferred: string | null,
+) {
+  return (
+    targets.find((target) => {
+      return target.id === preferred;
+    }) ?? targets[0]
+  );
+}
+
 function createConnectionBootstrap(
   context: ControllerContext<
     | "authority$"
@@ -3248,6 +3267,7 @@ function createConnectionBootstrap(
     | "model"
     | "nativeState$"
     | "readinessFailure$"
+    | "preferredTargetId"
     | "resetOwner$"
     | "waitEvent$"
   >,
@@ -3351,7 +3371,8 @@ function createConnectionBootstrap(
     signal.throwIfAborted();
     await set(waitAvailable$, signal);
     set(bootstrapping$, false);
-    const first = get(model.snapshot$).targets[0];
+    const targets = get(model.snapshot$).targets;
+    const first = initialTarget(targets, context.preferredTargetId);
     if (first) {
       return set(get(links$).select$, first.id, signal);
     }
@@ -3376,6 +3397,7 @@ function createConnectionGraph(
     | "model"
     | "nativeState$"
     | "readinessFailure$"
+    | "preferredTargetId"
     | "resetOwner$"
     | "selectedOwner$"
     | "startedState$"
@@ -4599,16 +4621,9 @@ export function createBrowserController(
   model: ViewerSignals,
   connection: BrowserConnection,
   canvas: HTMLCanvasElement,
-  authority$: Computed<boolean>,
-  nativeHost: NativeInputHost,
+  owner: ControllerOwner,
 ) {
-  const context = createControllerState(
-    model,
-    connection,
-    canvas,
-    authority$,
-    nativeHost,
-  );
+  const context = createControllerState(model, connection, canvas, owner);
   const links$: Computed<ControllerLinks> = computed(() => {
     return graph;
   });

@@ -749,12 +749,14 @@ function BrowserTabs({
 }
 
 function useBrowserRecovery(signals: BrowserSignals) {
+  const recoveryOperation = useLoadable(signals.recoveryOperation$);
   const displayRecovery = useGet(signals.displayRecovery$);
   const navigationScope = useGet(signals.navigationScope$);
   const [retryOperation, retryImage] = useLoadableSet(signals.retryImage$);
   const [reconnectOperation, reconnect] = useLoadableSet(signals.reconnect$);
   const [reloadOperation, navigate] = useLoadableSet(signals.navigate$);
   const pending =
+    recoveryOperation.state === "loading" ||
     retryOperation.state === "loading" ||
     reloadOperation.state === "loading" ||
     reconnectOperation.state === "loading";

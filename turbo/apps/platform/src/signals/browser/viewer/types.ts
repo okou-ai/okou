@@ -24,6 +24,8 @@ export interface ViewerError {
     | "frame";
   /** A fixed diagnostic, excluding endpoint credentials and provider payloads. */
   readonly message: string;
+  /** Safe transient-failure evidence; never permission to replay a failed effect. */
+  readonly transient?: boolean;
   /** Original failed request, when known. Never includes parameters or session IDs. */
   readonly request?: {
     readonly method: string;

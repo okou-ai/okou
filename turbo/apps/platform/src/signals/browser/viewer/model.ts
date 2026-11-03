@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import {
   initialInventory,
   inventoryTargets,
@@ -461,6 +461,7 @@ function createSnapshotTransitions(
 function createModelTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
+  changed$: Command<void, []>,
 ) {
   const { intentState$, imageState$, loadingPreviewState$, lifecycleState$ } =
     atoms;
@@ -468,7 +469,11 @@ function createModelTransitions(
   const snapshotTransition$ = createSnapshotTransitions(atoms, publication);
   const transition$ = command(({ get, set }, event: ViewerTransition) => {
     if ("owner" in event) {
-      return set(imageTransition$, event);
+      const decision = set(imageTransition$, event);
+      if (decision.accepted) {
+        set(changed$);
+      }
+      return decision;
     }
     if (event.type !== "streaming" && event.type !== "stopped") {
       set(
@@ -495,6 +500,7 @@ function createModelTransitions(
         : event.type === "select" && !!event.preview && !event.paused,
     );
     set(snapshotTransition$, event);
+    set(changed$);
     return undefined;
   });
   const commitIntent$ = command(
@@ -668,6 +674,7 @@ export function createViewerSignals(
   navigationScopeSource$: Computed<object | null>,
   creationReadySource$: Computed<boolean>,
   connectedSource$: Computed<boolean>,
+  changed$: Command<void, []>,
 ) {
   const atoms = createModelAtoms();
   const values = createModelValues(
@@ -682,7 +689,7 @@ export function createViewerSignals(
     creationReadySource$,
   );
   const publication = createModelPublication(atoms, values);
-  const transitions = createModelTransitions(atoms, publication);
+  const transitions = createModelTransitions(atoms, publication, changed$);
   const address = createAddressActions(atoms, values);
   const favicon = createFaviconActions(atoms);
   const configuration = createConfigurationActions(atoms);

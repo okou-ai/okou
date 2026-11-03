@@ -240,6 +240,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Share website logins across chats with a separate window for each chat",
     enabled: false,
   },
+  [FeatureSwitchKey.BrowserViewerRecovery]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Browser viewer recovery",
+    description:
+      "Automatically recover temporary browser viewer connection failures",
+    enabled: false,
+  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",
