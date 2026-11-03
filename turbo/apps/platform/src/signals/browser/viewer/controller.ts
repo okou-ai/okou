@@ -24,7 +24,8 @@ import {
   captureSentryLogError,
   sentryLogContext,
 } from "../../../lib/sentry-config.ts";
-import { diagnostic } from "./diagnostic.ts";
+import { diagnostic, isImageFailure } from "./diagnostic.ts";
+import type { ImageEvent } from "./image-recovery.ts";
 import { i18n } from "../../../i18n/index.ts";
 import {
   createTargetDirectory,
@@ -59,9 +60,9 @@ import {
 import { captureBoundary } from "../display/capture-boundary.ts";
 import { createCanvasRenderer, type FrameSink } from "../render/canvas.ts";
 import type { ViewerSignals } from "./model.ts";
+import type { BrowserConnection } from "../browser.ts";
 import type { ViewerIntent } from "./lifecycle.ts";
 import type {
-  BrowserConnection,
   NavigationAction,
   NavigationReceipt,
   ViewerHistory,
@@ -403,6 +404,7 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
 }
 
 interface ControllerLinks {
+  readonly imageEvent$: Command<void, [ImageEvent]>;
   readonly discoveryFailed$: Command<void, [unknown, AbortSignal]>;
   readonly nativeEvent$: Command<void, [NativeEvent]>;
   readonly beginClosing$: Command<void, []>;
@@ -725,11 +727,20 @@ function createControllerState(
     tabOpening: createTabOpeningGraph(model, creation$),
   };
 }
-type ControllerContext = ReturnType<typeof createControllerState>;
+type ControllerState = ReturnType<typeof createControllerState>;
+type ControllerContext<Keys extends keyof ControllerState> = Pick<
+  ControllerState,
+  Keys
+>;
+type ControllerDependencies<Keys extends keyof ControllerLinks> = Computed<
+  Pick<ControllerLinks, Keys>
+>;
 
 function createDiscoveryFailure(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    "connected$" | "connectedState$" | "model" | "readinessFailure$" | "wake$"
+  >,
+  links$: ControllerDependencies<"beginClosing$" | "retireCurrent$">,
 ): ControllerLinks["discoveryFailed$"] {
   const { model, readinessFailure$, connected$, wake$ } = context;
   return command(({ get, set }, error: unknown, signal: AbortSignal): void => {
@@ -748,9 +759,27 @@ function createDiscoveryFailure(
   });
 }
 
+type DiscoveryContext = ControllerContext<
+  | "available$"
+  | "bootstrapping$"
+  | "chosenOnce$"
+  | "closingTargets$"
+  | "connected$"
+  | "connectedState$"
+  | "crashed$"
+  | "creationOwner$"
+  | "directory$"
+  | "model"
+  | "nativeHost"
+  | "readinessFailure$"
+  | "wake$"
+>;
+
 function createDiscoveryGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: DiscoveryContext,
+  links$: ControllerDependencies<
+    "beginClosing$" | "retireCurrent$" | "selectTab$" | "selectedSession$"
+  >,
 ): Pick<
   ControllerLinks,
   "discoveryFailed$" | "discoveryChanged$" | "discovery$"
@@ -863,9 +892,41 @@ function createDiscoveryGraph(
   return { discoveryFailed$, discoveryChanged$, discovery$ };
 }
 
+function createImageRecoveryGraph(
+  context: ControllerContext<"model" | "wake$">,
+  links$: ControllerDependencies<"displayGraph$">,
+): Pick<ControllerLinks, "imageEvent$"> {
+  const { model, wake$ } = context;
+  const imageEvent$ = command(({ get, set }, event: ImageEvent) => {
+    const decision = set(model.transition$, event);
+    if (decision?.resumeDisplay) {
+      const display = get(get(links$).displayGraph$);
+      if (display) {
+        set(display.setSuspended$, false);
+      }
+    }
+    set(wake$);
+  });
+  return { imageEvent$ };
+}
+
 function createCaptureRecoveryGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "framesState$"
+    | "model"
+    | "nativeHost"
+    | "readinessFailure$"
+    | "retirements$"
+    | "sink"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "displayGraph$"
+    | "imageEvent$"
+    | "reconcileRetirement$"
+    | "retireCurrent$"
+    | "selectedSession$"
+  >,
 ): Pick<ControllerLinks, "captureFailed$"> {
   const { model, sink, retirements$, readinessFailure$, wake$, nativeHost } =
     context;
@@ -886,16 +947,8 @@ function createCaptureRecoveryGraph(
         return;
       }
       const fault = diagnostic(error);
-      const method = fault.request?.method;
       set(selected.failure$, error);
-      if (
-        fault.kind !== "frame" &&
-        !(
-          fault.kind === "protocol" &&
-          (method === "Page.startScreencast" ||
-            method === "Page.stopScreencast")
-        )
-      ) {
+      if (!isImageFailure(fault)) {
         set(readinessFailure$, error);
         set(get(links$).retireCurrent$, "target-replaced", false, true);
         set(model.transition$, { type: "failed", error: fault });
@@ -931,14 +984,13 @@ function createCaptureRecoveryGraph(
       sink.reset();
       // A retained transition preview is not a live image after decode failure.
       set(model.transition$, { type: "stopped", retainFrame: true });
-      set(model.transition$, {
+      set(get(links$).imageEvent$, {
         type: "image-failed",
         owner: recoveryOwner,
         targetId: owner.targetId,
         error: fault,
       });
       set(nativeHost.synchronize$);
-      set(wake$);
       const [input, capture, displayReceipt] = await Promise.allSettled([
         set(selected.input.suspend$, selected.attached.client.signal),
         set(selected.stream.quiesce$, selected.attached.frames.signal),
@@ -959,8 +1011,20 @@ function createCaptureRecoveryGraph(
 }
 
 function createSelectedSessionsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "attachedState$"
+    | "available$"
+    | "captureStartedState$"
+    | "captureUpdated$"
+    | "directory$"
+    | "nativeHost"
+    | "selectedOwner$"
+    | "settings$"
+    | "sink"
+  >,
+  links$: ControllerDependencies<
+    "captureFailed$" | "discovery$" | "scheduleCapture$"
+  >,
 ): Pick<ControllerLinks, "captureStarted$" | "selectedSession$"> {
   const {
     sink,
@@ -1018,8 +1082,17 @@ function createSelectedSessionsGraph(
 }
 
 function createDisplayGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "available$"
+    | "capturePending$"
+    | "clientState$"
+    | "connected$"
+    | "connection"
+    | "model"
+  >,
+  links$: ControllerDependencies<
+    "discovery$" | "scheduleCapture$" | "selectedSession$"
+  >,
 ): Pick<
   ControllerLinks,
   | "refreshCapture$"
@@ -1119,8 +1192,20 @@ function createDisplayGraph(
 }
 
 function createCaptureGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "captureChange$"
+    | "capturePending$"
+    | "captureScheduled$"
+    | "captureStartedState$"
+    | "captureUpdated$"
+    | "displaySize$"
+    | "nativeHost"
+    | "settings$"
+  >,
+  links$: ControllerDependencies<
+    "display$" | "selectedSession$" | "waitReady$"
+  >,
 ): Pick<
   ControllerLinks,
   "cancelCapture$" | "configureCapture$" | "scheduleCapture$"
@@ -1229,7 +1314,19 @@ function createCaptureGraph(
   return { cancelCapture$, configureCapture$, scheduleCapture$ };
 }
 
-function createRetirementReceiptsGraph(context: ControllerContext) {
+type RetirementReceiptsContext = ControllerContext<
+  | "closingState$"
+  | "disposedState$"
+  | "model"
+  | "retirements$"
+  | "waitEvent$"
+  | "wake$"
+>;
+
+function createRetirementReceiptsGraph(
+  context: RetirementReceiptsContext,
+  links$: ControllerDependencies<"imageEvent$">,
+) {
   const {
     model,
     disposedState$,
@@ -1275,13 +1372,14 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
       set(retirements$, remaining);
       const image = get(model.imageRecovery$);
       if (!get(disposedState$) && image?.owner === retirement.owner) {
-        set(model.transition$, {
+        set(get(links$).imageEvent$, {
           type: "image-settled",
           owner: image.owner,
           ready: result.status === "fulfilled",
         });
+      } else {
+        set(wake$);
       }
-      set(wake$);
       return result;
     },
   );
@@ -1357,8 +1455,24 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
 }
 
 function createRetirementsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "captureStartedState$"
+    | "closingState$"
+    | "creationOwner$"
+    | "disposedState$"
+    | "model"
+    | "nativeHost"
+    | "resetCreate$"
+    | "resetSelection$"
+    | "retirements$"
+    | "selection"
+    | "sink"
+    | "waitEvent$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    "cancelCapture$" | "displayGraph$" | "imageEvent$" | "selectedSession$"
+  >,
 ): Pick<
   ControllerLinks,
   | "reconcileRetirement$"
@@ -1380,7 +1494,7 @@ function createRetirementsGraph(
     wake$,
     nativeHost,
   } = context;
-  const receipts = createRetirementReceiptsGraph(context);
+  const receipts = createRetirementReceiptsGraph(context, links$);
   const retireCurrent$: Command<void, [InputStop, boolean, boolean?]> = command(
     (
       { get, set },
@@ -1409,7 +1523,7 @@ function createRetirementsGraph(
           );
         }
         if (image && !get(disposedState$)) {
-          set(model.transition$, {
+          set(get(links$).imageEvent$, {
             type: "image-failed",
             owner: image.owner,
             targetId: image.targetId,
@@ -1459,8 +1573,18 @@ function createRetirementsGraph(
 }
 
 function createReadinessGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "available$"
+    | "model"
+    | "nativeHost"
+    | "readinessFailure$"
+    | "selectedOwner$"
+    | "waitEvent$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    "displayGraph$" | "imageEvent$" | "refreshFavicon$" | "selectedSession$"
+  >,
 ): Pick<ControllerLinks, "streaming$" | "waitReady$" | "waitSelection$"> {
   const {
     model,
@@ -1481,25 +1605,19 @@ function createReadinessGraph(
     }
     const image = get(model.imageRecovery$);
     if (image) {
-      const decision = set(model.transition$, {
+      set(get(links$).imageEvent$, {
         type: "image-painted",
         owner: image.owner,
       });
-      if (decision?.resumeDisplay) {
-        const display = get(get(links$).displayGraph$);
-        if (display) {
-          set(display.setSuspended$, false);
-        }
-      }
     } else {
       const display = get(get(links$).displayGraph$);
       if (display) {
         set(display.setSuspended$, false);
       }
       set(model.transition$, { type: "streaming" });
+      set(wake$);
     }
     set(nativeHost.synchronize$);
-    set(wake$);
     detach(
       set(
         get(links$).refreshFavicon$,
@@ -1583,8 +1701,14 @@ function attachmentSessionId(value: unknown, message: string): string {
 }
 
 function createAttachmentAdmission(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "available$"
+    | "clientState$"
+    | "directory$"
+    | "selectedOwner$"
+    | "waitEvent$"
+  >,
+  links$: ControllerDependencies<"discovery$" | "waitRetirement$">,
 ) {
   const { selectedOwner$, available$, waitEvent$, clientState$, directory$ } =
     context;
@@ -1633,8 +1757,10 @@ function createAttachmentAdmission(
 }
 
 function createAttachmentInitialization(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<"nativeHost" | "wake$">,
+  links$: ControllerDependencies<
+    "displayGraph$" | "selectedSession$" | "streaming$"
+  >,
   assertCurrent$: Command<void, [SelectionOwner, AbortSignal]>,
 ) {
   const { wake$, nativeHost } = context;
@@ -1702,9 +1828,28 @@ function createAttachmentInitialization(
   return { enable$, initialize$ };
 }
 
+type AttachmentContext = ControllerContext<
+  | "available$"
+  | "clientState$"
+  | "directory$"
+  | "nativeHost"
+  | "selectedOwner$"
+  | "selection"
+  | "settings$"
+  | "waitEvent$"
+  | "wake$"
+>;
+
 function createAttachmentGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: AttachmentContext,
+  links$: ControllerDependencies<
+    | "discovery$"
+    | "displayGraph$"
+    | "ensureFrames$"
+    | "selectedSession$"
+    | "streaming$"
+    | "waitRetirement$"
+  >,
 ): Pick<ControllerLinks, "attach$"> {
   const { clientState$, selection, settings$, directory$, nativeHost } =
     context;
@@ -1818,8 +1963,15 @@ function createAttachmentGraph(
 }
 
 function createSelectionRevalidation(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "available$"
+    | "clientState$"
+    | "closingTargets$"
+    | "directory$"
+    | "model"
+    | "selectedOwner$"
+  >,
+  links$: ControllerDependencies<"discovery$" | "retireCurrent$">,
 ) {
   const {
     model,
@@ -1910,8 +2062,18 @@ function createSelectionRevalidation(
 }
 
 function createSelectionAttempt(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "clientState$"
+    | "disposedState$"
+    | "model"
+    | "readinessFailure$"
+    | "resetSelection$"
+    | "selectedOwner$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    "attach$" | "retireCurrent$" | "selectedSession$" | "waitReady$"
+  >,
   confirmFailedSelection$: Command<
     Promise<void>,
     [SelectionOwner, unknown, AbortSignal]
@@ -2007,8 +2169,30 @@ function createSelectionAttempt(
 }
 
 function createSelectionGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "available$"
+    | "chosenOnce$"
+    | "clientState$"
+    | "closingTargets$"
+    | "crashedSelection$"
+    | "directory$"
+    | "disposedState$"
+    | "extensionRevision$"
+    | "model"
+    | "readinessFailure$"
+    | "resetSelection$"
+    | "selectedOwner$"
+    | "selection"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "attach$"
+    | "discovery$"
+    | "retireCurrent$"
+    | "selectedSession$"
+    | "waitReady$"
+  >,
 ): Pick<ControllerLinks, "selectTab$" | "select$" | "revalidateSelection$"> {
   const {
     model,
@@ -2085,8 +2269,8 @@ function createSelectionGraph(
 }
 
 function createFaviconGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<"faviconAvailable$" | "faviconPending$" | "model">,
+  links$: ControllerDependencies<"selectedSession$">,
 ): Pick<ControllerLinks, "refreshFavicon$"> {
   const { model, faviconPending$, faviconAvailable$ } = context;
   const refreshFavicon$ = command(
@@ -2176,8 +2360,8 @@ function createFaviconGraph(
 }
 
 function createSessionEvent(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<"model">,
+  links$: ControllerDependencies<"refreshFavicon$">,
 ) {
   const { model } = context;
   return command(({ get, set }, event: CdpEvent, selected: SelectedSession) => {
@@ -2257,8 +2441,8 @@ function createSessionEvent(
 }
 
 function createScreencastEvent(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<"framesState$">,
+  links$: ControllerDependencies<"selectedSession$" | "streaming$">,
 ) {
   const { framesState$ } = context;
   return command(({ get, set }, event: CdpEvent, source: CdpClient) => {
@@ -2315,8 +2499,8 @@ function createScreencastEvent(
 }
 
 function createDetachedEvent(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<"closingTargets$" | "selection">,
+  links$: ControllerDependencies<"revalidateSelection$">,
 ) {
   const { closingTargets$, selection } = context;
   return command(
@@ -2348,8 +2532,8 @@ function createDetachedEvent(
 }
 
 function createRetiredSessionEvents(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<"connected$" | "model" | "retirements$">,
+  links$: ControllerDependencies<"discovery$" | "reconcileRetirement$">,
 ) {
   const { model, retirements$, connected$ } = context;
   return command(
@@ -2402,8 +2586,28 @@ function createRetiredSessionEvents(
 }
 
 function createProtocolEventDispatch(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "clientState$"
+    | "closingTargets$"
+    | "connected$"
+    | "crashedSelection$"
+    | "disposedState$"
+    | "framesState$"
+    | "model"
+    | "retirements$"
+    | "selection"
+    | "targetRevision$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "discovery$"
+    | "reconcileRetirement$"
+    | "refreshFavicon$"
+    | "retireCurrent$"
+    | "revalidateSelection$"
+    | "selectedSession$"
+    | "streaming$"
+  >,
   followActiveTarget$: ControllerLinks["followActiveTarget$"],
 ) {
   const { clientState$, disposedState$, targetRevision$, wake$ } = context;
@@ -2472,8 +2676,10 @@ function createProtocolEventDispatch(
 }
 
 function createCrashedEvent(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    "clientState$" | "crashedSelection$" | "model" | "selection"
+  >,
+  links$: ControllerDependencies<"retireCurrent$">,
 ) {
   const { model, selection, clientState$, crashedSelection$ } = context;
   return command(({ get, set }, event: CdpEvent, source: CdpClient) => {
@@ -2525,8 +2731,15 @@ function createCrashedEvent(
 }
 
 function createActiveTargetFollowing(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "available$"
+    | "clientState$"
+    | "directory$"
+    | "extensionRevision$"
+    | "model"
+    | "targetRevision$"
+  >,
+  links$: ControllerDependencies<"selectTab$">,
 ) {
   const {
     model,
@@ -2599,8 +2812,15 @@ function createActiveTargetFollowing(
 }
 
 function createFramesDisconnectionHandling(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    "framesState$" | "model" | "retirements$" | "selectedOwner$" | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "imageEvent$"
+    | "reconcileRetirement$"
+    | "retireCurrent$"
+    | "selectedSession$"
+  >,
 ) {
   const { model, framesState$, retirements$, selectedOwner$, wake$ } = context;
   return command(({ get, set }, fault: CdpFault, source: CdpClient) => {
@@ -2625,7 +2845,7 @@ function createFramesDisconnectionHandling(
       return;
     }
     const recoveryOwner = image?.owner ?? {};
-    set(model.transition$, {
+    set(get(links$).imageEvent$, {
       type: "image-failed",
       owner: recoveryOwner,
       targetId: owner.targetId,
@@ -2638,19 +2858,38 @@ function createFramesDisconnectionHandling(
     set(get(links$).retireCurrent$, "target-replaced", false, true);
     // Admission can lose frames before a selected input/capture graph exists.
     if (!selected) {
-      set(model.transition$, {
+      set(get(links$).imageEvent$, {
         type: "image-settled",
         owner: recoveryOwner,
         ready: true,
       });
     }
-    set(wake$);
   });
 }
 
 function createDisconnectionHandling(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "clientState$"
+    | "closingState$"
+    | "connectedState$"
+    | "disconnectingState$"
+    | "disposedState$"
+    | "framesState$"
+    | "model"
+    | "readinessFailure$"
+    | "retirements$"
+    | "selectedOwner$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "beginClosing$"
+    | "discovery$"
+    | "displayGraph$"
+    | "imageEvent$"
+    | "reconcileRetirement$"
+    | "retireCurrent$"
+    | "selectedSession$"
+  >,
 ): ControllerLinks["disconnected$"] {
   const {
     model,
@@ -2730,8 +2969,41 @@ function createDisconnectionHandling(
 }
 
 function createEventsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "available$"
+    | "clientState$"
+    | "closingState$"
+    | "closingTargets$"
+    | "connected$"
+    | "connectedState$"
+    | "connection"
+    | "crashedSelection$"
+    | "directory$"
+    | "disconnectingState$"
+    | "disposedState$"
+    | "extensionRevision$"
+    | "framesState$"
+    | "model"
+    | "readinessFailure$"
+    | "retirements$"
+    | "selectedOwner$"
+    | "selection"
+    | "targetRevision$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "beginClosing$"
+    | "discovery$"
+    | "displayGraph$"
+    | "imageEvent$"
+    | "reconcileRetirement$"
+    | "refreshFavicon$"
+    | "retireCurrent$"
+    | "revalidateSelection$"
+    | "selectTab$"
+    | "selectedSession$"
+    | "streaming$"
+  >,
 ): Pick<
   ControllerLinks,
   "event$" | "followActiveTarget$" | "disconnected$" | "nativeEvent$"
@@ -2782,8 +3054,10 @@ function createEventsGraph(
 }
 
 function createFramesConnectionGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    "assertAvailable$" | "clientState$" | "connection" | "framesState$"
+  >,
+  links$: ControllerDependencies<"disconnected$" | "event$">,
 ): Pick<ControllerLinks, "createFrames$" | "ensureFrames$"> {
   const { connection, framesState$, clientState$, assertAvailable$ } = context;
   const createFrames$ = command(({ get, set }): CdpClient => {
@@ -2836,8 +3110,30 @@ function createFramesConnectionGraph(
 }
 
 function createConnectionBootstrap(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "authority$"
+    | "bootstrapping$"
+    | "clientState$"
+    | "closingState$"
+    | "connectedState$"
+    | "connection"
+    | "displaySize$"
+    | "framesState$"
+    | "model"
+    | "nativeState$"
+    | "readinessFailure$"
+    | "resetOwner$"
+  >,
+  links$: ControllerDependencies<
+    | "createFrames$"
+    | "disconnected$"
+    | "discovery$"
+    | "displayGraph$"
+    | "event$"
+    | "nativeEvent$"
+    | "select$"
+  >,
 ): Command<Promise<SelectionOutcome>, [AbortSignal]> {
   const {
     model,
@@ -2944,8 +3240,38 @@ function createConnectionBootstrap(
 }
 
 function createConnectionGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "authority$"
+    | "bootstrapping$"
+    | "clientState$"
+    | "closingState$"
+    | "connected$"
+    | "connectedState$"
+    | "connection"
+    | "displaySize$"
+    | "disposedState$"
+    | "framesState$"
+    | "model"
+    | "nativeState$"
+    | "readinessFailure$"
+    | "resetOwner$"
+    | "selectedOwner$"
+    | "startedState$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "createFrames$"
+    | "disconnected$"
+    | "discovery$"
+    | "displayGraph$"
+    | "dispose$"
+    | "event$"
+    | "nativeEvent$"
+    | "reconcileSelection$"
+    | "select$"
+    | "waitReady$"
+  >,
 ): Pick<ControllerLinks, "start$"> {
   const {
     model,
@@ -3032,8 +3358,10 @@ interface CreatedTabPublication {
 }
 
 function createTabPublication(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    "assertAvailable$" | "creationOwner$" | "model" | "targetRevision$"
+  >,
+  links$: ControllerDependencies<"discovery$" | "selectTab$">,
 ) {
   const { model, creationOwner$, targetRevision$, assertAvailable$ } = context;
   return command(
@@ -3102,8 +3430,10 @@ function createTabPublication(
 }
 
 function createCreationResumption(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    "available$" | "clientState$" | "creationOwner$" | "model"
+  >,
+  links$: ControllerDependencies<"discovery$" | "restoreSelection$">,
 ) {
   const { model, creationOwner$, clientState$, available$ } = context;
   return command(
@@ -3143,8 +3473,19 @@ function createCreationResumption(
 }
 
 function createTabCreationGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "available$"
+    | "clientState$"
+    | "creationOwner$"
+    | "model"
+    | "resetCreate$"
+    | "tabOpening"
+    | "targetRevision$"
+  >,
+  links$: ControllerDependencies<
+    "canCreate$" | "discovery$" | "restoreSelection$" | "selectTab$"
+  >,
 ) {
   const {
     model,
@@ -3238,8 +3579,19 @@ function createTabCreationGraph(
 }
 
 function createTabClosingGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "clientState$"
+    | "closingTargets$"
+    | "connection"
+    | "directory$"
+    | "model"
+    | "tabOpening"
+    | "targetRevision$"
+  >,
+  links$: ControllerDependencies<
+    "discovery$" | "discoveryChanged$" | "retireCurrent$" | "selectTab$"
+  >,
 ) {
   const {
     model,
@@ -3356,8 +3708,27 @@ function createTabClosingGraph(
 }
 
 function createTabsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "available$"
+    | "clientState$"
+    | "closingTargets$"
+    | "connection"
+    | "creationOwner$"
+    | "directory$"
+    | "model"
+    | "resetCreate$"
+    | "tabOpening"
+    | "targetRevision$"
+  >,
+  links$: ControllerDependencies<
+    | "canCreate$"
+    | "discovery$"
+    | "discoveryChanged$"
+    | "restoreSelection$"
+    | "retireCurrent$"
+    | "selectTab$"
+  >,
 ): Pick<
   ControllerLinks,
   "cancelCreation$" | "createTab$" | "creatingTab$" | "closeTab$"
@@ -3369,8 +3740,14 @@ function createTabsGraph(
 }
 
 function createCrashedPageReload(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "clientState$"
+    | "crashed$"
+    | "directory$"
+    | "resetSelection$"
+  >,
+  links$: ControllerDependencies<"selectTab$" | "waitRetirement$">,
 ) {
   const {
     crashed$,
@@ -3462,8 +3839,16 @@ function createCrashedPageReload(
 }
 
 function createNavigationGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "clientState$"
+    | "crashed$"
+    | "directory$"
+    | "resetSelection$"
+  >,
+  links$: ControllerDependencies<
+    "input$" | "selectTab$" | "selectedSession$" | "waitRetirement$"
+  >,
 ): Pick<
   ControllerLinks,
   "navigate$" | "navigation$" | "history$" | "navigationScope$"
@@ -3513,17 +3898,24 @@ function createNavigationGraph(
 }
 
 function createImageRetryGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "framesState$"
+    | "model"
+    | "nativeHost"
+    | "selectedOwner$"
+  >,
+  links$: ControllerDependencies<
+    | "imageEvent$"
+    | "retireCurrent$"
+    | "selectTab$"
+    | "selectedSession$"
+    | "waitReady$"
+    | "waitRetirement$"
+  >,
 ): Pick<ControllerLinks, "retryStartingGraph$" | "retryImage$"> {
-  const {
-    model,
-    selectedOwner$,
-    framesState$,
-    wake$,
-    assertAvailable$,
-    nativeHost,
-  } = context;
+  const { model, selectedOwner$, framesState$, assertAvailable$, nativeHost } =
+    context;
   const retryStartingGraph$ = computed((get) => {
     const selected = get(get(links$).selectedSession$);
     const image = get(model.imageRecovery$);
@@ -3533,8 +3925,11 @@ function createImageRetryGraph(
     return {
       selected,
       owner: image.owner,
-      starting$: command(({ set }) => {
-        set(model.transition$, { type: "image-starting", owner: image.owner });
+      starting$: command(({ get, set }) => {
+        set(get(links$).imageEvent$, {
+          type: "image-starting",
+          owner: image.owner,
+        });
       }),
     };
   });
@@ -3577,7 +3972,7 @@ function createImageRetryGraph(
           set(selected.failure$, null);
           set(selected.painted$, false);
           set(nativeHost.synchronize$);
-          set(model.transition$, {
+          set(get(links$).imageEvent$, {
             type: "image-retrying",
             owner: image.owner,
           });
@@ -3599,30 +3994,22 @@ function createImageRetryGraph(
           if (!get(selected.current$)) {
             throw cancelled();
           }
-          const decision = set(model.transition$, {
+          set(get(links$).imageEvent$, {
             type: "image-released",
             owner: image.owner,
           });
-          if (decision?.resumeDisplay) {
-            const display = get(get(links$).displayGraph$);
-            if (display) {
-              set(display.setSuspended$, false);
-            }
-          }
-          set(wake$);
           await set(get(links$).waitReady$, selected.attached.owner, signal);
         })(),
       ]);
       signal.throwIfAborted();
       if (result.status === "rejected") {
         if (get(selected.current$)) {
-          set(model.transition$, {
+          set(get(links$).imageEvent$, {
             type: "image-blocked",
             owner: image.owner,
             error: diagnostic(result.reason),
           });
         }
-        set(wake$);
         if (signal.aborted) {
           throw cancelled();
         }
@@ -3635,8 +4022,20 @@ function createImageRetryGraph(
 }
 
 function createDisplaySettingsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "captureSize$"
+    | "displaySize$"
+    | "disposedState$"
+    | "model"
+  >,
+  links$: ControllerDependencies<
+    | "cancelCapture$"
+    | "configureCapture$"
+    | "displayGraph$"
+    | "scheduleCapture$"
+    | "selectedSession$"
+  >,
 ) {
   const {
     model,
@@ -3709,8 +4108,24 @@ function createDisplaySettingsGraph(
 }
 
 function createSelectionSettingsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "authority$"
+    | "available$"
+    | "chosenOnce$"
+    | "clientState$"
+    | "crashed$"
+    | "disposedState$"
+    | "model"
+    | "readinessFailure$"
+    | "selectedOwner$"
+  >,
+  links$: ControllerDependencies<
+    | "discovery$"
+    | "displayGraph$"
+    | "retireCurrent$"
+    | "select$"
+    | "waitSelection$"
+  >,
 ) {
   const {
     model,
@@ -3817,8 +4232,12 @@ function createSelectionSettingsGraph(
 }
 
 function createAuthoritySettingsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    "authority$" | "authorityRevoked$" | "disposedState$" | "model" | "wake$"
+  >,
+  links$: ControllerDependencies<
+    "displayGraph$" | "restoreSelection$" | "retireCurrent$"
+  >,
 ) {
   const { model, authority$, disposedState$, authorityRevoked$, wake$ } =
     context;
@@ -3861,8 +4280,34 @@ function createAuthoritySettingsGraph(
 }
 
 function createSettingsGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "assertAvailable$"
+    | "authority$"
+    | "authorityRevoked$"
+    | "available$"
+    | "captureSize$"
+    | "chosenOnce$"
+    | "clientState$"
+    | "crashed$"
+    | "displaySize$"
+    | "disposedState$"
+    | "model"
+    | "readinessFailure$"
+    | "selectedOwner$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    | "cancelCapture$"
+    | "configureCapture$"
+    | "discovery$"
+    | "displayGraph$"
+    | "restoreSelection$"
+    | "retireCurrent$"
+    | "scheduleCapture$"
+    | "select$"
+    | "selectedSession$"
+    | "waitSelection$"
+  >,
 ): Pick<
   ControllerLinks,
   | "changeCapture$"
@@ -3889,8 +4334,26 @@ function createSettingsGraph(
 }
 
 function createDisposalGraph(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
+  context: ControllerContext<
+    | "clientState$"
+    | "closedState$"
+    | "closingState$"
+    | "connectedState$"
+    | "disconnectingState$"
+    | "disposedState$"
+    | "framesState$"
+    | "model"
+    | "nativeState$"
+    | "readinessFailure$"
+    | "resetOwner$"
+    | "retirements$"
+    | "sink"
+    | "waitEvent$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<
+    "detachAttached$" | "discovery$" | "displayGraph$" | "retireCurrent$"
+  >,
 ): Pick<ControllerLinks, "dispose$" | "beginClosing$" | "waitForClosed$"> {
   const {
     model,
@@ -4016,6 +4479,7 @@ export function createBrowserController(
     return graph;
   });
   const discovery = createDiscoveryGraph(context, links$);
+  const imageRecovery = createImageRecoveryGraph(context, links$);
   const captureRecovery = createCaptureRecoveryGraph(context, links$);
   const selectedSessions = createSelectedSessionsGraph(context, links$);
   const display = createDisplayGraph(context, links$);
@@ -4035,6 +4499,7 @@ export function createBrowserController(
   const disposal = createDisposalGraph(context, links$);
   const graph: ControllerLinks = {
     ...discovery,
+    ...imageRecovery,
     ...captureRecovery,
     ...selectedSessions,
     ...display,

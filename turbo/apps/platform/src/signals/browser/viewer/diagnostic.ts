@@ -3,6 +3,15 @@ import { i18n } from "../../../i18n/index.ts";
 import { CdpFault } from "../cdp/errors.ts";
 import type { ViewerError } from "./types.ts";
 
+export function isImageFailure(error: ViewerError): boolean {
+  return (
+    error.kind === "frame" ||
+    (error.kind === "protocol" &&
+      (error.request?.method === "Page.startScreencast" ||
+        error.request?.method === "Page.stopScreencast"))
+  );
+}
+
 export function diagnostic(error: unknown): ViewerError {
   if (error instanceof CdpFault) {
     return Object.freeze({
