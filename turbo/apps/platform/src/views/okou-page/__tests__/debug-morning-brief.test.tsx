@@ -83,7 +83,7 @@ test("a queued brief links to its conversation", async () => {
     return expect(send).toBeEnabled();
   });
   click(send);
-  await screen.findByText(/Queued. Open the conversation/u);
+  await screen.findByText(/Queued. Open the chat/u);
   expect(button("Run another Morning Brief")).toBeDisabled();
 });
 
