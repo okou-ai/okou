@@ -459,6 +459,8 @@ interface ControllerLinks {
   readonly event$: Command<Promise<void>, [CdpEvent, CdpClient, AbortSignal]>;
   readonly followActiveTarget$: Command<Promise<void>, [string, AbortSignal]>;
   readonly disconnected$: Command<void, [CdpFault, CdpClient]>;
+  readonly createFrames$: Command<CdpClient, []>;
+  readonly ensureFrames$: Command<Promise<CdpClient>, [AbortSignal]>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly cancelCreation$: Command<void, [object]>;
   readonly createTab$: Command<Promise<string>, [AbortSignal]>;
@@ -735,6 +737,7 @@ function createDiscoveryGraph(
       if (
         selected &&
         !get(get(links$).selectedSession$) &&
+        !get(model.imageRecovery$) &&
         !get(context.creationOwner$) &&
         get(available$)
       ) {
@@ -813,6 +816,7 @@ function createCaptureRecoveryGraph(
       if (
         !selected ||
         selected.attached.owner !== owner ||
+        selected.attached.frames !== get(context.framesState$) ||
         !get(selected.current$)
       ) {
         return;
@@ -1611,14 +1615,8 @@ function createAttachmentGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ): Pick<ControllerLinks, "attach$"> {
-  const {
-    clientState$,
-    framesState$,
-    selection,
-    settings$,
-    directory$,
-    nativeHost,
-  } = context;
+  const { clientState$, selection, settings$, directory$, nativeHost } =
+    context;
   const { assertCurrent$, activate$ } = createAttachmentAdmission(
     context,
     links$,
@@ -1635,7 +1633,8 @@ function createAttachmentGraph(
       signal: AbortSignal,
     ): Promise<void> => {
       const client = get(clientState$)!;
-      const frames = get(framesState$)!;
+      const frames = await set(get(links$).ensureFrames$, signal);
+      set(assertCurrent$, owner, signal);
       const directory = get(directory$)!;
       await set(activate$, owner, signal);
       let sessionId: string | null = null;
@@ -2459,6 +2458,56 @@ function createActiveTargetFollowing(
   );
 }
 
+function createFramesDisconnectionHandling(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+) {
+  const { model, framesState$, retirements$, selectedOwner$, wake$ } = context;
+  return command(({ get, set }, fault: CdpFault, source: CdpClient) => {
+    set(framesState$, null);
+    // Closing a CDP socket ends only its own sessions. It cannot acknowledge
+    // an input/navigation effect sent on the surviving control connection.
+    const selected = get(get(links$).selectedSession$);
+    if (selected?.attached.frames === source) {
+      set(selected.stream.detached$);
+    }
+    for (const retirement of get(retirements$).values()) {
+      if (retirement.session.attached.frames === source) {
+        set(retirement.session.stream.detached$);
+        set(get(links$).reconcileRetirement$, retirement);
+      }
+    }
+    const owner = get(selectedOwner$);
+    // An already-settling/blocked image retains every original receipt.
+    const image = get(model.imageRecovery$);
+    if (!owner || (image && get(retirements$).has(owner.targetId))) {
+      set(wake$);
+      return;
+    }
+    const recoveryOwner = image?.owner ?? {};
+    set(model.transition$, {
+      type: "image-failed",
+      owner: recoveryOwner,
+      targetId: owner.targetId,
+      error: diagnostic(
+        new CdpFault("frame", fault.message, undefined, undefined, {
+          cause: fault,
+        }),
+      ),
+    });
+    set(get(links$).retireCurrent$, "target-replaced", false, true);
+    // Admission can lose frames before a selected input/capture graph exists.
+    if (!selected) {
+      set(model.transition$, {
+        type: "image-settled",
+        owner: recoveryOwner,
+        ready: true,
+      });
+    }
+    set(wake$);
+  });
+}
+
 function createDisconnectionHandling(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
@@ -2474,9 +2523,22 @@ function createDisconnectionHandling(
     readinessFailure$,
     wake$,
   } = context;
+  const framesDisconnected$ = createFramesDisconnectionHandling(
+    context,
+    links$,
+  );
   return command(({ get, set }, fault: CdpFault, source: CdpClient) => {
     if (get(disposedState$) || get(closingState$) || get(disconnectingState$)) {
       return;
+    }
+    if (source !== get(clientState$)) {
+      if (source !== get(framesState$)) {
+        return;
+      }
+      if (get(connectedState$)) {
+        set(framesDisconnected$, fault, source);
+        return;
+      }
     }
     set(disconnectingState$, true);
     const established = get(connectedState$);
@@ -2579,6 +2641,60 @@ function createEventsGraph(
   return { event$, followActiveTarget$, disconnected$, nativeEvent$ };
 }
 
+function createFramesConnectionGraph(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+): Pick<ControllerLinks, "createFrames$" | "ensureFrames$"> {
+  const { connection, framesState$, clientState$, assertAvailable$ } = context;
+  const createFrames$ = command(({ get, set }): CdpClient => {
+    const lifetime = get(clientState$)!.signal;
+    const frames = createCdpClient(
+      connection.cdpUrl,
+      { role: "frames" },
+      lifetime,
+    );
+    set(framesState$, frames);
+    frames.onEvent((event) => {
+      detach(
+        set(get(links$).event$, event, frames, lifetime),
+        Reason.DomCallback,
+        "browser video event",
+      );
+    });
+    frames.onDisconnected((fault) => {
+      set(get(links$).disconnected$, fault, frames);
+    });
+    return frames;
+  });
+  const ensureFrames$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<CdpClient> => {
+      set(assertAvailable$, signal);
+      const frames = get(framesState$) ?? set(createFrames$);
+      // Selection cancellation stops waiting; the controller still owns the
+      // socket, so another selection can reuse it and unmount will close it.
+      const cancellation = createDeferredPromise<void>(
+        { rejection: "owner" },
+        signal,
+      );
+      using _wait = {
+        [Symbol.dispose]: () => {
+          if (!cancellation.settled()) {
+            cancellation.resolve();
+          }
+        },
+      };
+      await Promise.race([frames.opened, cancellation.promise]);
+      signal.throwIfAborted();
+      set(assertAvailable$, signal);
+      if (get(framesState$) !== frames) {
+        throw cancelled();
+      }
+      return frames;
+    },
+  );
+  return { createFrames$, ensureFrames$ };
+}
+
 function createConnectionBootstrap(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
@@ -2628,22 +2744,7 @@ function createConnectionBootstrap(
       set(get(links$).disconnected$, fault, client);
     });
     if (transport === "split") {
-      const frames = createCdpClient(
-        connection.cdpUrl,
-        { role: "frames" },
-        lifetime,
-      );
-      set(framesState$, frames);
-      frames.onEvent((event) => {
-        detach(
-          set(get(links$).event$, event, frames, lifetime),
-          Reason.DomCallback,
-          "browser video event",
-        );
-      });
-      frames.onDisconnected((fault) => {
-        set(get(links$).disconnected$, fault, frames);
-      });
+      set(get(links$).createFrames$);
     }
     await Promise.all([client.opened, get(framesState$)!.opened]);
     signal.throwIfAborted();
@@ -3160,8 +3261,14 @@ function createImageRetryGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ): Pick<ControllerLinks, "retryStartingGraph$" | "retryImage$"> {
-  const { model, selectedOwner$, wake$, assertAvailable$, nativeHost } =
-    context;
+  const {
+    model,
+    selectedOwner$,
+    framesState$,
+    wake$,
+    assertAvailable$,
+    nativeHost,
+  } = context;
   const retryStartingGraph$ = computed((get) => {
     const selected = get(get(links$).selectedSession$);
     const image = get(model.imageRecovery$);
@@ -3184,7 +3291,11 @@ function createImageRetryGraph(
         throw new CdpFault("frame", "The live image is not ready to retry.");
       }
       const selected = get(get(links$).selectedSession$);
-      if (!selected || selected.attached.owner.targetId !== image.targetId) {
+      if (
+        !selected ||
+        selected.attached.owner.targetId !== image.targetId ||
+        selected.attached.frames !== get(framesState$)
+      ) {
         await set(get(links$).waitRetirement$, image.targetId, signal);
         await set(get(links$).selectTab$, image.targetId, signal);
         return;
@@ -3645,6 +3756,7 @@ export function createBrowserController(
   const selection = createSelectionGraph(context, links$);
   const favicon = createFaviconGraph(context, links$);
   const events = createEventsGraph(context, links$);
+  const framesConnection = createFramesConnectionGraph(context, links$);
   const connectionActions = createConnectionGraph(context, links$);
   const tabs = createTabsGraph(context, links$);
   const navigation = createNavigationGraph(context, links$);
@@ -3663,6 +3775,7 @@ export function createBrowserController(
     ...selection,
     ...favicon,
     ...events,
+    ...framesConnection,
     ...connectionActions,
     ...tabs,
     ...navigation,

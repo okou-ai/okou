@@ -1599,6 +1599,9 @@ function mockBrowserWebSocket(
     connections(): number {
       return connectionCount;
     },
+    activeConnections(): number {
+      return sockets.size;
+    },
     open(url: string): void {
       for (const socket of sockets) {
         if (socket.url === url) {
