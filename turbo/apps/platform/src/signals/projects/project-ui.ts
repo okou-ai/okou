@@ -9,10 +9,16 @@ export type ProjectDialog =
       readonly kind: "membership";
       readonly threadId: string;
       readonly anchor: HTMLElement;
+      readonly open: boolean;
     }
   | { readonly kind: "delete"; readonly projectId: string };
 const internalDialog$ = state<ProjectDialog | null>(null);
 export const projectDialog$ = computed((get) => {
+  const dialog = get(internalDialog$);
+  return dialog?.kind === "membership" && !dialog.open ? null : dialog;
+});
+// Let Base UI finish closing and restore focus after a moved row mounts.
+export const projectDialogSession$ = computed((get) => {
   return get(internalDialog$);
 });
 export const setProjectDialog$ = command(
@@ -63,7 +69,12 @@ export const openProjectMembership$ = command(
       throw new Error("Project membership requires its active Thread menu");
     }
     set(internalSearch$, "");
-    set(internalDialog$, { kind: "membership", threadId, anchor: menu.anchor });
+    set(internalDialog$, {
+      kind: "membership",
+      threadId,
+      anchor: menu.anchor,
+      open: true,
+    });
   },
 );
 export const openProjectEditor$ = command(
@@ -82,8 +93,18 @@ export const openProjectEditor$ = command(
 export const closeProjectDialog$ = command(
   ({ get, set }, expected: ProjectDialog) => {
     if (get(projectDialog$) === expected) {
-      set(internalDialog$, null);
+      set(
+        internalDialog$,
+        expected.kind === "membership" ? { ...expected, open: false } : null,
+      );
       set(activeThreadMenu$, null);
+    }
+  },
+);
+export const completeProjectMembershipClose$ = command(
+  ({ get, set }, expected: Extract<ProjectDialog, { kind: "membership" }>) => {
+    if (get(internalDialog$) === expected && !expected.open) {
+      set(internalDialog$, null);
     }
   },
 );

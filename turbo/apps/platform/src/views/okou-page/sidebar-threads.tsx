@@ -1264,7 +1264,7 @@ function useNewChatAction() {
       return;
     }
     detach(
-      createNewChat(currentChatAgentId, pane, rootSignal),
+      createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
       Reason.DomCallback,
     );
     setExpanded(false);

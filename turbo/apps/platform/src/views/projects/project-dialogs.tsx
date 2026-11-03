@@ -27,10 +27,11 @@ import {
 } from "../../signals/projects/projects.ts";
 import {
   setProjectEditorName$,
-  projectDialog$,
+  projectDialogSession$,
   projectEditorName$,
   openProjectEditor$,
   closeProjectDialog$,
+  completeProjectMembershipClose$,
   projectSearch$,
   setProjectSearch$,
   projectDialogHasSuccessor$,
@@ -76,7 +77,9 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const error = creation.state === "hasError" || renaming.state === "hasError";
   async function submit() {
     if (dialog.projectId) {
-      await rename(dialog.projectId, name, signal);
+      const completion = rename(dialog.projectId, name, signal);
+      close(dialog);
+      await completion;
     } else {
       await create(name, dialog.fromThreadId, signal);
     }
@@ -172,18 +175,24 @@ function MembershipSurface({
   mobile,
   finalFocus,
   onOpenChange,
+  onOpenChangeComplete,
   children,
 }: {
   dialog: Extract<ProjectDialog, { kind: "membership" }>;
   mobile: boolean;
   finalFocus: () => HTMLElement | false;
   onOpenChange: (open: boolean) => void;
+  onOpenChangeComplete: (open: boolean) => void;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   if (mobile) {
     return (
-      <Drawer open onOpenChange={onOpenChange}>
+      <Drawer
+        open={dialog.open}
+        onOpenChange={onOpenChange}
+        onOpenChangeComplete={onOpenChangeComplete}
+      >
         <DrawerContent
           closeLabel={t(($) => {
             return $.projects.close;
@@ -203,7 +212,11 @@ function MembershipSurface({
     );
   }
   return (
-    <Popover open onOpenChange={onOpenChange}>
+    <Popover
+      open={dialog.open}
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={onOpenChangeComplete}
+    >
       <PopoverContent
         anchor={dialog.anchor}
         align="end"
@@ -281,6 +294,7 @@ function ProjectMembershipPicker({
   })?.projectId;
   const mobile = useGet(mobileChatViewport$);
   const close = useSet(closeProjectDialog$);
+  const completeClose = useSet(completeProjectMembershipClose$);
   const [moving, move] = useLoadableSet(moveProjectThread$);
   const signal = useGet(pageSignal$);
   const hasSuccessor = useSet(projectDialogHasSuccessor$);
@@ -291,9 +305,9 @@ function ProjectMembershipPicker({
       .includes(search.trim().toLocaleLowerCase());
   });
   async function select(id: string | null) {
-    await move(dialog.threadId, id, signal);
-    signal.throwIfAborted();
+    const completion = move(dialog.threadId, id, signal);
     close(dialog);
+    await completion;
   }
   function onOpenChange(open: boolean) {
     if (!open) {
@@ -381,6 +395,11 @@ function ProjectMembershipPicker({
       mobile={mobile}
       finalFocus={finalFocus}
       onOpenChange={onOpenChange}
+      onOpenChangeComplete={(open) => {
+        if (!open) {
+          completeClose(dialog);
+        }
+      }}
     >
       {content}
     </MembershipSurface>
@@ -452,7 +471,7 @@ function DeleteProjectDialog({
 }
 export function ProjectDialogs() {
   const enabled = useGet(projectsEnabled$);
-  const dialog = useGet(projectDialog$);
+  const dialog = useGet(projectDialogSession$);
   if (!enabled || !dialog) {
     return null;
   }
