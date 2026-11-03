@@ -33,6 +33,8 @@ function createNowOverride(): {
 }
 
 const { get: getMockedNow, set: setMockedNow } = createNowOverride();
+const { get: getMockedMonotonicNow, set: setMockedMonotonicNow } =
+  createNowOverride();
 
 export function now(): number {
   return getMockedNow() ?? Date.now();
@@ -44,4 +46,13 @@ export function nowDate(): Date {
 
 export function mockNow(value: Date | NowValue, signal: AbortSignal): void {
   setMockedNow(value instanceof Date ? value.getTime() : value, signal);
+}
+
+/** Elapsed-time deadlines must not move when the system clock is corrected. */
+export function monotonicNow(): number {
+  return getMockedMonotonicNow() ?? performance.now();
+}
+
+export function mockMonotonicNow(value: NowValue, signal: AbortSignal): void {
+  setMockedMonotonicNow(value, signal);
 }

@@ -1,7 +1,8 @@
 import type { ViewerError } from "../viewer/types.ts";
 
 export interface CdpConnectionObservation {
-  readonly source: "native-close" | "native-error";
+  readonly source:
+    "native-close" | "native-error" | "opening-timeout" | "response-timeout";
   readonly role?: "control" | "frames";
   readonly phase: "opening" | "open";
   readonly ready_state: number;

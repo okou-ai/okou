@@ -1,0 +1,504 @@
+import {
+  browserContract,
+  type BrowserSession,
+} from "@okouai/api-contracts/contracts/browser";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import {
+  mockBrowserCdp,
+  recordBrowserStartupErrors,
+  TEST_BROWSER_EXTENSION,
+} from "../../../__tests__/browser-cdp-fixture.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockMonotonicNow, mockNow } from "../../../lib/time.ts";
+import { initSentry } from "../../../lib/sentry.ts";
+
+const context = testContext();
+const threadId = "11111111-1111-4111-8111-111111111111";
+const nextThreadId = "44444444-4444-4444-8444-444444444444";
+const endpoint = "wss://browser.example/deadlines?token=private-token";
+
+function mockViewer(autoOpen = true) {
+  let time = Date.parse("2026-09-01T10:00:00.000Z");
+  let elapsed = 0;
+  mockNow(() => {
+    return time;
+  }, context.signal);
+  mockMonotonicNow(() => {
+    return elapsed;
+  }, context.signal);
+  const startupErrors = recordBrowserStartupErrors();
+  const sentry = context.mocks.sentry();
+  initSentry();
+  const browser = mockBrowserCdp(context, endpoint, {
+    autoOpen,
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Original",
+        url: "https://original.example.com",
+        windowId: 101,
+      },
+      {
+        targetId: "replacement",
+        title: "Replacement",
+        url: "https://replacement.example.com",
+        windowId: 202,
+      },
+      {
+        targetId: "sibling",
+        title: "Sibling",
+        url: "https://sibling.example.com",
+        windowId: 303,
+      },
+    ],
+  });
+  let windowId = 101;
+  function session(id = threadId): BrowserSession {
+    return {
+      threadId: id,
+      name: "booking",
+      status: "active",
+      viewerUrl: `https://viewer.example/browsers/${id}`,
+      liveUrl: null,
+      screenshotUrl: null,
+      proxyCountryCode: null,
+      timeoutMinutes: 10,
+      idleExpiresAt: new Date(time + 600_000).toISOString(),
+      suspendedAt: null,
+      suspensionReason: null,
+      createdAt: "2026-09-01T10:00:00.000Z",
+      updatedAt: "2026-09-01T10:00:00.000Z",
+      window: {
+        instanceId: "22222222-2222-4222-8222-222222222222",
+        primaryWindowId: id === nextThreadId ? 202 : windowId,
+      },
+    };
+  }
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
+    return respond(200, { browser: session(params.threadId) });
+  });
+  context.mocks.api(browserContract.viewerConnection, ({ params, respond }) => {
+    return respond(200, {
+      browser: session(params.threadId),
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
+    return respond(200, { browser: session(params.threadId) });
+  });
+  return {
+    browser,
+    session,
+    sentry,
+    startupErrors,
+    advance(ms: number) {
+      act(() => {
+        time += ms;
+        elapsed += ms;
+      });
+    },
+    adjustWallClock(ms: number) {
+      act(() => {
+        time += ms;
+      });
+    },
+    replaceBinding() {
+      windowId = 202;
+    },
+  };
+}
+
+async function expectReady(url = "https://original.example.com") {
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue(url);
+  });
+}
+
+function reconnect() {
+  const button = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!button) {
+    throw new Error("Expected actionable reconnect");
+  }
+  click(button);
+}
+
+async function insertText(text: string) {
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, { target: { value: text }, inputType: "insertText" });
+}
+
+test("A socket that never opens reaches explicit recovery without reloading the page", async () => {
+  const viewer = mockViewer(false);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("Connecting to browser…");
+  await waitFor(() => {
+    expect(viewer.browser.connections()).toBe(1);
+  });
+  viewer.advance(31_000);
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await waitFor(() => {
+    expect(viewer.startupErrors).toHaveLength(1);
+  });
+  reconnect();
+  await waitFor(() => {
+    expect(viewer.browser.connections()).toBe(2);
+  });
+  act(() => {
+    viewer.browser.openConnection();
+  });
+  await expectReady();
+});
+
+test.each(["attachment", "native hello", "inventory"] as const)(
+  "An unanswered %s reaches explicit recovery without reloading the page",
+  async (phase) => {
+    const viewer = mockViewer();
+    const { browser } = viewer;
+    const receipt =
+      phase === "attachment"
+        ? browser.holdNext("Target.attachToBrowserTarget")
+        : phase === "native hello"
+          ? browser.holdNextNative("hello")
+          : browser.holdNext("Target.getTargets");
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await receipt.received;
+    viewer.advance(31_000);
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await waitFor(() => {
+      expect(viewer.startupErrors).toHaveLength(1);
+    });
+    reconnect();
+    await expectReady();
+    await receipt.release();
+    // A fresh scoped action completes after delivery of the original-wire reply.
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await waitFor(() => {
+      expect(browser.targets).toContainEqual(
+        expect.objectContaining({ targetId: "created-1", windowId: 101 }),
+      );
+    });
+    expect(viewer.startupErrors).toHaveLength(1);
+  },
+);
+
+test("Healthy HTTP renewal and queued invalidations cannot extend a dead native read", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const viewer = mockViewer();
+  const { browser, session } = viewer;
+  const renewed = context.mocks.deferred<void>();
+  let observeRenewal = false;
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    if (observeRenewal && !renewed.settled()) {
+      renewed.resolve();
+    }
+    return respond(200, { browser: session() });
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const proof = browser.holdNextNative("getWindow");
+  act(() => {
+    browser.nativeEvent("tab-attached", browser.targets[0]);
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  observeRenewal = true;
+  await renewed.promise;
+  act(() => {
+    browser.nativeEvent("tab-detached", browser.targets[0]);
+    visibility.changeTo("hidden");
+    visibility.changeTo("visible");
+  });
+  viewer.advance(31_000);
+  await screen.findByText("Browser disconnected");
+  viewer.replaceBinding();
+  reconnect();
+  await expectReady("https://replacement.example.com");
+  await act(async () => {
+    await proof.release();
+  });
+  await insertText("fresh");
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "fresh" },
+        sessionId: browser.pageSession("replacement"),
+      }),
+    );
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://replacement.example.com",
+  );
+  expect(
+    screen.queryByLabelText("Sibling", { selector: '[role="tab"]' }),
+  ).toBeNull();
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    context: {
+      contexts: {
+        browser_connection: {
+          source: "response-timeout",
+          phase: "open",
+          ready_state: 1,
+        },
+      },
+    },
+  });
+});
+
+test.each(["opening", "native read"] as const)(
+  "A wall-clock rollback cannot extend the %s deadline",
+  async (phase) => {
+    const viewer = mockViewer(phase !== "opening");
+    const { browser } = viewer;
+    const receipt =
+      phase === "native read" ? browser.holdNextNative("getWindow") : null;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    if (receipt) {
+      await receipt.received;
+    }
+    await waitFor(() => {
+      expect(browser.connections()).toBe(1);
+    });
+    viewer.adjustWallClock(-3_600_000);
+    viewer.advance(31_000);
+    await screen.findByText("Browser view unavailable");
+    reconnect();
+    await waitFor(() => {
+      expect(browser.connections()).toBe(2);
+    });
+    act(() => {
+      browser.openConnection();
+    });
+    await expectReady();
+    await receipt?.release();
+  },
+);
+
+async function recoverEffect(
+  viewer: ReturnType<typeof mockViewer>,
+  receipt: ReturnType<ReturnType<typeof mockBrowserCdp>["holdNext"]>,
+  url = "https://original.example.com",
+) {
+  await receipt.received;
+  viewer.advance(31_000);
+  await screen.findByText("Browser disconnected");
+  reconnect();
+  await expectReady(url);
+  await act(async () => {
+    await receipt.release();
+  });
+  // Current input succeeds on a new page session after the ambiguous old effect.
+  await insertText("y");
+  await waitFor(() => {
+    expect(viewer.browser.input).toContainEqual({
+      method: "Input.insertText",
+      params: { text: "y" },
+      sessionId: viewer.browser.pageSession("example-page"),
+    });
+  });
+}
+
+test("Uncertain input is not replayed after its response deadline", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const originalSession = browser.pageSession("example-page");
+  const receipt = browser.holdNext("Input.insertText");
+  await insertText("x");
+  await recoverEffect(viewer, receipt);
+  expect(
+    browser.input.filter((input) => {
+      return input.method === "Input.insertText";
+    }),
+  ).toStrictEqual([
+    {
+      method: "Input.insertText",
+      params: { text: "x" },
+      sessionId: originalSession,
+    },
+    {
+      method: "Input.insertText",
+      params: { text: "y" },
+      sessionId: browser.pageSession("example-page"),
+    },
+  ]);
+});
+
+test("Uncertain navigation is not replayed after its response deadline", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const receipt = browser.holdNext("Page.navigate");
+  await fill(screen.getByLabelText("Address"), "next.example");
+  await userEvent.keyboard("{Enter}");
+  await recoverEffect(viewer, receipt, "http://next.example/");
+  expect(
+    browser.requests.filter((request) => {
+      return request.method === "Page.navigate";
+    }),
+  ).toHaveLength(1);
+});
+
+test("Uncertain creation is not replayed after its response deadline", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const receipt = browser.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await recoverEffect(viewer, receipt);
+  expect(
+    browser.targets.filter((target) => {
+      return target.targetId.startsWith("created-");
+    }),
+  ).toHaveLength(1);
+  expect(
+    screen.getByLabelText("Original", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+});
+
+test("Navigating away cancels the original read deadline and keeps the next chat usable", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const receipt = browser.holdNextNative("getWindow");
+  act(() => {
+    browser.nativeEvent("tab-attached", browser.targets[0]);
+  });
+  await receipt.received;
+  act(() => {
+    window.history.pushState(null, "", `/browsers/${nextThreadId}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expectReady("https://replacement.example.com");
+  viewer.advance(31_000);
+  await act(async () => {
+    await receipt.release();
+  });
+  await insertText("z");
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "z" },
+        sessionId: browser.pageSession("replacement"),
+      }),
+    );
+  });
+  expect(viewer.sentry.reports).toStrictEqual([]);
+  expect(viewer.startupErrors).toStrictEqual([]);
+});
+
+test("A cancelled attachment keeps its original deadline without releasing the replacement session", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  browser.targets[1]!.windowId = 101;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const attachment = browser.holdNext("Target.attachToTarget");
+  click(screen.getByLabelText("Replacement", { selector: '[role="tab"]' }));
+  await attachment.received;
+  act(() => {
+    browser.event("Target.targetDestroyed", { targetId: "replacement" });
+  });
+  await expectReady();
+  viewer.advance(31_000);
+  await screen.findByText("Browser disconnected");
+  reconnect();
+  await expectReady();
+  await act(async () => {
+    await attachment.release();
+  });
+  await insertText("current");
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.insertText",
+      params: { text: "current" },
+      sessionId: browser.pageSession("example-page"),
+    });
+  });
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    context: {
+      contexts: {
+        browser_connection: {
+          source: "response-timeout",
+          cancelled_awaiting_response: 1,
+        },
+      },
+    },
+  });
+});
+
+test("Unacknowledged input and capture cleanup stay on their original connection after timeout", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const originalSession = browser.pageSession("example-page");
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.dispatchKeyEvent",
+      params: { type: "rawKeyDown", key: "Shift" },
+    });
+  });
+  const release = browser.holdNext("Input.dispatchKeyEvent");
+  const capture = browser.holdNext("Page.stopScreencast");
+  act(() => {
+    browser.nativeEvent("tab-attached", browser.targets[0]);
+  });
+  await Promise.all([release.received, capture.received]);
+  expect(input).toBeDisabled();
+  viewer.advance(31_000);
+  await screen.findByText("Browser disconnected");
+  reconnect();
+  await expectReady();
+  await act(async () => {
+    await release.release();
+    await capture.release();
+  });
+  await insertText("fresh");
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toStrictEqual({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+      sessionId: browser.pageSession("example-page"),
+    });
+  });
+  expect(
+    browser.input.filter((event) => {
+      return event.method === "Input.dispatchKeyEvent";
+    }),
+  ).toStrictEqual([
+    expect.objectContaining({
+      params: expect.objectContaining({ type: "rawKeyDown", key: "Shift" }),
+      sessionId: originalSession,
+    }),
+    expect.objectContaining({
+      params: expect.objectContaining({ type: "keyUp", key: "Shift" }),
+      sessionId: originalSession,
+    }),
+  ]);
+});

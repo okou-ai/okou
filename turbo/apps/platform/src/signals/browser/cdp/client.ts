@@ -3,12 +3,16 @@ import {
   detach,
   jsonParseOr,
   Reason,
+  setLoop,
   type DeferredPromise,
 } from "../../utils.ts";
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import { addBreadcrumb } from "@sentry/browser";
 import { CdpFault, isRecord, type CdpConnectionObservation } from "./errors.ts";
 import { maximumCdpMessageLength } from "../display/limits.ts";
+import { monotonicNow } from "../../../lib/time.ts";
+
+const responseTimeoutMs = 30_000;
 
 type Method = keyof ProtocolMapping.Commands;
 type Params<M extends Method> =
@@ -31,6 +35,7 @@ export interface CdpEvent {
 interface Pending {
   readonly method: string;
   readonly sessionId: string | undefined;
+  readonly deadline: number;
   readonly resolve: (result: unknown) => void;
   readonly reject: (error: unknown) => void;
   unwatch: (() => void) | undefined;
@@ -181,6 +186,7 @@ function createRequests(
     const entry: Pending = {
       method,
       sessionId,
+      deadline: monotonicNow() + responseTimeoutMs,
       resolve: (result) => {
         if (!deferred.settled()) {
           deferred.resolve(result);
@@ -473,6 +479,57 @@ function observeConnection(
   };
 }
 
+/** HTTP renewal and incoming events are not receipts for an outstanding request. */
+function observeDeadlines(
+  connection: Connection,
+  wire: Wire,
+  signal: AbortSignal,
+  role: ConnectionRole | undefined,
+): void {
+  const openingDeadline = monotonicNow() + responseTimeoutMs;
+  setLoop(
+    () => {
+      if (connection.failure) {
+        return true;
+      }
+      const opening = !connection.opening.settled();
+      const time = monotonicNow();
+      const expired = [...connection.pending.values()].find((entry) => {
+        return time >= entry.deadline;
+      });
+      if ((opening && time >= openingDeadline) || expired) {
+        // An unanswered write has an unknown outcome. Retire its original wire;
+        // never retry it or let a late reply authorize a replacement connection.
+        wire.close(
+          new CdpFault(
+            "connection",
+            opening
+              ? "The browser connection did not open in time. Reconnect the browser."
+              : "The browser did not respond in time. Reconnect the browser.",
+            undefined,
+            expired ? Object.freeze({ method: expired.method }) : undefined,
+            {
+              connection: {
+                source: opening ? "opening-timeout" : "response-timeout",
+                ...observeConnection(
+                  connection,
+                  role,
+                  opening ? "before-open" : "after-open",
+                ),
+              },
+            },
+          ),
+        );
+        return true;
+      }
+      return false;
+    },
+    1000,
+    signal,
+    { testIntervalMs: 10 },
+  );
+}
+
 /** One mounted surface owns this native socket adapter and its protocol receipts. */
 export function createCdpClient(
   url: string,
@@ -512,6 +569,7 @@ export function createCdpClient(
     };
   };
   listen(connection, wire, signal, options.role);
+  observeDeadlines(connection, wire, signal, options.role);
   if (signal.aborted) {
     wire.close();
   }
