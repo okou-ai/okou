@@ -587,6 +587,7 @@ export class OkouBrowserClient {
         return targets;
       }
     }
+    return undefined;
   }
 
   private async waitForWorker(observer?: ReadinessObserver): Promise<void> {
