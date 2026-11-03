@@ -21,12 +21,12 @@ struct ChatFeedbackSurface: View {
             messageLabel.padding(.top, 10)
             dismissButton
           }
-          if actionTitle != nil { actionButton.padding(.leading, 24) }
+          if let actionTitle { actionButton(title: actionTitle).padding(.leading, 24) }
         }
       } else {
         HStack(spacing: 8) {
           messageLabel
-          if actionTitle != nil { actionButton }
+          if let actionTitle { actionButton(title: actionTitle) }
           dismissButton
         }
       }
@@ -60,8 +60,8 @@ struct ChatFeedbackSurface: View {
     }
   }
 
-  private var actionButton: some View {
-    Button(actionTitle ?? "", action: action)
+  private func actionButton(title: String) -> some View {
+    Button(title, action: action)
       .font(.system(size: fontSize, weight: .semibold))
       .foregroundStyle(.primary)
       .padding(.horizontal, 6)
