@@ -6,13 +6,18 @@ import {
   type DataFamilySettings,
   type PaidToolSettings,
 } from "./settings/paid-tools.ts";
-import { startPaidToolsCatalogDiscovery$ } from "./settings/paid-tools-catalog.ts";
+import { createPaidToolsCatalogSignals } from "./settings/paid-tools-catalog.ts";
 
 function createSearchSourcesSignals(
   createClient: ApiClientFactory,
   assertCurrent: () => void,
 ) {
-  const tools = createPaidToolsSignals(createClient, assertCurrent);
+  const catalog = createPaidToolsCatalogSignals();
+  const tools = createPaidToolsSignals(
+    createClient,
+    assertCurrent,
+    catalog.catalog$,
+  );
   // Retain only the latest receipt per tool, for this identity owner rather
   // than a disclosure or a reconstructed catalog row. No preferences are copied.
   const receipts$ = state<ReadonlyMap<string, Promise<void>>>(new Map());
@@ -61,6 +66,7 @@ function createSearchSourcesSignals(
     };
   }
   return {
+    startDiscovery$: catalog.startDiscovery$,
     webSearch: sourceTool(tools.webSearch),
     dataFamilies$: computed(async (get) => {
       return (await get(tools.dataFamilies$)).map(sourceTool);
@@ -109,7 +115,7 @@ export const startComposerSearchSources$ = command(
       throw new DOMException("Search sources owner changed", "AbortError");
     }
     sources.assertCurrent();
-    set(startPaidToolsCatalogDiscovery$, signal);
+    set(sources.startDiscovery$, signal);
   },
 );
 

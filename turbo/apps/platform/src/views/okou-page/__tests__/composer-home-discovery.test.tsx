@@ -90,6 +90,8 @@ function mockResearchSources(
   options: {
     readonly updateResponse?: () => Promise<200 | 500>;
     readonly beforeRefresh?: () => Promise<void>;
+    readonly catalogResponse?: () => Promise<200 | 503>;
+    readonly familyTitle?: () => string;
   } = {},
 ) {
   let disabledTools: PaidToolId[] = ["web-search", "people-search"];
@@ -129,6 +131,9 @@ function mockResearchSources(
   ]) {
     context.mocks.http.post(url, async ({ request }) => {
       const message = (await request.json()) as { id: string | number };
+      if ((await options.catalogResponse?.()) === 503) {
+        return new HttpResponse(null, { status: 503 });
+      }
       return HttpResponse.json({
         jsonrpc: "2.0",
         id: message.id,
@@ -155,7 +160,9 @@ function mockResearchSources(
                 },
                 {
                   id: "people-search",
-                  title: { "en-US": "Professional profiles" },
+                  title: {
+                    "en-US": options.familyTitle?.() ?? "Professional profiles",
+                  },
                   description: {
                     "en-US": "Find public professional profiles.",
                   },
@@ -568,6 +575,147 @@ test("Search tools use catalog families and only an explicit switch saves a pref
   expect(updates).toStrictEqual([{ toolId: "web-search", disabled: false }]);
   expect(editor).toHaveTextContent(PEOPLE_PROMPT);
   expect(window.location.pathname).toBe(HOME_PATH);
+});
+
+test("Tools retains its usable directory while a reopened catalog refreshes", async () => {
+  mockTemplateChat();
+  const initialRequested = context.mocks.deferred<void>();
+  const releaseInitial = context.mocks.deferred<void>();
+  const refreshRequested = context.mocks.deferred<void>();
+  const releaseCatalog = context.mocks.deferred<void>();
+  let refreshing = false;
+  mockResearchSources({
+    catalogResponse: async () => {
+      if (refreshing) {
+        refreshRequested.resolve();
+        await releaseCatalog.promise;
+      } else {
+        initialRequested.resolve();
+        await releaseInitial.promise;
+      }
+      return 200;
+    },
+    familyTitle: () => {
+      return refreshing
+        ? "Updated professional profiles"
+        : "Professional profiles";
+    },
+  });
+  const editor = await setupDiscovery();
+  await screen.findByRole("region", { name: "Explore what Okou can do" });
+  click(button("People", directory()));
+  await searchIdeas("Who are you looking for?");
+  click(button("Tools", composerCard(editor)));
+  const sources = await screen.findByRole("dialog", { name: "Tools" });
+  await initialRequested.promise;
+  try {
+    expect(
+      within(sources).getByText("Loading your tool settings…"),
+    ).toBeInTheDocument();
+    const web = within(sources).getByRole("switch", { name: "Web search" });
+    await waitFor(() => {
+      expect(web).not.toHaveAttribute("aria-disabled", "true");
+    });
+    releaseInitial.resolve();
+    const profiles = await within(sources).findByRole("switch", {
+      name: "Professional profiles",
+    });
+    await waitFor(() => {
+      expect(profiles).not.toHaveAttribute("aria-disabled", "true");
+    });
+
+    const user = userEvent.setup({ delay: null });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(sources).not.toBeInTheDocument();
+    });
+    refreshing = true;
+    click(button("Tools", composerCard(editor)));
+    const reopened = await screen.findByRole("dialog", { name: "Tools" });
+    await refreshRequested.promise;
+    const retained = within(reopened).getByRole("switch", {
+      name: "Professional profiles",
+    });
+    await waitFor(() => {
+      expect(retained).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(retained).not.toBeChecked();
+    click(retained);
+    await waitFor(() => {
+      expect(retained).toBeChecked();
+      expect(retained).not.toHaveAttribute("aria-disabled", "true");
+    });
+
+    releaseCatalog.resolve();
+    const refreshed = await within(reopened).findByRole("switch", {
+      name: "Updated professional profiles",
+    });
+    await waitFor(() => {
+      expect(refreshed).toBeChecked();
+      expect(refreshed).not.toHaveAttribute("aria-disabled", "true");
+    });
+  } finally {
+    if (!releaseInitial.settled()) {
+      releaseInitial.resolve();
+    }
+    if (!releaseCatalog.settled()) {
+      releaseCatalog.resolve();
+    }
+  }
+});
+
+test("A catalog refresh failure remains visible and a later disclosure retries it", async () => {
+  mockTemplateChat();
+  let unavailable = false;
+  mockResearchSources({
+    catalogResponse: () => {
+      return Promise.resolve(unavailable ? 503 : 200);
+    },
+  });
+  const editor = await setupDiscovery();
+  await screen.findByRole("region", { name: "Explore what Okou can do" });
+  click(button("People", directory()));
+  await searchIdeas("Who are you looking for?");
+  click(button("Tools", composerCard(editor)));
+  const sources = await screen.findByRole("dialog", { name: "Tools" });
+  await within(sources).findByRole("switch", { name: "Professional profiles" });
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Tools" })).toBeNull();
+  });
+
+  unavailable = true;
+  click(button("Tools", composerCard(editor)));
+  const failed = await screen.findByRole("dialog", { name: "Tools" });
+  await expect(within(failed).findByRole("alert")).resolves.toHaveTextContent(
+    "Your tool settings could not be loaded.",
+  );
+  const web = within(failed).getByRole("switch", { name: "Web search" });
+  await waitFor(() => {
+    expect(web).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(web);
+  await waitFor(() => {
+    expect(web).toBeChecked();
+    expect(web).not.toHaveAttribute("aria-disabled", "true");
+  });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Tools" })).toBeNull();
+  });
+
+  unavailable = false;
+  click(button("Tools", composerCard(editor)));
+  const recovered = await screen.findByRole("dialog", { name: "Tools" });
+  const profiles = await within(recovered).findByRole("switch", {
+    name: "Professional profiles",
+  });
+  await waitFor(() => {
+    expect(profiles).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(profiles).not.toBeChecked();
+  expect(within(recovered).queryByRole("alert")).toBeNull();
 });
 
 test("A source save stays pending across disclosure and directory round-trips until confirmed", async () => {

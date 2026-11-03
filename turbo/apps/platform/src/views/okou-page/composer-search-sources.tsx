@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown } from "lucide-react";
@@ -121,41 +122,69 @@ function DataFamilyRow({ tool }: { readonly tool: ComposerSearchDataFamily }) {
   );
 }
 
+function SourcesPanel({ children }: { readonly children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <PopoverContent
+      side="top"
+      align="start"
+      collisionAvoidance={{
+        side: "none",
+        align: "shift",
+        fallbackAxisSide: "none",
+      }}
+      aria-label={t(($) => {
+        return $.chat.homeDiscovery.sources.trigger;
+      })}
+      className="h-90 max-h-[var(--available-height)] w-88 max-w-[var(--available-width)] overflow-y-auto overscroll-contain"
+    >
+      {children}
+    </PopoverContent>
+  );
+}
+
 function SourceRows({
   sources,
 }: {
   readonly sources: ComposerSearchSourcesSettings;
 }) {
   const { t } = useTranslation();
-  const families = useLoadable(sources.dataFamilies$);
+  // This owner stays mounted outside the popup portal between disclosures.
+  const families = useLastLoadable(sources.dataFamilies$);
   return (
-    <div className="divide-y divide-border">
-      <SourceRow
-        tool={sources.webSearch}
-        title={t(($) => {
-          return $.settings.paidTools.tools["web-search"].name;
-        })}
-        description={t(($) => {
-          return $.settings.paidTools.tools["web-search"].description;
-        })}
-      />
-      {families.state === "hasData" ? (
-        families.data.map((tool) => {
-          return <DataFamilyRow key={tool.toolId} tool={tool} />;
-        })
-      ) : (
-        <div className="py-2.5">
-          <SourcesLoadStatus failed={families.state === "hasError"} />
-        </div>
-      )}
-    </div>
+    <SourcesPanel>
+      <div className="divide-y divide-border">
+        <SourceRow
+          tool={sources.webSearch}
+          title={t(($) => {
+            return $.settings.paidTools.tools["web-search"].name;
+          })}
+          description={t(($) => {
+            return $.settings.paidTools.tools["web-search"].description;
+          })}
+        />
+        {families.state === "hasData" ? (
+          families.data.map((tool) => {
+            return <DataFamilyRow key={tool.toolId} tool={tool} />;
+          })
+        ) : (
+          <div className="py-2.5">
+            <SourcesLoadStatus failed={families.state === "hasError"} />
+          </div>
+        )}
+      </div>
+    </SourcesPanel>
   );
 }
 
 function SourcesContent() {
   const sources = useLoadable(composerSearchSources$);
   if (sources.state !== "hasData" || !sources.data) {
-    return <SourcesLoadStatus failed={sources.state !== "loading"} />;
+    return (
+      <SourcesPanel>
+        <SourcesLoadStatus failed={sources.state !== "loading"} />
+      </SourcesPanel>
+    );
   }
   return <SourceRows key={sources.data.key} sources={sources.data} />;
 }
@@ -187,14 +216,7 @@ function SearchSourcesPopover() {
         <span>{trigger}</span>
         <ChevronDown className="opacity-50" aria-hidden />
       </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        aria-label={trigger}
-        className="max-h-[var(--available-height)] w-88 max-w-[var(--available-width)] overflow-y-auto"
-      >
-        <SourcesContent />
-      </PopoverContent>
+      <SourcesContent />
     </Popover>
   );
 }
