@@ -67,8 +67,9 @@ function ProjectFolderMenu({
         render={
           <Button
             variant="quiet"
-            size="icon-2xs"
-            className={cn("rounded-md", touch && "min-h-11 min-w-11")}
+            size="icon-sm"
+            iconSize="md"
+            className={cn("shrink-0", touch && "min-h-11 min-w-11")}
             aria-label={t(
               ($) => {
                 return $.projects.options;
@@ -80,7 +81,7 @@ function ProjectFolderMenu({
           />
         }
       >
-        <Ellipsis size={16} />
+        <Ellipsis />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" finalFocus={dialog ? false : undefined}>
         <DropdownMenuItem
@@ -124,15 +125,7 @@ function ProjectFolderMenu({
   );
 }
 
-function ProjectFolderEmpty({
-  archived,
-  pending,
-  onNewChat,
-}: {
-  archived: boolean;
-  pending: boolean;
-  onNewChat: () => void;
-}) {
+function ProjectFolderEmpty({ archived }: { archived: boolean }) {
   const { t } = useTranslation();
   return (
     <div className="px-2 py-2 text-xs text-nav-copy-muted">
@@ -145,20 +138,6 @@ function ProjectFolderEmpty({
               return $.projects.empty;
             })}
       </p>
-      {!archived && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-1 -ml-2 text-xs"
-          disabled={pending}
-          onClick={onNewChat}
-        >
-          <Plus size={14} />
-          {t(($) => {
-            return $.projects.newChat;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -209,18 +188,19 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
           <Icon size={16} className="shrink-0 opacity-70" />
           <span className="truncate">{project.name}</span>
         </button>
-        <div className="flex shrink-0 items-center md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100">
+        <div className="flex shrink-0 items-center gap-0.5 md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100">
           <Button
             variant="quiet"
-            size="icon-2xs"
-            className={cn("rounded-md", touch && "min-h-11 min-w-11")}
+            size="icon-sm"
+            iconSize="md"
+            className={cn("shrink-0", touch && "min-h-11 min-w-11")}
             aria-label={t(($) => {
               return $.projects.newChat;
             })}
             disabled={creation.state === "loading"}
             onClick={newChat}
           >
-            <Plus size={16} />
+            <Plus />
           </Button>
           <ProjectFolderMenu
             project={project}
@@ -250,11 +230,7 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
             </p>
           )}
           {items.length === 0 ? (
-            <ProjectFolderEmpty
-              archived={archived}
-              pending={creation.state === "loading"}
-              onNewChat={newChat}
-            />
+            <ProjectFolderEmpty archived={archived} />
           ) : (
             items.slice(0, limit).map(({ signals }, index) => {
               return (
@@ -306,18 +282,24 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
       aria-label={t(($) => {
         return $.projects.projects;
       })}
-      className="min-h-0 shrink-0 px-2 pb-2"
+      className={cn("min-h-0 shrink-0 pb-2", touch ? "px-2" : "px-3")}
     >
-      <div className="flex h-8 items-center justify-between px-2">
-        <span className="text-xs text-nav-copy-muted">
+      <div
+        className={cn(
+          "flex items-center justify-between pl-2",
+          touch ? "min-h-12 pr-2" : "h-8",
+        )}
+      >
+        <span className="text-[13px] leading-4 text-nav-copy-muted">
           {t(($) => {
             return $.projects.projects;
           })}
         </span>
         <Button
           variant="quiet"
-          size="icon-2xs"
-          className="rounded-md"
+          size="icon-sm"
+          iconSize="md"
+          className={cn("shrink-0", touch && "min-h-11 min-w-11")}
           data-project-create=""
           aria-label={t(($) => {
             return $.projects.create;
@@ -326,7 +308,7 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
             return open();
           }}
         >
-          <Plus size={15} />
+          <Plus />
         </Button>
       </div>
       <div className="max-h-[45dvh] overflow-y-auto">
