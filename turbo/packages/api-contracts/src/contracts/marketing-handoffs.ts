@@ -15,9 +15,9 @@ import { artifactUrlSchema } from "./artifact-references";
 export const MARKETING_HANDOFF_MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const MARKETING_HANDOFF_MAX_FILES = 10;
 export const marketingContentHashSchema = string().regex(/^[a-f0-9]{64}$/u);
-const marketingHandoffShortHashSchema = string().regex(/^[a-f0-9]{8}$/u);
+const marketingHandoffShortHashSchema = string().regex(/^[a-f0-9]{12}$/u);
 const marketingHandoffHashSchema = string().regex(
-  /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/u,
+  /^(?:[a-f0-9]{12}|[a-f0-9]{64})$/u,
 );
 const marketingHandoffCreatedSchema = object({
   hash: marketingContentHashSchema,

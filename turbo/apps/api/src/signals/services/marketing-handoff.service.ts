@@ -235,7 +235,7 @@ export const storeMarketingManifest$ = command(
   ) => {
     const body = serializeMarketingHandoff(args.manifest);
     const hash = marketingContentHash(body);
-    const shortHash = hash.slice(0, 8);
+    const shortHash = hash.slice(0, 12);
     await get(
       putImmutableS3Object(
         args.bucket,

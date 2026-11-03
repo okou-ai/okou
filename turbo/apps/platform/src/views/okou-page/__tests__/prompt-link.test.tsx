@@ -474,7 +474,7 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   expect(draftUpdates).toHaveLength(0);
 });
 
-test.each([8, 64])(
+test.each([12, 64])(
   "An onboarded visitor starts the received task using a %i-character hash",
   async (length) => {
     enableMarketingHandoff();
@@ -615,7 +615,7 @@ test("An edited hash is retained while onboarding completion is still pending", 
     return respond(200, received);
   });
   context.mocks.api(marketingHandoffsContract.create, ({ respond }) => {
-    return respond(200, { hash: "b".repeat(64), shortHash: "b".repeat(8) });
+    return respond(200, { hash: "b".repeat(64), shortHash: "b".repeat(12) });
   });
   context.mocks.api(onboardingCompleteContract.complete, async ({ never }) => {
     return await never();
@@ -634,7 +634,7 @@ test("An edited hash is retained while onboarding completion is still pending", 
   );
   click(await findButton("Next"));
   await waitFor(() => {
-    return expect(search()).toBe(`?handoff=${"b".repeat(8)}`);
+    return expect(search()).toBe(`?handoff=${"b".repeat(12)}`);
   });
   expect(
     screen.getByRole("textbox", { name: "Onboarding prompt" }),

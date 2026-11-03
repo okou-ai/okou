@@ -167,7 +167,7 @@ describe("Marketing content handoff", () => {
     const first = await create();
     const duplicate = await create();
     const edited = await create(manifest("A different task"));
-    expect(first.body.shortHash).toBe(first.body.hash.slice(0, 8));
+    expect(first.body.shortHash).toBe(first.body.hash.slice(0, 12));
     expect(duplicate.body.hash).toBe(first.body.hash);
     expect(edited.body.hash).not.toBe(first.body.hash);
     const resolved = await accept(
@@ -194,9 +194,9 @@ describe("Marketing content handoff", () => {
 
   it("rejects a colliding short address without overwriting or granting access to the first task", async () => {
     const firstActor = actor;
-    const firstManifest = manifest("Short handoff collision 5888");
+    const firstManifest = manifest("Short handoff collision 12975700");
     const first = await create(firstManifest);
-    const colliding = manifest("Short handoff collision 98319");
+    const colliding = manifest("Short handoff collision 15460718");
     await enableActor();
     const rejected = await api().create({
       body: colliding,
@@ -234,8 +234,8 @@ describe("Marketing content handoff", () => {
 
   it("reserves a short address for only one of two concurrent colliding tasks", async () => {
     const bodies = [
-      manifest("Short handoff collision 29089"),
-      manifest("Short handoff collision 106361"),
+      manifest("Short handoff collision 12975700"),
+      manifest("Short handoff collision 15460718"),
     ];
     const responses = await Promise.all(
       bodies.map((body) => {
@@ -251,7 +251,7 @@ describe("Marketing content handoff", () => {
     ).toEqual([200, 409]);
     const resolved = await accept(
       api().resolve({
-        params: { hash: "3cc245bc" },
+        params: { hash: "23aab54ca8ed" },
         body: {},
         headers: auth,
         extraHeaders: { origin },
@@ -269,7 +269,7 @@ describe("Marketing content handoff", () => {
 
   it("returns not found for an unknown short address", async () => {
     const response = await api().resolve({
-      params: { hash: "00000000" },
+      params: { hash: "000000000000" },
       body: {},
       headers: auth,
       extraHeaders: { origin },
