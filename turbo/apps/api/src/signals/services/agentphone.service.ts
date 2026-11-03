@@ -5,6 +5,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-group-message-receipt";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
+import { agentPhoneMessageVisibleTo } from "./agentphone-message-access";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { command } from "ccstate";
 import {
@@ -14,7 +15,6 @@ import {
   exists,
   inArray,
   isNull,
-  lte,
   notExists,
   or,
   sql,
@@ -25,7 +25,7 @@ import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { inferMimetype } from "../../lib/mimetype";
-import { now, nowDate } from "../../lib/time";
+import { now } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import {
   isAgentPhoneApiError,
@@ -416,7 +416,6 @@ export const storeInboundAgentPhoneMessage$ = command(
         .where(
           and(
             inArray(agentphoneUserLinks.phoneHandle, handles),
-            lte(agentphoneUserLinks.createdAt, receivedAt),
             exists(db.select().from(receipt)),
           ),
         ),
@@ -434,9 +433,9 @@ export const storeInboundAgentPhoneMessage$ = command(
           ${values.whatsappUserLinkId},
           ${values.fromNumber}, ${values.toNumber}, ${values.direction},
           ${values.channel}, ${values.body}, ${values.mediaUrl}, ${values.isBot},
-          ${sql.param(receivedAt, agentphoneMessages.receivedAt)}, now()
-          FROM ${receipt}
-          WHERE ${exists(db.select().from(recipients))}`,
+          ${sql.param(receivedAt, agentphoneMessages.receivedAt)}, now(),
+          ${sql.param(handles, agentphoneMessages.participantHandles)}
+          FROM ${receipt}`,
         )
         .onConflictDoNothing()
         .returning({ id: agentphoneMessages.id }),
@@ -458,18 +457,11 @@ export const storeInboundAgentPhoneMessage$ = command(
         .returning({ messageId: agentphoneMessageVisibility.messageId }),
     );
     const inserted = exists(db.select().from(message));
-    // A receipt without eligible recipients is retained for privacy and replay,
-    // while the new event still reaches the normal unlinked-sender dispatch path.
+    // Persist the original roster even when nobody has connected Okou yet.
     const [result] = await db
       .with(receipt, recipients, message, visibility)
       .select({
         inserted: inserted.mapWith(pgBooleanDecoder),
-        receiptAccepted: exists(db.select().from(receipt)).mapWith(
-          pgBooleanDecoder,
-        ),
-        hasRecipients: exists(db.select().from(recipients)).mapWith(
-          pgBooleanDecoder,
-        ),
       })
       .from(sql`(SELECT 1) AS outcome`);
     signal.throwIfAborted();
@@ -478,8 +470,7 @@ export const storeInboundAgentPhoneMessage$ = command(
     }
     return {
       inserted: result.inserted,
-      dispatch:
-        result.inserted || (result.receiptAccepted && !result.hasRecipients),
+      dispatch: result.inserted,
     };
   },
 );
@@ -641,10 +632,6 @@ const fetchAgentPhoneContext$ = command(
               fromNumber: agentphoneMessages.fromNumber,
             })
             .from(agentphoneMessages)
-            .innerJoin(
-              agentphoneMessageVisibility,
-              eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-            )
             .where(
               and(
                 eq(
@@ -652,8 +639,7 @@ const fetchAgentPhoneContext$ = command(
                   params.agentphoneAgentId,
                 ),
                 eq(agentphoneMessages.groupId, params.groupId),
-                eq(agentphoneMessageVisibility.orgId, params.orgId),
-                eq(agentphoneMessageVisibility.userId, params.userId),
+                agentPhoneMessageVisibleTo(params),
               ),
             )
             .orderBy(desc(agentphoneMessages.receivedAt))
@@ -871,7 +857,6 @@ export const sendAgentPhoneText$ = command(
       ? await set(
           resolveAgentPhoneConversationVisibilityRecipients$,
           event.conversationId!,
-          nowDate(),
           signal,
         )
       : [];

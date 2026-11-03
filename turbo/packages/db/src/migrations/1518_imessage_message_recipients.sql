@@ -1,0 +1,2 @@
+ALTER TABLE "agentphone_messages" ADD COLUMN "participant_handles" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_agentphone_messages_participants" ON "agentphone_messages" USING gin ("participant_handles");

@@ -1,6 +1,6 @@
 import { pgTable, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
-/** Idempotency keys for group webhooks that cannot be safely archived. */
+/** Accepted group webhook identities, including legacy unarchived events. */
 export const agentphoneGroupMessageReceipts = pgTable(
   "agentphone_group_message_receipts",
   {

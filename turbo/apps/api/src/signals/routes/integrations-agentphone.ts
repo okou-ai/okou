@@ -10,7 +10,7 @@ import {
   type AgentPhoneConnectStatus,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
+import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -1646,8 +1646,7 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
     eq(agentphoneMessages.agentphoneAgentId, config.agentphoneAgentId),
     eq(agentphoneMessages.groupId, query.groupId),
     eq(agentphoneMessages.channel, "imessage"),
-    eq(agentphoneMessageVisibility.orgId, auth.orgId),
-    eq(agentphoneMessageVisibility.userId, auth.userId),
+    agentPhoneMessageVisibleTo(auth),
   ];
   let cursor: zInfer<typeof groupHistoryCursorSchema> | undefined;
   if (query.cursor) {
@@ -1694,10 +1693,6 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
       receivedAt: messageAt,
     })
     .from(agentphoneMessages)
-    .innerJoin(
-      agentphoneMessageVisibility,
-      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-    )
     .where(and(...conditions))
     .orderBy(asc(messageAt), asc(agentphoneMessages.id))
     .limit(query.limit + 1);
