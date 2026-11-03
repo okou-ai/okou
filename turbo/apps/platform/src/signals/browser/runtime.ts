@@ -811,15 +811,6 @@ function createConnectionAttempt(
     ) => {
       const recovery = get(context.recovery$);
       const generation = get(context.generation$);
-      if (
-        recovery &&
-        !recovery.completion.settled() &&
-        (recovery.request !== request ||
-          recovery.nodes !== nodes ||
-          recovery.generation !== generation)
-      ) {
-        recovery.completion.reject(cancelled());
-      }
       const expired = createDeferredPromise<never>(
         { rejection: "owner" },
         signal,
@@ -934,6 +925,30 @@ function createPauseObservation(
   );
 }
 
+/** Supersession ends receipts even when visibility suspends native work. */
+function createRecoverySupersession(
+  context: Pick<RuntimeState, "recovery$" | "generation$">,
+) {
+  return command(
+    (
+      { get },
+      request: Promise<BrowserConnection | null>,
+      nodes: BrowserNodes | null,
+    ) => {
+      const recovery = get(context.recovery$);
+      if (
+        recovery &&
+        !recovery.completion.settled() &&
+        (recovery.request !== request ||
+          recovery.nodes !== nodes ||
+          recovery.generation !== get(context.generation$))
+      ) {
+        recovery.completion.reject(cancelled());
+      }
+    },
+  );
+}
+
 /** The stable real DOM owner and page lifetime settle every parked receipt. */
 function createRootObservation(
   context: RuntimeState,
@@ -943,6 +958,7 @@ function createRootObservation(
   const { installed$, observer$, connection$ } = context;
   const { nodes$, retireLease$ } = graph;
   const updatePause$ = createPauseObservation(context);
+  const supersedeRecovery$ = createRecoverySupersession(context);
   return onRef(
     command(
       async ({ get, set }, root: HTMLDivElement, mountSignal: AbortSignal) => {
@@ -1026,14 +1042,11 @@ function createRootObservation(
               viewport.observe(canvas);
             }
           }
+          const request = get(connection$);
+          set(supersedeRecovery$, request, mountedNodes);
           if (!get(context.paused$)) {
             const [result] = await Promise.allSettled([
-              set(
-                observeConnection$,
-                get(connection$),
-                mountedNodes,
-                observation,
-              ),
+              set(observeConnection$, request, mountedNodes, observation),
             ]);
             signal.throwIfAborted();
             if (result.status === "rejected" && !isAbortError(result.reason)) {

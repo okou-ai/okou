@@ -897,6 +897,76 @@ test("A changed binding supersedes held recovery paint without inheriting its fa
   expect(viewer.startupErrors).toHaveLength(0);
 });
 
+test("A binding change cancels a pending transport operation while viewport-paused", async () => {
+  const sharedConnection = () => {
+    const option = queryAllByRoleFast("menuitemradio").find((item) => {
+      return item.textContent?.trim() === "Shared connection";
+    });
+    if (!option) {
+      throw new Error("Expected the shared connection option");
+    }
+    return option;
+  };
+  const changeVisibility = mockCanvasViewport();
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  const hello = viewer.browser.holdNextNative("hello");
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  click(await screen.findByText("Separate image connection"));
+  await hello.received;
+  changeVisibility(false);
+  await screen.findByText("Viewing paused");
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  await waitFor(() => {
+    expect(sharedConnection()).toHaveAttribute("aria-disabled", "true");
+  });
+  await userEvent.keyboard("{Escape}{Escape}");
+  const requested = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    const browser = viewer.session();
+    requested.resolve();
+    await response.promise;
+    return respond(200, {
+      browser,
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  viewer.replaceBinding();
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await requested.promise;
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Remote browser viewer" }),
+    ).not.toBeInTheDocument();
+  });
+  response.resolve();
+  await screen.findByRole("region", { name: "Remote browser viewer" });
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  await waitFor(() => {
+    expect(sharedConnection()).not.toHaveAttribute("aria-disabled", "true");
+  });
+  await userEvent.keyboard("{Escape}{Escape}");
+  changeVisibility(true);
+  await expectReady("https://replacement.example.com");
+  await hello.release();
+  await insertText("after paused supersession");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: viewer.browser.pageSession("replacement"),
+      params: { text: "after paused supersession" },
+    });
+  });
+});
+
 test("Changing connection mode cancels a pending recovery so a later failure can reconnect", async () => {
   const viewer = mockViewer();
   const { browser } = viewer;
