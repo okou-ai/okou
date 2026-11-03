@@ -8,6 +8,13 @@ final class ConversationMeasurementCache {
     let width: CGFloat
     let category: UIContentSizeCategory
     var height: CGFloat
+    var diskKey: ConversationHeightDiskCache.Key? = nil
+  }
+
+  let namespace: [String]?
+
+  init(namespace: [String]? = nil) {
+    self.namespace = namespace
   }
 
   private var entries: [String: Measurement] = [:]
