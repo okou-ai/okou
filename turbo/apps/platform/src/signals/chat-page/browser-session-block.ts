@@ -122,7 +122,7 @@ async function requestBrowserSessionLease(
         body: {},
         fetchOptions: { signal },
       }),
-      [200, 404, 409, 502, 503],
+      [200, 404, 409, 500, 502, 503, 504],
       signal,
     ),
   ]);
@@ -279,7 +279,7 @@ function createBrowserSessionKeepAliveSignals(
             signal,
           );
           signal.throwIfAborted();
-          if (!response || response.status === 502 || response.status === 503) {
+          if (!response || response.status >= 500) {
             // Only this idempotent renewal can continue at the normal interval.
             // An outage must not replay input or invalidate the mounted viewer.
             if (!reportedFailure) {
