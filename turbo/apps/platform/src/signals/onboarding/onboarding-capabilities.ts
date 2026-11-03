@@ -45,18 +45,10 @@ const onboardingPaidTools$ = computed(async (get) => {
   );
 });
 
-const CAPABILITY_ORDER: readonly string[] = [
-  "image-generation",
-  "social",
-  "web-search",
-  "people-search",
-  "data-search",
-  "scrape",
-  "finance",
-  "maps",
-  "seo",
-];
-
+/**
+ * Okou-owned capabilities lead; Router families keep Router's display order,
+ * so a new or regrouped family needs no App release.
+ */
 export const onboardingCapabilityTools$ = computed(async (get) => {
   const settings = await get(onboardingPaidTools$);
   const families = await get(settings.dataFamilies$);
@@ -65,14 +57,7 @@ export const onboardingCapabilityTools$ = computed(async (get) => {
     settings.webSearch,
     ...families,
   ];
-  return tools.sort((a, b) => {
-    const aIndex = CAPABILITY_ORDER.indexOf(a.toolId);
-    const bIndex = CAPABILITY_ORDER.indexOf(b.toolId);
-    return (
-      (aIndex === -1 ? CAPABILITY_ORDER.length : aIndex) -
-      (bIndex === -1 ? CAPABILITY_ORDER.length : bIndex)
-    );
-  });
+  return tools;
 });
 
 /** One page operation disables Continue until the confirmed preference is visible. */

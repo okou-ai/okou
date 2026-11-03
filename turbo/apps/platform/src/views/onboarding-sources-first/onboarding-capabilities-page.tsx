@@ -2,14 +2,18 @@ import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
+  ChartLine,
   ChartNoAxesColumnIncreasing,
   Database,
   FileText,
-  Globe,
+  Handshake,
   ImagePlus,
+  ListOrdered,
   MapPin,
+  Megaphone,
   Search,
   Share2,
+  ShoppingBag,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -27,16 +31,20 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
+// Icons are presentation only; an unlisted Router family uses the default.
 const CAPABILITY_ICONS: Readonly<Record<string, LucideIcon | undefined>> = {
   "image-generation": ImagePlus,
-  social: Share2,
   "web-search": Search,
-  "people-search": Users,
-  "data-search": Database,
-  scrape: FileText,
+  "web-extraction": FileText,
+  "company-contacts": Users,
+  "website-traffic": ChartLine,
+  "keywords-rankings": ListOrdered,
+  "ad-creatives": Megaphone,
+  "creators-partners": Handshake,
+  social: Share2,
+  "product-research": ShoppingBag,
   finance: ChartNoAxesColumnIncreasing,
-  maps: MapPin,
-  seo: Globe,
+  "places-weather": MapPin,
 };
 
 function CapabilityRow({
@@ -60,20 +68,19 @@ function CapabilityRow({
     },
   );
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const known = Object.entries(copy).find(([id]) => {
+  // Router owns every family's text, so families can change without an App
+  // release; App copy covers only Okou-owned tools.
+  const owned = Object.entries(copy).find(([id]) => {
     return id === tool.toolId;
   })?.[1];
-  // Router can add or remove families independently of the App release.
   const title =
-    known?.name ??
-    ("family" in tool
+    "family" in tool
       ? dataRouterFamilyText(tool.family.title, locale, tool.family.id)
-      : tool.toolId);
+      : (owned?.name ?? tool.toolId);
   const description =
-    known?.description ??
-    ("family" in tool
+    "family" in tool
       ? dataRouterFamilyText(tool.family.description, locale, tool.family.id)
-      : "");
+      : (owned?.description ?? "");
   const Icon = CAPABILITY_ICONS[tool.toolId] ?? Database;
   const id = `capability-${tool.toolId}`;
 

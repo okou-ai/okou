@@ -4274,37 +4274,9 @@
       "capabilities": {
         "copy": "Okou でウェブを調べ、人を探し、画像を作れます。これらのツールは初期設定で有効になっており、今でも後からでも変更できます。",
         "items": {
-          "data-search": {
-            "description": "企業、サイトのアクセス数、広告を比較して機会を発見。",
-            "name": "高度なデータ調査"
-          },
-          "finance": {
-            "description": "株価と市場動向を比較して投資調査に活用。",
-            "name": "金融データ"
-          },
           "image-generation": {
             "description": "SNS 投稿、キャンペーン、スライド用の画像を作成。",
             "name": "画像生成"
-          },
-          "maps": {
-            "description": "店舗や会場を探し、場所を比較して経路を計画。",
-            "name": "地図と場所"
-          },
-          "people-search": {
-            "description": "役職や会社から見込み客、パートナー、採用候補者を検索。",
-            "name": "人物検索"
-          },
-          "scrape": {
-            "description": "ウェブページから要点を抽出し、資料や比較に活用。",
-            "name": "ページ抽出"
-          },
-          "seo": {
-            "description": "顧客が検索するキーワードや競合の順位を調査。",
-            "name": "SEO 調査"
-          },
-          "social": {
-            "description": "クリエイター、投稿、反応を調べてコンテンツに活用。",
-            "name": "ソーシャル検索"
           },
           "web-search": {
             "description": "最新のニュースや情報を、確認できる出典付きで検索。",

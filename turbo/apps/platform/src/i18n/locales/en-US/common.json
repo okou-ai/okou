@@ -4288,37 +4288,9 @@
       "capabilities": {
         "copy": "Research the web, find people, and create images with Okou. These tools are on by default; you can adjust them now or later.",
         "items": {
-          "data-search": {
-            "description": "Compare companies, website traffic, and ads to spot opportunities.",
-            "name": "Advanced data research"
-          },
-          "finance": {
-            "description": "Compare stock prices and market trends for investment research.",
-            "name": "Financial data"
-          },
           "image-generation": {
             "description": "Create original visuals for social posts, campaigns, and slides.",
             "name": "Image generation"
-          },
-          "maps": {
-            "description": "Find businesses and venues, compare locations, and plan routes.",
-            "name": "Maps and places"
-          },
-          "people-search": {
-            "description": "Find potential customers, partners, or hires by role and company.",
-            "name": "People search"
-          },
-          "scrape": {
-            "description": "Turn web pages into key facts for briefs and comparisons.",
-            "name": "Page extraction"
-          },
-          "seo": {
-            "description": "Find keywords customers search for and see where competitors rank.",
-            "name": "SEO research"
-          },
-          "social": {
-            "description": "Research creators, posts, and engagement to guide your content.",
-            "name": "Social search"
           },
           "web-search": {
             "description": "Find up-to-date news and facts, with sources you can check.",

@@ -4274,37 +4274,9 @@
       "capabilities": {
         "copy": "用 Okou 查资料、找人、生成图片。这些工具默认开启，你可以现在调整，也可以稍后再改。",
         "items": {
-          "data-search": {
-            "description": "比较公司、网站流量和广告，发现业务机会。",
-            "name": "高级数据研究"
-          },
-          "finance": {
-            "description": "比较股价和市场趋势，为投资研究提供依据。",
-            "name": "金融数据"
-          },
           "image-generation": {
             "description": "为社交帖子、营销活动和演示文稿创作原创图片。",
             "name": "图像生成"
-          },
-          "maps": {
-            "description": "查找商家和场所、比较位置并规划路线。",
-            "name": "地图与地点"
-          },
-          "people-search": {
-            "description": "按职位和公司寻找潜在客户、合作伙伴或候选人。",
-            "name": "人物搜索"
-          },
-          "scrape": {
-            "description": "从网页提取关键事实，用于简报和对比分析。",
-            "name": "网页提取"
-          },
-          "seo": {
-            "description": "发现客户搜索的关键词，了解竞争对手的排名。",
-            "name": "SEO 研究"
-          },
-          "social": {
-            "description": "研究创作者、帖子和互动表现，为内容决策提供依据。",
-            "name": "社交搜索"
           },
           "web-search": {
             "description": "查找最新资讯和事实，并提供可核查的来源。",
