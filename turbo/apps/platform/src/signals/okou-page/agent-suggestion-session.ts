@@ -145,11 +145,15 @@ function createSuggestionSession() {
   const entries$ = computed(async (get) => {
     return (await get(snapshot$)).map(createSuggestionEntry);
   });
-  const visible$ = computed(async (get) => {
-    return (await get(entries$))
+  const confirmation$ = state<FeedbackConfirmation | null>(null);
+  const feedItems$ = computed(async (get) => {
+    const entries = await get(entries$);
+    const confirmation = get(confirmation$);
+    return entries
       .filter((entry) => {
         return (
-          !get(entry.hidden$) && getSuggestionExpiresAt(entry.item) > now()
+          entry === confirmation?.entry ||
+          (!get(entry.hidden$) && getSuggestionExpiresAt(entry.item) > now())
         );
       })
       .map((entry) => {
@@ -159,8 +163,8 @@ function createSuggestionSession() {
   return {
     snapshot$,
     entries$,
-    visible$,
-    confirmation$: state<FeedbackConfirmation | null>(null),
+    feedItems$,
+    confirmation$,
     reasonOpen$: state(false),
   };
 }
@@ -173,8 +177,8 @@ const session$ = computed((get) => {
 export const agentSuggestionEntries$ = computed((get) => {
   return get(get(session$).entries$);
 });
-export const visibleAgentSuggestions$ = computed((get) => {
-  return get(get(session$).visible$);
+export const agentSuggestionFeedItems$ = computed((get) => {
+  return get(get(session$).feedItems$);
 });
 export const suggestionFeedbackConfirmation$ = computed((get) => {
   return get(get(session$).confirmation$);
