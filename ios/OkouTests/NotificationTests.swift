@@ -66,10 +66,10 @@ final class NotificationTests: XCTestCase {
       } else {
         XCTAssertNotNil(service.error, "Session and upgrade failures retain global feedback")
       }
-  
+
       status.withLock { $0 = 200 }
       await service.retryRegistration()
-  
+
       XCTAssertNil(service.registrationError)
       XCTAssertNil(service.error)
       XCTAssertEqual(service.status, .authorized)
