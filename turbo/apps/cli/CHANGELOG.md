@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.15.0](https://github.com/okou-ai/okou/compare/cli-v10.14.0...cli-v10.15.0) (2026-11-03)
+
+
+### Features
+
+* use chat connector accounts for runs and cli switching ([#44778](https://github.com/okou-ai/okou/issues/44778)) ([9eb2bcb](https://github.com/okou-ai/okou/commit/9eb2bcba1f9804a86b338b63eb0c05d20852962f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.36.0
+    * @okouai/core bumped to 8.811.1
+    * @okouai/pi-agent-runtime bumped to 1.51.54
+
 ## [10.14.0](https://github.com/okou-ai/okou/compare/cli-v10.13.2...cli-v10.14.0) (2026-11-03)
 
 

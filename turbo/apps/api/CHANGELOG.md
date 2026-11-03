@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.42.0](https://github.com/okou-ai/okou/compare/api-v2.41.1...api-v2.42.0) (2026-11-03)
+
+
+### Features
+
+* use chat connector accounts for runs and cli switching ([#44778](https://github.com/okou-ai/okou/issues/44778)) ([9eb2bcb](https://github.com/okou-ai/okou/commit/9eb2bcba1f9804a86b338b63eb0c05d20852962f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.36.0
+    * @okouai/browser-extension-client bumped to 0.4.3
+    * @okouai/core bumped to 8.811.1
+    * @okouai/db bumped to 2.18.2
+    * @okouai/pi-agent-runtime bumped to 1.51.54
+
 ## [2.41.1](https://github.com/okou-ai/okou/compare/api-v2.41.0...api-v2.41.1) (2026-11-03)
 
 
