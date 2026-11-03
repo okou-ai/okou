@@ -9,24 +9,16 @@ use tokio::task::JoinHandle;
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 
+use crate::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseWorkerOnDrop;
+
 use super::super::*;
 
 const WAIT: Duration = Duration::from_secs(5);
 
-struct ReleaseWorkerOnDrop(Option<mpsc::Sender<()>>);
-
-impl Drop for ReleaseWorkerOnDrop {
-    fn drop(&mut self) {
-        if let Some(release) = self.0.take() {
-            let _ = release.send(());
-        }
-    }
-}
-
 fn occupy_blocking_worker(runtime: &Runtime) -> (ReleaseWorkerOnDrop, JoinHandle<()>) {
     let (started, started_rx) = mpsc::sync_channel(0);
     let (release, release_rx) = mpsc::channel();
-    let gate = ReleaseWorkerOnDrop(Some(release));
+    let gate = ReleaseWorkerOnDrop::new(release);
     let worker = runtime.spawn_blocking(move || {
         started.send(()).unwrap();
         release_rx.recv().unwrap();
