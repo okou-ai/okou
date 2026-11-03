@@ -521,6 +521,7 @@ final class WorkspaceStore {
       if leaving { self.startNewChat(agentID: thread.agentID) }
     }
     guard !closed, !needsUpgrade else { return false }
+    let failure = list.consumeActionError()
     if succeeded {
       if reopenOnSuccess { selectChat(id) }
       let message =
@@ -538,7 +539,7 @@ final class WorkspaceStore {
       }
     } else {
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: list.error ?? "The archive change was not saved.",
+        threadID: id, message: failure ?? "The archive change was not confirmed.",
         actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess
       ) { [weak self] in
         await self?.setArchived(
@@ -553,6 +554,7 @@ final class WorkspaceStore {
     guard !closed, !needsUpgrade, list.canMute(id) else { return }
     let succeeded = await list.setMuted(id, muted: muted, markRead: markRead)
     guard !closed, !needsUpgrade else { return }
+    let failure = list.consumeActionError()
     if succeeded {
       let message =
         muted
@@ -567,7 +569,7 @@ final class WorkspaceStore {
       }
     } else {
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: list.error ?? "The mute change was not saved.",
+        threadID: id, message: failure ?? "The mute change was not confirmed.",
         actionTitle: "Retry", persists: true
       ) { [weak self] in
         await self?.setMuted(id, muted: muted, markRead: markRead)

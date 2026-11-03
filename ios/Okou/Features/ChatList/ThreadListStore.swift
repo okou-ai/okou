@@ -447,6 +447,11 @@ final class ThreadListStore {
     actionError = nil
   }
 
+  func consumeActionError() -> String? {
+    defer { actionError = nil }
+    return actionError
+  }
+
   func canUpdate(_ id: String) -> Bool {
     !closed && !blocked && !updatingThreads.contains(id) && !markingAgentRead
       && threads.contains(where: { $0.id == id })
@@ -581,8 +586,8 @@ final class ThreadListStore {
         try Task.checkCancellation()
         guard !closed else { return }
         actionError = nil
+        succeeded = true
         await refresh(waitForCurrent: true)
-        succeeded = error == nil
       } catch is CancellationError {
       } catch { show(error) }
     }

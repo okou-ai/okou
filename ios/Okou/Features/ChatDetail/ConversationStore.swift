@@ -91,6 +91,7 @@ final class ConversationStore {
   private let didRequestNewChat: @MainActor () -> Void
   private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
   private(set) var error: String?
+  private(set) var readSyncError: String?
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
@@ -254,15 +255,22 @@ final class ConversationStore {
           if isVisible(), !suppressAutomaticRead, let unreadThrough,
             locallyReadThrough.map({ $0 < unreadThrough }) ?? true
           {
-            let watermark = try await commands.markRead(threadID: thread.id)
-            guard !closed, !Task.isCancelled else { return }
-            if let watermark {
-              locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
-              if suppressAutomaticRead {
-                manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
+            do {
+              let watermark = try await commands.markRead(threadID: thread.id)
+              guard !closed, !Task.isCancelled else { return }
+              readSyncError = nil
+              if let watermark {
+                locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
+                if suppressAutomaticRead {
+                  manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
+                }
               }
+              if !suppressAutomaticRead { didMarkRead(watermark) }
+            } catch {
+              guard !closed, !Task.isCancelled, !(error is CancellationError) else { return }
+              readSyncError = error.localizedDescription
+              report(error)
             }
-            if !suppressAutomaticRead { didMarkRead(watermark) }
           }
         } catch is CancellationError {
           return
@@ -387,7 +395,7 @@ final class ConversationStore {
           failureContextRevision == request
         else { return }
         failureBillingError = error.localizedDescription
-        show(error)
+        report(error)
       }
       return
     }
@@ -491,7 +499,7 @@ final class ConversationStore {
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = true
         }
-        show(error)
+        report(error)
         return false
       }
     }
@@ -761,6 +769,11 @@ final class ConversationStore {
   private func show(_ failure: Error) {
     guard !closed else { return }
     error = failure.localizedDescription
+    report(failure)
+  }
+
+  private func report(_ failure: Error) {
+    guard !closed else { return }
     needsUpgrade = (failure as? APIClientError)?.statusCode == 426
     didFail(failure)
   }

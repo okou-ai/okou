@@ -62,7 +62,7 @@ struct ChatSidebarView: View {
           .font(.footnote)
           .foregroundStyle(.secondary)
       }
-      if let error = store.list.error ?? store.error {
+      if let error = store.list.syncError {
         VStack(alignment: .leading, spacing: 8) {
           Text(error).font(.footnote).foregroundStyle(.secondary)
           Button("Try again") { Task { await store.refresh() } }
