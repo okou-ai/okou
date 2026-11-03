@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { avatarComposerUrl } from "@okouai/core/agent-avatar";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -11,6 +12,59 @@ import {
 } from "./team-page-test-helpers.ts";
 
 const context = testContext();
+
+test.each(["", "?tab=authorization"])(
+  "Chat connector accounts keeps agent editing available without old authorization controls: %s",
+  async (query) => {
+    await setupTeamPage({
+      context,
+      path: `/agents/${RESEARCH_AGENT_ID}${query}`,
+      featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+    });
+
+    await screen.findByRole("heading", { name: "Research Agent" });
+    await screen.findByRole("textbox", { name: "Name" });
+    expect(
+      queryAllByRoleFast("tab").map((tab) => {
+        return tab.textContent?.trim();
+      }),
+    ).toStrictEqual(["Profile", "Instructions"]);
+
+    click(screen.getByRole("combobox", { name: "Agent details section" }));
+    await screen.findByRole("option", { name: "Instructions" });
+    expect(screen.queryByRole("option", { name: "Authorization" })).toBeNull();
+    click(screen.getByRole("option", { name: "Instructions" }));
+    await waitFor(() => {
+      expect(window.location.search).toBe("?tab=instructions");
+    });
+  },
+);
+
+test("Chat connector accounts preserves a member's chat access without exposing agent editing", async () => {
+  context.mocks.data.org({
+    id: "org_default",
+    name: "Default Org",
+    role: "member",
+  });
+  await setupTeamPage({
+    context,
+    path: `/agents/${RESEARCH_AGENT_ID}?tab=authorization`,
+    agents: [
+      agentFixture(RESEARCH_AGENT_ID, "Research Agent", {
+        ownerId: "other-owner",
+      }),
+    ],
+    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+  });
+
+  await screen.findByRole("heading", { name: "Research Agent" });
+  expect(screen.getByLabelText("Chat with Research Agent")).toHaveAttribute(
+    "href",
+    `/agents/${RESEARCH_AGENT_ID}/chat`,
+  );
+  expect(queryAllByRoleFast("tab")).toHaveLength(0);
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+});
 
 function renderedAvatarSvgLayerSrcs(root: ParentNode): string[] {
   return Array.from(root.querySelectorAll<HTMLImageElement>("img"), (img) => {
