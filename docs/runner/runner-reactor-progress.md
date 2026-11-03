@@ -297,7 +297,9 @@ Rejected handoff uses the existing bounded fresh replacement, which rebuilds
 image-derived storage/history preparation before creating the replacement.
 
 Runtime home configurations carry the same fixed 50 GiB free-space reserve as
-cache publication. Firecracker queries the actual destination filesystem before
+cache publication. On filesystems of at least 100 GiB, background pressure starts
+below 75 GiB free and reclaims toward 100 GiB free; smaller filesystems clip the
+watermarks to their capacity. Firecracker queries the actual destination filesystem before
 fresh creation, Copy or EXDEV copy. Copy demand includes rounded logical data
 extents and per-extent allocation metadata, with a full-logical bound when
 observation is unavailable;

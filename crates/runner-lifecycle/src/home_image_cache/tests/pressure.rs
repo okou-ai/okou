@@ -18,7 +18,7 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
         let committed = f.commit("home", b"home", "2026-10-09T09:00:00Z").await;
         f.cache.set_fs_stats_for_test(FsStats {
             total_bytes: capacity_gib * GIB,
-            available_bytes: 62 * GIB + GIB / 2,
+            available_bytes: 75 * GIB,
             ..FsStats::default()
         });
         f.cache.reset_gc_root_scan_count();
@@ -27,7 +27,7 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
         assert_eq!(f.cache.gc_root_scan_count(), 0);
         f.cache.set_fs_stats_for_test(FsStats {
             total_bytes: capacity_gib * GIB,
-            available_bytes: 55 * GIB,
+            available_bytes: 70 * GIB,
             ..FsStats::default()
         });
         let device = std::fs::metadata(f.cache.home_image_cache_dir())
@@ -43,8 +43,8 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
         assert!(f.image("home", &committed).exists());
         f.cache.probe_home_cache_pressure().await.unwrap();
         f.cache.drain_pressure_reclamation().await;
-        assert_eq!(f.cache.gc_root_scan_count(), 1);
         assert!(!f.image("home", &committed).exists());
+        assert_eq!(f.cache.gc_root_scan_count(), 1);
         assert_eq!(
             std::fs::metadata(f.cache.routine_gc_lock_path())
                 .unwrap()
@@ -137,7 +137,7 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
     .unwrap();
     f.cache.set_fs_stats_for_test(FsStats {
         total_bytes: 100 * GIB,
-        available_bytes: 62 * GIB + GIB / 2,
+        available_bytes: 75 * GIB,
         ..FsStats::default()
     });
     assert!(
@@ -250,9 +250,26 @@ async fn routine_pressure_turn_releases_collector_and_retains_inventory_between_
             .len(),
         0
     );
+    let before_recovery = std::fs::read_dir(f.cache.home_image_cache_dir())
+        .unwrap()
+        .count();
+    // Recovery above the trigger is not enough to stop an accepted collection.
     f.cache.set_fs_stats_for_test(FsStats {
         total_bytes: 100 * GIB,
-        available_bytes: 75 * GIB,
+        available_bytes: 99 * GIB,
+        ..FsStats::default()
+    });
+    gate.release();
+    gate.wait_entered(Duration::from_secs(5)).await;
+    gate.release();
+    gate.wait_entered(Duration::from_secs(5)).await;
+    let at_target = std::fs::read_dir(f.cache.home_image_cache_dir())
+        .unwrap()
+        .count();
+    assert!(at_target > 0 && at_target < before_recovery);
+    f.cache.set_fs_stats_for_test(FsStats {
+        total_bytes: 100 * GIB,
+        available_bytes: 100 * GIB,
         ..FsStats::default()
     });
     let published = f
@@ -264,6 +281,12 @@ async fn routine_pressure_turn_releases_collector_and_retains_inventory_between_
     assert!(worker.await.unwrap().unwrap().is_some());
     assert_eq!(f.cache.gc_root_scan_count(), 1);
     assert!(f.image("intervening", &published).exists());
+    assert_eq!(
+        std::fs::read_dir(f.cache.home_image_cache_dir())
+            .unwrap()
+            .count(),
+        at_target + 1
+    );
     assert_eq!(
         std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
