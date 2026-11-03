@@ -21,7 +21,6 @@ struct FakeStopOps {
     acquire_lock_error: bool,
     gate_active_results: VecDeque<RunnerResult<bool>>,
     gate_config_path: Option<PathBuf>,
-    active_results: VecDeque<RunnerResult<bool>>,
     stop_results: VecDeque<RunnerResult<()>>,
     bounded_stop_results: VecDeque<RunnerResult<BoundedSystemctlOutcome>>,
     cleanup_states: VecDeque<RunnerResult<CleanupUnitActiveState>>,
@@ -41,7 +40,6 @@ impl Default for FakeStopOps {
             acquire_lock_error: false,
             gate_active_results: VecDeque::from([Ok(false)]),
             gate_config_path: Some(PathBuf::from("/tmp/runner-config.yaml")),
-            active_results: VecDeque::from([Ok(true)]),
             stop_results: VecDeque::from([Ok(())]),
             bounded_stop_results: VecDeque::from([Ok(BoundedSystemctlOutcome::Success)]),
             cleanup_states: VecDeque::from([Ok(test_support::cleanup_unit_active_state(
@@ -99,13 +97,6 @@ impl ServiceStopOps for FakeStopOps {
         } else {
             Ok(())
         }))
-    }
-
-    fn is_active<'a>(&'a mut self, _unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool> {
-        self.events.push("is_active");
-        Box::pin(std::future::ready(
-            self.active_results.pop_front().unwrap_or(Ok(false)),
-        ))
     }
 
     fn stop<'a>(&'a mut self, _unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()> {
@@ -241,7 +232,7 @@ fn cleanup_state(active_state: &str, active_like: bool) -> RunnerResult<CleanupU
 }
 
 #[tokio::test]
-async fn stop_default_active_service_preserves_existing_sequence() {
+async fn stop_default_active_service_stops_before_cleanup() {
     let unit = service_unit();
     let home = fake_home();
     let mut ops = FakeStopOps::default();
@@ -255,8 +246,101 @@ async fn stop_default_active_service_preserves_existing_sequence() {
         [
             "acquire_lock",
             "gate_is_active",
-            "is_active",
             "stop",
+            "reset_failed",
+            "cleanup_drain_restart_override",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn stop_default_failed_stop_keeps_override_until_shutdown_is_confirmed() {
+    let unit = service_unit();
+    let home = fake_home();
+    let mut ops = FakeStopOps {
+        stop_results: VecDeque::from([
+            Err(fake_error("stop client failed")),
+            Err(fake_error("stop client failed")),
+        ]),
+        cleanup_states: VecDeque::from([
+            cleanup_state("deactivating", true),
+            cleanup_state("inactive", false),
+        ]),
+        ..FakeStopOps::default()
+    };
+
+    let error = stop_with_ops(&unit, &home, false, None, &mut ops)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("vm0-runner-test.service"));
+    assert!(error.contains("stop client failed"));
+    assert!(error.contains("remains deactivating"));
+    assert_eq!(
+        ops.events,
+        [
+            "acquire_lock",
+            "gate_is_active",
+            "stop",
+            "cleanup_active_state"
+        ]
+    );
+
+    // A subsequent invocation can finish once systemd confirms inactivity,
+    // even if the stop client itself still fails.
+    ops.events.clear();
+    ops.gate_active_results.push_back(Ok(false));
+    stop_with_ops(&unit, &home, false, None, &mut ops)
+        .await
+        .unwrap();
+    assert_eq!(
+        ops.events,
+        [
+            "acquire_lock",
+            "gate_is_active",
+            "stop",
+            "cleanup_active_state",
+            "reset_failed",
+            "cleanup_drain_restart_override",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn stop_default_failed_stop_refuses_cleanup_when_state_is_unknown() {
+    let mut ops = FakeStopOps {
+        stop_results: VecDeque::from([Err(fake_error("stop client failed"))]),
+        cleanup_states: VecDeque::from([Err(fake_error("systemd unavailable"))]),
+        ..FakeStopOps::default()
+    };
+
+    let error = stop_default_with_ops(&service_unit(), &mut ops)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("stop client failed"));
+    assert!(error.contains("could not verify it is inactive"));
+    assert!(error.contains("systemd unavailable"));
+    assert_eq!(ops.events, ["stop", "cleanup_active_state"]);
+}
+
+#[tokio::test]
+async fn stop_default_missing_service_preserves_best_effort_cleanup() {
+    let mut ops = FakeStopOps {
+        stop_results: VecDeque::from([Err(fake_error("unit not found"))]),
+        // Host normalizes a not-found/inactive unit to this cleanup state.
+        cleanup_states: VecDeque::from([cleanup_state("inactive", false)]),
+        ..FakeStopOps::default()
+    };
+
+    stop_default_with_ops(&service_unit(), &mut ops)
+        .await
+        .unwrap();
+    assert_eq!(
+        ops.events,
+        [
+            "stop",
+            "cleanup_active_state",
             "reset_failed",
             "cleanup_drain_restart_override",
         ]

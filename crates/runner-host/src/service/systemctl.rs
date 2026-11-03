@@ -141,8 +141,8 @@ fn bounded_command_error(program: &str, error: BoundedCommandError) -> HostError
 /// `reloading`, and `refreshing`. `deactivating` intentionally returns `false`
 /// because a unit that has begun shutdown is no longer runnable.
 ///
-/// Cleanup callers must use `cleanup_unit_active_state_bounded`, which treats
-/// `deactivating` as active-like so cleanup can wait or escalate instead of
+/// Cleanup callers must use [`cleanup_unit_active_state`] or its bounded variant.
+/// These treat `deactivating` as active-like so cleanup can wait or escalate instead of
 /// reporting success before the unit is fully inactive.
 pub async fn is_unit_active(unit: &RunnerServiceUnit) -> HostResult<bool> {
     let svc = unit.service_name();
@@ -408,12 +408,19 @@ pub(super) async fn cat_unit_content_bounded(
     }
 }
 
-/// Read the systemd ActiveState using cleanup semantics.
+/// Read the systemd ActiveState using cleanup semantics and the default query timeout.
 ///
 /// Normal health checks intentionally treat `deactivating` as inactive because
 /// a service that has started shutdown is not runnable. Cleanup must treat
 /// `deactivating` as still active-like so recovery waits or escalates instead
 /// of reporting success too early.
+pub async fn cleanup_unit_active_state(
+    unit: &RunnerServiceUnit,
+) -> HostResult<CleanupUnitActiveState> {
+    cleanup_unit_active_state_bounded(unit, SYSTEMCTL_QUERY_TIMEOUT).await
+}
+
+/// Read cleanup activity with a caller-supplied query deadline.
 pub async fn cleanup_unit_active_state_bounded(
     unit: &RunnerServiceUnit,
     duration: Duration,
