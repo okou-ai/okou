@@ -7,10 +7,6 @@ import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import {
-  agentStorageReadPlan,
-  captureAgentStorageContext,
-} from "./agent-storage-context.service";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 import { createOfficialWorkflowFacts } from "./official-workflow-context.signals";
 import { createOfficialWorkflowObservation } from "./official-workflow-observation.service";
@@ -19,7 +15,6 @@ import type { createThreadAutomationContext } from "./thread-automation-context.
 import type { ThreadAutomationTarget } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import type { RunWorkflowRef } from "./workflow-data.service";
-import { createWorkflowSkills } from "./workflow-skills.service";
 
 function createProactiveTargetEligibility(
   bootstrap: AgentRunContextSignals,
@@ -190,37 +185,10 @@ export function createThreadWorkflowContext(
     workflows$,
     officialWorkflows$,
   );
-  const workflowSkills$ = createWorkflowSkills(
-    workflows$,
-    officialWorkflowObservation$,
-  );
-  const storage$ = computed(async (get) => {
-    const [ordinary, workflows, official] = await Promise.all([
-      get(bootstrap.storage$),
-      get(workflows$),
-      get(officialWorkflows$),
-    ]);
-    if (!official) {
-      return ordinary;
-    }
-    const plan = agentStorageReadPlan(
-      bootstrap,
-      await Promise.all([
-        get(bootstrap.agent$),
-        workflows,
-        get(bootstrap.connectorSelection$),
-        get(bootstrap.catalog$),
-        official,
-      ]),
-    );
-    return captureAgentStorageContext(plan, ordinary.index);
-  });
   return {
     workflows$,
     officialWorkflows$,
     officialWorkflowObservation$,
-    workflowSkills$,
-    storage$,
   };
 }
 

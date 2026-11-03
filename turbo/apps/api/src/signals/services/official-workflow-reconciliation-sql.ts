@@ -1,6 +1,5 @@
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import type { OfficialWorkflowAcceptedDefinition } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import {
   officialWorkflowCatalogReleases,
@@ -8,8 +7,7 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { boolean, object, string, unknown as zUnknown, type output } from "zod";
 
 import {
@@ -27,10 +25,7 @@ export const acceptedRevisionRowSchema = object({
   definitionName: string(),
   revision: string(),
   payload: zUnknown(),
-  storageName: string().nullable(),
-  storageId: string().nullable(),
-  storageVersion: string().nullable(),
-  contentBundle: contentBundleSchema.nullable(),
+  contentBundle: contentBundleSchema,
 });
 
 function acceptedCatalogAuthorityCondition() {
@@ -72,19 +67,6 @@ export function acceptedCatalogDefinitionRevision(definitionName: string) {
 export function acceptedRevisionReadStatement(
   definition: Pick<OfficialWorkflowAcceptedDefinition, "name" | "revision">,
 ) {
-  const storageCondition = and(
-    eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-    eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-    eq(storages.orgId, SYSTEM_ORG_ID),
-    eq(storages.userId, VOLUME_ORG_USER_ID),
-  );
-  const versionCondition = and(
-    eq(storageVersions.id, officialWorkflowDefinitionRevisions.storageVersion),
-    eq(
-      storageVersions.storageId,
-      officialWorkflowDefinitionRevisions.storageId,
-    ),
-  );
   const identityCondition = and(
     eq(officialWorkflowDefinitionRevisions.definitionName, definition.name),
     eq(officialWorkflowDefinitionRevisions.revision, definition.revision),
@@ -92,17 +74,9 @@ export function acceptedRevisionReadStatement(
   return sql`SELECT ${officialWorkflowDefinitionRevisions.definitionName} AS "definitionName",
       ${officialWorkflowDefinitionRevisions.revision} AS revision,
       ${officialWorkflowDefinitionRevisions.payload} AS payload,
-      ${officialWorkflowDefinitionRevisions.storageName} AS "storageName",
-      ${officialWorkflowDefinitionRevisions.storageId} AS "storageId",
-      ${officialWorkflowDefinitionRevisions.storageVersion} AS "storageVersion",
       ${officialWorkflowDefinitionRevisions.contentBundle} AS "contentBundle"
     FROM ${officialWorkflowDefinitionRevisions}
-    LEFT JOIN ${storages} ON ${storageCondition}
-    LEFT JOIN ${storageVersions} ON ${versionCondition}
-    WHERE ${identityCondition} AND (
-      (${officialWorkflowDefinitionRevisions.storageId} IS NULL AND ${officialWorkflowDefinitionRevisions.storageVersion} IS NULL)
-      OR (${storages.id} IS NOT NULL AND ${storageVersions.id} IS NOT NULL)
-    ) LIMIT 1`;
+    WHERE ${identityCondition} AND ${isNotNull(officialWorkflowDefinitionRevisions.contentBundle)} LIMIT 1`;
 }
 
 export const webhookTierRowSchema = object({

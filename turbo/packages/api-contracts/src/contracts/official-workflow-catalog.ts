@@ -5,13 +5,11 @@ import {
   lazy,
   literal,
   number,
-  never as zNever,
   object,
   record,
   string,
   union,
   url,
-  uuid,
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
@@ -245,15 +243,6 @@ export type OfficialWorkflowSourceCatalog = zInfer<
 
 const fingerprintSchema = string().regex(/^[0-9a-f]{64}$/);
 
-export const officialWorkflowArtifactReferenceSchema = object({
-  storageName: string().min(1).max(256),
-  storageId: uuid(),
-  storageVersion: fingerprintSchema,
-}).strict();
-export type OfficialWorkflowArtifactReference = zInfer<
-  typeof officialWorkflowArtifactReferenceSchema
->;
-
 // Accepted catalog and revision payloads are immutable once persisted. Each
 // supported schema version keeps its original required fields; a payload is
 // parsed only by the schema its own `schemaVersion` names.
@@ -316,51 +305,22 @@ const officialWorkflowAcceptedDefinitionShape = {
   presentation: officialWorkflowPresentationSchema,
 };
 
-const officialWorkflowAcceptedDefinitionV2Schema = object({
-  ...officialWorkflowAcceptedDefinitionShape,
-  artifact: officialWorkflowArtifactReferenceSchema,
-  contentBundle: zNever().optional(),
-  blueprints: array(officialWorkflowAcceptedBlueprintV2Schema),
-}).strict();
-
-const officialWorkflowAcceptedDefinitionV3Schema = object({
-  ...officialWorkflowAcceptedDefinitionShape,
-  artifact: officialWorkflowArtifactReferenceSchema,
-  contentBundle: zNever().optional(),
-  blueprints: array(officialWorkflowAcceptedBlueprintV3Schema),
-}).strict();
-
 /** Delivery format is independent of the immutable v2/v3 definition payload. */
 export const OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION = 4 as const;
 const officialWorkflowAcceptedDefinitionV4Schema = object({
   ...officialWorkflowAcceptedDefinitionShape,
   contentBundle: contentBundleSchema,
-  artifact: zNever().optional(),
   blueprints: array(officialWorkflowAcceptedBlueprintSchema),
 }).strict();
 
-export type OfficialWorkflowAcceptedDefinition =
-  | zInfer<typeof officialWorkflowAcceptedDefinitionV4Schema>
-  | zInfer<typeof officialWorkflowAcceptedDefinitionV2Schema>
-  | zInfer<typeof officialWorkflowAcceptedDefinitionV3Schema>;
+export type OfficialWorkflowAcceptedDefinition = zInfer<
+  typeof officialWorkflowAcceptedDefinitionV4Schema
+>;
 
-export const officialWorkflowCatalogReleasePayloadSchema = discriminatedUnion(
-  "schemaVersion",
-  [
-    object({
-      schemaVersion: literal(OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION),
-      definitions: array(officialWorkflowAcceptedDefinitionV4Schema),
-    }).strict(),
-    object({
-      schemaVersion: literal(2),
-      definitions: array(officialWorkflowAcceptedDefinitionV2Schema),
-    }).strict(),
-    object({
-      schemaVersion: literal(3),
-      definitions: array(officialWorkflowAcceptedDefinitionV3Schema),
-    }).strict(),
-  ],
-);
+export const officialWorkflowCatalogReleasePayloadSchema = object({
+  schemaVersion: literal(OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION),
+  definitions: array(officialWorkflowAcceptedDefinitionV4Schema),
+}).strict();
 export type OfficialWorkflowCatalogReleasePayload = zInfer<
   typeof officialWorkflowCatalogReleasePayloadSchema
 >;
@@ -416,18 +376,10 @@ export type OfficialWorkflowCatalogSyncResponse = zInfer<
   typeof officialWorkflowCatalogSyncResponseSchema
 >;
 
-export const officialWorkflowAcceptedRevisionSchema = union([
-  object({
-    definition: officialWorkflowDefinitionRevisionPayloadSchema,
-    artifact: officialWorkflowArtifactReferenceSchema,
-    contentBundle: contentBundleSchema.nullable().optional(),
-  }).strict(),
-  object({
-    definition: officialWorkflowDefinitionRevisionPayloadSchema,
-    artifact: zNever().optional(),
-    contentBundle: contentBundleSchema,
-  }).strict(),
-]);
+export const officialWorkflowAcceptedRevisionSchema = object({
+  definition: officialWorkflowDefinitionRevisionPayloadSchema,
+  contentBundle: contentBundleSchema,
+}).strict();
 export type OfficialWorkflowAcceptedRevision = zInfer<
   typeof officialWorkflowAcceptedRevisionSchema
 >;

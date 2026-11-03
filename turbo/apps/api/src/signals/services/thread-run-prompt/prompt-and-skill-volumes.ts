@@ -169,10 +169,6 @@ export function createPromptAndSkillVolumesSignals(
     selectedImageModel$,
     disabledPaidTools$,
   } = sources;
-  const workflowSkills$ = computed((get) => {
-    return get(threadContext.workflowSkills$);
-  });
-
   const cloudBrowserEnabled$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;
     if (!thread) {
@@ -222,7 +218,6 @@ export function createPromptAndSkillVolumesSignals(
       user,
       computerUse,
       connectors,
-      workflows,
       systemSkills,
       runtime,
     ] = await Promise.all([
@@ -233,7 +228,6 @@ export function createPromptAndSkillVolumesSignals(
       get(userPrompt$),
       get(computerUsePrompt$),
       get(connectors$),
-      get(workflowSkills$),
       get(systemSkills$),
       get(runtimePrompt$),
     ]);
@@ -259,7 +253,6 @@ export function createPromptAndSkillVolumesSignals(
       user,
       computerUse,
       connectors,
-      workflows,
       systemSkills,
       runtime,
     ]);

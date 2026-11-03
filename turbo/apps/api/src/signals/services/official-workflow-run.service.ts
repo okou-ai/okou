@@ -1,11 +1,10 @@
 import type {
   OfficialWorkflowAcceptedDefinition,
   OfficialWorkflowAcceptedRevision,
-  OfficialWorkflowArtifactReference,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import type {
   AgentRunOfficialWorkflowDefinitionProvenance,
+  AgentRunOfficialWorkflowBundleDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import type { StoredExecutionContext } from "@okouai/api-contracts/contracts/runners";
@@ -37,7 +36,7 @@ interface OfficialWorkflowRunBlueprintIdentity {
 }
 
 type ResolvedOfficialWorkflowDefinition =
-  AgentRunOfficialWorkflowDefinitionProvenance & {
+  AgentRunOfficialWorkflowBundleDefinitionProvenance & {
     readonly workflowId: string;
     readonly workflowName: string;
     readonly blueprints: readonly OfficialWorkflowRunBlueprintIdentity[];
@@ -46,7 +45,10 @@ type ResolvedOfficialWorkflowDefinition =
 export interface OfficialWorkflowObservation {
   readonly releaseId: string;
   readonly definitions: readonly ResolvedOfficialWorkflowDefinition[];
-  readonly provenance: AgentRunOfficialWorkflowProvenance;
+  readonly provenance: Extract<
+    AgentRunOfficialWorkflowProvenance,
+    { readonly schemaVersion: 2 }
+  >;
 }
 
 export type ResolvedOfficialWorkflowRunDefinition =
@@ -58,46 +60,13 @@ export interface OfficialWorkflowRunObservation extends OfficialWorkflowObservat
   readonly definitions: readonly ResolvedOfficialWorkflowRunDefinition[];
 }
 
-function artifactMatches(
-  provenance: NonNullable<
-    AgentRunOfficialWorkflowDefinitionProvenance["artifact"]
-  >,
-  artifact: OfficialWorkflowArtifactReference,
-): boolean {
-  return (
-    provenance.orgId === SYSTEM_ORG_ID &&
-    provenance.userId === VOLUME_ORG_USER_ID &&
-    provenance.storageName === artifact.storageName &&
-    provenance.storageId === artifact.storageId &&
-    provenance.storageVersion === artifact.storageVersion
-  );
-}
-
-function acceptedArtifactsMatch(
-  left: OfficialWorkflowArtifactReference,
-  right: OfficialWorkflowArtifactReference,
-): boolean {
-  return (
-    left.storageName === right.storageName &&
-    left.storageId === right.storageId &&
-    left.storageVersion === right.storageVersion
-  );
-}
-
 function acceptedDeliveryMatches(
-  left: Pick<OfficialWorkflowAcceptedRevision, "artifact" | "contentBundle">,
-  right: Pick<OfficialWorkflowAcceptedDefinition, "artifact" | "contentBundle">,
+  left: Pick<OfficialWorkflowAcceptedRevision, "contentBundle">,
+  right: Pick<OfficialWorkflowAcceptedDefinition, "contentBundle">,
 ): boolean {
-  if (right.contentBundle) {
-    return (
-      left.contentBundle?.sha256 === right.contentBundle.sha256 &&
-      left.contentBundle.archiveBytes === right.contentBundle.archiveBytes
-    );
-  }
   return (
-    left.artifact !== undefined &&
-    right.artifact !== undefined &&
-    acceptedArtifactsMatch(left.artifact, right.artifact)
+    left.contentBundle.sha256 === right.contentBundle.sha256 &&
+    left.contentBundle.archiveBytes === right.contentBundle.archiveBytes
   );
 }
 
@@ -105,13 +74,11 @@ export function observedDeliveryMatches(
   observed: AgentRunOfficialWorkflowDefinitionProvenance,
   definition: OfficialWorkflowAcceptedDefinition,
 ): boolean {
-  return definition.contentBundle
-    ? observed.contentBundle?.sha256 === definition.contentBundle.sha256 &&
-        observed.contentBundle.archiveBytes ===
-          definition.contentBundle.archiveBytes
-    : observed.artifact !== undefined &&
-        definition.artifact !== undefined &&
-        artifactMatches(observed.artifact, definition.artifact);
+  return (
+    observed.contentBundle?.sha256 === definition.contentBundle.sha256 &&
+    observed.contentBundle.archiveBytes ===
+      definition.contentBundle.archiveBytes
+  );
 }
 
 export function blueprintIdentities(
@@ -237,17 +204,7 @@ export function assembleWorkflowObservation(
         workflowName: candidate.workflowName,
         name: accepted.name,
         revision: accepted.revision,
-        ...(accepted.contentBundle
-          ? { contentBundle: accepted.contentBundle }
-          : {
-              artifact: {
-                orgId: SYSTEM_ORG_ID,
-                userId: VOLUME_ORG_USER_ID,
-                storageName: accepted.artifact.storageName,
-                storageId: accepted.artifact.storageId,
-                storageVersion: accepted.artifact.storageVersion,
-              },
-            }),
+        contentBundle: accepted.contentBundle,
         blueprints: blueprintIdentities(accepted),
       };
     },
@@ -256,34 +213,16 @@ export function assembleWorkflowObservation(
   return {
     releaseId: catalog.releaseId,
     definitions,
-    provenance:
-      catalog.payload.schemaVersion === 4
-        ? {
-            schemaVersion: 2,
-            definitions: definitions.map((definition) => {
-              if (!definition.contentBundle) {
-                throw new OfficialWorkflowRunAdmissionError();
-              }
-              return {
-                name: definition.name,
-                revision: definition.revision,
-                contentBundle: definition.contentBundle,
-              };
-            }),
-          }
-        : {
-            schemaVersion: 1,
-            definitions: definitions.map((definition) => {
-              if (!definition.artifact) {
-                throw new OfficialWorkflowRunAdmissionError();
-              }
-              return {
-                name: definition.name,
-                revision: definition.revision,
-                artifact: definition.artifact,
-              };
-            }),
-          },
+    provenance: {
+      schemaVersion: 2,
+      definitions: definitions.map((definition) => {
+        return {
+          name: definition.name,
+          revision: definition.revision,
+          contentBundle: definition.contentBundle,
+        };
+      }),
+    },
   };
 }
 
@@ -295,26 +234,9 @@ export function exactMountsMatch(
     return false;
   }
   return observation.definitions.every((definition) => {
-    if (definition.contentBundle) {
-      return !mounts.some((mount) => {
-        return mount.mountPath === definition.mountPath;
-      });
-    }
-    const matches = mounts.filter((mount) => {
+    return !mounts.some((mount) => {
       return mount.mountPath === definition.mountPath;
     });
-    if (matches.length !== 1) {
-      return false;
-    }
-    const [mount] = matches;
-    return (
-      mount?.orgId === SYSTEM_ORG_ID &&
-      mount.userId === VOLUME_ORG_USER_ID &&
-      mount.name === definition.artifact.storageName &&
-      mount.storageId === definition.artifact.storageId &&
-      mount.version === definition.artifact.storageVersion &&
-      mount.writeback !== true
-    );
   });
 }
 
@@ -322,10 +244,8 @@ export function pinnedOfficialWorkflowBundles(
   observation: OfficialWorkflowRunObservation | undefined,
 ): NonNullable<StoredExecutionContext["officialWorkflowBundles"]> {
   return (
-    observation?.definitions.flatMap((definition) => {
-      return definition.contentBundle
-        ? [{ ...definition.contentBundle, mountPath: definition.mountPath }]
-        : [];
+    observation?.definitions.map((definition) => {
+      return { ...definition.contentBundle, mountPath: definition.mountPath };
     }) ?? []
   );
 }

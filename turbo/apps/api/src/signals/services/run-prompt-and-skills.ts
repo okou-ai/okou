@@ -24,7 +24,6 @@ type SkillVolumeSource =
   | "system_skill"
   | "connector_skill"
   | "custom_connector_skill"
-  | "official_workflow"
   | "workflow_skill"
   // Template guidance packages keep their existing storage provenance.
   | "request_additional_volume";
@@ -33,7 +32,6 @@ interface SkillVolumeStorage {
   readonly name: string;
   readonly version?: string;
   readonly system?: boolean;
-  readonly expectedStorageId?: string;
 }
 
 export type SkillVolume =
@@ -68,7 +66,6 @@ const VOLUME_SOURCE_ORDER = {
   custom_connector_skill: 0,
   system_skill: 1,
   connector_skill: 2,
-  official_workflow: 3,
   workflow_skill: 3,
   request_additional_volume: 4,
 } as const satisfies Readonly<Record<SkillVolumeSource, number>>;

@@ -2,7 +2,6 @@ import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION,
   type OfficialWorkflowAcceptedDefinition,
-  type OfficialWorkflowArtifactReference,
   type OfficialWorkflowCatalogDiagnostic,
   type OfficialWorkflowCatalogReleasePayload,
   type OfficialWorkflowCatalogSyncResponse,
@@ -43,7 +42,6 @@ export class OfficialWorkflowCatalogRegistrationError extends Error {
 
 export interface PreparedOfficialWorkflowDefinition {
   readonly definition: OfficialWorkflowDefinitionRevisionPayload;
-  readonly artifact: OfficialWorkflowArtifactReference | undefined;
   readonly contentBundle: ContentBundle;
 }
 
@@ -352,17 +350,13 @@ export function preparedDefinitionPublicationPlan(
   const registered = query.$with(`${namespace}registered_definition`, {
     definitionName: table.definitionName,
   }).as(sql`INSERT INTO ${table}
-      (definition_name, revision, payload, storage_name, storage_id, storage_version, content_bundle)
+      (definition_name, revision, payload, content_bundle)
     SELECT ${prepared.definition.name}, ${prepared.definition.revision},
-      ${sql.param(prepared.definition, table.payload)}, ${prepared.artifact?.storageName ?? null},
-      ${prepared.artifact?.storageId ?? null}, ${prepared.artifact?.storageVersion ?? null}, ${sql.param(prepared.contentBundle, table.contentBundle)}
+      ${sql.param(prepared.definition, table.payload)}, ${sql.param(prepared.contentBundle, table.contentBundle)}
     WHERE ${admitted}
     ON CONFLICT (definition_name, revision) DO UPDATE
       SET content_bundle = COALESCE(official_workflow_definition_revisions.content_bundle, EXCLUDED.content_bundle)
     WHERE ${table.payload} = EXCLUDED.payload
-      AND ${table.storageName} IS NOT DISTINCT FROM EXCLUDED.storage_name
-      AND ${table.storageId} IS NOT DISTINCT FROM EXCLUDED.storage_id
-      AND ${table.storageVersion} IS NOT DISTINCT FROM EXCLUDED.storage_version
       AND (${table.contentBundle} IS NULL OR ${table.contentBundle} = EXCLUDED.content_bundle)
     RETURNING definition_name`);
   return { ctes: [registered], registered };

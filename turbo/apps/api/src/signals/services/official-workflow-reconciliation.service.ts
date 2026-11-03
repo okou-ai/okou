@@ -12,13 +12,11 @@ import {
   isMorningBriefDefinitionName,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { googleFormsResponseSubmittedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import {
@@ -472,8 +470,6 @@ const persistMorningBriefScheduleRecovery$ = command(
             db
               .select(revisionPlan.columns)
               .from(officialWorkflowDefinitionRevisions)
-              .leftJoin(storages, revisionPlan.storageJoin)
-              .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
               .where(
                 and(revisionPlan.condition, revisionPlan.deliveryCondition),
               ),
@@ -1817,8 +1813,6 @@ function structureTransitionOwnership(
             builder
               .select(revisionPlan.columns)
               .from(officialWorkflowDefinitionRevisions)
-              .leftJoin(storages, revisionPlan.storageJoin)
-              .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
               .where(
                 and(revisionPlan.condition, revisionPlan.deliveryCondition),
               ),
@@ -3376,8 +3370,6 @@ const retainDormantIdentity$ = command(
         await readDb
           .select(revisionPlan.columns)
           .from(officialWorkflowDefinitionRevisions)
-          .leftJoin(storages, revisionPlan.storageJoin)
-          .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
           .where(and(revisionPlan.condition, revisionPlan.deliveryCondition))
           .limit(1),
       );
@@ -3413,8 +3405,6 @@ const retainDormantIdentity$ = command(
     const revisionAuthority = db
       .select({ revision: officialWorkflowDefinitionRevisions.revision })
       .from(officialWorkflowDefinitionRevisions)
-      .leftJoin(storages, revisionPlan.storageJoin)
-      .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
       .where(
         and(
           revisionPlan.condition,
@@ -3500,15 +3490,10 @@ function reservedCreationOrphanCondition(args: ReservedCreationOrphanArgs) {
 function admittedCreationRevisionCondition(
   revision: Pick<
     typeof officialWorkflowDefinitionRevisions.$inferSelect,
-    "storageName" | "storageId" | "storageVersion" | "contentBundle"
+    "contentBundle"
   >,
 ) {
-  return and(
-    sql`${officialWorkflowDefinitionRevisions.storageName} IS NOT DISTINCT FROM ${revision.storageName}`,
-    sql`${officialWorkflowDefinitionRevisions.storageId} IS NOT DISTINCT FROM ${revision.storageId}`,
-    sql`${officialWorkflowDefinitionRevisions.storageVersion} IS NOT DISTINCT FROM ${revision.storageVersion}`,
-    sql`${officialWorkflowDefinitionRevisions.contentBundle} IS NOT DISTINCT FROM ${sql.param(revision.contentBundle, officialWorkflowDefinitionRevisions.contentBundle)}`,
-  );
+  return sql`${officialWorkflowDefinitionRevisions.contentBundle} IS NOT DISTINCT FROM ${sql.param(revision.contentBundle, officialWorkflowDefinitionRevisions.contentBundle)}`;
 }
 
 const deleteReservedCreationOrphan$ = command(
@@ -3547,8 +3532,6 @@ const deleteReservedCreationOrphan$ = command(
         await readDb
           .select(revisionPlan.columns)
           .from(officialWorkflowDefinitionRevisions)
-          .leftJoin(storages, revisionPlan.storageJoin)
-          .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
           .where(and(revisionPlan.condition, revisionPlan.deliveryCondition))
           .limit(1),
       );
@@ -3580,8 +3563,6 @@ const deleteReservedCreationOrphan$ = command(
       db
         .select({ revision: officialWorkflowDefinitionRevisions.revision })
         .from(officialWorkflowDefinitionRevisions)
-        .leftJoin(storages, revisionPlan.storageJoin)
-        .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
         .where(
           and(
             revisionPlan.condition,
@@ -3735,12 +3716,7 @@ const validateDormantMaterialization$ = command(
           revision: officialWorkflowDefinitionRevisions.revision,
           payload: officialWorkflowDefinitionRevisions.payload,
           contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
-          storageName: officialWorkflowDefinitionRevisions.storageName,
-          storageId: officialWorkflowDefinitionRevisions.storageId,
-          storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
         },
-        registeredStorageId: storages.id,
-        registeredStorageVersion: storageVersions.id,
         installation: { id: workflows.id },
         automation: workflowAutomationColumns(),
         identity: getTableColumns(officialWorkflowAutomationIdentities),
@@ -3757,28 +3733,6 @@ const validateDormantMaterialization$ = command(
           eq(
             officialWorkflowDefinitionRevisions.revision,
             acceptedCatalogDefinitionRevision(args.definitionName),
-          ),
-        ),
-      )
-      .leftJoin(
-        storages,
-        and(
-          eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-          eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-          eq(storages.orgId, SYSTEM_ORG_ID),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-        ),
-      )
-      .leftJoin(
-        storageVersions,
-        and(
-          eq(
-            storageVersions.id,
-            officialWorkflowDefinitionRevisions.storageVersion,
-          ),
-          eq(
-            storageVersions.storageId,
-            officialWorkflowDefinitionRevisions.storageId,
           ),
         ),
       )
@@ -3814,17 +3768,9 @@ const validateDormantMaterialization$ = command(
     if (!acceptedDefinition || !row) {
       return null;
     }
-    // Missing artifact registration has the same absence outcome as the old inner joins.
     if (
       !acceptedRevisionBlueprintMatches(
-        (row.registeredStorageId !== null &&
-          row.registeredStorageVersion !== null) ||
-          (row.revision?.storageName === null &&
-            row.revision.storageId === null &&
-            row.revision.storageVersion === null &&
-            row.revision.contentBundle !== null)
-          ? (row.revision ?? undefined)
-          : undefined,
+        row.revision ?? undefined,
         catalogIdentity,
       )
     ) {

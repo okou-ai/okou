@@ -62,7 +62,6 @@ interface AdditionalVolume {
   readonly version?: string;
   readonly mountPath: string;
   readonly system?: boolean;
-  readonly expectedStorageId?: string;
 }
 
 interface PrepareAgentRunStorageManifestArgs {
@@ -587,15 +586,6 @@ function resolveAdditionalStorageInput(args: {
       source,
     });
   }
-  if (source === "official_workflow") {
-    return resolveOfficialWorkflowStorageInput({
-      index: args.index,
-      volume: args.volume,
-    });
-  }
-  if (args.volume.expectedStorageId !== undefined) {
-    throw new Error("Exact Storage identity is unavailable for this source");
-  }
   const resolvedResult = safeSync(() => {
     return resolveVolumeStorage({
       index: args.index,
@@ -626,13 +616,6 @@ const CONNECTOR_SKILL_REGISTRATION_ERROR =
 
 const CUSTOM_CONNECTOR_SKILL_REGISTRATION_ERROR =
   "Custom connector skill registration is unavailable";
-
-export class OfficialWorkflowArtifactResolutionError extends Error {
-  constructor() {
-    super("Official Workflow artifact registration is unavailable");
-    this.name = "OfficialWorkflowArtifactResolutionError";
-  }
-}
 
 type ConnectorSkillStorageSource = Extract<
   StorageManifestSource,
@@ -685,44 +668,6 @@ function resolveConnectorSkillStorageInput(args: {
       resolved.s3Prefix !== `${SYSTEM_ORG_ID}/volume/${args.volume.name}`)
   ) {
     throw connectorSkillRegistrationError(args.source);
-  }
-
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.name,
-    resolved,
-  };
-}
-
-function resolveOfficialWorkflowStorageInput(args: {
-  readonly index: StorageIndex;
-  readonly volume: AdditionalVolume;
-}): ResolvedManifestStorageInput {
-  const version = args.volume.version;
-  const expectedStorageId = args.volume.expectedStorageId;
-  if (
-    args.volume.system !== true ||
-    expectedStorageId === undefined ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
-      expectedStorageId,
-    ) ||
-    version === undefined ||
-    !/^[a-f0-9]{64}$/u.test(version)
-  ) {
-    throw new OfficialWorkflowArtifactResolutionError();
-  }
-
-  const lookup = volumeStorageLookup(SYSTEM_ORG_ID, args.volume);
-  const storage = args.index.get(
-    storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-  );
-  if (!storage || storage.storageId !== expectedStorageId) {
-    throw new OfficialWorkflowArtifactResolutionError();
-  }
-  const resolved = resolvePreloadedExactVersion(storage, lookup, version);
-  if (!resolved || resolved.storageId !== expectedStorageId) {
-    throw new OfficialWorkflowArtifactResolutionError();
   }
 
   return {
@@ -893,16 +838,10 @@ function storageManifestRequests(args: {
       args.additionalVolumeSources,
       index,
     );
-    if (
-      source === "connector_skill" ||
-      source === "custom_connector_skill" ||
-      source === "official_workflow"
-    ) {
+    if (source === "connector_skill" || source === "custom_connector_skill") {
       requests.push({
         lookup: volumeStorageLookup(
-          source === "connector_skill" || source === "official_workflow"
-            ? SYSTEM_ORG_ID
-            : args.runtimeOrgId,
+          source === "connector_skill" ? SYSTEM_ORG_ID : args.runtimeOrgId,
           volume,
         ),
         version,
@@ -1370,7 +1309,6 @@ export interface AgentRunCreateAdditionalVolume {
   readonly version?: string;
   readonly mountPath: string;
   readonly system?: boolean;
-  readonly expectedStorageId?: string;
 }
 
 type StorageManifestSource =
@@ -1634,7 +1572,6 @@ const STORAGE_MANIFEST_SOURCES = [
   "system_skill",
   "connector_skill",
   "custom_connector_skill",
-  "official_workflow",
   "workflow_skill",
   "request_additional_volume",
   "compose_additional_volume",
@@ -1674,7 +1611,6 @@ function emptyStorageManifestSourceCounts(): StorageManifestSourceCounts {
     system_skill: 0,
     connector_skill: 0,
     custom_connector_skill: 0,
-    official_workflow: 0,
     workflow_skill: 0,
     request_additional_volume: 0,
     compose_additional_volume: 0,

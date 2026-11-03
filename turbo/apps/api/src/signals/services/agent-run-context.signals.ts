@@ -519,23 +519,19 @@ function createIdentityContext(
     agentId,
     featureSwitchContext$,
   );
-  const { workflows$ } = connectorContext.signals;
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
-    const plan = agentStorageReadPlan(
+    const requests = agentStorageReadPlan(
       scope,
       await Promise.all([
-        get(agent$),
-        get(workflows$),
         get(connectorContext.signals.connectorSelection$),
         get(connectorContext.signals.catalog$),
-        null,
       ]),
     );
     const db = get(db$);
     return captureAgentStorageContext(
-      plan,
+      requests,
       await (async () => {
-        const readPlan = storageBaseIndexReadPlan(plan.ownedRequests);
+        const readPlan = storageBaseIndexReadPlan(requests);
         if (readPlan === null) {
           return new Map();
         }
