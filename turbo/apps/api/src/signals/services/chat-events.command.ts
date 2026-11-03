@@ -76,7 +76,13 @@ import {
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { bestEffort, safeSync, settle, settleIncludingAbort } from "../utils";
+import {
+  bestEffort,
+  joinAll,
+  safeSync,
+  settle,
+  settleIncludingAbort,
+} from "../utils";
 import {
   createAgentRunContextSignals,
   preloadAgentRunContext$,
@@ -427,6 +433,12 @@ const resolveNormalSendAgentRunSource$ = command(
     return { source: resolved.annotation };
   },
 );
+/** A started source resolution; its outcome is observed after authorization. */
+type NormalSendAgentRunSourceRead = ReturnType<
+  typeof settle<
+    Awaited<ReturnType<(typeof resolveNormalSendAgentRunSource$)["write"]>>
+  >
+>;
 /**
  * Reject a template selection that can never resolve. Only the selection's
  * own syntax is checked here; whether the caller may use an uploaded
@@ -2017,6 +2029,7 @@ const prepareNormalSend$ = command(
       readonly context: AgentRunContextSignals;
       /** The existing thread's row read, started before the preload. */
       readonly existingThreadRow: ExistingSendThreadRowRead | undefined;
+      readonly agentRunSource: NormalSendAgentRunSourceRead;
     },
     signal: AbortSignal,
   ): Promise<
@@ -2032,15 +2045,20 @@ const prepareNormalSend$ = command(
     | NormalSendFailure
     | CreatedChatEventResponse
   > => {
-    const authorized =
+    // Join the source resolution even when authorization fails, so the
+    // started read stays owned. Its outcome, including a failure, is used only
+    // once authorization has succeeded.
+    const [authorized, resolvedSource] = await joinAll([
       args.existingThreadRow === undefined
-        ? await set(loadAuthorizedAgent$, args, signal)
-        : await set(
+        ? set(loadAuthorizedAgent$, args, signal)
+        : set(
             loadAuthorizedExistingSendThread$,
             args,
             args.existingThreadRow,
             signal,
-          );
+          ),
+      args.agentRunSource,
+    ]);
     signal.throwIfAborted();
     if ("status" in authorized) {
       return authorized;
@@ -2048,16 +2066,10 @@ const prepareNormalSend$ = command(
     if ("thread" in authorized && authorized.thread.isOfficialWorkflowThread) {
       return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
     }
-    const source = await set(
-      resolveNormalSendAgentRunSource$,
-      {
-        auth: args.auth,
-        userMessage: args.body.userMessage,
-        sourceRunId: args.body.sourceRunId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
+    if (!resolvedSource.ok) {
+      throw resolvedSource.error;
+    }
+    const source = resolvedSource.value;
     if ("response" in source) {
       return source.response;
     }
@@ -2348,12 +2360,26 @@ const prepareNormalSendContext$ = command(
       args.body.threadId === undefined
         ? undefined
         : set(loadExistingSendThreadRow$, args, args.body.threadId, signal);
+    // A forwarded or agent-token send also awaits its source Run. The read is
+    // scoped to the caller's user and organization, and its outcome is used
+    // only after authorization, so it runs alongside the thread row.
+    const agentRunSource = settle(
+      set(
+        resolveNormalSendAgentRunSource$,
+        {
+          auth: args.auth,
+          userMessage: args.body.userMessage,
+          sourceRunId: args.body.sourceRunId,
+        },
+        signal,
+      ),
+    );
     // Start authenticated org/member reads immediately; authorization consumes
     // the same promises. Settled waitUntil work stays owned on rejection/abort.
     set(preloadAgentRunContext$, context, signal);
     const prepared = await set(
       prepareNormalSend$,
-      { ...args, context, existingThreadRow },
+      { ...args, context, existingThreadRow, agentRunSource },
       signal,
     );
     if ("status" in prepared) {

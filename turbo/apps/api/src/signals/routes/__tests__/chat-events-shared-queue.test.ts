@@ -417,6 +417,24 @@ describe("CHAT-02: shared user message queue", () => {
         },
       },
     });
+    // Thread authorization still decides before the source Run is used.
+    const unknownThread = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: randomUUID(),
+        clientEventId: randomUUID(),
+        prompt: "forwarded into an unknown thread",
+        sourceRunId: randomUUID(),
+      },
+      [404],
+    );
+    expect(unknownThread).toMatchObject({
+      status: 404,
+      body: {
+        error: { code: "NOT_FOUND", message: "Chat thread not found" },
+      },
+    });
 
     await cancelChatRun(actor, forwardedRunId);
     await cancelChatRun(actor, source.runId);
