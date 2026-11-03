@@ -234,6 +234,78 @@ test("native window operations and event subscriptions preserve independent clie
   }
 });
 
+test("closing an auxiliary readiness page preserves a healthy client and the desired window", async () => {
+  const f = await fixture();
+  let client;
+  try {
+    const sibling = await f.client();
+    const desired = await f.window(`${origin}/desired`);
+    const auxiliary = await f.target(
+      f.context.pages().find((page) => {
+        return page.url() === "about:blank";
+      }),
+    );
+    expect(
+      (
+        await f.wire.request("Browser.getWindowForTarget", {
+          targetId: auxiliary,
+        })
+      ).windowId,
+    ).not.toBe(desired.id);
+    const detached = Promise.withResolvers();
+    const observers = [];
+    client = await OkouBrowserClient.connect({
+      runtimeId: f.runtimeId,
+      transport: {
+        onEvent(listener) {
+          return f.wire.onEvent((event) => {
+            if (
+              event.method === "Target.detachedFromTarget" &&
+              event.params.sessionId === observers[0]
+            )
+              detached.resolve();
+            listener(event);
+          });
+        },
+        async request(method, params, sessionId) {
+          const result = await f.wire.request(method, params, sessionId);
+          if (method === "Target.getTargets") {
+            result.targetInfos.sort((a, b) => {
+              return (
+                Number(b.targetId === auxiliary) -
+                Number(a.targetId === auxiliary)
+              );
+            });
+          }
+          if (method === "ServiceWorker.enable") {
+            observers.push(sessionId);
+            if (observers.length === 1) {
+              await f.wire.request("Target.closeTarget", {
+                targetId: auxiliary,
+              });
+              await detached.promise;
+            }
+          }
+          return result;
+        },
+      },
+    });
+    expect(observers).toHaveLength(2);
+    expect(observers[1]).not.toBe(observers[0]);
+    expect(
+      (await client.call("getWindow", { windowId: desired.id })).value.id,
+    ).toBe(desired.id);
+    expect(
+      (await sibling.call("getWindow", { windowId: desired.id })).value.id,
+    ).toBe(desired.id);
+    await client.close();
+    expect((await sibling.call("hello", {})).value.protocol).toBe(1);
+  } finally {
+    await client?.close();
+    await f.close();
+  }
+});
+
 test("events overtaking the hello response establish a contiguous fresh baseline", async () => {
   const f = await fixture();
   const captured = Promise.withResolvers();
@@ -512,7 +584,7 @@ test("worker retirement invalidates clients and action bootstrap obtains a fresh
   }
 });
 
-async function pauseWorkerRestart(f, client) {
+async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
   const { targetInfos } = await f.wire.request("Target.getTargets");
   const worker = targetInfos.find((target) => {
     return (
@@ -533,7 +605,7 @@ async function pauseWorkerRestart(f, client) {
       off();
     }
   });
-  const cdp = await f.context.newCDPSession(f.context.pages()[0]);
+  const cdp = await f.context.newCDPSession(page);
   await cdp.send("ServiceWorker.enable");
   const invalidated = new Promise((resolve) => {
     client.signal.addEventListener("abort", resolve, { once: true });
@@ -582,7 +654,13 @@ async function pauseWorkerRestart(f, client) {
   };
 }
 
-for (const completion of ["resume", "abort", "timeout", "observer-loss"]) {
+for (const completion of [
+  "resume",
+  "abort",
+  "timeout",
+  "observer-loss",
+  "observer-page-loss",
+]) {
   test(`a fresh client owns pending native worker startup until ${completion}`, async () => {
     const f = await fixture();
     const owner = new AbortController();
@@ -592,12 +670,27 @@ for (const completion of ["resume", "abort", "timeout", "observer-loss"]) {
     try {
       const previous = await f.client();
       const epoch = (await previous.call("hello", {})).epoch;
-      const window = (await previous.call("listWindows", {})).value[0];
-      startup = await pauseWorkerRestart(f, previous);
+      const window = await f.window(`${origin}/desired`);
+      await expect
+        .poll(() => {
+          return f.context.pages().some((page) => {
+            return page.url() === `${origin}/desired`;
+          });
+        })
+        .toBe(true);
+      const desiredPage = f.context.pages().find((page) => {
+        return page.url() === `${origin}/desired`;
+      });
+      const desiredTarget = await f.target(desiredPage);
+      startup = await pauseWorkerRestart(f, previous, desiredPage);
       const observing = Promise.withResolvers();
+      const replacing = Promise.withResolvers();
       const hello = Promise.withResolvers();
       let browserSession;
       let readinessSession;
+      let observerTarget;
+      const pageTargets = new Map();
+      const observers = [];
       let running = false;
       let helloCount = 0;
       let prematureHello = false;
@@ -624,7 +717,10 @@ for (const completion of ["resume", "abort", "timeout", "observer-loss"]) {
             const response = f.wire.request(method, params, sessionId);
             if (method === "ServiceWorker.enable") {
               readinessSession = sessionId;
+              observerTarget = pageTargets.get(sessionId);
+              observers.push(sessionId);
               observing.resolve("observing");
+              if (observers.length === 2) replacing.resolve();
             }
             if (method === "Runtime.evaluate") {
               helloCount++;
@@ -634,6 +730,17 @@ for (const completion of ["resume", "abort", "timeout", "observer-loss"]) {
             const value = await response;
             if (method === "Target.attachToBrowserTarget")
               browserSession = value.sessionId;
+            if (method === "Target.attachToTarget")
+              pageTargets.set(value.sessionId, params.targetId);
+            if (method === "Target.getTargets") {
+              // Target order is unspecified. Select an auxiliary page first.
+              value.targetInfos.sort((a, b) => {
+                return (
+                  Number(a.targetId === desiredTarget) -
+                  Number(b.targetId === desiredTarget)
+                );
+              });
+            }
             return value;
           },
         },
@@ -645,7 +752,28 @@ for (const completion of ["resume", "abort", "timeout", "observer-loss"]) {
       expect(await Promise.race([observing.promise, hello.promise])).toBe(
         "observing",
       );
-      if (completion === "resume") {
+      if (
+        completion === "resume" ||
+        completion === "observer-loss" ||
+        completion === "observer-page-loss"
+      ) {
+        if (completion !== "resume") {
+          expect(observerTarget).not.toBe(desiredTarget);
+          if (completion === "observer-loss") {
+            await f.wire.request(
+              "Target.detachFromTarget",
+              { sessionId: readinessSession },
+              browserSession,
+            );
+          } else {
+            await f.wire.request("Target.closeTarget", {
+              targetId: observerTarget,
+            });
+          }
+          await Promise.race([replacing.promise, connecting]);
+          expect(observers[1]).not.toBe(observers[0]);
+          expect(helloCount).toBe(0);
+        }
         await startup.resume();
         next = await connecting;
         expect(helloCount).toBe(1);
@@ -658,13 +786,6 @@ for (const completion of ["resume", "abort", "timeout", "observer-loss"]) {
         expect(f.wire.listeners.size).toBe(0);
       } else {
         if (completion === "abort") owner.abort();
-        if (completion === "observer-loss") {
-          await f.wire.request(
-            "Target.detachFromTarget",
-            { sessionId: readinessSession },
-            browserSession,
-          );
-        }
         await expect(connecting).rejects.toHaveProperty("kind", "unavailable");
         expect(helloCount).toBe(0);
         expect(f.wire.listeners.size).toBe(0);

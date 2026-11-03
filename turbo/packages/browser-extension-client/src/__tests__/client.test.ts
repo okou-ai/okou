@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
   BrowserBridgeError,
   OkouBrowserClient,
@@ -6,12 +6,29 @@ import {
   type CdpTransport,
 } from "../index";
 
+function deferred() {
+  let resolve: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return {
+    promise,
+    resolve: () => {
+      resolve();
+    },
+  };
+}
+
 /** External CDP peer; all bridge parsing, lifecycle and cleanup code is real. */
-function bridgePeer() {
+function bridgePeer(pages: string[] = []) {
   const runtimeId = "a".repeat(32);
   const requests: { method: string; sessionId?: string }[] = [];
   const listeners = new Set<(event: CdpEvent) => void>();
   const failures = new Map<string, Error>();
+  const sessions = new Set<string>();
+  const observations: string[] = [];
+  let observing: ((session: string) => void) | undefined;
+  let nextSession = 0;
   let result: unknown = {
     result: {
       value: {
@@ -24,14 +41,38 @@ function bridgePeer() {
     },
   };
   const transport: CdpTransport = {
-    async request(method, _params, sessionId) {
+    async request(method, params, sessionId) {
       requests.push({ method, sessionId });
       const failure = failures.get(method);
       if (failure) throw failure;
-      if (method === "Target.attachToBrowserTarget")
+      if (method === "Target.attachToBrowserTarget") {
+        sessions.add("private-browser-session");
         return { sessionId: "private-browser-session" };
-      if (method === "Target.attachToTarget")
-        return { sessionId: "private-worker-session" };
+      }
+      if (method === "Target.attachToTarget") {
+        if (
+          params.targetId !== "private-worker-target" &&
+          !pages.includes(String(params.targetId))
+        )
+          throw Object.assign(new Error("No target with given id"), {
+            code: -32602,
+          });
+        const id =
+          params.targetId === "private-worker-target"
+            ? "private-worker-session"
+            : `private-page-session-${++nextSession}`;
+        sessions.add(id);
+        return { sessionId: id };
+      }
+      if (method === "Target.detachFromTarget")
+        sessions.delete(String(params.sessionId));
+      if (method === "ServiceWorker.enable" && sessionId) {
+        if (observing) {
+          const resolve = observing;
+          observing = undefined;
+          resolve(sessionId);
+        } else observations.push(sessionId);
+      }
       if (method === "Target.getTargets")
         return {
           targetInfos: [
@@ -40,6 +81,13 @@ function bridgePeer() {
               type: "service_worker",
               url: `chrome-extension://${runtimeId}/worker.js`,
             },
+            ...pages.map((targetId) => {
+              return {
+                targetId,
+                type: "page",
+                url: "about:blank",
+              };
+            }),
           ],
         };
       if (method === "Runtime.evaluate") return result;
@@ -56,6 +104,48 @@ function bridgePeer() {
     requests,
     failures,
     listeners,
+    transport,
+    runtimeId,
+    sessions,
+    async observer() {
+      const id = observations.shift();
+      if (id) return id;
+      return await new Promise<string>((resolve) => {
+        observing = resolve;
+      });
+    },
+    losePage(targetId: string, sessionId?: string) {
+      const index = pages.indexOf(targetId);
+      if (index !== -1) pages.splice(index, 1);
+      this.event({
+        method: "Target.targetDestroyed",
+        sessionId: "private-browser-session",
+        params: { targetId },
+      });
+      if (sessionId) {
+        sessions.delete(sessionId);
+        this.event({
+          method: "Target.detachedFromTarget",
+          sessionId: "private-browser-session",
+          params: { sessionId },
+        });
+      }
+    },
+    running(sessionId: string, id = runtimeId) {
+      this.event({
+        method: "ServiceWorker.workerVersionUpdated",
+        sessionId,
+        params: {
+          versions: [
+            {
+              scriptURL: `chrome-extension://${id}/worker.js`,
+              targetId: "private-worker-target",
+              runningStatus: "running",
+            },
+          ],
+        },
+      });
+    },
     connect(signal?: AbortSignal) {
       return OkouBrowserClient.connect({ transport, runtimeId, signal });
     },
@@ -111,6 +201,240 @@ it("bootstrap failure retains only safe method/code/stage through cleanup", asyn
     }),
   ).toHaveLength(2);
 });
+
+it("replaces a lost page with fresh native readiness and ignores retired observer events", async () => {
+  const peer = bridgePeer(["left-page", "right-page"]);
+  const connecting = peer.connect();
+  const first = await peer.observer();
+  peer.losePage("left-page", first);
+  const second = await peer.observer();
+  peer.running(first);
+  peer.event({
+    method: "Target.detachedFromTarget",
+    sessionId: "private-browser-session",
+    params: { sessionId: first },
+  });
+  peer.event({
+    method: "Target.targetCreated",
+    sessionId: "private-browser-session",
+    params: {
+      targetInfo: {
+        targetId: "private-worker-target",
+        type: "service_worker",
+        url: `chrome-extension://${peer.runtimeId}/worker.js`,
+      },
+    },
+  });
+  peer.running(second, "b".repeat(32));
+  expect(
+    peer.requests.some((r) => {
+      return r.method === "Runtime.evaluate";
+    }),
+  ).toBe(false);
+  peer.running(second);
+  const client = await connecting;
+  expect((await client.call("hello", {})).value.protocol).toBe(1);
+  await client.close();
+  expect(peer.sessions.size).toBe(0);
+  expect(peer.listeners.size).toBe(0);
+});
+
+it.each(["attach", "enable"])(
+  "recovers proven page loss during %s",
+  async (boundary) => {
+    const peer = bridgePeer(["left-page", "right-page"]);
+    let lost = false;
+    const connecting = OkouBrowserClient.connect({
+      runtimeId: peer.runtimeId,
+      transport: {
+        onEvent: peer.transport.onEvent,
+        async request(method, params, sessionId) {
+          const result = await peer.transport.request(
+            method,
+            params,
+            sessionId,
+          );
+          if (
+            !lost &&
+            ((boundary === "attach" &&
+              method === "Target.attachToTarget" &&
+              params.targetId === "left-page") ||
+              (boundary === "enable" && method === "ServiceWorker.enable"))
+          ) {
+            lost = true;
+            peer.losePage("left-page");
+            if (boundary === "enable")
+              throw Object.assign(new Error("Session closed"), {
+                code: -32001,
+              });
+          }
+          return result;
+        },
+      },
+    });
+    if (boundary === "enable") await peer.observer();
+    peer.running(await peer.observer());
+    const client = await connecting;
+    expect(client.signal.aborted).toBe(false);
+    await client.close();
+    expect(peer.sessions.size).toBe(0);
+  },
+);
+
+it("does not use a retained worker target when no replacement page survives", async () => {
+  const peer = bridgePeer(["only-page"]);
+  const connecting = peer.connect();
+  peer.losePage("only-page", await peer.observer());
+  await expect(connecting).rejects.toMatchObject({
+    diagnostics: { reason: "worker-unobserved" },
+  });
+  expect(peer.sessions.size).toBe(0);
+  expect(peer.listeners.size).toBe(0);
+});
+
+it("reconciles a page that disappeared before observation began", async () => {
+  const peer = bridgePeer(["left-page", "right-page"]);
+  let listed = false;
+  const connecting = OkouBrowserClient.connect({
+    runtimeId: peer.runtimeId,
+    transport: {
+      onEvent: peer.transport.onEvent,
+      async request(method, params, sessionId) {
+        const result = await peer.transport.request(method, params, sessionId);
+        if (method === "Target.getTargets" && !listed) {
+          listed = true;
+          peer.losePage("left-page");
+        }
+        return result;
+      },
+    },
+  });
+  peer.running(await peer.observer());
+  const client = await connecting;
+  expect((await client.call("hello", {})).value.protocol).toBe(1);
+  await client.close();
+  expect(peer.sessions.size).toBe(0);
+});
+
+it("cancellation owns a late replacement attachment and releases every session", async () => {
+  const peer = bridgePeer(["left-page", "right-page"]);
+  const attached = deferred();
+  const release = deferred();
+  const owner = new AbortController();
+  const connecting = OkouBrowserClient.connect({
+    runtimeId: peer.runtimeId,
+    signal: owner.signal,
+    transport: {
+      onEvent: peer.transport.onEvent,
+      async request(method, params, sessionId) {
+        const result = await peer.transport.request(method, params, sessionId);
+        if (
+          method === "Target.attachToTarget" &&
+          params.targetId === "right-page"
+        ) {
+          attached.resolve();
+          await release.promise;
+        }
+        return result;
+      },
+    },
+  });
+  peer.losePage("left-page", await peer.observer());
+  await attached.promise;
+  owner.abort();
+  release.resolve();
+  await expect(connecting).rejects.toMatchObject({ kind: "unavailable" });
+  expect(peer.sessions.size).toBe(0);
+  expect(peer.listeners.size).toBe(0);
+});
+
+it("observer replacement shares the original readiness deadline", async () => {
+  vi.useFakeTimers();
+  const peer = bridgePeer(["left-page", "right-page"]);
+  const connecting = OkouBrowserClient.connect({
+    transport: peer.transport,
+    runtimeId: peer.runtimeId,
+    readinessTimeoutMs: 100,
+  });
+  const rejected = expect(connecting).rejects.toMatchObject({
+    diagnostics: { reason: "worker-readiness-timeout" },
+  });
+  try {
+    const first = await peer.observer();
+    await vi.advanceTimersByTimeAsync(60);
+    peer.losePage("left-page", first);
+    await peer.observer();
+    await vi.advanceTimersByTimeAsync(40);
+    await rejected;
+    expect(peer.sessions.size).toBe(0);
+    expect(peer.listeners.size).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("real worker destruction still fails bootstrap after observer replacement", async () => {
+  const peer = bridgePeer(["left-page", "right-page"]);
+  const connecting = peer.connect();
+  peer.losePage("left-page", await peer.observer());
+  peer.running(await peer.observer());
+  peer.event({
+    method: "Target.targetDestroyed",
+    sessionId: "private-browser-session",
+    params: { targetId: "private-worker-target" },
+  });
+  await expect(connecting).rejects.toMatchObject({
+    diagnostics: { reason: "worker-target-destroyed" },
+  });
+  expect(peer.sessions.size).toBe(0);
+});
+
+it("an observer request failure without page loss is not retried", async () => {
+  const peer = bridgePeer(["live-page"]);
+  peer.failures.set(
+    "ServiceWorker.enable",
+    Object.assign(new Error("Native failure"), { code: -32000 }),
+  );
+  await expect(peer.connect()).rejects.toMatchObject({
+    diagnostics: { reason: "cdp-request-failed" },
+  });
+  expect(
+    peer.requests.filter((r) => {
+      return r.method === "ServiceWorker.enable";
+    }),
+  ).toHaveLength(1);
+  expect(peer.sessions.size).toBe(0);
+});
+
+it.each(["connection", "protocol"])(
+  "page loss cannot conceal a %s transport failure",
+  async (kind) => {
+    const peer = bridgePeer(["left-page", "right-page"]);
+    const connecting = OkouBrowserClient.connect({
+      runtimeId: peer.runtimeId,
+      transport: {
+        onEvent: peer.transport.onEvent,
+        async request(method, params, sessionId) {
+          const result = await peer.transport.request(
+            method,
+            params,
+            sessionId,
+          );
+          if (method === "ServiceWorker.enable") {
+            peer.losePage("left-page");
+            throw Object.assign(new Error("Transport failure"), { kind });
+          }
+          return result;
+        },
+      },
+    });
+    await expect(connecting).rejects.toMatchObject({
+      diagnostics: { reason: `cdp-${kind}-failed` },
+    });
+    expect(peer.sessions.size).toBe(0);
+    expect(peer.listeners.size).toBe(0);
+  },
+);
 
 it.each([
   { reply: { result: { type: "undefined" } }, reason: "bridge-missing" },
