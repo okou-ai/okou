@@ -11,6 +11,7 @@ from mitmproxy import http
 
 import body_decoding
 import flow_metadata_keys as metadata_keys
+import response_inspection
 import stream_capture
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT
 from runtime_url_parsing import runtime_url_path
@@ -64,8 +65,6 @@ _MAX_NDJSON_LINE_BYTES = LARGE_RESPONSE_DECOMPRESS_LIMIT
 # Bound dense syntax and slow scalar inspection across one non-streaming X JSON
 # response while retaining the selective parser's bulk discarded-string path.
 _MAX_JSON_RESPONSE_WORK_UNITS = 65_536
-# Bound slow scalar validation within each cooperative JSON inspection step.
-_JSON_INSPECTION_SLICE_BYTES = 4 * 1024
 # Bound dense syntax and slow scalar inspection while keeping multi-megabyte
 # ordinary discarded strings on the selective parser's bulk-scan path.
 _MAX_NDJSON_ROW_WORK_UNITS = 65_536
@@ -390,11 +389,7 @@ class _XJsonResponseExtractor:
         Exhaust the iterator before feeding more input or finalizing the document.
         A complete root still accepts input so its trailing bytes are validated.
         """
-        for offset in range(0, len(chunk), _JSON_INSPECTION_SLICE_BYTES):
-            if not self.accepts_more_input():
-                return
-            self.feed(chunk[offset : offset + _JSON_INSPECTION_SLICE_BYTES])
-            yield
+        yield from response_inspection.json_steps(self, chunk)
 
     def accepts_more_input(self) -> bool:
         """Return whether the document parser can still consume input."""
