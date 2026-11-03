@@ -73,11 +73,11 @@ export function maskMarkdownInlineMath(
 ): string {
   let masked = upstreamMask;
   let from = 0;
-  for (;;) {
-    const start = source.indexOf(String.raw`\(`, from);
-    if (start === -1) {
-      return masked;
-    }
+  for (
+    let start = source.indexOf(String.raw`\(`);
+    start !== -1;
+    start = source.indexOf(String.raw`\(`, from)
+  ) {
     from = start + 2;
     let precedingSlashes = 0;
     for (let index = start - 1; index >= 0 && source[index] === "\\"; index--) {
@@ -100,6 +100,7 @@ export function maskMarkdownInlineMath(
       from = start + formula.raw.length;
     }
   }
+  return masked;
 }
 
 function embedMath(
