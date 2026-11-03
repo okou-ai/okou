@@ -138,8 +138,6 @@ pub enum SandboxOperation {
     StartProcess,
     /// [`Sandbox::start_agent_process`](crate::Sandbox::start_agent_process).
     StartAgentProcess,
-    /// [`Sandbox::verify_session_history_identity`](crate::Sandbox::verify_session_history_identity).
-    VerifySessionHistoryIdentity,
     /// [`Sandbox::mount_home_drive`](crate::Sandbox::mount_home_drive).
     MountHomeDrive,
     /// [`GuestProcessControlHandle::control_outcome`](crate::GuestProcessControlHandle::control_outcome).
@@ -158,7 +156,6 @@ impl fmt::Display for SandboxOperation {
             Self::FinalizeStagedFile => f.write_str("finalize staged file"),
             Self::StartProcess => f.write_str("start process"),
             Self::StartAgentProcess => f.write_str("start Agent process"),
-            Self::VerifySessionHistoryIdentity => f.write_str("verify session history identity"),
             Self::MountHomeDrive => f.write_str("mount home drive"),
             Self::ProcessControl => f.write_str("process control"),
             Self::WaitProcess => f.write_str("wait process"),

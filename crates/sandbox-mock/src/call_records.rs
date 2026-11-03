@@ -70,27 +70,6 @@ pub struct StorageManifestCall {
     pub timeout: Duration,
 }
 
-/// Captured fixed live session-history identity verifier request.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SessionHistoryIdentityVerifyCall {
-    /// Final identity metadata path supplied to the verifier.
-    pub metadata_path: String,
-    /// Canonical guest runtime directory supplied to the verifier.
-    pub runtime_dir: String,
-    /// Stable framework spelling supplied to the verifier.
-    pub framework: String,
-    /// Expected normalized session-id hash supplied to the verifier.
-    pub session_id_hash: String,
-    /// Stable history-reference-kind spelling supplied to the verifier.
-    pub history_ref_kind: String,
-    /// Expected final history hash supplied to the verifier.
-    pub history_hash: String,
-    /// Expected final history byte length supplied to the verifier.
-    pub history_size_bytes: u64,
-    /// Helper timeout supplied by the caller.
-    pub timeout: Duration,
-}
-
 /// Owned timezone behavior recorded for a fixed guest-state restore call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GuestStateRestoreTimezoneCall {

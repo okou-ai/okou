@@ -66,10 +66,7 @@ use guest_control_proto::{
 #[cfg(test)]
 use guest_control_proto::MSG_EXEC_RESULT;
 
-use crate::agent_command::{
-    GuestAgentProgram, spawn_agent_command_with_pipes,
-    spawn_session_history_identity_verifier_with_pipes,
-};
+use crate::agent_command::{GuestAgentProgram, spawn_agent_command_with_pipes};
 use crate::drain::{
     BoundedDrainResult, BoundedStreamConfig, DrainCancellation, drain_bounded_cancellable,
 };
@@ -239,9 +236,6 @@ impl ExecOperationTimeout {
 enum ExecOperationProcess {
     Workload,
     Agent,
-    SessionHistoryIdentityVerifier(
-        guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest,
-    ),
 }
 
 impl ExecOperationProcess {
@@ -249,9 +243,6 @@ impl ExecOperationProcess {
         match self {
             Self::Workload => ExecProcessRole::Workload,
             Self::Agent => ExecProcessRole::Agent,
-            Self::SessionHistoryIdentityVerifier(_) => {
-                ExecProcessRole::SessionHistoryIdentityVerifier
-            }
         }
     }
 }
@@ -357,25 +348,6 @@ impl ExecOperationWorkerRequest {
                 }
                 ExecOperationProcess::Agent
             }
-            ExecProcessRole::SessionHistoryIdentityVerifier => {
-                validate_session_history_identity_verifier_contract(&decoded)?;
-                let request = serde_json::from_str::<
-                    guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest,
-                >(decoded.command)
-                .map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "session history identity verifier payload is invalid",
-                    )
-                })?;
-                request.validate().map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "session history identity verifier payload is invalid",
-                    )
-                })?;
-                ExecOperationProcess::SessionHistoryIdentityVerifier(request)
-            }
             ExecProcessRole::Workload => ExecOperationProcess::Workload,
         };
 
@@ -430,9 +402,7 @@ impl ExecOperationWorkerRequest {
             self.process.role(),
             self.exec_control_bootstrap_endpoint.is_some(),
         ) {
-            (ExecProcessRole::Workload, false)
-            | (ExecProcessRole::Agent, true)
-            | (ExecProcessRole::SessionHistoryIdentityVerifier, false) => Ok(()),
+            (ExecProcessRole::Workload, false) | (ExecProcessRole::Agent, true) => Ok(()),
             (ExecProcessRole::Workload, true) => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "workload process received an Agent control bootstrap endpoint",
@@ -441,42 +411,7 @@ impl ExecOperationWorkerRequest {
                 io::ErrorKind::InvalidInput,
                 "Agent process did not receive a control bootstrap endpoint",
             )),
-            (ExecProcessRole::SessionHistoryIdentityVerifier, true) => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "session history identity verifier received a control bootstrap endpoint",
-            )),
         }
-    }
-}
-
-fn validate_session_history_identity_verifier_contract(
-    decoded: &guest_control_proto::DecodedExecStart<'_>,
-) -> io::Result<()> {
-    use guest_contracts::session_history_identity::{
-        SESSION_HISTORY_IDENTITY_VERIFY_DIAGNOSTIC_LABEL,
-        SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES,
-    };
-
-    let fixed_capture = ExecOutputPolicy::Capture {
-        limit_bytes: SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES,
-    };
-    let valid = decoded.lifecycle == ExecLifecyclePolicy::OneShot
-        && decoded.control == ExecControlPolicy::Disabled
-        && !decoded.command.is_empty()
-        && decoded.env.is_empty()
-        && !decoded.sudo
-        && decoded.label == SESSION_HISTORY_IDENTITY_VERIFY_DIAGNOSTIC_LABEL
-        && decoded.stdout == fixed_capture
-        && decoded.stderr == fixed_capture
-        && decoded.expected_exit_codes.is_empty()
-        && decoded.stdin_bytes.is_none();
-    if valid {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "session history identity verifier process contract is invalid",
-        ))
     }
 }
 
@@ -936,16 +871,10 @@ impl RunningExec {
             drain_done_rx,
         } = self;
 
-        let cleanup_process_group_before_reap =
-            process_containment.requires_pre_reap_process_group_cleanup();
-        let prepare_stdin_writer_for_pre_reap = || {
+        let prepare_for_pre_reap = || {
             stdin_writer
                 .as_ref()
                 .is_some_and(StdinWriter::cancel_if_running)
-        };
-        let prepare_for_pre_reap = || {
-            let stdin_writer_cancelled = prepare_stdin_writer_for_pre_reap();
-            cleanup_process_group_before_reap || stdin_writer_cancelled
         };
         let outcome = wait_with_kill_timeout_or_cancelled_either(
             child,
@@ -1438,13 +1367,6 @@ fn run_exec_operation_worker<S>(
             process_containment,
             &request.guest_agent_program,
         ),
-        ExecOperationProcess::SessionHistoryIdentityVerifier(verify_request) => {
-            spawn_session_history_identity_verifier_with_pipes(
-                verify_request,
-                process_containment,
-                &request.guest_agent_program,
-            )
-        }
     };
     let spawned = match spawn_result {
         Ok(spawned) => spawned,
@@ -1455,9 +1377,6 @@ fn run_exec_operation_worker<S>(
                     format_env_diagnostics(&request.command, &env_refs)
                 ),
                 ExecProcessRole::Agent => format!("Failed to execute controlled Agent: {e}"),
-                ExecProcessRole::SessionHistoryIdentityVerifier => {
-                    format!("Failed to execute session history identity verifier: {e}")
-                }
             };
             completion.start_failed(&diagnostic);
             return;

@@ -11,8 +11,8 @@ use crate::StorageManifestTiming;
 use crate::error::{Result, SandboxError, SandboxIdleTransition};
 use crate::types::{
     CopyFileOptions, CopyFileResult, ExecRequest, ExecResult, GuestAgentProcessHandle,
-    GuestProcessHandle, GuestStateRestoreRequest, ProcessExit, SessionHistoryIdentityVerifyRequest,
-    StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
+    GuestProcessHandle, GuestStateRestoreRequest, ProcessExit, StartAgentProcessRequest,
+    StartProcessRequest, StorageManifestRequest, WriteFileEntry,
 };
 
 /// Requested terminal disposition for one completed guest staging file.
@@ -965,24 +965,6 @@ pub trait Sandbox: Send + Sync + Any {
             operation: crate::SandboxOperation::MountHomeDrive,
             reason: crate::SandboxOperationReason::Other,
             message: "fixed home drive mount is unsupported".to_string(),
-        })
-    }
-
-    /// Verify live final session-history identity through the provider's fixed
-    /// Guest Agent helper operation.
-    ///
-    /// Implementations select the executable and fixed subcommand and must not
-    /// expose arbitrary command, environment, sudo, stdin, output, or lifecycle
-    /// authority. Helper and transport failures remain ordinary typed results
-    /// or sandbox errors for the lifecycle owner to fail closed.
-    async fn verify_session_history_identity(
-        &self,
-        _request: &SessionHistoryIdentityVerifyRequest<'_>,
-    ) -> Result<ExecResult> {
-        Err(SandboxError::Operation {
-            operation: crate::SandboxOperation::VerifySessionHistoryIdentity,
-            reason: crate::SandboxOperationReason::Other,
-            message: "fixed session history identity verifier is unsupported".to_string(),
         })
     }
 

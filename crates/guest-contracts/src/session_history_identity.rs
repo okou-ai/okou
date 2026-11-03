@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::path::Path;
 
 /// Maximum size of the serialized final identity metadata file.
 pub const FINAL_SESSION_HISTORY_IDENTITY_MAX_BYTES: u64 = 16 * 1024;
@@ -31,11 +30,7 @@ pub const SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ: i32 = 7;
 pub const SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_MISMATCH: i32 = 8;
 /// Guest helper exit code for local history exceeding the guest verification budget.
 pub const SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE: i32 = 9;
-/// Fixed exec diagnostic label for direct live identity verification.
-pub const SESSION_HISTORY_IDENTITY_VERIFY_DIAGNOSTIC_LABEL: &str =
-    "session-history-identity-verify";
-/// Fixed stdout/stderr capture bound for live identity verification.
-pub const SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES: u32 = 64 * 1024;
+
 /// Framework that owns session-history bytes.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -278,68 +273,6 @@ pub struct SessionHistoryIdentityExpectation {
     /// Exact final session-history byte length expected by runner.
     pub history_size_bytes: u64,
 }
-
-/// Structured fixed-helper request carried by the internal verifier process role.
-///
-/// Runner and the bundled guest are deployed atomically. This shape prevents
-/// the fixed verifier launch from accepting an executable, arbitrary arguments,
-/// sudo, stdin, or arbitrary environment variables.
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SessionHistoryIdentityVerifyRequest {
-    /// Absolute path to the final identity metadata inside the guest.
-    pub metadata_path: String,
-    /// Absolute canonical runtime directory exposed to the helper.
-    pub runtime_dir: String,
-    /// Identity fields that the live guest metadata and history must match.
-    pub expectation: SessionHistoryIdentityExpectation,
-}
-
-impl fmt::Debug for SessionHistoryIdentityVerifyRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SessionHistoryIdentityVerifyRequest")
-            .field("metadata_path", &"[redacted]")
-            .field("runtime_dir", &"[redacted]")
-            .field("expectation", &self.expectation)
-            .finish()
-    }
-}
-
-impl SessionHistoryIdentityVerifyRequest {
-    /// Validate fields before the guest constructs the fixed helper process.
-    pub fn validate(&self) -> Result<(), SessionHistoryIdentityVerifyRequestError> {
-        if !Path::new(&self.metadata_path).is_absolute()
-            || !Path::new(&self.runtime_dir).is_absolute()
-        {
-            return Err(SessionHistoryIdentityVerifyRequestError::InvalidPath);
-        }
-        self.expectation
-            .validate()
-            .map_err(SessionHistoryIdentityVerifyRequestError::InvalidExpectation)
-    }
-}
-
-/// Validation failure for the internal fixed verifier launch request.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SessionHistoryIdentityVerifyRequestError {
-    /// A required guest path is not absolute.
-    InvalidPath,
-    /// The expected identity fields violate the shared identity contract.
-    InvalidExpectation(SessionHistoryIdentityError),
-}
-
-impl fmt::Display for SessionHistoryIdentityVerifyRequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidPath => {
-                f.write_str("final session history identity verifier path is invalid")
-            }
-            Self::InvalidExpectation(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for SessionHistoryIdentityVerifyRequestError {}
 
 impl fmt::Debug for SessionHistoryIdentityExpectation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
