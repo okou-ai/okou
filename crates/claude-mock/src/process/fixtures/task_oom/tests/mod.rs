@@ -1,7 +1,10 @@
 use std::io::{Seek, SeekFrom, Write};
 use std::process::Command;
+use std::time::Instant;
 
-use super::{DIAGNOSTIC_TAIL_BYTES, LAUNCH_SUPPORT, diagnostics_tail};
+use super::{
+    CONTROLLER_PROGRAM, DIAGNOSTIC_TAIL_BYTES, LAUNCH_SUPPORT, diagnostics_tail, monotonic_deadline,
+};
 
 fn run_protocol(program: &str) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("python3")
@@ -101,6 +104,24 @@ for deadline in [str(time.monotonic() - 1), "inf", "nan"]:
             raise AssertionError("expired or invalid deadline received a new budget")
 "#,
     )
+}
+
+#[test]
+fn controller_start_does_not_renew_an_expired_budget() -> Result<(), Box<dyn std::error::Error>> {
+    let deadline = monotonic_deadline(Instant::now())?;
+    let output = Command::new("python3")
+        .args(["-c", CONTROLLER_PROGRAM])
+        .env("VM0_TEST_TASK_SUPPORT", LAUNCH_SUPPORT)
+        .env("VM0_TEST_TASK_DEADLINE", deadline)
+        .output()?;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("controller start: task fixture deadline expired"),
+        "controller did not reject its expired inherited budget: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
 }
 
 #[test]

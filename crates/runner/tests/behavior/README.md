@@ -36,8 +36,9 @@ The coordinator emits bounded invocation/run-scoped failure diagnostics before
 bounded transient-service cleanup and retains state if inactivity is unconfirmed.
 
 Parallel-tool and nested-task OOM scenarios share one 15-second deadline across
-preparation, resident-worker readiness, OOM exit and retirement. Nested Python processes
-inherit only the remaining budget. Readiness markers and worker reports gate
+preparation, resident-worker readiness, OOM exit and retirement. Nested Python
+processes inherit the absolute Guest `CLOCK_MONOTONIC` deadline, so controller
+startup also consumes the budget. Readiness markers and worker reports gate
 injection; there is no separate five-second allocation-speed requirement or new
 budget per stage. Missing readiness still fails without injecting OOM. Nested
 readiness/exit failures include the private bounded diagnostic tail in the JSONL

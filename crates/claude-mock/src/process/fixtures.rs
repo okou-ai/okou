@@ -790,11 +790,8 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
                 if mode.injected() { "1" } else { "0" },
             )
             .env(
-                "VM0_TEST_TASK_TIMEOUT_SECONDS",
-                deadline
-                    .saturating_duration_since(Instant::now())
-                    .as_secs_f64()
-                    .to_string(),
+                "VM0_TEST_TASK_DEADLINE",
+                task_oom::monotonic_deadline(deadline)?,
             )
             .stderr(
                 fixture
