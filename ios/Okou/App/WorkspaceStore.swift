@@ -58,7 +58,9 @@ final class WorkspaceStore {
   var synchronizationState: ChatSynchronizationState? {
     guard !closed else { return nil }
     if list.isLoading || selectedConversation?.isLoading == true { return .updating }
-    if list.syncError != nil || list.navigationError != nil || selectedConversation?.syncError != nil {
+    if list.syncError != nil || list.navigationError != nil
+      || selectedConversation?.syncError != nil
+    {
       return .unavailable
     }
     guard realtime != nil else { return nil }
@@ -538,11 +540,11 @@ final class WorkspaceStore {
     let restore = leaving || restoreOnUndo
     var failure: String?
     let succeeded = await list.setArchived(
-      thread, archived: archived, eventID: eventID, onFailure: { failure = $0 }
-    ) {
-      // The list owns the write, so leaving the detail cannot cancel it.
-      if leaving { self.startNewChat(agentID: thread.agentID) }
-    }
+      thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
+      didBegin: {
+        // The list owns the write, so leaving the detail cannot cancel it.
+        if leaving { self.startNewChat(agentID: thread.agentID) }
+      })
     guard !closed, !needsUpgrade else { return false }
     if succeeded {
       if reopenOnSuccess { selectChat(id) }

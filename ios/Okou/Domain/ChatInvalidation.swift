@@ -39,7 +39,6 @@ enum RealtimeConnectionStatus: Sendable {
   }
 }
 
-
 enum ChatSynchronizationState: Equatable {
   case connecting, updating, unavailable
 
