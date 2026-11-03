@@ -709,8 +709,9 @@ async fn deliver_pi_rpc_with_skips(
     assert_eq!(std::fs::read_to_string(&events_path)?, original);
     assert_eq!(std::fs::read_to_string(session_path)?, session);
     let local = std::fs::read_to_string(runtime.paths.agent_log_file())?;
+    let local_lines = local.lines().collect::<Vec<_>>();
     for expected in original.lines() {
-        assert!(local.lines().any(|line| line == expected));
+        assert!(local_lines.contains(&expected));
     }
     assert!(!local.contains("for delivery"));
     let commands = std::fs::read_to_string(commands_path)?;
