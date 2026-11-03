@@ -157,6 +157,30 @@ export const marketingHandoffsContract = c.router({
     body: marketingHandoffManifestSchema,
     responses: { 200: object({ hash: marketingContentHashSchema }), ...errors },
   },
+  publishStatus: {
+    method: "POST",
+    path: "/api/marketing-handoffs/publish/status",
+    headers: authHeadersSchema,
+    body: object({
+      hashes: array(marketingContentHashSchema).min(1).max(500),
+    }).strict(),
+    responses: {
+      200: object({ missing: array(marketingContentHashSchema) }),
+      ...errors,
+    },
+  },
+  publishBatch: {
+    method: "POST",
+    path: "/api/marketing-handoffs/publish/batch",
+    headers: authHeadersSchema,
+    body: object({
+      manifests: array(marketingHandoffManifestSchema).min(1).max(100),
+    }).strict(),
+    responses: {
+      200: object({ hashes: array(marketingContentHashSchema) }),
+      ...errors,
+    },
+  },
   publishFile: {
     method: "POST",
     path: "/api/marketing-handoffs/publish/files",

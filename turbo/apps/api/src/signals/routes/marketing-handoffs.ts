@@ -3,6 +3,7 @@ import { command } from "ccstate";
 import {
   MARKETING_HANDOFF_MAX_FILE_BYTES,
   marketingHandoffsContract,
+  serializeMarketingHandoff,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -29,6 +30,8 @@ import {
   importMarketingFiles$,
   marketingContentHash,
   marketingHandoffBucket,
+  publicMarketingContentHashes$,
+  publishMarketingManifests$,
   readMarketingManifest$,
   storeMarketingManifest$,
 } from "../services/marketing-handoff.service";
@@ -537,6 +540,63 @@ const publish$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: { hash } };
 });
 
+const publishStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const context = set(publisherContext$);
+  if ("status" in context) {
+    return context;
+  }
+  const body = await get(bodyResultOf(marketingHandoffsContract.publishStatus));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const hashes = [...new Set(body.data.hashes)];
+  const published = await set(
+    publicMarketingContentHashes$,
+    { resourceType: "manifest", hashes },
+    signal,
+  );
+  return {
+    status: 200 as const,
+    body: {
+      missing: hashes.filter((hash) => {
+        return !published.has(hash);
+      }),
+    },
+  };
+});
+
+const publishBatch$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const context = set(publisherContext$);
+  if ("status" in context) {
+    return context;
+  }
+  const body = await get(bodyResultOf(marketingHandoffsContract.publishBatch));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  if (
+    body.data.manifests.some((manifest) => {
+      return (
+        Buffer.byteLength(serializeMarketingHandoff(manifest)) >
+        manifestPolicy.maxBytes
+      );
+    })
+  ) {
+    return badRequestMessage("Handoff manifest is too large");
+  }
+  const hashes = await set(
+    publishMarketingManifests$,
+    { bucket: context.bucket, manifests: body.data.manifests },
+    signal,
+  );
+  if (!hashes) {
+    return notFound("Publish files before publishing a manifest");
+  }
+  return { status: 200 as const, body: { hashes } };
+});
+
 const manifestPolicy: Readonly<{ maxBytes: number; tooLargeMessage: string }> =
   {
     maxBytes: 128 * 1024,
@@ -583,6 +643,19 @@ export const marketingHandoffsRoutes: readonly RouteEntry[] = [
     requestBodyPolicy: {
       maxBytes: Math.ceil(MARKETING_HANDOFF_MAX_FILE_BYTES / 3) * 4 + 2048,
       tooLargeMessage: "File is too large",
+    },
+  },
+  {
+    route: marketingHandoffsContract.publishStatus,
+    handler: publishStatus$,
+    requestBodyPolicy: manifestPolicy,
+  },
+  {
+    route: marketingHandoffsContract.publishBatch,
+    handler: publishBatch$,
+    requestBodyPolicy: {
+      maxBytes: 512 * 1024,
+      tooLargeMessage: "Handoff publication batch is too large",
     },
   },
 ];
