@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.3](https://github.com/okou-ai/okou/compare/ios-v0.23.2...ios-v0.23.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** separate sync status from navigation controls ([#44893](https://github.com/okou-ai/okou/issues/44893)) ([2df6c92](https://github.com/okou-ai/okou/commit/2df6c922e318c3eb0eddf3c69a06ae7d87eb2f22))
+
 ## [0.23.2](https://github.com/okou-ai/okou/compare/ios-v0.23.1...ios-v0.23.2) (2026-11-03)
 
 

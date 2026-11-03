@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/okou-ai/okou/compare/runner-network-v0.4.1...runner-network-v0.4.2) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share blocking-worker release ownership in tests ([#44912](https://github.com/okou-ai/okou/issues/44912)) ([0c873d8](https://github.com/okou-ai/okou/commit/0c873d8254326de823cf8d42f5fe06489e555299))
+
 ## [0.4.1](https://github.com/okou-ai/okou/compare/runner-network-v0.4.0...runner-network-v0.4.1) (2026-11-03)
 
 ## [0.4.0](https://github.com/okou-ai/okou/compare/runner-network-v0.3.22...runner-network-v0.4.0) (2026-11-03)
