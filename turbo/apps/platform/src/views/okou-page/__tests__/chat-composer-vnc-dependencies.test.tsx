@@ -329,7 +329,7 @@ test.each([
     refresh.resolve();
     await waitFor(() => {
       const savedControl = within(menu).getByRole("combobox", { name });
-      expect(savedControl).toHaveTextContent(new RegExp(`^${option}$`));
+      expect(savedControl.textContent?.trim()).toBe(option);
       expect(savedControl).toHaveFocus();
     });
   },
