@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.45.1](https://github.com/okou-ai/okou/compare/api-v2.45.0...api-v2.45.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **api:** compact existing memory during proactive learning ([#44953](https://github.com/okou-ai/okou/issues/44953)) ([9acb4f0](https://github.com/okou-ai/okou/commit/9acb4f0004c16177a63ff6f6d836dcdde10f8907))
+* **integrations:** unify attribution and remove model footers ([#44941](https://github.com/okou-ai/okou/issues/44941)) ([7e379df](https://github.com/okou-ai/okou/commit/7e379df88127354feea56ebeca0a84807cf2551c))
+
+
+### Refactoring
+
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Performance Improvements
+
+* **api:** cut chat send and runner reuse sql round trips ([#44924](https://github.com/okou-ai/okou/issues/44924)) ([7d074ee](https://github.com/okou-ai/okou/commit/7d074eeaaf1367755c83eead825b0c9130988f4f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.1
+    * @okouai/browser-extension-client bumped to 0.4.4
+    * @okouai/core bumped to 8.813.1
+    * @okouai/db bumped to 2.19.1
+    * @okouai/pi-agent-runtime bumped to 1.51.59
+
 ## [2.45.0](https://github.com/okou-ai/okou/compare/api-v2.44.2...api-v2.45.0) (2026-11-03)
 
 

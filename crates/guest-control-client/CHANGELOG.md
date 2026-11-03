@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.72](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.71...guest-control-client-v0.23.72) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
 ## [0.23.71](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.70...guest-control-client-v0.23.71) (2026-11-03)
 
 ## [0.23.70](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.69...guest-control-client-v0.23.70) (2026-11-03)

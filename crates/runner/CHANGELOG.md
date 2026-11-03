@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.244.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.5...runner-rs-v0.244.6) (2026-11-03)
+
+
+### Refactoring
+
+* **python:** reuse unordered set element analysis ([#44945](https://github.com/okou-ai/okou/issues/44945)) ([d05fa2d](https://github.com/okou-ai/okou/commit/d05fa2d1f58291a5cb0578551dfeb5047797d966))
+* **python:** share native transition evidence validation ([#44969](https://github.com/okou-ai/okou/issues/44969)) ([f3f696a](https://github.com/okou-ai/okou/commit/f3f696a77076b8f82b2e40be1be0a2d266101bd6))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.4...runner-rs-v0.244.5) (2026-11-03)
 
 

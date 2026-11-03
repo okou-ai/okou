@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.813.1](https://github.com/okou-ai/okou/compare/core-v8.813.0...core-v8.813.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **integrations:** unify attribution and remove model footers ([#44941](https://github.com/okou-ai/okou/issues/44941)) ([7e379df](https://github.com/okou-ai/okou/commit/7e379df88127354feea56ebeca0a84807cf2551c))
+
+
+### Refactoring
+
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.1
+
 ## [8.813.0](https://github.com/okou-ai/okou/compare/core-v8.812.2...core-v8.813.0) (2026-11-03)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.1...guest-contracts-v0.30.2) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
 ## [0.30.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.0...guest-contracts-v0.30.1) (2026-11-03)
 
 

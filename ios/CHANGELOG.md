@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.23.4](https://github.com/okou-ai/okou/compare/ios-v0.23.3...ios-v0.23.4) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** streamline sheet loading and information density ([#44918](https://github.com/okou-ai/okou/issues/44918)) ([e1b713b](https://github.com/okou-ai/okou/commit/e1b713b0273253223c5290466b53d460ddefdf11))
+* **ios:** unify chat feedback in a top glass overlay ([#44971](https://github.com/okou-ai/okou/issues/44971)) ([82158b6](https://github.com/okou-ai/okou/commit/82158b6342e9cf228ec43089db4a9880fc0617bf))
+
+
+### Refactoring
+
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Performance Improvements
+
+* **ios:** reuse chat row heights across launches ([#44951](https://github.com/okou-ai/okou/issues/44951)) ([53cf861](https://github.com/okou-ai/okou/commit/53cf861c00b3befb8d05f4618bec7d90bae5aff6))
+
 ## [0.23.3](https://github.com/okou-ai/okou/compare/ios-v0.23.2...ios-v0.23.3) (2026-11-03)
 
 

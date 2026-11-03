@@ -13,6 +13,41 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1089.0](https://github.com/okou-ai/okou/compare/app-v0.1088.0...app-v0.1089.0) (2026-11-03)
+
+
+### Features
+
+* **platform:** drag chats into project groups ([#44950](https://github.com/okou-ai/okou/issues/44950)) ([be6bf0e](https://github.com/okou-ai/okou/commit/be6bf0e7f7e9f63d95f24805bf17a34b4ce297ec))
+
+
+### Bug Fixes
+
+* **app:** keep tools popover above its trigger with bounded scrolling ([#44936](https://github.com/okou-ai/okou/issues/44936)) ([16737ff](https://github.com/okou-ai/okou/commit/16737ff6f95cec83f63ff237c6eef481f799a7c3))
+* **app:** match sidebar chat title font weight ([#44929](https://github.com/okou-ai/okou/issues/44929)) ([58f7c36](https://github.com/okou-ai/okou/commit/58f7c36297499fefe27d90950154ab9e993d8120))
+* **app:** remove standalone chat header pin button ([#44927](https://github.com/okou-ai/okou/issues/44927)) ([ed06b4e](https://github.com/okou-ai/okou/commit/ed06b4ec35178b2c2fa5a13027b2f3ded7940af5))
+* **app:** use the connector icon in catalog debug settings ([#44966](https://github.com/okou-ai/okou/issues/44966)) ([9b94677](https://github.com/okou-ai/okou/commit/9b946777b44fcec4377e0963e8bb98124c5eae34))
+* **browser:** isolate viewer read and discovery failures ([#44917](https://github.com/okou-ai/okou/issues/44917)) ([cd26945](https://github.com/okou-ai/okou/commit/cd2694576ccede5adc986647528efe195f3340d6))
+* **platform:** apply project chat actions optimistically ([#44926](https://github.com/okou-ai/okou/issues/44926)) ([19d9217](https://github.com/okou-ai/okou/commit/19d92170439a89d19535759cfbef0c7a2419d355))
+* **platform:** point cloudinary media ideation at asset management mcp ([#44955](https://github.com/okou-ai/okou/issues/44955)) ([d77091b](https://github.com/okou-ai/okou/commit/d77091bc251b96d15c20632178f58a05c04afa52))
+* show folder icons for project mention suggestions ([#44940](https://github.com/okou-ai/okou/issues/44940)) ([66befdb](https://github.com/okou-ai/okou/commit/66befdb7c790eb4b32b6889980ce59b17abc9272))
+
+
+### Refactoring
+
+* **platform:** bound markdown math and project event loops by their conditions ([#44948](https://github.com/okou-ai/okou/issues/44948)) ([070611b](https://github.com/okou-ai/okou/commit/070611be96321c60c8dfa5befd838e2f47b3b33f))
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.1
+    * @okouai/browser-extension-client bumped to 0.4.4
+    * @okouai/core bumped to 8.813.1
+    * @okouai/ui bumped to 1.19.0
+
 ## [0.1088.0](https://github.com/okou-ai/okou/compare/app-v0.1087.4...app-v0.1088.0) (2026-11-03)
 
 
