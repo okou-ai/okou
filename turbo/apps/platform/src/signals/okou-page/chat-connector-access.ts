@@ -26,7 +26,10 @@ import {
   builtinConnectorAccountProjectionVersion$,
   customConnectorAccountProjectionVersion$,
 } from "./connector-account-projection.ts";
-import { createConnectorPermissionsSignals } from "./settings/connector-permissions.ts";
+import {
+  createConnectorPermissionsSignals,
+  type ConnectorPermissionsTarget,
+} from "./settings/connector-permissions.ts";
 import { pageSignal$ } from "../page-signal.ts";
 
 interface PendingChatConnectorOverride {
@@ -43,7 +46,7 @@ export interface PendingChatConnectorAccess {
 export interface ChatConnectorMenuTarget {
   readonly target: ConnectorAccountTarget;
   readonly label: string;
-  readonly permissionBundleRef: string | null;
+  readonly hasPermissions: boolean;
 }
 
 export interface ChatConnectorOverview extends ChatConnectorMenuTarget {
@@ -128,7 +131,7 @@ function createChatConnectorReads({
           return {
             target: { kind: "builtin" as const, connectorSlug: connector.slug },
             label: connector.label,
-            permissionBundleRef: connector.slug,
+            hasPermissions: connector.hasPermissions,
           };
         }),
         ...connected.customConnectors.map((connector) => {
@@ -138,7 +141,7 @@ function createChatConnectorReads({
               customConnectorId: connector.id,
             },
             label: connector.displayName,
-            permissionBundleRef: connector.permissionBundleRef,
+            hasPermissions: false,
           };
         }),
       ];
@@ -391,7 +394,7 @@ export function createChatConnectorAccessSignals(
   const resetSave$ = resetSignal();
   const version$ = state(0);
   const target$ = state<ChatConnectorMenuTarget | null>(null);
-  const permissions$ = state<ChatConnectorMenuTarget | null>(null);
+  const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
     const entry = get(permissions$);
     return entry ? createConnectorPermissionsSignals(entry) : null;
@@ -458,7 +461,7 @@ export function createChatConnectorAccessSignals(
     }),
     permissionSignals$,
     setPermissions$: command(
-      ({ get, set }, target: ChatConnectorMenuTarget | null) => {
+      ({ get, set }, target: ConnectorPermissionsTarget | null) => {
         const current = get(permissionSignals$);
         if (current) {
           set(current.close$);

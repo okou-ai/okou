@@ -108,7 +108,6 @@ interface PermissionsDrawerProps {
   agentId?: string;
   scopeKey?: string;
   connectorScope?: boolean;
-  headerIcon?: ReactNode;
   connectorSlug: ConnectorSlug;
   connectorLabel: string;
   metadata$: Computed<Promise<PlatformConnectorPermissionMetadata | null>>;
@@ -179,14 +178,13 @@ function buildInitialPermissionDrawerState({
 
 function PermissionsDrawerHeader({
   icon,
-  headerIcon,
   connectorLabel,
   displayName,
   surface,
   connectorScope,
 }: Pick<
   PermissionsDrawerProps,
-  "connectorLabel" | "displayName" | "connectorScope" | "headerIcon"
+  "connectorLabel" | "displayName" | "connectorScope"
 > & {
   readonly icon: PublicConnectorCatalogIcon | undefined;
   readonly surface: PermissionsSurface;
@@ -224,7 +222,7 @@ function PermissionsDrawerHeader({
     return (
       <DialogHeader>
         <div className="flex items-center gap-3">
-          {headerIcon ?? <ConnectorIcon icon={icon} size={24} />}
+          <ConnectorIcon icon={icon} size={24} />
           <DialogTitle className="text-base">{title}</DialogTitle>
         </div>
         <DialogDescription>{description}</DialogDescription>
@@ -235,7 +233,7 @@ function PermissionsDrawerHeader({
   return (
     <SheetHeader>
       <div className="flex items-center gap-3">
-        {headerIcon ?? <ConnectorIcon icon={icon} size={24} />}
+        <ConnectorIcon icon={icon} size={24} />
         <SheetTitle className="text-base">{title}</SheetTitle>
       </div>
       <SheetDescription>{description}</SheetDescription>
@@ -361,6 +359,18 @@ function hasDraftExpirationSelections({
     }
   }
   return false;
+}
+
+function canApplyPermissionPolicies({
+  metadata,
+  saving,
+  hasChanges,
+}: {
+  metadata: PlatformConnectorPermissionMetadata;
+  saving: boolean;
+  hasChanges: boolean;
+}): boolean {
+  return metadata.permissionCount > 0 && !saving && hasChanges;
 }
 
 function UnknownEndpointsToggle({
@@ -1181,7 +1191,11 @@ function LoadedPermissionsDrawerContent({
         permissions,
         explicitGrants,
       }));
-  const canApply = !saving && hasPermissionChanges;
+  const canApply = canApplyPermissionPolicies({
+    metadata,
+    saving,
+    hasChanges: hasPermissionChanges,
+  });
   const unknownGrant = effectiveExplicitGrants.get(UNKNOWN_PERMISSION_GRANT);
   const unknownSelectedExpiration = draft.unknownExpiration;
 
@@ -1527,7 +1541,6 @@ function PermissionsContent({
     <>
       <PermissionsDrawerHeader
         icon={loadedMetadata?.icon}
-        headerIcon={props.headerIcon}
         connectorLabel={props.connectorLabel}
         displayName={props.displayName}
         connectorScope={props.connectorScope}

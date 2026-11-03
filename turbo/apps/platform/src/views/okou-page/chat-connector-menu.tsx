@@ -360,25 +360,33 @@ function AccountPanelFooter({
 }) {
   const { t } = useTranslation();
   const permissions = useSet(signals.connector.chatAccess.setPermissions$);
+  const permissionTarget =
+    target.target.kind === "builtin" && target.hasPermissions
+      ? { target: target.target, label: target.label }
+      : null;
   return (
     <div className="mt-1 flex shrink-0 items-center justify-between border-t border-border/50 p-1">
-      <PopoverClose
-        render={
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!savedAccounts}
-            onClick={() => {
-              permissions(target);
-            }}
-          >
-            <SlidersHorizontal size={15} />
-            {t(($) => {
-              return $.connectorChatAccess.permissions;
-            })}
-          </Button>
-        }
-      />
+      <div>
+        {permissionTarget && (
+          <PopoverClose
+            render={
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!savedAccounts}
+                onClick={() => {
+                  permissions(permissionTarget);
+                }}
+              >
+                <SlidersHorizontal size={15} />
+                {t(($) => {
+                  return $.connectorChatAccess.permissions;
+                })}
+              </Button>
+            }
+          />
+        )}
+      </div>
       <Link
         pathname="/connectors"
         options={{

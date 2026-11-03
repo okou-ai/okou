@@ -80,18 +80,7 @@ function CustomConnectorAgentAccess(props: {
 }) {
   const enabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
-  const { t } = useTranslation();
-  return enabled ? (
-    props.allowAccessIncrease ? (
-      <Button variant="quiet" size="xs" onClick={props.onManageAccess}>
-        {t(($) => {
-          return $.connectorChatAccess.permissions;
-        })}
-      </Button>
-    ) : null
-  ) : (
-    <LegacyCustomConnectorAgentAccess {...props} />
-  );
+  return enabled ? null : <LegacyCustomConnectorAgentAccess {...props} />;
 }
 
 function LegacyCustomConnectorAgentAccess({

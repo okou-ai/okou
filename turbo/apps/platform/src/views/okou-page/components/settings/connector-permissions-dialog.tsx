@@ -1,19 +1,20 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
-import type { ChatConnectorMenuTarget } from "../../../../signals/okou-page/chat-connector-access.ts";
-import type { createConnectorPermissionsSignals } from "../../../../signals/okou-page/settings/connector-permissions.ts";
+import type {
+  createConnectorPermissionsSignals,
+  ConnectorPermissionsTarget,
+} from "../../../../signals/okou-page/settings/connector-permissions.ts";
 import { activeUserPermissionGrantSnapshot } from "../../../../signals/user-permission-grants.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { connectorAccountTargetKey } from "../../../../signals/okou-page/connector-accounts.ts";
 import { authenticatedSessionKey$ } from "../../../../signals/auth.ts";
 import { PermissionsDialog } from "./permissions-dialog.tsx";
-import { CustomConnectorIcon } from "./custom-connector-icon.tsx";
 
 export function ConnectorPermissionsDialog({
   entry,
   signals,
   onClose,
 }: {
-  readonly entry: ChatConnectorMenuTarget;
+  readonly entry: ConnectorPermissionsTarget;
   readonly signals: ReturnType<typeof createConnectorPermissionsSignals>;
   readonly onClose: () => void;
 }) {
@@ -29,22 +30,9 @@ export function ConnectorPermissionsDialog({
     <PermissionsDialog
       connectorScope
       scopeKey={`${owner}:${connectorAccountTargetKey(entry.target)}`}
-      connectorSlug={
-        entry.target.kind === "builtin"
-          ? entry.target.connectorSlug
-          : entry.target.customConnectorId
-      }
+      connectorSlug={entry.target.connectorSlug}
       connectorLabel={entry.label}
       displayName=""
-      headerIcon={
-        entry.target.kind === "custom" ? (
-          <CustomConnectorIcon
-            id={entry.target.customConnectorId}
-            displayName={entry.label}
-            size={24}
-          />
-        ) : undefined
-      }
       metadata$={signals.editorMetadata$}
       initialPolicies={snapshot?.policies ?? {}}
       initialGrants={snapshot?.grants ?? []}

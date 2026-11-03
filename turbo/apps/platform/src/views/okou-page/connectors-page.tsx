@@ -1006,6 +1006,7 @@ function connectorAgentName(agent: AgentResponse): string {
 function ConnectorAccessButton(props: {
   readonly connectorSlug: ConnectorSlug;
   readonly connectorLabel: string;
+  readonly hasPermissions: boolean;
   readonly allowAccessIncrease: boolean;
   readonly onClick: () => void;
 }) {
@@ -1013,7 +1014,7 @@ function ConnectorAccessButton(props: {
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
   const { t } = useTranslation();
   return enabled ? (
-    props.allowAccessIncrease ? (
+    props.allowAccessIncrease && props.hasPermissions ? (
       <Button variant="quiet" size="xs" onClick={props.onClick}>
         {t(($) => {
           return $.connectorChatAccess.permissions;
@@ -1257,6 +1258,7 @@ function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
     <ConnectorAccessButton
       connectorSlug={connector.slug}
       connectorLabel={connector.label}
+      hasPermissions={connector.permissionSummary.hasPermissions}
       allowAccessIncrease={inventoryStatus === "ready" && hasAccounts}
       onClick={manageAccess}
     />

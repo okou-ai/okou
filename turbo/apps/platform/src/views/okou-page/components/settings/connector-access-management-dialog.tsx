@@ -43,7 +43,6 @@ import {
 } from "../../../../signals/okou-page/settings/connector-access-management.ts";
 import {
   customConnectorAgentAuthorizations$,
-  customConnectorMemberPermissions$,
   setCustomConnectorAgentAuthorization$,
   type CustomConnectorAgentAuthorization,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
@@ -532,7 +531,6 @@ export function ConnectorAccessManagementDialog(
   const entry = {
     target: { kind: "builtin" as const, connectorSlug: props.connectorSlug },
     label: props.connectorLabel,
-    permissionBundleRef: props.connectorSlug,
   };
   return enabled ? (
     signals && (
@@ -691,24 +689,7 @@ export function CustomConnectorAccessManagementDialog(props: {
 }) {
   const enabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
-  const signals = useGet(customConnectorMemberPermissions$);
-  const entry = {
-    target: {
-      kind: "custom" as const,
-      customConnectorId: props.connector.id,
-    },
-    label: props.connector.displayName,
-    permissionBundleRef: props.connector.permissionBundleRef ?? null,
-  };
-  return enabled ? (
-    signals && (
-      <ConnectorPermissionsDialog
-        entry={entry}
-        signals={signals}
-        onClose={props.onClose}
-      />
-    )
-  ) : (
+  return enabled ? null : (
     <LegacyCustomConnectorAccessManagementDialog {...props} />
   );
 }

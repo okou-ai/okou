@@ -167,7 +167,6 @@ function createManagedConnectorAccessSignals(connectorSlug: ConnectorSlug) {
     memberPermissions: createConnectorPermissionsSignals({
       target: { kind: "builtin", connectorSlug },
       label: connectorSlug,
-      permissionBundleRef: connectorSlug,
     }),
     rows$,
     metadata$,

@@ -57,7 +57,7 @@ function installAccess(
     personalOff?: boolean;
     rejectSelection?: boolean;
     custom?: boolean;
-    withoutBundle?: boolean;
+    noPermissions?: boolean;
   } = {},
 ) {
   const accessTarget = options.custom
@@ -70,7 +70,7 @@ function installAccess(
           builtinConnector({
             slug: "github",
             label: "GitHub",
-            hasPermissions: true,
+            hasPermissions: !options.noPermissions,
           }),
         ],
     customConnectors: options.custom
@@ -82,9 +82,7 @@ function installAccess(
               displayName: "Acme",
               hasAccount: true,
             }),
-            permissionBundleRef: options.withoutBundle
-              ? null
-              : "builtin:github@1",
+            permissionBundleRef: "builtin:github@1",
           },
         ]
       : [],
@@ -310,10 +308,7 @@ test("Persist current account and nullable Chat overrides across menu reopening"
   });
 });
 
-test.each([
-  { label: "GitHub", custom: false },
-  { label: "Acme", custom: true },
-])(
+test.each([{ label: "GitHub", custom: false }])(
   "Edit $label permissions with all accounts off and keep account access off",
   async ({ label, custom }) => {
     const user = userEvent.setup({ delay: null });
@@ -354,44 +349,34 @@ test.each([
   },
 );
 
-test("Save custom connector endpoint rules without named permissions or enabled accounts", async () => {
-  const user = userEvent.setup({ delay: null });
-  installAccess({ allOff: true, custom: true, withoutBundle: true });
-  await setup();
-  await user.click(await openMenu("Acme"));
-  await user.click(await findFastControl("button", "Permissions"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Acme permissions",
-  });
-  await within(dialog).findByText("Other endpoints");
-  const deny = queryAllByRoleFast("button", dialog)
-    .filter((button) => {
-      return button.textContent?.trim() === "Deny";
-    })
-    .at(-1)!;
-  await user.click(deny);
-  const apply = await findFastControl("button", "Apply", dialog);
-  expect(apply).toBeEnabled();
-  await user.click(apply);
-  await waitFor(() => {
+test.each([
+  { label: "GitHub", custom: false },
+  { label: "Acme", custom: true },
+])(
+  "Hide unsupported $label permissions while keeping account controls",
+  async ({ label, custom }) => {
+    const user = userEvent.setup({ delay: null });
+    installAccess({ custom, noPermissions: true });
+    await setup();
+    await user.click(await openMenu(label));
+    await screen.findByRole("combobox", { name: "Work access" });
     expect(
-      screen.queryByRole("dialog", { name: "Acme permissions" }),
-    ).toBeNull();
-  });
-  const row = await openMenu("Acme");
-  expect(row).toHaveTextContent("0 on");
-  await user.click(row);
-  await user.click(await findFastControl("button", "Permissions"));
-  const saved = await screen.findByRole("dialog", { name: "Acme permissions" });
-  await within(saved).findByText("Other endpoints");
-  expect(
-    queryAllByRoleFast("button", saved)
-      .filter((button) => {
-        return button.textContent?.trim() === "Deny";
-      })
-      .at(-1),
-  ).toHaveAttribute("aria-pressed", "true");
-});
+      queryAllByRoleFast("button").filter((button) => {
+        return button.textContent?.trim() === "Permissions";
+      }),
+    ).toHaveLength(0);
+    await user.click(await findFastControl("link", "Manage accounts"));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/connectors");
+    });
+    await findFastControl("button", `Manage ${label} accounts`);
+    expect(
+      queryAllByRoleFast("button").filter((button) => {
+        return button.textContent?.trim() === "Permissions";
+      }),
+    ).toHaveLength(0);
+  },
+);
 
 function expectRetainedDraft(path: string, composer: HTMLElement) {
   expect(window.location.pathname).toBe(path);
