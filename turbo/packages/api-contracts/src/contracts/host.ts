@@ -197,8 +197,8 @@ export const hostedSitePrepareRequestSchema = object({
   requirePrivateArtifact: boolean().optional(),
   visibility: hostedSiteVisibilitySchema.optional(),
   site: hostedSiteSlugSchema,
-  /** Initial display name; optional for retained CLI clients. */
-  title: hostedSiteTitleSchema.optional(),
+  /** Initial display name. */
+  title: hostedSiteTitleSchema,
   slugSuffix: hostedSiteSlugSuffixSchema.optional(),
   artifactKind: hostedArtifactKindSchema.default("hosted-site"),
   spaFallback: boolean().default(false),
@@ -232,8 +232,8 @@ export const hostedSitePrepareResponseSchema = object({
   siteId: uuid(),
   /** Acknowledges the site policy before uploads or publication can start. */
   visibility: hostedSiteVisibilitySchema.optional(),
-  /** Acknowledges explicit titles; absent on APIs predating site titles. */
-  title: hostedSiteTitleSchema.optional(),
+  /** The site's current catalog title, or the supplied title on first publish. */
+  title: hostedSiteTitleSchema,
   deploymentId: uuid(),
   publicSlug: string(),
   url: artifactUrlSchema,

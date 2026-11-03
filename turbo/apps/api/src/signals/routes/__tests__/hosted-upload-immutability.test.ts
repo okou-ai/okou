@@ -29,6 +29,7 @@ test("issues normal 48-hour hosted PUT credentials without checksum binding", as
   ];
   const draft = await api.prepareHostedSite(actor, {
     site: `immutable-${randomUUID().slice(0, 8)}`,
+    title: "Immutable",
     artifactKind: "hosted-site",
     spaFallback: false,
     files,
@@ -75,6 +76,7 @@ test("rejects uploads that would overwrite the server delivery manifest", async 
     actor,
     {
       site: `reserved-${randomUUID().slice(0, 8)}`,
+      title: "Reserved",
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [
@@ -95,6 +97,7 @@ test("rejects an asset whose name does not carry its content hash", async () => 
     actor,
     {
       site: `unhashed-${randomUUID().slice(0, 8)}`,
+      title: "Unhashed",
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [
@@ -119,6 +122,7 @@ test("preserves asset hashes across retained deployments even when a later deplo
   const asset = "/assets/app-4f3a9c12.css";
   const first = await api.prepareHostedSite(actor, {
     site,
+    title: site,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [
@@ -136,6 +140,7 @@ test("preserves asset hashes across retained deployments even when a later deplo
   );
   const second = await api.prepareHostedSite(actor, {
     site,
+    title: site,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [
@@ -154,6 +159,7 @@ test("preserves asset hashes across retained deployments even when a later deplo
     actor,
     {
       site,
+      title: site,
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [
@@ -174,6 +180,7 @@ test("preserves asset hashes across retained deployments even when a later deplo
   // Unchanged assets from either deployment can be reused with updated HTML.
   const redeployed = await api.prepareHostedSite(actor, {
     site,
+    title: site,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [

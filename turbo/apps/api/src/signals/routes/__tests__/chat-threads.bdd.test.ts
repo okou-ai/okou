@@ -1871,6 +1871,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
       const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
         site: `private-drive-${randomUUID().slice(0, 8)}`,
+        title: "Private drive",
         artifactKind,
         spaFallback: false,
         files: [
@@ -1956,6 +1957,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `public-deck-${randomUUID().slice(0, 8)}`,
+      title: "Public deck",
       artifactKind: "presentation-html",
       spaFallback: false,
       files: [
@@ -2038,6 +2040,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `single-page-${randomUUID().slice(0, 8)}`,
+      title: "Single page",
       artifactKind: "presentation-html",
       spaFallback: false,
       files: [hostedTextFile("/index.html", index)],
@@ -4685,6 +4688,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     // dedupe still resolves that URL to run 2.
     const prepared = await chat.prepareHostedSiteWithBearer(bearer2, {
       site: `bdd-artifact-${randomUUID().slice(0, 8)}`,
+      title: "BDD artifact",
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>artifact run</main>")],
@@ -4806,6 +4810,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `bdd-media-${randomUUID().slice(0, 8)}`,
+      title: "BDD media",
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>kitten</main>")],

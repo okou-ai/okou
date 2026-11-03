@@ -370,7 +370,7 @@ async function publishHostedSite(args: {
   const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
   const body = {
     site: args.site,
-    title: args.title,
+    title: args.title ?? args.site,
     artifactKind: args.artifactKind ?? ("hosted-site" as const),
     spaFallback: false,
     files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
@@ -1363,6 +1363,7 @@ describe("GET /api/artifacts/catalog", () => {
     const site = `catalog-cross-chat-${randomUUID().slice(0, 8)}`;
     const body = {
       site,
+      title: site,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       visibility: "public" as const,

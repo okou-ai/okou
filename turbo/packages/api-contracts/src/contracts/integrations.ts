@@ -563,63 +563,6 @@ export type IntegrationsPhoneDownloadFileContract =
   typeof integrationsPhoneDownloadFileContract;
 
 /**
- * Integration Telegram bot list contract
- * GET /api/integrations/telegram/bots
- *
- * Reports the official Telegram bot for older CLI clients.
- * Requires `telegram:read` capability (via OKOU_TOKEN).
- */
-const telegramBotTokenStatusSchema = zEnum(["valid", "invalid", "unknown"]);
-
-const telegramConnectedUserSchema = object({
-  telegramUserId: string(),
-  telegramUsername: string().nullable(),
-  telegramDisplayName: string().nullable(),
-});
-
-const telegramBotListItemSchema = object({
-  id: string(),
-  kind: literal("official").optional(),
-  username: string().nullable(),
-  agent: object({ id: string(), name: string() }).nullable(),
-  isOwner: boolean(),
-  isConnected: boolean(),
-  connectedUser: telegramConnectedUserSchema.nullable().optional(),
-  tokenStatus: telegramBotTokenStatusSchema,
-  official: object({
-    configured: boolean(),
-    usesDefaultAgent: boolean(),
-    linkedTelegramUserId: string().nullable(),
-  }).optional(),
-});
-
-const listTelegramBotsResponseSchema = object({
-  bots: array(telegramBotListItemSchema),
-});
-
-export type TelegramBotListItem = zInfer<typeof telegramBotListItemSchema>;
-export type ListTelegramBotsResponse = zInfer<
-  typeof listTelegramBotsResponseSchema
->;
-
-export const integrationsTelegramBotListContract = c.router({
-  listBots: {
-    method: "GET",
-    path: "/api/integrations/telegram/bots",
-    headers: authHeadersSchema,
-    responses: {
-      200: listTelegramBotsResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-    },
-    summary: "Get the official Telegram bot status",
-  },
-});
-
-export type IntegrationsTelegramBotListContract =
-  typeof integrationsTelegramBotListContract;
-
-/**
  * Integration Slack file download contract.
  * Requires `slack:write` because Slack's file APIs are reached through the
  * org bot token that also posts messages.

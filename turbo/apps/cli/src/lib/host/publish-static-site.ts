@@ -108,12 +108,6 @@ export async function publishStaticSite(
     }),
   });
 
-  if (!prepared.title) {
-    throw new Error(
-      "The API did not acknowledge the supplied site title; no files were uploaded or activated. Retry after the API supports site titles.",
-    );
-  }
-
   if (preview && prepared.preview?.sha256 !== preview.metadata.sha256) {
     throw new Error(
       "The API did not acknowledge the supplied preview; no files were uploaded or activated",

@@ -26,7 +26,6 @@ import type {
   integrationsTeamsMessageContract as OriginalIntegrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract as OriginalIntegrationsTeamsUploadCompleteContract,
   integrationsTeamsUploadInitContract as OriginalIntegrationsTeamsUploadInitContract,
-  integrationsTelegramBotListContract as OriginalIntegrationsTelegramBotListContract,
   integrationsTelegramDownloadFileContract as OriginalIntegrationsTelegramDownloadFileContract,
   integrationsTelegramMessageContract as OriginalIntegrationsTelegramMessageContract,
   integrationsTelegramUploadCompleteContract as OriginalIntegrationsTelegramUploadCompleteContract,
@@ -467,20 +466,6 @@ export const integrationsTeamsUploadInitContract: ClientDescriptor<
       404: true,
       409: true,
       502: true,
-    },
-  },
-};
-
-export const integrationsTelegramBotListContract: ClientDescriptor<
-  typeof OriginalIntegrationsTelegramBotListContract
-> = {
-  listBots: {
-    method: "GET",
-    path: "/api/integrations/telegram/bots",
-    statuses: {
-      200: true,
-      401: true,
-      403: true,
     },
   },
 };

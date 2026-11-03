@@ -68,6 +68,7 @@ test.each([
     api.captureHostedSitesS3();
     const prepared = await api.prepareHostedSite(owner, {
       site: `private-${randomUUID().slice(0, 8)}`,
+      title: "Private",
       artifactKind: "hosted-site",
       spaFallback: false,
       ...(visibility === undefined ? {} : { visibility }),
@@ -147,6 +148,7 @@ async function publish() {
   const site = `access-${randomUUID().slice(0, 8)}`;
   const input = {
     site,
+    title: site,
     artifactKind: "hosted-site" as const,
     spaFallback: false,
     files: [hostedTextFile("/index.html", "<p>protected report</p>")],
@@ -893,6 +895,7 @@ test("one publisher cannot redirect another Site's authorization to its own orig
   const other = await api.prepareHostedSite(owner, {
     ...input,
     site: `other-${randomUUID().slice(0, 8)}`,
+    title: "Other",
   });
   await api.completeHostedSite(owner, other.deploymentId);
   await accept(

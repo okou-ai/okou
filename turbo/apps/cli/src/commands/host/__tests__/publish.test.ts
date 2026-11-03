@@ -77,39 +77,6 @@ describe("okou host publish command", () => {
     expect(mockConsoleLog.mock.calls).toHaveLength(0);
   });
 
-  it("does not upload when an older API silently drops the supplied title", async () => {
-    writeFileSync(join(tempDir, "index.html"), "<main>Report</main>");
-    server.use(
-      http.post(PREPARE_URL, () => {
-        return HttpResponse.json({
-          siteId: "00000000-0000-4000-8000-000000000001",
-          deploymentId: "00000000-0000-4000-8000-000000000002",
-          publicSlug: "demo-site",
-          url: "https://demo-site.okou.app",
-          visibility: "public",
-          uploads: [],
-        });
-      }),
-    );
-    await expect(
-      hostCommand.parseAsync([
-        "node",
-        "okou",
-        tempDir,
-        "--site",
-        "demo-site",
-        "--title",
-        "Demo site",
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "did not acknowledge the supplied site title",
-    );
-    expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
-      "Hosted site deployed",
-    );
-  });
-
   it.each([
     { label: "public", privateArtifact: false, publicSlug: "demo-site" },
     { label: "private", privateArtifact: true, publicSlug: "demo-site" },

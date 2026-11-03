@@ -1,6 +1,6 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -143,44 +143,5 @@ test.each([false, true])(
     expect(conversation).toHaveAttribute("rel", "noopener noreferrer");
     expect(listItem).toHaveRole("listitem");
     expect(listItem.parentElement).toHaveRole("list");
-  },
-);
-
-test.each([false, true])(
-  "An older API retains catalog deep links with sidebar preview %s",
-  async (sidebarPreview) => {
-    const locationAssign = context.mocks.browser.locationAssign();
-    const conversation = artifact({
-      kind: "shared-thread",
-      title: "Weekly launch review",
-    });
-    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-      return respond(200, { artifacts: [conversation], nextCursor: null });
-    });
-    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...conversation,
-        kind: "shared-thread",
-        sharedThread: { id: "b0000000-0000-4000-a000-000000000001" },
-      });
-    });
-    await setupPage({
-      context,
-      path: `/artifacts?tab=shared-thread&artifact=${conversation.id}`,
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreview,
-      },
-    });
-    await expect(
-      findArtifactAction(conversation.title),
-    ).resolves.toHaveAttribute(
-      "href",
-      `/artifacts?tab=shared-thread&artifact=${conversation.id}`,
-    );
-    await waitFor(() => {
-      expect(locationAssign.calls).toStrictEqual([
-        "/share/threads/b0000000-0000-4000-a000-000000000001",
-      ]);
-    });
   },
 );

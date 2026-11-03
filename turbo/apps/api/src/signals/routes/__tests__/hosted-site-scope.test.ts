@@ -21,6 +21,7 @@ const host = createHostBddApi(context);
 function hostedSiteBody(site: string, content: string) {
   return {
     site,
+    title: site,
     artifactKind: "hosted-site" as const,
     spaFallback: false,
     files: [hostedTextFile("/index.html", `<main>${content}</main>`)],

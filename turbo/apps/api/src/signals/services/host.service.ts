@@ -263,6 +263,7 @@ type PrepareDeploymentResult =
       readonly body: {
         readonly siteId: string;
         readonly visibility: HostedSiteVisibility;
+        readonly title: string;
         readonly deploymentId: string;
         readonly publicSlug: string;
         readonly url: string;
@@ -803,28 +804,23 @@ export const prepareHostedSiteDeployment$ = command(
       : undefined;
     // The caller supplies an initial name; a published site's catalog owns
     // subsequent title changes, including redeploys from another chat.
-    const [artifact] =
-      args.body.title === undefined
-        ? []
-        : await get(db$)
-            .select({ title: artifacts.title })
-            .from(artifacts)
-            .where(
-              and(
-                eq(artifacts.orgId, args.orgId),
-                eq(artifacts.logicalKey, `site:${siteAndDeployment.site.id}`),
-              ),
-            )
-            .limit(1);
+    const [artifact] = await get(db$)
+      .select({ title: artifacts.title })
+      .from(artifacts)
+      .where(
+        and(
+          eq(artifacts.orgId, args.orgId),
+          eq(artifacts.logicalKey, `site:${siteAndDeployment.site.id}`),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
     return {
       status: "ok",
       body: {
         siteId: siteAndDeployment.site.id,
         visibility: visibility.visibility,
-        ...(args.body.title === undefined
-          ? {}
-          : { title: artifact?.title ?? args.body.title }),
+        title: artifact?.title ?? args.body.title,
         deploymentId: siteAndDeployment.deployment.id,
         publicSlug,
         url,

@@ -55,6 +55,7 @@ test("denies late immutable writes after deletion even when R2 loses the respons
   const site = `delivery-loss-${randomUUID().slice(0, 8)}`;
   const pending = await api.prepareHostedSite(owner, {
     site,
+    title: site,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [hostedTextFile("/index.html", "<p>old</p>")],
@@ -127,6 +128,7 @@ test("waits for SQL readiness when the public pointer already exists", async () 
   const site = `delivery-pending-${randomUUID().slice(0, 8)}`;
   const pending = await api.prepareHostedSite(owner, {
     site,
+    title: site,
     artifactKind: "hosted-site",
     spaFallback: false,
     visibility: "public",
@@ -186,6 +188,7 @@ test("authorizes ready owned identities, keeps immutable history and denies dele
   const site = `delivery-${randomUUID().slice(0, 8)}`;
   const body = {
     site,
+    title: site,
     artifactKind: "hosted-site" as const,
     spaFallback: false,
     visibility: "public" as const,
@@ -249,6 +252,7 @@ test("authorizes ready owned identities, keeps immutable history and denies dele
   const foreign = await api.prepareHostedSite(other, {
     ...body,
     site: `foreign-${randomUUID().slice(0, 8)}`,
+    title: "Foreign",
   });
   await api.completeHostedSite(other, foreign.deploymentId);
   await expect(check(foreign.deploymentId, firstQuery)).resolves.toBeFalsy();

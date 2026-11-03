@@ -2509,6 +2509,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         const site = await fixture.run(() => {
           return chatApi.prepareHostedSiteWithBearer(hostBearer, {
             site: siteName,
+            title: siteName,
             artifactKind: "hosted-site",
             spaFallback: false,
             files: [
