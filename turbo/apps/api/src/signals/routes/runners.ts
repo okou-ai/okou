@@ -2011,7 +2011,7 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
-    const workflowInput = workflowClaimInput(storedContext, run.prompt);
+    const workflowInput = workflowClaimInput(storedContext);
 
     const baseResponseBody = await set(
       buildClaimResponseBodyForClaim$,

@@ -289,7 +289,7 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
     prompt: `/${name} summarize today`,
   });
   await runs.heartbeatRunner(group);
-  // Claim rejects a captured invocation that is not this slug's winner.
+  // The claim mounts this slug's current winner.
   const claim = await runs.claimRunnerJob(run.runId);
   const skill = claim.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${name}`);
@@ -300,7 +300,7 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
   await finish(run.runId, claim.sandboxToken);
 });
 
-test("keeps a queued explicit invocation unavailable after its Workflow is deleted", async () => {
+test("runs a queued explicit invocation without its deleted Workflow", async () => {
   const { actor, agent, group } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId);
   const run = await runs.createThreadRun(actor, {
@@ -315,14 +315,17 @@ test("keeps a queued explicit invocation unavailable after its Workflow is delet
     [204],
   );
   await runs.heartbeatRunner(group);
-  const rejected = await runs.requestClaimRunnerJob(true, run.runId, [404]);
-  expect(rejected.status).toBe(404);
-  expect((await runs.readRun(actor, run.runId)).status).toBe("pending");
-  await runs.requestCancelRun(actor, run.runId, [200]);
+  const claim = await runs.claimRunnerJob(run.runId);
+  expect(
+    claim.contentBundles.skills.map((entry) => {
+      return entry.mountPath.split("/").at(-1);
+    }),
+  ).toStrictEqual([...SEED_SKILLS]);
+  await finish(run.runId, claim.sandboxToken);
 });
 
-test("does not redirect a queued invocation when its renamed Workflow slug is reused", async () => {
-  const { actor, agent, group } = await fixture();
+test("mounts the current winner for a queued invocation whose slug is reused", async () => {
+  const { actor, agent, group, s3 } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
@@ -337,33 +340,26 @@ test("does not redirect a queued invocation when its renamed Workflow slug is re
     }),
     [200],
   );
-  const replacement = await createWorkflow(actor, agent.agentId, {
+  await createWorkflow(actor, agent.agentId, {
     name: workflow.name,
     instruction: "different invocation target",
   });
   await runs.heartbeatRunner(group);
-  await runs.requestClaimRunnerJob(true, run.runId, [404]);
-  expect((await runs.readRun(actor, run.runId)).status).toBe("pending");
-  await runs.requestCancelRun(actor, run.runId, [200]);
-
-  const fresh = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: `/${renamed}`,
-  });
-  const claim = await runs.claimRunnerJob(fresh.runId);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const invoked = claim.contentBundles.skills.find((entry) => {
+    return entry.mountPath.endsWith(`/${workflow.name}`);
+  })!;
+  expect(
+    readClaimedContentBundle(s3.objects, invoked).get("SKILL.md")?.toString(),
+  ).toContain("different invocation target");
   expect(claim.contentBundles.skills).toStrictEqual(
     expect.arrayContaining([
       expect.objectContaining({
         mountPath: expect.stringMatching(new RegExp(`/${renamed}$`, "u")),
       }),
-      expect.objectContaining({
-        mountPath: expect.stringMatching(
-          new RegExp(`/${replacement.name}$`, "u"),
-        ),
-      }),
     ]),
   );
-  await finish(fresh.runId, claim.sandboxToken);
+  await finish(run.runId, claim.sandboxToken);
 });
 
 test("keeps a large non-ASCII Workflow in its complete package without truncation", async () => {

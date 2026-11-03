@@ -1,9 +1,5 @@
 import { performance } from "node:perf_hooks";
 import {
-  findInvokedWorkflowId,
-  invokedWorkflowName,
-} from "./execution-agent-workflows.service";
-import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
   type PiLaunchConfig,
@@ -3819,22 +3815,7 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const invokedName =
-        runnerInput && !isRouteError(runnerInput)
-          ? invokedWorkflowName(runnerInput.body.prompt)
-          : null;
-      // The Run's owner, org and Agent are bootstrap's identity, whose S1
-      // selection already captured the ordinary Private/Public winner per name.
-      const invokedWorkflowId =
-        invokedName === null
-          ? null
-          : findInvokedWorkflowId(await get(bootstrap.workflows$), invokedName);
-      signal.throwIfAborted();
-      const contextDraft = claimRunStoredContextDraft(
-        runnerInput,
-        encrypted,
-        invokedWorkflowId,
-      );
+      const contextDraft = claimRunStoredContextDraft(runnerInput, encrypted);
       return {
         kind: "prepared" as const,
         resources: [
@@ -5188,7 +5169,6 @@ function claimRunStoredContextDraft<
 >(
   input: RunnerInputResult,
   encrypted: TEncrypted | CreateRunErrorResult | null | undefined,
-  invokedWorkflowId: string | null,
 ) {
   if (!input || isRouteError(input)) {
     return input;
@@ -5204,7 +5184,6 @@ function claimRunStoredContextDraft<
       platformEnvironment,
       runId: args.run.id,
       workflowAutomationId: args.workflowAutomationId,
-      invokedWorkflowId,
     },
     encrypted.encryptedSecrets,
   );
@@ -5226,7 +5205,6 @@ function buildStoredExecutionContextDraft(
   args: {
     readonly runId: string;
     readonly workflowAutomationId: string | null;
-    readonly invokedWorkflowId: string | null;
     readonly userId: string;
     readonly orgId: string;
     readonly chatThreadId: string | undefined;
@@ -5309,7 +5287,9 @@ function buildStoredExecutionContextDraft(
         ? {
             customWorkflowSelection: {
               agentId: args.resolved.agentId,
-              invokedWorkflowId: args.invokedWorkflowId,
+              // Older API claims require the key; a null identity admits any
+              // current winner. Remove with that claim check's retirement.
+              invokedWorkflowId: null,
               ...(args.workflowAutomationId === null
                 ? {}
                 : { automationId: args.workflowAutomationId }),
