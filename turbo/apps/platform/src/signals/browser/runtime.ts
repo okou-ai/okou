@@ -1085,6 +1085,7 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
       tabsDisabled: !authorized || controls.tabsDisabled,
       canSyncDisplay:
         authorized && controls.canSyncDisplay && get(display$).ready,
+      canReload: authorized && !get(pending$) && controls.canReload,
       showImageRetry: !get(pending$) && controls.showImageRetry,
       canRetryImage: authorized && controls.canRetryImage,
     };
