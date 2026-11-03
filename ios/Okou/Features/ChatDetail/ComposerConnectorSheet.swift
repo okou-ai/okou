@@ -13,6 +13,13 @@ struct ComposerConnectorButton: View {
     }
     .accessibilityLabel("Connectors")
     .accessibilityIdentifier("composer-connectors")
+    .accessibilityValue(store.uncertain ? "Confirm settings before sending" : "")
+    .overlay(alignment: .topTrailing) {
+      if store.uncertain {
+        Image(systemName: "exclamationmark.circle.fill").font(.caption2).foregroundStyle(.orange)
+          .accessibilityHidden(true)
+      }
+    }
     .disabled(store.agentID == nil)
     .sheet(isPresented: $presented) {
       ComposerConnectorSheet(store: store)
@@ -36,6 +43,9 @@ struct ComposerConnectorSheet: View {
         if let error = store.error {
           ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
         }
+        if let notice = store.notice {
+          Text(notice).font(.footnote).foregroundStyle(.secondary)
+        }
         Section {
           NavigationLink {
             ComposerRemoteControls(store: store)
@@ -44,7 +54,7 @@ struct ComposerConnectorSheet: View {
           }
         }
         Section {
-          if let error = store.connectorError {
+          if let error = store.connectorError, store.error == nil {
             ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
           } else if store.isLoading && store.connectors.isEmpty {
             ProgressView("Loading connectors…")
@@ -134,7 +144,7 @@ struct ComposerConnectorSheet: View {
         .toggleStyle(.switch)
         .tint(.green)
         .fixedSize(horizontal: true, vertical: false)
-        .labelsHidden().disabled(store.isSaving)
+        .labelsHidden().disabled(store.isSaving || store.uncertain)
         .accessibilityLabel("Allow \(connector.label) for this Agent")
       }
       .frame(minHeight: 44)
@@ -234,7 +244,7 @@ private struct ComposerRemoteControls: View {
           )
           .toggleStyle(.switch)
           .tint(.green)
-          .disabled(store.isSaving || !remotes.cloudBrowserAvailable)
+          .disabled(store.isSaving || store.uncertain || !remotes.cloudBrowserAvailable)
           if !remotes.cloudBrowserAvailable {
             Text("Cloud Browser is not available for this workspace.").font(.footnote)
               .foregroundStyle(.secondary)
@@ -261,7 +271,7 @@ private struct ComposerRemoteControls: View {
             }
             .toggleStyle(.switch)
             .tint(.green)
-            .disabled(store.isSaving)
+            .disabled(store.isSaving || store.uncertain)
           }
           if store.visibleComputerUseHosts.isEmpty {
             Text("No online computers").foregroundStyle(.secondary)
@@ -289,7 +299,7 @@ private struct ComposerRemoteControls: View {
                 Text(host.defaultEnabled ? "Default (on)" : "Default (off)").tag("default")
                 Text("On").tag("on")
                 Text("Off").tag("off")
-              }.disabled(store.isSaving)
+              }.disabled(store.isSaving || store.uncertain)
               if proto == .vnc { dependencies(host) }
             }
             Button("Configure \(proto.rawValue.uppercased()) hosts") { store.setupRemote(proto) }

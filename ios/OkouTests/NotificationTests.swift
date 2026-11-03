@@ -46,27 +46,35 @@ final class NotificationTests: XCTestCase {
   }
 
   func testPushRegistrationRecoversThroughTheExplicitNotificationSetupAction() async throws {
-    let status = Mutex(503)
-    let fixture = ConversationHistoryFixture(additional: { request in
-      if request.url?.path == "/api/ios-push-registrations" {
-        return ChatHTTPResponse(
-          status: status.withLock { $0 }, body: #"{"error":{"message":"Push setup unavailable"}}"#)
+    for initialStatus in [503, 401, 426] {
+      let status = Mutex(initialStatus)
+      let fixture = ConversationHistoryFixture(additional: { request in
+        if request.url?.path == "/api/ios-push-registrations" {
+          return ChatHTTPResponse(
+            status: status.withLock { $0 },
+            body: #"{"error":{"message":"Push setup unavailable"}}"#)
+        }
+        throw URLError(.unsupportedURL)
+      })
+      let system = NotificationSystemFixture()
+      system.status = .authorized
+      let service = notifications(system: system)
+      await service.update(workspace: workspace(fixture))
+      service.didRegister(deviceToken: Data(repeating: 0xab, count: 32))
+      try await waitForBusinessResult { service.registrationError != nil }
+      if initialStatus == 503 {
+        XCTAssertNil(service.error)
+      } else {
+        XCTAssertNotNil(service.error, "Session and upgrade failures retain global feedback")
       }
-      throw URLError(.unsupportedURL)
-    })
-    let system = NotificationSystemFixture()
-    system.status = .authorized
-    let service = notifications(system: system)
-    await service.update(workspace: workspace(fixture))
-    service.didRegister(deviceToken: Data(repeating: 0xab, count: 32))
-    try await waitForBusinessResult { service.registrationError != nil }
-    XCTAssertNil(service.error)
 
-    status.withLock { $0 = 200 }
-    await service.retryRegistration()
+      status.withLock { $0 = 200 }
+      await service.retryRegistration()
 
-    XCTAssertNil(service.registrationError)
-    XCTAssertEqual(service.status, .authorized)
+      XCTAssertNil(service.registrationError)
+      XCTAssertNil(service.error)
+      XCTAssertEqual(service.status, .authorized)
+    }
   }
 
   func testBackgroundDelegatePersistsAuthoritativeHistoryForOfflineReopenWithoutMarkingRead()

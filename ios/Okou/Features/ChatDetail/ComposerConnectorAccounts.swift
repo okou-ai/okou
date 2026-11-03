@@ -15,7 +15,12 @@ struct ComposerConnectorAccounts: View {
 
   var body: some View {
     List {
-      if let error { ConnectorLoadError(error: error) { await load() } }
+      if let error {
+        ConnectorLoadError(error: error, isLoading: loading || store.isLoading) {
+          await store.refresh()
+          await load()
+        }
+      }
       Section {
         Button {
           Task { await choose(nil) }
@@ -23,7 +28,7 @@ struct ComposerConnectorAccounts: View {
           accountLabel(
             "Use default", detail: defaultAccount?.label ?? "No usable default account",
             checked: selection == nil)
-        }.disabled(store.isSaving || loading)
+        }.disabled(store.isSaving || store.uncertain || loading)
         ForEach(accounts) { account in
           VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -33,7 +38,7 @@ struct ComposerConnectorAccounts: View {
                 account.label,
                 detail: account.ready ? "Connected" : "Reconnect required",
                 checked: selection == account.id)
-            }.disabled(store.isSaving || loading)
+            }.disabled(store.isSaving || store.uncertain || loading)
             if !account.ready {
               Button("Reconnect this account") {
                 store.connect(target: connector.target, accountID: account.id)
@@ -111,7 +116,7 @@ struct ComposerConnectorAccounts: View {
     } catch is CancellationError {
     } catch {
       guard requestID == request else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
     }
   }
   private func choose(_ id: String?) async {

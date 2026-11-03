@@ -97,7 +97,10 @@ struct MessageAttachmentView: View {
       } catch {
         guard !Task.isCancelled else { return }
         prepared = Prepared(
-          key: key, image: nil, message: MessageAttachmentStore.message(for: error))
+          key: key, image: nil,
+          message: ChatRequestFailure.isTransient(error)
+            ? String(localized: "Tap to download preview")
+            : MessageAttachmentStore.message(for: error))
       }
     }
   }
@@ -143,8 +146,10 @@ struct MessageAttachmentPreview: View {
             Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(
               .secondary)
             Text(error).multilineTextAlignment(.center)
-            Button("Retry download") { viewer.open(preview.attachment) }
-              .buttonStyle(NeutralProminentButtonStyle())
+            if preview.canRetry {
+              Button("Retry download") { viewer.open(preview.attachment) }
+                .buttonStyle(NeutralProminentButtonStyle())
+            }
           } else {
             ProgressView("Downloading attachment…")
             Text(preview.attachment.filename).font(.subheadline)

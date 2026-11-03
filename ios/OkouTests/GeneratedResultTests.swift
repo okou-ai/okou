@@ -92,12 +92,14 @@ final class GeneratedResultTests: XCTestCase {
     viewer.open(source)
     try await waitForBusinessResult { viewer.preview?.error != nil }
     XCTAssertTrue(viewer.preview?.error?.contains("permission") == true)
+    XCTAssertEqual(viewer.preview?.canRetry, false)
     fixture.state.denied.withLock { $0 = false }
     for status in [403, 404] {
       fixture.state.storageStatus.withLock { $0 = status }
       viewer.retry()
       try await waitForBusinessResult { viewer.preview?.error != nil }
       XCTAssertTrue(viewer.preview?.error?.contains(status == 403 ? "denied" : "deleted") == true)
+      XCTAssertEqual(viewer.preview?.canRetry, status == 403)
     }
     fixture.state.storageStatus.withLock { $0 = nil }
     viewer.retry()
@@ -112,6 +114,27 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertNil(viewer.preview)
     viewer.open(source)
     XCTAssertNil(viewer.preview)
+  }
+
+  func testFileDetailsRetryKeepsTheAlreadyDownloadedContent() async throws {
+    let fixture = try await GeneratedResultFixture.make(owner: self)
+    fixture.state.catalogUnavailable.withLock { $0 = true }
+    let conversation = fixture.history.conversation()
+    defer { conversation.close() }
+    let viewer = conversation.artifacts
+    viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
+    try await waitForBusinessResult { viewer.preview?.file != nil }
+    let file = try XCTUnwrap(viewer.preview?.file)
+    XCTAssertNotNil(viewer.catalogWarning)
+    let requests = fixture.state.storageRequests.withLock { $0.count }
+    let resolutions = fixture.state.resolutions.withLock { $0 }
+    fixture.state.catalogUnavailable.withLock { $0 = false }
+    await viewer.refreshDetails()
+    XCTAssertNil(viewer.catalogWarning)
+    XCTAssertEqual(viewer.preview?.file?.url, file.url)
+    XCTAssertEqual(viewer.preview?.artifact.filename, "Notes.txt")
+    XCTAssertEqual(fixture.state.storageRequests.withLock { $0.count }, requests)
+    XCTAssertEqual(fixture.state.resolutions.withLock { $0 }, resolutions)
   }
 
   func testShareConsumerKeepsAuthorizedFileAfterPreviewDismissal() async throws {
@@ -325,6 +348,9 @@ private final class GeneratedResultFixture: Sendable {
       rows: [row],
       artifactResources: { request in
         if request.url?.path.hasSuffix("/artifacts") == true {
+          if state.catalogUnavailable.withLock({ $0 }) {
+            return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Unavailable\"}}")
+          }
           return ChatHTTPResponse(body: catalog)
         }
         let resolution = state.resolutions.withLock {
@@ -358,6 +384,7 @@ private final class GeneratedResultFixture: Sendable {
 }
 
 private final class GeneratedResultState: Sendable {
+  let catalogUnavailable = Mutex(false)
   let storageStatus = Mutex<Int?>(nil)
   let omitVideoPoster = Mutex(false)
   let denied = Mutex(false)

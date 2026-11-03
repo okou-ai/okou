@@ -19,6 +19,7 @@ final class MessageAttachmentStore {
     let attachment: ChatMessageAttachment
     var file: ChatAttachmentFile?
     var error: String?
+    var canRetry = true
   }
 
   private(set) var preview: Preview?
@@ -97,6 +98,7 @@ final class MessageAttachmentStore {
       } catch {
         guard !Task.isCancelled, preview?.id == item.id else { return }
         preview?.error = Self.message(for: error)
+        preview?.canRetry = ChatRequestFailure.canRetry(error)
       }
     }
   }
@@ -153,8 +155,8 @@ final class MessageAttachmentStore {
   static func message(for error: Error) -> String {
     switch (error as? APIClientError)?.statusCode {
     case 403: "You do not have permission to view this attachment."
-    case 404: "This attachment was deleted or is no longer available."
-    default: error.localizedDescription
+    case 404, 410: "This attachment was deleted or is no longer available."
+    default: ChatRequestFailure.message(for: error)
     }
   }
 }

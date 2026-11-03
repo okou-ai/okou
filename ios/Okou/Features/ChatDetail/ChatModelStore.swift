@@ -19,9 +19,17 @@ final class ChatModelStore {
   private var closed = false
   private var reportingCatalog: ModelCatalog?
   private var catalogTask: Task<Void, Never>?
+  let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let didFail: @MainActor (Error) -> Void
 
-  init(client: APIClient, webURL: URL, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    client: APIClient, webURL: URL,
+    readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    },
+    didFail: @escaping @MainActor (Error) -> Void
+  ) {
+    self.readRetrySleep = readRetrySleep
     self.webURL = webURL
     service = ChatModelService(client: client)
     connectorAccess = ChatComposerAccess(client: client)
@@ -38,14 +46,16 @@ final class ChatModelStore {
     isLoading = true
     defer { if request == revision { isLoading = false } }
     do {
-      let result = try await service.load()
+      let result = try await ChatReadRecovery.read("model settings", sleep: readRetrySleep) {
+        try await service.load()
+      }
       guard !closed, !Task.isCancelled, request == revision else { return }
       configuration = result
       error = nil
     } catch is CancellationError {
     } catch {
       guard !closed, request == revision else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       didFail(error)
     }
   }
@@ -120,7 +130,8 @@ final class ChatModelSelectionStore {
     self.models = models
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
-      webURL: models.webURL, thread: thread, didFail: models.report)
+      webURL: models.webURL, thread: thread, readRetrySleep: models.readRetrySleep,
+      didFail: models.report)
     threadID = thread?.id
     stored = thread.map(ChatModelSelection.init)
     hasLoaded = thread == nil
@@ -187,7 +198,11 @@ final class ChatModelSelectionStore {
     isLoading = true
     defer { if request == revision { isLoading = false } }
     do {
-      let value = try await models.service.selection(threadID: threadID)
+      let value = try await ChatReadRecovery.read(
+        "saved model selection", sleep: models.readRetrySleep
+      ) {
+        try await models.service.selection(threadID: threadID)
+      }
       guard !closed, !Task.isCancelled, revision == request else { return }
       stored = value
       hasLoaded = true
@@ -197,7 +212,7 @@ final class ChatModelSelectionStore {
     } catch is CancellationError {
     } catch {
       guard !closed, revision == request else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       uncertain = true
       models.report(error)
     }
@@ -249,8 +264,11 @@ final class ChatModelSelectionStore {
       error = nil
       return
     }
+    var accepted = false
+    var checkingUncertainWrite = false
     do {
       try await models.service.save(next, effort: effort, threadID: threadID)
+      accepted = true
       let confirmed = try await models.service.selection(threadID: threadID)
       guard !closed, !Task.isCancelled else { return }
       stored = confirmed
@@ -261,10 +279,17 @@ final class ChatModelSelectionStore {
       guard !closed else { return }
       // A failed response may follow a successful write. Block sends until a fresh read resolves it.
       uncertain = true
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       models.report(error)
+      if accepted || ChatRequestFailure.isTransient(error) {
+        checkingUncertainWrite = true
+        refreshAfterSave = true
+      }
     }
     await finishSaving()
+    if checkingUncertainWrite && !uncertain && stored != next {
+      error = String(localized: "Your model change was not saved. Choose it again to retry.")
+    }
   }
   private func finishSaving() async {
     isSaving = false
@@ -290,7 +315,7 @@ final class ChatModelSelectionStore {
       error = nil
     } catch {
       guard !closed else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       models.report(error)
     }
     await finishSaving()

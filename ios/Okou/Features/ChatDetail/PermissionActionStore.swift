@@ -148,7 +148,7 @@ final class PermissionActionStore {
       } catch {
         guard !closed, self.generation == generation else { return }
         snapshot = nil
-        self.error = error.localizedDescription
+        self.error = ChatRequestFailure.message(for: error)
         didFail(error)
       }
     }
@@ -206,7 +206,7 @@ final class PermissionActionStore {
       } catch is CancellationError {
       } catch {
         guard !closed, self.generation == generation else { return }
-        self.error = error.localizedDescription
+        self.error = ChatRequestFailure.message(for: error)
         didFail(error)
         // Read back an uncertain write without repeating it or sending a callback.
         if let updated = try? await commands.permissions.load(action),

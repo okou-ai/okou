@@ -15,6 +15,7 @@ final class MessageArtifactStore {
     var htmlExpiresAt: Date?
     var text: ArtifactTextContent?
     var error: String?
+    var canRetry = true
     var renewedHTMLSignature = false
     var isDownloading = false
     var downloadError: String?
@@ -135,6 +136,7 @@ final class MessageArtifactStore {
       } catch {
         guard !Task.isCancelled, preview?.id == previewID else { return }
         preview?.error = Self.message(for: error)
+        preview?.canRetry = ChatRequestFailure.canRetry(error)
       }
     }
   }
@@ -192,6 +194,22 @@ final class MessageArtifactStore {
         guard !Task.isCancelled, preview?.id == item.id else { return }
         preview?.downloadError = Self.message(for: error)
       }
+    }
+  }
+
+  func refreshDetails() async {
+    guard !closed, let id = preview?.id else { return }
+    catalog = nil
+    do {
+      try await loadCatalog()
+      guard !closed, !Task.isCancelled, preview?.id == id, let artifact = preview?.artifact else {
+        return
+      }
+      preview?.artifact = metadata(artifact)
+    } catch {
+      guard !closed, !Task.isCancelled, preview?.id == id else { return }
+      preview?.error = Self.message(for: error)
+      preview?.canRetry = ChatRequestFailure.canRetry(error)
     }
   }
 
@@ -311,6 +329,6 @@ final class MessageArtifactStore {
     if (error as? URLError)?.code == .dataLengthExceedsMaximum {
       return "This result is too large to read in the app. Download it to share or save to Files."
     }
-    return error.localizedDescription
+    return ChatRequestFailure.message(for: error)
   }
 }

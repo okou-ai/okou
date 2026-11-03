@@ -112,7 +112,7 @@ final class ConversationRunUsageStore {
             if wanted[id] == nil { requestedEvents[id] = nil }
             continue
           }
-          states[id] = .failed(error.localizedDescription)
+          states[id] = .failed(ChatRequestFailure.message(for: error))
         }
         if let status = (error as? APIClientError)?.statusCode, status == 401 || status == 426 {
           didFail(error)
