@@ -21,8 +21,7 @@ unexpected() {
   exit 2
 }
 
-if [ "$#" -ne 4 ] || [ "$1" != "show" ] || \
-   [ "$3" != "--property=LoadState" ] || [ "$4" != "--property=ActiveState" ]; then
+if [ "$#" -lt 2 ]; then
   unexpected "$@"
 fi
 case "$2" in
@@ -32,11 +31,29 @@ esac
 
 state=
 IFS= read -r state < "$OKOU_TEST_VERSION_GC_SYSTEMCTL_STATE" || unexpected 'unreadable service state'
+if [ "$#" -eq 2 ] && [ "$1" = "stop" ] && [ "$state" = "stop-deactivating" ]; then
+  printf 'stop %s\n' "$2" >> "$OKOU_TEST_VERSION_GC_SYSTEMCTL_INVOCATIONS"
+  printf 'deactivating\n' > "$OKOU_TEST_VERSION_GC_SYSTEMCTL_STATE"
+  exit 1
+fi
+if [ "$#" -ne 4 ] || [ "$1" != "show" ] || \
+   [ "$3" != "--property=LoadState" ] || [ "$4" != "--property=ActiveState" ]; then
+  unexpected "$@"
+fi
 case "$state" in
-  active|inactive) ;;
+  active|inactive|deactivating|unknown|missing) ;;
+  stop-deactivating) state=inactive ;;
   *) unexpected "service state: $state" ;;
 esac
 printf '%s %s\n' "$state" "$2" >> "$OKOU_TEST_VERSION_GC_SYSTEMCTL_INVOCATIONS"
+if [ "$state" = "unknown" ]; then
+  printf 'systemd unavailable\n' >&2
+  exit 1
+fi
+if [ "$state" = "missing" ]; then
+  printf 'LoadState=not-found\nActiveState=inactive\n'
+  exit 4
+fi
 printf 'LoadState=loaded\nActiveState=%s\n' "$state"
 "#;
 
@@ -65,12 +82,21 @@ async fn run_version_gc_test(test_name: &str) {
     )
     .await;
 
-    // Query errors are intentionally tolerated by GC, so fail the fixture
-    // explicitly if a request did not receive a supported service response.
+    // Distinguish intentional unavailable-state responses from unsupported
+    // fixture requests, which must never silently satisfy a retention test.
     let invocations = std::fs::read_to_string(invocations).unwrap();
     assert!(
         invocations.lines().all(|line| {
-            line.starts_with("inactive vm0-runner-v") || line.starts_with("active vm0-runner-v")
+            [
+                "inactive",
+                "active",
+                "deactivating",
+                "unknown",
+                "missing",
+                "stop",
+            ]
+            .iter()
+            .any(|state| line.starts_with(&format!("{state} vm0-runner-v")))
         }),
         "unexpected systemctl fixture request:\n{invocations}"
     );
@@ -308,29 +334,8 @@ version_gc_test!(gc_versions_removes_inactive_semver_dirs, {
     assert!(!runners_dir.join("v1.0.0").exists());
 });
 
-version_gc_test!(gc_versions_keeps_active_version, {
-    let dir = tempfile::tempdir().unwrap();
-    let home = test_home(dir.path());
-    let version = "v1.0.0";
-    let version_bin = home.bin_dir().join(version);
-    let version_config = home.runners_dir().join(version);
-    std::fs::create_dir_all(&version_bin).unwrap();
-    std::fs::create_dir_all(&version_config).unwrap();
-    age_version_past_gc_min_age(&home, version);
-    set_service_state("active");
-
-    let removed = gc_versions(&home, false, None, None).await.unwrap();
-
-    assert!(removed.is_empty());
-    assert!(version_bin.exists(), "active version binary must survive");
-    assert!(
-        version_config.exists(),
-        "active version config must survive"
-    );
-});
-
-version_gc_test!(gc_versions_rechecks_service_activity_before_removal, {
-    for dry_run in [false, true] {
+version_gc_test!(gc_versions_keeps_active_like_or_unknown_version, {
+    for state in ["active", "deactivating", "unknown"] {
         let dir = tempfile::tempdir().unwrap();
         let home = test_home(dir.path());
         let version = "v1.0.0";
@@ -339,35 +344,113 @@ version_gc_test!(gc_versions_rechecks_service_activity_before_removal, {
         std::fs::create_dir_all(&version_bin).unwrap();
         std::fs::create_dir_all(&version_config).unwrap();
         age_version_past_gc_min_age(&home, version);
-        let service_lock = test_version_service_unit(version).lock_path(&home);
-        drop(lock::open_lock_file(&service_lock).unwrap());
+        set_service_state(state);
 
-        set_service_state("inactive");
-        let analysis = analyze_version_gc(&home, None, None).await.unwrap();
-        set_service_state("active");
-        let removed = gc_versions_with_analysis_and_uninstall(
-            &home,
-            dry_run,
-            analysis,
-            successful_fake_uninstall_service_unit,
-        )
-        .await
-        .unwrap();
+        let removed = gc_versions(&home, false, None, None).await.unwrap();
 
         assert!(removed.is_empty());
-        assert!(
-            version_bin.exists(),
-            "newly active version binary must survive"
-        );
+        assert!(version_bin.exists(), "{state} version binary must survive");
         assert!(
             version_config.exists(),
-            "newly active version config must survive"
-        );
-        assert!(
-            service_lock.exists(),
-            "active version lifecycle lock must survive"
+            "{state} version config must survive"
         );
     }
+});
+
+version_gc_test!(gc_versions_rechecks_service_activity_before_removal, {
+    for dry_run in [false, true] {
+        for state in ["active", "deactivating", "unknown"] {
+            let dir = tempfile::tempdir().unwrap();
+            let home = test_home(dir.path());
+            let version = "v1.0.0";
+            let version_bin = home.bin_dir().join(version);
+            let version_config = home.runners_dir().join(version);
+            std::fs::create_dir_all(&version_bin).unwrap();
+            std::fs::create_dir_all(&version_config).unwrap();
+            age_version_past_gc_min_age(&home, version);
+            let service_lock = test_version_service_unit(version).lock_path(&home);
+            drop(lock::open_lock_file(&service_lock).unwrap());
+
+            set_service_state("inactive");
+            let analysis = analyze_version_gc(&home, None, None).await.unwrap();
+            set_service_state(state);
+            let removed = gc_versions_with_analysis_and_uninstall(
+                &home,
+                dry_run,
+                analysis,
+                successful_fake_uninstall_service_unit,
+            )
+            .await
+            .unwrap();
+
+            assert!(removed.is_empty());
+            assert!(version_bin.exists(), "{state} version binary must survive");
+            assert!(
+                version_config.exists(),
+                "{state} version config must survive"
+            );
+            assert!(
+                service_lock.exists(),
+                "{state} version lifecycle lock must survive"
+            );
+        }
+    }
+});
+
+version_gc_test!(gc_versions_keeps_version_when_stop_fails_during_shutdown, {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    // Real uninstall must never address a shared host's deployed unit, even
+    // when this regression is run against a broken teardown implementation.
+    let version = format!("v0.0.{}", std::process::id());
+    let version = version.as_str();
+    let unit = test_version_service_unit(version);
+    assert!(!unit.unit_file_path().exists());
+    let version_bin = home.bin_dir().join(version);
+    let version_config = home.runners_dir().join(version);
+    std::fs::create_dir_all(&version_bin).unwrap();
+    std::fs::create_dir_all(&version_config).unwrap();
+    age_version_past_gc_min_age(&home, version);
+    let service_lock = unit.lock_path(&home);
+
+    // Inventory and the locked recheck both see inactive. The failed stop
+    // client then leaves systemd deactivating, exercising real uninstall as
+    // the final guard before any directory deletion.
+    set_service_state("stop-deactivating");
+    let analysis = analyze_version_gc(&home, None, None).await.unwrap();
+    let report = gc_versions_with_analysis(&home, false, analysis)
+        .await
+        .unwrap();
+    assert_eq!(report, GcReport::removed_versions(Vec::new()));
+    assert!(version_bin.exists());
+    assert!(version_config.exists());
+    assert!(service_lock.exists());
+    let invocations =
+        std::fs::read_to_string(std::env::var(VERSION_GC_INVOCATIONS_ENV).unwrap()).unwrap();
+    assert!(invocations.contains(&format!("stop {}\n", unit.service_name())));
+    assert!(invocations.ends_with(&format!("deactivating {}\n", unit.service_name())));
+
+    // Once shutdown finishes, the candidate becomes removable on a later pass.
+    // Successful uninstall is injected here; actual removal/locks stay real.
+    set_service_state("inactive");
+    let removed = gc_versions(&home, false, None, None).await.unwrap();
+    assert_eq!(removed, [version]);
+    assert!(!version_bin.exists());
+    assert!(!version_config.exists());
+});
+
+version_gc_test!(gc_versions_removes_version_with_missing_service, {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    let version = "v1.0.0";
+    let version_bin = home.bin_dir().join(version);
+    std::fs::create_dir_all(&version_bin).unwrap();
+    age_version_past_gc_min_age(&home, version);
+    set_service_state("missing");
+
+    let removed = gc_versions(&home, false, None, None).await.unwrap();
+    assert_eq!(removed, [version]);
+    assert!(!version_bin.exists());
 });
 
 version_gc_test!(gc_versions_keeps_version_when_service_uninstall_fails, {
