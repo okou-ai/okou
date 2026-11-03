@@ -29,13 +29,8 @@ import {
   setRootSignal$,
 } from "../signals/root-signal.ts";
 import { logger } from "../signals/log.ts";
-import {
-  detach,
-  Reason,
-  settle,
-  setLoop,
-  throttleCommand,
-} from "../signals/utils.ts";
+import { detach, Reason, settle, setLoop } from "../signals/utils.ts";
+import { throttleCommand } from "../signals/command-scheduling.ts";
 import {
   chatThreadIndicators$,
   reloadChatThreadIndicators$,

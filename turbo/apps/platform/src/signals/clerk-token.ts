@@ -1,4 +1,4 @@
-import { createDeferredPromise, waitForToken } from "./utils.ts";
+import { createDeferredPromise, withCleanup } from "./utils.ts";
 
 interface ClerkTokenSession {
   getToken(options?: { readonly skipCache?: boolean }): Promise<string | null>;
@@ -49,6 +49,17 @@ export function waitForClerkSession(
   resolveIfSettled(clerk.session);
 
   return deferred.promise;
+}
+
+function waitForToken<T>(token: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  const aborted = createDeferredPromise<never>(signal);
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
+  return withCleanup(Promise.race([token, aborted.promise]), () => {
+    if (!aborted.settled()) {
+      aborted.reject(new DOMException("Token read settled", "AbortError"));
+    }
+  });
 }
 
 export async function readClerkToken(

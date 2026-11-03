@@ -16,9 +16,10 @@ import {
   isAuthenticatedAttachmentUrl,
   type ArtifactShareIdentity,
 } from "./attachment-resource-url.ts";
+import { throttleCommand } from "./command-scheduling.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { onRef, resetSignal, throttleCommand } from "./utils.ts";
+import { onRef, resetSignal } from "./utils.ts";
 
 // Hosted sites are public publications addressed by their own URL, so the
 // viewer offers their link instead of an artifact permission control.
