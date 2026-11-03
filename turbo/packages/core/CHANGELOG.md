@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.812.1](https://github.com/okou-ai/okou/compare/core-v8.812.0...core-v8.812.1) (2026-11-03)
+
+
+### Refactoring
+
+* **workflows:** retire official storage execution compatibility ([#44854](https://github.com/okou-ai/okou/issues/44854)) ([8eb2a91](https://github.com/okou-ai/okou/commit/8eb2a91f518b62e0363749f8387f36a46dc4cd38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.37.0
+
 ## [8.812.0](https://github.com/okou-ai/okou/compare/core-v8.811.1...core-v8.812.0) (2026-11-03)
 
 

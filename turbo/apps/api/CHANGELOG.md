@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.44.0](https://github.com/okou-ai/okou/compare/api-v2.43.0...api-v2.44.0) (2026-11-03)
+
+
+### Features
+
+* add shared imessage group discovery ([#44856](https://github.com/okou-ai/okou/issues/44856)) ([0980704](https://github.com/okou-ai/okou/commit/0980704d01366e046fc13733fb679f7740253a76))
+
+
+### Bug Fixes
+
+* allow project snapshot garbage collection progress ([#44855](https://github.com/okou-ai/okou/issues/44855)) ([cce4d0c](https://github.com/okou-ai/okou/commit/cce4d0cda93e3e861f6c202e6056589fd5ee18a4))
+* attribute local firewall auth failures through run completion ([#44847](https://github.com/okou-ai/okou/issues/44847)) ([d672c61](https://github.com/okou-ai/okou/commit/d672c6141ad26b6f19522363841b7659a7c38673))
+* **workflows:** retry transient gmail history reads without warning logs ([#44853](https://github.com/okou-ai/okou/issues/44853)) ([91cdfb9](https://github.com/okou-ai/okou/commit/91cdfb92a83bad344f2849d45b9b6b7ed12b5094))
+
+
+### Refactoring
+
+* **workflows:** retire official storage execution compatibility ([#44854](https://github.com/okou-ai/okou/issues/44854)) ([8eb2a91](https://github.com/okou-ai/okou/commit/8eb2a91f518b62e0363749f8387f36a46dc4cd38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.37.0
+    * @okouai/core bumped to 8.812.1
+    * @okouai/db bumped to 2.18.4
+    * @okouai/pi-agent-runtime bumped to 1.51.56
+
 ## [2.43.0](https://github.com/okou-ai/okou/compare/api-v2.42.0...api-v2.43.0) (2026-11-03)
 
 

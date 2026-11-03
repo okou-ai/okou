@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.185](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.184...guest-telemetry-v0.3.185) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share telemetry destination cleanup ownership ([#44860](https://github.com/okou-ai/okou/issues/44860)) ([27e972b](https://github.com/okou-ai/okou/commit/27e972ba025e79d7d7f1c67d004e9963459867f4))
+
 ## [0.3.184](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.183...guest-telemetry-v0.3.184) (2026-11-03)
 
 ## [0.3.183](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.182...guest-telemetry-v0.3.183) (2026-11-02)

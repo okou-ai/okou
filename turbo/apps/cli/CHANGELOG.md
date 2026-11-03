@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.16.0](https://github.com/okou-ai/okou/compare/cli-v10.15.1...cli-v10.16.0) (2026-11-03)
+
+
+### Features
+
+* add shared imessage group discovery ([#44856](https://github.com/okou-ai/okou/issues/44856)) ([0980704](https://github.com/okou-ai/okou/commit/0980704d01366e046fc13733fb679f7740253a76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.37.0
+    * @okouai/core bumped to 8.812.1
+    * @okouai/pi-agent-runtime bumped to 1.51.56
+
 ## [10.15.1](https://github.com/okou-ai/okou/compare/cli-v10.15.0...cli-v10.15.1) (2026-11-03)
 
 

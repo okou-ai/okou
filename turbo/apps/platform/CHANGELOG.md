@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1087.2](https://github.com/okou-ai/okou/compare/app-v0.1087.1...app-v0.1087.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* attribute local firewall auth failures through run completion ([#44847](https://github.com/okou-ai/okou/issues/44847)) ([d672c61](https://github.com/okou-ai/okou/commit/d672c6141ad26b6f19522363841b7659a7c38673))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.37.0
+    * @okouai/core bumped to 8.812.1
+
 ## [0.1087.1](https://github.com/okou-ai/okou/compare/app-v0.1087.0...app-v0.1087.1) (2026-11-03)
 
 
