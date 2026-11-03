@@ -3,7 +3,7 @@ import {
   type AgentPhoneGroupListResponse,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
+import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { command, computed } from "ccstate";
 import { and, asc, desc, eq, gt, isNotNull, or } from "drizzle-orm";
@@ -68,14 +68,9 @@ const groupListCandidates$ = computed(async (get) => {
       },
     )
     .from(agentphoneMessages)
-    .innerJoin(
-      agentphoneMessageVisibility,
-      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-    )
     .where(
       and(
-        eq(agentphoneMessageVisibility.orgId, auth.orgId),
-        eq(agentphoneMessageVisibility.userId, auth.userId),
+        agentPhoneMessageVisibleTo(auth),
         eq(agentphoneMessages.channel, "imessage"),
         isNotNull(agentphoneMessages.groupId),
         isNotNull(agentphoneMessages.conversationId),

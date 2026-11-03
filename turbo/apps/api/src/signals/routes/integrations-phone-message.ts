@@ -1,7 +1,6 @@
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
-import { and, desc, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { command, computed } from "ccstate";
 import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
@@ -23,9 +22,9 @@ import {
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
 import { resolveAgentPhoneParticipantVisibilityRecipients$ } from "../services/agentphone-shared.service";
+import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 import { settle } from "../utils";
 import { optionalEnv } from "../../lib/env";
-import { nowDate } from "../../lib/time";
 
 function routeError<Status extends 400 | 401 | 403 | 404 | 502>(
   status: Status,
@@ -171,16 +170,6 @@ const reactionTarget$ = computed(async (get) => {
     return undefined;
   }
   const db = get(db$);
-  const groupVisibility = db
-    .select({ messageId: agentphoneMessageVisibility.messageId })
-    .from(agentphoneMessageVisibility)
-    .where(
-      and(
-        eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-        eq(agentphoneMessageVisibility.orgId, auth.orgId),
-        eq(agentphoneMessageVisibility.userId, auth.userId),
-      ),
-    );
   const [message] = await db
     .select({
       messageId: agentphoneMessages.agentphoneMessageId,
@@ -205,7 +194,10 @@ const reactionTarget$ = computed(async (get) => {
             isNull(agentphoneMessages.groupId),
             eq(agentphoneMessages.agentphoneUserLinkId, agentphoneUserLinks.id),
           ),
-          and(isNotNull(agentphoneMessages.groupId), exists(groupVisibility)),
+          and(
+            isNotNull(agentphoneMessages.groupId),
+            agentPhoneMessageVisibleTo(auth),
+          ),
         ),
       ),
     )
@@ -373,7 +365,6 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return groupNotFound();
   }
 
-  const asOf = nowDate();
   const roster = await settle(
     getAgentPhoneConversationParticipants(
       { conversationId: target.conversationId },
@@ -394,7 +385,6 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   const recipients = await set(
     resolveAgentPhoneParticipantVisibilityRecipients$,
     roster.value,
-    asOf,
     signal,
   );
   if (

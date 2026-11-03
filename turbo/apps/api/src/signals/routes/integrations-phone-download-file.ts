@@ -2,10 +2,10 @@ import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { integrationsPhoneDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 
 import { inferMimetype } from "../../lib/mimetype";
 import { logger } from "../../lib/log";
@@ -71,16 +71,6 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsPhoneDownloadFileContract.download));
   const db = get(db$);
-  const groupVisibility = db
-    .select({ messageId: agentphoneMessageVisibility.messageId })
-    .from(agentphoneMessageVisibility)
-    .where(
-      and(
-        eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-        eq(agentphoneMessageVisibility.orgId, auth.orgId),
-        eq(agentphoneMessageVisibility.userId, auth.userId),
-      ),
-    );
   const [message] = await db
     .select({
       mediaUrl: agentphoneMessages.mediaUrl,
@@ -111,7 +101,10 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
             eq(whatsappUserLinks.userId, auth.userId),
             eq(whatsappUserLinks.orgId, auth.orgId),
           ),
-          and(isNotNull(agentphoneMessages.groupId), exists(groupVisibility)),
+          and(
+            isNotNull(agentphoneMessages.groupId),
+            agentPhoneMessageVisibleTo(auth),
+          ),
         ),
       ),
     )

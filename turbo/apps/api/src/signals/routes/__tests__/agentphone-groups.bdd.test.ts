@@ -3,7 +3,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import {
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
@@ -51,6 +51,44 @@ function currentGroup(args: {
 }
 
 describe("iMessage group discovery", () => {
+  it("discovers a group from messages received before the participant connected Okou", async () => {
+    const { integrations, ap, phone, sends } = await linkedGroupMember();
+    const recipient = integrations.user();
+    const recipientPhone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    const receivedAt = new Date(now()).toISOString();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "already visible to both group members",
+      conversationId,
+      isGroup: true,
+      participants: [{ identifier: phone }, { identifier: recipientPhone }],
+      receivedAt,
+    });
+    mockNow(now() + 1000);
+    await ap.linkViaWebhookConnectPrompt(recipient, recipientPhone, sends);
+    server.use(
+      http.get(
+        `https://api.agentphone.test/v1/conversations/${conversationId}`,
+        () => {
+          return HttpResponse.json(
+            currentGroup({ conversationId, groupId, phone: recipientPhone }),
+          );
+        },
+      ),
+    );
+    const listed = await integrations.requestAgentPhoneGroupList(
+      recipient,
+      { limit: 25 },
+      [200],
+    );
+    expect(listed.body.groups).toMatchObject([
+      { groupId, lastMessageAt: receivedAt },
+    ]);
+  });
+
   it("lists each shared group once with its current name and latest visible message time", async () => {
     const { integrations, ap, actor, phone } = await linkedGroupMember();
     const conversationId = uniqueConversationId();

@@ -34,6 +34,7 @@ import {
   resolveAgentPhoneConversationVisibilityRecipients$,
   resolveAgentPhoneReplyFooterText$,
   storeOutboundAgentPhoneMessage$,
+  type AgentPhoneMessageVisibilityRecipient,
 } from "./agentphone-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
@@ -311,10 +312,7 @@ interface AgentPhoneChatSendResult {
     readonly message: AgentPhoneSendResult;
     readonly body: string;
   }[];
-  readonly visibilityRecipients: readonly {
-    readonly orgId: string;
-    readonly userId: string;
-  }[];
+  readonly visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[];
 }
 
 const sendAgentPhoneReply$ = command(
@@ -340,7 +338,6 @@ const sendAgentPhoneReply$ = command(
       ? await set(
           resolveAgentPhoneConversationVisibilityRecipients$,
           args.target.conversationId!,
-          nowDate(),
           signal,
         )
       : [];
