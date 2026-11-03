@@ -15,8 +15,11 @@ enum ChatRequestFailure {
   }
 
   static func message(for error: Error) -> String {
+    if (error as? APIClientError)?.statusCode == 429 {
+      return String(localized: "Too many requests. Wait a moment before trying again.")
+    }
     if isTransient(error) {
-      return String(localized: "Unable to connect right now. Try again in a moment.")
+      return String(localized: "Unable to complete this request right now. Try again in a moment.")
     }
     return error.localizedDescription
   }
