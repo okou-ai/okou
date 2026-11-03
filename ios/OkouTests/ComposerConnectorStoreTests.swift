@@ -199,13 +199,16 @@ final class ComposerConnectorStoreTests: XCTestCase {
           status: 403, body: #"{"error":{"message":"Remote access is blocked"}}"#)
       }
       let response = try composerResponse(request)
-      if request.url!.path.hasSuffix("/remote-access"), holdOld.withLock({ value in
-        let held = value
-        value = false
-        return held
-      }) {
-        oldReading.fulfill()
-        await oldResponse.wait()
+      if request.url!.path.hasSuffix("/remote-access") {
+        let shouldHold = holdOld.withLock { value in
+          let held = value
+          value = false
+          return held
+        }
+        if shouldHold {
+          oldReading.fulfill()
+          await oldResponse.wait()
+        }
       }
       return response
     }
