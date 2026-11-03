@@ -856,6 +856,8 @@ function normalSendRequestFacts(
         | "frameworkSessionId"
         | "frameworkSessionRunId"
         | "projectId"
+        | "title"
+        | "renamedAt"
       >
     | undefined,
   event: Pick<
@@ -875,6 +877,9 @@ function normalSendRequestFacts(
       framework: previousBinding?.framework ?? null,
       frameworkSessionId: previousBinding?.frameworkSessionId ?? null,
       frameworkSessionRunId: previousBinding?.frameworkSessionRunId ?? null,
+      // A new thread starts untitled; title generation re-reads that case.
+      title: previousBinding?.title ?? null,
+      renamedAt: previousBinding?.renamedAt ?? null,
     },
     input: {
       id: event.id,

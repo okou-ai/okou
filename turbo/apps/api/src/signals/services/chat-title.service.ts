@@ -405,10 +405,16 @@ export const generateAndPersistChatThreadTitle$ = command(
       readonly orgId: string;
       readonly prompt: string;
       readonly includePriorRounds: boolean;
+      /** A captured row had a title or rename, which the fresh read rejects. */
+      readonly knownTitled: boolean;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    if (!gcpLlmConfiguration() || args.prompt.trim().length === 0) {
+    if (
+      args.knownTitled ||
+      !gcpLlmConfiguration() ||
+      args.prompt.trim().length === 0
+    ) {
       return;
     }
     await tapError(

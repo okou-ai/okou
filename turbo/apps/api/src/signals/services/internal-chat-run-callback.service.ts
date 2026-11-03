@@ -2444,6 +2444,8 @@ export type QueuedPromptLaunchInput = Pick<
 
 export interface QueuedPromptLaunchContext {
   readonly userId: string;
+  /** The request snapshot already showed a title or rename; never cleared. */
+  readonly knownTitled: boolean;
   readonly runInput: QueuedPromptLaunchInput;
 }
 
@@ -2468,6 +2470,7 @@ export const recordQueuedPromptRunLaunch$ = command(
           orgId: runInput.orgId,
           prompt: runInput.prompt,
           includePriorRounds: true,
+          knownTitled: args.knownTitled,
         },
         signal,
       ),

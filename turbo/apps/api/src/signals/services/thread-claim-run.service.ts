@@ -1153,6 +1153,20 @@ function claimRejectionContext(
     },
   };
 }
+
+/**
+ * Generation writes a title only over NULL title and renamed_at, and a rename
+ * sets both, so neither returns to NULL. A titled request snapshot therefore
+ * stays titled; other picks report false and keep the fresh title read.
+ */
+function requestThreadTitled(requestFacts: ChatThreadRequestFacts | undefined) {
+  return (
+    requestFacts !== undefined &&
+    (requestFacts.thread.title !== null ||
+      requestFacts.thread.renamedAt !== null)
+  );
+}
+
 function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
   if (record.kind === "automation") {
     return record;
@@ -1163,6 +1177,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
     timing: record.timing,
     context: {
       userId: record.context.userId,
+      knownTitled: record.context.knownTitled,
       runInput: {
         orgId: input.orgId,
         threadId: input.threadId,
@@ -1786,7 +1801,11 @@ export function createThreadClaimRunObjects(
         launchRecord: {
           kind: "prompt",
           timing,
-          context: { userId: head.userId, runInput },
+          context: {
+            userId: head.userId,
+            knownTitled: requestThreadTitled(requestFacts),
+            runInput,
+          },
         },
       };
     },
