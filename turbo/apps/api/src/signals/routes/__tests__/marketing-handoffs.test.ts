@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   GetObjectCommand,
@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   marketingHandoffsContract,
+  serializeMarketingHandoff,
   type MarketingHandoffManifest,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
@@ -234,6 +235,250 @@ describe("Marketing content handoff", () => {
         secretAccessKey: "test-marketing-secret",
       });
     }
+  });
+
+  it("checks public publication receipts without exposing private handoffs", async () => {
+    const privateHandoff = await create();
+    const published = await accept(
+      api().publish({
+        headers: publisher,
+        body: manifest(`Public preset ${taskId}`),
+      }),
+      [200],
+    );
+    const response = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: {
+          hashes: [
+            published.body.hash,
+            privateHandoff.body.hash,
+            privateHandoff.body.hash,
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(response.body.missing).toStrictEqual([privateHandoff.body.hash]);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(
+      (
+        await api().publishStatus({
+          headers: auth,
+          body: { hashes: [privateHandoff.body.hash] },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await api().publishBatch({
+          headers: auth,
+          body: { manifests: [manifest()] },
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("publishes only missing unique manifests and reuses the single-publish receipts", async () => {
+    const existing = manifest(`Existing preset ${taskId}`);
+    const added = manifest(`New preset ${taskId}`);
+    const first = await accept(
+      api().publish({ headers: publisher, body: existing }),
+      [200],
+    );
+    const puts = () => {
+      return context.mocks.s3.send.mock.calls.filter(([request]) => {
+        return request instanceof PutObjectCommand;
+      }).length;
+    };
+    const before = puts();
+    const batch = await accept(
+      api().publishBatch({
+        headers: publisher,
+        body: { manifests: [existing, added, added] },
+      }),
+      [200],
+    );
+    const newHash = createHash("sha256")
+      .update(serializeMarketingHandoff(added))
+      .digest("hex");
+    expect(batch.body.hashes).toStrictEqual([first.body.hash, newHash]);
+    expect(puts() - before).toBe(1);
+    await accept(
+      api().publishBatch({
+        headers: publisher,
+        body: { manifests: [added, existing] },
+      }),
+      [200],
+    );
+    expect(puts() - before).toBe(1);
+    const status = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: { hashes: batch.body.hashes },
+      }),
+      [200],
+    );
+    expect(status.body.missing).toStrictEqual([]);
+    await enableActor();
+    const resolved = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: newHash },
+        body: {},
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(added);
+  });
+
+  it("does not make private files public through batch publication", async () => {
+    const file = await accept(
+      api().upload({
+        headers: auth,
+        extraHeaders: { origin },
+        body: {
+          filename: "private.txt",
+          contentType: "text/plain",
+          data: Buffer.from(taskId).toString("base64"),
+        },
+      }),
+      [200],
+    );
+    const body = { ...manifest(), files: [file.body] };
+    const result = await api().publishBatch({
+      headers: publisher,
+      body: { manifests: [body] },
+    });
+    expect(result.status).toBe(404);
+    const hash = createHash("sha256")
+      .update(serializeMarketingHandoff(body))
+      .digest("hex");
+    const status = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes: [hash] } }),
+      [200],
+    );
+    expect(status.body.missing).toStrictEqual([hash]);
+    await enableActor();
+    expect(
+      (
+        await api().resolve({
+          headers: auth,
+          extraHeaders: { origin },
+          params: { hash },
+          body: {},
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  it("keeps a partially failed batch unpublished and safely retries its immutable objects", async () => {
+    const manifests = [
+      manifest(`First ${taskId}`),
+      manifest(`Second ${taskId}`),
+    ];
+    const hashes = manifests.map((body) => {
+      return createHash("sha256")
+        .update(serializeMarketingHandoff(body))
+        .digest("hex");
+    });
+    context.mocks.s3.send.mockRejectedValueOnce(
+      new Error("Storage unavailable"),
+    );
+    const failed = await api().publishBatch({
+      headers: publisher,
+      body: { manifests },
+    });
+    expect(failed.status).toBe(500);
+    const unpublished = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(unpublished.body.missing).toStrictEqual(hashes);
+    const retry = await accept(
+      api().publishBatch({ headers: publisher, body: { manifests } }),
+      [200],
+    );
+    expect(retry.body.hashes).toStrictEqual(hashes);
+    const published = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(published.body.missing).toStrictEqual([]);
+  });
+
+  it("publishes a batch that references an already public file", async () => {
+    const file = await accept(
+      api().publishFile({
+        headers: publisher,
+        body: {
+          filename: "preset.txt",
+          contentType: "text/plain",
+          data: Buffer.from(taskId).toString("base64"),
+        },
+      }),
+      [200],
+    );
+    const body = { ...manifest(), files: [file.body] };
+    const batch = await accept(
+      api().publishBatch({ headers: publisher, body: { manifests: [body] } }),
+      [200],
+    );
+    await enableActor();
+    const resolved = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: batch.body.hashes[0]! },
+        body: {},
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(body);
+  });
+
+  it("rejects a batch manifest larger than the reader's individual object limit", async () => {
+    const body = {
+      ...manifest("\u0000".repeat(20_000)),
+      options: { showcase: "\u0000".repeat(2048) },
+    };
+    expect(
+      (
+        await api().publishBatch({
+          headers: publisher,
+          body: { manifests: [body] },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("bounds publisher inventory and write batches", async () => {
+    const hash = "a".repeat(64);
+    expect(
+      (
+        await api().publishStatus({
+          headers: publisher,
+          body: {
+            hashes: Array.from({ length: 501 }, () => {
+              return hash;
+            }),
+          },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await api().publishBatch({
+          headers: publisher,
+          body: {
+            manifests: Array.from({ length: 101 }, () => {
+              return manifest();
+            }),
+          },
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("still rejects missing handoff credentials after the transport is initialized", async () => {
