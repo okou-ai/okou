@@ -158,7 +158,7 @@ interface BrowserUseCdpCommand {
   readonly maxResponseBytes?: number;
 }
 
-class BrowserUseCdpCommandError extends Error {
+export class BrowserUseCdpCommandError extends Error {
   constructor(
     message: string,
     readonly code: number | undefined,
