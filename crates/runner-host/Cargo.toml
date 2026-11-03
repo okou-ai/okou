@@ -25,6 +25,7 @@ tracing = { workspace = true, features = ["attributes", "std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 futures-util = { workspace = true, features = ["async-await"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["net", "signal", "test-util"] }

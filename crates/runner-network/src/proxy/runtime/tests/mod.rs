@@ -1,10 +1,11 @@
+use cli_test_support::child::KillAndWaitChild;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 
 use super::*;
 
 struct ProbeChild {
-    child: Child,
+    child: KillAndWaitChild,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
 }
@@ -24,14 +25,14 @@ impl ProbeChild {
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Self {
-            child,
+            child: KillAndWaitChild(child),
             stdin,
             stdout,
         }
     }
 
     fn pid(&self) -> u32 {
-        self.child.id()
+        self.child.0.id()
     }
 
     fn assert_responds(&mut self) {
@@ -69,6 +70,7 @@ async fn acquisition_reconciles_canonical_process() {
 
     let status = child
         .child
+        .0
         .try_wait()
         .unwrap()
         .expect("canonical-marked process is still running after reconciliation");
@@ -98,13 +100,6 @@ fn runtime_marker_resolver_reads_canonical_marker_as_raw_bytes() {
         resolve_runtime_marker(&marker_environment(Some(canonical))),
         Some(canonical.as_slice()),
     );
-}
-
-impl Drop for ProbeChild {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
 }
 
 async fn process_identity(pid: u32) -> ProcessIdentity {

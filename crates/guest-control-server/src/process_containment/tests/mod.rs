@@ -1,9 +1,8 @@
 use super::*;
+use cli_test_support::child::KillAndWaitChild as ChildGuard;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
-
-struct ChildGuard(Child);
 
 struct OomEvidenceExchange {
     client: UnixStream,
@@ -74,13 +73,6 @@ fn current_cgroup_path() -> PathBuf {
         .find_map(|line| line.strip_prefix("0::/"))
         .unwrap();
     Path::new(CGROUP_V2_MOUNT_PATH).join(relative)
-}
-
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
 }
 
 #[test]

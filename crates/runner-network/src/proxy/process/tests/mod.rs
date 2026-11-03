@@ -552,14 +552,7 @@ async fn wait_for_reaped_pid(pid: u32, starttime: u64) -> bool {
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn wait_for_reaped_pid_leaves_zombie_for_owner() {
-    struct UnreapedChild(std::process::Child);
-
-    impl Drop for UnreapedChild {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
+    use cli_test_support::child::KillAndWaitChild as UnreapedChild;
 
     // A standard-library child has no async reaper that could mask a bad observer.
     let mut child = UnreapedChild(

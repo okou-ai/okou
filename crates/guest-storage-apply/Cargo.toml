@@ -16,6 +16,7 @@ ureq = { workspace = true, features = ["gzip", "platform-verifier", "rustls"] }
 guest-telemetry.workspace = true
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 httpmock = { workspace = true, features = ["cookies"] }
 proptest = { workspace = true, features = ["std"] }
 tempfile = { workspace = true, features = ["getrandom"] }

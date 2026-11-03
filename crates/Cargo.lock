@@ -2121,6 +2121,7 @@ name = "guest-control-server"
 version = "0.24.68"
 dependencies = [
  "chrono",
+ "cli-test-support",
  "guest-contracts",
  "guest-control-proto",
  "libc",
@@ -2185,6 +2186,7 @@ dependencies = [
 name = "guest-storage-apply"
 version = "0.28.6"
 dependencies = [
+ "cli-test-support",
  "flate2",
  "guest-contracts",
  "guest-telemetry",
@@ -2226,6 +2228,7 @@ dependencies = [
 name = "guest-tool-exec"
 version = "0.3.50"
 dependencies = [
+ "cli-test-support",
  "guest-contracts",
  "libc",
  "process-control-ipc",
@@ -3083,6 +3086,7 @@ name = "nbd-cow"
 version = "0.5.9"
 dependencies = [
  "bitvec",
+ "cli-test-support",
  "libc",
  "nix",
  "serde_json",
@@ -4049,6 +4053,7 @@ dependencies = [
  "chrono",
  "clap",
  "claude-mock",
+ "cli-test-support",
  "codex-mock",
  "flate2",
  "futures-util",
@@ -4163,6 +4168,7 @@ name = "runner-host"
 version = "0.10.18"
 dependencies = [
  "chrono",
+ "cli-test-support",
  "futures-util",
  "hex",
  "libc",
@@ -4220,6 +4226,7 @@ dependencies = [
  "api-contracts",
  "async-trait",
  "chrono",
+ "cli-test-support",
  "futures-util",
  "guest-contracts",
  "hex",

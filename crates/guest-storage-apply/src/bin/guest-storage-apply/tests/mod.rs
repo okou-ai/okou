@@ -92,21 +92,13 @@ fn run_manifest_file_and_remove_rejects_symlink_to_regular_file() {
 #[cfg(unix)]
 #[test]
 fn run_manifest_file_and_remove_rejects_fifo_without_blocking() {
+    use cli_test_support::child::KillAndWaitChild as FifoChild;
     use std::ffi::CString;
     use std::io;
     use std::io::{Read as _, Seek as _};
     use std::os::unix::ffi::OsStrExt;
-    use std::process::{Child, Command, Stdio};
+    use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
-
-    struct FifoChild(Child);
-
-    impl Drop for FifoChild {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("storage-manifest.json");
