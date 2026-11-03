@@ -235,7 +235,7 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
       {expanded && (
         <div
           id={contentsId}
-          className="ml-6 min-w-0 pb-1"
+          className="ml-6 flex min-w-0 flex-col gap-1 py-1"
           aria-label={project.name}
         >
           {archived && (
