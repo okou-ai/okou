@@ -53,7 +53,8 @@ struct ComposerConnectorPermissions: View {
                   })
               }
             }
-          }.disabled(store.isSaving || store.uncertain || filteredPermissions(state.metadata).isEmpty)
+          }.disabled(
+            store.isSaving || store.uncertain || filteredPermissions(state.metadata).isEmpty)
         } footer: {
           Text("These permissions apply to this Agent across its conversations.")
         }
