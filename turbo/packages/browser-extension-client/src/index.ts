@@ -129,9 +129,7 @@ export type BridgeFailureReason =
   | "capability-missing"
   | "native-operation-failed"
   | "closed"
-  | "readiness-session-detached"
   | "browser-session-detached"
-  | "worker-version-changed"
   | "worker-crashed"
   | "worker-detached"
   | "worker-context-cleared"
@@ -220,6 +218,12 @@ interface Target {
   url: string;
 }
 
+interface ReadinessObserver {
+  readonly targetId: string;
+  sessionId?: string;
+  lost: boolean;
+}
+
 /** Each client owns only its CDP sessions; closing it never closes a tab. */
 export class OkouBrowserClient {
   /** Unexpected loss retains a safe BrowserBridgeError; intentional close cancels. */
@@ -232,7 +236,8 @@ export class OkouBrowserClient {
   private readonly listeners = new Set<(event: NativeEvent) => void>();
   private readonly pages = new Set<string>();
   private browserSession: string | undefined;
-  private readinessSession: string | undefined;
+  private readinessObserver: ReadinessObserver | undefined;
+  private observingReadiness = false;
   private workerSession: string | undefined;
   private workerTarget: Target | undefined;
   private workerChanged: (() => void) | undefined;
@@ -427,24 +432,10 @@ export class OkouBrowserClient {
     );
     this.current();
     this.stage = "list-targets";
-    const result = record(
-      await this.request(
-        "Target.getTargets",
-        { filter: [{ exclude: false }] },
-        this.browserSession,
-      ),
-    );
-    this.current();
-    if (!Array.isArray(result.targetInfos))
-      throw new BrowserBridgeError("protocol");
-    for (const info of result.targetInfos)
-      this.workerTarget ??= this.worker(info);
+    const targets = await this.listTargets();
+    for (const info of targets) this.workerTarget ??= this.worker(info);
     this.stage = "start-worker";
-    const worker = await this.startWorker(
-      result.targetInfos,
-      timeoutMs,
-      wakeWorker,
-    );
+    const worker = await this.startWorker(targets, timeoutMs, wakeWorker);
     this.current();
     this.stage = "enable-runtime";
     await this.request("Runtime.enable", {}, worker);
@@ -469,72 +460,172 @@ export class OkouBrowserClient {
     this.stage = "ready";
   }
 
+  private async listTargets(): Promise<unknown[]> {
+    const result = record(
+      await this.request(
+        "Target.getTargets",
+        { filter: [{ exclude: false }] },
+        this.browserSession,
+      ),
+    );
+    this.current();
+    if (!Array.isArray(result.targetInfos))
+      throw new BrowserBridgeError("protocol");
+    return result.targetInfos;
+  }
+
   private async startWorker(
     targets: unknown[],
     timeoutMs: number,
     wakeWorker: boolean,
   ): Promise<string> {
-    const tab = targets.find((info) => {
-      return record(info).type === "tab";
-    });
-    const page = targets.find((info) => {
-      return record(info).type === "page";
-    });
     const browser = this.browserSession;
+    let woken = false;
+    const deadline = performance.now() + timeoutMs;
+    const timer = setTimeout(() => {
+      this.invalidate("worker-readiness-timeout");
+    }, timeoutMs);
     try {
-      if (page) {
-        const id = record(page).targetId;
-        if (typeof id !== "string") throw new BrowserBridgeError("protocol");
-        this.readinessSession = await this.attach("page", id);
+      for (;;) {
         this.current();
-        // A retained target and even a new Runtime context can precede module
-        // evaluation. Native running status is published after script startup.
-        this.workerTarget = undefined;
-        await this.request("ServiceWorker.enable", {}, this.readinessSession);
-        this.current();
-      }
-      if (wakeWorker && tab) {
-        await this.request(
-          "Extensions.triggerAction",
-          { id: this.runtimeId, targetId: record(tab).targetId },
-          browser,
-        );
-        this.current();
-      }
-      if (!this.workerTarget && !this.readinessSession && (!wakeWorker || !tab))
-        throw this.failure("unavailable", "worker-unobserved");
-      if (!this.workerTarget) {
-        await new Promise<void>((resolve, reject) => {
-          const finish = () => {
-            clearTimeout(timer);
-            this.workerChanged = undefined;
-            this.signal.removeEventListener("abort", aborted);
-          };
-          const aborted = () => {
-            finish();
-            reject(
-              this.signal.aborted
-                ? this.signal.reason
-                : this.failure("unavailable", "worker-readiness-timeout"),
-            );
-          };
-          const timer = setTimeout(aborted, timeoutMs);
-          this.workerChanged = () => {
-            finish();
-            resolve();
-          };
-          this.signal.addEventListener("abort", aborted, { once: true });
-        });
+        if (performance.now() >= deadline)
+          throw this.failure("unavailable", "worker-readiness-timeout");
+        const observer = this.observePage(targets);
+        let replacementTargets: unknown[] | undefined;
+        try {
+          if (observer) {
+            replacementTargets = await this.enableReadiness(observer);
+            this.current();
+          }
+          if (!observer?.lost) {
+            const tab = targets.find((info) => {
+              return record(info).type === "tab";
+            });
+            if (wakeWorker && tab && !woken) {
+              woken = await this.wakeWorker(record(tab).targetId, observer);
+              this.current();
+            }
+            if (!this.workerTarget && !observer && (!wakeWorker || !tab))
+              throw this.failure("unavailable", "worker-unobserved");
+            await this.waitForWorker(observer);
+            this.current();
+            if (!observer?.lost) break;
+          }
+        } finally {
+          // Retire before detach: its late events cannot affect the next owner.
+          this.readinessObserver = undefined;
+          const session = observer?.sessionId;
+          if (session && this.pages.delete(session))
+            await this.detach(session, browser);
+        }
+        targets = replacementTargets ?? (await this.listTargets());
       }
       this.current();
       if (!this.workerTarget)
         throw this.failure("unavailable", "worker-unobserved");
       return await this.attach("worker", this.workerTarget.targetId);
     } finally {
-      const page = this.readinessSession;
-      this.readinessSession = undefined;
-      if (page && this.pages.delete(page)) await this.detach(page, browser);
+      clearTimeout(timer);
+      this.observingReadiness = false;
     }
+  }
+
+  private async wakeWorker(
+    targetId: unknown,
+    observer?: ReadinessObserver,
+  ): Promise<boolean> {
+    try {
+      await this.request(
+        "Extensions.triggerAction",
+        { id: this.runtimeId, targetId },
+        this.browserSession,
+      );
+      return true;
+    } catch (error) {
+      this.current();
+      if (
+        !observer?.lost ||
+        !(error instanceof BrowserBridgeError) ||
+        error.diagnostics.reason !== "cdp-request-failed"
+      )
+        throw error;
+      // With proven observer loss, repeat only this no-op startup trigger on
+      // fresh inventory. Caller mutations never retry.
+      return false;
+    }
+  }
+
+  private observePage(targets: unknown[]): ReadinessObserver | undefined {
+    const page = targets.find((info) => {
+      return record(info).type === "page";
+    });
+    if (!page) {
+      // Target discovery cannot substitute for a lost native observer.
+      if (this.observingReadiness)
+        throw this.failure("unavailable", "worker-unobserved");
+      return;
+    }
+    const id = record(page).targetId;
+    if (typeof id !== "string") throw new BrowserBridgeError("protocol");
+    const observer = { targetId: id, lost: false };
+    this.readinessObserver = observer;
+    this.observingReadiness = true;
+    // Retained targets and Runtime contexts can precede module evaluation.
+    // Each observer must supply its own native running status.
+    this.workerTarget = undefined;
+    return observer;
+  }
+
+  private async enableReadiness(
+    observer: ReadinessObserver,
+  ): Promise<unknown[] | undefined> {
+    try {
+      observer.sessionId = await this.attach("page", observer.targetId);
+      this.current();
+      if (!observer.lost)
+        await this.request("ServiceWorker.enable", {}, observer.sessionId);
+    } catch (error) {
+      this.current();
+      if (
+        !(error instanceof BrowserBridgeError) ||
+        error.diagnostics.reason !== "cdp-request-failed"
+      )
+        throw error;
+      if (!observer.lost) {
+        // The target may have vanished before this observer existed.
+        // A command error alone is never proof that retry is safe.
+        const targets = await this.listTargets();
+        if (
+          targets.some((info) => {
+            return record(info).targetId === observer.targetId;
+          })
+        )
+          throw error;
+        observer.lost = true;
+        this.workerTarget = undefined;
+        return targets;
+      }
+    }
+    return undefined;
+  }
+
+  private async waitForWorker(observer?: ReadinessObserver): Promise<void> {
+    if (this.workerTarget || observer?.lost) return;
+    await new Promise<void>((resolve, reject) => {
+      const finish = () => {
+        this.workerChanged = undefined;
+        this.signal.removeEventListener("abort", aborted);
+      };
+      const aborted = () => {
+        finish();
+        reject(this.signal.reason);
+      };
+      this.workerChanged = () => {
+        finish();
+        resolve();
+      };
+      this.signal.addEventListener("abort", aborted, { once: true });
+    });
   }
 
   private event(event: CdpEvent): void {
@@ -546,17 +637,17 @@ export class OkouBrowserClient {
   }
 
   private readinessEvent(event: CdpEvent): void {
-    if (!this.readinessSession) return;
-    if (
-      event.sessionId === this.browserSession &&
-      event.method === "Target.detachedFromTarget" &&
-      event.params.sessionId === this.readinessSession
-    ) {
-      this.invalidate("readiness-session-detached");
+    const observer = this.readinessObserver;
+    if (!observer || observer.lost) return;
+    if (this.readinessLost(event, observer)) {
+      observer.lost = true;
+      this.workerTarget = undefined;
+      this.workerChanged?.();
       return;
     }
     if (
-      event.sessionId !== this.readinessSession ||
+      !observer.sessionId ||
+      event.sessionId !== observer.sessionId ||
       event.method !== "ServiceWorker.workerVersionUpdated" ||
       !Array.isArray(event.params.versions)
     )
@@ -573,17 +664,20 @@ export class OkouBrowserClient {
               targetId: version.targetId,
             })
           : undefined;
-      if (
-        this.workerSession &&
-        target?.targetId !== this.workerTarget?.targetId
-      ) {
-        this.workerAlive = false;
-        this.invalidate("worker-version-changed");
-        return;
-      }
       this.workerTarget = target;
       if (target) this.workerChanged?.();
     }
+  }
+
+  private readinessLost(event: CdpEvent, observer: ReadinessObserver): boolean {
+    if (event.sessionId !== this.browserSession) return false;
+    if (event.method === "Target.targetDestroyed")
+      return event.params.targetId === observer.targetId;
+    return (
+      event.method === "Target.detachedFromTarget" &&
+      observer.sessionId !== undefined &&
+      event.params.sessionId === observer.sessionId
+    );
   }
 
   private lifecycleEvent(event: CdpEvent): void {
@@ -631,7 +725,7 @@ export class OkouBrowserClient {
   }
 
   private workerCreated(info: unknown): void {
-    if (this.readinessSession) return;
+    if (this.observingReadiness) return;
     const target = this.worker(info);
     if (!target) return;
     if (this.workerSession && target.targetId !== this.workerTarget?.targetId) {
