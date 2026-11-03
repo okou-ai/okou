@@ -19,6 +19,25 @@ import {
 import { validateModelCatalog } from "./model-catalog.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
 
+const seedSkillColumns = Object.freeze({
+  url: skillCatalog.url,
+  versionHash: skillCatalog.versionHash,
+  contentBundle: skillCatalog.contentBundle,
+  contentBundleSourceVersionHash: skillCatalog.contentBundleSourceVersionHash,
+});
+
+/** Every Seed Skill row; each run filters and validates its own selection. */
+function seedSkillRows(builder: QueryBuilder) {
+  return builder
+    .select({
+      payload: contextJsonProjection(seedSkillColumns)
+        .mapWith(zodDriverValueDecoder(zUnknown()))
+        .as("payload"),
+    })
+    .from(skillCatalog)
+    .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
+}
+
 /** One statement snapshot makes every global read gate enqueue with the catalog. */
 export function createGlobalModelContext() {
   const keys = {
@@ -54,12 +73,6 @@ export function createGlobalModelContext() {
     pricingKind: modelRoutes.pricingKind,
     pricingProvider: modelRoutes.pricingProvider,
     longContextMinTotalInputTokens: modelRoutes.longContextMinTotalInputTokens,
-  };
-  const seedSkills = {
-    url: skillCatalog.url,
-    versionHash: skillCatalog.versionHash,
-    contentBundle: skillCatalog.contentBundle,
-    contentBundleSourceVersionHash: skillCatalog.contentBundleSourceVersionHash,
   };
   const builder = new QueryBuilder();
   const globalRaw$ = computed(async (get) => {
@@ -98,15 +111,6 @@ export function createGlobalModelContext() {
         sql`${modelRoutes.subscriptionType} asc nulls first`,
         asc(modelRoutes.priority),
       );
-    // Every Seed Skill row; each run filters and validates its own selection.
-    const seedSkillRows = builder
-      .select({
-        payload: contextJsonProjection(seedSkills)
-          .mapWith(zodDriverValueDecoder(zUnknown()))
-          .as("payload"),
-      })
-      .from(skillCatalog)
-      .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
     const [row] = await get(db$)
       .select({
         keys: contextJsonRows(keyRows).mapWith(
@@ -121,7 +125,7 @@ export function createGlobalModelContext() {
         routes: contextJsonRows(routeRows).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
-        seedSkills: contextJsonRows(seedSkillRows).mapWith(
+        seedSkills: contextJsonRows(seedSkillRows(builder)).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
       })
@@ -152,7 +156,7 @@ export function createGlobalModelContext() {
   });
   // Decoding never checks preparation; the consuming run validates its skills.
   const seedSkills$ = computed(async (get) => {
-    return array(contextProjectionSchema(seedSkills)).parse(
+    return array(contextProjectionSchema(seedSkillColumns)).parse(
       (await get(globalRaw$)).seedSkills,
     );
   });
