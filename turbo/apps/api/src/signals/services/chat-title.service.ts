@@ -380,21 +380,6 @@ const persistChatThreadTitle$ = command(
   },
 );
 
-const shouldGenerateChatThreadTitle$ = command(
-  async ({ get }, threadId: string, signal: AbortSignal): Promise<boolean> => {
-    const [thread] = await get(db$)
-      .select({ title: chatThreads.title, renamedAt: chatThreads.renamedAt })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, threadId))
-      .limit(1);
-
-    signal.throwIfAborted();
-    return Boolean(
-      thread && thread.title === null && thread.renamedAt === null,
-    );
-  },
-);
-
 /** The ingress owns background scheduling; this action owns title persistence. */
 export const generateAndPersistChatThreadTitle$ = command(
   async (
@@ -405,13 +390,13 @@ export const generateAndPersistChatThreadTitle$ = command(
       readonly orgId: string;
       readonly prompt: string;
       readonly includePriorRounds: boolean;
-      /** A captured row had a title or rename, which the fresh read rejects. */
-      readonly knownTitled: boolean;
+      /** The claimed thread snapshot already had a title or rename. */
+      readonly titled: boolean;
     },
     signal: AbortSignal,
   ): Promise<void> => {
     if (
-      args.knownTitled ||
+      args.titled ||
       !gcpLlmConfiguration() ||
       args.prompt.trim().length === 0
     ) {
@@ -419,12 +404,8 @@ export const generateAndPersistChatThreadTitle$ = command(
     }
     await tapError(
       (async () => {
-        if (
-          !(await set(shouldGenerateChatThreadTitle$, args.threadId, signal))
-        ) {
-          return;
-        }
-
+        // The conditional write below drops a title that lost to a
+        // concurrent generation or rename.
         const priorRounds = args.includePriorRounds
           ? await set(loadTitleContext$, args.threadId, signal)
           : [];

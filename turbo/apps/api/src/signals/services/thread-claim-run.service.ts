@@ -1152,14 +1152,18 @@ function claimRejectionContext(
 
 /**
  * Generation writes a title only over NULL title and renamed_at, and a rename
- * sets both, so neither returns to NULL. A titled request snapshot therefore
- * stays titled; other picks report false and keep the fresh title read.
+ * sets both, so a titled or renamed claim snapshot never needs another read.
  */
-function requestThreadTitled(requestFacts: ChatThreadRequestFacts | undefined) {
+function threadTitled(
+  thread:
+    | { readonly title: string | null; readonly renamedAt: Date | null }
+    | null
+    | undefined,
+) {
   return (
-    requestFacts !== undefined &&
-    (requestFacts.thread.title !== null ||
-      requestFacts.thread.renamedAt !== null)
+    thread !== null &&
+    thread !== undefined &&
+    (thread.title !== null || thread.renamedAt !== null)
   );
 }
 
@@ -1173,7 +1177,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
     timing: record.timing,
     context: {
       userId: record.context.userId,
-      knownTitled: record.context.knownTitled,
+      titled: record.context.titled,
       runInput: {
         orgId: input.orgId,
         threadId: input.threadId,
@@ -1799,7 +1803,7 @@ export function createThreadClaimRunObjects(
           timing,
           context: {
             userId: head.userId,
-            knownTitled: requestThreadTitled(requestFacts),
+            titled: threadTitled((await get(pickedEvent$))?.thread),
             runInput,
           },
         },
