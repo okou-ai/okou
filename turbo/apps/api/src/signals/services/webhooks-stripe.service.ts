@@ -3553,7 +3553,7 @@ const handleConcurrencyInvoicePaid$ = command(
   },
 );
 
-const fulfillPaidInvoice$ = command(
+const handleInvoicePaid$ = command(
   async (
     { set },
     invoice: InvoiceInput,
@@ -3675,13 +3675,12 @@ const fulfillPaidInvoice$ = command(
   },
 );
 
-const handleInvoicePaid$ = command(
+/** Only the verified invoice.paid webhook can confirm a referral reward. */
+const handlePaidInvoiceWebhook$ = command(
   async ({ set }, invoice: InvoiceInput, signal: AbortSignal) => {
-    const orgId = await set(fulfillPaidInvoice$, invoice, signal);
+    const orgId = await set(handleInvoicePaid$, invoice, signal);
     signal.throwIfAborted();
     if (orgId) {
-      // Billing reconciliation uses this same path, including after a reward
-      // publication failure following an already-committed usage-pack payment.
       await set(grantPaidFriendReferralRewards$, invoice, orgId, signal);
     }
     return orgId;
@@ -4674,7 +4673,7 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "invoice.paid": {
-        drainOrgId = await set(handleInvoicePaid$, event.object, signal);
+        drainOrgId = await set(handlePaidInvoiceWebhook$, event.object, signal);
         if (drainOrgId) {
           billingChangedOrgIds.add(drainOrgId);
         }

@@ -1,4 +1,7 @@
-import { billingUsagePackCheckoutContract } from "@okouai/api-contracts/contracts/billing";
+import {
+  billingCheckoutContract,
+  billingUsagePackCheckoutContract,
+} from "@okouai/api-contracts/contracts/billing";
 import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import { randomUUID } from "node:crypto";
 import type StripeSDK from "stripe";
@@ -39,6 +42,8 @@ export async function purchaseUsagePacks(
     readonly amountPaid?: number;
     readonly deliveries?: number;
     readonly tier?: "pro" | "team";
+    readonly completeCheckout?: boolean;
+    readonly paidOutOfBand?: boolean;
   } = {},
 ) {
   mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
@@ -209,6 +214,7 @@ export async function purchaseUsagePacks(
         metadata,
         status: "paid",
         paid: true,
+        paid_out_of_band: options.paidOutOfBand ?? false,
         currency: "usd",
         amount_paid:
           options.amountPaid ??
@@ -239,6 +245,31 @@ export async function purchaseUsagePacks(
       },
     },
   };
+  if (options.completeCheckout) {
+    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+      id: sessionId,
+      mode: "subscription",
+      status: "complete",
+      payment_status: "paid",
+      customer: customerId,
+      subscription: subscriptionId,
+      metadata,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      ...subscription,
+      latest_invoice: event.data.object,
+    });
+    const completed = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingCheckoutContract,
+      ).complete({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { sessionId },
+      }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({ completed: true });
+  }
   const deliveries = options.deliveries ?? 1;
   for (let index = 0; index < deliveries; index++) {
     context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(

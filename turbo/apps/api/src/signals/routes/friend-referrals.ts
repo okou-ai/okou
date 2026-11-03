@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import {
   FRIEND_REFERRAL_REWARD_CREDITS,
   friendReferralsContract,
@@ -6,7 +7,7 @@ import {
   friendReferralLinks,
   friendReferrals,
 } from "@okouai/db/schema/friend-referral";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { notFound, resourceUnavailable } from "../../lib/error";
@@ -29,14 +30,35 @@ const link$ = command(async ({ get, set }, signal: AbortSignal) => {
     return resourceUnavailable("Friend referrals are not available");
   }
   const db = set(writeDb$);
-  const [link] = await db
+  // Candidate rows share one owner: its unique key allows only one insert,
+  // while a short-code collision skips to another candidate in the same SQL.
+  const [created] = await db
     .insert(friendReferralLinks)
-    .values({ orgId, userId })
-    .onConflictDoUpdate({
-      target: [friendReferralLinks.orgId, friendReferralLinks.userId],
-      set: { userId },
-    })
+    .values(
+      Array.from({ length: 8 }, () => {
+        return {
+          orgId,
+          userId,
+          code: randomInt(36 ** 6)
+            .toString(36)
+            .padStart(6, "0"),
+        };
+      }),
+    )
+    .onConflictDoNothing()
     .returning();
+  signal.throwIfAborted();
+  const [link] = created
+    ? [created]
+    : await db
+        .select()
+        .from(friendReferralLinks)
+        .where(
+          and(
+            eq(friendReferralLinks.orgId, orgId),
+            eq(friendReferralLinks.userId, userId),
+          ),
+        );
   signal.throwIfAborted();
   if (!link) {
     throw new Error("Friend referral link was not persisted");
@@ -54,7 +76,7 @@ const link$ = command(async ({ get, set }, signal: AbortSignal) => {
   return {
     status: 200 as const,
     body: {
-      code: link.id,
+      code: link.code,
       registeredCount: totals?.registeredCount ?? 0,
       rewardedCount,
       earnedCredits: rewardedCount * FRIEND_REFERRAL_REWARD_CREDITS,
@@ -71,7 +93,7 @@ const visit$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [link] = await set(writeDb$)
     .select()
     .from(friendReferralLinks)
-    .where(eq(friendReferralLinks.id, body.data.code));
+    .where(eq(friendReferralLinks.code, body.data.code));
   signal.throwIfAborted();
   if (
     !link ||
@@ -105,7 +127,7 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [link] = await db
     .select()
     .from(friendReferralLinks)
-    .where(eq(friendReferralLinks.id, visit.code));
+    .where(eq(friendReferralLinks.id, visit.linkId));
   signal.throwIfAborted();
   if (
     !link ||

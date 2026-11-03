@@ -7,8 +7,8 @@ function signature(payload: string): Buffer {
     .digest();
 }
 
-export function friendReferralVisitToken(code: string, at: Date): string {
-  const payload = `${code}.${at.getTime()}`;
+export function friendReferralVisitToken(linkId: string, at: Date): string {
+  const payload = `${linkId}.${at.getTime()}`;
   return `${payload}.${signature(payload).toString("hex")}`;
 }
 
@@ -18,15 +18,15 @@ export function readFriendReferralVisit(token: string, at: Date) {
   if (!match) {
     return null;
   }
-  const [, code, timestamp, mac] = match;
-  if (!code || !timestamp || !mac) {
+  const [, linkId, timestamp, mac] = match;
+  if (!linkId || !timestamp || !mac) {
     return null;
   }
   const visitedAt = Number(timestamp);
   const actual = Buffer.from(mac, "hex");
-  const expected = signature(`${code}.${timestamp}`);
+  const expected = signature(`${linkId}.${timestamp}`);
   if (visitedAt > at.getTime() || !timingSafeEqual(actual, expected)) {
     return null;
   }
-  return { code, visitedAt };
+  return { linkId, visitedAt };
 }

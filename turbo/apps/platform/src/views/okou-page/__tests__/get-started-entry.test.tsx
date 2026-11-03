@@ -53,7 +53,7 @@ test("Friends have a separate referral link with paid-pack qualification and one
   context.mocks.api(friendReferralsContract.link, async ({ respond }) => {
     await linkReady.promise;
     return respond(200, {
-      code: "77777777-7777-4777-a777-777777777777",
+      code: "a7k2p9",
       registeredCount: 3,
       rewardedCount: 2,
       earnedCredits: 40_000,
@@ -93,16 +93,14 @@ test("Friends have a separate referral link with paid-pack qualification and one
   );
   linkReady.resolve();
   const link = await within(dialog).findByLabelText("Your referral link");
-  expect(link).toHaveValue(
-    `${location.origin}/sign-up?friend_referral=77777777-7777-4777-a777-777777777777`,
-  );
+  expect(link).toHaveValue(`${location.origin}/sign-up?friend_referral=a7k2p9`);
   expect(within(dialog).getByText("40,000")).toBeInTheDocument();
   click(buttonNamed("Copy link", dialog));
   await waitFor(() => {
     expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
   });
   await expect(navigator.clipboard.readText()).resolves.toBe(
-    `${location.origin}/sign-up?friend_referral=77777777-7777-4777-a777-777777777777`,
+    `${location.origin}/sign-up?friend_referral=a7k2p9`,
   );
 });
 
@@ -118,7 +116,7 @@ test("Referral link failures can be retried in the same dialog", async () => {
           },
         })
       : respond(200, {
-          code: "77777777-7777-4777-a777-777777777777",
+          code: "a7k2p9",
           registeredCount: 0,
           rewardedCount: 0,
           earnedCredits: 0,

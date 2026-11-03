@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { uuid } from "zod";
+import { friendReferralCodeSchema } from "@okouai/api-contracts/validators/friend-referrals";
 import { friendReferralsContract } from "@okouai/api-contracts/client/friend-referrals";
 import { apiClient$ } from "./api-client.ts";
 import { clerkUser$ } from "./auth.ts";
@@ -19,7 +19,7 @@ export const setFriendReferralOpen$ = command(({ set }, open: boolean) => {
 /** Capture before rendering signup, so the server can verify account newness. */
 export const captureFriendReferral$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const code = uuid().safeParse(
+    const code = friendReferralCodeSchema.safeParse(
       new URLSearchParams(location.search).get("friend_referral"),
     );
     if (!code.success || set(pendingReferral.readFresh$)) {

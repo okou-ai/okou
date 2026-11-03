@@ -2,19 +2,19 @@ import {
   number,
   object,
   string,
-  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { friendReferralCodeSchema } from "../validators/friend-referrals";
 
 const c = initContract();
 
 export { FRIEND_REFERRAL_REWARD_CREDITS } from "../validators/friend-referrals";
 
 export const friendReferralStatusSchema = object({
-  code: uuid(),
+  code: friendReferralCodeSchema,
   registeredCount: number().int().nonnegative(),
   rewardedCount: number().int().nonnegative(),
   earnedCredits: number().int().nonnegative(),
@@ -37,7 +37,7 @@ export const friendReferralsContract = c.router({
   visit: {
     method: "POST",
     path: "/api/friend-referrals/visit",
-    body: object({ code: uuid() }),
+    body: object({ code: friendReferralCodeSchema }),
     responses: { 200: object({ token: string() }), 404: apiErrorSchema },
     summary: "Record a referral visit before a friend registers",
   },

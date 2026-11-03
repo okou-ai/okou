@@ -1,5 +1,5 @@
 {
-  "id": "9f13b0b8-823b-4b83-8442-954c7731f352",
+  "id": "a9fc154f-75d1-4730-aa92-8d4d735c1d16",
   "prevId": "cd7c92d7-a97a-48ae-8574-ff9d672ab713",
   "version": "7",
   "dialect": "postgresql",
@@ -16124,6 +16124,12 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "org_id": {
           "name": "org_id",
           "type": "text",
@@ -16145,6 +16151,21 @@
         }
       },
       "indexes": {
+        "uq_friend_referral_link_code": {
+          "name": "uq_friend_referral_link_code",
+          "columns": [
+            {
+              "expression": "code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "uq_friend_referral_link_owner": {
           "name": "uq_friend_referral_link_owner",
           "columns": [
@@ -16171,7 +16192,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chk_friend_referral_link_code": {
+          "name": "chk_friend_referral_link_code",
+          "value": "\"friend_referral_links\".\"code\" ~ '^[a-z0-9]{6}$'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.friend_referrals": {

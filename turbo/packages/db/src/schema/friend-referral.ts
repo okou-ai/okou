@@ -13,15 +13,21 @@ export const friendReferralLinks = pgTable(
   "friend_referral_links",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    code: text("code").notNull(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
     return [
+      uniqueIndex("uq_friend_referral_link_code").on(table.code),
       uniqueIndex("uq_friend_referral_link_owner").on(
         table.orgId,
         table.userId,
+      ),
+      check(
+        "chk_friend_referral_link_code",
+        sql`${table.code} ~ '^[a-z0-9]{6}$'`,
       ),
     ];
   },

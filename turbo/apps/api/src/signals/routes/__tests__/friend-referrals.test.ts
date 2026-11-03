@@ -56,6 +56,7 @@ async function register(
 test("links are reusable and registration attribution is immutable, without rewarding existing accounts or self-referrals", async () => {
   const referrer = `user_${randomUUID()}`;
   const original = await referralLink(referrer);
+  expect(original.code).toMatch(/^[a-z0-9]{6}$/u);
   const links = await Promise.all(
     Array.from({ length: 4 }, () => {
       return referralLink(referrer);
@@ -73,6 +74,7 @@ test("links are reusable and registration attribution is immutable, without rewa
   const firstToken = await visit(original.code);
   const otherReferrer = `user_${randomUUID()}`;
   const other = await referralLink(otherReferrer);
+  expect(other.code).not.toBe(original.code);
   const otherToken = await visit(other.code);
   const invitee = `user_${randomUUID()}`;
   await expect(register(invitee, firstToken)).resolves.toStrictEqual({
@@ -109,7 +111,7 @@ test("links are reusable and registration attribution is immutable, without rewa
 });
 
 test.each(["pro", "team"] as const)(
-  "a paid %s usage pack grants $20 once across concurrent deliveries and renewals, with calendar-month expiry",
+  "a paid %s usage pack rewards only on a verified webhook, once across deliveries and renewals, with calendar-month expiry",
   async (tier) => {
     const referrer = `user_${randomUUID()}`;
     const invitee = {
@@ -140,7 +142,53 @@ test.each(["pro", "team"] as const)(
       context,
       invitee,
       [{ userId: invitee.userId, usd: 20 }],
-      { deliveries: 3, tier },
+      { deliveries: 0, tier, completeCheckout: true },
+    );
+    const paidBalance = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers }),
+      [200],
+    );
+    expect(paidBalance.body.purchasedCredits).toBe(20_000);
+    await expect(referralLink(referrer)).resolves.toMatchObject({
+      registeredCount: 1,
+      rewardedCount: 0,
+      earnedCredits: 0,
+    });
+    context.mocks.stripe.webhooks.constructEventAsync.mockRejectedValueOnce(
+      new Error("Invalid Stripe signature"),
+    );
+    await accept(
+      setupApp({ context, routes: webhooksStripeRoutes })(
+        webhookStripeContract,
+      ).post({
+        body: JSON.stringify(event),
+        extraHeaders: { "stripe-signature": "t=1,v1=invalid" },
+      }),
+      [401],
+    );
+    await expect(referralLink(referrer)).resolves.toMatchObject({
+      rewardedCount: 0,
+      earnedCredits: 0,
+    });
+    for (let index = 0; index < 3; index++) {
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+        event,
+      );
+    }
+    await Promise.all(
+      Array.from({ length: 3 }, () => {
+        return accept(
+          setupApp({ context, routes: webhooksStripeRoutes })(
+            webhookStripeContract,
+          ).post({
+            body: JSON.stringify(event),
+            extraHeaders: { "stripe-signature": "t=1,v1=paid-referral" },
+          }),
+          [200],
+        );
+      }),
     );
     await expect(referralLink(referrer)).resolves.toMatchObject({
       registeredCount: 1,
@@ -208,26 +256,32 @@ test.each(["pro", "team"] as const)(
   },
 );
 
-test("a zero-dollar usage-pack invoice does not reward its referrer", async () => {
-  const referrer = `user_${randomUUID()}`;
-  const invitee = {
-    userId: `user_${randomUUID()}`,
-    orgId: `org_${randomUUID()}`,
-  };
-  const link = await referralLink(referrer);
-  await register(invitee.userId, await visit(link.code));
-  await purchaseUsagePacks(
-    context,
-    invitee,
-    [{ userId: invitee.userId, usd: 20 }],
-    { amountPaid: 0 },
-  );
-  await expect(referralLink(referrer)).resolves.toMatchObject({
-    registeredCount: 1,
-    rewardedCount: 0,
-    earnedCredits: 0,
-  });
-});
+test.each([
+  { kind: "zero-dollar", options: { amountPaid: 0 } },
+  { kind: "out-of-band", options: { paidOutOfBand: true } },
+])(
+  "a $kind usage-pack invoice does not reward its referrer",
+  async ({ options }) => {
+    const referrer = `user_${randomUUID()}`;
+    const invitee = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
+    const link = await referralLink(referrer);
+    await register(invitee.userId, await visit(link.code));
+    await purchaseUsagePacks(
+      context,
+      invitee,
+      [{ userId: invitee.userId, usd: 20 }],
+      options,
+    );
+    await expect(referralLink(referrer)).resolves.toMatchObject({
+      registeredCount: 1,
+      rewardedCount: 0,
+      earnedCredits: 0,
+    });
+  },
+);
 
 test("the referral rollout denies non-staff link creation", async () => {
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);

@@ -1,8 +1,10 @@
 CREATE TABLE "friend_referral_links" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"code" text NOT NULL,
 	"org_id" text NOT NULL,
 	"user_id" text NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_friend_referral_link_code" CHECK ("friend_referral_links"."code" ~ '^[a-z0-9]{6}$')
 );
 --> statement-breakpoint
 CREATE TABLE "friend_referrals" (
@@ -21,6 +23,7 @@ CREATE TABLE "friend_referrals" (
 );
 --> statement-breakpoint
 ALTER TABLE "friend_referrals" ADD CONSTRAINT "friend_referrals_link_id_friend_referral_links_id_fk" FOREIGN KEY ("link_id") REFERENCES "public"."friend_referral_links"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_friend_referral_link_code" ON "friend_referral_links" USING btree ("code");--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_friend_referral_link_owner" ON "friend_referral_links" USING btree ("org_id","user_id");--> statement-breakpoint
 CREATE INDEX "idx_friend_referrals_link" ON "friend_referrals" USING btree ("link_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_friend_referral_credit_grant" ON "friend_referrals" USING btree ("credit_grant_id");

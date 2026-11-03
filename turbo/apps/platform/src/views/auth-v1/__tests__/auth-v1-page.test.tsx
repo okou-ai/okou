@@ -19,9 +19,7 @@ test("An unavailable referral backend still opens the normal signup form", async
       error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
     });
   });
-  await setupSignedOutPage(
-    "/sign-up?friend_referral=77777777-7777-4777-a777-777777777777",
-  );
+  await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
   expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
   expect(document.title).toBe("Sign up | Okou");
 });
