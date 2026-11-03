@@ -97,7 +97,11 @@ async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<
     }
 }
 
-async fn wait_for_path_event(path: &Path) -> io::Result<()> {
+/// Wait for a path to appear, leaving deadline policy to the caller.
+///
+/// Callers may wrap this future in a timeout or race it against other paths.
+/// Dropping the future releases its owned inotify descriptor.
+pub async fn wait_for_path_event(path: &Path) -> io::Result<()> {
     if tokio::fs::try_exists(path).await? {
         return Ok(());
     }

@@ -2139,13 +2139,13 @@ dependencies = [
 name = "guest-control-tests"
 version = "0.12.137"
 dependencies = [
+ "cli-test-support",
  "guest-contracts",
  "guest-control-client",
  "guest-control-proto",
  "guest-control-server",
  "guest-write-file",
  "libc",
- "nix",
  "sandbox",
  "shell-quote",
  "tempfile",
