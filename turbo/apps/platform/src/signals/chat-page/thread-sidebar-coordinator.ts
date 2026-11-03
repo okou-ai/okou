@@ -11,7 +11,8 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { animationFrame, delay } from "signal-timers";
+import { waitForMailLayout } from "../utils.ts";
+import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
   threadMailLocation$,
@@ -219,14 +220,6 @@ export const openThreadMailDraft$ = command(
     }
   },
 );
-
-async function waitForMailLayout(signal: AbortSignal): Promise<void> {
-  // View Transitions pause animation frames while React and Floating UI commit.
-  await delay(0, { signal });
-  signal.throwIfAborted();
-  await delay(0, { signal });
-  signal.throwIfAborted();
-}
 
 /** Navigation commits before the destination reads its data. */
 export const navigateThreadMail$ = command(
