@@ -26,6 +26,7 @@ function errorMessage(body: unknown): string {
 function siteBody(site: string, html: string) {
   return {
     site,
+    title: site,
     artifactKind: "hosted-site" as const,
     spaFallback: false,
     files: [hostedTextFile("/index.html", html)],

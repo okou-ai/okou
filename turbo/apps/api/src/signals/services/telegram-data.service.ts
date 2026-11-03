@@ -19,7 +19,6 @@ import {
 } from "../external/telegram-official";
 import { safeUrlParse } from "../utils";
 
-type TelegramBotListItem = TelegramBot;
 type TelegramConnectedUser = NonNullable<TelegramBot["connectedUser"]>;
 const log = logger("api:telegram:readiness");
 
@@ -111,8 +110,8 @@ function officialCompose(args: {
 function buildOfficialTelegramBot(args: {
   readonly orgId: string;
   readonly userId: string;
-}): Computed<Promise<TelegramBotListItem>> {
-  return computed(async (get): Promise<TelegramBotListItem> => {
+}): Computed<Promise<TelegramBot>> {
+  return computed(async (get): Promise<TelegramBot> => {
     const config = getOfficialTelegramBotConfig();
     const [official, userLink] = await Promise.all([
       get(officialCompose(args)),
@@ -139,15 +138,6 @@ function buildOfficialTelegramBot(args: {
         linkedTelegramUserId: userLink?.telegramUserId ?? null,
       },
     };
-  });
-}
-
-export function telegramBots(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<readonly TelegramBotListItem[]>> {
-  return computed(async (get): Promise<readonly TelegramBotListItem[]> => {
-    return [await get(buildOfficialTelegramBot(args))];
   });
 }
 

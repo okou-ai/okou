@@ -234,6 +234,7 @@ async function fixture() {
   async function deploy(site = `download-${randomUUID().slice(0, 8)}`) {
     const prepared = await host.prepareHostedSite(actor, {
       site,
+      title: site,
       artifactKind: "hosted-site",
       spaFallback: false,
       visibility: "public",

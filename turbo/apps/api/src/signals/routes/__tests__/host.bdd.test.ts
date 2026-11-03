@@ -31,6 +31,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const files = [hostedTextFile("/index.html", "<main>published</main>")];
     const body = {
       site,
+      title: site,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files,
@@ -81,6 +82,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     api.captureHostedSitesS3();
     const prepared = await api.prepareHostedSite(actor, {
       site: `owned-${randomUUID().slice(0, 8)}`,
+      title: "Owned",
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>owned</main>")],
@@ -99,6 +101,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     api.captureHostedSitesS3();
     const body = {
       site: `bdd-concurrent-${randomUUID().slice(0, 8)}`,
+      title: "BDD concurrent",
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>concurrent</main>")],
@@ -163,6 +166,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const site = `bdd-published-${randomUUID().slice(0, 8)}`;
     const body = {
       site,
+      title: site,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>original</main>")],
@@ -250,6 +254,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     api.captureHostedSitesS3();
     const body = {
       site: `bdd-repeat-${randomUUID().slice(0, 8)}`,
+      title: "BDD repeat",
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>copy</main>")],
@@ -304,6 +309,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const browserOkouSite = `bdd-browser-okou-${randomUUID().slice(0, 8)}`;
     const createdOnOkou = await api.prepareHostedSite(actor, {
       site: browserOkouSite,
+      title: browserOkouSite,
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>Browser site</main>")],
@@ -324,6 +330,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       { bearerToken: okouToken },
       {
         site: okouSite,
+        title: okouSite,
         artifactKind: "hosted-site",
         spaFallback: false,
         files: [hostedTextFile("/index.html", "<main>Okou site</main>")],
@@ -372,6 +379,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const aliasOwner = bdd.user();
     const occupied = await api.prepareHostedSite(aliasOwner, {
       site: `bdd-alias-owner-${randomUUID().slice(0, 8)}`,
+      title: "BDD alias owner",
       slugSuffix: "fixed",
       artifactKind: "hosted-site",
       spaFallback: false,
@@ -386,6 +394,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const capture = api.captureHostedSitesS3();
     const versioned = await api.prepareHostedSite(actor, {
       site: occupied.publicSlug,
+      title: occupied.publicSlug,
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>collision</main>")],
@@ -470,6 +479,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       const files = [indexFile, scriptFile];
       const body = {
         site,
+        title: site,
         artifactKind: "hosted-site" as const,
         spaFallback: true,
         visibility: "public" as const,
@@ -578,6 +588,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       const third = await api.prepareHostedSite(actor, {
         ...body,
         site: `${site}-pending`,
+        title: `${site}-pending`,
       });
       await fixture.initialize();
       await fixture.suspend();
@@ -607,6 +618,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       null,
       {
         site: "bdd-anon-site",
+        title: "bdd-anon-site",
         artifactKind: "hosted-site",
         spaFallback: false,
         files,
@@ -644,6 +656,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       const site = `bdd-run-artifact-${randomUUID().slice(0, 8)}`;
       const prepared = await api.prepareHostedSite(bearer, {
         site,
+        title: site,
         slugSuffix: "run-01",
         artifactKind: "hosted-site",
         spaFallback: false,

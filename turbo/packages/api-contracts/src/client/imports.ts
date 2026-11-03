@@ -1000,7 +1000,6 @@ export const clientContractImportManifest = [
       "integrationsTeamsMessageContract",
       "integrationsTeamsUploadCompleteContract",
       "integrationsTeamsUploadInitContract",
-      "integrationsTelegramBotListContract",
       "integrationsTelegramDownloadFileContract",
       "integrationsTelegramMessageContract",
       "integrationsTelegramUploadCompleteContract",

@@ -1,9 +1,6 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command, computed } from "ccstate";
-import {
-  integrationsTelegramBotListContract,
-  integrationsTelegramDownloadFileContract,
-} from "@okouai/api-contracts/contracts/integrations";
+import { integrationsTelegramDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 
@@ -31,7 +28,6 @@ import {
 import {
   telegramIntegrationBots,
   telegramIntegrationLinkStatus,
-  telegramBots,
 } from "../services/telegram-data.service";
 import { telegramWebhook$ } from "../services/telegram-post.service";
 import { settle, tapError } from "../utils";
@@ -129,18 +125,6 @@ const telegramReadAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "telegram:read",
 } as const;
-
-const getTelegramBotsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const bots = await get(
-    telegramBots({ orgId: auth.orgId, userId: auth.userId }),
-  );
-
-  return {
-    status: 200 as const,
-    body: { bots: [...bots] },
-  };
-});
 
 const getIntegrationTelegramListInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -450,10 +434,6 @@ export const integrationsTelegramRoutes: readonly RouteEntry[] = [
   {
     route: integrationsTelegramContract.avatar,
     handler: getIntegrationTelegramAvatar$,
-  },
-  {
-    route: integrationsTelegramBotListContract.listBots,
-    handler: authRoute(telegramReadAuth, getTelegramBotsInner$),
   },
   {
     route: integrationsTelegramDownloadFileContract.download,

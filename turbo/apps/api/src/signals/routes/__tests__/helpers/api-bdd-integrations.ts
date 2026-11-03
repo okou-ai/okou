@@ -7,7 +7,6 @@ import { mockClerkUsers } from "./clerk-users";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import {
-  integrationsTelegramBotListContract,
   integrationsTelegramMessageContract,
   integrationsTelegramUploadInitContract,
   integrationsGithubUploadCompleteContract,
@@ -1463,22 +1462,6 @@ export function createBddIntegrationApi(context: TestContext) {
       })(integrationsTelegramContract);
       return await accept(
         client.list({
-          headers: authenticate(context, routeMocks, actor),
-        }),
-        statuses,
-      );
-    },
-
-    async requestListTelegramBots(
-      actor: ApiTestUser | null,
-      statuses: readonly (200 | 401 | 403)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramBotListContract);
-      return await accept(
-        client.listBots({
           headers: authenticate(context, routeMocks, actor),
         }),
         statuses,

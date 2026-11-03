@@ -820,6 +820,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
 
     const prepared = await api.prepareHostedSite(actor, {
       site,
+      title: site,
       slugSuffix: "release-01",
       artifactKind: "hosted-site",
       spaFallback: true,
@@ -870,6 +871,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
       actor,
       {
         site: `bdd-invalid-${randomUUID().slice(0, 8)}`,
+        title: "BDD invalid",
         artifactKind: "hosted-site",
         spaFallback: false,
         files: [hostedTextFile("/about.html", "<main>missing index</main>")],

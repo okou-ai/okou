@@ -459,7 +459,6 @@ export const clientDescriptorManifest = [
       "integrationsTeamsMessageContract",
       "integrationsTeamsUploadCompleteContract",
       "integrationsTeamsUploadInitContract",
-      "integrationsTelegramBotListContract",
       "integrationsTelegramDownloadFileContract",
       "integrationsTelegramMessageContract",
       "integrationsTelegramUploadCompleteContract",

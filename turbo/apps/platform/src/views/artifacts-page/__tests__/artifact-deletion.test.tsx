@@ -236,7 +236,10 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
 
 test("deleting a shared conversation explains that its shared link will stop working", async () => {
   let removed = false;
-  const conversation = artifact({ kind: "shared-thread" });
+  const conversation = artifact({
+    kind: "shared-thread",
+    sharedThreadId: "b0000000-0000-4000-a000-000000000001",
+  });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: removed ? [] : [conversation],

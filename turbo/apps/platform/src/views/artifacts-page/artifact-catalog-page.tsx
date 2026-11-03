@@ -35,7 +35,6 @@ import {
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
@@ -407,12 +406,12 @@ function ArtifactSharedConversationList({
       })}
     >
       {artifacts.map((artifact) => {
-        // New App -> old API during deployment or rollback: retain the catalog
-        // deep link until APIs without sharedThreadId are neither serving nor
-        // retained as production rollback targets. Follow-up: #43928.
-        const href = artifact.sharedThreadId
-          ? `/share/threads/${encodeURIComponent(artifact.sharedThreadId)}`
-          : `${ROUTES.artifacts}?tab=shared-thread&artifact=${encodeURIComponent(artifact.id)}`;
+        if (!artifact.sharedThreadId) {
+          throw new Error(
+            `Shared conversation artifact ${artifact.id} is missing its shared thread`,
+          );
+        }
+        const href = `/share/threads/${encodeURIComponent(artifact.sharedThreadId)}`;
         return (
           <li key={artifact.id} className="flex items-center">
             <a

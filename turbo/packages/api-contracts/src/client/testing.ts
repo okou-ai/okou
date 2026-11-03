@@ -443,7 +443,6 @@ import {
   integrationsTeamsMessageContract as OriginalIntegrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract as OriginalIntegrationsTeamsUploadCompleteContract,
   integrationsTeamsUploadInitContract as OriginalIntegrationsTeamsUploadInitContract,
-  integrationsTelegramBotListContract as OriginalIntegrationsTelegramBotListContract,
   integrationsTelegramDownloadFileContract as OriginalIntegrationsTelegramDownloadFileContract,
   integrationsTelegramMessageContract as OriginalIntegrationsTelegramMessageContract,
   integrationsTelegramUploadCompleteContract as OriginalIntegrationsTelegramUploadCompleteContract,
@@ -474,7 +473,6 @@ import {
   integrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract,
   integrationsTeamsUploadInitContract,
-  integrationsTelegramBotListContract,
   integrationsTelegramDownloadFileContract,
   integrationsTelegramMessageContract,
   integrationsTelegramUploadCompleteContract,
@@ -1181,10 +1179,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [
     integrationsTeamsUploadInitContract,
     OriginalIntegrationsTeamsUploadInitContract,
-  ],
-  [
-    integrationsTelegramBotListContract,
-    OriginalIntegrationsTelegramBotListContract,
   ],
   [
     integrationsTelegramDownloadFileContract,
