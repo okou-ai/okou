@@ -770,10 +770,12 @@ function useBrowserRecovery(signals: BrowserSignals) {
       isBrowserOperationFailure(reloadOperation.error) &&
       (!(reloadOperation.error instanceof NavigationFault) ||
         reloadOperation.error.scope === navigationScope)) ||
-    (reconnectOperation.state === "hasError" &&
+    // A realtime refresh may recover without rerunning Reconnect.
+    (controls.recovery &&
+      reconnectOperation.state === "hasError" &&
       isBrowserOperationFailure(
         reconnectOperation.error,
-        imageRecovery !== null || controls.streaming,
+        imageRecovery !== null,
       ));
   return { pending, failed, retryImage, reconnect, navigate };
 }

@@ -301,6 +301,57 @@ test("A rejected recovery descriptor settles the operation and permits another r
   await expectReady();
 });
 
+test.each(["same binding", "replacement window", "empty window"] as const)(
+  "A failed reconnect does not leave an error on a recovered %s",
+  async (recovered) => {
+    const viewer = mockViewer();
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await expectReady();
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await screen.findByText("Browser disconnected");
+    let reject = true;
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      return reject
+        ? respond(500, {
+            error: { code: "INTERNAL_SERVER_ERROR", message: "Unavailable" },
+          })
+        : respond(200, {
+            browser: viewer.session(),
+            cdpUrl: endpoint,
+            extension: TEST_BROWSER_EXTENSION,
+          });
+    });
+    reconnect();
+    const failure =
+      "The browser action could not be completed. Check the browser before trying again.";
+    await screen.findByText(failure);
+    reject = false;
+    if (recovered === "replacement window") {
+      viewer.replaceBinding();
+    } else if (recovered === "empty window") {
+      viewer.browser.targets.splice(0, 1);
+    }
+    act(() => {
+      context.mocks.ably.trigger("browserSessionChanged", { threadId });
+    });
+    if (recovered === "empty window") {
+      await screen.findByText("No tabs open");
+    } else {
+      await expectReady(
+        recovered === "replacement window"
+          ? "https://replacement.example.com"
+          : "https://original.example.com",
+      );
+    }
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeEnabled();
+    expect(screen.queryByText(failure)).not.toBeInTheDocument();
+  },
+);
+
 test("A verified empty window completes recovery without waiting for pixels", async () => {
   const viewer = mockViewer();
   viewer.browser.targets.splice(0, 1);
