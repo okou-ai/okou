@@ -417,6 +417,27 @@ test("Hiding the viewer cancels a pending crash reload even if visibility return
   expect(browser.connections()).toBe(1);
 });
 
+test("Closing a sibling tab preserves the selected crashed page's Reload action", async () => {
+  const browser = await openViewer();
+  act(() => {
+    browser.crash("example-page");
+  });
+  await unavailable();
+  const closing = browser.holdNext("Target.closeTarget");
+  click(screen.getByLabelText("Close Other"));
+  await act(async () => {
+    await closing.release();
+  });
+  expect(
+    screen.queryByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toBeNull();
+  await unavailable();
+  click(screen.getByText("Reload", { selector: "button" }));
+  await ready();
+  await navigateTo("https://sibling-close-recovery.example/");
+  expect(browser.connections()).toBe(1);
+});
+
 test("A renderer crash during a rejected tab close remains unavailable until explicit recovery", async () => {
   const browser = await openViewer();
   browser.failNext(

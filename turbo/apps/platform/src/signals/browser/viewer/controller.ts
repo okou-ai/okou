@@ -3259,7 +3259,6 @@ function createTabClosingGraph(
       set(targetRevision$, (value) => {
         return value + 1;
       });
-      set(model.update$, { error: null });
       if (
         get(model.selectedTabId$) === targetId &&
         get(model.intent$).selection === selectionIntent
