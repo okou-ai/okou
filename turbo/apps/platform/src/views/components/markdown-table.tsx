@@ -2,7 +2,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Download, Loader2 } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   BrandGoogleDrive,
@@ -19,6 +19,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  IconButton,
 } from "@okouai/ui";
 import type { Element } from "hast";
 import { formatAppNumber } from "../../i18n/format.ts";
@@ -83,31 +84,52 @@ function ExportableTable({
       </div>
       <div
         data-markdown-ui
-        className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-0.5"
+        className="mt-1 flex items-center justify-between gap-3 px-0.5"
       >
+        <p className="m-0 pl-3 text-xs text-muted-foreground">
+          {t(
+            ($) => {
+              return $.markdown.tableExport.rows;
+            },
+            { count: rowCount, formattedCount: formatAppNumber(rowCount) },
+          )}
+          {" · "}
+          {t(
+            ($) => {
+              return $.markdown.tableExport.columns;
+            },
+            {
+              count: columnCount,
+              formattedCount: formatAppNumber(columnCount),
+            },
+          )}
+        </p>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button
-                variant="quiet"
-                size="sm"
+              <IconButton
+                aria-label={
+                  pending
+                    ? t(($) => {
+                        return $.markdown.tableExport.saving;
+                      })
+                    : t(($) => {
+                        return $.markdown.tableExport.export;
+                      })
+                }
                 disabled={pending || connection?.params.table === node}
                 aria-busy={pending}
-                className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:h-11"
+                className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-50 [@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:size-11"
               />
             }
           >
-            {pending ? <Loader2 className="animate-spin" /> : <Download />}
-            {pending
-              ? t(($) => {
-                  return $.markdown.tableExport.saving;
-                })
-              : t(($) => {
-                  return $.markdown.tableExport.export;
-                })}
-            <ChevronDown />
+            {pending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="size-4" aria-hidden="true" />
+            )}
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
+          <DropdownMenuContent align="end">
             <DropdownMenuItem
               className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               onClick={() => {
@@ -145,24 +167,6 @@ function ExportableTable({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <p className="m-0 ml-auto text-right text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.markdown.tableExport.rows;
-            },
-            { count: rowCount, formattedCount: formatAppNumber(rowCount) },
-          )}
-          {" · "}
-          {t(
-            ($) => {
-              return $.markdown.tableExport.columns;
-            },
-            {
-              count: columnCount,
-              formattedCount: formatAppNumber(columnCount),
-            },
-          )}
-        </p>
       </div>
       <TableGoogleConnectionDialog node={node} />
     </Card>
