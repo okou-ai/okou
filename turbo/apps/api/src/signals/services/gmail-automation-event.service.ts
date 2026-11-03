@@ -43,6 +43,7 @@ import {
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { isRetryableGmailReadError } from "./gmail-error";
 import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
@@ -189,7 +190,8 @@ type GmailHistoryResult =
       readonly labelsAdded: readonly GmailHistoryLabelAdded[];
     }
   | { readonly kind: "stale_cursor" }
-  | { readonly kind: "gmail_error"; readonly message: string };
+  | { readonly kind: "retryable_error" }
+  | { readonly kind: "gmail_error"; readonly status: number };
 
 interface PubSubOidcClaims {
   readonly email: string | null;
@@ -263,9 +265,12 @@ async function listGmailHistory(
     signal.throwIfAborted();
 
     if (result.kind !== "ok") {
-      return result.status === 404
-        ? { kind: "stale_cursor" }
-        : { kind: "gmail_error", message: result.message };
+      if (result.status === 404) {
+        return { kind: "stale_cursor" };
+      }
+      return isRetryableGmailReadError(result.status, result.message)
+        ? { kind: "retryable_error" }
+        : { kind: "gmail_error", status: result.status };
     }
 
     for (const history of result.value.history ?? []) {
@@ -576,6 +581,7 @@ type GmailPubSubPushResult =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "bad_request"; readonly message: string }
   | { readonly kind: "config_error"; readonly message: string }
+  | { readonly kind: "retryable_error"; readonly message: string }
   | { readonly kind: "run_error"; readonly message: string };
 
 type DecodedGmailPubSubPush = Extract<
@@ -622,7 +628,8 @@ type GmailDispatchStateResult =
       readonly duplicates: number;
       readonly needsRewatch?: boolean;
     }
-  | { readonly kind: "run_error"; readonly message: string };
+  | { readonly kind: "run_error"; readonly message: string }
+  | { readonly kind: "retryable_error"; readonly message: string };
 
 const loadGmailWatchStates$ = command(
   async (
@@ -1432,10 +1439,19 @@ const dispatchGmailWatchState$ = command(
     if (history.kind === "stale_cursor") {
       return { kind: "ok", dispatched: 0, duplicates: 0, needsRewatch: true };
     }
+    if (history.kind === "retryable_error") {
+      // Pub/Sub owns redelivery. Keep the cursor until every history page and
+      // its events have been processed; request logs retain the HTTP 503.
+      return {
+        kind: "retryable_error",
+        message:
+          "Gmail history is temporarily unavailable; retry this notification",
+      };
+    }
     if (history.kind === "gmail_error") {
       log.warn("Gmail history lookup failed", {
         watchStateId: args.state.id,
-        message: history.message,
+        status: history.status,
       });
       return { kind: "ok", dispatched: 0, duplicates: 0 };
     }

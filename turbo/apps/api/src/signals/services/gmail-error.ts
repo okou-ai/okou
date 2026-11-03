@@ -53,6 +53,36 @@ export class GmailAuthorizationError extends Error {
   }
 }
 
+export function isRetryableGmailReadError(
+  status: number,
+  body: string,
+): boolean {
+  if (
+    status === 0 ||
+    status === 408 ||
+    status === 429 ||
+    (status >= 500 && status < 600)
+  ) {
+    return true;
+  }
+  if (status !== 403) {
+    return false;
+  }
+  const parsed = gmailErrorResponseSchema.safeParse(safeJsonParse(body));
+  return (
+    parsed.success &&
+    [
+      ...(parsed.data.error.errors ?? []),
+      ...(parsed.data.error.details ?? []),
+    ].some((detail) => {
+      return (
+        detail.reason === "rateLimitExceeded" ||
+        detail.reason === "userRateLimitExceeded"
+      );
+    })
+  );
+}
+
 async function readGmailErrorBody(response: Response): Promise<unknown> {
   const body = await readBoundedResponseText(response, 16 * 1024);
   if (body.kind === "too_large") {
