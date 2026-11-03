@@ -34,10 +34,15 @@ export async function validatePermanentProjectStorage(databaseUrl: string) {
         .values({ bucket: gcBucket, prefix });
       const cursorObjectKey = `${prefix}/snapshot.json.gz`;
       const cycleId = randomUUID();
-      await client.query(
-        "UPDATE chat_thread_snapshot_gc_state SET cursor_object_key = $1, cycle_id = $2 WHERE bucket = $3 AND prefix = $4",
-        [cursorObjectKey, cycleId, gcBucket, prefix],
-      );
+      await db
+        .update(chatThreadSnapshotGcState)
+        .set({ cursorObjectKey, cycleId })
+        .where(
+          and(
+            eq(chatThreadSnapshotGcState.bucket, gcBucket),
+            eq(chatThreadSnapshotGcState.prefix, prefix),
+          ),
+        );
       await db
         .insert(chatThreadSnapshotGcState)
         .values({ bucket: gcBucket, prefix })
