@@ -18,10 +18,11 @@ use guest_contracts::diagnostics::{
 };
 use guest_telemetry::{log_info, log_warn};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
+use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::LOG_TAG;
@@ -54,13 +55,13 @@ pub(super) struct EventDeliverySender {
 struct EventQueue {
     pending: Mutex<VecDeque<PreparedEvent>>,
     ready: Notify,
-    closed: AtomicBool,
+    closed: CancellationToken,
     dropped_events: AtomicUsize,
 }
 
 impl EventQueue {
     fn close(&self) {
-        self.closed.store(true, Ordering::Release);
+        self.closed.cancel();
         self.ready.notify_one();
     }
 
@@ -77,7 +78,7 @@ impl EventQueue {
                     // Pair the retry generation with dequeue under the eviction lock.
                     return Some((event, self.dropped_events.load(Ordering::Relaxed)));
                 }
-                if self.closed.load(Ordering::Acquire) {
+                if self.closed.is_cancelled() {
                     return None;
                 }
             }
@@ -161,7 +162,7 @@ impl EventDeliverySender {
             .pending
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if self.queue.closed.load(Ordering::Acquire) {
+        if self.queue.closed.is_cancelled() {
             return Err(AgentError::Execution(format!(
                 "CLI event delivery worker stopped before sequence {sequence} could be queued"
             )));
@@ -560,7 +561,7 @@ async fn run_event_sender(
             };
             let terminal = matches!(error, AgentError::HttpStatus { status, .. } if (400..500).contains(status) && *status != 429);
             if terminal
-                || queue.closed.load(Ordering::Acquire)
+                || queue.closed.is_cancelled()
                 || queue.dropped_events.load(Ordering::Relaxed) != drops_at_start
             {
                 break result;
@@ -574,8 +575,13 @@ async fn run_event_sender(
                 LOG_TAG,
                 "Retrying event batch {first_sequence}-{last_sequence} while CLI execution continues after upload failure: {error}"
             );
-            tokio::time::sleep(delay).await;
-            if queue.closed.load(Ordering::Acquire)
+            // Closing ends only the continued-execution backoff. The failed
+            // batch is recorded below, then later accepted events still drain.
+            tokio::select! {
+                _ = tokio::time::sleep(delay) => {},
+                _ = queue.closed.cancelled() => {},
+            }
+            if queue.closed.is_cancelled()
                 || queue.dropped_events.load(Ordering::Relaxed) != drops_at_start
             {
                 break result;
@@ -769,3 +775,6 @@ fn usize_to_u32(value: usize) -> u32 {
 fn usize_to_u64(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
+
+#[cfg(test)]
+mod tests;

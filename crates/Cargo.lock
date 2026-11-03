@@ -2035,6 +2035,7 @@ dependencies = [
  "libc",
  "pin-project-lite",
  "process-control-ipc",
+ "raw-http-test-support",
  "reqwest",
  "rustix",
  "serde",
