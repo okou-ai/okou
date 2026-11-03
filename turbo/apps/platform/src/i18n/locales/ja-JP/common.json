@@ -3169,6 +3169,18 @@
     "unused": "あなたのホストでは使用されていません",
     "usedBy_other": "あなたのホスト {{count}} 台が使用："
   },
+  "connectorChatAccess": {
+    "accountAccess": "{{account}} のアクセス",
+    "enableByDefault": "{{account}} を既定で有効にする",
+    "enabledAccounts": "{{value}} 件が有効",
+    "manageAccounts": "アカウントを管理",
+    "noAccount": "アカウント未選択",
+    "noEnabledAccount": "このチャットで有効なアカウントはありません",
+    "permissions": "権限",
+    "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
+    "settingsDescription": "既定で有効にするアカウントと、新しいチャットの既定のアカウントを選択します。",
+    "thisChat": "このチャット"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{action}} {{connector}} {{agent}} へのアクセス",

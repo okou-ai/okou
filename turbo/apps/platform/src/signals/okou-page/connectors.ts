@@ -40,6 +40,9 @@ import {
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
+import { createChatConnectorAccessSignals } from "./chat-connector-access.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -130,6 +133,8 @@ export interface ComposerConnectorSignals {
     Promise<readonly PlatformUserPermissionGrant[]>
   >;
   readonly accounts: ComposerConnectorAccountSignals;
+  readonly chatAccess: ReturnType<typeof createChatConnectorAccessSignals>;
+  readonly reloadAccountPreference$: Command<void, []>;
 }
 
 /** Browse reads ask for no keyword; the category, when set, scopes them. */
@@ -288,6 +293,7 @@ function createConnectorAuthorizationCommand(
 function createConnectorUiSignals(
   resources: ReturnType<typeof createConnectorResourceSignals>,
   accounts: ComposerConnectorAccountSignals,
+  chatAccess: ReturnType<typeof createChatConnectorAccessSignals>,
 ): Pick<
   ComposerConnectorSignals,
   | "connectorUiState$"
@@ -362,11 +368,13 @@ function createConnectorUiSignals(
       directoryDetailSlug: null,
     });
   });
-  const setPopoverOpen$ = command(({ set }, open: boolean): void => {
+  const setPopoverOpen$ = command(({ get, set }, open: boolean): void => {
     if (open) {
       set(updateConnectorUiState$, { popoverOpen: true });
+      set(chatAccess.open$, get(pageSignal$));
     } else {
       set(accounts.closeMenu$);
+      set(chatAccess.close$);
       set(updateConnectorUiState$, {
         popoverOpen: false,
         popoverSearch: "",
@@ -376,6 +384,7 @@ function createConnectorUiSignals(
   });
   const openRemoteAccessDialog$ = command(({ set }): void => {
     set(accounts.closeMenu$);
+    set(chatAccess.close$);
     set(updateConnectorUiState$, {
       popoverOpen: false,
       popoverSearch: "",
@@ -404,9 +413,23 @@ export function createComposerConnectorSignals(
 ): ComposerConnectorSignals {
   const resources = createConnectorResourceSignals();
   const accounts = createComposerConnectorAccountSignals(threadId);
-  const ui = createConnectorUiSignals(resources, accounts);
+  const chatAccess = createChatConnectorAccessSignals(
+    resources.connected$,
+    threadId,
+  );
+  const ui = createConnectorUiSignals(resources, accounts, chatAccess);
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
+    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      return {
+        overview: await get(resources.connected$),
+        authorization: {
+          agentId,
+          enabledConnectorSlugs: [],
+          customConnectorIds: [],
+        },
+      };
+    }
     const [overview, authorization] = await Promise.all([
       get(resources.connected$),
       get(authorization$),
@@ -489,5 +512,10 @@ export function createComposerConnectorSignals(
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
     accounts,
+    chatAccess,
+    reloadAccountPreference$: command(({ set }) => {
+      set(accounts.reloadPreference$);
+      set(chatAccess.reload$);
+    }),
   };
 }

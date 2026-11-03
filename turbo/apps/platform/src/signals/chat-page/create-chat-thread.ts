@@ -3948,7 +3948,7 @@ export function createChatPanelSignals(
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$:
-      composer.connector.accounts.reloadPreference$,
+      composer.connector.reloadAccountPreference$,
     resourceCatalog: artifact.resourceCatalog,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);

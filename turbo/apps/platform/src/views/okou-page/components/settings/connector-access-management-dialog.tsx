@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { ConnectorPermissionsDialog } from "./connector-permissions-dialog.tsx";
 
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -40,6 +43,7 @@ import {
 } from "../../../../signals/okou-page/settings/connector-access-management.ts";
 import {
   customConnectorAgentAuthorizations$,
+  customConnectorMemberPermissions$,
   setCustomConnectorAgentAuthorization$,
   type CustomConnectorAgentAuthorization,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
@@ -519,7 +523,31 @@ function AgentPermissionDialog({
   );
 }
 
-export function ConnectorAccessManagementDialog({
+export function ConnectorAccessManagementDialog(
+  props: ConnectorAccessManagementDialogProps,
+) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  const signals = useGet(managedConnectorAccessSignals$);
+  const entry = {
+    target: { kind: "builtin" as const, connectorSlug: props.connectorSlug },
+    label: props.connectorLabel,
+    permissionBundleRef: props.connectorSlug,
+  };
+  return enabled ? (
+    signals && (
+      <ConnectorPermissionsDialog
+        entry={entry}
+        signals={signals.memberPermissions}
+        onClose={props.onClose}
+      />
+    )
+  ) : (
+    <LegacyConnectorAccessManagementDialog {...props} />
+  );
+}
+
+function LegacyConnectorAccessManagementDialog({
   connectorSlug,
   connectorLabel,
   allowAccessIncrease,
@@ -656,7 +684,36 @@ function CustomConnectorAccessPermissionsDrawer({
   );
 }
 
-export function CustomConnectorAccessManagementDialog({
+export function CustomConnectorAccessManagementDialog(props: {
+  readonly connector: CustomConnectorResponse;
+  readonly allowAccessIncrease: boolean;
+  readonly onClose: () => void;
+}) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  const signals = useGet(customConnectorMemberPermissions$);
+  const entry = {
+    target: {
+      kind: "custom" as const,
+      customConnectorId: props.connector.id,
+    },
+    label: props.connector.displayName,
+    permissionBundleRef: props.connector.permissionBundleRef ?? null,
+  };
+  return enabled ? (
+    signals && (
+      <ConnectorPermissionsDialog
+        entry={entry}
+        signals={signals}
+        onClose={props.onClose}
+      />
+    )
+  ) : (
+    <LegacyCustomConnectorAccessManagementDialog {...props} />
+  );
+}
+
+function LegacyCustomConnectorAccessManagementDialog({
   connector,
   allowAccessIncrease,
   onClose,

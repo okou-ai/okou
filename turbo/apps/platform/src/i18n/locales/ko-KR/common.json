@@ -3169,6 +3169,18 @@
     "unused": "내 호스트에서 사용 중이지 않음",
     "usedBy_other": "내 호스트 {{count}}개에서 사용:"
   },
+  "connectorChatAccess": {
+    "accountAccess": "{{account}} 접근",
+    "enableByDefault": "{{account}} 기본 활성화",
+    "enabledAccounts": "{{value}}개 활성화",
+    "manageAccounts": "계정 관리",
+    "noAccount": "선택된 계정 없음",
+    "noEnabledAccount": "이 채팅에서 활성화된 계정이 없습니다",
+    "permissions": "권한",
+    "permissionsDescription": "이 규칙은 모든 채팅과 계정에서 이 커넥터에 적용됩니다.",
+    "settingsDescription": "기본으로 활성화할 계정과 새 채팅의 기본 계정을 선택하세요.",
+    "thisChat": "현재 채팅"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{agent}}에 대해 {{connector}} {{action}} 권한",

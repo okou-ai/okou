@@ -3,6 +3,8 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { EllipsisVertical } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 
 import {
   surfaceVariants,
@@ -71,7 +73,28 @@ interface CustomConnectorRowProps {
   readonly connecting: boolean;
 }
 
-function CustomConnectorAgentAccess({
+function CustomConnectorAgentAccess(props: {
+  readonly connector: CustomConnectorResponse;
+  readonly allowAccessIncrease: boolean;
+  readonly onManageAccess: () => void;
+}) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  const { t } = useTranslation();
+  return enabled ? (
+    props.allowAccessIncrease ? (
+      <Button variant="quiet" size="xs" onClick={props.onManageAccess}>
+        {t(($) => {
+          return $.connectorChatAccess.permissions;
+        })}
+      </Button>
+    ) : null
+  ) : (
+    <LegacyCustomConnectorAgentAccess {...props} />
+  );
+}
+
+function LegacyCustomConnectorAgentAccess({
   connector,
   allowAccessIncrease,
   onManageAccess,

@@ -105,7 +105,10 @@ interface ConnectorPermission {
 }
 
 interface PermissionsDrawerProps {
-  agentId: string;
+  agentId?: string;
+  scopeKey?: string;
+  connectorScope?: boolean;
+  headerIcon?: ReactNode;
   connectorSlug: ConnectorSlug;
   connectorLabel: string;
   metadata$: Computed<Promise<PlatformConnectorPermissionMetadata | null>>;
@@ -153,13 +156,14 @@ type LoadedPermissionsDrawerContentProps = Pick<
 
 function buildInitialPermissionDrawerState({
   agentId,
+  scopeKey,
   connectorSlug,
   metadata,
   initialPolicies,
   initialGrants,
 }: Pick<
   PermissionsDrawerProps,
-  "agentId" | "connectorSlug" | "initialPolicies" | "initialGrants"
+  "agentId" | "scopeKey" | "connectorSlug" | "initialPolicies" | "initialGrants"
 > & {
   readonly metadata: PlatformConnectorPermissionMetadata;
 }): InitialPermissionDrawerState {
@@ -169,16 +173,21 @@ function buildInitialPermissionDrawerState({
   const initialPolicyStateKey = permissionDraftInitialPolicyKey(context);
   return {
     explicitGrants,
-    initialPolicyKey: `${agentId}\u0000${connectorSlug}\u0000${permissionDraftMetadataKey(metadata)}\u0000${initialPolicyStateKey}\u0000${grantStateKey}`,
+    initialPolicyKey: `${scopeKey ?? agentId}\u0000${connectorSlug}\u0000${permissionDraftMetadataKey(metadata)}\u0000${initialPolicyStateKey}\u0000${grantStateKey}`,
   };
 }
 
 function PermissionsDrawerHeader({
   icon,
+  headerIcon,
   connectorLabel,
   displayName,
   surface,
-}: Pick<PermissionsDrawerProps, "connectorLabel" | "displayName"> & {
+  connectorScope,
+}: Pick<
+  PermissionsDrawerProps,
+  "connectorLabel" | "displayName" | "connectorScope" | "headerIcon"
+> & {
   readonly icon: PublicConnectorCatalogIcon | undefined;
   readonly surface: PermissionsSurface;
 }) {
@@ -191,25 +200,31 @@ function PermissionsDrawerHeader({
         },
         { connector: connectorLabel },
       )}
-      <span className="text-sm font-normal text-muted-foreground ml-1">
-        {t(
-          ($) => {
-            return $.connectors.permissions.forTarget;
-          },
-          { target: displayName },
-        )}
-      </span>
+      {!connectorScope && (
+        <span className="text-sm font-normal text-muted-foreground ml-1">
+          {t(
+            ($) => {
+              return $.connectors.permissions.forTarget;
+            },
+            { target: displayName },
+          )}
+        </span>
+      )}
     </>
   );
-  const description = t(($) => {
-    return $.connectors.permissions.descriptionAgent;
-  });
+  const description = connectorScope
+    ? t(($) => {
+        return $.connectorChatAccess.permissionsDescription;
+      })
+    : t(($) => {
+        return $.connectors.permissions.descriptionAgent;
+      });
 
   if (surface === "dialog") {
     return (
       <DialogHeader>
         <div className="flex items-center gap-3">
-          <ConnectorIcon icon={icon} size={24} />
+          {headerIcon ?? <ConnectorIcon icon={icon} size={24} />}
           <DialogTitle className="text-base">{title}</DialogTitle>
         </div>
         <DialogDescription>{description}</DialogDescription>
@@ -220,7 +235,7 @@ function PermissionsDrawerHeader({
   return (
     <SheetHeader>
       <div className="flex items-center gap-3">
-        <ConnectorIcon icon={icon} size={24} />
+        {headerIcon ?? <ConnectorIcon icon={icon} size={24} />}
         <SheetTitle className="text-base">{title}</SheetTitle>
       </div>
       <SheetDescription>{description}</SheetDescription>
@@ -974,6 +989,8 @@ function PermissionRow({
     <div>
       {showSeparator && <div className="mx-3 border-t border-border/40" />}
       <div
+        role="group"
+        aria-label={permission.name}
         className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-state-hover transition-colors ${indent ? "pl-8" : ""}`}
       >
         <div className="min-w-0 flex-1">
@@ -1502,6 +1519,7 @@ function PermissionsContent({
   const loadedInitialState = loadedMetadata
     ? buildInitialPermissionDrawerState({
         agentId: props.agentId,
+        scopeKey: props.scopeKey,
         connectorSlug: props.connectorSlug,
         metadata: loadedMetadata,
         initialPolicies: props.initialPolicies,
@@ -1525,8 +1543,10 @@ function PermissionsContent({
     <>
       <PermissionsDrawerHeader
         icon={loadedMetadata?.icon}
+        headerIcon={props.headerIcon}
         connectorLabel={props.connectorLabel}
         displayName={props.displayName}
+        connectorScope={props.connectorScope}
         surface={surface}
       />
 

@@ -1,4 +1,6 @@
 import { command, computed, state } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import {
   sendNewThread$,
@@ -106,15 +108,21 @@ function createAgentSubmitMessage(
         return false;
       }
       const access = get(newThreadComputerAccess$);
-      const connectorPreference = await get(
-        connector.accounts.preferenceState$,
-      );
+      const chatAccessEnabled =
+        get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+      const connectorPreference = chatAccessEnabled
+        ? null
+        : await get(connector.accounts.preferenceState$);
       signal.throwIfAborted();
       const send = options.forward
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
-      const connectorSelections = connectorPreference.selections;
+      const connectorSelections = connectorPreference?.selections ?? [];
+      const pendingConnectorAccess = get(connector.chatAccess.pending$);
+      const hasPendingConnectorAccess =
+        pendingConnectorAccess.overrides.length > 0 ||
+        pendingConnectorAccess.selections.length > 0;
       const sent = await set(
         send,
         {
@@ -142,6 +150,9 @@ function createAgentSubmitMessage(
             ? { onOptimisticSend: options.onOptimisticSend }
             : {}),
           ...(connectorSelections.length > 0 ? { connectorSelections } : {}),
+          ...(chatAccessEnabled && hasPendingConnectorAccess
+            ? { initialConnectorAccess: pendingConnectorAccess }
+            : {}),
           ...(initialRemoteAccessOverrides.length > 0
             ? { initialRemoteAccessOverrides }
             : {}),
@@ -152,6 +163,7 @@ function createAgentSubmitMessage(
         set(resetNewThreadComputerAccess$);
         set(resetChatPageModelSelection$);
         set(connector.accounts.resetPendingSelections$);
+        set(connector.chatAccess.resetPending$);
         set(pendingRemoteAccess.reset$);
       }
       return sent;

@@ -1,4 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -35,6 +37,7 @@ import {
 import {
   setDefaultConnectorAccount$,
   settingsConnectorAccounts,
+  createConnectorAccountDefaultSignals,
 } from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import {
   clearConnectorAccountDeletion$,
@@ -48,6 +51,7 @@ import {
   connectorAccountRenameInputRef$,
   prepareConnectorAccountDeletion$,
   resetConnectorAccountManagerDrafts$,
+  managedConnectorAccountDefaults$,
   saveConnectorAccountRename$,
   setConnectorAccountRenameValue$,
   startConnectorAccountRename$,
@@ -55,6 +59,7 @@ import {
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { useConnectorAccountLabel } from "./use-connector-account-label.ts";
 import { MercuryDisclosure } from "./mercury-disclosure.tsx";
+import { LoadingSwitch } from "../../../components/loading-switch.tsx";
 
 interface ConnectorAccountManagerDialogProps {
   readonly target: ConnectorAccountTarget;
@@ -125,8 +130,10 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
 
 function AccountDefaultRadio({
   account,
+  disabled,
 }: {
   readonly account: ConnectorAccountConnection;
+  readonly disabled?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -142,6 +149,7 @@ function AccountDefaultRadio({
         </span>
       ) : null}
       <Radio
+        disabled={disabled}
         value={account.id}
         aria-label={
           account.isDefault
@@ -259,12 +267,16 @@ function AccountRow({
   listed,
   onReconnect,
   onReviewScopes,
+  defaultEnabled,
+  enableControl,
 }: {
   readonly target: ConnectorAccountTarget;
   readonly account: ConnectorAccountConnection;
   readonly listed: boolean;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
+  readonly defaultEnabled?: boolean;
+  readonly enableControl?: ReactNode;
 }) {
   const { t } = useTranslation();
   const renameDraft = useGet(connectorAccountRenameDraft$);
@@ -314,7 +326,11 @@ function AccountRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <AccountDefaultRadio account={account} />
+        {enableControl}
+        <AccountDefaultRadio
+          account={account}
+          disabled={defaultEnabled === false}
+        />
         <AccountActions
           account={account}
           onReconnect={onReconnect}
@@ -325,27 +341,24 @@ function AccountRow({
   );
 }
 
-function AccountsCard({
-  loadable,
-  defaultConnection,
-  search,
-  target,
-  onReconnect,
-  onReviewScopes,
-}: {
-  readonly loadable: Loadable<ConnectorAccountList>;
-  readonly defaultConnection: ConnectorAccountConnection | null;
-  readonly search: string;
-  readonly target: ConnectorAccountTarget;
-  readonly onReconnect: (account: ConnectorAccountConnection) => void;
-  readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
-}) {
-  const [setDefaultLoadable, setDefault] = useLoadableSet(
-    setDefaultConnectorAccount$,
-  );
-  const signal = useGet(pageSignal$);
-  const renameDraft = useGet(connectorAccountRenameDraft$);
-  const editingAccount = renameDraft?.account;
+function accountDefaultEnablement(
+  defaults: readonly { connectionId: string; defaultEnabled: boolean }[] | null,
+  connectionId: string,
+  active: boolean,
+): boolean | undefined {
+  return active
+    ? (defaults?.find((item) => {
+        return item.connectionId === connectionId;
+      })?.defaultEnabled ?? false)
+    : undefined;
+}
+
+function accountManagerRows(
+  loadable: Loadable<ConnectorAccountList>,
+  defaultConnection: ConnectorAccountConnection | null,
+  search: string,
+  editingAccount: ConnectorAccountConnection | undefined,
+) {
   const available = loadable.state === "hasData" && loadable.data.available;
   const connections = available ? loadable.data.connections : [];
   // At rest the default account is pinned on top. Search owns the entire list.
@@ -357,7 +370,8 @@ function AccountsCard({
     : available && defaultConnection
       ? [defaultConnection, ...others]
       : others;
-  const messageKey =
+  const messageKey:
+    "accountsUnavailable" | "loading" | "noAccountsFound" | null =
     loadable.state === "hasError" ||
     (loadable.state === "hasData" && !available)
       ? "accountsUnavailable"
@@ -375,12 +389,60 @@ function AccountsCard({
     })
       ? [...rows, editingAccount]
       : rows;
+  return { rows, displayedRows, messageKey };
+}
+
+function AccountsCard({
+  loadable,
+  defaultConnection,
+  search,
+  target,
+  onReconnect,
+  onReviewScopes,
+  defaults,
+  defaultSignals,
+}: {
+  readonly loadable: Loadable<ConnectorAccountList>;
+  readonly defaultConnection: ConnectorAccountConnection | null;
+  readonly search: string;
+  readonly target: ConnectorAccountTarget;
+  readonly onReconnect: (account: ConnectorAccountConnection) => void;
+  readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
+  readonly defaults:
+    | readonly {
+        connectionId: string;
+        defaultEnabled: boolean;
+        isDefault: boolean;
+      }[]
+    | null;
+  readonly defaultSignals: ReturnType<
+    typeof createConnectorAccountDefaultSignals
+  > | null;
+}) {
+  const [setDefaultLoadable, setDefault] = useLoadableSet(
+    setDefaultConnectorAccount$,
+  );
+  const signal = useGet(pageSignal$);
+  const renameDraft = useGet(connectorAccountRenameDraft$);
+  const editingAccount = renameDraft?.account;
+  const { rows, displayedRows, messageKey } = accountManagerRows(
+    loadable,
+    defaultConnection,
+    search,
+    editingAccount,
+  );
   return (
     <>
       {messageKey ? <AccountsMessage messageKey={messageKey} /> : null}
       {displayedRows.length > 0 ? (
         <RadioGroup
-          value={defaultConnection?.id ?? null}
+          value={
+            defaultSignals
+              ? (defaults?.find((account) => {
+                  return account.isDefault;
+                })?.connectionId ?? null)
+              : (defaultConnection?.id ?? null)
+          }
           disabled={setDefaultLoadable.state === "loading"}
           onValueChange={(connectionId: string) => {
             detach(
@@ -404,6 +466,18 @@ function AccountsCard({
                   })}
                   onReconnect={onReconnect}
                   onReviewScopes={onReviewScopes}
+                  defaultEnabled={accountDefaultEnablement(
+                    defaults,
+                    account.id,
+                    defaultSignals !== null,
+                  )}
+                  enableControl={
+                    <OptionalAccountEnabledToggle
+                      account={account}
+                      defaults={defaults}
+                      signals={defaultSignals}
+                    />
+                  }
                 />
               </div>
             );
@@ -411,6 +485,63 @@ function AccountsCard({
         </RadioGroup>
       ) : null}
     </>
+  );
+}
+
+function OptionalAccountEnabledToggle({
+  account,
+  defaults,
+  signals,
+}: {
+  readonly account: ConnectorAccountConnection;
+  readonly defaults:
+    readonly { connectionId: string; defaultEnabled: boolean }[] | null;
+  readonly signals: ReturnType<
+    typeof createConnectorAccountDefaultSignals
+  > | null;
+}) {
+  return signals ? (
+    <AccountEnabledToggle
+      account={account}
+      enabled={accountDefaultEnablement(defaults, account.id, true) ?? false}
+      loading={defaults === null}
+      signals={signals}
+    />
+  ) : null;
+}
+
+function AccountEnabledToggle({
+  account,
+  enabled,
+  loading,
+  signals,
+}: {
+  readonly account: ConnectorAccountConnection;
+  readonly enabled: boolean;
+  readonly loading: boolean;
+  readonly signals: ReturnType<typeof createConnectorAccountDefaultSignals>;
+}) {
+  const [saving, update] = useLoadableSet(signals.update$);
+  const signal = useGet(pageSignal$);
+  const label = useConnectorAccountLabel()(account);
+  const { t } = useTranslation();
+  return (
+    <LoadingSwitch
+      checked={enabled}
+      disabled={loading}
+      loading={saving.state === "loading"}
+      ariaLabel={t(
+        ($) => {
+          return $.connectorChatAccess.enableByDefault;
+        },
+        {
+          account: label,
+        },
+      )}
+      onCheckedChange={(value) => {
+        detach(update(account.id, value, signal), Reason.DomCallback);
+      }}
+    />
   );
 }
 
@@ -660,6 +791,8 @@ function ConnectorAccountManagerHeader({
   icon,
 }: Pick<ConnectorAccountManagerDialogProps, "connectorLabel" | "icon">) {
   const { t } = useTranslation();
+  const chatAccess =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
   return (
     <DialogHeader className="shrink-0 gap-2">
       <div className="flex items-center gap-3">
@@ -676,9 +809,13 @@ function ConnectorAccountManagerHeader({
             )}
           </DialogTitle>
           <DialogDescription>
-            {t(($) => {
-              return $.connectors.accounts.managerDescription;
-            })}
+            {chatAccess
+              ? t(($) => {
+                  return $.connectorChatAccess.settingsDescription;
+                })
+              : t(($) => {
+                  return $.connectors.accounts.managerDescription;
+                })}
           </DialogDescription>
         </div>
       </div>
@@ -686,7 +823,19 @@ function ConnectorAccountManagerHeader({
   );
 }
 
-export function ConnectorAccountManagerDialog({
+export function ConnectorAccountManagerDialog(
+  props: ConnectorAccountManagerDialogProps,
+) {
+  const defaultsSignals = useGet(managedConnectorAccountDefaults$);
+  return defaultsSignals ? (
+    <LoadedConnectorAccountManagerDialog
+      {...props}
+      defaultsSignals={defaultsSignals}
+    />
+  ) : null;
+}
+
+function LoadedConnectorAccountManagerDialog({
   target,
   connectorLabel,
   icon,
@@ -694,8 +843,16 @@ export function ConnectorAccountManagerDialog({
   onAdd,
   onReconnect,
   onReviewScopes,
-}: ConnectorAccountManagerDialogProps) {
+  defaultsSignals,
+}: ConnectorAccountManagerDialogProps & {
+  readonly defaultsSignals: ReturnType<
+    typeof createConnectorAccountDefaultSignals
+  >;
+}) {
   const { t } = useTranslation();
+  const chatAccess =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  const defaults = useLastLoadable(defaultsSignals.defaults$);
   const accountsLoadable = useLastLoadable(settingsConnectorAccounts.accounts$);
   const search = useGet(settingsConnectorAccounts.search$);
   const [loadMoreLoadable, loadMore] = useLoadableSet(
@@ -740,6 +897,8 @@ export function ConnectorAccountManagerDialog({
         ) : null}
         <div className="min-h-0 overflow-y-auto">
           <AccountsCard
+            defaults={defaults.state === "hasData" ? defaults.data : null}
+            defaultSignals={chatAccess ? defaultsSignals : null}
             loadable={accountsLoadable}
             defaultConnection={defaultConnection}
             search={search}

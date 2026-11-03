@@ -1,4 +1,8 @@
 import { command, computed, state } from "ccstate";
+import { createConnectorPermissionsSignals } from "./connector-permissions.ts";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { pageSignal$ } from "../../page-signal.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
@@ -981,6 +985,16 @@ const internalEditConfirmation$ = state<{
 export const customConnectorDialog$ = computed((get) => {
   return get(internalDialog$);
 });
+export const customConnectorMemberPermissions$ = computed((get) => {
+  const dialog = get(internalDialog$);
+  return dialog.kind === "access"
+    ? createConnectorPermissionsSignals({
+        target: { kind: "custom", customConnectorId: dialog.connector.id },
+        label: dialog.connector.displayName,
+        permissionBundleRef: dialog.connector.permissionBundleRef ?? null,
+      })
+    : null;
+});
 export const customConnectorEditConfirmation$ = computed((get) => {
   return get(internalEditConfirmation$);
 });
@@ -1013,8 +1027,15 @@ export const closeCustomConnectorEditConfirmationDialog$ = command(
   },
 );
 export const openCustomConnectorAccessDialog$ = command(
-  ({ set }, connector: CustomConnectorResponse) => {
+  ({ get, set }, connector: CustomConnectorResponse) => {
     set(internalDialog$, { kind: "access", connector });
+    const permissions = get(customConnectorMemberPermissions$);
+    if (
+      permissions &&
+      get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
+    ) {
+      set(permissions.open$, get(pageSignal$));
+    }
   },
 );
 export const openCustomConnectorDeleteDialog$ = command(
@@ -1022,7 +1043,11 @@ export const openCustomConnectorDeleteDialog$ = command(
     set(internalDialog$, { kind: "delete", connector });
   },
 );
-export const closeCustomConnectorDialog$ = command(({ set }) => {
+export const closeCustomConnectorDialog$ = command(({ get, set }) => {
+  const permissions = get(customConnectorMemberPermissions$);
+  if (permissions) {
+    set(permissions.close$);
+  }
   set(internalEditConfirmation$, null);
   set(internalDialog$, { kind: "none" });
 });

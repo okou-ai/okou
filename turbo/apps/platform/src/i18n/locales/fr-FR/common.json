@@ -3230,6 +3230,18 @@
     "usedBy_many": "Utilisée par {{count}} de vos hôtes :",
     "usedBy_other": "Utilisée par {{count}} de vos hôtes :"
   },
+  "connectorChatAccess": {
+    "accountAccess": "Accès de {{account}}",
+    "enableByDefault": "Activer {{account}} par défaut",
+    "enabledAccounts": "{{value}} actifs",
+    "manageAccounts": "Gérer les comptes",
+    "noAccount": "Aucun compte sélectionné",
+    "noEnabledAccount": "Aucun compte actif pour cette discussion",
+    "permissions": "Autorisations",
+    "permissionsDescription": "Ces règles s’appliquent à ce connecteur dans toutes vos discussions et tous vos comptes.",
+    "settingsDescription": "Choisissez les comptes actifs par défaut et le compte par défaut pour les nouvelles discussions.",
+    "thisChat": "Cette discussion"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{action}} l'accès à {{connector}} pour {{agent}}",
