@@ -5417,6 +5417,8 @@
       "settings": "Settings",
       "signOut": "Sign out",
       "subscriptions": {
+        "label": "Subscription usage",
+        "lowUsage": "Subscription usage: less than 20% remaining",
         "credits": "Credits",
         "fiveHourLimit": "5-hour limit",
         "resetTimeUnavailable": "Reset time unavailable",

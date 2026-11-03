@@ -5419,6 +5419,8 @@
       "settings": "Einstellungen",
       "signOut": "Abmelden",
       "subscriptions": {
+        "label": "Abonnementnutzung",
+        "lowUsage": "Abonnementnutzung: weniger als 20 % verbleibend",
         "credits": "Credits",
         "fiveHourLimit": "5-Stunden-Limit",
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",

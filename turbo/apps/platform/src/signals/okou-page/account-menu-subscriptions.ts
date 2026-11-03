@@ -3,7 +3,10 @@ import type {
   ModelProviderResponse,
   ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { subscriptionUsageWindows } from "../../lib/subscription-usage-windows.ts";
+import {
+  subscriptionUsageWindowRemainingPercent,
+  subscriptionUsageWindows,
+} from "../../lib/subscription-usage-windows.ts";
 import { refreshThirdPartySubscriptionsIfStale$ } from "../external/third-party-subscriptions.ts";
 import {
   accountMenuCodexResetDialog$,
@@ -28,6 +31,23 @@ export interface AccountMenuSubscriptionUsageRow {
 }
 
 export type AccountMenuSubscriptionUsageRowsCacheKey = string | null;
+
+/** The rail follows connection, account-switch, and usage invalidations directly. */
+export const sidebarSubscriptionUsage$ = computed(async (get) => {
+  const rows = accountMenuSubscriptionUsageRows(
+    await get(personalConfiguredProviders$),
+  );
+  const lowUsage = rows.some((row) => {
+    return subscriptionUsageWindows(row.usage).some(({ kind, window }) => {
+      if (row.type === "codex-oauth-token" && kind !== "week") {
+        return false;
+      }
+      const remaining = subscriptionUsageWindowRemainingPercent(window);
+      return remaining !== null && remaining < 20;
+    });
+  });
+  return { rows, lowUsage };
+});
 
 export const ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS = [
   { type: "codex-oauth-token" },

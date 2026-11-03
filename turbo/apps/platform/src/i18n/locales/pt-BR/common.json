@@ -5480,6 +5480,8 @@
       "settings": "Configurações",
       "signOut": "Sair",
       "subscriptions": {
+        "label": "Uso de assinaturas",
+        "lowUsage": "Uso de assinaturas: menos de 20% restante",
         "credits": "Créditos",
         "fiveHourLimit": "Limite de 5 horas",
         "resetTimeUnavailable": "Horário de redefinição indisponível",

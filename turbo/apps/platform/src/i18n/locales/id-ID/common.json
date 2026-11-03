@@ -5402,6 +5402,8 @@
       "settings": "Setelan",
       "signOut": "Keluar",
       "subscriptions": {
+        "label": "Penggunaan langganan",
+        "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",

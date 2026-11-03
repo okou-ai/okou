@@ -5402,6 +5402,8 @@
       "settings": "設定",
       "signOut": "サインアウト",
       "subscriptions": {
+        "label": "サブスクリプションの使用状況",
+        "lowUsage": "サブスクリプションの使用状況：残り20%未満",
         "credits": "クレジット",
         "fiveHourLimit": "5時間の上限",
         "resetTimeUnavailable": "リセット時間は利用不可",

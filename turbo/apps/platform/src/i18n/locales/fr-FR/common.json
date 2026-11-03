@@ -5480,6 +5480,8 @@
       "settings": "Paramètres",
       "signOut": "Se déconnecter",
       "subscriptions": {
+        "label": "Utilisation des abonnements",
+        "lowUsage": "Utilisation des abonnements : moins de 20 % restants",
         "credits": "Crédits",
         "fiveHourLimit": "Limite de 5 heures",
         "resetTimeUnavailable": "Réinitialisation du temps indisponible",

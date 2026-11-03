@@ -5480,6 +5480,8 @@
       "settings": "Impostazioni",
       "signOut": "Esci",
       "subscriptions": {
+        "label": "Utilizzo degli abbonamenti",
+        "lowUsage": "Utilizzo degli abbonamenti: meno del 20% rimanente",
         "credits": "Crediti",
         "fiveHourLimit": "Limite di 5 ore",
         "resetTimeUnavailable": "Reimposta ora non disponibile",

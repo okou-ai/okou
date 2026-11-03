@@ -5402,6 +5402,8 @@
       "settings": "設定",
       "signOut": "退出登入",
       "subscriptions": {
+        "label": "訂閱用量",
+        "lowUsage": "訂閱用量：剩餘額度低於 20%",
         "credits": "點數",
         "fiveHourLimit": "5 小時額度",
         "resetTimeUnavailable": "重置時間不可用",

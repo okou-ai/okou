@@ -5402,6 +5402,8 @@
       "settings": "설정",
       "signOut": "로그아웃",
       "subscriptions": {
+        "label": "구독 사용량",
+        "lowUsage": "구독 사용량: 남은 한도 20% 미만",
         "credits": "크레딧",
         "fiveHourLimit": "5시간 한도",
         "resetTimeUnavailable": "재설정 시간 사용 불가",
