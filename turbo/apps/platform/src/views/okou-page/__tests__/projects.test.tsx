@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -23,6 +23,7 @@ import {
   continuityThread,
   continuityEventRow,
 } from "./chat-continuity-test-helpers.ts";
+import { createDataTransferStub } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
 const id = "30000000-0000-4000-8000-000000000071";
@@ -68,6 +69,15 @@ function namedLink(container: HTMLElement, name: string) {
       return link.textContent?.trim() === name;
     }) ?? null
   );
+}
+function threadLink(threadId: string) {
+  const link = document.querySelector<HTMLAnchorElement>(
+    `[data-sidebar-chat-thread-id="${threadId}"]`,
+  );
+  if (!link) {
+    throw new Error("Chat link not found");
+  }
+  return link;
 }
 function metadata(extra: readonly { id: string; name: string }[] = []) {
   const p = { id, name: "Launch", createdAt: at, updatedAt: at };
@@ -416,6 +426,223 @@ test("Thread menu searches and changes Project membership while preserving the o
   expect(
     document.querySelector(`[data-sidebar-chat-thread-id="${ordinary.id}"]`),
   ).toBeInTheDocument();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
+test("Dropping over an existing Project chat moves immediately while the request is pending", async () => {
+  const confirmation = context.mocks.deferred<void>();
+  const canonicalRead = context.mocks.deferred<void>();
+  const ordinary = continuityThread(101, 1, "Drag me into Launch");
+  const member = {
+    ...continuityThread(101, 2, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 101,
+    threads: [ordinary, member],
+  });
+  metadata();
+  const events: ChatThreadEvent[] = [];
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    if (events.length > 0) {
+      canonicalRead.resolve();
+    }
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(
+    projectsContract.membership,
+    async ({ params, body, respond }) => {
+      await confirmation.promise;
+      events.push({
+        id: body.eventId,
+        seqId: 2,
+        kind: "sort_touched",
+        chatThreadId: params.id,
+        agentId: ordinary.agentId,
+        title: ordinary.title,
+        projectId: body.projectId,
+        projectMembershipUpdated: true,
+        selectedModel: ordinary.selectedModel,
+        serviceTier: null,
+        computerUseHostId: null,
+        createdAt: at,
+      });
+      return respond(200, { threadId: params.id, projectId: body.projectId });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Launch", folder()));
+  const source = threadLink(ordinary.id);
+  const target = threadLink(member.id);
+  const dataTransfer = createDataTransferStub({ "text/uri-list": source.href });
+  fireEvent.dragStart(source, { dataTransfer });
+  expect(dataTransfer.getData("text/uri-list")).toBe("");
+  fireEvent.dragOver(target, { dataTransfer, clientX: 160, clientY: 160 });
+  await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
+    "Move to Launch",
+  );
+  expect(folder()).toHaveAttribute("data-project-drop-target");
+  // Moving between children must not clear the enclosing Project's hover.
+  fireEvent(
+    target,
+    new MouseEvent("dragleave", {
+      bubbles: true,
+      relatedTarget: button("Launch", folder()),
+    }),
+  );
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Move to Launch");
+  fireEvent.drop(target, { dataTransfer });
+  await waitFor(() => {
+    expect(namedLink(folder(), "Drag me into Launch")).toBeInTheDocument();
+  });
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  confirmation.resolve();
+  await canonicalRead.promise;
+  expect(namedLink(folder(), "Drag me into Launch")).toBeInTheDocument();
+});
+
+test("A cross-Agent Project chat can be dragged onto another collapsed Project", async () => {
+  const secondId = "30000000-0000-4000-8000-000000000072";
+  const ordinary = continuityThread(102, 1, "Keep this chat open");
+  const member = {
+    ...continuityThread(102, 2, "Cross-Agent research"),
+    projectId: id,
+    agentId: "c7000000-0000-4000-a000-000000000009",
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 102,
+    threads: [ordinary, member],
+  });
+  metadata([{ id: secondId, name: "Research" }]);
+  context.mocks.api(
+    projectsContract.membership,
+    ({ params, body, respond }) => {
+      return respond(200, { threadId: params.id, projectId: body.projectId });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Launch", folder()));
+  expect(button("Research", folder(secondId))).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  const dataTransfer = createDataTransferStub();
+  fireEvent.dragStart(threadLink(member.id), { dataTransfer });
+  fireEvent.dragOver(folder(secondId), { dataTransfer });
+  await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
+    "Move to Research",
+  );
+  fireEvent.drop(folder(secondId), { dataTransfer });
+  await waitFor(() => {
+    expect(
+      namedLink(folder(secondId), "Cross-Agent research"),
+    ).toBeInTheDocument();
+  });
+  expect(button("Research", folder(secondId))).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(namedLink(folder(), "Cross-Agent research")).not.toBeInTheDocument();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
+test("Escape cancels a Project drag, and unrelated drags or the current Project are not accepted", async () => {
+  const ordinary = continuityThread(103, 1, "Ordinary chat");
+  const member = {
+    ...continuityThread(103, 2, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 103,
+    threads: [ordinary, member],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Launch", folder()));
+  const dataTransfer = createDataTransferStub();
+  fireEvent.dragStart(threadLink(ordinary.id), { dataTransfer });
+  fireEvent.dragOver(folder(), { dataTransfer });
+  await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
+    "Move to Launch",
+  );
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  expect(folder()).not.toHaveAttribute("data-project-drop-target");
+  fireEvent.drop(folder(), { dataTransfer });
+  expect(
+    threadLink(ordinary.id).closest("[data-project-folder-id]"),
+  ).toBeNull();
+
+  const ownProjectTransfer = createDataTransferStub();
+  fireEvent.dragStart(threadLink(member.id), {
+    dataTransfer: ownProjectTransfer,
+  });
+  expect(
+    fireEvent.dragOver(folder(), { dataTransfer: ownProjectTransfer }),
+  ).toBeTruthy();
+  fireEvent.dragEnd(threadLink(member.id), {
+    dataTransfer: ownProjectTransfer,
+  });
+  const externalTransfer = createDataTransferStub({
+    "text/uri-list": "https://example.com",
+  });
+  expect(
+    fireEvent.dragOver(folder(), { dataTransfer: externalTransfer }),
+  ).toBeTruthy();
+  expect(
+    fireEvent.drop(folder(), { dataTransfer: externalTransfer }),
+  ).toBeTruthy();
+  expect(namedLink(folder(), "Launch planning")).toBeInTheDocument();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
+test("A failed drag move shows an error beside its destination", async () => {
+  const ordinary = continuityThread(104, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 104,
+    threads: [ordinary],
+  });
+  metadata();
+  context.mocks.api(projectsContract.membership, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Project access denied" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const dataTransfer = createDataTransferStub();
+  fireEvent.dragStart(threadLink(ordinary.id), { dataTransfer });
+  fireEvent.dragOver(folder(), { dataTransfer });
+  fireEvent.drop(folder(), { dataTransfer });
+  await expect(within(folder()).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not move chat",
+  );
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });
 

@@ -40,6 +40,7 @@ TooltipTrigger.displayName = "TooltipTrigger";
 
 type TooltipPositionerProps = Pick<
   TooltipPrimitive.Positioner.Props,
+  | "anchor"
   | "align"
   | "alignOffset"
   | "collisionAvoidance"
@@ -56,6 +57,7 @@ type TooltipContentProps = TooltipPrimitive.Popup.Props &
 const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
   (
     {
+      anchor,
       align = "center",
       alignOffset = 0,
       children,
@@ -76,6 +78,7 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
           {(padding) => {
             return (
               <TooltipPrimitive.Positioner
+                anchor={anchor}
                 align={align}
                 alignOffset={alignOffset}
                 collisionAvoidance={collisionAvoidance}
