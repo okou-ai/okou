@@ -406,7 +406,7 @@ describe("sandbox hosted previews", () => {
     const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
       artifactOgContract,
     );
-    context.mocks.s3.clientConfig.mockClear();
+    context.mocks.s3.requestConfig.mockClear();
     const metadata = await accept(
       og.metadata({ query: { kind: "host", id: prepared.deploymentId } }),
       [200],
@@ -416,7 +416,7 @@ describe("sandbox hosted previews", () => {
       title: "Morning coffee",
       description: "Fresh coffee daily",
     });
-    expect(context.mocks.s3.clientConfig).toHaveBeenCalledWith(
+    expect(context.mocks.s3.requestConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         credentials: {
           accessKeyId: "test-hosted-sites-access-key",
@@ -424,7 +424,7 @@ describe("sandbox hosted previews", () => {
         },
       }),
     );
-    expect(context.mocks.s3.clientConfig).not.toHaveBeenCalledWith(
+    expect(context.mocks.s3.requestConfig).not.toHaveBeenCalledWith(
       expect.objectContaining({
         credentials: {
           accessKeyId: "test-access-key",

@@ -50,6 +50,7 @@
     "src/lib/env.ts",
     "src/lib/log.ts",
     "src/lib/secret-kms-client.ts",
+    "src/lib/s3-client.ts",
     "src/lib/singleton.ts",
     "src/signals/external/clerk.ts",
     "src/signals/external/mcp-server.ts",

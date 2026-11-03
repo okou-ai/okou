@@ -29,7 +29,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { env } from "../../lib/env";
-import { singleton } from "../../lib/singleton";
+import { createLazyS3Client } from "../../lib/s3-client";
 import { detach, Mechanism, settle } from "../utils";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
@@ -210,19 +210,27 @@ export class S3ObjectSizeLimitError extends Error {
   }
 }
 
-function createS3Client(
-  endpoint: string,
-  credentials: S3Credentials,
-  requestHandler?: S3Client["config"]["requestHandler"],
-): S3Client {
-  return new S3Client({
-    region: env("S3_REGION") ?? "auto",
-    endpoint,
-    credentials,
-    forcePathStyle: env("S3_FORCE_PATH_STYLE") === "true",
-    requestChecksumCalculation: "WHEN_REQUIRED",
-    ...(requestHandler ? { requestHandler } : {}),
+function createS3ClientGetter(
+  credentials: () => S3Credentials,
+  usePublicEndpoint = false,
+): () => S3Client {
+  const getClient = createLazyS3Client((requestHandler) => {
+    return new S3Client({
+      region: env("S3_REGION") ?? "auto",
+      endpoint: usePublicEndpoint
+        ? env("S3_PUBLIC_ENDPOINT")
+        : (env("S3_ENDPOINT") ?? defaultS3Endpoint()),
+      credentials: credentials(),
+      forcePathStyle: env("S3_FORCE_PATH_STYLE") === "true",
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      requestHandler,
+    });
   });
+  return () => {
+    // Keep required credential validation fail-closed on warm clients too.
+    credentials();
+    return getClient();
+  };
 }
 
 function defaultS3Endpoint(): string {
@@ -254,34 +262,27 @@ function hostedSitesS3Credentials(): S3Credentials {
   return { accessKeyId, secretAccessKey };
 }
 
-const s3Client$ = computed((): S3Client => {
-  return createS3Client(
-    env("S3_ENDPOINT") ?? defaultS3Endpoint(),
-    defaultS3Credentials(),
-  );
+const s3Client = createS3ClientGetter(defaultS3Credentials);
+const s3Client$ = computed(() => {
+  return s3Client();
 });
-
+const publicS3Client = createS3ClientGetter(defaultS3Credentials, true);
 const publicS3Client$ = computed((get): S3Client => {
-  const publicEndpoint = env("S3_PUBLIC_ENDPOINT");
-  if (!publicEndpoint) {
-    return get(s3Client$);
-  }
-  return createS3Client(publicEndpoint, defaultS3Credentials());
+  return env("S3_PUBLIC_ENDPOINT") ? publicS3Client() : get(s3Client$);
 });
 
-const userArtifactsS3Client$ = computed((): S3Client => {
-  return createS3Client(
-    env("S3_ENDPOINT") ?? defaultS3Endpoint(),
-    userArtifactsS3Credentials(),
-  );
+const userArtifactsS3Client = createS3ClientGetter(userArtifactsS3Credentials);
+const userArtifactsS3Client$ = computed(() => {
+  return userArtifactsS3Client();
 });
-
+const userArtifactsPublicS3Client = createS3ClientGetter(
+  userArtifactsS3Credentials,
+  true,
+);
 const userArtifactsPublicS3Client$ = computed((get): S3Client => {
-  const publicEndpoint = env("S3_PUBLIC_ENDPOINT");
-  if (!publicEndpoint) {
-    return get(userArtifactsS3Client$);
-  }
-  return createS3Client(publicEndpoint, userArtifactsS3Credentials());
+  return env("S3_PUBLIC_ENDPOINT")
+    ? userArtifactsPublicS3Client()
+    : get(userArtifactsS3Client$);
 });
 
 function privateArtifactsS3Credentials(): S3Credentials {
@@ -295,44 +296,32 @@ function privateArtifactsS3Credentials(): S3Credentials {
   return { accessKeyId, secretAccessKey };
 }
 
-const privateArtifactsS3Client$ = computed((): S3Client => {
-  return createS3Client(
-    env("S3_ENDPOINT") ?? defaultS3Endpoint(),
-    privateArtifactsS3Credentials(),
-  );
+const privateArtifactsS3Client = createS3ClientGetter(
+  privateArtifactsS3Credentials,
+);
+const privateArtifactsS3Client$ = computed(() => {
+  return privateArtifactsS3Client();
 });
-
+const privateArtifactsPublicS3Client = createS3ClientGetter(
+  privateArtifactsS3Credentials,
+  true,
+);
 const privateArtifactsPublicS3Client$ = computed((get): S3Client => {
-  const publicEndpoint = env("S3_PUBLIC_ENDPOINT");
-  return publicEndpoint
-    ? createS3Client(publicEndpoint, privateArtifactsS3Credentials())
+  return env("S3_PUBLIC_ENDPOINT")
+    ? privateArtifactsPublicS3Client()
     : get(privateArtifactsS3Client$);
 });
 
-const marketingHandoffTransport = singleton(
-  (): {
-    requestHandler?: S3Client["config"]["requestHandler"];
-  } => {
-    return {};
-  },
-);
-
-const marketingHandoffS3Client$ = computed((): S3Client => {
+const marketingHandoffS3Client = createS3ClientGetter(() => {
   const accessKeyId = env("R2_MARKETING_HANDOFF_ACCESS_KEY_ID");
   const secretAccessKey = env("R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY");
   if (!accessKeyId || !secretAccessKey) {
     throw new Error("Marketing handoff storage credentials are not configured");
   }
-  // The runtime owns the SDK's bounded connection pool; request stores retain
-  // independent signing configuration and credential validation.
-  const transport = marketingHandoffTransport();
-  const client = createS3Client(
-    env("S3_ENDPOINT") ?? defaultS3Endpoint(),
-    { accessKeyId, secretAccessKey },
-    transport.requestHandler,
-  );
-  transport.requestHandler ??= client.config.requestHandler;
-  return client;
+  return { accessKeyId, secretAccessKey };
+});
+const marketingHandoffS3Client$ = computed(() => {
+  return marketingHandoffS3Client();
 });
 
 function s3ClientForBucket(
@@ -410,19 +399,18 @@ export function presignedGetUrlSignerForBucket(
     : presignedGetUrlSigner$;
 }
 
-const hostedSitesS3Client$ = computed((): S3Client => {
-  return createS3Client(
-    env("S3_ENDPOINT") ?? defaultS3Endpoint(),
-    hostedSitesS3Credentials(),
-  );
+const hostedSitesS3Client = createS3ClientGetter(hostedSitesS3Credentials);
+const hostedSitesS3Client$ = computed(() => {
+  return hostedSitesS3Client();
 });
-
+const hostedSitesPublicS3Client = createS3ClientGetter(
+  hostedSitesS3Credentials,
+  true,
+);
 const hostedSitesPublicS3Client$ = computed((get): S3Client => {
-  const publicEndpoint = env("S3_PUBLIC_ENDPOINT");
-  if (!publicEndpoint) {
-    return get(hostedSitesS3Client$);
-  }
-  return createS3Client(publicEndpoint, hostedSitesS3Credentials());
+  return env("S3_PUBLIC_ENDPOINT")
+    ? hostedSitesPublicS3Client()
+    : get(hostedSitesS3Client$);
 });
 
 export function listS3Objects(

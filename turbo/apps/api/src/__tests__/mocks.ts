@@ -194,6 +194,7 @@ export interface ApiTestMocks {
     readonly send: AsyncMock;
     readonly getSignedUrl: AsyncMock;
     readonly clientConfig: SyncMock;
+    readonly requestConfig: SyncMock;
   };
   readonly resend: {
     readonly send: AsyncMock;
@@ -615,6 +616,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       send: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getSignedUrl: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       clientConfig: vi.fn<(...args: unknown[]) => void>(),
+      requestConfig: vi.fn<(...args: unknown[]) => void>(),
     },
     resend: {
       send: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -881,6 +883,7 @@ vi.mock("@aws-sdk/client-s3", () => {
 
   class S3Client {
     readonly config: unknown;
+    readonly destroy = vi.fn<() => void>();
 
     constructor(config: S3ClientConfig) {
       this.config = {
@@ -895,6 +898,7 @@ vi.mock("@aws-sdk/client-s3", () => {
     }
 
     send(...args: unknown[]): Promise<unknown> {
+      apiTestMocks.s3.requestConfig(this.config);
       return apiTestMocks.s3.send(...args);
     }
   }
