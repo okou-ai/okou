@@ -867,7 +867,7 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
             # implicit parent, symlink unlink, file truncate or attribute write.
             relative = str(pathlib.Path(targetpath).relative_to(root))
             actual = self._get_extract_tarinfo(
-                member, lambda entry, path: tarfile.data_filter(entry.replace(name=relative), path), str(root))
+                member, lambda entry, path: tarfile.data_filter(entry.replace(name=relative, deep=False), path), str(root))
             # Maintained security updates return (filtered, original) and pass
             # filter_function/extraction_root through recursive extraction.
             # Preserve that context; never retry with a weaker/unfiltered API.
