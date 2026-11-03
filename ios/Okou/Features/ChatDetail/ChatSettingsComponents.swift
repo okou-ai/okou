@@ -24,7 +24,7 @@ struct ChatSettingsActionLabel: View {
         ProgressView().controlSize(.small).tint(.primary)
         Text(title).foregroundStyle(.primary)
       } else {
-        Text(title)
+        Text(title).foregroundStyle(Color(uiColor: .systemBackground))
       }
     }
     .frame(maxWidth: .infinity, minHeight: 24)
