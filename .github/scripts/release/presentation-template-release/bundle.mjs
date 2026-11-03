@@ -5,6 +5,7 @@ import {
   createArchive,
   inspectArchive,
   inspectTemplateDirectory,
+  registryArchiveDescriptor,
   withExtractedArchive,
 } from "./archive.mjs";
 import {
@@ -51,6 +52,7 @@ async function buildPackage(sourceDir, outputDir, release) {
       sha256: archiveSha256,
       byteSize: archive.byteLength,
     },
+    registryArchive: registryArchiveDescriptor(archive),
     totalSize: totalFileSize(files),
     fileCount: files.length,
     files,
@@ -77,7 +79,7 @@ export async function buildBundle({ sourceDir, outputDir, sourceCommit }) {
   }
 
   const publication = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: { ...config.source, commit: sourceCommit },
     packages,
   };
@@ -94,7 +96,7 @@ function validatePublication(config, publication) {
     publication.source?.ref === config.source.ref &&
     publication.source?.directory === config.source.directory;
   if (
-    publication.schemaVersion !== 1 ||
+    publication.schemaVersion !== 2 ||
     !sourceMatches ||
     !COMMIT_PATTERN.test(publication.source?.commit) ||
     !Array.isArray(publication.packages)
@@ -129,6 +131,17 @@ function validateArchiveBytes(pkg, release, archive) {
     sha256(archive) !== pkg.archive.sha256
   ) {
     throw new Error(`${release.slug}: archive bytes do not match`);
+  }
+  const expected = registryArchiveDescriptor(archive);
+  if (
+    pkg.registryArchive?.format !== expected.format ||
+    pkg.registryArchive.sha256 !== expected.sha256 ||
+    pkg.registryArchive.archiveBytes !== expected.archiveBytes ||
+    pkg.registryArchive.objectKey !== expected.objectKey
+  ) {
+    throw new Error(
+      `${release.slug}: registry archive descriptor does not match`,
+    );
   }
 }
 

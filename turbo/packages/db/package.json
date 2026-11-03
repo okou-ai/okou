@@ -73,7 +73,8 @@
     "test:run-output-memory-citation-retirement": "tsx scripts/test-run-output-memory-citation-retirement.ts",
     "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts",
     "test:content-bundles": "node --import tsx scripts/migrations/027-content-bundles/test-backfill.ts",
-    "test:workflow-storage-retirement": "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts"
+    "test:workflow-storage-retirement": "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts",
+    "test:registry-resource-inventory": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",

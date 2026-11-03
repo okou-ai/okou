@@ -3081,6 +3081,13 @@
       "when": 1793680062602,
       "tag": "1518_imessage_message_recipients",
       "breakpoints": true
+    },
+    {
+      "idx": 1519,
+      "version": "7",
+      "when": 1793683465743,
+      "tag": "1519_registry_resource_bundle_preparation",
+      "breakpoints": true
     }
   ]
 }

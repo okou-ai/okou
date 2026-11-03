@@ -21,6 +21,7 @@ import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as storageSchema from "./schema/storage";
+import * as registryResourceArchiveSchema from "./schema/registry-resource-archive";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
 import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-presigned-url-cache";
 import * as blobSchema from "./schema/blob";
@@ -193,6 +194,7 @@ export const schema = {
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...storageSchema,
+  ...registryResourceArchiveSchema,
   ...storagePublicationFenceSchema,
   ...systemStoragePresignedUrlCacheSchema,
   ...blobSchema,
