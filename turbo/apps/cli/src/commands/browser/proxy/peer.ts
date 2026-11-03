@@ -885,6 +885,10 @@ export class ProxyPeer {
             filter: [{ type: info.type }, { exclude: true }],
           });
     } else await this.relatedRoots(auto, roots);
+    // Destroyed native sources retire their own subscriptions. Only a still-
+    // live source leaving this window requires cancelling the remaining roots.
+    for (const id of auto.roots.keys())
+      if (!this.scope.targets.has(id)) auto.roots.delete(id);
     if (
       [...auto.roots.keys()].some((id) => {
         return !roots.has(id);
@@ -899,6 +903,7 @@ export class ProxyPeer {
     }
     let response: unknown = {};
     for (const [targetId, params] of roots) {
+      if (!this.scope.targets.has(targetId)) continue;
       if (
         !this.refreshedRoot(targetId, refresh) &&
         auto.roots.get(targetId) === (params.waitForDebuggerOnStart === true)
@@ -1056,9 +1061,14 @@ export class ProxyPeer {
       // Detaching a native parent also detaches its descendants. Sending a
       // second command through that retired parent races its detach events.
       if (session.parent && !this.liveSession(session.parent)) continue;
+      // Native target destruction owns its detach; revalidate the still-live
+      // target/session after any asynchronous membership observation as well.
       if (
         session.target !== null &&
-        !(await this.scope.allows(session.target))
+        this.scope.targets.has(session.target) &&
+        !(await this.scope.allows(session.target)) &&
+        this.scope.targets.has(session.target) &&
+        this.sessions.get(id) === session
       ) {
         await this.inject(
           "Target.detachFromTarget",

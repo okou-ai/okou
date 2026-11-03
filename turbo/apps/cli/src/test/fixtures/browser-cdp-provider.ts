@@ -57,6 +57,7 @@ interface Target {
 interface Connection {
   socket: WebSocket;
   sessions: Map<string, string>;
+  parents: Map<string, string | undefined>;
   discovery: Set<string | undefined>;
   automatic: Map<string | undefined, Set<string>>;
   related: Map<
@@ -249,6 +250,7 @@ export async function browserCdpProvider() {
         if (connection.sessions.get(id) === targetId) return { sessionId: id };
     const sessionId = "session-" + ++nextSession;
     connection.sessions.set(sessionId, targetId);
+    connection.parents.set(sessionId, parent);
     if (automatic) {
       let entries = connection.automatic.get(parent);
       if (!entries) connection.automatic.set(parent, (entries = new Set()));
@@ -286,22 +288,59 @@ export async function browserCdpProvider() {
         }
       }
   }
-  function detach(connection: Connection, sessionId: string, parent?: string) {
-    for (const child of connection.automatic.get(sessionId) ?? [])
-      detach(connection, child, sessionId);
+  function detach(
+    connection: Connection,
+    sessionId: string,
+    parent = connection.parents.get(sessionId),
+    notify = (message: unknown) => {
+      return send(connection, message);
+    },
+  ) {
+    for (const [child, owner] of connection.parents)
+      if (owner === sessionId) detach(connection, child, sessionId, notify);
     connection.automatic.delete(sessionId);
     connection.related.delete(sessionId);
     connection.sessions.delete(sessionId);
-    send(connection, {
+    connection.parents.delete(sessionId);
+    for (const entries of connection.automatic.values())
+      entries.delete(sessionId);
+    notify({
       method: "Target.detachedFromTarget",
       sessionId: parent,
       params: { sessionId },
     });
   }
+  function destroyTarget(targetId: string, deferDetach = false) {
+    targets.delete(targetId);
+    const notifications: (() => void)[] = [];
+    for (const connection of connections) {
+      for (const handler of connection.related.values())
+        handler.roots.delete(targetId);
+      for (const [sessionId, target] of connection.sessions)
+        if (target === targetId)
+          detach(
+            connection,
+            sessionId,
+            connection.parents.get(sessionId),
+            (event) => {
+              notifications.push(() => {
+                return send(connection, event);
+              });
+            },
+          );
+    }
+    const resume = () => {
+      for (const notify of notifications.splice(0)) notify();
+    };
+    if (!deferDetach) resume();
+    broadcast("Target.targetDestroyed", { targetId });
+    return { resume };
+  }
   server.on("connection", (socket) => {
     const connection: Connection = {
       socket,
       sessions: new Map(),
+      parents: new Map(),
       discovery: new Set(),
       automatic: new Map(),
       related: new Map(),
@@ -337,9 +376,10 @@ export async function browserCdpProvider() {
       }
       const handlers: Record<string, () => void> = {
         "Target.attachToBrowserTarget": () => {
-          const sessionId = "browser-" + ++nextSession;
-          connection.sessions.set(sessionId, "BROWSER");
-          reply({ sessionId });
+          const attached = "browser-" + ++nextSession;
+          connection.sessions.set(attached, "BROWSER");
+          connection.parents.set(attached, sessionId);
+          reply({ sessionId: attached });
         },
         "Target.getTargets": () => {
           reply({
@@ -383,6 +423,10 @@ export async function browserCdpProvider() {
           else reply(attach(connection, String(params.targetId), sessionId));
         },
         "Target.detachFromTarget": () => {
+          if (!connection.sessions.has(String(params.sessionId))) {
+            fail(-32602, "No session with given id");
+            return;
+          }
           detach(connection, String(params.sessionId), sessionId);
           reply({});
         },
@@ -513,8 +557,7 @@ export async function browserCdpProvider() {
           reply({ targetId: target.id });
         },
         "Target.closeTarget": () => {
-          targets.delete(String(params.targetId));
-          broadcast("Target.targetDestroyed", { targetId: params.targetId });
+          destroyTarget(String(params.targetId));
           reply({ success: true });
         },
         "Page.navigate": () => {
@@ -610,6 +653,7 @@ export async function browserCdpProvider() {
     commands,
     attachments,
     move,
+    destroyTarget,
     addFrame(parent: string, id: string) {
       const page = targets.get(parent);
       if (!page) throw new Error("Missing parent fixture page");

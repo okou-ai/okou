@@ -813,6 +813,90 @@ try {
     assert.equal(result.ok, true);
     return result.value;
   };
+  // Native source destruction already retires that source; another root's
+  // session must survive, unlike a live source moving out of this window.
+  for (const automatic of [false, true]) {
+    const closing = await scopedA.request("Target.createTarget", {
+      url: origin + "/closing-root-" + automatic,
+    });
+    const observers = [await wire(endpoint), await wire(proxyA.endpoint)];
+    const originals = [];
+    const listeners = [];
+    for (const connection of observers) {
+      const attached = new Map();
+      listeners.push(
+        connection.onEvent((event) => {
+          if (event.method === "Target.attachedToTarget")
+            attached.set(
+              event.params.targetInfo.targetId,
+              event.params.sessionId,
+            );
+        }),
+      );
+      if (automatic)
+        await connection.request("Target.setAutoAttach", {
+          autoAttach: true,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+          filter: [{ type: "page" }],
+        });
+      else
+        for (const targetId of [a, closing.targetId])
+          await connection.request("Target.autoAttachRelated", {
+            targetId,
+            waitForDebuggerOnStart: false,
+            filter: [{ type: "page" }],
+          });
+      await connection.request("Target.getTargets");
+      assert.ok(attached.has(a));
+      originals.push(attached.get(a));
+    }
+    await direct.request("Target.closeTarget", { targetId: closing.targetId });
+    const foreignBarrier = await direct.request("Target.createTarget", {
+      url: origin + "/root-close-control",
+      newWindow: true,
+    });
+    let ownedBarrier;
+    if (automatic) {
+      const url = origin + "/root-close-owned";
+      await observe(
+        observers[1],
+        (event) => {
+          return (
+            event.method === "Target.attachedToTarget" &&
+            event.params.targetInfo.url === url
+          );
+        },
+        async () => {
+          ownedBarrier = await scopedA.request("Target.createTarget", { url });
+        },
+      );
+    }
+    for (const [index, connection] of observers.entries()) {
+      // The new foreign target requires a scope-control observation after the
+      // destruction. Reselecting an existing related root is a control barrier
+      // that preserves its native session; automatic mode uses the new owned
+      // root attachment above to observe reconciliation instead.
+      await connection.request("Target.getTargets", { filter: [{}] });
+      if (!automatic)
+        await connection.request("Target.autoAttachRelated", {
+          targetId: a,
+          waitForDebuggerOnStart: false,
+          filter: [{ type: "page" }],
+        });
+      await connection.request("Runtime.enable", {}, originals[index]);
+      connection.close();
+    }
+    for (const off of listeners) off();
+    if (ownedBarrier)
+      await direct.request("Target.closeTarget", {
+        targetId: ownedBarrier.targetId,
+      });
+    await direct.request("Target.closeTarget", {
+      targetId: foreignBarrier.targetId,
+    });
+  }
+
   // Changing the last watched root must not resurrect an earlier root's filter.
   const selected = await scopedA.request("Target.createTarget", {
     url: origin + "/filter-root",
@@ -1104,6 +1188,7 @@ try {
         browserRootRelatedSelection: true,
         overlappingRelatedSelectors: true,
         handlerFilterSurvivesRootRemoval: true,
+        nativeRootDestructionPreservesOtherSessions: true,
         noForeignNativeDebuggerAttachment: true,
         oopifParentage: true,
         agentBrowser: true,

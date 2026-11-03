@@ -872,6 +872,81 @@ describe("chat-window CDP proxy protocol", () => {
     },
   );
 
+  it.each([
+    { browserSession: false, deferDetach: false },
+    { browserSession: true, deferDetach: false },
+    { browserSession: false, deferDetach: true },
+    { browserSession: true, deferDetach: true },
+  ])(
+    "preserves the other root's original session when a selected target dies: %j",
+    async ({ browserSession, deferDetach }) => {
+      const channel = browserSession
+        ? String(
+            (await connection.request("Target.attachToBrowserTarget"))
+              .sessionId,
+          )
+        : undefined;
+      await connection.request(
+        "Target.setDiscoverTargets",
+        { discover: true },
+        channel,
+      );
+      const entered = connection.event((message) => {
+        return (
+          message.method === "Target.targetCreated" &&
+          message.sessionId === channel &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "B"
+        );
+      });
+      provider.move("B", 0);
+      await entered;
+      const attached = connection.event((message) => {
+        return (
+          message.method === "Target.attachedToTarget" &&
+          message.sessionId === channel &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "A"
+        );
+      });
+      for (const targetId of ["A", "B"])
+        await connection.request(
+          "Target.autoAttachRelated",
+          {
+            targetId,
+            waitForDebuggerOnStart: false,
+            filter: [{ type: "page" }],
+          },
+          channel,
+        );
+      const original = String((await attached).params?.sessionId);
+      const closed = provider.destroyTarget("B", deferDetach);
+      try {
+        // The fresh target requires a scope-control observation after B died.
+        provider.addPage("CONTROL-BARRIER", 1);
+        await connection.request(
+          "Target.getTargets",
+          { filter: [{}] },
+          channel,
+        );
+        await connection.request(
+          "Target.autoAttachRelated",
+          {
+            targetId: "A",
+            waitForDebuggerOnStart: false,
+            filter: [{ type: "page" }],
+          },
+          channel,
+        );
+        expect(
+          await connection.request("Runtime.enable", {}, original),
+        ).toStrictEqual({});
+      } finally {
+        closed.resume();
+      }
+    },
+  );
+
   it("never attaches foreign pages through a browser-global source and releases only owned browser sessions", async () => {
     const explicit = String(
       (
