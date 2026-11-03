@@ -2320,6 +2320,8 @@
     "remoteAccess": {
       "default": "默认",
       "defaultEnabled": "聊天默认启用",
+      "disabled": "已禁用",
+      "enabled": "已启用",
       "enabledCount_other": "已启用 {{count}} 个",
       "loadFailed": "无法加载远程访问权限。",
       "loading": "正在加载远程访问…",

@@ -2327,6 +2327,8 @@
     "remoteAccess": {
       "default": "Standard",
       "defaultEnabled": "Für Chats standardmäßig aktiviert",
+      "disabled": "Deaktiviert",
+      "enabled": "Aktiviert",
       "enabledCount_one": "{{count}} aktiviert",
       "enabledCount_other": "{{count}} aktiviert",
       "loadFailed": "Fernzugriff konnte nicht geladen werden.",

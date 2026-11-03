@@ -9,6 +9,7 @@ import {
   type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -204,6 +205,51 @@ async function chooseHost(name: string, option: string) {
   click(screen.getByRole("combobox", { name }));
   click(await screen.findByRole("option", { name: option }));
 }
+
+test.each([
+  {
+    protocol: "SSH",
+    name: "SSH MacinCloud",
+    option: "On",
+    keys: "{ArrowDown}{Enter}",
+    dependency: SSH_ENABLED_NOTE,
+    headings: ["SSH", "Enabled", "Disabled"],
+  },
+  {
+    protocol: "VNC",
+    name: "VNC MacinCloud",
+    option: "Off",
+    keys: "{End}{Enter}",
+    dependency: SSH_NOTE,
+    headings: ["VNC", "Disabled"],
+  },
+])(
+  "New-chat $protocol regrouping preserves keyboard focus and VNC dependency feedback",
+  async ({ protocol, name, option, keys, dependency, headings }) => {
+    installDependencyFixture({ newChat: true });
+    const menu = await openRemoteAccess(true);
+    await within(menu).findByText(SSH_WARNING);
+    const user = userEvent.setup({ delay: null });
+    within(menu).getByRole("combobox", { name }).focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", { name: option });
+    await user.keyboard(keys);
+    await within(menu).findByText(dependency);
+    await waitFor(() => {
+      const control = within(menu).getByRole("combobox", { name });
+      expect(control).toHaveTextContent(option);
+      expect(control).toHaveFocus();
+    });
+    const section = within(menu).getByRole("region", { name: protocol });
+    expect(
+      within(section)
+        .getAllByRole("heading")
+        .map((heading) => {
+          return heading.textContent;
+        }),
+    ).toStrictEqual(headings);
+  },
+);
 
 test("An unrelated SSH host does not satisfy an enabled VNC host's dependency", async () => {
   installDependencyFixture();
