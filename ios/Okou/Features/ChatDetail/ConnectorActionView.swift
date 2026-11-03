@@ -135,8 +135,8 @@ struct ConnectorAuthorizationSheet: View {
               LabeledContent("Service account", value: identity).textSelection(.enabled)
             }
           }
+        } footer: {
           Text("Authorization applies to the Agent in this chat.")
-            .font(.footnote).foregroundStyle(.secondary)
         }
         if flow.needsConnection {
           if flow.status.builtin != nil {
@@ -210,21 +210,17 @@ struct ConnectorAuthorizationSheet: View {
           Button {
             store.submit()
           } label: {
-            HStack {
-              Text(
-                flow.operatedID != nil
-                  ? "Retry continuation"
-                  : (flow.isExternalCode ? "Submit code" : "Confirm and continue"))
-              if flow.busy {
-                Spacer()
-                ProgressView()
-              }
-            }
+            ChatSettingsActionLabel(title: confirmationTitle, isBusy: flow.busy)
           }
+          .buttonStyle(.borderedProminent).controlSize(.large)
+          .tint(.accentColor)
           .disabled(!flow.canSubmit)
           .accessibilityIdentifier("connector-confirm")
         }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
       }
+      .listSectionSpacing(16)
       .navigationTitle("Connect service")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -245,6 +241,15 @@ struct ConnectorAuthorizationSheet: View {
       }
     }
   }
+  private var confirmationTitle: LocalizedStringKey {
+    if flow.busy {
+      if flow.operatedID != nil { return "Continuing chat…" }
+      return flow.isExternalCode ? "Submitting code…" : "Connecting…"
+    }
+    if flow.operatedID != nil { return "Retry continuation" }
+    return flow.isExternalCode ? "Submit code" : "Confirm and continue"
+  }
+
   @ViewBuilder private func credential(_ label: String, key: String, secret: Bool) -> some View {
     let value = Binding(get: { flow.values[key] ?? "" }, set: { flow.values[key] = $0 })
     if secret {

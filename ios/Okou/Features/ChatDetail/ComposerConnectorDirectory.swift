@@ -28,7 +28,6 @@ struct ComposerConnectorDirectory: View {
         }
       }
       if let error { ConnectorLoadError(error: error) { await load() } }
-      if loading { ProgressView("Loading connectors…") }
       if tab == "discover" {
         ForEach(catalog) { connector in
           NavigationLink {
@@ -69,6 +68,12 @@ struct ComposerConnectorDirectory: View {
       Section("Remote access") {
         Button("Set up SSH") { store.setupRemote(.ssh) }
         Button("Set up VNC") { store.setupRemote(.vnc) }
+      }
+    }
+    .listSectionSpacing(16)
+    .overlay {
+      if loading && error == nil && (tab == "discover" ? catalog.isEmpty : custom.isEmpty) {
+        ChatSettingsLoadingView(title: "Loading connectors…")
       }
     }
     .navigationTitle("Add connectors")

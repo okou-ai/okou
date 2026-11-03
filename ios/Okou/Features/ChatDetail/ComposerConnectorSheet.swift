@@ -34,6 +34,7 @@ struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
   @State private var destination: ConnectorDestination?
+  @State private var savingConnectorID: String?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
 
@@ -56,8 +57,6 @@ struct ComposerConnectorSheet: View {
         Section {
           if let error = store.connectorError, store.error == nil {
             ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
-          } else if store.isLoading && store.connectors.isEmpty {
-            ProgressView("Loading connectors…")
           } else {
             ForEach(
               store.connectors.filter {
@@ -77,9 +76,17 @@ struct ComposerConnectorSheet: View {
             Label("Add connectors", systemImage: "plus")
           }
         } header: {
-          Text("Services")
+          Text("Services").textCase(nil)
         } footer: {
           Text("Service access applies to this Agent. Account choices apply to this chat.")
+        }
+      }
+      .listSectionSpacing(16)
+      .overlay {
+        if store.isLoading && store.connectors.isEmpty && store.connectorError == nil
+          && store.error == nil
+        {
+          ChatSettingsLoadingView(title: "Loading connectors…")
         }
       }
       .searchable(text: $search, prompt: "Find connectors")
@@ -129,6 +136,9 @@ struct ComposerConnectorSheet: View {
         .truncationMode(.tail)
         .layoutPriority(1)
         Spacer(minLength: 8)
+        if store.isSaving && savingConnectorID == connector.id {
+          ProgressView().controlSize(.small)
+        }
         Toggle(
           connector.label,
           isOn: Binding(
@@ -137,7 +147,12 @@ struct ComposerConnectorSheet: View {
               if enabled && connector.permissionBundleRef != nil {
                 store.openWeb(path: "connectors")
               } else {
-                Task { await store.setAuthorized(connector, enabled: enabled) }
+                Task {
+                  guard !store.isSaving, !store.uncertain else { return }
+                  savingConnectorID = connector.id
+                  defer { savingConnectorID = nil }
+                  await store.setAuthorized(connector, enabled: enabled)
+                }
               }
             })
         )
@@ -154,9 +169,12 @@ struct ComposerConnectorSheet: View {
             Button {
               destination = .accounts(connector.id)
             } label: {
-              Label("Account", systemImage: "person.crop.circle")
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+              HStack(spacing: 4) {
+                Text("Account")
+                Image(systemName: "chevron.right").font(.caption2)
+              }
+              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+              .contentShape(Rectangle())
             }
             .accessibilityLabel("Account for \(connector.label)")
           }
@@ -164,14 +182,18 @@ struct ComposerConnectorSheet: View {
             Button {
               destination = .permissions(connector.id)
             } label: {
-              Label("Permissions", systemImage: "slider.horizontal.3")
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+              HStack(spacing: 4) {
+                Text("Permissions")
+                Image(systemName: "chevron.right").font(.caption2)
+              }
+              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+              .contentShape(Rectangle())
             }
             .accessibilityLabel("Permissions for \(connector.label)")
           }
         }
         .font(.subheadline)
+        .foregroundStyle(.secondary)
         .buttonStyle(.borderless)
         .padding(.leading, 32)
       }

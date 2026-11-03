@@ -97,81 +97,24 @@ struct PermissionActionCard: View {
 struct PermissionActionDetails: View {
   @Bindable var store: PermissionActionStore
   @Environment(\.dismiss) private var dismiss
+  @State private var confirmingContinuation = false
 
   var body: some View {
     NavigationStack {
-      Form {
-        Section {
-          LabeledContent("Connector", value: store.metadata?.label ?? store.action.connectorSlug)
-          LabeledContent(
-            "Agent", value: store.snapshot?.agentName ?? store.action.agentID)
-          Text("These permissions apply to your account for this Agent.")
-            .font(.caption).foregroundStyle(.secondary)
-          LabeledContent(
-            "Permission",
-            value: store.action.permission == "__unknown__"
-              ? String(localized: "Other endpoints") : store.action.permission)
-          if let description = store.metadata?.permissions.first(where: {
-            $0.name == store.action.permission
-          })?.description {
-            Text(description).textSelection(.enabled)
-          }
-          if let method = store.action.method, let path = store.action.path {
-            Text("\(method) \(path)").font(.caption.monospaced()).textSelection(.enabled)
-          }
-          if let reason = store.action.reason, !reason.isEmpty {
-            Text(reason).textSelection(.enabled)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+          if store.snapshot != nil || store.error != nil {
+            requestSummary
+            confirmation
           }
         }
-        Section {
-          if store.isLoading || (store.snapshot == nil && store.error == nil) {
-            ProgressView("Checking permission…")
-          }
-          if let error = store.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-          if store.snapshot == nil && store.error != nil && !store.isLoading {
-            Button("Retry loading") { Task { await store.refresh() } }
-          } else if store.snapshot != nil && !store.hasPermission && !store.isLoading {
-            Text("This permission is no longer available.")
-          }
-          if store.applied {
-            Text(
-              store.action.action == .allow
-                ? String(localized: "Allowed") : String(localized: "Denied"))
-            if let expiry = store.grant?.expiresAt, expiry > .now {
-              Text("Expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
-            } else if store.action.action == .allow {
-              Text("No expiration")
-            }
-          }
-          if store.hasPermission && (!store.applied || store.needsContinuation) {
-            if store.action.action == .allow && !store.needsContinuation {
-              Picker("Duration", selection: $store.duration) {
-                Text("1 hour").tag(ChatPermissionAction.Duration.hour)
-                Text("24 hours").tag(ChatPermissionAction.Duration.day)
-                Text("7 days").tag(ChatPermissionAction.Duration.week)
-                Text("Always").tag(ChatPermissionAction.Duration.always)
-              }
-              .disabled(store.isSaving || store.isLoading)
-              .accessibilityIdentifier("permission-duration")
-            }
-            if store.action.callbackPrompt != nil {
-              Text("The chat will continue after confirmation.").font(.caption)
-            }
-            Button {
-              Task { await store.confirm() }
-            } label: {
-              if store.needsContinuation {
-                Text("Continue chat")
-              } else if store.action.action == .allow {
-                Text("Allow permission")
-              } else {
-                Text("Deny permission")
-              }
-            }
-            .disabled(!store.canConfirm)
-            .accessibilityIdentifier("permission-confirm")
-          }
-          if store.isSaving { ProgressView("Saving permission…") }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .background(Color(uiColor: .systemGroupedBackground))
+      .overlay {
+        if store.snapshot == nil && store.error == nil {
+          ChatSettingsLoadingView(title: "Checking permission…")
         }
       }
       .navigationTitle("Permission request")
@@ -180,5 +123,118 @@ struct PermissionActionDetails: View {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }
     }
+  }
+
+  private var requestSummary: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(spacing: 12) {
+        Image(systemName: "lock.shield")
+          .font(.title3).foregroundStyle(.secondary)
+          .frame(width: 40, height: 40)
+          .background(Color(uiColor: .tertiarySystemGroupedBackground), in: .rect(cornerRadius: 12))
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 4) {
+          Text(store.metadata?.label ?? store.action.connectorSlug).font(.headline)
+          Text("Requested by \(store.snapshot?.agentName ?? String(localized: "this Agent"))")
+            .font(.subheadline).foregroundStyle(.secondary)
+        }
+      }
+      Divider()
+      VStack(alignment: .leading, spacing: 8) {
+        Text(
+          store.action.permission == "__unknown__"
+            ? String(localized: "Other endpoints") : store.action.permission
+        )
+        .font(.subheadline.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+        if let description = store.metadata?.permissions.first(where: {
+          $0.name == store.action.permission
+        })?.description {
+          Text(description).textSelection(.enabled)
+        }
+        Text("These permissions apply to your account for this Agent.")
+          .font(.footnote).foregroundStyle(.secondary)
+      }
+      if let method = store.action.method, let path = store.action.path {
+        Text("\(method) \(path)").font(.caption.monospaced()).textSelection(.enabled)
+      }
+      if let reason = store.action.reason, !reason.isEmpty {
+        Text(reason).font(.subheadline).textSelection(.enabled)
+      }
+    }
+    .padding(18)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 20))
+  }
+
+  @ViewBuilder private var confirmation: some View {
+    if let error = store.error {
+      Text(error).foregroundStyle(.red).textSelection(.enabled)
+    }
+    if store.snapshot == nil && store.error != nil && !store.isLoading {
+      Button("Retry loading") { Task { await store.refresh() } }
+        .frame(minHeight: 44)
+    } else if store.snapshot != nil && !store.hasPermission && !store.isLoading {
+      Text("This permission is no longer available.")
+    }
+    if store.applied && !store.isSaving {
+      VStack(alignment: .leading, spacing: 4) {
+        Label(
+          store.action.action == .allow
+            ? String(localized: "Allowed") : String(localized: "Denied"),
+          systemImage: "checkmark.circle")
+        if let expiry = store.grant?.expiresAt, expiry > .now {
+          Text("Expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
+            .font(.footnote).foregroundStyle(.secondary)
+        } else if store.action.action == .allow {
+          Text("No expiration").font(.footnote).foregroundStyle(.secondary)
+        }
+      }
+    }
+    if store.hasPermission && (!store.applied || store.needsContinuation || store.isSaving) {
+      if store.action.action == .allow
+        && (store.isSaving ? !confirmingContinuation : !store.needsContinuation)
+      {
+        HStack {
+          Text("Allow for")
+          Spacer()
+          Picker("Allow for", selection: $store.duration) {
+            Text("1 hour").tag(ChatPermissionAction.Duration.hour)
+            Text("24 hours").tag(ChatPermissionAction.Duration.day)
+            Text("7 days").tag(ChatPermissionAction.Duration.week)
+            Text("Always").tag(ChatPermissionAction.Duration.always)
+          }
+          .pickerStyle(.menu).labelsHidden()
+          .disabled(store.isSaving || store.isLoading)
+          .accessibilityIdentifier("permission-duration")
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 16).padding(.vertical, 4)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 20))
+      }
+      VStack(spacing: 10) {
+        Button {
+          confirmingContinuation = store.needsContinuation
+          Task { await store.confirm() }
+        } label: {
+          ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
+        }
+        .buttonStyle(.borderedProminent).controlSize(.large)
+        .tint(.accentColor)
+        .disabled(!store.canConfirm)
+        .accessibilityIdentifier("permission-confirm")
+        if store.action.callbackPrompt != nil {
+          Text("The chat will continue after confirmation.")
+            .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+      }
+    }
+  }
+
+  private var confirmationTitle: LocalizedStringKey {
+    if store.isSaving {
+      return confirmingContinuation ? "Continuing chat…" : "Saving permission…"
+    }
+    if store.needsContinuation { return "Continue chat" }
+    return store.action.action == .allow ? "Allow permission" : "Deny permission"
   }
 }

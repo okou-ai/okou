@@ -21,7 +21,6 @@ struct ComposerConnectorPermissions: View {
           await load()
         }
       }
-      if loading { ProgressView("Loading permissions…") }
       if let state {
         Section {
           Picker("Allow for", selection: $duration) {
@@ -77,6 +76,12 @@ struct ComposerConnectorPermissions: View {
             "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
           )
         }
+      }
+    }
+    .listSectionSpacing(16)
+    .overlay {
+      if loading && state == nil && error == nil {
+        ChatSettingsLoadingView(title: "Loading permissions…")
       }
     }
     .navigationTitle(label + " permissions")
