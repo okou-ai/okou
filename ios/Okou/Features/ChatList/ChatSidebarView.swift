@@ -109,7 +109,7 @@ struct ChatSidebarView: View {
         .buttonStyle(.glass)
         .accessibilityIdentifier("search-chats")
     }
-    .frame(height: headerHeight)
+    .frame(minHeight: headerHeight)
   }
 
   private var workspaceSwitcher: some View {
