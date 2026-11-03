@@ -1,14 +1,11 @@
 import { spawnSync } from "node:child_process";
 
 import { Command, InvalidArgumentError, Option } from "commander";
-import type { BrowserSession } from "@okouai/api-contracts/contracts/browser";
-import { array, boolean, literal, number, object, string } from "zod";
+import { array, boolean, literal, object, string } from "zod";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { BrowserCdpClient } from "./browser-cdp";
 
 export const DEFAULT_AGENT_BROWSER_SESSION = "okou-browser";
-const WINDOW_LOOKUP_CONCURRENCY = 4;
 const tabIdSchema = string().regex(/^t[1-9]\d*$/u);
 const tabListSchema = object({
   success: literal(true),
@@ -22,12 +19,6 @@ const tabListSchema = object({
       }),
     ),
   }),
-});
-const nativeWindowSchema = object({
-  windowId: number().int().nonnegative().safe(),
-});
-const targetInventorySchema = object({
-  targetInfos: array(object({ targetId: string().min(1) })),
 });
 
 type DriverTab = {
@@ -88,130 +79,6 @@ function driverJson(session: string, args: readonly string[]): unknown {
     throw new Error(
       "Could not inspect the attached Browser safely; run `okou browser use`.",
     );
-  }
-}
-
-class BrowserWindowLookupError extends Error {}
-
-async function windowConnection(cdpUrl: string): Promise<BrowserCdpClient> {
-  return await BrowserCdpClient.connect(
-    cdpUrl,
-    Date.now() + 30_000,
-    {
-      connection: (message) => {
-        return new Error(message);
-      },
-      timeout: (message) => {
-        return new Error(message);
-      },
-      command: () => {
-        return new BrowserWindowLookupError(
-          "Could not resolve the Browser tab's native window",
-        );
-      },
-    },
-    1024 * 1024,
-  );
-}
-
-async function nativeWindow(
-  client: BrowserCdpClient,
-  targetId: string,
-): Promise<number | null> {
-  let result: unknown;
-  try {
-    result = await client.send("Browser.getWindowForTarget", { targetId });
-  } catch (error) {
-    if (error instanceof BrowserWindowLookupError) {
-      // Native error messages vary across Chrome versions. Confirm a missing
-      // reference against Chrome instead of hiding provider/permission failures.
-      const inventory = targetInventorySchema.safeParse(
-        await client.send("Target.getTargets"),
-      );
-      if (!inventory.success) {
-        throw new Error("The Browser returned incompatible target information");
-      }
-      if (
-        !inventory.data.targetInfos.some((target) => {
-          return target.targetId === targetId;
-        })
-      ) {
-        return null;
-      }
-    }
-    throw error;
-  }
-  const parsed = nativeWindowSchema.safeParse(result);
-  if (!parsed.success) {
-    throw new Error(
-      "The Browser returned incompatible native window information",
-    );
-  }
-  return parsed.data.windowId;
-}
-
-export async function bindBrowserWindow(
-  browser: BrowserSession,
-  cdpUrl: string,
-  session: string,
-): Promise<void> {
-  const window = browser.window;
-  if (!window) {
-    return;
-  }
-  const client = await windowConnection(cdpUrl);
-  try {
-    const tabs = [...driverTabs(session)].sort((left, right) => {
-      return Number(right.active) - Number(left.active);
-    });
-    let lookupFailure: BrowserWindowLookupError | undefined;
-    for (let offset = 0; offset < tabs.length;) {
-      // A selected member remains a one-command fast path. Other candidates
-      // are checked in driver order, independent of their response order.
-      const count =
-        offset === 0 && tabs[0]?.active ? 1 : WINDOW_LOOKUP_CONCURRENCY;
-      const batch = tabs.slice(offset, offset + count);
-      const results = await Promise.allSettled(
-        batch.map((target) => {
-          return nativeWindow(client, target.targetId);
-        }),
-      );
-      for (const [index, result] of results.entries()) {
-        if (result.status === "rejected") {
-          const error: unknown = result.reason;
-          if (!(error instanceof BrowserWindowLookupError)) {
-            throw error;
-          }
-          lookupFailure ??= error;
-          continue;
-        }
-        if (result.value !== window.primaryWindowId) {
-          continue;
-        }
-        const target = batch[index]!;
-        // A candidate can move while another lookup in its batch completes.
-        if (
-          batch.length > 1 &&
-          (await nativeWindow(client, target.targetId)) !==
-            window.primaryWindowId
-        ) {
-          throw new Error(
-            "The Browser tab moved or closed before attachment; run `okou browser use` again",
-          );
-        }
-        runAgentBrowser(session, ["--pin-tab", "tab", target.targetId]);
-        return;
-      }
-      offset += count;
-    }
-    throw (
-      lookupFailure ??
-      new Error(
-        "This chat's Browser window has no available tab; reconnect explicitly",
-      )
-    );
-  } finally {
-    client.close();
   }
 }
 

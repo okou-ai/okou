@@ -135,9 +135,9 @@ describe("okou browser command", () => {
     expect(help).toContain(
       "Chats sharing a Browser profile share cookies and localStorage",
     );
-    expect(help).toContain("When use reports a chat Browser window");
+    expect(help).toContain("keep new pages in this chat automatically");
     expect(help).toContain(
-      "explicit tab selection and every CDP API remain available",
+      "Tab list shows safe origins without full URLs or titles",
     );
   });
 
