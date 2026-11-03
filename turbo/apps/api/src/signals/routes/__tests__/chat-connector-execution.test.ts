@@ -358,6 +358,9 @@ describe("Chat connector execution", () => {
       [403],
     );
     const foreign = bdd.user();
+    await connectors.updateFeatureSwitches(foreign, {
+      connectorChatAccountAccess: true,
+    });
     const foreignAccount = await addAccount(foreign, "foreign");
     await accept(
       client().select({
@@ -371,7 +374,7 @@ describe("Chat connector execution", () => {
       client().approve({
         headers: sessionHeaders,
         params: { threadId: value.threadId },
-        body: { target: builtin, connectionId: b.id },
+        body: { target: builtin, connectionId: foreignAccount.id },
       }),
       [404],
     );

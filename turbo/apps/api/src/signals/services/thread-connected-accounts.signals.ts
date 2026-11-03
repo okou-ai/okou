@@ -282,8 +282,12 @@ function createConnectorInputSignals(
       timing: get(dispatchTiming$),
     };
   });
-  const { chatAccountsEnabled$, effectiveAccounts$ } =
-    createChatAccountInputSignals(execution, connectorInput$);
+  const chatAccounts = createChatAccountInputSignals(
+    execution,
+    connectorInput$,
+  );
+  const chatAccountsEnabled$ = chatAccounts.chatAccountsEnabled$;
+  const effectiveAccounts$ = chatAccounts.effectiveAccounts$;
   const connectorScope$ = computed(
     async (get): Promise<EffectiveConnectorScope> => {
       const scope = runConnectorScope(await get(execution.connectorScope$));
