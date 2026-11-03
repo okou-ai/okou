@@ -13,6 +13,8 @@ import type { infer as zInfer } from "zod";
 import { installedSharedDatabaseBridge$ } from "../shared-database-bridge-state.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { apiClient$ } from "../api-client.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
+import { rootVersion$ } from "../root-signal.ts";
 import { accept } from "../../lib/accept.ts";
 import { searchParams$, pathParams$ } from "../route.ts";
 import {
@@ -24,27 +26,34 @@ import {
 export const projectsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.Projects] ?? false;
 });
-const state$ = state<zInfer<typeof projectEventQueryResultSchema>>({
-  snapshot: null,
-  events: [],
+const projectState$ = computed((get) => {
+  get(authenticatedSessionKey$);
+  get(rootVersion$);
+  return {
+    events$: state<zInfer<typeof projectEventQueryResultSchema> | null>(null),
+    optimisticRenames$: state<
+      readonly (Pick<ProjectEvent, "id" | "projectId" | "createdAt"> & {
+        readonly name: string;
+      })[]
+    >([]),
+  };
 });
-const optimisticProjectRenames$ = state<
-  readonly (Pick<ProjectEvent, "id" | "projectId" | "createdAt"> & {
-    readonly name: string;
-  })[]
->([]);
 export const projects$ = computed((get) => {
   if (!get(projectsEnabled$)) {
     return [];
   }
-  const value = get(state$);
+  const owner = get(projectState$);
+  const value = get(owner.events$);
+  if (!value) {
+    return [];
+  }
   const persistedIds = new Set(
     value.events.map((event) => {
       return event.id;
     }),
   );
   const pending = new Map(
-    get(optimisticProjectRenames$)
+    get(owner.optimisticRenames$)
       .filter((event) => {
         return !persistedIds.has(event.id);
       })
@@ -63,8 +72,9 @@ export const projects$ = computed((get) => {
 });
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const owner = get(projectState$);
     if (!get(projectsEnabled$)) {
-      set(state$, { snapshot: null, events: [] });
+      set(owner.events$, null);
       return;
     }
     const result = await get(installedSharedDatabaseBridge$).query(
@@ -76,13 +86,13 @@ export const syncProjects$ = command(
       signal,
     );
     signal.throwIfAborted();
-    set(state$, result);
+    set(owner.events$, result);
     const persistedIds = new Set(
       result.events.map((event) => {
         return event.id;
       }),
     );
-    set(optimisticProjectRenames$, (events) => {
+    set(owner.optimisticRenames$, (events) => {
       return events.filter((event) => {
         return !persistedIds.has(event.id);
       });
@@ -91,22 +101,29 @@ export const syncProjects$ = command(
 );
 export const hydrateProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(state$, { snapshot: null, events: [] });
+    const owner = get(projectState$);
     if (!get(projectsEnabled$)) {
+      set(owner.events$, null);
       return;
     }
     await set(restoreProjectExpansion$, signal);
-    set(
-      state$,
-      await get(installedSharedDatabaseBridge$).query(
+    signal.throwIfAborted();
+    // Cache hydration belongs to the session, not each route. Keep the current
+    // folders mounted while navigation catches up with the canonical stream.
+    if (get(owner.events$) === null) {
+      const cached = await get(installedSharedDatabaseBridge$).query(
         {
           dataKey: { kind: "project-event" },
           afterSeqId: null,
           consistency: "cache-only",
         },
         signal,
-      ),
-    );
+      );
+      signal.throwIfAborted();
+      if (get(owner.events$) === null) {
+        set(owner.events$, cached);
+      }
+    }
     await set(syncProjects$, signal);
     const threadId = get(pathParams$)?.threadId;
     const projectId =
@@ -148,8 +165,9 @@ export const createProject$ = command(
 export const renameProject$ = command(
   async ({ get, set }, id: string, name: string, signal: AbortSignal) => {
     signal.throwIfAborted();
+    const owner = get(projectState$);
     const eventId = operation();
-    set(optimisticProjectRenames$, (events) => {
+    set(owner.optimisticRenames$, (events) => {
       return [
         ...events,
         {
