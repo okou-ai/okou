@@ -1,5 +1,8 @@
 import type { Command, Computed } from "ccstate";
+import { isAbortError } from "../utils.ts";
 import { createBrowserRuntime } from "./runtime.ts";
+import { CdpFault } from "./cdp/errors.ts";
+import { isImageFailure } from "./viewer/diagnostic.ts";
 import type { ClipboardRecovery } from "./input/clipboard.ts";
 import type { BrowserNavigationAction } from "./navigation/action.ts";
 import type { DisplayModeResult, DisplayState } from "./display/sync.ts";
@@ -26,6 +29,25 @@ export interface BrowserConnection {
     readonly runtimeId: string;
     readonly version: string;
   };
+}
+
+export function isBrowserOperationFailure(
+  error: unknown,
+  imageFailureHandled = false,
+): boolean {
+  if (
+    isAbortError(error) ||
+    (error instanceof Error && isAbortError(error.cause))
+  ) {
+    return false;
+  }
+  // Selection/create/reconnect can reject after native creation succeeded. The
+  // image-recovery controls own those image failures, including a later retry.
+  return !(
+    imageFailureHandled &&
+    error instanceof CdpFault &&
+    isImageFailure(error)
+  );
 }
 
 export interface BrowserTab {

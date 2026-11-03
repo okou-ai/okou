@@ -694,10 +694,6 @@ export function createViewerSignals(
     ...address,
     ...favicon,
     ...configuration,
-    // Temporary private controller integration; never exposed on BrowserSignals.
-    captureState$: atoms.captureState$,
-    transportState$: atoms.transportState$,
-    modeState$: atoms.modeState$,
   };
 }
 export type ViewerSignals = ReturnType<typeof createViewerSignals>;

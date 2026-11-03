@@ -10,7 +10,7 @@ import {
 } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { logger } from "../log.ts";
-import type { BrowserSignals } from "./browser.ts";
+import type { BrowserConnection, BrowserSignals } from "./browser.ts";
 import { CdpFault } from "./cdp/errors.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
@@ -27,7 +27,6 @@ import { diagnostic } from "./viewer/diagnostic.ts";
 import { createViewerSignals } from "./viewer/model.ts";
 import type { TabSpace } from "./viewer/tab-layout.ts";
 import type {
-  BrowserConnection,
   NavigationReceipt,
   ViewerCaptureOptions,
   ViewerTransport,

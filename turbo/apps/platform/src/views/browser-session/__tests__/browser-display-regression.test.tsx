@@ -382,6 +382,68 @@ test("Automatic panel sizing exposes a native display failure without a settings
   expect(within(viewer).getByLabelText("Browser settings")).toBeEnabled();
 });
 
+test.each(["frame", "capture receipt"] as const)(
+  "Display synchronization resumes after image recovery with the %s first",
+  async (first) => {
+    const browser = mockViewer();
+    const viewer = await openViewer();
+    const input = within(viewer).getByLabelText("Remote browser input");
+    await waitFor(() => {
+      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+      expect(input).toBeEnabled();
+    });
+    act(() => {
+      browser.frame("!");
+    });
+    const retry = await within(viewer).findByText("Retry live image");
+    await waitFor(() => {
+      expect(retry).toBeEnabled();
+    });
+    const capture = browser.holdNext("Page.startScreencast");
+    const frame = browser.holdTargetFrames("example-page");
+    click(retry);
+    await capture.received;
+    await frame.received;
+    if (first === "frame") {
+      act(() => {
+        frame.release();
+      });
+    } else {
+      await act(async () => {
+        await capture.release();
+      });
+    }
+    await waitFor(() => {
+      expect(input).toHaveProperty("disabled", first === "capture receipt");
+    });
+    if (first === "frame") {
+      await act(async () => {
+        await capture.release();
+      });
+    } else {
+      act(() => {
+        frame.release();
+      });
+    }
+    await waitFor(() => {
+      expect(input).toBeEnabled();
+    });
+
+    // A panel resize could restart capture and conceal a suspended display.
+    browser.setWindowState("maximized", 0, {
+      width: 1280,
+      height: 720,
+    });
+    const sizing = await openWindowSizeMenu(viewer);
+    click(sizeOption(sizing, "Fit window to panel"));
+    await waitFor(() => {
+      expect(browser.windowState()).toBe("normal");
+      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+      expect(input).toBeEnabled();
+    });
+  },
+);
+
 test("A window resize synchronizes the remote display to the new panel size", async () => {
   let canvasBox = new DOMRect(0, 0, 900, 600);
   const browser = mockViewer(() => {

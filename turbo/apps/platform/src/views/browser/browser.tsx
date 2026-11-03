@@ -34,8 +34,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@okouai/ui";
-import type { BrowserSignals } from "../../signals/browser/browser.ts";
-import { CdpFault } from "../../signals/browser/cdp/errors.ts";
+import {
+  isBrowserOperationFailure,
+  type BrowserSignals,
+} from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
@@ -45,29 +47,7 @@ import type {
   WindowSizeSync,
 } from "../../signals/browser/viewer/types.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, isAbortError, Reason } from "../../signals/utils.ts";
-
-function isBrowserOperationFailure(
-  error: unknown,
-  imageFailureHandled = false,
-): boolean {
-  if (
-    isAbortError(error) ||
-    (error instanceof Error && isAbortError(error.cause))
-  ) {
-    return false;
-  }
-  // Selection/create/reconnect can reject after native creation succeeded. The
-  // image-recovery controls own those image failures, including a later retry.
-  return !(
-    imageFailureHandled &&
-    error instanceof CdpFault &&
-    (error.kind === "frame" ||
-      (error.kind === "protocol" &&
-        (error.request?.method === "Page.startScreencast" ||
-          error.request?.method === "Page.stopScreencast")))
-  );
-}
+import { detach, Reason } from "../../signals/utils.ts";
 
 function BrowserOperationError({
   failed,
