@@ -75,7 +75,9 @@ export function AccountMenuSubscriptionsPanel({
         <AccountMenuSubscriptionsSkeleton />
       ) : (
         <TooltipProvider delay={250}>
-          <div className={cn("flex flex-col", !onOpenUsage && "gap-1")}>
+          <div
+            className={cn("flex flex-col", resetControl === "menu" && "gap-1")}
+          >
             {rows.map((row) => {
               return (
                 <AccountMenuSubscriptionProviderSection
@@ -190,7 +192,7 @@ function AccountMenuSubscriptionProviderSection({
     <section
       className={cn(
         "rounded-lg",
-        onOpenUsage
+        resetControl === "button"
           ? "not-first:before:mx-3 not-first:before:my-1 not-first:before:block not-first:before:border-t not-first:before:border-border"
           : "overflow-hidden bg-nested-fill",
       )}
@@ -285,6 +287,19 @@ function subscriptionInformationTarget(
   const informationClassName =
     "flex w-full flex-col items-stretch gap-2 rounded-lg p-3 text-left text-sm font-normal leading-5 outline-none hover:bg-state-hover focus-visible:bg-state-hover";
 
+  if (resetControl === "menu") {
+    return (
+      <DropdownMenuItem
+        closeOnClick={onOpenUsage !== undefined}
+        onClick={onOpenUsage}
+        className={cn(
+          informationClassName,
+          onOpenUsage && "cursor-pointer active:bg-state-pressed",
+        )}
+      />
+    );
+  }
+
   if (onOpenUsage) {
     return (
       <button
@@ -297,11 +312,7 @@ function subscriptionInformationTarget(
       />
     );
   }
-  return resetControl === "menu" ? (
-    <DropdownMenuItem closeOnClick={false} className={informationClassName} />
-  ) : (
-    <div tabIndex={0} className={informationClassName} />
-  );
+  return <div tabIndex={0} className={informationClassName} />;
 }
 
 function SubscriptionResetTimes({
