@@ -462,6 +462,34 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertEqual(fixture.state.value.withLock { $0.sends.count }, 1)
   }
 
+  func testUncertainStopChecksHistoryWithoutReplayingTheCommand() async throws {
+    let fixture = FailureRecoveryFixture()
+    fixture.state.value.withLock {
+      $0.rows.removeLast()
+      $0.lastID = FailureRecoveryFixture.id(2)
+    }
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    XCTAssertEqual(conversation.history?.canStop, true)
+    await conversation.stop()
+    XCTAssertNotNil(conversation.stopIssue)
+    XCTAssertNil(conversation.error)
+    XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
+    await conversation.refresh()
+    XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
+    fixture.state.value.withLock {
+      $0.rows.append(FailureRecoveryFixture.row(3, type: "run.cancelled", payload: "null"))
+      $0.lastID = FailureRecoveryFixture.id(3)
+    }
+    await conversation.refresh()
+    XCTAssertNil(conversation.stopIssue)
+    XCTAssertEqual(conversation.history?.canStop, false)
+    XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
+  }
+
   func testRejectedSendRetainsItsMessageAndIdentityForExplicitRecovery() async throws {
     let fixture = FailureRecoveryFixture()
     fixture.state.value.withLock {

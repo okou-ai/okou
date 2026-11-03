@@ -30,6 +30,7 @@ final class FailureRecoveryFixture: Sendable {
     )
     .replacingOccurrences(of: "\"usedPercent\":20", with: "\"usedPercent\":100")
     var sends: [Data] = []
+    var stopWrites = 0
     var sendStatus = 200
     var persistSend = true
     var resetOutcome = "reset"
@@ -181,6 +182,11 @@ final class FailureRecoveryFixture: Sendable {
         let data = chatRequestBody(request)
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         return state.value.withLock { value in
+          if body["interruptsRunId"] != nil || body["revokesEventId"] != nil {
+            value.stopWrites += 1
+            return ChatHTTPResponse(
+              status: 503, body: #"{"error":{"message":"Stop response unavailable"}}"#)
+          }
           value.sends.append(data)
           if value.persistSend {
             let id = body["clientEventId"] as! String
