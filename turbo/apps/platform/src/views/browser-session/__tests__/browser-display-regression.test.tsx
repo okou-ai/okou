@@ -385,10 +385,7 @@ test("Automatic panel sizing exposes a native display failure without a settings
 test.each(["frame", "capture receipt"] as const)(
   "Display synchronization resumes after image recovery with the %s first",
   async (first) => {
-    let canvasBox = new DOMRect(0, 0, 900, 600);
-    const browser = mockViewer(() => {
-      return canvasBox;
-    });
+    const browser = mockViewer();
     const viewer = await openViewer();
     const input = within(viewer).getByLabelText("Remote browser input");
     await waitFor(() => {
@@ -432,12 +429,16 @@ test.each(["frame", "capture receipt"] as const)(
       expect(input).toBeEnabled();
     });
 
-    canvasBox = new DOMRect(0, 0, 720, 480);
-    act(() => {
-      window.dispatchEvent(new Event("resize"));
+    // A panel resize could restart capture and conceal a suspended display.
+    browser.setWindowState("maximized", 0, {
+      width: 1280,
+      height: 720,
     });
+    const sizing = await openWindowSizeMenu(viewer);
+    click(sizeOption(sizing, "Fit window to panel"));
     await waitFor(() => {
-      expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
+      expect(browser.windowState()).toBe("normal");
+      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
       expect(input).toBeEnabled();
     });
   },
