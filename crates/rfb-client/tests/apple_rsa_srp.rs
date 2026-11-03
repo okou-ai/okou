@@ -4,13 +4,11 @@
     reason = "bounded synthetic protocol fixtures and fixed test credentials"
 )]
 
+mod common_rsa;
+
 use crypto_bigint::{
     BoxedUint, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
-};
-use rand::{
-    SeedableRng,
-    rngs::{StdRng, SysRng},
 };
 use rfb_client::{AppleRsaSrpCredentials, AuthenticationStage, Error, authenticate_apple_rsa_srp};
 use rsa::{Pkcs1v15Encrypt, RsaPrivateKey, RsaPublicKey, pkcs8::EncodePublicKey};
@@ -75,8 +73,7 @@ struct PeerFixture {
 
 impl PeerFixture {
     fn new() -> Self {
-        let mut rng = StdRng::try_from_rng(&mut SysRng).expect("OS entropy");
-        let private = RsaPrivateKey::new(&mut rng, 2048).expect("synthetic RSA key");
+        let private = common_rsa::server_key().expect("synthetic RSA key");
         let n_bytes = group();
         let n = BoxedUint::from_be_slice(&n_bytes, 4096).expect("N");
         let params = BoxedMontyParams::new_vartime(
