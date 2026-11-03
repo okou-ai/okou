@@ -108,7 +108,9 @@ function sheet(bytes: ArrayBuffer) {
 
 function tableExportButton(index = 0) {
   const button = queryAllByRoleFast("button").filter((candidate) => {
-    return ["Export", "Saving…"].includes(candidate.textContent?.trim() ?? "");
+    return ["Export", "Saving…"].includes(
+      candidate.getAttribute("aria-label") ?? "",
+    );
   })[index];
   if (!button) {
     throw new Error(`Expected export control for table ${index + 1}`);
@@ -365,7 +367,7 @@ test("Keyboard activation of footer Export preserves the menu and dismissal focu
   const trigger = tableExportButton();
   trigger.focus();
   expect(trigger).toHaveFocus();
-  expect(trigger).toHaveTextContent("Export");
+  expect(trigger).toHaveAccessibleName("Export");
 
   await user.keyboard("{ArrowDown}");
   const menu = await screen.findByRole("menu");
@@ -392,7 +394,7 @@ test("Each table exports its own real workbook with literal values and source UR
   const browser = context.mocks.browser.blobDownload({ deferRead: true });
   await openTables();
   const buttons = queryAllByRoleFast("button").filter((button) => {
-    return button.textContent === "Export";
+    return button.getAttribute("aria-label") === "Export";
   });
   expect(buttons).toHaveLength(2);
   click(buttons[1]!);
@@ -749,7 +751,7 @@ test.each([
   },
 );
 
-test("The table export trigger is disabled and says Saving… during the initial upload", async () => {
+test("The table export trigger is disabled and named Saving… during the initial upload", async () => {
   const uploadStarted = context.mocks.deferred<void>();
   const releaseUpload = context.mocks.deferred<void>();
   const savedUrl = "https://drive.google.test/file/d/pending-table/view";
@@ -775,7 +777,7 @@ test("The table export trigger is disabled and says Saving… during the initial
   });
   expect(buttonNamed("Saving…")).toHaveAttribute("aria-busy", "true");
   expect(tableExportButton(1)).toBeEnabled();
-  expect(tableExportButton(1)).toHaveTextContent("Export");
+  expect(tableExportButton(1)).toHaveAccessibleName("Export");
 
   releaseUpload.resolve();
   await expectSavedToast("Saved to Google Drive", savedUrl);
