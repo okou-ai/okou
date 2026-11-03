@@ -5,6 +5,7 @@ import json
 import os
 import urllib.error
 from collections.abc import Callable
+from pathlib import Path
 from typing import Literal
 from unittest.mock import AsyncMock, patch
 
@@ -40,6 +41,10 @@ from tests.jsonl_log_helpers import read_jsonl_text_after_flush
 
 _MALFORMED_SUCCESS_PREFIX = "Firewall auth endpoint returned malformed success response"
 _MISSING_FIELD = object()
+_LOCAL_AUTH_FAILURE_FIXTURE = (
+    Path(__file__).resolve().parents[4]
+    / "turbo/packages/pi-agent-runtime/src/test/fixtures/local-firewall-auth-failure.json"
+)
 type HookPhase = Literal["request", "requestheaders"]
 
 
@@ -1064,31 +1069,39 @@ class TestHandleFirewallRequest:
         assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "auth_failed"
         body = json.loads(flow.response.content)
         assert body["error"] == "auth_failed"
+        assert body["authFailure"] == {
+            "source": "okou_firewall_auth",
+            "kind": "unexpected_error",
+        }
         assert "API unreachable" in body["message"]
         assert body["permission"] == "github"
         assert body["base"] == "https://api.github.com"
         assert "connectors" not in body
 
     @pytest.mark.parametrize(
-        ("network_error", "expected_message"),
+        ("network_error", "expected_message", "expected_evidence"),
         [
             (
                 urllib.error.URLError("connection refused"),
                 "connection refused",
+                {"kind": "transport_error"},
             ),
             (
                 TimeoutError("timed out"),
                 "timed out",
+                {"kind": "transport_error"},
             ),
             (
                 ConnectionResetError("connection reset"),
                 "connection reset",
+                {"kind": "transport_error"},
             ),
             (
                 auth_client.FirewallAuthDeadlineExceededError(
                     auth_client.FirewallAuthFetchPhase.RESPONSE_HEADERS
                 ),
                 "Firewall auth fetch deadline exceeded during response_headers",
+                {"kind": "deadline_exceeded", "phase": "response_headers"},
             ),
         ],
         ids=["url-error", "socket-timeout", "connection-reset", "deadline-phase"],
@@ -1097,6 +1110,7 @@ class TestHandleFirewallRequest:
         self,
         network_error: Exception,
         expected_message: str,
+        expected_evidence: dict,
         real_flow,
         mitm_ctx,
         tmp_path,
@@ -1136,6 +1150,7 @@ class TestHandleFirewallRequest:
         body = json.loads(flow.response.content)
         assert body["error"] == "auth_failed"
         assert expected_message in body["message"]
+        assert body["authFailure"] == {"source": "okou_firewall_auth", **expected_evidence}
         assert body["permission"] == "github"
         assert body["base"] == "https://api.github.com"
         assert "connectors" not in body
@@ -1174,9 +1189,42 @@ class TestHandleFirewallRequest:
         assert cached_headers(flow.metadata[metadata_keys.FIREWALL_AUTH_CACHE_KEY]) is None
         body = json.loads(flow.response.content)
         assert body["error"] == "auth_failed"
+        assert body["authFailure"] == {
+            "source": "okou_firewall_auth",
+            "kind": "invalid_response",
+        }
         assert body["permission"] == "github"
         assert body["base"] == "https://api.github.com"
         assert "connectors" not in body
+
+    @pytest.mark.parametrize("hook_phase", ["request", "requestheaders"])
+    @pytest.mark.parametrize("api_status", [500, 403])
+    async def test_generic_api_failure_retains_local_provenance_and_original_status(
+        self, real_flow, mitm_ctx, tmp_path, hook_phase: HookPhase, api_status: int
+    ):
+        fixture = json.loads(await asyncio.to_thread(_LOCAL_AUTH_FAILURE_FIXTURE.read_text))
+        flow = _firewall_flow(real_flow)
+        endpoint = FakeAuthEndpoint()
+        endpoint.queue_json_response(
+            {"error": {"code": "UNKNOWN_AUTH_ERROR", "message": "private-provider-detail"}},
+            status=api_status,
+        )
+        with endpoint.run(), mitm_ctx(api_url=endpoint.api_url):
+            await _run_firewall_auth_phase(
+                hook_phase, flow, _allow(_api_entry()), _sandbox_info(tmp_path)
+            )
+
+        assert endpoint.request_count == 1
+        assert flow.response is not None
+        assert flow.response.status_code == 502
+        body = json.loads(flow.response.content)
+        assert body["error"] == fixture["response"]["error"]
+        assert body["authFailure"] == {
+            **fixture["response"]["authFailure"],
+            "status": api_status,
+        }
+        assert "private-provider-detail" not in json.dumps(body["authFailure"])
+        assert "Authorization" not in flow.request.headers
 
     @pytest.mark.parametrize(
         ("field_name", "invalid_value", "expected_reason"),

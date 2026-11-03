@@ -737,6 +737,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   provider_stream_timeout: "generic",
   provider_queue_timeout: "generic",
   provider_server_error: "generic",
+  firewall_auth_failed: "generic",
   provider_bad_request: "generic",
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",

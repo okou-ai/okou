@@ -640,6 +640,9 @@ export const rustTypeBindings = [
             "The provider expired the request before processing started.",
           ],
           provider_server_error: ["The provider returned a server error."],
+          firewall_auth_failed: [
+            "Local firewall authentication resolution failed.",
+          ],
           provider_bad_request: [
             "Codex returned an opaque HTTP 400 with no more specific cause.",
           ],

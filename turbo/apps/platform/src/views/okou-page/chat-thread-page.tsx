@@ -5600,6 +5600,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.genericTitle;
     });
   },
+  firewall_auth_failed: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  },
   response_connection_lost: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.connectionLostTitle;
@@ -5738,6 +5743,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
       return $.runErrors.transient;
     });
   },
+  firewall_auth_failed: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.transient;
+    });
+  },
   response_connection_lost: FAILURE_DESCRIPTIONS.capacity,
   safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
   reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
@@ -5781,6 +5791,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
     reason === "provider_bad_request" ||
+    reason === "firewall_auth_failed" ||
     reason === "session_history_limit"
   ) {
     return AlertCircle;
@@ -5794,6 +5805,7 @@ function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
     reason !== "account_verification_required" &&
     reason !== "input_too_large" &&
     reason !== "provider_bad_request" &&
+    reason !== "firewall_auth_failed" &&
     reason !== "provider_image_too_large"
   );
 }
