@@ -1,6 +1,12 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { test, expect } from "vitest";
+import { test, expect, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
@@ -18,7 +24,12 @@ import {
   setupPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { resetSignal } from "../../../signals/utils.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import {
   installContinuityWorkspace,
   continuityThread,
@@ -27,6 +38,7 @@ import {
 import { createDataTransferStub } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
+const reloadedContext = createTestRuntime(context);
 const id = "30000000-0000-4000-8000-000000000071";
 const at = "2026-11-02T00:00:00.000Z";
 function folder(projectId = id) {
@@ -114,6 +126,146 @@ function metadata(extra: readonly { id: string; name: string }[] = []) {
     return respond(204);
   });
 }
+
+function releasePageDom() {
+  cleanup();
+  vi.mocked(window.history.pushState).mockRestore();
+  vi.mocked(window.history.replaceState).mockRestore();
+  vi.mocked(window.history.back).mockRestore();
+}
+
+test("Project folders remember open and collapsed states after a page reload", async () => {
+  const otherId = "30000000-0000-4000-8000-000000000072";
+  const member = {
+    ...continuityThread(108, 1, "Launch planning"),
+    projectId: id,
+  };
+  const other = {
+    ...continuityThread(108, 2, "Research notes"),
+    projectId: otherId,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 108,
+    threads: [member, other],
+  });
+  metadata([{ id: otherId, name: "Research" }]);
+  const resetPage$ = resetSignal();
+  const signal = context.store.set(resetPage$, context.signal);
+  const options = {
+    path: `/chats/${member.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  };
+  await setupPage({ context: { ...context, signal }, ...options });
+  expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "true");
+  expect(button("Research", folder(otherId))).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+
+  click(button("Launch", folder()));
+  click(button("Research", folder(otherId)));
+  expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "false");
+  expect(namedLink(folder(otherId), "Research notes")).toBeInTheDocument();
+
+  context.store.set(resetPage$);
+  releasePageDom();
+  await setupPage({ context: reloadedContext, ...options });
+
+  expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "false");
+  expect(namedLink(folder(), "Launch planning")).toBeNull();
+  expect(button("Research", folder(otherId))).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(namedLink(folder(otherId), "Research notes")).toBeInTheDocument();
+});
+
+test.each(["account", "workspace"] as const)(
+  "Project folder preferences stay separate for each %s",
+  async (scope) => {
+    const ordinary = continuityThread(109, 1, "Ordinary chat");
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 109,
+      threads: [ordinary],
+    });
+    metadata();
+    const resetPage$ = resetSignal();
+    const signal = context.store.set(resetPage$, context.signal);
+    const options = {
+      path: `/chats/${ordinary.id}`,
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    };
+    await setupPage({ context: { ...context, signal }, ...options });
+    click(button("Launch", folder()));
+    expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "true");
+
+    context.store.set(resetPage$);
+    releasePageDom();
+    const auth = workspace.pageOptions.auth;
+    await setupPage({
+      context: reloadedContext,
+      ...options,
+      auth: {
+        ...auth,
+        ...(scope === "account"
+          ? { user: { ...auth.user, id: "user_other" } }
+          : {
+              organization: {
+                activeOrg: { id: "org_other", name: "Other workspace" },
+                memberships: [{ id: "org_other" }],
+              },
+            }),
+      },
+    });
+
+    expect(button("Launch", folder())).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    click(button("Launch", folder()));
+    expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "true");
+  },
+);
+
+test.each(["not json", '{"invalid":"true"}'])(
+  "Project folders remain usable with invalid cached preferences: %s",
+  async (value) => {
+    const ordinary = continuityThread(110, 1, "Ordinary chat");
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 110,
+      threads: [ordinary],
+    });
+    metadata();
+    const { auth } = workspace.pageOptions;
+    context.store.set(
+      localStorageSignals(
+        `project-folder-expansion:${auth.organization?.activeOrg?.id}:${auth.user.id}`,
+      ).set$,
+      value,
+    );
+    await setupPage({
+      context,
+      path: `/chats/${ordinary.id}`,
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    });
+
+    expect(button("Launch", folder())).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    click(button("Launch", folder()));
+    expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "true");
+    click(button("Launch", folder()));
+    expect(button("Launch", folder())).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  },
+);
+
 test("Project folders show cross-Agent chats inline without leaving the current conversation", async () => {
   const ordinary = continuityThread(90, 1, "Ordinary chat");
   const member = {
