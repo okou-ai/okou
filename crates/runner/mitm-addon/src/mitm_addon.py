@@ -865,6 +865,13 @@ def client_disconnected(client: connection.Client) -> None:
 # ============================================================================
 
 
+def _terminate_classified_requestheaders(flow: http.HTTPFlow) -> None:
+    """Drop cached classification and kill a rejected header-phase request."""
+    request_classification.pop_cached_classification(flow)
+    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+    flow.kill()
+
+
 def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
     try:
         return _requestheaders(flow)
@@ -1129,9 +1136,7 @@ def _requestheaders_after_authority(
                     firewall_base=firewall_base,
                     reason=auth_base_body_check.reason,
                 )
-            request_classification.pop_cached_classification(flow)
-            flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-            flow.kill()
+            _terminate_classified_requestheaders(flow)
             return None
 
         if auth_base and auth_base_body_check.kind == "ok":
@@ -1152,9 +1157,7 @@ def _requestheaders_after_authority(
                     proxy_log_path=proxy_log_path,
                     firewall_base=firewall_base,
                 )
-                request_classification.pop_cached_classification(flow)
-                flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-                flow.kill()
+                _terminate_classified_requestheaders(flow)
                 return None
             try:
                 auth_base_forwarder.attach_forward_request_admission_to_flow(flow, admission)
@@ -1364,9 +1367,7 @@ def _check_data_router_request_body(
         observed_size=body_check.observed_size,
         request_body_limit_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
     )
-    request_classification.pop_cached_classification(flow)
-    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-    flow.kill()
+    _terminate_classified_requestheaders(flow)
 
 
 def _admit_buffered_public_destination_request(
@@ -1417,9 +1418,7 @@ def _admit_buffered_public_destination_request(
         observed_size=body_check.observed_size,
         request_body_limit_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
     )
-    request_classification.pop_cached_classification(flow)
-    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-    flow.kill()
+    _terminate_classified_requestheaders(flow)
 
 
 def _admit_buffered_aws_sigv4_request(
@@ -1479,9 +1478,7 @@ def _admit_buffered_aws_sigv4_request(
             action=action,
         )
     release_aws_sigv4_request_inspection(flow)
-    request_classification.pop_cached_classification(flow)
-    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-    flow.kill()
+    _terminate_classified_requestheaders(flow)
 
 
 async def _try_firewall_request_stream_from_headers(
