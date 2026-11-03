@@ -90,7 +90,7 @@
     },
     {
       "path": "/api/cron/sync-connector-catalog",
-      "schedule": "0 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/sync-official-workflow-catalog",
