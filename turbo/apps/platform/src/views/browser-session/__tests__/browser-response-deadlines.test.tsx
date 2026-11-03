@@ -843,6 +843,70 @@ test.each(["shared", "split"] as const)(
   },
 );
 
+test.each(["shared", "split"] as const)(
+  "First-frame timeouts during tab selection and image retry preserve the healthy %s connection",
+  async (mode) => {
+    const viewer = mockViewer();
+    viewer.browser.targets[1]!.windowId = 101;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await expectReady();
+    if (mode === "split") {
+      await separateImages(viewer.browser);
+    }
+    await insertText("before local first-frame timeout");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "before local first-frame timeout" },
+      });
+    });
+    const image = viewer.browser.holdTargetFrames("replacement");
+    click(screen.getByLabelText("Replacement", { selector: '[role="tab"]' }));
+    await act(async () => {
+      await image.received;
+    });
+    viewer.advance(31_000);
+    await screen.findByText("Browser view unavailable");
+    const retry = await screen.findByText("Retry live image");
+    await waitFor(() => {
+      expect(retry).toBeEnabled();
+    });
+    expect(
+      screen.getByLabelText("Original", { selector: '[role="tab"]' }),
+    ).not.toHaveAttribute("aria-disabled", "true");
+    act(() => {
+      image.release();
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    const retryImage = viewer.browser.holdTargetFrames("replacement");
+    click(retry);
+    await act(async () => {
+      await retryImage.received;
+    });
+    expect(screen.getByText("Retry live image")).toBeDisabled();
+    viewer.advance(31_000);
+    await screen.findByText("Browser view unavailable");
+    const retryAgain = screen.getByText("Retry live image");
+    await waitFor(() => {
+      expect(retryAgain).toBeEnabled();
+    });
+    act(() => {
+      retryImage.release();
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    click(retryAgain);
+    await expectReady("https://replacement.example.com");
+    await insertText("after local first-frame timeout");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        sessionId: viewer.browser.pageSession("replacement"),
+        params: { text: "after local first-frame timeout" },
+      });
+    });
+  },
+);
+
 test("Selecting a ready tab cancels the old first-frame deadline without failing startup", async () => {
   const viewer = mockViewer();
   viewer.browser.targets[1]!.windowId = 101;

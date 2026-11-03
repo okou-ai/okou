@@ -1632,7 +1632,7 @@ function createReadinessWait(
     | "waitEvent$"
     | "wake$"
   >,
-  links$: ControllerDependencies<"selectedSession$">,
+  links$: ControllerDependencies<"captureFailed$" | "selectedSession$">,
 ): ControllerLinks["waitReady$"] {
   const { selectedOwner$, readinessFailure$, available$, wake$, waitEvent$ } =
     context;
@@ -1690,7 +1690,17 @@ function createReadinessWait(
           throw failure;
         }
         if (monotonicNow() >= deadline) {
-          throw new BrowserReadinessTimeout();
+          const error = new BrowserReadinessTimeout();
+          if (
+            selected &&
+            get(selected.current$) &&
+            get(selected.inputReady$) &&
+            !get(selected.painted$)
+          ) {
+            // Missing paint is a capture fault, not a lost healthy connection.
+            await set(get(links$).captureFailed$, owner, error, signal);
+          }
+          throw error;
         }
         await set(waitEvent$, signal);
       }
@@ -1713,6 +1723,7 @@ function createReadinessGraph(
   >,
   links$: ControllerDependencies<
     | "canCreate$"
+    | "captureFailed$"
     | "displayGraph$"
     | "imageEvent$"
     | "refreshFavicon$"
