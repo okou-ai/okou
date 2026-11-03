@@ -140,6 +140,25 @@ test("Preview subscriptions from the rail and open usage in Settings", async () 
   });
   await user.keyboard("{Enter}");
   await expect(
+    screen.findByRole("dialog", { name: "Subscription usage" }),
+  ).resolves.toBeInTheDocument();
+  expect(entry).toHaveFocus();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(entry).toHaveFocus();
+    expect(entry).toHaveAttribute("aria-expanded", "false");
+  });
+  await user.keyboard(" ");
+  const reopenedPreview = await screen.findByRole("dialog", {
+    name: "Subscription usage",
+  });
+  const chatGpt = within(
+    within(reopenedPreview).getByRole("region", { name: "ChatGPT usage" }),
+  ).getByLabelText("ChatGPT usage");
+  chatGpt.focus();
+  expect(chatGpt).toHaveFocus();
+  await user.keyboard("{Enter}");
+  await expect(
     screen.findByRole("dialog", { name: "Settings" }),
   ).resolves.toBeInTheDocument();
 });
@@ -520,10 +539,29 @@ test.each([
     const entry = await screen.findByLabelText(
       "Subscription usage: less than 20% remaining",
     );
-    await userEvent.setup().hover(entry);
-    const panel = await screen.findByTestId("account-menu-subscriptions");
+    click(entry);
+    const panel = await screen.findByRole("dialog", {
+      name: "Subscription usage",
+    });
     expect(within(panel).getByText("12% left")).toBeInTheDocument();
     click(entry);
+    await waitFor(() => {
+      expect(entry).toHaveAttribute("aria-expanded", "false");
+    });
+    click(entry);
+    await waitFor(() => {
+      expect(entry).toHaveAttribute("aria-expanded", "true");
+    });
+    const reopenedPanel = await screen.findByRole("dialog", {
+      name: "Subscription usage",
+    });
+    const providerLabel =
+      type === "codex-oauth-token" ? "ChatGPT usage" : "Claude usage";
+    click(
+      within(
+        within(reopenedPanel).getByRole("region", { name: providerLabel }),
+      ).getByLabelText(providerLabel),
+    );
     const settings = await screen.findByRole("dialog", { name: "Settings" });
     expect(
       within(settings).getByRole("heading", { name: "Credit usage" }),

@@ -44,16 +44,7 @@ export function SidebarSubscriptionUsage({
   });
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next, details) => {
-        // Clicking opens Settings; only hover/focus controls this preview.
-        if (details.reason === "trigger-press") {
-          return;
-        }
-        previewUsage(next);
-      }}
-    >
+    <Popover open={open} onOpenChange={previewUsage}>
       <PopoverTrigger
         ref={setEntry}
         openOnHover
@@ -66,13 +57,6 @@ export function SidebarSubscriptionUsage({
               })
             : label
         }
-        onFocus={() => {
-          previewUsage(true);
-        }}
-        onClick={(event) => {
-          event.preventBaseUIHandler();
-          handleOpenUsage();
-        }}
         render={
           <Button
             variant="quiet"
