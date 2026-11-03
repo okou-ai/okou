@@ -10,7 +10,7 @@ import { and, eq, sql, type SQL } from "drizzle-orm";
 import { object, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { db$ } from "../external/db";
+import { rawSqlReadDb$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 interface WorkflowAutomationAccountScope {
@@ -44,7 +44,7 @@ export const readWorkflowAutomationConnectorAccount$ = command(
       args,
       signal,
     );
-    const db = get(db$);
+    const db = get(rawSqlReadDb$);
     const [selection] = parseRawRows(
       object({ connectorId: uuid().nullable() }),
       await db.execute(
