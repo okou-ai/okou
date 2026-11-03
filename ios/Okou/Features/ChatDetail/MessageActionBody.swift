@@ -9,6 +9,7 @@ enum MessageActionBody {
     case markdown(AttributedString)
     case connector(ChatConnectorAction)
     case permission(ChatPermissionAction)
+    case permissionBatch(ChatPermissionBatchAction)
     case unavailablePermission(String)
   }
   static func blocks(
@@ -52,6 +53,7 @@ enum MessageActionBody {
           block = .connector(action)
         } else if permissionsEnabled,
           let url = ChatPermissionAction.trustedURL(value, webURL: webURL)
+            ?? ChatPermissionBatchAction.trustedURL(value, webURL: webURL)
         {
           if run.link == nil, range.lowerBound > content.startIndex {
             let previous = content.characters[content.characters.index(before: range.lowerBound)]
@@ -62,9 +64,16 @@ enum MessageActionBody {
             }
             guard !permissionURLIsInMarkup(String(prefix.characters)) else { continue }
           }
-          block =
-            ChatPermissionAction(url: url, agentID: agentID, threadID: threadID)
-            .map(Block.permission) ?? .unavailablePermission(value)
+          if url.path.hasSuffix("/permissions/batch") {
+            block =
+              ChatPermissionBatchAction(
+                value: value, webURL: webURL, agentID: agentID, threadID: threadID
+              ).map(Block.permissionBatch) ?? .unavailablePermission(value)
+          } else {
+            block =
+              ChatPermissionAction(url: url, agentID: agentID, threadID: threadID)
+              .map(Block.permission) ?? .unavailablePermission(value)
+          }
         } else {
           continue
         }

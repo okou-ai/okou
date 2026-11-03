@@ -112,18 +112,7 @@ public struct ChatPermissions: Sendable {
         connectorScoped: true)
     }
     let grants = try await grants(action)
-    struct Metadata: Decodable, Sendable { let permissions: ChatPermissionMetadata }
-    let metadata: ChatPermissionMetadata?
-    do {
-      let response: Metadata = try await client.request(
-        "/api/connector-catalog/\(action.connectorSlug)/permissions")
-      guard response.permissions.connectorSlug == action.connectorSlug else {
-        throw APIClientError.invalidResponse
-      }
-      metadata = response.permissions
-    } catch let error as APIClientError where error.statusCode == 404 {
-      metadata = nil
-    }
+    let metadata = try await self.metadata(slug: action.connectorSlug)
     return ChatPermissionSnapshot(
       agentName: agent.displayName, metadata: metadata, grants: grants.map(\.rule),
       connectorScoped: false)
@@ -191,20 +180,20 @@ public struct ChatPermissions: Sendable {
     let result: MemberConnectorPermissions = try await client.request(
       "/api/connector-permissions", query: ChatConnectorTarget.builtin(slug).query)
     let rules = try result.rules(slug: slug)
-    struct Metadata: Decodable, Sendable { let permissions: ChatPermissionMetadata }
-    let metadata: ChatPermissionMetadata?
-    do {
-      let response: Metadata = try await client.request(
-        "/api/connector-catalog/\(slug)/permissions")
-      guard response.permissions.connectorSlug == slug else {
-        throw APIClientError.invalidResponse
-      }
-      metadata = response.permissions
-    } catch let error as APIClientError where error.statusCode == 404 {
-      metadata = nil
-    }
+    let metadata = try await self.metadata(slug: slug)
     return ChatPermissionSnapshot(
       agentName: nil, metadata: metadata, grants: rules, connectorScoped: true)
+  }
+
+  func metadata(slug: String) async throws -> ChatPermissionMetadata? {
+    struct Metadata: Decodable, Sendable { let permissions: ChatPermissionMetadata }
+    do {
+      let result: Metadata = try await client.request("/api/connector-catalog/\(slug)/permissions")
+      guard result.permissions.connectorSlug == slug else { throw APIClientError.invalidResponse }
+      return result.permissions
+    } catch let error as APIClientError where error.statusCode == 404 {
+      return nil
+    }
   }
 
   func applyConnectorPermissions(slug: String, edits: [ChatPermissionEdit], reset: Bool = false)

@@ -435,6 +435,10 @@ const iosContracts: readonly {
     route: userPermissionGrantsContract.apply,
   },
   {
+    id: "ios.userPermissionGrantsContract.applyBatch",
+    route: userPermissionGrantsContract.applyBatch,
+  },
+  {
     id: "ios.userPermissionGrantsContract.list",
     route: userPermissionGrantsContract.list,
   },
