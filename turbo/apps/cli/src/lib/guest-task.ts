@@ -22,8 +22,8 @@ export interface GuestTask {
 }
 
 export interface GuestTaskLaunchOptions {
-  readonly stdout: number;
-  readonly stderr: number;
+  readonly stdout: number | "ignore";
+  readonly stderr: number | "ignore";
   readonly env: NodeJS.ProcessEnv;
   /** Install application listeners synchronously, before native admission. */
   readonly onSpawn: (child: ChildProcess) => void;
