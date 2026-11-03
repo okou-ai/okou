@@ -312,8 +312,13 @@ required `lint-runtime-api-compat` job binds those routes into the runtime API
 schema with owner `desktop` and compares the candidate with the production
 snapshot that each API production promotion republishes. Desktop and iOS routes compare
 every declared response status, because Desktop also decodes error bodies such
-as the `426` upgrade floor; service owners compare `2xx` bodies only. A breaking
-Desktop finding fails the job unless the same PR carries one of two proofs:
+as the `426` upgrade floor; service owners compare `2xx` bodies only.
+Adding a response status to an already registered native route is also a finding,
+even when all previous responses remain unchanged: the existing baseline does
+not establish that installed clients support the new response branch. The same
+native compatibility proofs apply to these additions; a `2xx` transform must
+match the new status, and non-`2xx` additions cannot use a response transform.
+A breaking Desktop finding fails the job unless the same PR carries one of two proofs:
 
 - **(A) Floor raise.** Raise `minimumSupportedVersion` in
   [`desktop-compatibility.json`](../turbo/apps/api/src/lib/desktop-compatibility.json)
