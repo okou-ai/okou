@@ -955,9 +955,18 @@ describe("chat-window CDP proxy protocol", () => {
     },
   );
 
-  it.each([false, true])(
-    "preserves an owned session when another tab moves during root observation (browser session=%s)",
-    async (browserSession) => {
+  it.each([
+    { browserSession: false, survivor: "A" },
+    { browserSession: true, survivor: "A" },
+    { browserSession: false, survivor: "B" },
+    { browserSession: true, survivor: "B" },
+  ])(
+    "preserves an owned session when another tab moves during root observation: %j",
+    async ({ browserSession, survivor }) => {
+      if (survivor === "B") {
+        provider.move("A", 1);
+        provider.move("B", 0);
+      }
       const channel = browserSession
         ? String(
             (await connection.request("Target.attachToBrowserTarget"))
@@ -969,7 +978,7 @@ describe("chat-window CDP proxy protocol", () => {
           message.method === "Target.attachedToTarget" &&
           message.sessionId === channel &&
           (message.params?.targetInfo as { targetId?: string })?.targetId ===
-            "A"
+            survivor
         );
       });
       const select = () => {
@@ -985,11 +994,12 @@ describe("chat-window CDP proxy protocol", () => {
       };
       await select();
       const original = String((await attached).params?.sessionId);
-      const lookup = provider.holdWindowLookup("TAB-A");
+      const lookup = provider.holdWindowLookup("TAB-" + survivor);
+      const moving = survivor === "A" ? "B" : "A";
       try {
-        provider.move("B", 0);
+        provider.move(moving, 0);
         await lookup.observed;
-        provider.move("B", 1);
+        provider.move(moving, 1);
         lookup.resume();
         await select();
         expect(

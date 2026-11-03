@@ -44,6 +44,10 @@ export class WindowScope {
   private refreshing = Promise.resolve();
   private readonly off: (() => void)[];
 
+  get revision(): number {
+    return this.generation;
+  }
+
   constructor(
     readonly wire: ControlWire,
     readonly native: OkouBrowserClient,

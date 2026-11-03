@@ -867,6 +867,7 @@ export class ProxyPeer {
     auto: AutoAttachment,
     refresh?: string,
   ): Promise<unknown> {
+    const revision = this.scope.revision;
     const roots = new Map<string, Message>();
     if (auto.kind === "automatic") {
       for (const info of this.scope.targets.values())
@@ -885,6 +886,10 @@ export class ProxyPeer {
             filter: [{ type: info.type }, { exclude: true }],
           });
     } else await this.relatedRoots(auto, roots);
+    // A later root lookup can cross a native move and invalidate earlier choices.
+    // Rebuild that observation before changing any native subscriptions.
+    if (revision !== this.scope.revision)
+      return this.relate(channel, auto, refresh);
     // Destroyed native sources retire their own subscriptions. Only a still-
     // live source leaving this window requires cancelling the remaining roots.
     for (const id of auto.roots.keys())
@@ -903,6 +908,8 @@ export class ProxyPeer {
     }
     let response: unknown = {};
     for (const [targetId, params] of roots) {
+      if (revision !== this.scope.revision)
+        return this.relate(channel, auto, refresh);
       if (!this.scope.targets.has(targetId)) continue;
       if (
         !this.refreshedRoot(targetId, refresh) &&
@@ -922,6 +929,8 @@ export class ProxyPeer {
         throw error;
       }
     }
+    if (revision !== this.scope.revision)
+      return this.relate(channel, auto, refresh);
     if (auto.kind === "related")
       await this.attachBrowserRoots(channel, auto, refresh);
     return response;
