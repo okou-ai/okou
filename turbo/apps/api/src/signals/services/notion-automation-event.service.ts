@@ -57,7 +57,10 @@ import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import {
+  loadWorkflowAutomationAccountMode$,
+  workflowAutomationConnectorSelectionSql,
+} from "./workflow-automation-account.service";
 import type {
   AutomationRow,
   RunWorkflowAutomationResult,
@@ -509,6 +512,11 @@ const repairNotionAutomationProjection$ = command(
       userId: args.userId,
       workflowId: automation.workflowId,
       connectorSlug: "notion",
+      chatAccountAccess: await set(
+        loadWorkflowAutomationAccountMode$,
+        args,
+        signal,
+      ),
     });
     const [selection] = parseRawRows(
       object({ connectorId: string().nullable() }),

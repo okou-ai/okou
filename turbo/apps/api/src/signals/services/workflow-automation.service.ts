@@ -152,7 +152,11 @@ import {
   prepareNotionPageContentUpdatedEventConfigForPersist$,
   validateNotionEventConfigForConnector$,
 } from "./notion-automation-preparation.service";
-import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import {
+  loadWorkflowAutomationAccountMode$,
+  readWorkflowAutomationConnectorAccount$,
+  workflowAutomationConnectorSelectionSql,
+} from "./workflow-automation-account.service";
 import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
 import {
   OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
@@ -1861,7 +1865,7 @@ function eventAutomationConnectorSlug(
 
 const readEventAutomationConnectorId$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1870,10 +1874,17 @@ const readEventAutomationConnectorId$ = command(
     },
     signal: AbortSignal,
   ): Promise<string | null> => {
+    const chatAccountAccess = await set(
+      loadWorkflowAutomationAccountMode$,
+      args,
+      signal,
+    );
     const db = get(rawSqlReadDb$);
     const [selected] = parseRawRows(
       object({ connectorId: string().nullable() }),
-      await db.execute(workflowAutomationConnectorSelectionSql(args)),
+      await db.execute(
+        workflowAutomationConnectorSelectionSql({ ...args, chatAccountAccess }),
+      ),
     );
     signal.throwIfAborted();
     return selected?.connectorId ?? null;
@@ -2056,16 +2067,10 @@ const insertEventAutomation$ = command(
       (async () => {
         let eventConnectorId: string | null = null;
         if (connectorSlug !== null) {
-          const [selected] = parseRawRows(
-            object({ connectorId: string().nullable() }),
-            await db.execute(
-              workflowAutomationConnectorSelectionSql({
-                ...owner,
-                connectorSlug,
-              }),
-            ),
+          eventConnectorId = await set(
+            readWorkflowAutomationConnectorAccount$,
+            { ...owner, connectorSlug },
           );
-          eventConnectorId = selected?.connectorId ?? null;
         }
         if (
           args.expectedEventConnectorId !== undefined &&
@@ -5145,6 +5150,11 @@ const persistGmailEventConfiguration$ = command(
     },
     signal: AbortSignal,
   ): Promise<WorkflowAutomationSummary | null> => {
+    const chatAccountAccess = await set(
+      loadWorkflowAutomationAccountMode$,
+      args,
+      signal,
+    );
     const db = set(writeDb$);
     const settled = await settle(
       // Publish the account only while it is still the workflow's
@@ -5161,7 +5171,7 @@ const persistGmailEventConfiguration$ = command(
             eq(workflowAutomations.id, args.automationId),
             eq(workflowAutomations.orgId, args.orgId),
             eq(workflowAutomations.ownerUserId, args.userId),
-            gmailSelectedAccountCondition(args),
+            gmailSelectedAccountCondition({ ...args, chatAccountAccess }),
           ),
         )
         .returning(workflowAutomationColumns()),

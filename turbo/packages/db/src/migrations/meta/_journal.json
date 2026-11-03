@@ -3102,6 +3102,13 @@
       "when": 1793697501912,
       "tag": "1521_friend_referrals",
       "breakpoints": true
+    },
+    {
+      "idx": 1522,
+      "version": "7",
+      "when": 1793725191980,
+      "tag": "1522_repair_deleted_chat_connector_accounts",
+      "breakpoints": true
     }
   ]
 }

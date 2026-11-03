@@ -2,6 +2,8 @@ import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -1484,6 +1486,192 @@ describe("Google Forms Pub/Sub webhook", () => {
       ).toHaveLength(0);
     },
   );
+
+  it("rebinds Forms to an allowed surviving account after deleting the selected account", async () => {
+    const {
+      actor,
+      agentId,
+      firstConnector,
+      secondConnector,
+      second,
+      formsApi,
+    } = await setupGoogleFormsMultiAccountAutomations(true);
+    const target = { kind: "builtin", connectorSlug: "google-forms" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: {
+          threadId: second.chatThreadId,
+          connectionId: firstConnector.id,
+        },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    const email = `third-${randomUUID()}@example.test`;
+    mockGoogleFormsConnectorOAuth({
+      accessToken: "google-forms-replaced-access-token",
+      refreshToken: "google-forms-third-refresh-token",
+      subject: randomUUID(),
+      email,
+    });
+    const oauth = await connectors.startOauth(
+      actor,
+      "google-forms",
+      "oauth",
+      agentId,
+      { intent: "add", displayName: "Third Google Forms" },
+    );
+    const state = new URL(oauth.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected third Google Forms OAuth state");
+    }
+    await connectors.completeOauthCallback("google-forms", {
+      code: "third-forms-code",
+      state,
+    });
+    const third = (
+      await connectors.listBuiltinConnectorAccounts(actor, "google-forms")
+    ).find((account) => {
+      return account.externalEmail === email;
+    });
+    if (!third) {
+      throw new Error("Expected third Google Forms account");
+    }
+    await accept(
+      access.setThreadCurrent({
+        headers: authHeaders(),
+        params: { threadId: second.chatThreadId },
+        body: { target, connectionId: third.id },
+      }),
+      [200],
+    );
+    await connectors.deleteBuiltinConnectorAccount(
+      actor,
+      "google-forms",
+      third.id,
+    );
+    const current = await accept(
+      access.getThread({
+        headers: authHeaders(),
+        params: { threadId: second.chatThreadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(current.body.currentConnectionId).toBe(secondConnector.id);
+    const automation = await accept(
+      automationsClient().get({
+        headers: authHeaders(),
+        params: { id: second.automationId },
+      }),
+      [200],
+    );
+    expect(automation.body).toMatchObject({
+      eventConfig: { connectorId: secondConnector.id },
+    });
+    const watchId = formsApi.watchIds.at(-1);
+    if (!watchId) {
+      throw new Error("Expected an allowed-account replacement watch");
+    }
+    const push = await postWebhook(
+      formsPushBody("pubsub-allowed-replacement-after-deletion", watchId),
+    );
+    expect(push).toMatchObject({
+      status: 200,
+      body: { watchStates: 1, dispatched: 1 },
+    });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(second.chatThreadId);
+    expect(
+      events.filter((event) => {
+        return event.eventType === "input.prompt";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("does not restore a denied Forms default after deletion or change another Chat's listener", async () => {
+    const {
+      actor,
+      first,
+      second,
+      firstConnector,
+      secondConnector,
+      firstWatchId,
+    } = await setupGoogleFormsMultiAccountAutomations(true);
+    const target = { kind: "builtin", connectorSlug: "google-forms" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: {
+          threadId: second.chatThreadId,
+          connectionId: firstConnector.id,
+        },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    await connectors.deleteBuiltinConnectorAccount(
+      actor,
+      "google-forms",
+      secondConnector.id,
+    );
+    const current = await accept(
+      access.getThread({
+        headers: authHeaders(),
+        params: { threadId: second.chatThreadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      currentConnectionId: null,
+      available: false,
+    });
+    const other = await accept(
+      access.getThread({
+        headers: authHeaders(),
+        params: { threadId: first.chatThreadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(other.body.currentConnectionId).toBe(firstConnector.id);
+    const firstPush = await postWebhook(
+      formsPushBody("pubsub-surviving-chat-after-deletion", firstWatchId),
+    );
+    expect(firstPush).toMatchObject({
+      status: 200,
+      body: { watchStates: 1, dispatched: 1 },
+    });
+    await flushWaitUntilForTest();
+    const secondEvents = await workflows.readThreadEvents(second.chatThreadId);
+    expect(
+      secondEvents.filter((event) => {
+        return event.eventType === "input.prompt";
+      }),
+    ).toHaveLength(0);
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: second.automationId },
+      }),
+      [200],
+    );
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: second.automationId },
+      }),
+      [400],
+    );
+  });
 
   it("keeps the current selected account usable after a provider failure", async () => {
     const { first, firstWatchId, secondConnector, secondWatchId } =
