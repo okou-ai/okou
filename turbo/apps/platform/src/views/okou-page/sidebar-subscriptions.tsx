@@ -285,6 +285,14 @@ function subscriptionInformationTarget(
   const informationClassName =
     "flex w-full flex-col items-stretch gap-2 rounded-lg p-3 text-left text-sm font-normal leading-5 outline-none hover:bg-state-hover focus-visible:bg-state-hover";
 
+  if (onOpenUsage && resetControl === "menu") {
+    return (
+      <DropdownMenuItem
+        onClick={onOpenUsage}
+        className={informationClassName}
+      />
+    );
+  }
   if (onOpenUsage) {
     return (
       <button

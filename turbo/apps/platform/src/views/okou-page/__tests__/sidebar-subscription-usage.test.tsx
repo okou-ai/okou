@@ -67,6 +67,35 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
   ).not.toBeInTheDocument();
 });
 
+test("Open credit usage from the subscription row in the mobile account menu", async () => {
+  mockAdminAccountSidebar();
+  context.mocks.browser.matchMedia(() => false);
+  context.mocks.data.personalModelProviders([connectedPersonalCodexProvider()]);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    auth: {
+      user: {
+        id: "test-user-123",
+        fullName: "Alex Rivera",
+        email: "alex.rivera@example.test",
+      },
+    },
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+  });
+  click(screen.getByLabelText("Open menu"));
+  const menu = await openAccountMenu();
+  const usage = await within(menu).findByRole("menuitem", {
+    name: "ChatGPT usage",
+  });
+  click(usage);
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  expect(
+    within(settings).getByRole("heading", { name: "Credit usage" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
 test("Preview subscriptions from the rail and open usage in Settings", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
