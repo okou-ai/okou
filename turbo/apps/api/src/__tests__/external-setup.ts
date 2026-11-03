@@ -4,6 +4,7 @@ import { installClerkAuthorityHttp } from "./clerk-authority-http";
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 
 import { clearMockedEnv, mockEnv } from "../lib/env";
+import { closeS3Clients } from "../lib/s3-client";
 import { setSecretKmsClientForTests } from "../lib/secret-kms-client";
 import { createApiTestKmsClient } from "./secret-kms";
 import { clearMockNow } from "../lib/time";
@@ -37,6 +38,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await clearAllDetached();
+  closeS3Clients();
   clearMockNow();
   clearMockedEnv();
   resetApiTestMocks();

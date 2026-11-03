@@ -197,6 +197,9 @@ importers:
       ably:
         specifier: ^2.28.0
         version: 2.29.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6)
+      agentkeepalive:
+        specifier: ^4.6.0
+        version: 4.6.0
       archiver:
         specifier: ^8.0.0
         version: 8.0.0

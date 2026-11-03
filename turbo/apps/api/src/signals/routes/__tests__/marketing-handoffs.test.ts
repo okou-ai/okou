@@ -219,13 +219,14 @@ describe("Marketing content handoff", () => {
         [200],
       );
     }
-    const configs = context.mocks.s3.clientConfig.mock.calls.map(([config]) => {
-      return config as S3ClientConfig;
-    });
+    const configs = context.mocks.s3.requestConfig.mock.calls.map(
+      ([config]) => {
+        return config as S3ClientConfig;
+      },
+    );
     expect(configs).toHaveLength(3);
     const transport = configs[1]?.requestHandler;
     expect(transport).toBeDefined();
-    expect(transport).toHaveProperty("handle", expect.any(Function));
     expect(configs[2]?.requestHandler).toBe(transport);
     for (const config of configs) {
       expect(config.credentials).toMatchObject({
