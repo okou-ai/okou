@@ -605,7 +605,7 @@ function createSessionReadiness(
   );
   const checkOwner$ = command(({ get, set }, owner: InputOwner) => {
     if (!get(accepting$) || !set(lifecycle.owns$, owner)) {
-      throw new Error("Input cancelled");
+      throw new DOMException("Input cancelled", "AbortError");
     }
   });
   const awaitOwnerCompletion$ = command(
@@ -1032,7 +1032,7 @@ function createSessionKeyboard(graph: SessionObservations) {
   const selection$ = command(
     ({ get, set }, owner: InputOwner): Promise<SelectionResult> => {
       if (!get(accepting$) || !set(lifecycle.owns$, owner)) {
-        throw new Error("Selection cancelled");
+        throw new DOMException("Selection cancelled", "AbortError");
       }
       set(clipboardVersion$, (value) => {
         return value + 1;

@@ -64,12 +64,12 @@ function createInputBinding(
       signal: AbortSignal,
     ): Promise<void> => {
       if (owner !== captured || !get(owner$)) {
-        throw new Error("Input cancelled");
+        throw new DOMException("Input cancelled", "AbortError");
       }
       await set(target.completion$, captured);
       signal.throwIfAborted();
       if (!get(owner$)) {
-        throw new Error("Input cancelled");
+        throw new DOMException("Input cancelled", "AbortError");
       }
     },
   );
@@ -126,12 +126,12 @@ function createInputBinding(
   const selection$ = command(
     async ({ get, set }, owner: InputOwner, signal: AbortSignal) => {
       if (owner !== captured || !get(owner$)) {
-        throw new Error("Selection cancelled");
+        throw new DOMException("Selection cancelled", "AbortError");
       }
       const result = await set(target.selection$, captured);
       signal.throwIfAborted();
       if (!get(owner$)) {
-        throw new Error("Selection cancelled");
+        throw new DOMException("Selection cancelled", "AbortError");
       }
       return result;
     },
