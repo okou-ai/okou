@@ -4,8 +4,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Archive,
-  ChevronDown,
-  ChevronRight,
   Ellipsis,
   Folder,
   FolderOpen,
@@ -161,29 +159,6 @@ interface ProjectFolderProps {
   readonly layout: ProjectSidebarLayout;
 }
 
-function ProjectFolderLabel({
-  name,
-  expanded,
-  layout,
-}: {
-  name: string;
-  expanded: boolean;
-  layout: ProjectSidebarLayout;
-}) {
-  const Chevron = expanded ? ChevronDown : ChevronRight;
-  const Icon = expanded ? FolderOpen : Folder;
-  return (
-    <>
-      <Chevron
-        size={layout === "list" ? 16 : 14}
-        className="shrink-0 opacity-50"
-      />
-      <Icon size={16} className="shrink-0 opacity-70" />
-      <span className="truncate">{name}</span>
-    </>
-  );
-}
-
 function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const { t } = useTranslation();
   const agent = useLastResolved(projectCreationAgentId$);
@@ -197,6 +172,7 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const showMore = useSet(showMoreProjectThreads$);
   const [creation, create] = useLoadableSet(newProjectThread$);
   const signal = useGet(pageSignal$);
+  const Icon = expanded ? FolderOpen : Folder;
   const contentsId = `project-threads-${touch ? "touch" : "sidebar"}-${project.id}`;
   function newChat() {
     detach(create(project.id, signal), Reason.DomCallback);
@@ -217,11 +193,8 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
             layout === "list" && "h-14 px-3 text-base leading-5",
           )}
         >
-          <ProjectFolderLabel
-            name={project.name}
-            expanded={expanded}
-            layout={layout}
-          />
+          <Icon size={16} className="shrink-0 opacity-70" />
+          <span className="truncate">{project.name}</span>
         </button>
         <div
           className={cn(
@@ -259,7 +232,7 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
       {expanded && (
         <div
           id={contentsId}
-          className={cn("min-w-0 pb-1", layout === "list" ? "ml-12" : "ml-6")}
+          className="ml-6 min-w-0 pb-1"
           aria-label={project.name}
         >
           {archived && (
