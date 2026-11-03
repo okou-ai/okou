@@ -1140,6 +1140,34 @@ describe("POST /api/webhooks/notion", () => {
     });
   });
 
+  it("follows an allowance replacement before the Chat's first explicit account selection", async () => {
+    const {
+      actor,
+      threadId,
+      firstAccount,
+      secondAccount,
+      expectAutomationConnector,
+    } = await setupNotionAccountLifecycle();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    const changed = await accept(
+      setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      ).setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: firstAccount.id },
+        body: {
+          target: { kind: "builtin", connectorSlug: "notion" },
+          enabled: false,
+        },
+      }),
+      [200],
+    );
+    expect(changed.body.currentConnectionId).toBe(secondAccount.id);
+    await expectAutomationConnector(secondAccount.id);
+  });
+
   it("synchronizes Notion listeners after Chat, Run, approval and account allowance changes", async () => {
     const {
       actor,
