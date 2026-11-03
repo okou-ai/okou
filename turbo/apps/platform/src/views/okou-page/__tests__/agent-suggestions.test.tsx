@@ -317,7 +317,7 @@ test.each([
   "Document",
   "Image",
   "Website",
-  "Visualization",
+  "Charts",
 ])(
   "Selecting %s hides the Tasks row and clearing it restores the row",
   async (task) => {
@@ -359,7 +359,7 @@ test.each([
       "Document",
       "Image",
       "Website",
-      "Visualization",
+      "Charts",
     ]);
     expect(composer()).toHaveTextContent("Keep my draft");
   },
