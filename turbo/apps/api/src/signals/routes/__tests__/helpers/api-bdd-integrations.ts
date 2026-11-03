@@ -42,6 +42,7 @@ import {
   integrationsAgentPhoneContract,
   type AgentPhoneConnectRequest,
   type AgentPhoneGroupHistoryQuery,
+  type AgentPhoneGroupListQuery,
   type SendAgentPhoneGroupMessageBody,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
@@ -1690,6 +1691,26 @@ export function createBddIntegrationApi(context: TestContext) {
       })(integrationsAgentPhoneContract);
       return await accept(
         client.getConnectStatus({
+          headers: authenticate(context, routeMocks, actor),
+          query,
+        }),
+        statuses,
+      );
+    },
+
+    async requestAgentPhoneGroupList<
+      Status extends 200 | 400 | 401 | 404 | 502,
+    >(
+      actor: ApiTestUser | null,
+      query: AgentPhoneGroupListQuery,
+      statuses: readonly Status[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsAgentPhoneRoutes,
+      })(integrationsAgentPhoneContract);
+      return await accept(
+        client.listGroups({
           headers: authenticate(context, routeMocks, actor),
           query,
         }),

@@ -11,6 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { integrationsPhoneMessageRoutes } from "../integrations-phone-message";
+import { integrationsAgentPhoneRoutes } from "../integrations-agentphone";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -833,9 +834,51 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(run.appendSystemPrompt).toContain(
       `okou imessage message send --to ${groupId}`,
     );
+    expect(run.appendSystemPrompt).toContain("okou imessage group list --help");
+    expect(run.appendSystemPrompt).toContain(
+      "okou imessage group history --help",
+    );
     if (!run.okouToken) {
       throw new Error("Expected a claim-issued CLI token");
     }
+    const groupsClient = setupApp({
+      context,
+      routes: integrationsAgentPhoneRoutes,
+    })(integrationsAgentPhoneContract);
+    server.use(
+      http.get(
+        `https://api.agentphone.test/v1/conversations/${conversationId}`,
+        () => {
+          return HttpResponse.json({
+            id: conversationId,
+            agentId: AGENTPHONE_BDD_AGENT_ID,
+            isGroup: true,
+            groupId,
+            groupName: "Project group",
+            phoneNumber: AGENTPHONE_BDD_PHONE_NUMBER,
+            participants: [
+              { identifier: phone },
+              { identifier: otherPhone },
+              { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+            ],
+          });
+        },
+      ),
+    );
+    const listed = await accept(
+      groupsClient.listGroups({
+        headers: { authorization: `Bearer ${run.okouToken}` },
+        query: { limit: 25 },
+      }),
+      [200],
+    );
+    expect(listed.body.groups).toContainEqual({
+      groupId,
+      conversationId,
+      groupName: "Project group",
+      agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+      lastMessageAt: expect.any(String),
+    });
     const client = setupApp({
       context,
       routes: integrationsPhoneMessageRoutes,

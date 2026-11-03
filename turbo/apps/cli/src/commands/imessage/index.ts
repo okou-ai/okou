@@ -11,6 +11,8 @@ const imessageMessageCommand = new Command()
 
 export const imessageCommand = new Command()
   .name("imessage")
-  .description("Send messages, add reactions, and read group history")
+  .description(
+    "Discover shared groups, send messages, add reactions, and read history",
+  )
   .addCommand(imessageMessageCommand)
   .addCommand(imessageGroupCommand);

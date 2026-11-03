@@ -2,6 +2,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneGroupHistoryQuery,
+  type AgentPhoneGroupListQuery,
   type SendAgentPhoneGroupMessageBody,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import {
@@ -27,6 +28,16 @@ interface DownloadPhoneFileResult {
   path: string;
   mimetype: string;
   size: number;
+}
+
+export async function listAgentPhoneGroups(query: AgentPhoneGroupListQuery) {
+  const config = await getClientConfig();
+  const client = initClient(integrationsAgentPhoneContract, config);
+  const result = await client.listGroups({ query, headers: {} });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handleError(result, "Failed to list iMessage groups");
 }
 
 export async function readAgentPhoneGroupHistory(

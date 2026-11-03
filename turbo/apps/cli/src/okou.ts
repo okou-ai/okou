@@ -636,6 +636,7 @@ export function buildHelpText(
     "  Send Telegram?         okou telegram message send --help",
     "  Upload Telegram?       okou telegram upload-file --help",
     "  Download Telegram?     okou telegram download-file --help",
+    "  Find iMessage groups? okou imessage group list --help",
     "  Read group history?   okou imessage group history --help",
     "  Send iMessage?        okou imessage message send --help",
     "  Send SMS?             okou sms message send --help",

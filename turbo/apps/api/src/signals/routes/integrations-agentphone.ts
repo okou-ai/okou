@@ -84,6 +84,7 @@ import {
   whatsappEnabled$,
 } from "../services/whatsapp-config";
 import { safeJsonParse, settle, tapError } from "../utils";
+import { integrationsAgentPhoneGroupRoutes } from "./integrations-agentphone-groups";
 
 interface AgentPhoneConfig {
   readonly agentphoneAgentId: string | null;
@@ -1740,6 +1741,7 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
 });
 
 export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
+  ...integrationsAgentPhoneGroupRoutes,
   {
     route: integrationsAgentPhoneContract.getConnectStatus,
     handler: authRoute(agentPhoneAuthOptions, getConnectStatus$),

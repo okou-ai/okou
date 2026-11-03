@@ -346,10 +346,10 @@ export async function getAgentPhoneMessagesAfter(
   return conversationMessagesSchema.parse(await response.json());
 }
 
-export async function getAgentPhoneConversationParticipants(
+async function readAgentPhoneConversation(
   opts: { readonly conversationId: string },
   signal?: AbortSignal,
-): Promise<readonly string[]> {
+) {
   const responseResult = await settle(
     accept(
       fetch(
@@ -389,10 +389,55 @@ export async function getAgentPhoneConversationParticipants(
       : Object.keys(data).length > 0
         ? data
         : result;
+  return source;
+}
+
+const agentPhoneGroupConversationSchema = object({
+  id: string().min(1),
+  agentId: string().min(1),
+  phoneNumber: string().min(1),
+  isGroup: boolean(),
+  groupId: string().nullable(),
+  groupName: string().nullable().optional(),
+  participants: array(
+    string()
+      .min(1)
+      .or(object({ identifier: string().min(1) })),
+  ),
+});
+
+export async function getAgentPhoneGroupConversation(
+  opts: { readonly conversationId: string },
+  signal?: AbortSignal,
+) {
+  const source = await readAgentPhoneConversation(opts, signal);
+  const parsed = agentPhoneGroupConversationSchema.safeParse(source);
+  if (!parsed.success) {
+    throw makeAgentPhoneApiError(
+      502,
+      "Invalid AgentPhone conversation response",
+    );
+  }
+  const conversation = parsed.data;
+  return {
+    ...conversation,
+    groupName: conversation.groupName ?? null,
+    participants: conversation.participants.map((participant) => {
+      return typeof participant === "string"
+        ? participant
+        : participant.identifier;
+    }),
+  };
+}
+
+export async function getAgentPhoneConversationParticipants(
+  opts: { readonly conversationId: string },
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const source = await readAgentPhoneConversation(opts, signal);
   const participants = Array.isArray(source.participants)
     ? source.participants
     : [];
-
   return participants
     .map((participant) => {
       if (typeof participant === "string") {
