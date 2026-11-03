@@ -5,6 +5,7 @@ import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { billingStatusContract } from "../contracts/billing";
 import { chatEventsContract } from "../contracts/chat-event-send";
+import { chatConnectorAccessContract } from "../contracts/chat-connector-access";
 import { chatRemoteAccessContract } from "../contracts/chat-remote-access";
 import { chatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import {
@@ -31,6 +32,7 @@ import { claudeCodeDeviceAuthContract } from "../contracts/claude-code-device-au
 import { codexDeviceAuthContract } from "../contracts/codex-device-auth";
 import { connectedConnectorsContract } from "../contracts/connected-connectors";
 import { connectorAccountsContract } from "../contracts/connector-accounts";
+import { connectorPermissionsContract } from "../contracts/connector-permissions";
 import { connectorCatalogContract } from "../contracts/connector-catalog";
 import {
   builtinConnectorAutomaticContract,
@@ -58,6 +60,7 @@ import { personalModelProviderAccountsByIdContract } from "../contracts/personal
 import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { remotesContract } from "../contracts/remotes";
 import { runModelsMainContract } from "../contracts/run-models";
+import { runConnectorAccountsContract } from "../contracts/run-connector-accounts";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { uploadsContract } from "../contracts/uploads";
 import { userBuiltinConnectorsContract } from "../contracts/user-connectors";
@@ -104,6 +107,26 @@ const iosContracts: readonly {
     route: artifactReferencesContract.resolve,
   },
   { id: "ios.billingStatusContract.get", route: billingStatusContract.get },
+  {
+    id: "ios.chatConnectorAccessContract.accountDefaults",
+    route: chatConnectorAccessContract.accountDefaults,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.updateAccountDefault",
+    route: chatConnectorAccessContract.updateAccountDefault,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.getThread",
+    route: chatConnectorAccessContract.getThread,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.setThreadOverride",
+    route: chatConnectorAccessContract.setThreadOverride,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.setThreadCurrent",
+    route: chatConnectorAccessContract.setThreadCurrent,
+  },
   { id: "ios.chatEventsContract.send", route: chatEventsContract.send },
   {
     id: "ios.chatRemoteAccessContract.clearThreadOverride",
@@ -256,6 +279,18 @@ const iosContracts: readonly {
     route: connectorAccountsContract.oauthCompletion,
   },
   {
+    id: "ios.connectorAccountsContract.setDefault",
+    route: connectorAccountsContract.setDefault,
+  },
+  {
+    id: "ios.connectorPermissionsContract.get",
+    route: connectorPermissionsContract.get,
+  },
+  {
+    id: "ios.connectorPermissionsContract.apply",
+    route: connectorPermissionsContract.apply,
+  },
+  {
     id: "ios.connectorCatalogContract.discovery",
     route: connectorCatalogContract.discovery,
   },
@@ -361,6 +396,10 @@ const iosContracts: readonly {
   },
   { id: "ios.remotesContract.overview", route: remotesContract.overview },
   { id: "ios.runModelsMainContract.list", route: runModelsMainContract.list },
+  {
+    id: "ios.runConnectorAccountsContract.approve",
+    route: runConnectorAccountsContract.approve,
+  },
   {
     id: "ios.thirdPartySubscriptionsMainContract.list",
     route: thirdPartySubscriptionsMainContract.list,

@@ -66,19 +66,26 @@ struct ComposerConnectorSheet: View {
               connectorRow(connector)
             }
             if store.connectors.isEmpty && !store.isLoading {
-              Text("Connect a service to make it available to this Agent.").foregroundStyle(
+              Text(
+                store.chatAccountAccess
+                  ? "Connect a service to use it in this chat."
+                  : "Connect a service to make it available to this Agent."
+              ).foregroundStyle(
                 .secondary)
             }
           }
           NavigationLink {
             ComposerConnectorDirectory(store: store)
           } label: {
-            Label("Add connectors", systemImage: "plus")
+            Label("Add connectors", systemImage: "plus").foregroundStyle(.primary)
           }
         } header: {
           Text("Services").font(.subheadline).fontWeight(.regular).textCase(nil)
         } footer: {
-          Text("Service access applies to this Agent. Account choices apply to this chat.")
+          Text(
+            store.chatAccountAccess
+              ? "Account choices apply to this chat."
+              : "Service access applies to this Agent. Account choices apply to this chat.")
         }
       }
       .listSectionSpacing(16)
@@ -125,7 +132,37 @@ struct ComposerConnectorSheet: View {
     .onDisappear { store.authorization.cancel() }
   }
 
+  @ViewBuilder
   private func connectorRow(_ connector: ChatComposerConnector) -> some View {
+    if store.chatAccountAccess {
+      NavigationLink {
+        ComposerChatConnectorAccounts(store: store, connector: connector)
+      } label: {
+        Label {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(connector.label).foregroundStyle(.primary).lineLimit(1)
+            if let access = connector.access {
+              if let account = connector.currentAccount {
+                Text("\(account.label) · \(access.enabledCount) enabled")
+                  .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+              } else {
+                Text(access.available ? "Account unavailable" : "Off")
+                  .font(.caption).foregroundStyle(.secondary)
+              }
+            }
+          }
+        } icon: {
+          Image(
+            systemName: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug"
+          ).foregroundStyle(.secondary)
+        }
+      }.disabled(store.isSaving)
+    } else {
+      legacyConnectorRow(connector)
+    }
+  }
+
+  private func legacyConnectorRow(_ connector: ChatComposerConnector) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
         Label(

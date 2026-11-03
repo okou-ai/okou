@@ -64,10 +64,17 @@ control can stop active work.
 
 Sending preserves the conversation's confirmed connector account choices and
 Cloud Browser / Computer Use selection. The same conversation shares these
-settings with the PWA. Service access belongs to the current user and Agent;
-account preferences and remote host overrides belong to the conversation.
+settings with the PWA. When `connectorChatAccountAccess` is enabled, each account
+inherits its saved default enablement or has an explicit conversation override;
+the conversation selects one enabled current account. Connector permissions belong
+to the current user and connector across conversations and accounts. Supported
+connectors expose permissions even when all saved accounts are disabled. The
+ordinary feature-off service authorization remains Agent-scoped. Remote host
+overrides belong to the conversation.
 New-chat account and host choices remain with their Agent composer until the
-first message creates a conversation. An uncertain settings write requires fresh
+first message creates a conversation. New-mode account overrides and current
+choices are saved before the first message; a failed initialization retains the
+draft for ordinary retry. An uncertain settings write requires fresh
 readback before another message can be sent.
 
 ## Local setup
