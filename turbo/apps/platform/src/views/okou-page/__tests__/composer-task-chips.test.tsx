@@ -100,7 +100,7 @@ test("The start page shows only task choices until one is selected", async () =>
     "Document",
     "Image",
     "Website",
-    "Charts",
+    "Chart",
   ]);
   expect(
     screen.queryByRole("group", { name: "Ideas to get started" }),
@@ -162,15 +162,15 @@ test("A send carries the task and its slide count into the thread it opens", asy
   ).toHaveTextContent("16–20 slides");
 });
 
-test("Charts preferences are interactive and are sent as agent-only context", async () => {
+test("Chart preferences are interactive and are sent as agent-only context", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Explain the quarterly results");
-  click(button("Charts", screen.getByRole("group", { name: "Choose a task" })));
+  click(button("Chart", screen.getByRole("group", { name: "Choose a task" })));
   const panel = await screen.findByRole("region", {
     name: "Visualization options",
   });
-  expect(selectedTask(editor, "Charts")).toHaveTextContent("Charts");
+  expect(selectedTask(editor, "Chart")).toHaveTextContent("Chart");
   const outputPicker = within(panel).getByRole("group", {
     name: "Output format",
   });
@@ -752,7 +752,7 @@ test("More exposes only overflowing tasks and hands the selected task to the com
   expect(button("More")).toHaveTextContent("+1");
   await user.hover(button("More"));
   await expect(
-    screen.findByText("Document, Image, Website, Charts", {
+    screen.findByText("Document, Image, Website, Chart", {
       selector: '[data-slot="tooltip-content"]',
     }),
   ).resolves.toBeInTheDocument();
@@ -763,7 +763,7 @@ test("More exposes only overflowing tasks and hands the selected task to the com
     queryAllByRoleFast("menuitem", menu).map((item) => {
       return item.textContent?.trim();
     }),
-  ).toStrictEqual(["Document", "Image", "Website", "Charts"]);
+  ).toStrictEqual(["Document", "Image", "Website", "Chart"]);
   await user.keyboard("{Escape}");
   expect(button("More")).toHaveFocus();
   expect(editor).toHaveTextContent("Keep my draft");
@@ -802,7 +802,7 @@ test("More fits its changing stack width and adapts to window and font changes",
   });
   await user.hover(button("More"));
   await expect(
-    screen.findByText("Charts", {
+    screen.findByText("Chart", {
       selector: '[data-slot="tooltip-content"]',
     }),
   ).resolves.toBeInTheDocument();
@@ -818,7 +818,7 @@ test("More fits its changing stack width and adapts to window and font changes",
     queryAllByRoleFast("menuitem", resizedMenu).map((item) => {
       return item.textContent?.trim();
     }),
-  ).toStrictEqual(["Website", "Charts"]);
+  ).toStrictEqual(["Website", "Chart"]);
   await user.keyboard("{Escape}");
   layout.setWidth(900);
   fireEvent(window, new Event("resize"));
@@ -840,5 +840,5 @@ test("More fits its changing stack width and adapts to window and font changes",
     queryAllByRoleFast("menuitem", menu).map((item) => {
       return item.textContent?.trim();
     }),
-  ).toStrictEqual(["Charts"]);
+  ).toStrictEqual(["Chart"]);
 });
