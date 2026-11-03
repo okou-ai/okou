@@ -12,6 +12,7 @@ export enum FeatureSwitchKey {
   BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
+  TikTokOAuthConnector = "tiktokOAuthConnector",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
   BentomlConnector = "bentomlConnector",

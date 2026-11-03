@@ -688,6 +688,8 @@ assert_env_value "$success_env_file" RAMP_OAUTH_CLIENT_ID "doppler-RAMP_OAUTH_CL
 assert_env_value "$success_env_file" RAMP_OAUTH_CLIENT_SECRET "doppler-RAMP_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" TIKTOK_ADS_OAUTH_CLIENT_ID "doppler-TIKTOK_ADS_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" TIKTOK_ADS_OAUTH_CLIENT_SECRET "doppler-TIKTOK_ADS_OAUTH_CLIENT_SECRET"
+assert_env_value "$success_env_file" TIKTOK_OAUTH_CLIENT_ID "doppler-TIKTOK_OAUTH_CLIENT_ID"
+assert_env_value "$success_env_file" TIKTOK_OAUTH_CLIENT_SECRET "doppler-TIKTOK_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_ID ""
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_APP_TENANT_ID ""
@@ -1063,7 +1065,7 @@ if [[ "$status" -eq 0 ]]; then
 fi
 assert_contains "$missing_stripe_secret_output" "::error::STRIPE_OAUTH_CLIENT_SECRET is missing from Doppler OAuth config"
 
-for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM_OAUTH_CLIENT_ID CAL_COM_OAUTH_CLIENT_SECRET COPPER_OAUTH_CLIENT_ID COPPER_OAUTH_CLIENT_SECRET; do
+for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM_OAUTH_CLIENT_ID CAL_COM_OAUTH_CLIENT_SECRET COPPER_OAUTH_CLIENT_ID COPPER_OAUTH_CLIENT_SECRET TIKTOK_OAUTH_CLIENT_ID TIKTOK_OAUTH_CLIENT_SECRET; do
   missing_oauth_dir="$(mktemp -d)"
   TEMP_DIRS+=("$missing_oauth_dir")
   status=0

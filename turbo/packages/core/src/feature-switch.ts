@@ -46,6 +46,15 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.TikTokOAuthConnector]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "TikTok OAuth connector",
+    description:
+      "Connect a TikTok account with automatically refreshed read-only access.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.MarketingContentHandoff]: {
     maintainer: "yuma@okou.ai",
     displayName: "Marketing content handoff",

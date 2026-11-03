@@ -2075,6 +2075,33 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
+    connectorSlug: "tiktok",
+    authMethodId: "oauth",
+    contract: {
+      client: {
+        kind: "static-confidential-env",
+        clientIdEnv: "TIKTOK_OAUTH_CLIENT_ID",
+        clientSecretEnv: "TIKTOK_OAUTH_CLIENT_SECRET",
+      },
+      grant: {
+        kind: "auth-code",
+        callbackOrigin: "web",
+        outputNames: ["accessToken", "refreshToken"],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "refresh-token",
+        inputNames: ["refreshToken"],
+        outputNames: ["accessToken", "refreshToken"],
+        platformSecrets: [],
+      },
+      revoke: {
+        kind: "token-revoke",
+        inputNames: ["accessToken"],
+      },
+    },
+  },
+  {
     connectorSlug: "tiktok-ads",
     authMethodId: "oauth",
     contract: {
