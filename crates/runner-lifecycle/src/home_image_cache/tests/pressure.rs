@@ -13,43 +13,45 @@ fn low_space(cache: &HomeImageCache) {
 
 #[tokio::test]
 async fn foreground_target_and_cheap_background_watermarks_remain_independent() {
-    let f = Fixture::new().await;
-    let committed = f.commit("home", b"home", "2026-10-09T09:00:00Z").await;
-    f.cache.set_fs_stats_for_test(FsStats {
-        total_bytes: 100 * GIB,
-        available_bytes: 62 * GIB + GIB / 2,
-        ..FsStats::default()
-    });
-    f.cache.reset_gc_root_scan_count();
-    f.cache.probe_home_cache_pressure().await.unwrap();
-    assert_eq!(f.cache.gc_root_scan_count(), 0);
-    assert!(f.image("home", &committed).exists());
-    f.cache.set_fs_stats_for_test(FsStats {
-        total_bytes: 100 * GIB,
-        available_bytes: 55 * GIB,
-        ..FsStats::default()
-    });
-    let device = std::fs::metadata(f.cache.home_image_cache_dir())
-        .unwrap()
-        .dev();
-    let demand = f
-        .cache
-        .reclaim_home_image_headroom(device, 51 * GIB, reclamation_deadline())
-        .await
-        .unwrap();
-    assert_eq!(demand.status, HomeCacheReclaimStatus::TargetSatisfied);
-    assert_eq!(f.cache.gc_root_scan_count(), 0);
-    assert!(f.image("home", &committed).exists());
-    f.cache.probe_home_cache_pressure().await.unwrap();
-    f.cache.drain_pressure_reclamation().await;
-    assert_eq!(f.cache.gc_root_scan_count(), 1);
-    assert!(!f.image("home", &committed).exists());
-    assert_eq!(
-        std::fs::metadata(f.cache.routine_gc_lock_path())
+    for capacity_gib in [100, 1024, 2048] {
+        let f = Fixture::new().await;
+        let committed = f.commit("home", b"home", "2026-10-09T09:00:00Z").await;
+        f.cache.set_fs_stats_for_test(FsStats {
+            total_bytes: capacity_gib * GIB,
+            available_bytes: 62 * GIB + GIB / 2,
+            ..FsStats::default()
+        });
+        f.cache.reset_gc_root_scan_count();
+        f.cache.probe_home_cache_pressure().await.unwrap();
+        assert!(f.image("home", &committed).exists());
+        assert_eq!(f.cache.gc_root_scan_count(), 0);
+        f.cache.set_fs_stats_for_test(FsStats {
+            total_bytes: capacity_gib * GIB,
+            available_bytes: 55 * GIB,
+            ..FsStats::default()
+        });
+        let device = std::fs::metadata(f.cache.home_image_cache_dir())
             .unwrap()
-            .len(),
-        0
-    );
+            .dev();
+        let demand = f
+            .cache
+            .reclaim_home_image_headroom(device, 51 * GIB, reclamation_deadline())
+            .await
+            .unwrap();
+        assert_eq!(demand.status, HomeCacheReclaimStatus::TargetSatisfied);
+        assert_eq!(f.cache.gc_root_scan_count(), 0);
+        assert!(f.image("home", &committed).exists());
+        f.cache.probe_home_cache_pressure().await.unwrap();
+        f.cache.drain_pressure_reclamation().await;
+        assert_eq!(f.cache.gc_root_scan_count(), 1);
+        assert!(!f.image("home", &committed).exists());
+        assert_eq!(
+            std::fs::metadata(f.cache.routine_gc_lock_path())
+                .unwrap()
+                .len(),
+            0
+        );
+    }
 }
 
 #[tokio::test]

@@ -284,11 +284,11 @@ fn pressure_watermarks_cover_small_infeasible_and_integer_boundaries() {
         total_bytes: u64::MAX,
         ..FsStats::default()
     });
-    assert_eq!(largest.reserve_bytes, u64::MAX / 10);
+    assert_eq!(largest.reserve_bytes, 50 * GIB);
     assert!(largest.reserve_feasible);
     assert!(largest.reserve_bytes < largest.low_free_bytes);
     assert!(largest.low_free_bytes < largest.high_free_bytes);
-    assert_eq!(largest.high_free_bytes, 2_767_011_611_056_432_741);
+    assert_eq!(largest.high_free_bytes, 75 * GIB);
 }
 
 #[test]

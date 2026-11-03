@@ -296,7 +296,7 @@ bounded advisory key revalidation; a notification alone cannot advertise a home.
 Rejected handoff uses the existing bounded fresh replacement, which rebuilds
 image-derived storage/history preparation before creating the replacement.
 
-Runtime home configurations carry the same max(10% capacity, 50 GiB) reserve as
+Runtime home configurations carry the same fixed 50 GiB free-space reserve as
 cache publication. Firecracker queries the actual destination filesystem before
 fresh creation, Copy or EXDEV copy. Copy demand includes rounded logical data
 extents and per-extent allocation metadata, with a full-logical bound when
