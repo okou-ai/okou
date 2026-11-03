@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1087.4](https://github.com/okou-ai/okou/compare/app-v0.1087.3...app-v0.1087.4) (2026-11-03)
+
+
+### Bug Fixes
+
+* **app:** group remote access hosts by protocol and enabled state ([#44870](https://github.com/okou-ai/okou/issues/44870)) ([b5ac4bc](https://github.com/okou-ai/okou/commit/b5ac4bc7c0211eb00690f231ae93849f889d097b))
+
+
+### Refactoring
+
+* **browser:** centralize viewer recovery and narrow dependencies ([#44871](https://github.com/okou-ai/okou/issues/44871)) ([9a92576](https://github.com/okou-ai/okou/commit/9a92576dbe083f3afb96c9dfbc4debf8209600b6))
+* retire shared-chat link, site title and telegram bot list compatibility ([#44887](https://github.com/okou-ai/okou/issues/44887)) ([d8f4e29](https://github.com/okou-ai/okou/commit/d8f4e29836f9a70ea4f1c2ee54de79c2380a37f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.37.1
+    * @okouai/core bumped to 8.812.2
+
 ## [0.1087.3](https://github.com/okou-ai/okou/compare/app-v0.1087.2...app-v0.1087.3) (2026-11-03)
 
 

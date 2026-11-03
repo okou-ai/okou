@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.44.2](https://github.com/okou-ai/okou/compare/api-v2.44.1...api-v2.44.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* preserve imessage history received before connecting ([#44875](https://github.com/okou-ai/okou/issues/44875)) ([fdd3263](https://github.com/okou-ai/okou/commit/fdd32631946bbe3eec64ab86483bbfb6e74760d5))
+
+
+### Refactoring
+
+* retire shared-chat link, site title and telegram bot list compatibility ([#44887](https://github.com/okou-ai/okou/issues/44887)) ([d8f4e29](https://github.com/okou-ai/okou/commit/d8f4e29836f9a70ea4f1c2ee54de79c2380a37f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.37.1
+    * @okouai/core bumped to 8.812.2
+    * @okouai/db bumped to 2.18.5
+    * @okouai/pi-agent-runtime bumped to 1.51.57
+
 ## [2.44.1](https://github.com/okou-ai/okou/compare/api-v2.44.0...api-v2.44.1) (2026-11-03)
 
 
