@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.15.0...runner-provider-v0.16.0) (2026-11-03)
+
+
+### Features
+
+* use chat connector accounts for runs and cli switching ([#44778](https://github.com/okou-ai/okou/issues/44778)) ([9eb2bcb](https://github.com/okou-ai/okou/commit/9eb2bcba1f9804a86b338b63eb0c05d20852962f))
+
 ## [0.15.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.14.6...runner-provider-v0.15.0) (2026-11-03)
 
 

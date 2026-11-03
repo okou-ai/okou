@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.3](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.2...browser-extension-v0.5.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* **browser:** replace lost startup readiness observers ([#44803](https://github.com/okou-ai/okou/issues/44803)) ([a5047ce](https://github.com/okou-ai/okou/commit/a5047ceca13324d3d5dca197321aef601d16f3a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.3
+
 ## [0.5.2](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.1...browser-extension-v0.5.2) (2026-11-02)
 
 

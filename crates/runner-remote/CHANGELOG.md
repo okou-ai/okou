@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.22...runner-remote-v0.31.0) (2026-11-03)
+
+
+### Features
+
+* use chat connector accounts for runs and cli switching ([#44778](https://github.com/okou-ai/okou/issues/44778)) ([9eb2bcb](https://github.com/okou-ai/okou/commit/9eb2bcba1f9804a86b338b63eb0c05d20852962f))
+
 ## [0.30.22](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.21...runner-remote-v0.30.22) (2026-11-03)
 
 

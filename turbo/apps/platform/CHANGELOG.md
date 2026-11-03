@@ -13,6 +13,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1087.0](https://github.com/okou-ai/okou/compare/app-v0.1086.0...app-v0.1087.0) (2026-11-03)
+
+
+### Features
+
+* use chat connector accounts for runs and cli switching ([#44778](https://github.com/okou-ai/okou/issues/44778)) ([9eb2bcb](https://github.com/okou-ai/okou/commit/9eb2bcba1f9804a86b338b63eb0c05d20852962f))
+
+
+### Bug Fixes
+
+* **browser:** continue lease renewal after gateway failures ([#44800](https://github.com/okou-ai/okou/issues/44800)) ([ecaad07](https://github.com/okou-ai/okou/commit/ecaad07edba38b6dbdf455a4b6d671b8127d749d))
+* **browser:** isolate frames connection loss from viewer control ([#44802](https://github.com/okou-ai/okou/issues/44802)) ([d043458](https://github.com/okou-ai/okou/commit/d043458b7b6d19afaff42a9d6e21548ff2e7a77e))
+* **platform:** bound unanswered browser requests and expose recovery ([#44801](https://github.com/okou-ai/okou/issues/44801)) ([47f22ca](https://github.com/okou-ai/okou/commit/47f22ca434f6cbf2069ab919286d6050033f5a42))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.36.0
+    * @okouai/browser-extension-client bumped to 0.4.3
+    * @okouai/core bumped to 8.811.1
+
 ## [0.1086.0](https://github.com/okou-ai/okou/compare/app-v0.1085.0...app-v0.1086.0) (2026-11-03)
 
 

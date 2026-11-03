@@ -1,6 +1,6 @@
 {
   "name": "@okouai/browser-extension-client",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "type": "module",
   "exports": {
