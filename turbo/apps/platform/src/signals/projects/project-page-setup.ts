@@ -17,7 +17,7 @@ export const setupProjectPage$ = command(
       return project.id === projectId;
     });
     if (projectId && available) {
-      set(expandProject$, projectId);
+      set(expandProject$, projectId, { ifUnset: true });
     } else {
       toast.error(
         i18n.t(($) => {

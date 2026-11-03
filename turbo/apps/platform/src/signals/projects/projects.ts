@@ -1,5 +1,5 @@
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
-import { expandProject$ } from "./project-folders.ts";
+import { expandProject$, restoreProjectExpansion$ } from "./project-folders.ts";
 import { now, nowDate } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
 import { projectsContract } from "@okouai/api-contracts/client/projects";
@@ -95,6 +95,7 @@ export const hydrateProjects$ = command(
     if (!get(projectsEnabled$)) {
       return;
     }
+    await set(restoreProjectExpansion$, signal);
     set(
       state$,
       await get(installedSharedDatabaseBridge$).query(
@@ -115,7 +116,7 @@ export const hydrateProjects$ = command(
           })?.projectId
         : get(searchParams$).get("project");
     if (projectId) {
-      set(expandProject$, projectId);
+      set(expandProject$, projectId, { ifUnset: true });
     }
   },
 );
