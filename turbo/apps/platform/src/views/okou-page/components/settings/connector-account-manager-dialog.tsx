@@ -11,6 +11,7 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
+  Badge,
   Button,
   cn,
   Dialog,
@@ -137,31 +138,19 @@ function AccountDefaultRadio({
 }) {
   const { t } = useTranslation();
   return (
-    <label className="flex shrink-0 cursor-pointer items-center gap-2">
-      {account.isDefault ? (
-        <span
-          aria-hidden="true"
-          className="shrink-0 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-        >
-          {t(($) => {
-            return $.connectors.accounts.default;
-          })}
-        </span>
-      ) : null}
-      <Radio
-        disabled={disabled}
-        value={account.id}
-        aria-label={
-          account.isDefault
-            ? t(($) => {
-                return $.connectors.accounts.default;
-              })
-            : t(($) => {
-                return $.connectors.accounts.makeDefault;
-              })
-        }
-      />
-    </label>
+    <Radio
+      disabled={disabled}
+      value={account.id}
+      aria-label={
+        account.isDefault
+          ? t(($) => {
+              return $.connectors.accounts.default;
+            })
+          : t(($) => {
+              return $.connectors.accounts.makeDefault;
+            })
+      }
+    />
   );
 }
 
@@ -296,8 +285,22 @@ function AccountRow({
       aria-label={label}
       className="flex items-center justify-between gap-4 px-5 py-4"
     >
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-foreground">{label}</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="truncate text-sm font-medium text-foreground">
+            {label}
+          </p>
+          {account.isDefault && (
+            <Badge
+              aria-hidden="true"
+              className="shrink-0 text-[10px] font-medium text-muted-foreground"
+            >
+              {t(($) => {
+                return $.connectors.accounts.default;
+              })}
+            </Badge>
+          )}
+        </div>
         <p className="mt-0.5 flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
           <AccountStatus account={account} />
           {identity && identity !== label ? (
