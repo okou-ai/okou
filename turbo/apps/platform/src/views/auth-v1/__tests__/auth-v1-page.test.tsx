@@ -13,7 +13,7 @@ import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
 
-test("An unavailable referral backend still opens the normal signup form", async () => {
+test("An unavailable referral link still opens the normal signup form", async () => {
   context.mocks.api(friendReferralsContract.visit, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Referral link is unavailable" },

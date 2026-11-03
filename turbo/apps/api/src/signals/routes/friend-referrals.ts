@@ -71,13 +71,16 @@ const link$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(friendReferrals)
     .where(eq(friendReferrals.linkId, link.id));
   signal.throwIfAborted();
-  const rewardedCount = totals?.rewardedCount ?? 0;
+  if (!totals) {
+    throw new Error("Friend referral aggregate did not return a row");
+  }
+  const { registeredCount, rewardedCount } = totals;
   set(setResHeader$, "Cache-Control", "no-store");
   return {
     status: 200 as const,
     body: {
       code: link.code,
-      registeredCount: totals?.registeredCount ?? 0,
+      registeredCount,
       rewardedCount,
       earnedCredits: rewardedCount * FRIEND_REFERRAL_REWARD_CREDITS,
     },

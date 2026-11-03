@@ -19,7 +19,13 @@ import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   integrationsSlackContract,
@@ -74,9 +80,14 @@ test("Friends have a separate referral link with paid-pack qualification and one
       },
     },
   });
-  const panel = await openQuestPanel();
+  const user = userEvent.setup({ delay: null });
+  await user.click(await screen.findByTestId("get-started-entry"));
+  const panel = await screen.findByRole("menu");
   expect(within(panel).getByText("Invite your team")).toBeInTheDocument();
-  click(within(panel).getByText("Invite your friends"));
+  await user.keyboard("{End}");
+  expect(document.activeElement).toHaveTextContent("Invite your friends");
+  expect(document.activeElement).toHaveAttribute("role", "menuitem");
+  await user.keyboard("{Enter}");
   const dialog = await screen.findByRole("dialog", {
     name: "Invite your friends",
   });
@@ -102,6 +113,33 @@ test("Friends have a separate referral link with paid-pack qualification and one
   await expect(navigator.clipboard.readText()).resolves.toBe(
     `${location.origin}/sign-up?friend_referral=a7k2p9`,
   );
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(screen.getByTestId("get-started-entry")).toHaveFocus();
+  });
+  await user.click(linkNamed("Workflows", document.body));
+  await screen.findByRole("heading", { name: "Workflows" });
+  act(() => {
+    window.history.back();
+  });
+  await user.click(await screen.findByTestId("get-started-entry"));
+  await screen.findByRole("menu");
+  await user.keyboard("{End}{Enter}");
+  await screen.findByRole("dialog", { name: "Invite your friends" });
+  act(() => {
+    window.history.forward();
+  });
+  await screen.findByRole("heading", { name: "Workflows" });
+  act(() => {
+    window.history.back();
+  });
+  await waitFor(() => {
+    expect(pathname()).toBe(questChatPath());
+    expect(
+      screen.queryByRole("dialog", { name: "Invite your friends" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 test("Referral link failures can be retried in the same dialog", async () => {

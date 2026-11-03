@@ -31,7 +31,6 @@ export const friendReferralsContract: ClientDescriptor<
       200: true,
       401: true,
       403: true,
-      404: true,
     },
   },
 };

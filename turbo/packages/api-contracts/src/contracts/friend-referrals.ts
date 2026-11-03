@@ -50,7 +50,6 @@ export const friendReferralsContract = c.router({
       200: object({ status: zEnum(["registered", "ineligible"]) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
-      404: apiErrorSchema,
     },
     summary: "Bind a new registration to its original friend referral",
   },

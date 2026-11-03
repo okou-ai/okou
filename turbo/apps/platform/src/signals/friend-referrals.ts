@@ -3,17 +3,18 @@ import { friendReferralCodeSchema } from "@okouai/api-contracts/validators/frien
 import { friendReferralsContract } from "@okouai/api-contracts/client/friend-referrals";
 import { apiClient$ } from "./api-client.ts";
 import { clerkUser$ } from "./auth.ts";
+import { pageVersion$ } from "./page-signal.ts";
 import { localStorageSignals } from "./external/local-storage.ts";
 import { accept } from "../lib/accept.ts";
 import { writeToClipboard } from "./okou-page/clipboard.ts";
 
 const pendingReferral = localStorageSignals("friend_referral_visit");
-const internalOpen$ = state(false);
+const internalOpenPageVersion$ = state<number | null>(null);
 export const friendReferralOpen$ = computed((get) => {
-  return get(internalOpen$);
+  return get(internalOpenPageVersion$) === get(pageVersion$);
 });
-export const setFriendReferralOpen$ = command(({ set }, open: boolean) => {
-  set(internalOpen$, open);
+export const setFriendReferralOpen$ = command(({ get, set }, open: boolean) => {
+  set(internalOpenPageVersion$, open ? get(pageVersion$) : null);
 });
 
 /** Capture before rendering signup, so the server can verify account newness. */
@@ -50,19 +51,17 @@ export const registerFriendReferral$ = command(
       return;
     }
     signal.throwIfAborted();
-    const response = await accept(
+    await accept(
       get(apiClient$)(friendReferralsContract).register({
         body: { token },
         fetchOptions: { signal },
       }),
-      [200, 404],
+      [200],
       undefined,
       { showErrorToast: false },
     );
     signal.throwIfAborted();
-    if (response.status === 200) {
-      set(pendingReferral.clear$);
-    }
+    set(pendingReferral.clear$);
   },
 );
 
