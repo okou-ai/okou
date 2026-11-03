@@ -1,5 +1,8 @@
 import { performance } from "node:perf_hooks";
-import { captureInvokedWorkflow$ } from "./execution-agent-workflows.service";
+import {
+  findInvokedWorkflowId,
+  invokedWorkflowName,
+} from "./execution-agent-workflows.service";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
@@ -3797,19 +3800,17 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const invokedWorkflowId =
+      const invokedName =
         runnerInput && !isRouteError(runnerInput)
-          ? await set(
-              captureInvokedWorkflow$,
-              {
-                agentId: runnerInput.args.resolved.agentId,
-                userId: runnerInput.args.userId,
-                orgId: runnerInput.args.orgId,
-                prompt: runnerInput.body.prompt,
-              },
-              signal,
-            )
+          ? invokedWorkflowName(runnerInput.body.prompt)
           : null;
+      // The Run's owner, org and Agent are bootstrap's identity, whose S1
+      // selection already captured the ordinary Private/Public winner per name.
+      const invokedWorkflowId =
+        invokedName === null
+          ? null
+          : findInvokedWorkflowId(await get(bootstrap.workflows$), invokedName);
+      signal.throwIfAborted();
       const contextDraft = claimRunStoredContextDraft(
         runnerInput,
         encrypted,

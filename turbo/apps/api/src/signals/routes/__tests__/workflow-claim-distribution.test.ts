@@ -268,6 +268,38 @@ test("re-evaluates private/public precedence without exposing another member's p
   await finish(run.runId, claim.sandboxToken);
 });
 
+test("invokes the caller's Private Workflow when Public and foreign Private Workflows share its slug", async () => {
+  const { actor, agent, group, s3 } = await fixture();
+  const name = `invoked-${randomUUID().slice(0, 8)}`;
+  await createWorkflow(actor, agent.agentId, {
+    name,
+    visibility: "public",
+    instruction: "public body",
+  });
+  await createWorkflow(bdd.user({ orgId: actor.orgId }), agent.agentId, {
+    name,
+    instruction: "foreign private body",
+  });
+  await createWorkflow(actor, agent.agentId, {
+    name,
+    instruction: "private body",
+  });
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: `/${name} summarize today`,
+  });
+  await runs.heartbeatRunner(group);
+  // Claim rejects a captured invocation that is not this slug's winner.
+  const claim = await runs.claimRunnerJob(run.runId);
+  const skill = claim.contentBundles.skills.find((entry) => {
+    return entry.mountPath.endsWith(`/${name}`);
+  })!;
+  expect(
+    readClaimedContentBundle(s3.objects, skill).get("SKILL.md")?.toString(),
+  ).toContain("private body");
+  await finish(run.runId, claim.sandboxToken);
+});
+
 test("keeps a queued explicit invocation unavailable after its Workflow is deleted", async () => {
   const { actor, agent, group } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId);
