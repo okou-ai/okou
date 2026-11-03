@@ -37,6 +37,17 @@ export const integrationsAgentPhoneContract: ClientDescriptor<
       500: true,
     },
   },
+  listGroups: {
+    method: "GET",
+    path: "/api/integrations/agentphone/groups",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      502: true,
+    },
+  },
   groupHistory: {
     method: "GET",
     path: "/api/integrations/agentphone/group-history",

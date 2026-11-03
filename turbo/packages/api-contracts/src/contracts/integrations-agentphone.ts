@@ -96,6 +96,24 @@ export const agentPhoneGroupHistoryQuerySchema = object({
   { message: "after must be earlier than before", path: ["after"] },
 );
 
+export const agentPhoneGroupListQuerySchema = object({
+  limit: coerce.number().int().min(1).max(100).default(25),
+  cursor: string().min(1).max(1024).optional(),
+});
+
+const agentPhoneGroupListResponseSchema = object({
+  groups: array(
+    object({
+      groupId: string(),
+      conversationId: string(),
+      groupName: string().nullable(),
+      agentphoneAgentId: string(),
+      lastMessageAt: iso.datetime(),
+    }),
+  ),
+  nextCursor: string().nullable(),
+});
+
 const agentPhoneGroupHistoryResponseSchema = object({
   groupId: string(),
   messages: array(
@@ -160,6 +178,20 @@ export const integrationsAgentPhoneContract = c.router({
       500: string(),
     },
     summary: "Handle inbound phone message webhooks",
+  },
+  listGroups: {
+    method: "GET",
+    path: "/api/integrations/agentphone/groups",
+    headers: authHeadersSchema,
+    query: agentPhoneGroupListQuerySchema,
+    responses: {
+      200: agentPhoneGroupListResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "List known iMessage groups shared by the connected user and Okou",
   },
   groupHistory: {
     method: "GET",
@@ -268,6 +300,12 @@ export type AgentPhoneLinkCodeResponse = zInfer<
 >;
 export type AgentPhoneGroupHistoryQuery = zInfer<
   typeof agentPhoneGroupHistoryQuerySchema
+>;
+export type AgentPhoneGroupListQuery = zInfer<
+  typeof agentPhoneGroupListQuerySchema
+>;
+export type AgentPhoneGroupListResponse = zInfer<
+  typeof agentPhoneGroupListResponseSchema
 >;
 export type AgentPhoneGroupHistoryResponse = zInfer<
   typeof agentPhoneGroupHistoryResponseSchema
