@@ -196,7 +196,7 @@ test.each(["attachment", "native hello", "inventory"] as const)(
   },
 );
 
-test("Healthy HTTP renewal and queued invalidations cannot extend a dead native read", async () => {
+test("A native read deadline permits queued revalidation without replacing the healthy wire", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
   const viewer = mockViewer();
   const { browser, session } = viewer;
@@ -224,10 +224,8 @@ test("Healthy HTTP renewal and queued invalidations cannot extend a dead native 
     visibility.changeTo("visible");
   });
   viewer.advance(31_000);
-  await screen.findByText("Browser disconnected");
-  viewer.replaceBinding();
-  reconnect();
-  await expectReady("https://replacement.example.com");
+  await expectReady();
+  expect(browser.connections()).toBe(1);
   await act(async () => {
     await proof.release();
   });
@@ -237,28 +235,153 @@ test("Healthy HTTP renewal and queued invalidations cannot extend a dead native 
       expect.objectContaining({
         method: "Input.insertText",
         params: { text: "fresh" },
-        sessionId: browser.pageSession("replacement"),
+        sessionId: browser.pageSession("example-page"),
       }),
     );
   });
   expect(screen.getByLabelText("Address")).toHaveValue(
-    "https://replacement.example.com",
+    "https://original.example.com",
   );
   expect(
     screen.queryByLabelText("Sibling", { selector: '[role="tab"]' }),
   ).toBeNull();
-  expect(viewer.sentry.reports).toHaveLength(1);
-  expect(viewer.sentry.reports[0]).toMatchObject({
-    context: {
-      contexts: {
-        browser_connection: {
-          source: "response-timeout",
-          phase: "open",
-          ready_state: 1,
-        },
-      },
-    },
+});
+
+async function separateImages(browser: ReturnType<typeof mockBrowserCdp>) {
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  click(await screen.findByText("Separate image connection"));
+  await waitFor(() => {
+    expect(browser.connections()).toBe(3);
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
+}
+
+test.each(["shared", "split"] as const)(
+  "A history timeout stays local on a %s connection and ignores its late reply",
+  async (mode) => {
+    const viewer = mockViewer();
+    const { browser } = viewer;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await expectReady();
+    if (mode === "split") {
+      await separateImages(browser);
+    }
+    const connections = browser.connections();
+    const history = browser.holdNext("Page.getNavigationHistory");
+    act(() => {
+      browser.event(
+        "Page.loadEventFired",
+        { timestamp: 2 },
+        browser.pageSession("example-page"),
+      );
+    });
+    await history.received;
+    viewer.advance(31_000);
+    await screen.findByRole("alert");
+    await expectReady();
+    await act(async () => {
+      await history.release();
+    });
+    await insertText("after read timeout");
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.insertText",
+          params: { text: "after read timeout" },
+        }),
+      );
+    });
+    expect(browser.connections()).toBe(connections);
+    expect(screen.queryByText("Browser disconnected")).toBeNull();
+  },
+);
+
+test.each([
+  ["shared", false],
+  ["shared", true],
+  ["split", false],
+  ["split", true],
+] as const)(
+  "A failed scope read on %s permits explicit recovery (binding replaced=%s)",
+  async (mode, replaced) => {
+    const viewer = mockViewer();
+    const { browser } = viewer;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await expectReady();
+    if (mode === "split") {
+      await separateImages(browser);
+    }
+    const connections = browser.connections();
+    const proof = browser.holdNextNative("getWindow");
+    act(() => {
+      browser.nativeEvent("tab-attached", browser.targets[0]);
+    });
+    await proof.received;
+    viewer.advance(31_000);
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+    expect(browser.connections()).toBe(connections);
+    if (replaced) {
+      viewer.replaceBinding();
+    }
+    reconnect();
+    await expectReady(
+      replaced
+        ? "https://replacement.example.com"
+        : "https://original.example.com",
+    );
+    expect(browser.connections()).toBe(
+      replaced ? connections + (mode === "split" ? 2 : 1) : connections,
+    );
+    await act(async () => {
+      await proof.release();
+    });
+    await insertText("fresh scope");
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.insertText",
+          params: { text: "fresh scope" },
+          sessionId: browser.pageSession(
+            replaced ? "replacement" : "example-page",
+          ),
+        }),
+      );
+    });
+    expect(
+      screen.queryByLabelText("Sibling", { selector: '[role="tab"]' }),
+    ).toBeNull();
+  },
+);
+
+test("Selecting another scoped tab revalidates a rejected native read on the healthy wire", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  browser.targets[1]!.windowId = 101;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  browser.failNext("Runtime.evaluate", "Native window temporarily unavailable");
+  act(() => {
+    browser.nativeEvent("tab-attached", browser.targets[0]);
+  });
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  click(screen.getByLabelText("Replacement", { selector: '[role="tab"]' }));
+  await expectReady("https://replacement.example.com");
+  await insertText("after revalidation");
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "after revalidation" },
+      }),
+    );
+  });
+  expect(browser.connections()).toBe(1);
 });
 
 test.each(["opening", "native read"] as const)(

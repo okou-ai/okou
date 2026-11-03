@@ -3,8 +3,13 @@ import { createDeferredPromise } from "../../utils.ts";
 import type { OkouBrowserClient } from "@okouai/browser-extension-client";
 import type { ViewerTarget } from "../viewer/types.ts";
 import type { CdpClient } from "./client.ts";
-import { CdpFault, isRecord, requestDetails } from "./errors.ts";
-import { nativeFault } from "./native.ts";
+import {
+  CdpFault,
+  isRecord,
+  isRecoverableReadFailure,
+  requestDetails,
+} from "./errors.ts";
+import { nativeFault, nativeReadFault } from "./native.ts";
 
 export function pageTarget(info: unknown): ViewerTarget | null {
   if (!isRecord(info) || info.type !== "page" || info.subtype === "prerender") {
@@ -68,8 +73,9 @@ function createWindowLookup(client: CdpClient) {
           ? "unsupported-capability"
           : "scope",
         "Window membership could not be verified. Scoped viewing is unavailable.",
-        undefined,
+        error instanceof CdpFault ? error.code : undefined,
         requestDetails(error),
+        { readOnly: isRecoverableReadFailure(error) },
       );
     },
   );
@@ -101,11 +107,17 @@ function createWindowAssertion(
           }
         },
       };
-      const observation = await Promise.race([
-        native.call("getWindow", { windowId: scopedWindowId }),
-        interrupted.promise,
+      const [read] = await Promise.allSettled([
+        Promise.race([
+          native.call("getWindow", { windowId: scopedWindowId }),
+          interrupted.promise,
+        ]),
       ]);
       signal.throwIfAborted();
+      if (read.status === "rejected") {
+        throw nativeReadFault(read.reason);
+      }
+      const observation = read.value;
       set(assertNative$, signal);
       if (revision !== get(revision$)) {
         throw new CdpFault(

@@ -19,7 +19,12 @@ import {
   type CdpClient,
   type CdpEvent,
 } from "../cdp/client.ts";
-import { CdpFault, isRecord, validateConfiguration } from "../cdp/errors.ts";
+import {
+  CdpFault,
+  isRecord,
+  isRecoverableReadFailure,
+  validateConfiguration,
+} from "../cdp/errors.ts";
 import {
   captureSentryLogError,
   sentryLogContext,
@@ -404,6 +409,8 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
 }
 
 interface ControllerLinks {
+  readonly canRetryDiscovery$: Computed<boolean>;
+  readonly retryDiscovery$: Command<Promise<void>, [AbortSignal]>;
   readonly imageEvent$: Command<void, [ImageEvent]>;
   readonly discoveryFailed$: Command<void, [unknown, AbortSignal]>;
   readonly nativeEvent$: Command<void, [NativeEvent]>;
@@ -748,14 +755,19 @@ function createDiscoveryFailure(
       return;
     }
     set(readinessFailure$, error);
-    set(context.connectedState$, false);
+    const recoverable = isRecoverableReadFailure(error);
+    if (!recoverable) {
+      set(context.connectedState$, false);
+    }
     set(get(links$).retireCurrent$, "target-replaced", false);
     set(model.transition$, {
-      type: "discovery-failed",
+      type: recoverable ? "failed" : "discovery-failed",
       error: diagnostic(error),
     });
     set(wake$);
-    set(get(links$).beginClosing$);
+    if (!recoverable) {
+      set(get(links$).beginClosing$);
+    }
   });
 }
 
@@ -775,6 +787,30 @@ type DiscoveryContext = ControllerContext<
   | "wake$"
 >;
 
+function createDiscoveryRetry(
+  context: ControllerContext<"connected$" | "readinessFailure$">,
+  discovery$: ControllerLinks["discovery$"],
+): Pick<ControllerLinks, "canRetryDiscovery$" | "retryDiscovery$"> {
+  const canRetryDiscovery$ = computed((get) => {
+    return (
+      get(context.connected$) &&
+      isRecoverableReadFailure(get(context.readinessFailure$))
+    );
+  });
+  const retryDiscovery$ = command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (!get(canRetryDiscovery$)) {
+      return;
+    }
+    await set(get(discovery$)!.refresh$, signal);
+    signal.throwIfAborted();
+    if (!get(context.connected$)) {
+      throw cancelled();
+    }
+  });
+  return { canRetryDiscovery$, retryDiscovery$ };
+}
+
 function createDiscoveryGraph(
   context: DiscoveryContext,
   links$: ControllerDependencies<
@@ -782,7 +818,11 @@ function createDiscoveryGraph(
   >,
 ): Pick<
   ControllerLinks,
-  "discoveryFailed$" | "discoveryChanged$" | "discovery$"
+  | "discoveryFailed$"
+  | "discoveryChanged$"
+  | "discovery$"
+  | "canRetryDiscovery$"
+  | "retryDiscovery$"
 > {
   const {
     model,
@@ -804,6 +844,9 @@ function createDiscoveryGraph(
       if (signal.aborted || !get(connected$)) {
         return;
       }
+      set(context.readinessFailure$, (error) => {
+        return isRecoverableReadFailure(error) ? null : error;
+      });
       const snapshot = get(model.snapshot$);
       let selected = snapshot.selectedTargetId;
       if (
@@ -889,7 +932,12 @@ function createDiscoveryGraph(
         )
       : null;
   });
-  return { discoveryFailed$, discoveryChanged$, discovery$ };
+  return {
+    discoveryFailed$,
+    discoveryChanged$,
+    discovery$,
+    ...createDiscoveryRetry(context, discovery$),
+  };
 }
 
 function createImageRecoveryGraph(
@@ -2188,7 +2236,9 @@ function createSelectionGraph(
   >,
   links$: ControllerDependencies<
     | "attach$"
+    | "canRetryDiscovery$"
     | "discovery$"
+    | "retryDiscovery$"
     | "retireCurrent$"
     | "selectedSession$"
     | "waitReady$"
@@ -2216,6 +2266,10 @@ function createSelectionGraph(
       signal: AbortSignal,
     ): Promise<SelectionOutcome> => {
       set(assertAvailable$, signal);
+      if (get(get(links$).canRetryDiscovery$)) {
+        await set(get(links$).retryDiscovery$, signal);
+        set(assertAvailable$, signal);
+      }
       const target = get(model.snapshot$).targets.find((target) => {
         return target.id === targetId;
       });
@@ -4520,6 +4574,7 @@ export function createBrowserController(
   };
   return {
     connected$: context.connected$,
+    canRetryDiscovery$: graph.canRetryDiscovery$,
     start$: graph.start$,
     dispose$: graph.dispose$,
     waitForClosed$: graph.waitForClosed$,

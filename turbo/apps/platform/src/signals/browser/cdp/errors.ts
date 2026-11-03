@@ -16,6 +16,7 @@ export class CdpFault extends Error {
   /** Capture ownership follows this fault through wrappers retaining its cause. */
   reported = false;
   readonly connection: CdpConnectionObservation | undefined;
+  readonly readOnly: boolean;
 
   constructor(
     readonly kind: ViewerError["kind"],
@@ -24,12 +25,24 @@ export class CdpFault extends Error {
     readonly request?: ViewerError["request"],
     options?: ErrorOptions & {
       readonly connection?: CdpConnectionObservation;
+      readonly readOnly?: boolean;
     },
   ) {
     super(message, options);
     this.name = "CdpFault";
     this.connection = options?.connection;
+    this.readOnly = options?.readOnly === true;
   }
+}
+
+/** A failed read is not a lost wire or permission to use an unverified scope. */
+export function isRecoverableReadFailure(error: unknown): error is CdpFault {
+  return (
+    error instanceof CdpFault &&
+    error.readOnly &&
+    error.code !== -32_601 &&
+    (error.kind === "protocol" || error.kind === "scope")
+  );
 }
 
 /** Preserve diagnostic context without changing a wrapper's control-flow code. */
