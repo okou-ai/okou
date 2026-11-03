@@ -89,17 +89,15 @@ function BrowserSettings({
     signals.changeWindowSizeSync$,
   );
   const [syncOperation, syncDisplay] = useLoadableSet(signals.syncDisplay$);
-  const failed = [
-    captureOperation,
-    transportOperation,
-    windowOperation,
-    syncOperation,
-  ].some((operation) => {
-    return (
-      operation.state === "hasError" &&
-      isBrowserOperationFailure(operation.error)
-    );
-  });
+  // Transport replacement uses the root recovery pipeline and its current error.
+  const failed = [captureOperation, windowOperation, syncOperation].some(
+    (operation) => {
+      return (
+        operation.state === "hasError" &&
+        isBrowserOperationFailure(operation.error)
+      );
+    },
+  );
   return (
     <>
       <DropdownMenu>
@@ -751,9 +749,7 @@ function BrowserTabs({
 }
 
 function useBrowserRecovery(signals: BrowserSignals) {
-  const controls = useGet(signals.controls$);
   const displayRecovery = useGet(signals.displayRecovery$);
-  const imageRecovery = useGet(signals.imageRecovery$);
   const navigationScope = useGet(signals.navigationScope$);
   const [retryOperation, retryImage] = useLoadableSet(signals.retryImage$);
   const [reconnectOperation, reconnect] = useLoadableSet(signals.reconnect$);
@@ -762,6 +758,8 @@ function useBrowserRecovery(signals: BrowserSignals) {
     retryOperation.state === "loading" ||
     reloadOperation.state === "loading" ||
     reconnectOperation.state === "loading";
+  // The current runtime presents connection failures. Action loadables retain
+  // only local command feedback; an old Reconnect must not become current again.
   const failed =
     displayRecovery !== null ||
     (retryOperation.state === "hasError" &&
@@ -769,12 +767,7 @@ function useBrowserRecovery(signals: BrowserSignals) {
     (reloadOperation.state === "hasError" &&
       isBrowserOperationFailure(reloadOperation.error) &&
       (!(reloadOperation.error instanceof NavigationFault) ||
-        reloadOperation.error.scope === navigationScope)) ||
-    (reconnectOperation.state === "hasError" &&
-      isBrowserOperationFailure(
-        reconnectOperation.error,
-        imageRecovery !== null || controls.streaming,
-      ));
+        reloadOperation.error.scope === navigationScope));
   return { pending, failed, retryImage, reconnect, navigate };
 }
 

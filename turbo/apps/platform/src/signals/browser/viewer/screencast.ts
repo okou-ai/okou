@@ -1,5 +1,12 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { createDeferredPromise, detach, Reason } from "../../utils.ts";
+import {
+  createDeferredPromise,
+  detach,
+  Reason,
+  resetSignal,
+  setLoop,
+} from "../../utils.ts";
+import { monotonicNow } from "../../../lib/time.ts";
 
 import type { CdpClient } from "../cdp/client.ts";
 import { CdpFault } from "../cdp/errors.ts";
@@ -12,8 +19,10 @@ interface ScreencastOwner {
   readonly sessionId: string;
   readonly sink: FrameSink;
   readonly current$: Computed<boolean>;
+  /** starting$ invalidates the previous capture's accepted-paint proof. */
+  readonly painted$: Computed<boolean>;
   readonly failed$: Command<unknown, [unknown, AbortSignal]>;
-  readonly starting$?: Command<unknown, [CaptureSettings, AbortSignal]>;
+  readonly starting$: Command<void, [CaptureSettings, AbortSignal]>;
 }
 
 type NativeCapture =
@@ -50,6 +59,7 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
   const desired$ = state(settings);
   const applied$ = state<CaptureSettings | null>(null);
   const native$ = state<NativeCapture>({ kind: "stopped" });
+  const resetFirstFrame$ = resetSignal();
   const detachedState$ = state(false);
   const lane$ = state<CaptureLane | null>(null);
   const reservation$ = state<object | null>(null);
@@ -85,6 +95,7 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     desired$,
     applied$,
     native$,
+    resetFirstFrame$,
     detachedState$,
     lane$,
     reservation$,
@@ -175,6 +186,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     current$,
     native$,
     detachedState$,
+    resetFirstFrame$,
   } = graph;
   const navigationSettled$ = command(({ get, set }, done: boolean) => {
     const listeners = get(navigationListeners$);
@@ -188,6 +200,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
       return;
     }
     set(halted$, true);
+    set(resetFirstFrame$, AbortSignal.abort());
     set(accepting$, false);
     set(revision$, get(revision$) + 1);
     owner.sink.invalidate();
@@ -225,7 +238,8 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
 }
 
 function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
-  const { native$, accepting$, revision$, detachedState$ } = graph;
+  const { native$, accepting$, revision$, detachedState$, resetFirstFrame$ } =
+    graph;
   const stopConfirmed$ = command(({ get, set }, native: NativeCapture) => {
     const latest = get(native$);
     if (
@@ -243,6 +257,7 @@ function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
         return;
       }
       const native = get(native$);
+      set(resetFirstFrame$, AbortSignal.abort());
       set(accepting$, false);
       set(revision$, get(revision$) + 1);
       owner.sink.invalidate();
@@ -272,12 +287,63 @@ function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
   return { stop$ };
 }
 
+/** One acknowledged capture owns its first-image budget, independently of readers. */
+function createCaptureReadiness(
+  owner: ScreencastOwner,
+  graph: CaptureState,
+  core: CaptureCore,
+) {
+  const { current$, native$, halted$, resetFirstFrame$ } = graph;
+  return command(({ get, set }, native: NativeCapture) => {
+    const signal = set(resetFirstFrame$, owner.client.signal);
+    const deadline = monotonicNow() + 30_000;
+    setLoop(
+      async () => {
+        if (
+          !get(current$) ||
+          get(native$) !== native ||
+          get(halted$) ||
+          get(owner.painted$)
+        ) {
+          return true;
+        }
+        if (monotonicNow() < deadline) {
+          return false;
+        }
+        // Suspending the capture ends this timer; original receipt cleanup must
+        // retain the transport owner instead of inheriting the timer's signal.
+        await set(
+          core.fail$,
+          new CdpFault(
+            "frame",
+            "The browser did not receive a usable image in time.",
+          ),
+          owner.client.signal,
+        );
+        return true;
+      },
+      1000,
+      signal,
+      { testIntervalMs: 10 },
+    );
+  });
+}
+
 function createCaptureBegin(
   owner: ScreencastOwner,
   graph: CaptureState,
   ports: CaptureLaneCommands & CaptureStop,
+  observeFirstFrame$: ReturnType<typeof createCaptureReadiness>,
 ) {
-  const { native$, current$, halted$, accepting$, applied$, stopped$ } = graph;
+  const {
+    native$,
+    current$,
+    halted$,
+    accepting$,
+    applied$,
+    stopped$,
+    resetFirstFrame$,
+  } = graph;
   const { acquireLane$, releaseLane$, stop$ } = ports;
   const cleanupLateStart$ = command(
     async (
@@ -317,12 +383,11 @@ function createCaptureBegin(
         throw new CdpFault("frame", "The live image is unavailable.");
       }
       const native: NativeCapture = { kind: "possible", epoch: {} };
+      set(resetFirstFrame$, AbortSignal.abort());
       set(accepting$, true);
       set(native$, native);
-      if (owner.starting$) {
-        await set(owner.starting$, next, signal);
-        signal.throwIfAborted();
-      }
+      set(owner.starting$, next, signal);
+      signal.throwIfAborted();
       if (!get(current$) || get(halted$)) {
         return;
       }
@@ -347,6 +412,7 @@ function createCaptureBegin(
         return;
       }
       set(applied$, next);
+      set(observeFirstFrame$, native);
     },
   );
   const resume$ = command(({ get, set }, signal: AbortSignal) => {
@@ -355,6 +421,8 @@ function createCaptureBegin(
       return;
     }
     set(accepting$, true);
+    // A rejected stop can resume the acknowledged native capture without begin$.
+    set(observeFirstFrame$, get(native$));
   });
 
   return { begin$, resume$ };
@@ -896,7 +964,13 @@ export function createScreencast(
   const lane = createCaptureLane(graph);
   const core = createCaptureCore(owner, graph);
   const stop = createCaptureStop(owner, graph);
-  const begin = createCaptureBegin(owner, graph, { ...lane, ...stop });
+  const observeFirstFrame$ = createCaptureReadiness(owner, graph, core);
+  const begin = createCaptureBegin(
+    owner,
+    graph,
+    { ...lane, ...stop },
+    observeFirstFrame$,
+  );
   const navigation = createCaptureNavigation(graph, core);
   const configuration = createCaptureConfiguration(owner, graph, {
     ...core,
