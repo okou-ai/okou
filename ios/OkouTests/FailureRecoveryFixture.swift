@@ -22,6 +22,7 @@ final class FailureRecoveryFixture: Sendable {
     var threadEventsGate: ModelResponseGate?
     var threadEventsRequested: (@Sendable () -> Void)?
     var failNextSend = false
+    var markReadStatus = 200
     var markReadGate: ModelResponseGate?
     var markReadRequested: (@Sendable () -> Void)?
     var accounts = ModelHTTPFixtures.subscriptions.replacingOccurrences(
@@ -137,7 +138,12 @@ final class FailureRecoveryFixture: Sendable {
         }
         requested?()
         if let gate { await gate.wait() }
-        return ChatHTTPResponse(body: #"{"lastReadAt":"2030-01-01T00:00:00Z"}"#)
+        let status = state.value.withLock { $0.markReadStatus }
+        return ChatHTTPResponse(
+          status: status,
+          body: status == 200
+            ? #"{"lastReadAt":"2030-01-01T00:00:00Z"}"#
+            : #"{"error":{"message":"Read receipt unavailable"}}"#)
       case threadPath + "/connector-selections":
         return ChatHTTPResponse(body: #"{"selections":[]}"#)
       case threadPath + "/metadata":

@@ -95,7 +95,6 @@ final class AttachmentDraftStore {
       } catch {
         guard !closed, !Task.isCancelled else { return }
         let message = "Cannot restore \(item.file.filename). " + error.localizedDescription
-        self.error = message
         update(item.id, .failed(message))
         didFail(error)
       }

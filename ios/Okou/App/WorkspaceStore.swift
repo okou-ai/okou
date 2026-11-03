@@ -516,10 +516,13 @@ final class WorkspaceStore {
     // Creation already owns the next navigation when its response arrives.
     guard !isCreating || (!leaving && !reopenOnSuccess) else { return false }
     let restore = leaving || restoreOnUndo
-    let succeeded = await list.setArchived(thread, archived: archived, eventID: eventID) {
-      // The list owns the write, so leaving the detail cannot cancel it.
-      if leaving { self.startNewChat(agentID: thread.agentID) }
-    }
+    var failure: String?
+    let succeeded = await list.setArchived(
+      thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
+      didBegin: {
+        // The list owns the write, so leaving the detail cannot cancel it.
+        if leaving { self.startNewChat(agentID: thread.agentID) }
+      })
     guard !closed, !needsUpgrade else { return false }
     if succeeded {
       if reopenOnSuccess { selectChat(id) }
@@ -538,7 +541,7 @@ final class WorkspaceStore {
       }
     } else {
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: list.error ?? "The archive change was not saved.",
+        threadID: id, message: failure ?? "The archive change was not confirmed.",
         actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess
       ) { [weak self] in
         await self?.setArchived(
@@ -551,7 +554,9 @@ final class WorkspaceStore {
 
   func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
     guard !closed, !needsUpgrade, list.canMute(id) else { return }
-    let succeeded = await list.setMuted(id, muted: muted, markRead: markRead)
+    var failure: String?
+    let succeeded = await list.setMuted(
+      id, muted: muted, markRead: markRead, onFailure: { failure = $0 })
     guard !closed, !needsUpgrade else { return }
     if succeeded {
       let message =
@@ -567,7 +572,7 @@ final class WorkspaceStore {
       }
     } else {
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: list.error ?? "The mute change was not saved.",
+        threadID: id, message: failure ?? "The mute change was not confirmed.",
         actionTitle: "Retry", persists: true
       ) { [weak self] in
         await self?.setMuted(id, muted: muted, markRead: markRead)

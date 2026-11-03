@@ -213,7 +213,7 @@ private struct WorkspaceRootView: View {
                   draft: $composer.text, isBusy: store.isCreating,
                   showsProgress: store.isCreating, canStop: false,
                   needsUpgrade: store.needsUpgrade,
-                  error: store.error ?? store.list.actionError, attachmentURL: store.webURL,
+                  error: store.error, attachmentURL: store.webURL,
                   attachments: composer.attachments,
                   draftState: composer,
                   submit: {
@@ -347,7 +347,7 @@ private struct WorkspaceRootView: View {
       "Unable to update chats",
       isPresented: Binding(
         get: {
-          store.selectedConversation != nil && store.list.actionError != nil
+          store.list.actionError != nil
             && store.list.renameRequest == nil && !store.list.isSavingRename
         },
         set: { if !$0 { store.list.dismissError() } }

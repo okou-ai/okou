@@ -54,6 +54,25 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
   }
 
+  func testRunRecoveryContinuesWhenOnlyTheAutomaticReadReceiptFails() async throws {
+    let fixture = FailureRecoveryFixture()
+    fixture.state.value.withLock { $0.markReadStatus = 503 }
+    let (conversation, models) = await fixture.conversation(isVisible: { true })
+    defer {
+      conversation.close()
+      models.close()
+    }
+
+    await conversation.recoverFailure(FailureRecoveryFixture.failureID)
+
+    let sends = fixture.state.value.withLock { $0.sends }
+    XCTAssertEqual(sends.count, 1)
+    let body = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: try XCTUnwrap(sends.first)) as? [String: Any])
+    XCTAssertEqual(body["prompt"] as? String, "continue")
+    XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
+  }
+
   func testOneRetrySendsWhileBackgroundModelReadIsStillPending() async throws {
     let fixture = FailureRecoveryFixture(
       reason: "provider_server_error", error: "Provider unavailable")
