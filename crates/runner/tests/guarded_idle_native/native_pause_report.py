@@ -7,13 +7,12 @@ import json
 import pathlib
 
 import batch_aba_report as batch
-import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
 import speculative_fault_report as saving
 import status_failure_report as failure
-from native_unpark_report import wire
+from native_transition_report import wait_progress, wire
 from cleanup_report import supplied_policy
 from snapshot_report import exact
 
@@ -101,15 +100,7 @@ def validate(directory):
             "repark_refused":True,"incoming_refused":True,"original_metadata_preserved":True,
             "original_full_lease_active":True,"original_exit_polled_pending":True,"pool_empty":True,
             "allocated":[2,4096,1]}, "native cancellation lost original uncertain custody")
-        held = batch.clock(progress.get("pool_held_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
-        polled = batch.clock(progress.get("heartbeat_pending_ns"), held, events[4]["monotonic_ns"])
-        released = batch.clock(progress.get("pool_released_ns"), polled, events[4]["monotonic_ns"])
-        foreground.observer(progress.get("observer"), polled, released)
-        runner = foreground.heartbeat(progress.get("heartbeat"),1,released,events[4]["monotonic_ns"],(2,4096))
-        exact(progress, {"pool_held_ns":held,"heartbeat_pending_ns":polled,"pool_released_ns":released,
-            "observer":progress["observer"],"heartbeat":progress["heartbeat"],"terminal_unpark_polled_pending":True,
-            "response_delivery_withheld":True,"additional_full_profile_refused":True,
-            "original_full_lease_active":True,"allocated":[2,4096,1]}, "native wait lost independent progress or no-headroom custody")
+        runner = wait_progress(progress, events[3], events[4])
         released = batch.clock(joined.get("response_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
         finished = batch.clock(joined.get("producer_joined_ns"), released, events[5]["monotonic_ns"])
         exact(joined, {"response_released_ns":released,"producer_joined_ns":finished,"producer_joined":True,
