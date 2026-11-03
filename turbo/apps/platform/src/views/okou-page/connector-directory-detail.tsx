@@ -3,7 +3,7 @@ import { useGet } from "ccstate-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ChevronLeft, SlidersHorizontal } from "lucide-react";
-import { Button, buttonVariants } from "@okouai/ui";
+import { Button, buttonVariants, cn } from "@okouai/ui";
 import { Link } from "../router/link.tsx";
 import { DialogTitle } from "@okouai/ui/components/ui/dialog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
@@ -70,7 +70,7 @@ function ConnectorDetailHeader({
           })}
         </Button>
       </div>
-      <div className="flex shrink-0 items-start gap-3.5 px-6 pb-4 pt-4">
+      <div className="flex shrink-0 flex-wrap items-start gap-3.5 px-6 pb-4 pt-4">
         <ConnectorIconTile icon={connector.icon} size="lg" />
         <div className="min-w-0 flex-1">
           {/*
@@ -90,7 +90,10 @@ function ConnectorDetailHeader({
         {needsAccountChoice ? (
           <Link
             pathname="/connectors"
-            className={buttonVariants({ variant: "outline", size: "sm" })}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "h-auto min-h-8 max-w-full basis-full whitespace-normal break-words sm:basis-auto",
+            )}
           >
             {t(
               ($) => {
@@ -102,6 +105,7 @@ function ConnectorDetailHeader({
         ) : status !== "connected" && status !== "scope-mismatch" ? (
           <Button
             type="button"
+            className="basis-full sm:basis-auto"
             disabled={busy}
             onClick={() => {
               launchConnectorConnect({ connector, ...connect });
