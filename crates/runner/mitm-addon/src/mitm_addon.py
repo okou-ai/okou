@@ -1875,6 +1875,15 @@ def _unhandled_request_classification(classification: NoReturn) -> NoReturn:
     raise AssertionError(f"Unhandled request classification: {classification!r}")
 
 
+def _release_early_request_preparation(flow: http.HTTPFlow) -> None:
+    """Release preparation state when the request hook skips normal dispatch."""
+    auth_base_forwarder.release_forward_request_admission_from_flow(flow)
+    aws_sigv4_body_admission.release_from_flow(flow)
+    public_destination_body_admission.release_from_flow(flow)
+    release_aws_sigv4_request_inspection(flow)
+    request_classification.pop_cached_classification(flow)
+
+
 async def request(flow: http.HTTPFlow) -> None:
     """Dispatch a request-phase classification and apply its outcome.
 
@@ -1886,11 +1895,7 @@ async def request(flow: http.HTTPFlow) -> None:
     """
     if flow.metadata.get(_REQUEST_HEADERS_TERMINATED):
         managed_openrouter.release_from_flow(flow)
-        auth_base_forwarder.release_forward_request_admission_from_flow(flow)
-        aws_sigv4_body_admission.release_from_flow(flow)
-        public_destination_body_admission.release_from_flow(flow)
-        release_aws_sigv4_request_inspection(flow)
-        request_classification.pop_cached_classification(flow)
+        _release_early_request_preparation(flow)
         return
 
     codex_model_catalog_cache.capture_and_strip_prefetch_marker(flow)
@@ -1903,11 +1908,7 @@ async def request(flow: http.HTTPFlow) -> None:
             managed_openrouter.release_from_flow(flow)
         elif managed_upload.get(flow) is not None:
             flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
-        auth_base_forwarder.release_forward_request_admission_from_flow(flow)
-        aws_sigv4_body_admission.release_from_flow(flow)
-        public_destination_body_admission.release_from_flow(flow)
-        release_aws_sigv4_request_inspection(flow)
-        request_classification.pop_cached_classification(flow)
+        _release_early_request_preparation(flow)
         return
 
     try:
