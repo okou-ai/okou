@@ -170,6 +170,113 @@ test.each([undefined, 0])(
   },
 );
 
+test.each([0, 1])(
+  "Closing the last tab retains a usable blank tab in assigned window %s",
+  async (windowId) => {
+    const browser = await setupViewer(windowId);
+    const title = windowId === 0 ? "Example" : "Other";
+    click(screen.getByLabelText(`Close ${title}`));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(queryAllByRoleFast("tab")).toHaveLength(1);
+    expect(screen.getByLabelText("Address")).toHaveValue("");
+    expect(
+      browser.targets.filter((target) => {
+        return target.windowId === windowId;
+      }),
+    ).toMatchObject([{ windowId, url: "about:blank" }]);
+    expect(
+      browser.targets.find((target) => {
+        return target.windowId !== windowId;
+      }),
+    ).toMatchObject({
+      targetId: windowId === 0 ? "other-page" : "example-page",
+      url: windowId === 0 ? "https://other.example.com" : "https://example.com",
+    });
+    await fill(
+      screen.getByLabelText("Address"),
+      "https://continued.example.com/ready",
+    );
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://continued.example.com/ready",
+      );
+    });
+  },
+);
+
+test("The last tab stays open until its blank replacement is confirmed", async () => {
+  const browser = await setupViewer(0);
+  const preparation = browser.holdNext("Page.navigate");
+  click(screen.getByLabelText("Close Example"));
+  await preparation.received;
+  expect(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Close Example")).toBeDisabled();
+  await preparation.release();
+  await waitFor(() => {
+    expect(queryAllByRoleFast("tab")).toHaveLength(1);
+    expect(
+      screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("Overlapping closes retain one blank tab in the assigned window", async () => {
+  const browser = await setupViewer(0);
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  await screen.findByLabelText("Other", { selector: '[role="tab"]' });
+  const close = browser.holdNext("Target.closeTarget");
+  click(screen.getByLabelText("Close Example"));
+  await close.received;
+  click(screen.getByLabelText("Close Other"));
+  await waitFor(() => {
+    expect(queryAllByRoleFast("tab")).toHaveLength(1);
+    expect(
+      screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+    ).toBeInTheDocument();
+  });
+  await close.release();
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(browser.targets).toMatchObject([{ windowId: 0, url: "about:blank" }]);
+});
+
+test("A failed final-tab replacement leaves the original page usable", async () => {
+  const browser = await setupViewer(0);
+  browser.failNext(
+    "Page.navigate",
+    "The replacement tab could not be prepared",
+  );
+  click(screen.getByLabelText("Close Example"));
+  await screen.findByRole("alert");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("Close Example")).toBeEnabled();
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(browser.targets).toMatchObject([
+    { targetId: "example-page", windowId: 0 },
+    { targetId: "other-page", windowId: 1 },
+  ]);
+});
+
 test("Selecting a blank tab covers the previous page before its first image", async () => {
   const browser = mockViewer(0);
   browser.targets.push({

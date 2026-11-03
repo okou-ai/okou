@@ -3110,6 +3110,7 @@ function createTabClosingGraph(
     closingTargets$,
     assertAvailable$,
     directory$,
+    creation$,
   } = context;
   const closeTab$ = command(
     async (
@@ -3141,7 +3142,20 @@ function createTabClosingGraph(
           set(get(links$).discoveryChanged$, client.signal);
         },
       };
+      // Reserve the replacement before awaiting: other pending closes cannot
+      // keep the assigned native window alive once their requests complete.
+      const preserveWindow =
+        context.connection.windowId !== null &&
+        context.connection.windowId !== undefined &&
+        snapshot.targets.every((target) => {
+          return get(closingTargets$).has(target.id);
+        });
       await set(directory.assertMember$, targetId, signal);
+      if (preserveWindow) {
+        await set(get(creation$)!.open$, signal);
+        await set(discovery.refresh$, signal);
+        await set(directory.assertMember$, targetId, signal);
+      }
       signal.throwIfAborted();
       set(assertAvailable$, signal);
       const receipt = await client.request(
