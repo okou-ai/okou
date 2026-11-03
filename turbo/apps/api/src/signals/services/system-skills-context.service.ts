@@ -25,8 +25,8 @@ export function createSystemSkillsContext(
       }),
     );
     const skillVolumes = skills.flatMap((skillName): readonly SkillVolume[] => {
-      // Only a usable bundle matters: a newer source version that is still
-      // being rebuilt does not block the run, which keeps this pointer.
+      // Only a usable bundle matters; the run keeps this pointer whatever the
+      // catalog's source version is when the Runner starts.
       const contentBundle = byUrl.get(
         resolveSkillRef(skillName),
       )?.contentBundle;

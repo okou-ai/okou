@@ -5286,14 +5286,11 @@ function buildStoredExecutionContextDraft(
     context: {
       environment,
       seedSkillBundles: args.seedSkillBundles,
-      // Capture invocation identity and mount precedence, never Workflow content.
+      // Capture Agent identity and mount precedence, never Workflow content.
       ...(args.resolved.agentId !== null
         ? {
             customWorkflowSelection: {
               agentId: args.resolved.agentId,
-              // Older API claims require the key; a null identity admits any
-              // current winner. Remove with that claim check's retirement.
-              invokedWorkflowId: null,
               ...(args.workflowAutomationId === null
                 ? {}
                 : { automationId: args.workflowAutomationId }),

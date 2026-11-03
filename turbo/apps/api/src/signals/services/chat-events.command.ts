@@ -877,7 +877,7 @@ function normalSendRequestFacts(
       framework: previousBinding?.framework ?? null,
       frameworkSessionId: previousBinding?.frameworkSessionId ?? null,
       frameworkSessionRunId: previousBinding?.frameworkSessionRunId ?? null,
-      // A new thread starts untitled; title generation re-reads that case.
+      // A new thread's row is inserted untitled and unrenamed.
       title: previousBinding?.title ?? null,
       renamedAt: previousBinding?.renamedAt ?? null,
     },
