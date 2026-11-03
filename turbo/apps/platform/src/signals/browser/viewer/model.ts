@@ -290,6 +290,7 @@ function createModelPresentation(
         canMutateTabs && get(creationReadySource$) && (streaming || empty),
       tabsDisabled: !get(connected$),
       canSyncDisplay: streaming,
+      canReload: snapshot.error?.kind === "target-crashed" && canMutateTabs,
       showImageRetry: imageVisible && image.phase !== "blocked",
       canRetryImage:
         image?.phase === "ready" &&

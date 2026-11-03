@@ -515,6 +515,10 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   const bootstrapping$ = state(true);
   const chosenOnce$ = state(false);
   const selection = createSelectionLifecycle();
+  const crashedSelection$ = state<{
+    readonly owner: SelectionOwner;
+    readonly intent: object;
+  } | null>(null);
   const retirements$ = state<ReadonlyMap<string, Retirement>>(new Map());
   const wakeListeners$ = state<ReadonlySet<() => void>>(new Set());
   const displaySize$ = state<DisplaySize | null>(null);
@@ -548,6 +552,7 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
     bootstrapping$,
     chosenOnce$,
     selection,
+    crashedSelection$,
     selectedOwner$: selection.owner$,
     attachedState$: selection.attachment$,
     retirements$,
@@ -590,6 +595,14 @@ function createControllerState(
   });
   const available$ = computed((get) => {
     return get(connected$) && get(authority$) && !get(model.intent$).paused;
+  });
+  const crashed$ = computed((get) => {
+    const crash = get(atoms.crashedSelection$);
+    return crash &&
+      get(model.selectedTabId$) === crash.owner.targetId &&
+      get(model.intent$).selection === crash.intent
+      ? crash
+      : null;
   });
   const settings$ = computed((get) => {
     return captureSettings(get(model.capture$), get(captureSize$));
@@ -659,6 +672,7 @@ function createControllerState(
     ...atoms,
     connected$,
     available$,
+    crashed$,
     settings$,
     capturePending$,
     wake$,
@@ -738,6 +752,7 @@ function createDiscoveryGraph(
         selected &&
         !get(get(links$).selectedSession$) &&
         !get(model.imageRecovery$) &&
+        !get(context.crashed$) &&
         !get(context.creationOwner$) &&
         get(available$)
       ) {
@@ -1574,7 +1589,33 @@ function createAttachmentInitialization(
   assertCurrent$: Command<void, [SelectionOwner, AbortSignal]>,
 ) {
   const { wake$, nativeHost } = context;
-  return command(
+  const enable$ = command(
+    async (
+      { set },
+      owner: SelectionOwner,
+      client: CdpClient,
+      sessionId: string,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      await client.request(
+        "Inspector.enable",
+        undefined,
+        sessionId,
+        undefined,
+        signal,
+      );
+      set(assertCurrent$, owner, signal);
+      await client.request(
+        "Page.enable",
+        undefined,
+        sessionId,
+        undefined,
+        signal,
+      );
+      set(assertCurrent$, owner, signal);
+    },
+  );
+  const initialize$ = command(
     async (
       { get, set },
       attached: AttachedSelection,
@@ -1609,6 +1650,7 @@ function createAttachmentInitialization(
       set(wake$);
     },
   );
+  return { enable$, initialize$ };
 }
 
 function createAttachmentGraph(
@@ -1621,7 +1663,7 @@ function createAttachmentGraph(
     context,
     links$,
   );
-  const initialize$ = createAttachmentInitialization(
+  const { enable$, initialize$ } = createAttachmentInitialization(
     context,
     links$,
     assertCurrent$,
@@ -1706,14 +1748,7 @@ function createAttachmentGraph(
       await set(directory.assertMember$, owner.targetId, signal);
       signal.throwIfAborted();
       set(assertCurrent$, owner, signal);
-      await client.request(
-        "Page.enable",
-        undefined,
-        sessionId,
-        undefined,
-        signal,
-      );
-      set(assertCurrent$, owner, signal);
+      await set(enable$, owner, client, sessionId, signal);
       const attachment: AttachedSelection = {
         owner,
         client,
@@ -1976,6 +2011,7 @@ function createSelectionGraph(
         (get(model.presentation$).status === "streaming" ||
           get(model.presentation$).loadingPreview);
       set(get(links$).retireCurrent$, "target-replaced", preview);
+      set(context.crashedSelection$, null);
       set(readinessFailure$, null);
       set(model.transition$, {
         type: "select",
@@ -2326,6 +2362,7 @@ function createProtocolEventDispatch(
   const detachedEvent$ = createDetachedEvent(context, links$);
   const sessionEvent$ = createSessionEvent(context, links$);
   const screencastEvent$ = createScreencastEvent(context, links$);
+  const crashedEvent$ = createCrashedEvent(context, links$);
   return command(
     async (
       { get, set },
@@ -2338,6 +2375,7 @@ function createProtocolEventDispatch(
       if (get(disposedState$)) {
         return;
       }
+      set(crashedEvent$, event, source);
       if (
         source === get(clientState$) &&
         selected &&
@@ -2382,6 +2420,58 @@ function createProtocolEventDispatch(
       }
     },
   );
+}
+
+function createCrashedEvent(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+) {
+  const { model, selection, clientState$, crashedSelection$, closingTargets$ } =
+    context;
+  return command(({ get, set }, event: CdpEvent, source: CdpClient) => {
+    const owner = get(selection.owner$);
+    if (!owner || get(closingTargets$).has(owner.targetId)) {
+      return;
+    }
+    const sessions = get(selection.sessions$);
+    if (
+      event.method === "Target.targetCrashed" &&
+      event.sessionId === undefined &&
+      source === get(clientState$) &&
+      event.params.targetId === owner.targetId
+    ) {
+      // Target IDs do not identify a session incarnation. Ask the current
+      // Inspector to re-announce its own crash state; a healthy successor stays live.
+      const session = sessions.find((receipt) => {
+        return receipt.client === source;
+      });
+      if (session) {
+        source.notify("Inspector.enable", undefined, session.sessionId);
+      }
+      return;
+    }
+    if (
+      event.method !== "Inspector.targetCrashed" ||
+      !sessions.some((receipt) => {
+        return (
+          receipt.client === source && receipt.sessionId === event.sessionId
+        );
+      })
+    ) {
+      return;
+    }
+    set(crashedSelection$, { owner, intent: get(model.intent$).selection });
+    // Crash is not detach evidence. Original input/capture receipts retain
+    // their normal retirement fence, independently of this recovery observation.
+    set(get(links$).retireCurrent$, "target-replaced", false, true);
+    set(model.transition$, {
+      type: "failed",
+      error: {
+        kind: "target-crashed",
+        message: "The selected browser page crashed.",
+      },
+    });
+  });
 }
 
 function createActiveTargetFollowing(
@@ -3214,6 +3304,75 @@ function createTabsGraph(
   };
 }
 
+function createCrashedPageReload(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+) {
+  const { crashed$, clientState$, directory$, assertAvailable$ } = context;
+  return command(
+    async ({ get, set }, signal: AbortSignal): Promise<NavigationReceipt> => {
+      set(assertAvailable$, signal);
+      const crash = get(crashed$);
+      if (!crash) {
+        throw cancelled();
+      }
+      const targetId = crash.owner.targetId;
+      const client = get(clientState$)!;
+      const directory = get(directory$)!;
+      const current = () => {
+        signal.throwIfAborted();
+        if (get(crashed$) !== crash) {
+          throw cancelled();
+        }
+        set(assertAvailable$, signal);
+      };
+      // Never use a crash or a reload to erase unconfirmed original input effects.
+      await set(get(links$).waitRetirement$, targetId, signal);
+      current();
+      await set(directory.assertMember$, targetId, signal);
+      current();
+      let sessionId: string | null = null;
+      using _attachment = {
+        [Symbol.dispose]: () => {
+          if (sessionId) {
+            client.notify("Target.detachFromTarget", { sessionId });
+          }
+        },
+      };
+      const attached: unknown = await client.request(
+        "Target.attachToTarget",
+        { targetId, flatten: true },
+        undefined,
+        (value) => {
+          detachLateAttachment(client, value);
+        },
+        signal,
+      );
+      sessionId = attachmentSessionId(
+        attached,
+        "The browser returned an invalid recovery session.",
+      );
+      current();
+      await set(directory.assertMember$, targetId, signal);
+      current();
+      // This is the user's explicit Reload, issued once. Reattachment alone
+      // cannot revive a retained crashed renderer, and must not replay navigation.
+      await client.request(
+        "Page.reload",
+        undefined,
+        sessionId,
+        undefined,
+        signal,
+      );
+      current();
+      client.notify("Target.detachFromTarget", { sessionId });
+      sessionId = null;
+      await set(get(links$).selectTab$, targetId, signal);
+      return { kind: "ack" };
+    },
+  );
+}
+
 function createNavigationGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
@@ -3222,6 +3381,7 @@ function createNavigationGraph(
   "navigate$" | "navigation$" | "history$" | "navigationScope$"
 > {
   const { assertAvailable$ } = context;
+  const reloadCrashed$ = createCrashedPageReload(context, links$);
   const navigation$ = computed((get) => {
     const selected = get(get(links$).selectedSession$);
     return selected && get(selected.current$)
@@ -3247,6 +3407,9 @@ function createNavigationGraph(
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
       set(assertAvailable$, signal);
+      if (navigation === "reload" && get(context.crashed$)) {
+        return await set(reloadCrashed$, signal);
+      }
       const input = get(get(links$).input$);
       if (!input) {
         throw new CdpFault("input", "Remote input is unavailable.");
@@ -3471,6 +3634,16 @@ function createSelectionSettingsGraph(
       if (!get(available$)) {
         return "ready";
       }
+      if (get(context.crashed$)) {
+        set(model.transition$, {
+          type: "failed",
+          error: {
+            kind: "target-crashed",
+            message: "The selected browser page crashed.",
+          },
+        });
+        return "ready";
+      }
       const targetId = get(model.selectedTabId$);
       if (
         targetId &&
@@ -3499,6 +3672,9 @@ function createSelectionSettingsGraph(
   const reconcileSelection$: ControllerLinks["reconcileSelection$"] = command(
     async ({ get, set }, signal: AbortSignal): Promise<SelectionOutcome> => {
       signal.throwIfAborted();
+      if (get(context.crashed$)) {
+        return "ready";
+      }
       const failure = get(readinessFailure$);
       if (failure) {
         throw failure;

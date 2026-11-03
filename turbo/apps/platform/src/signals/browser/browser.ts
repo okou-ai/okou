@@ -53,6 +53,7 @@ export interface BrowserControls {
   readonly canCreate: boolean;
   readonly tabsDisabled: boolean;
   readonly canSyncDisplay: boolean;
+  readonly canReload: boolean;
   readonly showImageRetry: boolean;
   readonly canRetryImage: boolean;
   readonly retryingImage: boolean;

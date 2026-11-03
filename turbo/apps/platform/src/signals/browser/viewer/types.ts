@@ -16,6 +16,7 @@ export interface ViewerError {
     | "scope"
     | "unsupported-capability"
     | "target-unavailable"
+    | "target-crashed"
     | "input"
     | "display"
     | "extension"
