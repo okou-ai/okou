@@ -454,6 +454,41 @@ test("A changed binding supersedes held recovery paint without inheriting its fa
   expect(viewer.startupErrors).toHaveLength(0);
 });
 
+test("Changing connection mode cancels a pending recovery so a later failure can reconnect", async () => {
+  const viewer = mockViewer();
+  const { browser } = viewer;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  browser.failNext("Runtime.evaluate", "Native window temporarily unavailable");
+  act(() => {
+    browser.nativeEvent("tab-attached", browser.targets[0]);
+  });
+  await screen.findByText("Browser view unavailable");
+  const proof = browser.holdNextNative("getWindow");
+  reconnect();
+  await proof.received;
+  await separateImages(browser);
+  browser.failNext("Runtime.evaluate", "Native window temporarily unavailable");
+  act(() => {
+    browser.nativeEvent("tab-attached", browser.targets[0]);
+  });
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(screen.getByText("Reconnect", { selector: "button" })).toBeEnabled();
+  });
+  reconnect();
+  await expectReady();
+  await proof.release();
+  await insertText("after mode replacement");
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after mode replacement" },
+      sessionId: browser.pageSession("example-page"),
+    });
+  });
+});
+
 test("A socket that never opens reaches explicit recovery without reloading the page", async () => {
   const viewer = mockViewer(false);
   await setupPage({ context, path: `/browsers/${threadId}` });

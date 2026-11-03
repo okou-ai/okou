@@ -1174,6 +1174,7 @@ function createConfigurationActions(
       if (transport === get(model.transport$)) {
         return;
       }
+      set(resetRecovery$, AbortSignal.abort(cancelled()));
       set(model.setTransport$, transport);
       set(generation$, (value) => {
         return value + 1;
