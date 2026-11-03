@@ -1702,6 +1702,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ).toHaveBeenLastCalledWith({
           files: [{ id: fileId, title: "Self report" }],
           channel_id: "D-SELF",
+          thread_ts: undefined,
+          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
         });
       });
     },
@@ -1827,8 +1829,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         expect(
           context.mocks.slack.files.completeUploadExternal,
         ).toHaveBeenLastCalledWith({
-          files: [{ id: "F-SELF" }],
+          files: [{ id: "F-SELF", title: undefined }],
           channel_id: "D-SELF",
+          thread_ts: undefined,
+          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
         });
         expect(context.mocks.slack.conversations.open).toHaveBeenCalledTimes(1);
       });

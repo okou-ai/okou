@@ -12,10 +12,9 @@ export function appendIntegrationMessageFooter(
 }
 
 export function escapeSlackFooterLabel(text: string | undefined) {
-  return text
-    ?.replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return text?.replace(/[&<>]/gu, (character) => {
+    return character === "&" ? "&amp;" : character === "<" ? "&lt;" : "&gt;";
+  });
 }
 
 export function escapeMarkdownFooterLabel(text: string | undefined) {
