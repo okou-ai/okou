@@ -167,33 +167,21 @@ function BrowserCdpViewer({
   readonly overlay: ReactNode;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
+  const controls = useGet(signals.browser.controls$);
   const syncLayout = useSet(signals.browser.syncLayout$);
   // Keep the DOM during same-identity revalidation. The graph revokes input
   // immediately while pending and owns endpoint changes without a React remount.
   // Conceal a known replacement while preserving the graph until its actual
   // endpoint/window identity is confirmed. A provider URL alone is not that identity.
   const connecting =
+    !controls.recovery &&
     connection.state === "hasData" &&
     connection.data !== null &&
     (connection.data.requestedSession.liveUrl !== liveUrl ||
       connection.data.requestedSession.window?.instanceId !== instanceId ||
       connection.data.requestedSession.window?.primaryWindowId !== windowId);
-  if (connection.state === "loading") {
-    return (
-      <>
-        <PanelActions actions={actions} />
-        <LoadingBody />
-      </>
-    );
-  }
-  if (connection.state === "hasError" || !connection.data) {
-    return (
-      <>
-        <PanelActions actions={actions} />
-        <UnavailableBody quiet={refined} />
-      </>
-    );
-  }
+  // The mounted root owns descriptor deadlines and recovery, including initial
+  // loading and failed HTTP reads. Removing it would cancel its own receipt.
   return (
     <>
       {refined ? null : <PanelActions actions={actions} />}

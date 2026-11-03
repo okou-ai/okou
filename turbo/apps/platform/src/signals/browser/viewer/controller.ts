@@ -13,7 +13,9 @@ import {
   isAbortError,
   Reason,
   resetSignal,
+  setLoop,
 } from "../../utils.ts";
+import { monotonicNow } from "../../../lib/time.ts";
 import {
   createCdpClient,
   type CdpClient,
@@ -21,6 +23,7 @@ import {
 } from "../cdp/client.ts";
 import {
   CdpFault,
+  BrowserReadinessTimeout,
   isRecord,
   isRecoverableReadFailure,
   validateConfiguration,
@@ -1620,6 +1623,80 @@ function createRetirementsGraph(
   return { ...receipts, retireCurrent$ };
 }
 
+function createReadinessWait(
+  context: ControllerContext<
+    | "available$"
+    | "readinessFailure$"
+    | "selectedOwner$"
+    | "waitEvent$"
+    | "wake$"
+  >,
+  links$: ControllerDependencies<"selectedSession$">,
+): ControllerLinks["waitReady$"] {
+  const { selectedOwner$, readinessFailure$, available$, wake$, waitEvent$ } =
+    context;
+  return command(
+    async (
+      { get, set },
+      owner: SelectionOwner,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const deadline = monotonicNow() + 30_000;
+      let waiting = true;
+      using _deadline = {
+        [Symbol.dispose]() {
+          waiting = false;
+        },
+      };
+      // Only wake this finite readiness wait; an already painted static page
+      // has no inactivity deadline and never needs another changing frame.
+      setLoop(
+        () => {
+          if (!waiting || signal.aborted) {
+            return true;
+          }
+          if (monotonicNow() >= deadline) {
+            set(wake$);
+            return true;
+          }
+          return false;
+        },
+        1000,
+        signal,
+        { testIntervalMs: 10 },
+      );
+      while (true) {
+        signal.throwIfAborted();
+        if (!get(available$) || get(selectedOwner$) !== owner) {
+          throw cancelled();
+        }
+        const selected = get(get(links$).selectedSession$);
+        if (selected?.attached.owner === owner) {
+          const failure = get(selected.failure$);
+          if (failure) {
+            throw failure;
+          }
+          if (
+            get(selected.current$) &&
+            get(selected.painted$) &&
+            get(selected.inputReady$)
+          ) {
+            return;
+          }
+        }
+        const failure = get(readinessFailure$);
+        if (failure) {
+          throw failure;
+        }
+        if (monotonicNow() >= deadline) {
+          throw new BrowserReadinessTimeout();
+        }
+        await set(waitEvent$, signal);
+      }
+    },
+  );
+}
+
 function createReadinessGraph(
   context: ControllerContext<
     | "available$"
@@ -1634,15 +1711,7 @@ function createReadinessGraph(
     "displayGraph$" | "imageEvent$" | "refreshFavicon$" | "selectedSession$"
   >,
 ): Pick<ControllerLinks, "streaming$" | "waitReady$" | "waitSelection$"> {
-  const {
-    model,
-    selectedOwner$,
-    readinessFailure$,
-    available$,
-    wake$,
-    waitEvent$,
-    nativeHost,
-  } = context;
+  const { model, wake$, nativeHost } = context;
   const streaming$ = command(({ get, set }, selected: SelectedSession) => {
     if (
       !get(selected.current$) ||
@@ -1676,39 +1745,7 @@ function createReadinessGraph(
       "browser favicon observation",
     );
   });
-  const waitReady$ = command(
-    async (
-      { get, set },
-      owner: SelectionOwner,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      while (true) {
-        signal.throwIfAborted();
-        if (!get(available$) || get(selectedOwner$) !== owner) {
-          throw cancelled();
-        }
-        const selected = get(get(links$).selectedSession$);
-        if (selected?.attached.owner === owner) {
-          const failure = get(selected.failure$);
-          if (failure) {
-            throw failure;
-          }
-          if (
-            get(selected.current$) &&
-            get(selected.painted$) &&
-            get(selected.inputReady$)
-          ) {
-            return;
-          }
-        }
-        const failure = get(readinessFailure$);
-        if (failure) {
-          throw failure;
-        }
-        await set(waitEvent$, signal);
-      }
-    },
-  );
+  const waitReady$ = createReadinessWait(context, links$);
   const waitSelection$: ControllerLinks["waitSelection$"] = command(
     async (
       { get, set },

@@ -140,6 +140,320 @@ async function insertText(text: string) {
   fireEvent.input(input, { target: { value: text }, inputType: "insertText" });
 }
 
+test("Acknowledged startup without a first frame reaches a bounded failure and ignores late pixels", async () => {
+  const viewer = mockViewer();
+  const image = viewer.browser.holdFrames("example-page-session");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  viewer.advance(31_000);
+  await screen.findByText("Browser view unavailable");
+  reconnect();
+  await expectReady();
+  act(() => {
+    image.release();
+  });
+  await insertText("after first-frame timeout");
+  await waitFor(() => {
+    expect(viewer.browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "after first-frame timeout" },
+      }),
+    );
+  });
+});
+
+test("A held descriptor expires and its late response cannot replace recovered authority", async () => {
+  const viewer = mockViewer();
+  const held = context.mocks.deferred<void>();
+  const requested = context.mocks.deferred<void>();
+  let requests = 0;
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    requests++;
+    const browser = viewer.session();
+    if (requests === 1) {
+      requested.resolve();
+      await held.promise;
+    }
+    return respond(200, {
+      browser,
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("Connecting to browser…");
+  await requested.promise;
+  viewer.advance(61_000);
+  await screen.findByText("Browser view unavailable");
+  expect(viewer.browser.connections()).toBe(0);
+  viewer.replaceBinding();
+  reconnect();
+  await expectReady("https://replacement.example.com");
+  act(() => {
+    held.resolve();
+  });
+  await insertText("after descriptor timeout");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after descriptor timeout" },
+      sessionId: viewer.browser.pageSession("replacement"),
+    });
+  });
+  expect(viewer.browser.connections()).toBe(1);
+  expect(
+    screen.queryByLabelText("Original", { selector: '[role="tab"]' }),
+  ).toBeNull();
+});
+
+test("A whole startup budget bounds several individually timely setup phases", async () => {
+  const viewer = mockViewer();
+  const attachment = viewer.browser.holdNext("Target.attachToBrowserTarget");
+  const hello = viewer.browser.holdNextNative("hello");
+  const proof = viewer.browser.holdNextNative("getWindow");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await attachment.received;
+  viewer.advance(21_000);
+  await attachment.release();
+  await hello.received;
+  viewer.advance(21_000);
+  await hello.release();
+  await proof.received;
+  viewer.advance(19_000);
+  await screen.findByText("Browser view unavailable");
+  reconnect();
+  await expectReady();
+  await proof.release();
+  expect(viewer.startupErrors).toHaveLength(1);
+});
+
+test.each(["shared", "split"] as const)(
+  "Reconnect stays pending through native proof on a healthy %s wire and then waits for paint",
+  async (mode) => {
+    const viewer = mockViewer();
+    const { browser } = viewer;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await expectReady();
+    if (mode === "split") {
+      await separateImages(browser);
+    }
+    const connections = browser.connections();
+    browser.failNext(
+      "Runtime.evaluate",
+      "Native window temporarily unavailable",
+    );
+    act(() => {
+      browser.nativeEvent("tab-attached", browser.targets[0]);
+    });
+    await screen.findByText("Browser view unavailable");
+    const proof = browser.holdNextNative("getWindow");
+    const image = browser.holdTargetFrames("example-page");
+    reconnect();
+    await proof.received;
+    await waitFor(() => {
+      expect(
+        screen.getByText("Reconnect", { selector: "button" }),
+      ).toBeDisabled();
+    });
+    await proof.release();
+    await image.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
+    await expectReady();
+    expect(browser.connections()).toBe(connections);
+  },
+);
+
+test("A rejected recovery descriptor settles the operation and permits another recovery", async () => {
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await screen.findByText("Browser disconnected");
+  let reject = true;
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    if (reject) {
+      return respond(500, {
+        error: { code: "INTERNAL_SERVER_ERROR", message: "Unavailable" },
+      });
+    }
+    return respond(200, {
+      browser: viewer.session(),
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  reconnect();
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(screen.getByText("Reconnect", { selector: "button" })).toBeEnabled();
+  });
+  reject = false;
+  reconnect();
+  await expectReady();
+});
+
+test("A verified empty window completes recovery without waiting for pixels", async () => {
+  const viewer = mockViewer();
+  viewer.browser.targets.splice(0, 1);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("No tabs open");
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await screen.findByText("Browser disconnected");
+  reconnect();
+  await screen.findByText("No tabs open");
+  viewer.advance(61_000);
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await expectReady("");
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test("An accepted static page has no inactivity deadline", async () => {
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  viewer.advance(61_000);
+  await insertText("static page");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "static page" },
+    });
+  });
+  await expectReady();
+  expect(viewer.browser.connections()).toBe(1);
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test("Changing chat cancels held recovery paint and its deadline cannot retire the next window", async () => {
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await screen.findByText("Browser disconnected");
+  const image = viewer.browser.holdTargetFrames("example-page");
+  reconnect();
+  await image.received;
+  act(() => {
+    window.history.pushState(null, "", `/browsers/${nextThreadId}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expectReady("https://replacement.example.com");
+  viewer.advance(61_000);
+  act(() => {
+    image.release();
+  });
+  await insertText("next chat");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "next chat" },
+      sessionId: viewer.browser.pageSession("replacement"),
+    });
+  });
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test.each(["shared", "split"] as const)(
+  "A %s recovery with acknowledged capture but no paint settles as a retryable failure",
+  async (mode) => {
+    const viewer = mockViewer();
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await expectReady();
+    if (mode === "split") {
+      await separateImages(viewer.browser);
+    }
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false }, 0);
+    });
+    await screen.findByText("Browser disconnected");
+    const image = viewer.browser.holdTargetFrames("example-page");
+    reconnect();
+    await act(async () => {
+      await image.received;
+    });
+    viewer.adjustWallClock(-3_600_000);
+    viewer.advance(31_000);
+    await screen.findByText("Browser view unavailable");
+    await waitFor(() => {
+      expect(
+        screen.getByText("Reconnect", { selector: "button" }),
+      ).toBeEnabled();
+    });
+    act(() => {
+      image.release();
+    });
+    reconnect();
+    await expectReady();
+  },
+);
+
+test("Selecting a ready tab cancels the old first-frame deadline without failing startup", async () => {
+  const viewer = mockViewer();
+  viewer.browser.targets[1]!.windowId = 101;
+  const image = viewer.browser.holdTargetFrames("example-page");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await image.received;
+  click(screen.getByLabelText("Replacement", { selector: '[role="tab"]' }));
+  await expectReady("https://replacement.example.com");
+  viewer.advance(61_000);
+  act(() => {
+    image.release();
+  });
+  await insertText("selected tab");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "selected tab" },
+      sessionId: viewer.browser.pageSession("replacement"),
+    });
+  });
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test("A changed binding supersedes held recovery paint without inheriting its failure", async () => {
+  const viewer = mockViewer();
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await expectReady();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await screen.findByText("Browser disconnected");
+  const image = viewer.browser.holdTargetFrames("example-page");
+  reconnect();
+  await image.received;
+  viewer.replaceBinding();
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await expectReady("https://replacement.example.com");
+  viewer.advance(61_000);
+  act(() => {
+    image.release();
+  });
+  await insertText("new binding");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "new binding" },
+      sessionId: viewer.browser.pageSession("replacement"),
+    });
+  });
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
 test("A socket that never opens reaches explicit recovery without reloading the page", async () => {
   const viewer = mockViewer(false);
   await setupPage({ context, path: `/browsers/${threadId}` });

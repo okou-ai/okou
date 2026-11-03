@@ -392,16 +392,14 @@ export function createBrowserSessionSignals(
       get(apiClient$)(browserContract).viewerConnection({
         params: { threadId: descriptor.threadId },
       }),
-      [200, 409],
+      [200],
     );
-    return response.status === 200
-      ? {
-          ...response.body,
-          // This snapshot identifies the request for retained-panel visibility;
-          // native admission uses only the authoritative response below.
-          requestedSession: lifecycleSession,
-        }
-      : null;
+    return {
+      ...response.body,
+      // This snapshot identifies the request for retained-panel visibility;
+      // native admission uses only the authoritative response below.
+      requestedSession: lifecycleSession,
+    };
   });
 
   const browserConnection$ = computed(

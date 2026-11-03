@@ -6,12 +6,14 @@ import {
   onRef,
   Reason,
   resetSignal,
+  setLoop,
   type DeferredPromise,
 } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { logger } from "../log.ts";
 import type { BrowserConnection, BrowserSignals } from "./browser.ts";
-import { CdpFault } from "./cdp/errors.ts";
+import { BrowserReadinessTimeout, CdpFault } from "./cdp/errors.ts";
+import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus } from "./focus.ts";
@@ -56,6 +58,12 @@ interface NativeLease {
   readonly identity: BrowserIdentity;
   readonly controller: Controller;
   readonly resetRetirement$: ReturnType<typeof resetSignal>;
+}
+interface RecoveryAttempt {
+  readonly request: Promise<BrowserConnection | null>;
+  readonly generation: number;
+  readonly nodes: BrowserNodes;
+  readonly completion: DeferredPromise<void>;
 }
 type ConnectionObservation = Command<
   Promise<void>,
@@ -168,6 +176,8 @@ function createRuntimeState(
   const liveConnection$ = state<BrowserConnection | null>(null);
   const generation$ = state(0);
   const observer$ = state<object | null>(null);
+  const recovery$ = state<RecoveryAttempt | null>(null);
+  const resetRecovery$ = resetSignal();
   const inViewport$ = state(true);
   const documentHidden$ = state(document.hidden);
   const resetNativeOwner$ = resetSignal();
@@ -200,6 +210,8 @@ function createRuntimeState(
     liveConnection$,
     generation$,
     observer$,
+    recovery$,
+    resetRecovery$,
     installed$,
     retiring$,
     inViewport$,
@@ -822,7 +834,106 @@ function createConnectionObservers(
       }
     },
   );
-  return { root$: createRootObservation(context, graph, observeConnection$) };
+  const attempt$ = createConnectionAttempt(context, graph, observeConnection$);
+  return { root$: createRootObservation(context, graph, attempt$) };
+}
+
+/** A receipt observes the root's work; Reconnect never becomes a bootstrap owner. */
+function createConnectionAttempt(
+  context: RuntimeState,
+  graph: RuntimeGraph,
+  observe$: ConnectionObservation,
+): ConnectionObservation {
+  return command(
+    async (
+      { get, set },
+      request: Promise<BrowserConnection | null>,
+      nodes: BrowserNodes | null,
+      signal: AbortSignal,
+    ) => {
+      const recovery = get(context.recovery$);
+      const generation = get(context.generation$);
+      if (
+        recovery &&
+        !recovery.completion.settled() &&
+        (recovery.request !== request ||
+          recovery.nodes !== nodes ||
+          recovery.generation !== generation)
+      ) {
+        recovery.completion.reject(cancelled());
+      }
+      const expired = createDeferredPromise<never>(
+        { rejection: "owner" },
+        signal,
+      );
+      const deadline = monotonicNow() + 60_000;
+      using _deadline = {
+        [Symbol.dispose]() {
+          if (!expired.settled()) {
+            expired.reject(cancelled());
+          }
+        },
+      };
+      setLoop(
+        () => {
+          if (expired.settled()) {
+            return true;
+          }
+          if (monotonicNow() >= deadline) {
+            expired.reject(new BrowserReadinessTimeout());
+            return true;
+          }
+          return false;
+        },
+        1000,
+        signal,
+        { testIntervalMs: 10 },
+      );
+      const [result] = await Promise.allSettled([
+        Promise.race([set(observe$, request, nodes, signal), expired.promise]),
+      ]);
+      signal.throwIfAborted();
+      if (
+        get(context.connection$) !== request ||
+        get(graph.nodes$) !== nodes ||
+        get(context.generation$) !== generation
+      ) {
+        throw cancelled();
+      }
+      if (
+        result.status === "rejected" &&
+        result.reason instanceof BrowserReadinessTimeout
+      ) {
+        // Cancel the parked observer before retiring its resources. Its late API
+        // response or paint cannot publish into this or a successor attempt.
+        set(context.resetObservation$, AbortSignal.abort(cancelled()));
+        const lease = get(context.installed$);
+        if (lease) {
+          set(graph.retireLease$, lease);
+        }
+        set(context.liveConnection$, null);
+        set(context.confirmedRequest$, request);
+        set(context.model.transition$, {
+          type: "failed",
+          error: diagnostic(result.reason),
+        });
+      }
+      if (
+        recovery &&
+        get(context.recovery$) === recovery &&
+        !recovery.completion.settled()
+      ) {
+        if (result.status === "rejected") {
+          recovery.completion.reject(result.reason);
+        } else {
+          recovery.completion.resolve();
+        }
+      }
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    },
+  );
 }
 
 /** The stable real DOM owner and page lifetime settle every parked receipt. */
@@ -841,6 +952,14 @@ function createRootObservation(
         signal.addEventListener(
           "abort",
           () => {
+            const recovery = get(context.recovery$);
+            if (
+              recovery &&
+              root.contains(recovery.nodes.surface.node) &&
+              !recovery.completion.settled()
+            ) {
+              recovery.completion.reject(cancelled());
+            }
             set(context.resetObservation$, AbortSignal.abort(cancelled()));
             set(context.changeNotification$, null);
             const lease = get(installed$);
@@ -984,13 +1103,23 @@ function createConfigurationActions(
   lifecycle: NativeLifecycle,
   reloadConnection$: Command<void, []>,
 ) {
-  const { model, connection$, generation$, installed$, authority$ } = context;
+  const {
+    model,
+    connection$,
+    generation$,
+    installed$,
+    authority$,
+    recovery$,
+    resetRecovery$,
+  } = context;
   const { requireController$, nodes$, native } = graph;
   const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (!get(nodes$)) {
+    const nodes = get(nodes$);
+    if (!nodes) {
       throw cancelled();
     }
+    const operation = set(resetRecovery$, signal);
     const lease = get(installed$);
     if (
       !get(authority$) ||
@@ -1002,21 +1131,29 @@ function createConfigurationActions(
       });
     }
     set(reloadConnection$);
-    const interrupted = createDeferredPromise<void>(signal);
-    using _interruption = {
-      [Symbol.dispose]() {
-        if (!interrupted.settled()) {
-          interrupted.resolve();
+    const recovery: RecoveryAttempt = {
+      request: get(connection$),
+      generation: get(generation$),
+      nodes,
+      completion: createDeferredPromise<void>(
+        { rejection: "owner" },
+        operation,
+      ),
+    };
+    set(recovery$, recovery);
+    using _recovery = {
+      [Symbol.dispose]: () => {
+        if (get(recovery$) === recovery) {
+          set(recovery$, null);
+        }
+        if (!recovery.completion.settled()) {
+          recovery.completion.reject(cancelled());
         }
       },
     };
-    // The root observer owns bootstrap and its error report. Refreshing the
-    // descriptor must not start or report a second native attempt here.
-    await Promise.race([
-      Promise.allSettled([get(connection$)]),
-      interrupted.promise,
-    ]);
+    await recovery.completion.promise;
     signal.throwIfAborted();
+    operation.throwIfAborted();
   });
   const retryImage$ = command(async ({ set }, signal: AbortSignal) => {
     const lease = set(requireController$, signal);

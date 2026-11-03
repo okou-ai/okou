@@ -291,7 +291,7 @@ test("A reclaimed connection shows an unavailable state", async () => {
     path: `/browsers/${THREAD_ID}`,
   });
   await expect(
-    screen.findByText("Browser unavailable"),
+    screen.findByText("Browser view unavailable"),
   ).resolves.toBeInTheDocument();
 });
 
@@ -369,7 +369,7 @@ test.each(["url", "instance", "window"] as const)(
     });
     releaseConnection.resolve();
     await expect(
-      screen.findByText("Browser unavailable"),
+      screen.findByText("Browser view unavailable"),
     ).resolves.toBeInTheDocument();
   },
 );

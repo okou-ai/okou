@@ -35,6 +35,15 @@ export class CdpFault extends Error {
   }
 }
 
+export class BrowserReadinessTimeout extends CdpFault {
+  constructor() {
+    super(
+      "frame",
+      "The browser did not become ready in time. Reconnect the browser.",
+    );
+  }
+}
+
 /** A failed read is not a lost wire or permission to use an unverified scope. */
 export function isRecoverableReadFailure(error: unknown): error is CdpFault {
   return (
