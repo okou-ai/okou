@@ -55,7 +55,7 @@ function PwaChatListHeader() {
   const openSearch = useSet(openThreeColumnSearchDialog$);
 
   return (
-    <header className="shrink-0 px-4 pt-2">
+    <header className="shrink-0 px-3 pt-2">
       <div className="flex min-w-0 items-center gap-1">
         <div className="min-w-0 flex-1">
           <PwaAgentSwitcher />
@@ -285,7 +285,7 @@ export function PwaChatListPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PwaChatListHeader />
-      <ProjectSidebar touch />
+      <ProjectSidebar touch layout="list" />
       <InstatusStatusNotice placement="list" />
       <PwaChatListContent />
     </div>

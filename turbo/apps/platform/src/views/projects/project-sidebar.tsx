@@ -125,10 +125,23 @@ function ProjectFolderMenu({
   );
 }
 
-function ProjectFolderEmpty({ archived }: { archived: boolean }) {
+type ProjectSidebarLayout = "sidebar" | "list";
+
+function ProjectFolderEmpty({
+  archived,
+  layout,
+}: {
+  archived: boolean;
+  layout: ProjectSidebarLayout;
+}) {
   const { t } = useTranslation();
   return (
-    <div className="px-2 py-2 text-xs text-nav-copy-muted">
+    <div
+      className={cn(
+        "py-2 text-xs text-nav-copy-muted",
+        layout === "list" ? "px-3" : "px-2",
+      )}
+    >
       <p>
         {archived
           ? t(($) => {
@@ -145,9 +158,10 @@ function ProjectFolderEmpty({ archived }: { archived: boolean }) {
 interface ProjectFolderProps {
   readonly project: Project;
   readonly touch: boolean;
+  readonly layout: ProjectSidebarLayout;
 }
 
-function ProjectFolder({ project, touch }: ProjectFolderProps) {
+function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const { t } = useTranslation();
   const agent = useLastResolved(projectCreationAgentId$);
   const expanded = useGet(expandedProjectIds$).has(project.id);
@@ -178,17 +192,29 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
           className={cn(
             "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             touch ? "min-h-12" : "h-8",
+            layout === "list" && "h-14 px-3 text-base leading-5",
           )}
         >
           {expanded ? (
-            <ChevronDown size={14} className="shrink-0 opacity-50" />
+            <ChevronDown
+              size={layout === "list" ? 16 : 14}
+              className="shrink-0 opacity-50"
+            />
           ) : (
-            <ChevronRight size={14} className="shrink-0 opacity-50" />
+            <ChevronRight
+              size={layout === "list" ? 16 : 14}
+              className="shrink-0 opacity-50"
+            />
           )}
           <Icon size={16} className="shrink-0 opacity-70" />
           <span className="truncate">{project.name}</span>
         </button>
-        <div className="flex shrink-0 items-center gap-0.5 md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100">
+        <div
+          className={cn(
+            "flex shrink-0 items-center md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100",
+            layout === "list" ? "gap-1" : "gap-0.5",
+          )}
+        >
           <Button
             variant="quiet"
             size="icon-sm"
@@ -219,18 +245,23 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
       {expanded && (
         <div
           id={contentsId}
-          className="ml-6 min-w-0 pb-1"
+          className={cn("min-w-0 pb-1", layout === "list" ? "ml-12" : "ml-6")}
           aria-label={project.name}
         >
           {archived && (
-            <p className="px-2 py-1 text-xs text-nav-copy-muted">
+            <p
+              className={cn(
+                "py-1 text-xs text-nav-copy-muted",
+                layout === "list" ? "px-3" : "px-2",
+              )}
+            >
               {t(($) => {
                 return $.projects.archived;
               })}
             </p>
           )}
           {items.length === 0 ? (
-            <ProjectFolderEmpty archived={archived} />
+            <ProjectFolderEmpty archived={archived} layout={layout} />
           ) : (
             items.slice(0, limit).map(({ signals }, index) => {
               return (
@@ -268,7 +299,13 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
   );
 }
 
-export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
+export function ProjectSidebar({
+  touch = false,
+  layout = "sidebar",
+}: {
+  touch?: boolean;
+  layout?: ProjectSidebarLayout;
+}) {
   const { t } = useTranslation();
   const enabled = useGet(projectsEnabled$);
   const projects = useGet(projects$);
@@ -282,12 +319,16 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
       aria-label={t(($) => {
         return $.projects.projects;
       })}
-      className={cn("min-h-0 shrink-0 pb-2", touch ? "px-2" : "px-3")}
+      className={cn(
+        "min-h-0 shrink-0 pb-2",
+        touch && layout === "sidebar" ? "px-2" : "px-3",
+      )}
     >
       <div
         className={cn(
-          "flex items-center justify-between pl-2",
-          touch ? "min-h-12 pr-2" : "h-8",
+          "flex items-center justify-between",
+          touch ? "min-h-12 pl-2 pr-2" : "h-8 pl-2",
+          layout === "list" && "pl-3 pr-0",
         )}
       >
         <span className="text-[13px] leading-4 text-nav-copy-muted">
@@ -314,7 +355,12 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
       <div className="max-h-[45dvh] overflow-y-auto">
         {projects.map((project) => {
           return (
-            <ProjectFolder key={project.id} project={project} touch={touch} />
+            <ProjectFolder
+              key={project.id}
+              project={project}
+              touch={touch}
+              layout={layout}
+            />
           );
         })}
       </div>
