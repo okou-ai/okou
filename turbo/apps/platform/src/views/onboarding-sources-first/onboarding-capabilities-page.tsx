@@ -1,22 +1,6 @@
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import {
-  ChartLine,
-  ChartNoAxesColumnIncreasing,
-  Database,
-  FileText,
-  Handshake,
-  ImagePlus,
-  ListOrdered,
-  MapPin,
-  Megaphone,
-  Search,
-  Share2,
-  ShoppingBag,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
 import { dataRouterFamilyText } from "@okouai/api-contracts/contracts/data-router-tools";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import {
@@ -28,24 +12,9 @@ import { disabledPaidTools$ } from "../../signals/okou-page/paid-tools.ts";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { getToolCapabilityIcon } from "../components/tool-capability-icons.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
-
-// Icons are presentation only; an unlisted Router family uses the default.
-const CAPABILITY_ICONS: Readonly<Record<string, LucideIcon | undefined>> = {
-  "image-generation": ImagePlus,
-  "web-search": Search,
-  "web-extraction": FileText,
-  "company-contacts": Users,
-  "website-traffic": ChartLine,
-  "keywords-rankings": ListOrdered,
-  "ad-creatives": Megaphone,
-  "creators-partners": Handshake,
-  social: Share2,
-  "product-research": ShoppingBag,
-  finance: ChartNoAxesColumnIncreasing,
-  "places-weather": MapPin,
-};
 
 function CapabilityRow({
   tool,
@@ -81,7 +50,7 @@ function CapabilityRow({
     "family" in tool
       ? dataRouterFamilyText(tool.family.description, locale, tool.family.id)
       : (owned?.description ?? "");
-  const Icon = CAPABILITY_ICONS[tool.toolId] ?? Database;
+  const Icon = getToolCapabilityIcon(tool.toolId);
   const id = `capability-${tool.toolId}`;
 
   return (
