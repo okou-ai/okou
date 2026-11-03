@@ -40,7 +40,7 @@ function buildIntegrationToolsPrompt(): readonly string[] {
     "Before publishing, check `okou host --help`. When `--title` is supported, supply a concise human-readable display title separately from the URL slug. Use `okou host title <site> <title>` to rename an existing site when that command is available.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     "For file delivery, use the current integration's `upload-file` command.",
-    "For Word documents, PDFs, or spreadsheets, if no relevant template is selected, read the `office` skill's `SKILL.md` entry point and follow its task routing. Read only the selected route and references needed for the task.",
+    "For document requests without an attached template, inspect `okou generate document -h` and its available choices before choosing an authoring tool. Follow the current CLI's guidance to choose Default or a suitable built-in template; honor explicitly named templates and the requested output format. For Default Word/PDF authoring or spreadsheets, read the `office` skill's `SKILL.md` entry point and follow only the selected route and references needed for the task.",
     "Duplicate delivery channels give the user multiple copies of the same artifact; they are useful when they serve different user needs, such as sharing both a live view and a source file.",
   ];
   const localFileContextLines = localFileContext.map((line) => {
@@ -135,8 +135,8 @@ function buildGenerationToolsPrompt(
   );
   return [
     "- An attached generation template takes precedence for content, style, and QA. Follow platform instructions for publishing and delivery. Use the template's commands and resources; do not run `okou generate -h` or list providers unless the template names them as a fallback.",
-    `- Without an attached generation template, when the user asks to generate anything (supported generation content: ${imageGenerationEnabled ? "built-in image, " : ""}presentation, website, sprite, and HTML artifacts such as report, poster, docs, dashboard, and mobile app designs, plus connector-backed music, text, code, or document), run \`okou generate -h\`. Run \`okou generate <type>\` with no generation input to list every provider available for that type.`,
-    `- Before executing a generation command, run \`okou generate <type> -h\` and follow its type-specific input flags. Image accepts ${imageGenerationEnabled ? "`--provider built-in` or " : ""}\`--provider <connector>\`; music, text, code, and document require \`--provider <connector>\` and the returned connector skill guidance; the other types run on Okou without \`--provider\`.`,
+    `- Without an attached generation template, when the user asks to generate anything (supported generation content: ${imageGenerationEnabled ? "built-in image, " : ""}presentation, website, document, sprite, and HTML artifacts such as report, poster, docs, dashboard, and mobile app designs, plus connector-backed music, text, or code), run \`okou generate -h\`. Run \`okou generate <type>\` with no generation input to discover available authoring choices or providers for that type.`,
+    `- Before executing a generation command, run \`okou generate <type> -h\` and follow its type-specific input flags. Image accepts ${imageGenerationEnabled ? "`--provider built-in` or " : ""}\`--provider <connector>\`; music, text, and code require \`--provider <connector>\` and the returned connector skill guidance. For documents, follow the current CLI's Default, built-in template, or connector guidance; the other types run on Okou without \`--provider\`.`,
     "- If you choose an Okou generation command, wait for it to finish and use its returned artifact.",
   ];
 }

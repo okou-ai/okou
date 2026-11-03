@@ -9,6 +9,7 @@ interface DispatchOptions {
   readonly prompt?: string;
   readonly all?: boolean;
   readonly listOnMissingPrompt?: boolean;
+  readonly listChoices?: () => void | Promise<void>;
   readonly missingPromptError?: string;
   readonly requireExecutionFor?: string;
 }
@@ -49,9 +50,13 @@ export async function dispatchGenerate(
     if (options.listOnMissingPrompt === false) {
       throw new Error(options.missingPromptError ?? "Prompt is required");
     }
-    await runLister(options.generationType, {
-      all: options.all,
-    });
+    if (options.listChoices) {
+      await options.listChoices();
+    } else {
+      await runLister(options.generationType, {
+        all: options.all,
+      });
+    }
     return { outcome: "handled" };
   }
 
@@ -65,7 +70,7 @@ function resolvePrompt(prompt: string | undefined): string | null {
 
   if (!process.stdin.isTTY) {
     try {
-      const piped = readFileSync("/dev/stdin", "utf8").trim();
+      const piped = readFileSync(0, "utf8").trim();
       if (piped.length > 0) {
         return piped;
       }

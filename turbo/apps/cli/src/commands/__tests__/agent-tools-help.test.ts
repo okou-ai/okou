@@ -173,9 +173,15 @@ describe("agent-facing operational CLI help", () => {
       "use --provider <name> directly when the type supports it",
     );
     expect(generate).not.toContain("list every available provider");
+    expect(generate).toContain("Music, text, and code use connectors");
     expect(generate).toContain(
-      "Music, text, code, and document use connectors",
+      "Document authoring chooses Default or an existing built-in template",
     );
+    const document = await helpFor(generateCommand, ["document"]);
+    expect(document).toContain("--prompt <text>");
+    expect(document).toContain("--template <id>");
+    expect(document).toContain("Default:");
+    expect(document).toContain("Built-in Document templates:");
     expect(generate).toContain("durable job receipt immediately by default");
     expect(generate).toContain(
       'use "okou generate image ... --wait" explicitly',

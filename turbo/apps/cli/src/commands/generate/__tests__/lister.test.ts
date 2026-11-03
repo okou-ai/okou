@@ -30,6 +30,7 @@ const CONNECTOR_LABELS: Record<string, string> = {
   hume: "Hume",
   joggai: "JoggAI",
   "luma-ai": "Luma AI",
+  manus: "Manus",
   minimax: "MiniMax",
   openai: "OpenAI",
   replicate: "Replicate",
@@ -42,6 +43,7 @@ const CONNECTOR_GENERATION: Record<string, readonly string[]> = {
   hume: ["audio"],
   joggai: ["video"],
   "luma-ai": ["image", "video"],
+  manus: ["document"],
   minimax: ["audio"],
   openai: ["audio", "image", "text"],
   replicate: ["image", "video"],
@@ -513,6 +515,29 @@ describe("okou generate lister", () => {
       "Returns authoring instructions for the calling agent.",
     );
     expect(text).toContain(`Use: okou generate ${type} -h`);
+  });
+
+  it("discovers document connectors alongside Default and built-in templates with --all", async () => {
+    server.use(
+      ...stubRunConnectorsWithCatalogSlugs(
+        contextPath,
+        [connector("manus", "manus-user")],
+        ["manus"],
+      ),
+      stubUserConnectors(["manus"]),
+    );
+
+    await generateCommand.parseAsync(["node", "cli", "document", "--all"]);
+
+    expect(output()).toContain("Default:");
+    expect(output()).toContain("document-template:monthly-services");
+    expect(output()).toContain("Document generation choices for current run");
+    expect(output()).toContain("Manus");
+    expect(output()).toContain("@manus-user");
+    expect(output()).toContain(
+      "Default or built-in template document authoring",
+    );
+    expect(output()).toContain("Use: okou generate document -h");
   });
 
   it("lists music as the public audio connector-backed subtype", async () => {

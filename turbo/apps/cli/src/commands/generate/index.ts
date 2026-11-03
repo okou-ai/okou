@@ -13,6 +13,7 @@ import { presentationCommand } from "./presentation";
 import { createSpriteCommand } from "./sprite";
 import { websiteCommand } from "./website";
 import { createListerOnlyCommand } from "./lister-only";
+import { createDocumentCommand } from "./document";
 import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 
 const musicCommand = createListerOnlyCommand({
@@ -33,12 +34,6 @@ const codeCommand = createListerOnlyCommand({
   description: "List connectors that provide code generation",
 });
 
-const documentCommand = createListerOnlyCommand({
-  name: "document",
-  generationType: "document",
-  description: "List connectors that provide document generation",
-});
-
 function buildGenerateHelpText(): string {
   const imageEnabled = isPaidToolEnabled("image-generation");
   const examples = [
@@ -50,6 +45,7 @@ function buildGenerateHelpText(): string {
       : []),
     '  Generate deck:         okou generate presentation --prompt "A product roadmap"',
     '  Generate report:       okou generate report --prompt "A Q2 usage report"',
+    '  Generate document:     okou generate document --prompt "A sales guide as DOCX"',
     '  Generate docs:         okou generate docs-design --prompt "A setup guide"',
     '  Generate site:         okou generate website --prompt "A launch site"',
     '  Generate sprite:       okou generate sprite --prompt "A slime monster idle loop"',
@@ -73,7 +69,7 @@ Routing:
   - If the task includes an attached generation template, follow that template's exact commands and resources. Do not run generic provider discovery unless the template names it as a fallback.
   - When the type is known, run "okou generate <type> --help" directly before execution and reuse help already read for the same CLI version and context. Do not unconditionally chain root, group, and leaf help; flags differ by command.
   - Run this root help only when the type is unknown. Run "okou generate <type>" without generation input only when provider or registry discovery is needed. If the user named a provider, use --provider <name> directly when the type supports it instead of listing every provider.
-  - Built-in generation surfaces are ${imageEnabled ? "image, " : ""}presentation, website, and the listed HTML artifact types. Music, text, code, and document use connectors. Do not infer unsupported types.
+  - Built-in generation surfaces are ${imageEnabled ? "image, " : ""}presentation, website, document, and the listed HTML artifact types. Document authoring chooses Default or an existing built-in template while preserving the requested output format. Music, text, and code use connectors. Do not infer unsupported types.
 
 Execution:
   - Use ${imageEnabled ? "--provider built-in for Okou execution or " : ""}--provider <connector> for connector skill-invocation guidance where offered.
@@ -113,6 +109,6 @@ export function createGenerateCommand(): Command {
     .addCommand(musicCommand)
     .addCommand(textCommand)
     .addCommand(codeCommand)
-    .addCommand(documentCommand)
+    .addCommand(createDocumentCommand())
     .addHelpText("after", buildGenerateHelpText);
 }

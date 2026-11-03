@@ -1503,6 +1503,16 @@ describe("CHAT-02: generation templates and attachments", () => {
           "studionaeo/design-services-standard-agreement/df71218eb1d5c5a59efb1ceb80de56a9935d6420/%E5%8D%8F%E8%AE%AE/%E8%AE%BE%E8%AE%A1%E6%9C%8D%E5%8A%A1%E6%A0%87%E5%87%86%E5%8D%8F%E8%AE%AE%E4%B9%A6.md",
       },
       {
+        id: "document-template:knowledge-handbook",
+        source:
+          "fmarotta/kaobook/22225a174f1b667a50c0a80afb48c498e8126dc1/examples/documentation/main.tex",
+        supportingSources: [
+          "fmarotta/kaobook/22225a174f1b667a50c0a80afb48c498e8126dc1/kaobook.cls",
+          "fmarotta/kaobook/22225a174f1b667a50c0a80afb48c498e8126dc1/kao.sty",
+          "fmarotta/kaobook/22225a174f1b667a50c0a80afb48c498e8126dc1/examples/documentation/main.pdf",
+        ],
+      },
+      {
         id: "document-template:department-newsletter",
         source:
           "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/template/main.typ",

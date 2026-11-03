@@ -155,6 +155,18 @@ describe("CHAT-02: model-first routing", () => {
       "Never send a reply automatically; the user always sends",
     );
     expect(appendSystemPrompt).toContain(CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET);
+    expect(appendSystemPrompt).toContain(
+      "For document requests without an attached template, inspect `okou generate document -h`",
+    );
+    expect(appendSystemPrompt).toContain(
+      "choose Default or a suitable built-in template",
+    );
+    expect(appendSystemPrompt).toContain(
+      "honor explicitly named templates and the requested output format",
+    );
+    expect(appendSystemPrompt).toContain(
+      "For documents, follow the current CLI's Default, built-in template, or connector guidance",
+    );
     let previousSectionIndex = -1;
     for (const section of [
       "# Agent Identity",
