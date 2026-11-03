@@ -38,13 +38,13 @@ teardown() {
     run create_runner_agent "e2e-auto-pi-${TEST_ID}"
     assert_success
     AGENT_ID="$output"
-    run set_runner_agent_instructions "$AGENT_ID" "Auto Pi smoke test instructions."
+    run set_runner_model_test_instructions "$AGENT_ID"
     assert_success
 
     # Omit a model on a new chat to exercise the product default, not just an
     # explicit-model happy path. Bootstrap sets the member preference to Auto.
     # This platform-default case must not inherit a mock Codex profile selection.
-    E2E_MOCK_CODEX_MODEL="" run runner_chat_send "$AGENT_ID" "What is 1 + 2? Reply with only the number." "" ""
+    E2E_MOCK_CODEX_MODEL="" run runner_chat_send "$AGENT_ID" "This is an automated chat delivery test. Do not use tools. What is 1 + 2? Reply with only the number." "" ""
     assert_success
     RUN_ID="$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")"
     THREAD_ID="$(jq -er '.threadId | select(type == "string" and length > 0)' <<<"$output")"
