@@ -1299,7 +1299,9 @@ describe("Google Forms Pub/Sub webhook", () => {
     ).toBeFalsy();
   });
 
-  async function setupGoogleFormsMultiAccountAutomations() {
+  async function setupGoogleFormsMultiAccountAutomations(
+    chatAccountAccess = false,
+  ) {
     configureEnvironment();
     const formsApi = configureFormsApi([
       "google-forms-access-token",
@@ -1309,6 +1311,9 @@ describe("Google Forms Pub/Sub webhook", () => {
       "google-forms-readded-access-token",
     ]);
     const { actor } = await workflows.setupWorkflowOrg();
+    await connectors.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: chatAccountAccess,
+    });
     await useNativeHarnessForFormsFixture(actor);
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
@@ -1450,30 +1455,35 @@ describe("Google Forms Pub/Sub webhook", () => {
     };
   }
 
-  it("rejects the previous account watch after a switch", async () => {
-    const { first, second, firstWatchId } =
-      await setupGoogleFormsMultiAccountAutomations();
-    const firstPush = await postWebhook(
-      formsPushBody("pubsub-first-account", firstWatchId),
-    );
-    expect(firstPush).toMatchObject({
-      status: 200,
-      body: { watchStates: 1, dispatched: 1 },
-    });
-    await flushWaitUntilForTest();
-    const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
-    const secondEvents = await workflows.readThreadEvents(second.chatThreadId);
-    expect(
-      firstEvents.filter((event) => {
-        return event.eventType === "input.prompt";
-      }),
-    ).toHaveLength(1);
-    expect(
-      secondEvents.filter((event) => {
-        return event.eventType === "input.prompt";
-      }),
-    ).toHaveLength(0);
-  });
+  it.each([false, true])(
+    "rejects the previous account watch after a switch (Chat access: %s)",
+    async (chatAccountAccess) => {
+      const { first, second, firstWatchId } =
+        await setupGoogleFormsMultiAccountAutomations(chatAccountAccess);
+      const firstPush = await postWebhook(
+        formsPushBody("pubsub-first-account", firstWatchId),
+      );
+      expect(firstPush).toMatchObject({
+        status: 200,
+        body: { watchStates: 1, dispatched: 1 },
+      });
+      await flushWaitUntilForTest();
+      const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
+      const secondEvents = await workflows.readThreadEvents(
+        second.chatThreadId,
+      );
+      expect(
+        firstEvents.filter((event) => {
+          return event.eventType === "input.prompt";
+        }),
+      ).toHaveLength(1);
+      expect(
+        secondEvents.filter((event) => {
+          return event.eventType === "input.prompt";
+        }),
+      ).toHaveLength(0);
+    },
+  );
 
   it("keeps the current selected account usable after a provider failure", async () => {
     const { first, firstWatchId, secondConnector, secondWatchId } =

@@ -1426,164 +1426,170 @@ describe("POST /api/webhooks/gmail", () => {
     },
   );
 
-  it("dispatches matching new inbound messages and de-duplicates retries", async () => {
-    configureGmailEnv();
-    const runnerGroup = runsApi.configureRunnerGroup();
-    configureGmailWatchMock();
+  it.each([false, true])(
+    "dispatches matching new inbound messages and de-duplicates retries (Chat access: %s)",
+    async (chatAccountAccess) => {
+      configureGmailEnv();
+      const runnerGroup = runsApi.configureRunnerGroup();
+      configureGmailWatchMock();
 
-    const { actor, workflowId, firstEmail, secondEmail, secondConnectorId } =
-      await setupMultiAccountGmailFixture();
-    configureGmailMessageMocks(secondEmail, "gmail-second-access-token");
-    await configureWorkspaceModelProvider(actor);
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: {
-            provider: "gmail",
-            event: "new_message",
-            threadId: "gmail-thread-1",
-            match: { subject: { contains: "invoice" } },
+      const { actor, workflowId, firstEmail, secondEmail, secondConnectorId } =
+        await setupMultiAccountGmailFixture();
+      await updateFeatureSwitchesForUser(context, actor, {
+        connectorChatAccountAccess: chatAccountAccess,
+      });
+      configureGmailMessageMocks(secondEmail, "gmail-second-access-token");
+      await configureWorkspaceModelProvider(actor);
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: {
+              provider: "gmail",
+              event: "new_message",
+              threadId: "gmail-thread-1",
+              match: { subject: { contains: "invoice" } },
+            },
           },
-        },
-      }),
-      [201],
-    );
-    const unrelatedThread = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: {
-            provider: "gmail",
-            event: "new_message",
-            threadId: "gmail-thread-2",
-            match: { subject: { contains: "invoice" } },
+        }),
+        [201],
+      );
+      const unrelatedThread = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: {
+              provider: "gmail",
+              event: "new_message",
+              threadId: "gmail-thread-2",
+              match: { subject: { contains: "invoice" } },
+            },
           },
-        },
-      }),
-      [201],
-    );
-    const chatThreadId = requireAutomationChatThreadId(created.body);
-    await configureAutomationThreadModel(actor, chatThreadId);
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: chatThreadId },
-        body: {
+        }),
+        [201],
+      );
+      const chatThreadId = requireAutomationChatThreadId(created.body);
+      await configureAutomationThreadModel(actor, chatThreadId);
+      await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: authHeaders(actor),
+          params: { id: chatThreadId },
+          body: {
+            connectionId: secondConnectorId,
+            target: { kind: "builtin", connectorSlug: "gmail" },
+          },
+        }),
+        [200],
+      );
+
+      const oldSource = await postGmailWebhook(
+        gmailPushBody({
+          emailAddress: firstEmail,
+          historyId: 101,
+          messageId: "pubsub-old-account",
+        }),
+      );
+      expectResponseStatus(oldSource, 200);
+      expect(oldSource.body).toMatchObject({
+        success: true,
+        dispatched: 0,
+        duplicates: 0,
+      });
+
+      const body = gmailPushBody({
+        emailAddress: secondEmail,
+        historyId: 101,
+        messageId: "pubsub-1",
+      });
+      const first = await postGmailWebhook(body);
+
+      expectResponseStatus(first, 200);
+      expect(first.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+      await flushWaitUntilForTest();
+      const expectedDisplayMessage =
+        'A new email arrived from Customer Example <customer@example.com> with subject "Invoice needs a reply".';
+
+      await expect(
+        workflowAutomationDisplayTexts(actor, chatThreadId),
+      ).resolves.toContain(expectedDisplayMessage);
+      const selections = await accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: authHeaders(actor),
+          params: { id: chatThreadId },
+        }),
+        [200],
+      );
+      expect(selections.body.selections).toStrictEqual([
+        {
           connectionId: secondConnectorId,
           target: { kind: "builtin", connectorSlug: "gmail" },
         },
-      }),
-      [200],
-    );
-
-    const oldSource = await postGmailWebhook(
-      gmailPushBody({
-        emailAddress: firstEmail,
-        historyId: 101,
-        messageId: "pubsub-old-account",
-      }),
-    );
-    expectResponseStatus(oldSource, 200);
-    expect(oldSource.body).toMatchObject({
-      success: true,
-      dispatched: 0,
-      duplicates: 0,
-    });
-
-    const body = gmailPushBody({
-      emailAddress: secondEmail,
-      historyId: 101,
-      messageId: "pubsub-1",
-    });
-    const first = await postGmailWebhook(body);
-
-    expectResponseStatus(first, 200);
-    expect(first.body).toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 1,
-      duplicates: 0,
-    });
-    await flushWaitUntilForTest();
-    const expectedDisplayMessage =
-      'A new email arrived from Customer Example <customer@example.com> with subject "Invoice needs a reply".';
-
-    await expect(
-      workflowAutomationDisplayTexts(actor, chatThreadId),
-    ).resolves.toContain(expectedDisplayMessage);
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: authHeaders(actor),
-        params: { id: chatThreadId },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([
-      {
-        connectionId: secondConnectorId,
-        target: { kind: "builtin", connectorSlug: "gmail" },
-      },
-    ]);
-    await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
-      {
+      ]);
+      await expect(
+        readAutomation(actor, created.body.id),
+      ).resolves.toMatchObject({
         lastRunAt: expect.any(String),
-      },
-    );
-    await expect(
-      readAutomation(actor, unrelatedThread.body.id),
-    ).resolves.toMatchObject({
-      lastRunAt: null,
-    });
-    const [runId] = await workflowRunIds(actor, chatThreadId);
-    if (!runId) {
-      throw new Error("Expected a dispatched Gmail workflow run");
-    }
-    await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
-    expect(claim.prompt).toContain("Not included below: the email body.");
-    expect(claim.prompt).not.toContain("Please draft a helpful reply.");
-    expectGmailEventContextInPrompt(claim.prompt, {
-      automationId: created.body.id,
-      event: "new_message",
-      emailAddress: secondEmail,
-      messageId: "msg-1",
-      threadId: "gmail-thread-1",
-      from: "Customer Example <customer@example.com>",
-      to: [secondEmail],
-      cc: [],
-      subject: "Invoice needs a reply",
-    });
-    expect(claim.appendSystemPrompt).toContain("# Agent Identity");
-    expect(
-      Object.values(claim.secretConnectorMetadataMap ?? {}),
-    ).toContainEqual(expect.objectContaining({ sourceId: secondConnectorId }));
+      });
+      await expect(
+        readAutomation(actor, unrelatedThread.body.id),
+      ).resolves.toMatchObject({
+        lastRunAt: null,
+      });
+      const [runId] = await workflowRunIds(actor, chatThreadId);
+      if (!runId) {
+        throw new Error("Expected a dispatched Gmail workflow run");
+      }
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(runId);
+      expect(claim.prompt).toContain("Not included below: the email body.");
+      expect(claim.prompt).not.toContain("Please draft a helpful reply.");
+      expectGmailEventContextInPrompt(claim.prompt, {
+        automationId: created.body.id,
+        event: "new_message",
+        emailAddress: secondEmail,
+        messageId: "msg-1",
+        threadId: "gmail-thread-1",
+        from: "Customer Example <customer@example.com>",
+        to: [secondEmail],
+        cc: [],
+        subject: "Invoice needs a reply",
+      });
+      expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+      expect(
+        Object.values(claim.secretConnectorMetadataMap ?? {}),
+      ).toContainEqual(
+        expect.objectContaining({ sourceId: secondConnectorId }),
+      );
 
-    const second = await postGmailWebhook(body);
+      const second = await postGmailWebhook(body);
 
-    expectResponseStatus(second, 200);
-    expect(second.body).toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 0,
-      duplicates: 1,
-    });
-    const displayMessagesAfterDuplicate = await workflowAutomationDisplayTexts(
-      actor,
-      chatThreadId,
-    );
-    expect(
-      displayMessagesAfterDuplicate.filter((message) => {
-        return message === expectedDisplayMessage;
-      }),
-    ).toHaveLength(1);
-  });
+      expectResponseStatus(second, 200);
+      expect(second.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 0,
+        duplicates: 1,
+      });
+      const displayMessagesAfterDuplicate =
+        await workflowAutomationDisplayTexts(actor, chatThreadId);
+      expect(
+        displayMessagesAfterDuplicate.filter((message) => {
+          return message === expectedDisplayMessage;
+        }),
+      ).toHaveLength(1);
+    },
+  );
 
   it("reprojects Gmail labels when the workflow thread account changes", async () => {
     configureGmailEnv();
