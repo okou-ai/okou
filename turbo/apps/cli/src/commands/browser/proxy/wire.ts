@@ -10,6 +10,10 @@ export class ProtocolError extends Error {
   }
 }
 
+export function scopedError(message: string): ProtocolError {
+  return new ProtocolError({ code: -32000, message });
+}
+
 /** One private control connection; downstream CDP request IDs stay untouched. */
 export class ControlWire implements CdpTransport {
   private nextId = 0;

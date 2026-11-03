@@ -3,7 +3,7 @@ import {
   OkouBrowserClient,
   type CdpEvent,
 } from "@okouai/browser-extension-client";
-import { ControlWire, ProtocolError, record } from "./wire";
+import { ControlWire, ProtocolError, record, scopedError } from "./wire";
 
 export interface TargetInfo extends Record<string, unknown> {
   readonly targetId: string;
@@ -19,11 +19,10 @@ export function targetInfo(value: unknown): TargetInfo | null {
 }
 
 const CREATION_PREFIX = "about:blank#okou-cdp-create-";
-export const outsideWindow = () => {
-  return new ProtocolError({
-    code: -32000,
-    message: "The target is outside this chat's Browser window",
-  });
+export const unavailableTarget = () => {
+  return scopedError(
+    "The target is unavailable in this chat's Browser connection; get current targets from this connection",
+  );
 };
 
 /** Ownership observations are driven by discovery/native events, never input messages. */
@@ -437,7 +436,7 @@ export class WindowScope {
     });
     if (!record(location) || typeof location.windowId !== "number")
       throw new Error("Invalid Browser window");
-    if (location.windowId !== this.windowId) throw outsideWindow();
+    if (location.windowId !== this.windowId) throw unavailableTarget();
   }
 
   private async createdPage(
@@ -521,14 +520,22 @@ export class WindowScope {
     create: (params: Record<string, unknown>) => Promise<unknown>,
   ): Promise<unknown> {
     if (typeof params.url !== "string") return create(params);
-    if (params.newWindow === true || params.hidden === true)
-      throw outsideWindow();
+    if (params.newWindow === true)
+      throw scopedError(
+        "Creating a new Browser window is not allowed; create a tab in this chat instead",
+      );
+    if (params.hidden === true)
+      throw scopedError(
+        "Hidden targets are not supported in this chat; create a visible tab instead",
+      );
     const first = this.targets.get(await this.firstPage())!;
     if (
       params.browserContextId !== undefined &&
       params.browserContextId !== first.browserContextId
     )
-      throw outsideWindow();
+      throw scopedError(
+        "Creating a target in another browser context is not allowed; use this chat's browser context",
+      );
     const marker = CREATION_PREFIX + randomUUID();
     let createdId: string | undefined;
     let createdPageId: string | undefined;

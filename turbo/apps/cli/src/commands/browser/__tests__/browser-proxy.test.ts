@@ -15,6 +15,22 @@ interface Message {
   result?: Record<string, unknown>;
   error?: unknown;
 }
+const unavailableTargetError = {
+  code: -32000,
+  message:
+    "The target is unavailable in this chat's Browser connection; get current targets from this connection",
+};
+const unavailableSessionError = {
+  code: -32000,
+  message:
+    "The session is unavailable in this chat's Browser connection; attach to a current target before sending session commands",
+};
+const unconfirmedOperationError = {
+  code: -32000,
+  message:
+    "Scoped Browser operation could not be confirmed; inspect before retrying",
+};
+
 async function client(endpoint: string) {
   const socket = new WebSocket(endpoint);
   await new Promise<void>((resolve, reject) => {
@@ -134,7 +150,13 @@ describe("chat-window CDP proxy protocol", () => {
         targetId: "B",
         flatten: true,
       }),
-    ).rejects.toMatchObject({ code: -32000 });
+    ).rejects.toStrictEqual(unavailableTargetError);
+    await expect(
+      connection.request("Target.attachToTarget", {
+        targetId: "unknown-target",
+        flatten: true,
+      }),
+    ).rejects.toStrictEqual(unavailableTargetError);
   });
 
   it("passes opaque identifiers/unknown methods and native error data unchanged", async () => {
@@ -156,7 +178,43 @@ describe("chat-window CDP proxy protocol", () => {
     });
     await expect(
       connection.request("Runtime.enable", {}, "unknown-session"),
-    ).rejects.toMatchObject({ code: -32000 });
+    ).rejects.toStrictEqual(unavailableSessionError);
+  });
+
+  it("explains unavailable child sessions without borrowing another peer's attachment", async () => {
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const { sessionId } = await peer.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: true,
+    });
+    await expect(
+      connection.request("Target.detachFromTarget", { sessionId }),
+    ).rejects.toStrictEqual(unavailableSessionError);
+    await expect(
+      connection.request("Target.sendMessageToTarget", {
+        sessionId,
+        message: JSON.stringify({ id: 51, method: "Runtime.enable" }),
+      }),
+    ).rejects.toStrictEqual(unavailableSessionError);
+    await expect(
+      connection.request("Target.sendMessageToTarget", {
+        targetId: "A",
+        message: JSON.stringify({ id: 52, method: "Runtime.enable" }),
+      }),
+    ).rejects.toStrictEqual(unavailableSessionError);
+    expect(
+      provider.commands.filter((command) => {
+        return (
+          command.method === "Target.sendMessageToTarget" ||
+          (command.method === "Target.detachFromTarget" &&
+            command.params.sessionId === sessionId)
+        );
+      }),
+    ).toStrictEqual([]);
+    expect(
+      await peer.request("Runtime.enable", {}, String(sessionId)),
+    ).toStrictEqual({});
   });
 
   it.each([
@@ -1080,10 +1138,7 @@ describe("chat-window CDP proxy protocol", () => {
     ).toStrictEqual({});
     await expect(
       connection.request("Runtime.enable", {}, ownedBrowser),
-    ).rejects.toMatchObject({
-      code: -32000,
-      message: "The target is outside this chat's Browser window",
-    });
+    ).rejects.toStrictEqual(unavailableSessionError);
   });
 
   it.each([
@@ -1536,9 +1591,14 @@ describe("chat-window CDP proxy protocol", () => {
     }
   });
 
-  it.each([true, false])(
-    "settles a reply overtaken by tab retirement (flatten=%s)",
-    async (flatten) => {
+  it.each([
+    { flatten: true, nativeError: false },
+    { flatten: false, nativeError: false },
+    { flatten: true, nativeError: true },
+    { flatten: false, nativeError: true },
+  ])(
+    "settles a reply overtaken by tab retirement (flatten=$flatten, native error=$nativeError)",
+    async ({ flatten, nativeError }) => {
       provider.addPage("C", 0);
       const session = String(
         (
@@ -1548,18 +1608,22 @@ describe("chat-window CDP proxy protocol", () => {
           })
         ).sessionId,
       );
-      const held = provider.holdReply("Runtime.evaluate", "A");
+      const method = nativeError ? "Future.error" : "Runtime.evaluate";
+      const expectedError = nativeError
+        ? {
+            code: -32601,
+            message: "Native error remains unchanged",
+            data: { original: true },
+          }
+        : unconfirmedOperationError;
+      const held = provider.holdReply(method, "A");
       const peer = await client(proxy.endpoint);
       clients.push(peer);
       let result: Promise<void>;
       if (flatten) {
         result = expect(
-          connection.request(
-            "Runtime.evaluate",
-            { expression: "stale result" },
-            session,
-          ),
-        ).rejects.toMatchObject({ code: -32000 });
+          connection.request(method, { expression: "stale result" }, session),
+        ).rejects.toStrictEqual(expectedError);
       } else {
         const reply = connection.event((message) => {
           return (
@@ -1569,16 +1633,16 @@ describe("chat-window CDP proxy protocol", () => {
           );
         });
         result = reply.then((message) => {
-          expect(JSON.parse(String(message.params?.message))).toMatchObject({
+          expect(JSON.parse(String(message.params?.message))).toStrictEqual({
             id: 49,
-            error: { code: -32000 },
+            error: expectedError,
           });
         });
         await connection.request("Target.sendMessageToTarget", {
           sessionId: session,
           message: JSON.stringify({
             id: 49,
-            method: "Runtime.evaluate",
+            method,
             params: { expression: "stale result" },
           }),
         });
@@ -1632,9 +1696,9 @@ describe("chat-window CDP proxy protocol", () => {
       await lookup.observed;
       await peer.request("Target.closeTarget", { targetId: "A" });
       lookup.resume();
-      expect(JSON.parse(String((await reply).params?.message))).toMatchObject({
+      expect(JSON.parse(String((await reply).params?.message))).toStrictEqual({
         id: 52,
-        error: { code: -32000 },
+        error: unavailableTargetError,
       });
       expect(
         (await peer.request("Browser.getWindowForTarget", { targetId: "C" }))
@@ -1667,7 +1731,7 @@ describe("chat-window CDP proxy protocol", () => {
             { url: "https://example.test/new" },
             session,
           ),
-        ).rejects.toMatchObject({ code: -32000 });
+        ).rejects.toStrictEqual(unconfirmedOperationError);
       } else {
         const reply = connection.event((message) => {
           return (
@@ -1677,9 +1741,9 @@ describe("chat-window CDP proxy protocol", () => {
           );
         });
         result = reply.then((message) => {
-          expect(JSON.parse(String(message.params?.message))).toMatchObject({
+          expect(JSON.parse(String(message.params?.message))).toStrictEqual({
             id: 53,
-            error: { code: -32000 },
+            error: unconfirmedOperationError,
           });
         });
         await connection.request("Target.sendMessageToTarget", {
@@ -1731,7 +1795,7 @@ describe("chat-window CDP proxy protocol", () => {
     provider.addPage("LATE", 0);
     const result = expect(
       connection.request("Target.getTargets", {}, session),
-    ).rejects.toMatchObject({ code: -32000 });
+    ).rejects.toStrictEqual(unconfirmedOperationError);
     try {
       await Promise.all([lookup.observed, reply.observed]);
       reply.resume();
@@ -2001,15 +2065,38 @@ describe("chat-window CDP proxy protocol", () => {
   );
 
   it("rejects physical window creation and destruction while keeping both windows usable", async () => {
-    await expect(
-      connection.request("Target.createTarget", {
-        url: "about:blank",
-        newWindow: true,
+    for (const [params, message] of [
+      [
+        { newWindow: true },
+        "Creating a new Browser window is not allowed; create a tab in this chat instead",
+      ],
+      [
+        { hidden: true },
+        "Hidden targets are not supported in this chat; create a visible tab instead",
+      ],
+      [
+        { browserContextId: "unrelated" },
+        "Creating a target in another browser context is not allowed; use this chat's browser context",
+      ],
+    ] as const)
+      await expect(
+        connection.request("Target.createTarget", {
+          url: "https://example.test/private?token=fixture-value",
+          ...params,
+        }),
+      ).rejects.toStrictEqual({ code: -32000, message });
+    expect(
+      provider.commands.filter((command) => {
+        return command.method === "Target.createTarget";
       }),
-    ).rejects.toMatchObject({ code: -32000 });
+    ).toStrictEqual([]);
     await expect(
       connection.request("Target.openDevTools", { targetId: "A" }),
-    ).rejects.toMatchObject({ code: -32000 });
+    ).rejects.toStrictEqual({
+      code: -32000,
+      message:
+        "Opening DevTools is not supported by this chat's Browser connection",
+    });
     expect(
       provider.commands.some((command) => {
         return command.method === "Target.openDevTools";
