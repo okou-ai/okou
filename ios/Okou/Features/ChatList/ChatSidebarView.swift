@@ -6,6 +6,7 @@ struct ChatSidebarView: View {
   let authentication: AuthenticationService
   let workspaceID: String
   let notifications: NotificationService
+  let sidebar: SidebarInteraction
   let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
@@ -354,35 +355,11 @@ struct ChatSidebarView: View {
       .accessibilityLabel("New chat")
       .accessibilityIdentifier("new-chat")
       Spacer()
-      Menu {
-        Link("Open Okou on web", destination: store.webURL)
-        if notifications.registrationError != nil {
-          Button("Retry notification setup", systemImage: "bell.badge") {
-            Task { await notifications.retryRegistration() }
-          }
-        }
-        Button(
-          notifications.status == .authorized ? "Notifications enabled" : "Enable notifications",
-          systemImage: "bell"
-        ) {
-          Task { await notifications.enable() }
-        }
-        Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-          Task {
-            do {
-              try await notifications.signOut(authentication: authentication)
-            } catch {
-              accountError = error.localizedDescription
-            }
-          }
-        }
-      } label: {
-        Image(systemName: "gearshape")
-          .font(.system(size: 21))
-          .frame(width: 32, height: 32)
-      }
-      .buttonStyle(.glass)
-      .accessibilityLabel("Account")
+      ChatSidebarAccountButton(
+        sidebar: sidebar, authentication: authentication, notifications: notifications,
+        webURL: store.webURL, accountError: $accountError
+      )
+      .frame(width: 48, height: 48)
     }
     .buttonStyle(.plain)
     .frame(height: ChatComposerView.compactHeight)
