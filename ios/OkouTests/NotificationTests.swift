@@ -51,7 +51,8 @@ final class NotificationTests: XCTestCase {
       let fixture = ConversationHistoryFixture(additional: { request in
         if request.url?.path == "/api/ios-push-registrations" {
           return ChatHTTPResponse(
-            status: status.withLock { $0 }, body: #"{"error":{"message":"Push setup unavailable"}}"#)
+            status: status.withLock { $0 },
+            body: #"{"error":{"message":"Push setup unavailable"}}"#)
         }
         throw URLError(.unsupportedURL)
       })
