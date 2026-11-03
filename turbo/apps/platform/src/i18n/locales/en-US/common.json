@@ -2327,6 +2327,8 @@
     "remoteAccess": {
       "default": "Default",
       "defaultEnabled": "Enabled by default for chats",
+      "disabled": "Disabled",
+      "enabled": "Enabled",
       "enabledCount_one": "{{count}} enabled",
       "enabledCount_other": "{{count}} enabled",
       "loadFailed": "Couldn't load remote access.",

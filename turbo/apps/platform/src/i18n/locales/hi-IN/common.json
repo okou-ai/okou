@@ -2327,6 +2327,8 @@
     "remoteAccess": {
       "default": "डिफ़ॉल्ट",
       "defaultEnabled": "चैट के लिए डिफ़ॉल्ट रूप से सक्षम",
+      "disabled": "बंद",
+      "enabled": "चालू",
       "enabledCount_one": "{{count}} सक्षम",
       "enabledCount_other": "{{count}} सक्षम",
       "loadFailed": "रिमोट एक्सेस लोड नहीं हो सका।",

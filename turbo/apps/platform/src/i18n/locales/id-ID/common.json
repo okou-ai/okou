@@ -2320,6 +2320,8 @@
     "remoteAccess": {
       "default": "Default",
       "defaultEnabled": "Aktif secara default untuk chat",
+      "disabled": "Dinonaktifkan",
+      "enabled": "Diaktifkan",
       "enabledCount_other": "{{count}} aktif",
       "loadFailed": "Gagal memuat akses jarak jauh.",
       "loading": "Memuat akses jarak jauh…",

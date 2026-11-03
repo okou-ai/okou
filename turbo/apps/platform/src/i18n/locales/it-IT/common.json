@@ -2365,6 +2365,8 @@
     "remoteAccess": {
       "default": "Predefinito",
       "defaultEnabled": "Abilitato per impostazione predefinita nelle chat",
+      "disabled": "Disabilitato",
+      "enabled": "Abilitato",
       "enabledCount_one": "{{count}} attivo",
       "enabledCount_many": "{{count}} attivi",
       "enabledCount_other": "{{count}} attivi",

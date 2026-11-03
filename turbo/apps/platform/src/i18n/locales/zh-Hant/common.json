@@ -2320,6 +2320,8 @@
     "remoteAccess": {
       "default": "預設",
       "defaultEnabled": "聊天預設啟用",
+      "disabled": "已停用",
+      "enabled": "已啟用",
       "enabledCount_other": "已啟用 {{count}} 個",
       "loadFailed": "無法載入遠端存取權限。",
       "loading": "正在載入遠端存取…",

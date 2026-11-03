@@ -2365,6 +2365,8 @@
     "remoteAccess": {
       "default": "Par défaut",
       "defaultEnabled": "Activé par défaut pour les chats",
+      "disabled": "Désactivé",
+      "enabled": "Activé",
       "enabledCount_one": "{{count}} activé",
       "enabledCount_many": "{{count}} activés",
       "enabledCount_other": "{{count}} activés",

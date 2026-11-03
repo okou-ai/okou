@@ -6,6 +6,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -641,6 +642,67 @@ function RemoteHostLoadError() {
   );
 }
 
+function RemoteHostProtocolSection({
+  protocol,
+  hosts,
+  renderHost,
+}: {
+  protocol: RemoteAccessProtocol;
+  hosts: readonly ThreadRemoteHostAccess[];
+  renderHost: (host: ThreadRemoteHostAccess) => ReactNode;
+}) {
+  const { t } = useTranslation();
+  if (hosts.length === 0) {
+    return null;
+  }
+  const label =
+    protocol === "ssh"
+      ? t(($) => {
+          return $.ssh.label;
+        })
+      : t(($) => {
+          return $.vnc.label;
+        });
+  const groups = [
+    {
+      key: "enabled",
+      label: t(($) => {
+        return $.chat.remoteAccess.enabled;
+      }),
+      hosts: hosts.filter((host) => {
+        return host.enabled;
+      }),
+    },
+    {
+      key: "disabled",
+      label: t(($) => {
+        return $.chat.remoteAccess.disabled;
+      }),
+      hosts: hosts.filter((host) => {
+        return !host.enabled;
+      }),
+    },
+  ];
+  return (
+    <section aria-label={label} className="py-1 text-foreground">
+      <h3 className="px-2 pt-1 text-sm font-medium">{label}</h3>
+      <div className="pl-3">
+        {/* Keep rows under one parent so regrouping preserves each Select. */}
+        {groups.flatMap((group) => {
+          return group.hosts.length === 0
+            ? []
+            : [
+                <h4 key={group.key} className="px-2 pt-2 pb-1 text-xs">
+                  {group.label}
+                </h4>,
+                ...group.hosts.map(renderHost),
+              ];
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ThreadRemoteHostChoices({
   threadId,
   remoteAccess$,
@@ -693,64 +755,58 @@ function ThreadRemoteHostChoices({
           })}
         </p>
       ) : threadId && accessFailed ? null : (
-        <>
-          {sshHosts.length > 0 && (
-            <p className="px-2 pt-1 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.ssh.label;
-              })}
-            </p>
-          )}
-          {sshHosts.map((host) => {
-            return (
-              <RemoteHostChoiceRow
-                key={host.connectionId}
-                protocol="ssh"
-                host={host}
-                choiceActions={choiceActions}
-              />
-            );
-          })}
-          {vncHostChoices.length > 0 && (
-            <p className="px-2 pt-1 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.vnc.label;
-              })}
-            </p>
-          )}
-          {vncHostChoices.map((host) => {
-            const configured =
-              vncHosts.state === "hasData"
-                ? vncHosts.data?.find((item) => {
-                    return item.id === host.connectionId;
-                  })
-                : undefined;
-            const sshConnectionId = configured
-              ? vncSshConnectionId(configured)
-              : null;
-            const sshConnectionIds = new Set<string>();
-            if (sshConnectionId) {
-              sshConnectionIds.add(sshConnectionId);
-            }
-            if (
-              configured?.security.type === "qemu_x509_gssapi" &&
-              configured.security.kdc?.transport.type === "ssh"
-            ) {
-              sshConnectionIds.add(
-                configured.security.kdc.transport.connectionId,
+        <div className="divide-y">
+          <RemoteHostProtocolSection
+            protocol="ssh"
+            hosts={sshHosts}
+            renderHost={(host) => {
+              return (
+                <RemoteHostChoiceRow
+                  key={host.connectionId}
+                  protocol="ssh"
+                  host={host}
+                  choiceActions={choiceActions}
+                />
               );
-            }
-            return (
-              <VncHostChoiceRow
-                key={host.connectionId}
-                host={host}
-                choiceActions={choiceActions}
-                sshConnectionIds={[...sshConnectionIds]}
-                sshHosts={sshHosts}
-              />
-            );
-          })}
-        </>
+            }}
+          />
+          <RemoteHostProtocolSection
+            protocol="vnc"
+            hosts={vncHostChoices}
+            renderHost={(host) => {
+              const configured =
+                vncHosts.state === "hasData"
+                  ? vncHosts.data?.find((item) => {
+                      return item.id === host.connectionId;
+                    })
+                  : undefined;
+              const sshConnectionId = configured
+                ? vncSshConnectionId(configured)
+                : null;
+              const sshConnectionIds = new Set<string>();
+              if (sshConnectionId) {
+                sshConnectionIds.add(sshConnectionId);
+              }
+              if (
+                configured?.security.type === "qemu_x509_gssapi" &&
+                configured.security.kdc?.transport.type === "ssh"
+              ) {
+                sshConnectionIds.add(
+                  configured.security.kdc.transport.connectionId,
+                );
+              }
+              return (
+                <VncHostChoiceRow
+                  key={host.connectionId}
+                  host={host}
+                  choiceActions={choiceActions}
+                  sshConnectionIds={[...sshConnectionIds]}
+                  sshHosts={sshHosts}
+                />
+              );
+            }}
+          />
+        </div>
       )}
     </DialogBody>
   );
