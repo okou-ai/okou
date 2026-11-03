@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.2...runner-rs-v0.244.3) (2026-11-03)
+
+
+### Refactoring
+
+* **python:** centralize early request preparation release ([#44863](https://github.com/okou-ai/okou/issues/44863)) ([a440129](https://github.com/okou-ai/okou/commit/a440129e1f89ffa9620fdaf1770c8dbb532b75ef))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.1...runner-rs-v0.244.2) (2026-11-03)
 
 
