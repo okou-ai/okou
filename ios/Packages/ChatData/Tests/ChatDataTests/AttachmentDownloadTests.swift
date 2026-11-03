@@ -21,8 +21,8 @@ final class AttachmentDownloadTests: XCTestCase {
       return request.url?.path == "/expired"
         ? .init(status: 403) : .init(body: Data("%PDF-sample".utf8))
     }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let lookups = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       XCTAssertEqual(request.url?.path, "/api/web/file-url")
@@ -53,8 +53,8 @@ final class AttachmentDownloadTests: XCTestCase {
   func testAccessFailureDoesNotDownloadAndExplicitRetryReauthorizes() async throws {
     let denied = Mutex(true)
     let server = try ChatFileHTTPServer { _ in .init(body: Data("file".utf8)) }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ChatHTTPFixture { _ in
       if denied.withLock({ $0 }) {
         return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"File not found\"}}")
@@ -74,8 +74,8 @@ final class AttachmentDownloadTests: XCTestCase {
 
   func testStorageFailureIsNotAnAPISessionOrPermissionFailure() async throws {
     let server = try ChatFileHTTPServer { _ in .init(status: 401) }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(body: "{\"url\":\"\(origin)/file\",\"downloadUrl\":\"\(origin)/file\"}")
     }
@@ -95,8 +95,8 @@ final class AttachmentDownloadTests: XCTestCase {
       XCTAssertEqual(request.url?.path, "/poster")
       return .init(body: Data("poster".utf8))
     }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let insecure = Mutex(false)
     let fixture = ChatHTTPFixture { _ in
       let url = insecure.withLock { $0 } ? "http://untrusted.example/file" : "\(origin)/poster"
@@ -119,8 +119,8 @@ final class AttachmentDownloadTests: XCTestCase {
     let server = try ChatFileHTTPServer { _ in
       .init(headers: ["Content-Length": "22000000"], body: Data(repeating: 42, count: 22_000_000))
     }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(body: "{\"url\":\"\(origin)/image\",\"downloadUrl\":\"\(origin)/image\"}")
     }

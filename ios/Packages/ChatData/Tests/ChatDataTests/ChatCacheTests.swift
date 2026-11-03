@@ -94,13 +94,12 @@ final class ChatCacheTests: XCTestCase {
   }
 
   func testThreadListSurvivesRestartAndIsScopedToIdentity() async throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: URL(string: "https://api.example.invalid")!, userID: "user-a",
       workspaceID: "workspace-a")
     let snapshot = Data(#"{"chatThreads":[]}"#.utf8)
-    let first = ChatCache(scope: scope, directory: directory)
+    let first = directory.cache(scope: scope)
     try await first.replaceThreadList(
       snapshot: snapshot, cursor: ChatCacheCursor(eventID: nil, seqID: 10),
       events: [event(11), event(13)])
@@ -109,7 +108,7 @@ final class ChatCacheTests: XCTestCase {
     // thread tables exist, but the additive navigation table does not.
     let file = try XCTUnwrap(
       FileManager.default.contentsOfDirectory(
-        at: directory.appendingPathComponent("ChatCache"), includingPropertiesForKeys: nil
+        at: directory.url.appendingPathComponent("ChatCache"), includingPropertiesForKeys: nil
       ).first { $0.pathExtension == "sqlite" })
     var handle: OpaquePointer?
     let opened = sqlite3_open(file.path, &handle)
@@ -117,14 +116,14 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertEqual(opened, SQLITE_OK)
     XCTAssertEqual(sqlite3_exec(handle, "DROP TABLE sidebar_navigation", nil, nil, nil), SQLITE_OK)
 
-    let reopened = ChatCache(scope: scope, directory: directory)
+    let reopened = directory.cache(scope: scope)
     let navigation = try JSONDecoder().decode(
       SidebarNavigationSnapshot.self,
       from: Data(
         #"{"agents":[{"agentId":"agent-a","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":["agent-a"]},"featureSwitches":{"effectiveSwitches":{"chatThreadArchiving":true}}}"#
           .utf8))
     try await reopened.saveNavigation(navigation)
-    let persistedNavigation = try await ChatCache(scope: scope, directory: directory)
+    let persistedNavigation = try await directory.cache(scope: scope)
       .loadNavigation()
     XCTAssertEqual(persistedNavigation?.agents.first?.displayName, "Assistant")
     XCTAssertEqual(persistedNavigation?.preferences.pinnedAgentIds, ["agent-a"])
@@ -141,18 +140,16 @@ final class ChatCacheTests: XCTestCase {
     let extended = try await reopened.loadThreadList()
     XCTAssertEqual(extended?.events, [event(11), event(13), event(16)])
 
-    let otherUser = ChatCache(
+    let otherUser = directory.cache(
       scope: ChatCacheScope(
-        apiBaseURL: scope.apiBaseURL, userID: "user-b", workspaceID: scope.workspaceID),
-      directory: directory)
-    let otherWorkspace = ChatCache(
+        apiBaseURL: scope.apiBaseURL, userID: "user-b", workspaceID: scope.workspaceID))
+    let otherWorkspace = directory.cache(
       scope: ChatCacheScope(
-        apiBaseURL: scope.apiBaseURL, userID: scope.userID, workspaceID: "workspace-b"),
-      directory: directory)
-    let otherAPI = ChatCache(
+        apiBaseURL: scope.apiBaseURL, userID: scope.userID, workspaceID: "workspace-b"))
+    let otherAPI = directory.cache(
       scope: ChatCacheScope(
         apiBaseURL: URL(string: "https://other.example.invalid")!, userID: scope.userID,
-        workspaceID: scope.workspaceID), directory: directory)
+        workspaceID: scope.workspaceID))
     let foreignUser = try await otherUser.loadThreadList()
     let foreignWorkspace = try await otherWorkspace.loadThreadList()
     let foreignAPI = try await otherAPI.loadThreadList()
@@ -168,9 +165,8 @@ final class ChatCacheTests: XCTestCase {
   }
 
   func testFailedAppendRollsBackEarlierRowsInSamePage() async throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let cache = ChatCache(scope: scope(), directory: directory)
+    let directory = CacheTestDirectory(owner: self)
+    let cache = directory.cache(scope: scope())
     try await cache.replaceThreadList(
       snapshot: Data("snapshot".utf8), cursor: ChatCacheCursor(eventID: nil, seqID: 10),
       events: [event(11)])
@@ -187,9 +183,8 @@ final class ChatCacheTests: XCTestCase {
   }
 
   func testHistoryCursorAndRowsCommitTogetherAndCanBeRemoved() async throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let cache = ChatCache(scope: scope(), directory: directory)
+    let directory = CacheTestDirectory(owner: self)
+    let cache = directory.cache(scope: scope())
     let threadID = "thread-a"
     try await cache.replaceHistory(
       threadID: threadID, rows: [event(2), event(3)],
@@ -201,7 +196,7 @@ final class ChatCacheTests: XCTestCase {
       threadID: threadID, rows: [],
       cursor: ChatCacheCursor(eventID: event(5).id, seqID: 5), schemaVersion: 7)
 
-    let reopened = ChatCache(scope: scope(), directory: directory)
+    let reopened = directory.cache(scope: scope())
     let loaded = try await reopened.loadHistory(threadID: threadID)
     let stored = try XCTUnwrap(loaded)
     XCTAssertEqual(stored.rows, [event(2), event(3), event(5)])
@@ -214,17 +209,16 @@ final class ChatCacheTests: XCTestCase {
   }
 
   func testDamagedDatabaseIsDiscarded() async throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     try await writeInitialCache(directory: directory)
-    let cacheDirectory = directory.appendingPathComponent("ChatCache", isDirectory: true)
+    let cacheDirectory = directory.url.appendingPathComponent("ChatCache", isDirectory: true)
     let files = try FileManager.default.contentsOfDirectory(
       at: cacheDirectory, includingPropertiesForKeys: nil)
     let database = try XCTUnwrap(files.first(where: { $0.pathExtension == "sqlite" }))
     for file in files { try FileManager.default.removeItem(at: file) }
     try Data("not a SQLite database".utf8).write(to: database)
 
-    let reopened = ChatCache(scope: scope(), directory: directory)
+    let reopened = directory.cache(scope: scope())
     let discarded = try await reopened.loadThreadList()
     XCTAssertNil(discarded)
     try await reopened.replaceThreadList(
@@ -233,21 +227,17 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertEqual(fresh?.snapshot, Data("new".utf8))
   }
 
-  private func writeInitialCache(directory: URL) async throws {
-    let cache = ChatCache(scope: scope(), directory: directory)
+  private func writeInitialCache(directory: CacheTestDirectory) async throws {
+    let cache = directory.cache(scope: scope())
     try await cache.replaceThreadList(
       snapshot: Data("old".utf8), cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
+    await cache.close()
   }
 
   private func scope() -> ChatCacheScope {
     ChatCacheScope(
       apiBaseURL: URL(string: "https://api.example.invalid")!, userID: "user-a",
       workspaceID: "workspace-a")
-  }
-
-  private func temporaryDirectory() -> URL {
-    FileManager.default.temporaryDirectory.appendingPathComponent(
-      UUID().uuidString, isDirectory: true)
   }
 
   private func event(_ sequence: Int) -> ChatCacheEvent {

@@ -17,7 +17,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
       transfers.withLock { $0 += 1 }
       return .init(body: bytes)
     }
-    defer { server.stop() }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
     let entered = expectation(description: "Thumbnail authorization started")
     let (gate, release) = AsyncStream<Void>.makeStream()
@@ -75,7 +75,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
   func testDetailExitDiscardsLoadedThumbnailsAndCancelsPendingThumbnails() async throws {
     let bytes = imageData()
     let server = try ChatFileHTTPServer { _ in .init(body: bytes) }
-    defer { server.stop() }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
     let entered = expectation(description: "Second thumbnail authorization started")
     let (gate, release) = AsyncStream<Void>.makeStream()
@@ -129,7 +129,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
   func testFailedThumbnailCanRetryAndRenderedFileNeedsItsOwnAuthorization() async throws {
     let bytes = imageData()
     let server = try ChatFileHTTPServer { _ in .init(body: bytes) }
-    defer { server.stop() }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
     let unavailable = Mutex(true)
     let fixture = ChatHTTPFixture { request in
