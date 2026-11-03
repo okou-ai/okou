@@ -261,11 +261,15 @@ final class NotificationService {
       try Task.checkCancellation()
       guard self.generation == generation else { return }
       registrationError = nil
+      error = nil
       requestNotificationStateRefresh()
     } catch {
       guard self.generation == generation, !Task.isCancelled else { return }
       binding = nil
       registrationError = error.localizedDescription
+      if let status = (error as? APIClientError)?.statusCode, [401, 426].contains(status) {
+        self.error = error.localizedDescription
+      }
     }
   }
 
