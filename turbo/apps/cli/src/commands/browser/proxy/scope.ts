@@ -38,7 +38,7 @@ export class WindowScope {
   private readonly creating = new Set<string>();
   private readonly preparingTabs = new Set<number>();
   private readonly created = new Map<string, string>();
-  private readonly closingTargets = new Set<string>();
+  private readonly closingTargets = new Map<string, number>();
   private closing = Promise.resolve();
   private readonly listeners = new Set<() => void>();
   private generation = 0;
@@ -352,8 +352,7 @@ export class WindowScope {
 
   /** One close owner across peers; a pending native close is not a survivor. */
   closeTarget(id: string, close: () => Promise<unknown>): Promise<unknown> {
-    const reserved = this.closingTargets.has(id);
-    this.closingTargets.add(id);
+    this.reserveClose(id);
     let dispatched = false;
     const operation = this.closing
       .then(async () => {
@@ -402,8 +401,7 @@ export class WindowScope {
         await this.confirmWindow(id);
         dispatched = true;
         const result = await close();
-        if (!reserved && record(result) && result.success === false)
-          this.closingTargets.delete(id);
+        if (record(result) && result.success === false) this.releaseClose(id);
         // A successful acknowledgement can precede destruction (Page.close may
         // also await beforeunload). Native retirement owns reservation release.
         return result;
@@ -411,7 +409,7 @@ export class WindowScope {
       .catch((error: unknown) => {
         // Once sent, a failed/disconnected reply does not prove that native close
         // was cancelled. Keep its reservation until authoritative retirement.
-        if (!reserved && !dispatched) this.closingTargets.delete(id);
+        if (!dispatched) this.releaseClose(id);
         throw error;
       });
     this.closing = operation.then(
@@ -419,6 +417,17 @@ export class WindowScope {
       () => {},
     );
     return operation;
+  }
+
+  private reserveClose(id: string): void {
+    this.closingTargets.set(id, (this.closingTargets.get(id) ?? 0) + 1);
+  }
+
+  private releaseClose(id: string): void {
+    const count = this.closingTargets.get(id);
+    if (count === undefined) return; // Native retirement already released all owners.
+    if (count === 1) this.closingTargets.delete(id);
+    else this.closingTargets.set(id, count - 1);
   }
 
   private async confirmWindow(targetId: string): Promise<void> {
@@ -560,7 +569,7 @@ export class WindowScope {
       if (createdId) {
         try {
           // A rollback acknowledgement can precede native retirement too.
-          this.closingTargets.add(createdId);
+          this.reserveClose(createdId);
           await this.wire.request("Target.closeTarget", {
             targetId: createdId,
           });

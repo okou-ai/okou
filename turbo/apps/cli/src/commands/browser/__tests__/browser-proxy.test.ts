@@ -1469,6 +1469,43 @@ describe("chat-window CDP proxy protocol", () => {
     },
   );
 
+  it("retains another peer's close reservation when an overlapping close of the same tab fails", async () => {
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const preparation = provider.holdNextNavigation();
+    const first = expect(
+      connection.request("Target.closeTarget", { targetId: "A" }),
+    ).rejects.toMatchObject({
+      code: -32000,
+      message: "Native navigation failed",
+    });
+    let second: Promise<Record<string, unknown>> | undefined;
+    try {
+      await preparation.observed;
+      second = peer.request("Target.closeTarget", { targetId: "A" });
+      await peer.request("Future.echo", { barrier: true });
+      preparation.resume(true);
+      await first;
+      expect(await second).toStrictEqual({ success: true });
+      const targets = (await peer.request("Target.getTargets")).targetInfos as {
+        targetId: string;
+        type: string;
+        url: string;
+      }[];
+      expect(
+        targets.filter((target) => {
+          return target.type === "page";
+        }),
+      ).toEqual([expect.objectContaining({ url: "about:blank" })]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      preparation.resume(true);
+      await first;
+      await second?.catch(() => {});
+    }
+  });
+
   it("preserves the window when an earlier close loses its native acknowledgement", async () => {
     provider.addPage("C", 0);
     await connection.request("Target.getTargets");
