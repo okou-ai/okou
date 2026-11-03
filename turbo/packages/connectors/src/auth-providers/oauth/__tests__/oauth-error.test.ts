@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { isOAuthProviderHttpError, throwOAuthError } from "../error";
+import {
+  isOAuthProviderHttpError,
+  OAuthProviderHttpError,
+  oauthFailureDiagnostics,
+  throwOAuthError,
+} from "../error";
+import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 
 function makeResponse(status: number, body: string): Response {
   return new Response(body, { status, statusText: "Bad Request" });
@@ -174,5 +180,35 @@ describe("throwOAuthError", () => {
     await expect(
       throwOAuthError("Stripe", "refresh", response),
     ).rejects.toThrow('Stripe token refresh failed: 400 "temporarily down"');
+  });
+});
+
+describe("oauthFailureDiagnostics", () => {
+  it("keeps only typed HTTP status and allowlisted OAuth codes", () => {
+    const secret = "provider-controlled-secret-canary";
+    const knownError = new OAuthProviderHttpError(
+      secret,
+      400,
+      "invalid_client",
+      secret,
+      secret,
+    );
+    expect(oauthFailureDiagnostics(knownError)).toStrictEqual({
+      failureKind: "oauth_http",
+      httpStatus: 400,
+      oauthError: "invalid_client",
+    });
+    const untrustedErrors = [
+      new OAuthProviderHttpError(secret, 400, secret, secret, secret),
+      new ProviderHttpError(secret, 403),
+      new ProviderResponseError(secret),
+      new Error(secret, { cause: secret }),
+      { message: secret, status: secret, oauthError: secret },
+    ];
+    for (const error of untrustedErrors) {
+      expect(JSON.stringify(oauthFailureDiagnostics(error))).not.toContain(
+        secret,
+      );
+    }
   });
 });

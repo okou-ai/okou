@@ -21,12 +21,14 @@ import {
   verifyConnectorOpenIdAuthCallbackWithMethod,
   type ConnectorAuthProviderGrantResult,
 } from "@okouai/connectors/auth-providers";
+import { oauthFailureDiagnostics } from "@okouai/connectors/auth-providers/oauth/error";
 
 import { request$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
+import { logger } from "../../lib/log";
 import {
   claimBuiltinConnectorOAuthState$,
   getConnectorOAuthStateStatus$,
@@ -72,6 +74,7 @@ import {
 } from "../../lib/connector-oauth-state";
 import { openIdRealmForOrigin } from "./connector-openid-auth-start";
 
+const L = logger("connectors:oauth-callback");
 type CallbackIdentity = {
   readonly userId: string;
   readonly orgId: string;
@@ -1229,6 +1232,14 @@ const handleAuthCodeConnectorCallback$ = command(
         },
         signal,
       ),
+      (error) => {
+        L.error("OAuth callback failed", {
+          connectorSlug: args.connectorSlug,
+          authMethodId: resolvedState.resolvedMethod.authMethodId,
+          oauthAttemptId: claimedState.storedState.id,
+          ...oauthFailureDiagnostics(error),
+        });
+      },
     );
     signal.throwIfAborted();
 
