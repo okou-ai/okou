@@ -9,8 +9,9 @@ import {
   type ChatThreadSnapshotProjection,
   chatThreadMetadataContract,
   chatThreadByIdContract,
+  chatThreadDraftContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   fill,
@@ -100,16 +101,16 @@ function metadata(extra: readonly { id: string; name: string }[] = []) {
   context.mocks.api(projectsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  context.mocks.api(projectChatContract.agentDraft, ({ respond }) => {
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(projectChatContract.draft, ({ respond }) => {
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(projectChatContract.saveAgentDraft, ({ respond }) => {
+  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
-  context.mocks.api(projectChatContract.saveDraft, ({ respond }) => {
+  context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
     return respond(204);
   });
 }
@@ -337,12 +338,11 @@ test("Thread menu searches and changes Project membership while preserving the o
       events.push({
         id: body.eventId,
         seqId: events.length + 2,
-        kind: "sort_touched",
+        kind: "project_updated",
         chatThreadId: params.id,
         agentId: ordinary.agentId,
         title: ordinary.title,
         projectId: body.projectId,
-        projectMembershipUpdated: true,
         selectedModel: ordinary.selectedModel,
         serviceTier: null,
         computerUseHostId: null,
@@ -461,12 +461,11 @@ test("Dropping over an existing Project chat moves immediately while the request
       events.push({
         id: body.eventId,
         seqId: 2,
-        kind: "sort_touched",
+        kind: "project_updated",
         chatThreadId: params.id,
         agentId: ordinary.agentId,
         title: ordinary.title,
         projectId: body.projectId,
-        projectMembershipUpdated: true,
         selectedModel: ordinary.selectedModel,
         serviceTier: null,
         computerUseHostId: null,
@@ -947,11 +946,10 @@ test.each([
         const committed: ChatThreadEvent = {
           id: body.eventId,
           seqId: 2,
-          kind: "sort_touched",
+          kind: "project_updated",
           chatThreadId: params.id,
           agentId: thread.agentId,
           projectId: body.projectId,
-          projectMembershipUpdated: true,
           title: thread.title,
           selectedModel: thread.selectedModel,
           serviceTier: null,

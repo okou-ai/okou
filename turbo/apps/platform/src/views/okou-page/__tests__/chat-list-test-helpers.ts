@@ -5,6 +5,7 @@ import {
   chatThreadEventsContract,
   chatThreadMetadataContract,
   chatThreadsContract,
+  chatThreadEventSchema,
   type ChatThreadEvent,
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
@@ -82,7 +83,7 @@ export function chatListEvent(
   overrides: Partial<ChatThreadEvent> = {},
 ): ChatThreadEvent {
   const seconds = sequence.toString().padStart(2, "0");
-  return {
+  return chatThreadEventSchema.parse({
     id: chatListEventId(caseId, sequence),
     seqId: sequence,
     kind,
@@ -95,7 +96,7 @@ export function chatListEvent(
     cloudBrowserEnabled: false,
     createdAt: `2026-08-01T01:00:${seconds}.000Z`,
     ...overrides,
-  };
+  });
 }
 
 export function cachedChatListEvents(

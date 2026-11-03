@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadsContract,
+  chatThreadByIdContract,
+  chatThreadDraftContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { testContext, accept } from "../../../__tests__/test-context";
@@ -9,6 +14,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { projectRoutes } from "../projects";
 import { chatThreadRoutes } from "../chat-threads";
+import { agentDraftRoutes } from "../agent-draft";
 import {
   createBddApi,
   type ApiTestUser,
@@ -111,6 +117,107 @@ async function move(
 }
 
 describe("private cross-Agent Projects", () => {
+  it("preserves structured Project references through ordinary Agent and Thread drafts", async () => {
+    const actor = await owner();
+    const project = await create(actor);
+    const a = await agent(actor);
+    const t = await thread(actor, a.agentId, project.id);
+    const draft = {
+      draftUserMessage: {
+        version: 1 as const,
+        parts: [
+          {
+            type: "project" as const,
+            projectId: project.id,
+            nameSnapshot: project.name,
+          },
+          {
+            type: "feedback" as const,
+            quote: "Review this",
+            note: [
+              {
+                type: "project" as const,
+                projectId: project.id,
+                nameSnapshot: project.name,
+              },
+            ],
+          },
+        ],
+      },
+      draftAttachments: null,
+    };
+    const threadApi = setupApp({ context, routes: chatThreadRoutes });
+    await accept(
+      threadApi(chatThreadByIdContract).patch({
+        headers: headers(actor),
+        params: { id: t.id },
+        body: draft,
+      }),
+      [204],
+    );
+    expect(
+      (
+        await accept(
+          threadApi(chatThreadDraftContract).get({
+            headers: headers(actor),
+            params: { id: t.id },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(draft);
+    const agentApi = setupApp({ context, routes: agentDraftRoutes })(
+      agentDraftContract,
+    );
+    await accept(
+      agentApi.patch({
+        headers: headers(actor),
+        params: { id: a.agentId },
+        body: draft,
+      }),
+      [204],
+    );
+    expect(
+      (
+        await accept(
+          agentApi.get({
+            headers: headers(actor),
+            params: { id: a.agentId },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(draft);
+    if (!actor.orgId) {
+      throw new Error("Missing organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.Projects]: false,
+      },
+    );
+    expect(
+      (
+        await threadApi(chatThreadByIdContract).patch({
+          headers: headers(actor),
+          params: { id: t.id },
+          body: draft,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await agentApi.patch({
+          headers: headers(actor),
+          params: { id: a.agentId },
+          body: draft,
+        })
+      ).status,
+    ).toBe(404);
+  });
+
   it("is disabled by default and isolates colleagues and organizations", async () => {
     const disabled = bdd.user();
     expect((await client().list({ headers: headers(disabled) })).status).toBe(
@@ -234,7 +341,7 @@ describe("private cross-Agent Projects", () => {
       expect(
         events
           .filter((e) => {
-            return e.chatThreadId === id && e.projectMembershipUpdated;
+            return e.chatThreadId === id && e.kind === "project_updated";
           })
           .at(-1)?.projectId,
       ).toBeNull();
@@ -335,7 +442,7 @@ test("serializes concurrent moves, duplicate creates and deletion against new me
       [200],
     )
   ).body.events.filter((e) => {
-    return e.chatThreadId === first.id && e.projectMembershipUpdated;
+    return e.chatThreadId === first.id && e.kind === "project_updated";
   });
   const last = events.at(-1);
   if (!last?.projectId) {
@@ -377,7 +484,7 @@ test("serializes concurrent moves, duplicate creates and deletion against new me
     ).body.events;
     const tail = all
       .filter((e) => {
-        return e.chatThreadId === first.id && e.projectMembershipUpdated;
+        return e.chatThreadId === first.id && e.kind === "project_updated";
       })
       .at(-1);
     expect(tail?.projectId).not.toBe(p.id);

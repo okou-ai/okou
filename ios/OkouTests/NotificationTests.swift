@@ -212,7 +212,7 @@ final class NotificationTests: XCTestCase {
       scope: ChatCacheScope(
         apiBaseURL: fixture.http.baseURL, userID: "user_push", workspaceID: "org_push"))
     try await emptyCache.replaceThreadList(
-      snapshot: Data(#"{"chatThreads":[]}"#.utf8),
+      snapshot: Data(#"{"cacheFormat":"projectEvents","chatThreads":[]}"#.utf8),
       cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
     let mounted = WorkspaceStore(
       client: data.client, webURL: fixture.http.baseURL,

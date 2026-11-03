@@ -237,7 +237,7 @@ export const chatThreadSnapshotArchiveSchema = object({
   chatThreads: array(chatThreadSnapshotProjectionSchema),
 });
 
-export const chatThreadEventSchema = object({
+const ordinaryChatThreadEventSchema = object({
   id: chatThreadEventIdSchema,
   /** Server-assigned strict position within the user/org event stream. */
   seqId: number().int().positive(),
@@ -259,8 +259,6 @@ export const chatThreadEventSchema = object({
   agentId: uuid(),
   /** On sort_touched, an explicit canonical agent reassignment. */
   reassignedAgentId: uuid().optional(),
-  /** Release-1 membership bridge; remove with the #44591 wire activation. */
-  projectMembershipUpdated: boolean().optional(),
   title: string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: string().nullable().optional(),
@@ -280,6 +278,14 @@ export const chatThreadEventSchema = object({
   cloudBrowserEnabled: boolean().optional(),
   createdAt: string(),
 });
+
+export const chatThreadEventSchema = discriminatedUnion("kind", [
+  ordinaryChatThreadEventSchema,
+  ordinaryChatThreadEventSchema.extend({
+    kind: literal("project_updated"),
+    projectId: uuid().nullable(),
+  }),
+]);
 
 export const presentationGenerationTemplateRequestSchema = object({
   type: literal("presentation"),
@@ -423,6 +429,12 @@ const userMessageAgentPartSchema = object({
   nameSnapshot: string().min(1),
 }).strict();
 
+export const projectMentionSchema = object({
+  type: literal("project"),
+  projectId: uuid(),
+  nameSnapshot: string().min(1).max(120),
+}).strict();
+
 const userMessageTemplatePartSchema = object({
   type: literal("template"),
   titleSnapshot: string().min(1),
@@ -434,6 +446,7 @@ export const feedbackNotePartSchema = discriminatedUnion("type", [
   userMessageChatThreadPartSchema,
   userMessageAgentPartSchema,
   userMessageTemplatePartSchema,
+  projectMentionSchema,
 ]);
 
 const feedbackRangeSchema = object({
@@ -501,6 +514,7 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
   userMessageChatThreadPartSchema,
   userMessageAgentPartSchema,
   userMessageTemplatePartSchema,
+  projectMentionSchema,
   userMessageSourcePartSchema,
   object({
     /** Client-authored context included in agent prompts, not visible text. */

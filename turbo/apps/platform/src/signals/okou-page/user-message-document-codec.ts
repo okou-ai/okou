@@ -1,8 +1,9 @@
 import {
-  projectMessageDocumentSchema as userMessageDocumentSchema,
-  projectInputDocumentSchema as userMessageInputDocumentSchema,
+  userMessageDocumentSchema,
+  userMessageInputDocumentSchema,
   projectMentionSchema,
-} from "@okouai/api-contracts/validators/project-message";
+  generationTemplateRequestSchema,
+} from "@okouai/api-contracts/validators/chat-threads";
 import {
   readSuggestionContext,
   suggestionContextPart,
@@ -11,7 +12,6 @@ import {
 } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { JSONContent } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { generationTemplateRequestSchema } from "@okouai/api-contracts/validators/chat-threads";
 import type {
   FeedbackNotePart,
   GenerationTemplateRequest,

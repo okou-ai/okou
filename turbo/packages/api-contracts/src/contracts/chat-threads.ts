@@ -1,10 +1,3 @@
-import type {
-  ProjectMessagePart,
-  ProjectInputPart,
-  ProjectMessageDocument,
-  ProjectInputDocument,
-  ProjectMention,
-} from "../validators/project-message";
 import {
   chatThreadArtifactGoogleDriveRecoverySchema,
   chatThreadArtifactGoogleDriveSyncSchema,
@@ -1278,12 +1271,13 @@ export type GenerationTemplateRequest = zInfer<
   typeof generationTemplateRequestSchema
 >;
 export type GenerationTemplateType = GenerationTemplateRequest["type"];
-export type FeedbackNotePart =
-  zInfer<typeof feedbackNotePartSchema> | ProjectMention;
-export type UserMessageInputPart = ProjectInputPart;
-export type UserMessageInputDocument = ProjectInputDocument;
-export type UserMessagePart = ProjectMessagePart;
-export type UserMessageDocument = ProjectMessageDocument;
+export type FeedbackNotePart = zInfer<typeof feedbackNotePartSchema>;
+export type UserMessageInputPart = zInfer<typeof userMessageInputPartSchema>;
+export type UserMessageInputDocument = zInfer<
+  typeof userMessageInputDocumentSchema
+>;
+export type UserMessagePart = zInfer<typeof userMessagePartSchema>;
+export type UserMessageDocument = zInfer<typeof userMessageDocumentSchema>;
 export type LegacyThreadGenerationTemplateType = Exclude<
   GenerationTemplateType,
   "workflow" | "website"
@@ -1328,17 +1322,8 @@ export type ChatThreadSnapshotProjection = zInfer<
 export type ChatThreadEvent = zInfer<typeof chatThreadEventSchema>;
 export type ChatThreadDetail = zInfer<typeof chatThreadDetailSchema>;
 export type ChatThreadMetadata = zInfer<typeof chatThreadMetadataSchema>;
-export type ChatThreadDraft = zInfer<
-  typeof import("../validators/project-message").projectComposerDraftSchema
->;
-type ProjectDocumentEvent<T> = T extends unknown
-  ? "userMessage" extends keyof T
-    ? T extends { userMessage: unknown }
-      ? Omit<T, "userMessage"> & { userMessage: UserMessageDocument }
-      : Omit<T, "userMessage"> & { userMessage?: UserMessageDocument }
-    : T
-  : never;
-export type ChatEvent = ProjectDocumentEvent<zInfer<typeof chatEventSchema>>;
+export type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
+export type ChatEvent = zInfer<typeof chatEventSchema>;
 export type Indicator = zInfer<typeof indicatorSchema>;
 export type Indicators = zInfer<typeof indicatorsSchema>;
 

@@ -1,4 +1,7 @@
-import { projectMessageDocumentSchema as projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
+import {
+  userMessageDocumentSchema,
+  resolveChatEventRecommendedFollowups,
+} from "@okouai/api-contracts/validators/chat-threads";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -13,7 +16,6 @@ import {
   revokedChatEventIds,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/client/chat-threads";
-import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
 import type {
   ChatRunOptionsRequest,
   ChatThreadArtifactRun,
@@ -1144,8 +1146,7 @@ const registerUserMessageRenderDocument$ = command(
     document: UserMessageDocument,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderDocument => {
-    const readableDocument =
-      projectAwareUserMessageDocumentSchema.parse(document);
+    const readableDocument = userMessageDocumentSchema.parse(document);
     return {
       // Registration uses the raw document identity across window updates.
       document,

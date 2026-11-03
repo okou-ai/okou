@@ -3,10 +3,6 @@ import {
   chatThreadEventSchema,
   userMessageDocumentSchema,
 } from "../chat-threads";
-import {
-  projectAwareChatThreadEventSchema,
-  projectAwareUserMessageDocumentSchema,
-} from "../project-readers";
 
 const projectId = "00000000-0000-4000-8000-000000000071";
 const event = {
@@ -20,17 +16,15 @@ const event = {
   createdAt: "2026-11-02T00:00:00.000Z",
 };
 
-describe("prepared Project readers", () => {
-  it("reads explicit assignment and unassignment while the published server enum remains legacy", () => {
-    expect(projectAwareChatThreadEventSchema.parse(event)).toMatchObject({
+describe("Project wire contracts", () => {
+  it("reads canonical assignment and unassignment events", () => {
+    expect(chatThreadEventSchema.parse(event)).toMatchObject({
       kind: "project_updated",
       projectId,
     });
     expect(
-      projectAwareChatThreadEventSchema.parse({ ...event, projectId: null }),
+      chatThreadEventSchema.parse({ ...event, projectId: null }),
     ).toMatchObject({ projectId: null });
-    // Release 1 must remain compatible with the installed iOS response reader.
-    expect(chatThreadEventSchema.safeParse(event).success).toBe(false);
     expect(
       chatThreadEventSchema.parse({ ...event, kind: "renamed" }),
     ).toMatchObject({ kind: "renamed" });
@@ -51,25 +45,14 @@ describe("prepared Project readers", () => {
       ],
     };
     const before = structuredClone(document);
-    const parsed = projectAwareUserMessageDocumentSchema.parse(document);
-    expect(parsed.parts).toEqual([
-      { type: "text", text: "Review " },
-      { type: "text", text: `[Original launch](/projects/${projectId})` },
-      {
-        type: "feedback",
-        quote: "Check this",
-        note: [
-          { type: "text", text: `[Original launch](/projects/${projectId})` },
-        ],
-      },
-    ]);
+    const parsed = userMessageDocumentSchema.parse(document);
+    expect(parsed).toEqual(document);
     expect(document).toEqual(before);
-    expect(userMessageDocumentSchema.parse(parsed)).toEqual(parsed);
   });
 
   it("rejects malformed clipboard references through safeParse without throwing", () => {
     expect(
-      projectAwareUserMessageDocumentSchema.safeParse({
+      userMessageDocumentSchema.safeParse({
         version: 1,
         parts: [
           { type: "project", projectId: "not-an-id", nameSnapshot: "Launch" },

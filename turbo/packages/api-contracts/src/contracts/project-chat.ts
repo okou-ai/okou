@@ -2,9 +2,9 @@ import { object, uuid, string, never as zNever } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { chatNormalSendBodyShape, chatEventsContract } from "./chat-event-send";
 import {
-  projectMessageDocumentSchema,
-  projectComposerDraftSchema,
-} from "../validators/project-message";
+  userMessageDocumentSchema,
+  composerDraftSchema,
+} from "../validators/chat-threads";
 import { apiErrorSchema } from "./errors";
 const c = initContract();
 export const projectChatContract = c.router({
@@ -14,7 +14,7 @@ export const projectChatContract = c.router({
     pathParams: object({ id: uuid() }),
     headers: authHeadersSchema,
     responses: {
-      200: projectComposerDraftSchema,
+      200: composerDraftSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -25,7 +25,7 @@ export const projectChatContract = c.router({
     path: "/api/project-chat/agents/:id/draft",
     pathParams: object({ id: uuid() }),
     headers: authHeadersSchema,
-    body: projectComposerDraftSchema,
+    body: composerDraftSchema,
     responses: {
       204: c.noBody(),
       400: apiErrorSchema,
@@ -40,7 +40,7 @@ export const projectChatContract = c.router({
     headers: authHeadersSchema,
     body: object({
       ...chatNormalSendBodyShape,
-      userMessage: projectMessageDocumentSchema,
+      userMessage: userMessageDocumentSchema,
       clientEventId: uuid().optional(),
       revokesEventId: string().min(1).optional(),
       interruptsRunId: zNever().optional(),
@@ -65,7 +65,7 @@ export const projectChatContract = c.router({
     pathParams: object({ id: uuid() }),
     headers: authHeadersSchema,
     responses: {
-      200: projectComposerDraftSchema,
+      200: composerDraftSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -76,7 +76,7 @@ export const projectChatContract = c.router({
     path: "/api/project-chat/:id/draft",
     pathParams: object({ id: uuid() }),
     headers: authHeadersSchema,
-    body: projectComposerDraftSchema,
+    body: composerDraftSchema,
     responses: {
       204: c.noBody(),
       400: apiErrorSchema,
