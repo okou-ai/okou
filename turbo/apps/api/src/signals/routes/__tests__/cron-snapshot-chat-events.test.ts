@@ -300,65 +300,109 @@ describe("cron snapshot chat events", () => {
         const output = context.mocks.console.log;
         onTestFinished(context.mocks.console.capture());
         const privateContext = `private-snapshot-credential ${threadId} ${[...objects.keys()].join(" ")}`;
-        output.mockClear();
-        context.mocks.s3.send.mockImplementationOnce((request: unknown) => {
-          if (!(request instanceof GetObjectCommand)) {
-            throw new Error("Expected the existing snapshot download");
-          }
-          return Promise.reject(
-            Object.assign(new Error(privateContext), {
+        const localError = Object.assign(new Error(privateContext), {
+          code: "EBUSY",
+          syscall: "getaddrinfo",
+          hostname: privateContext,
+        });
+        const fdError = Object.assign(new Error(privateContext), {
+          code: "EMFILE",
+        });
+        const cyclicError = Object.assign(new Error(privateContext), {
+          code: privateContext,
+        });
+        cyclicError.cause = cyclicError;
+        let deepError: Error = localError;
+        for (let depth = 0; depth < 8; depth += 1) {
+          deepError = new Error(privateContext, { cause: deepError });
+        }
+        const failures = [
+          {
+            error: Object.assign(new Error(privateContext), {
               name: "AccessDenied",
-              $metadata: {
-                httpStatusCode: 403,
-                attempts: 1,
-                requestId: privateContext,
-              },
-              cause: new Error(privateContext),
-              request: { url: `https://storage.example/${privateContext}` },
+              cause: localError,
+              $metadata: { httpStatusCode: 403, attempts: 1 },
             }),
-          );
-        });
-        const skipped = await accept(
-          app(cronSnapshotChatEventsContract).snapshot({ headers }),
-          [200],
-        );
-        expect(skipped.body.skippedUnreadableHeads).toBe(1);
-        const warnings = output.mock.calls.filter(([message]) => {
-          return (
-            typeof message === "string" &&
-            message.includes("Skipped Chat Event Snapshot pointer")
-          );
-        });
-        expect(warnings).toStrictEqual([
-          [
-            "[WARN][api:cron:snapshot-chat-events] Skipped Chat Event Snapshot pointer",
-            {
-              type: "chat_event_snapshot_head_skipped",
-              reason: "unreadable",
-              downloadStage: "get_object",
-              failureClass: "access_denied",
-              providerStatus: 403,
-              providerAttempts: 1,
-              providerRetries: 0,
+            expected: { failureClass: "access_denied", providerStatus: 403 },
+          },
+          {
+            error: localError,
+            expected: { failureClass: "local_resource", failureCode: "EBUSY" },
+          },
+          {
+            error: new Error(privateContext, { cause: fdError }),
+            expected: { failureClass: "local_resource", failureCode: "EMFILE" },
+          },
+          {
+            error: new AggregateError([fdError], privateContext),
+            expected: { failureClass: "local_resource", failureCode: "EMFILE" },
+          },
+          { error: cyclicError, expected: { failureClass: "unknown" } },
+          { error: deepError, expected: { failureClass: "unknown" } },
+        ];
+        for (const { error, expected } of failures) {
+          Object.assign(error, {
+            $metadata: {
+              attempts: 1,
+              requestId: privateContext,
+              ...("providerStatus" in expected
+                ? { httpStatusCode: expected.providerStatus }
+                : {}),
             },
-          ],
-        ]);
-        expect(JSON.stringify(warnings)).not.toContain(privateContext);
-        expect(JSON.stringify(warnings)).not.toContain(threadId);
-        createRouteMocks(context).clerk.session(
-          owner.userId,
-          owner.orgId,
-          owner.orgRole,
-        );
-        const previous = await accept(
-          app(chatThreadEventsContract).snapshot({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { threadId },
-          }),
-          [200],
-        );
-        expect(previous.body.lastSeqId).toBe(priorSeqId);
-        expect(previous.body.lastEventId).toBe(priorRows.at(-1)?.id);
+            request: { url: `https://storage.example/${privateContext}` },
+          });
+          output.mockClear();
+          context.mocks.s3.send.mockRejectedValueOnce(error);
+          const skipped = await accept(
+            app(cronSnapshotChatEventsContract).snapshot({ headers }),
+            [200],
+          );
+          expect(skipped.body.skippedUnreadableHeads).toBe(1);
+          const warnings = output.mock.calls.filter(([message]) => {
+            return (
+              typeof message === "string" &&
+              message.includes("Skipped Chat Event Snapshot pointer")
+            );
+          });
+          expect(warnings).toStrictEqual([
+            [
+              "[WARN][api:cron:snapshot-chat-events] Skipped Chat Event Snapshot pointer",
+              {
+                type: "chat_event_snapshot_head_skipped",
+                reason: "unreadable",
+                downloadStage: "get_object",
+                ...expected,
+                providerAttempts: 1,
+                providerRetries: 0,
+              },
+            ],
+          ]);
+          expect(JSON.stringify(warnings)).not.toContain(privateContext);
+          expect(JSON.stringify(warnings)).not.toContain(threadId);
+          createRouteMocks(context).clerk.session(
+            owner.userId,
+            owner.orgId,
+            owner.orgRole,
+          );
+          const previous = await accept(
+            app(chatThreadEventsContract).snapshot({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { threadId },
+            }),
+            [200],
+          );
+          expect(previous.body.lastSeqId).toBe(priorSeqId);
+          expect(previous.body.lastEventId).toBe(priorRows.at(-1)?.id);
+          const downloaded = await fetch(previous.body.url);
+          expect(downloaded.status).toBe(200);
+          const previousRows = (await downloaded.text())
+            .trimEnd()
+            .split("\n")
+            .map((line) => {
+              return chatEventRowSchema.parse(JSON.parse(line));
+            });
+          expect(previousRows).toStrictEqual(priorRows);
+        }
       }
       await accept(
         app(cronSnapshotChatEventsContract).snapshot({ headers }),
