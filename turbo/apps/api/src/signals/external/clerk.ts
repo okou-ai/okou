@@ -169,6 +169,8 @@ export interface ClerkEmailAddress {
 
 export interface ClerkUser {
   readonly id: string;
+  readonly createdAt?: number;
+  readonly banned?: boolean;
   readonly emailAddresses: readonly ClerkEmailAddress[];
   readonly primaryEmailAddressId: string | null;
   readonly firstName: string | null;

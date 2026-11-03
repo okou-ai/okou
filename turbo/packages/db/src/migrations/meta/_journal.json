@@ -3095,6 +3095,13 @@
       "when": 1793687900107,
       "tag": "1520_connector_catalog_version",
       "breakpoints": true
+    },
+    {
+      "idx": 1521,
+      "version": "7",
+      "when": 1793693860122,
+      "tag": "1521_sudden_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

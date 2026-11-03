@@ -343,6 +343,10 @@ export const clientDescriptorManifest = [
     contracts: ["feishuOauthContract"],
   },
   {
+    module: "friend-referrals",
+    contracts: ["friendReferralsContract"],
+  },
+  {
     module: "get-started",
     contracts: ["cronGetStartedContract", "getStartedContract"],
   },

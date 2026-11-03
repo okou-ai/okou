@@ -18,6 +18,7 @@ const selectionSchema = object({
   metadata: object({ usagePackSubscriptionId: string() }).catchall(string()),
 });
 const PRICE_PLAN = "price_public_usage_plan";
+const PRICE_PLAN_TEAM = "price_public_usage_plan_team";
 const PRICE_20 = "price_public_usage_20";
 const PRICE_50 = "price_public_usage_50";
 const PRICE_100 = "price_public_usage_100";
@@ -34,11 +35,17 @@ export async function purchaseUsagePacks(
   context: TestContext,
   actor: { readonly userId: string; readonly orgId: string },
   selections: readonly { readonly userId: string; readonly usd: 20 | 50 }[],
-): Promise<void> {
+  options: {
+    readonly amountPaid?: number;
+    readonly deliveries?: number;
+    readonly tier?: "pro" | "team";
+  } = {},
+) {
   mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
   mockOptionalEnv("STRIPE_SECRET_KEY", "sk_public_usage_pack");
   mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_public_usage_pack");
   mockEnv("OKOU_PRICE_USAGE_PACK_PLAN_PRO", PRICE_PLAN);
+  mockEnv("OKOU_PRICE_USAGE_PACK_PLAN_TEAM", PRICE_PLAN_TEAM);
   mockEnv("OKOU_PRICE_USAGE_PACK_20", PRICE_20);
   mockEnv("OKOU_PRICE_USAGE_PACK_50", PRICE_50);
   mockEnv("OKOU_PRICE_USAGE_PACK_100", PRICE_100);
@@ -124,7 +131,7 @@ export async function purchaseUsagePacks(
     ).create({
       headers: { authorization: "Bearer clerk-session" },
       body: {
-        tier: "pro",
+        tier: options.tier ?? "pro",
         memberUsagePacks: members.map((userId) => {
           const selected = selections.find((selection) => {
             return selection.userId === userId;
@@ -174,7 +181,7 @@ export async function purchaseUsagePacks(
     items: {
       data: [
         {
-          price: { id: PRICE_PLAN },
+          price: { id: options.tier === "team" ? PRICE_PLAN_TEAM : PRICE_PLAN },
           quantity: 1,
           current_period_start: start,
           current_period_end: end,
@@ -202,6 +209,12 @@ export async function purchaseUsagePacks(
         metadata,
         status: "paid",
         paid: true,
+        currency: "usd",
+        amount_paid:
+          options.amountPaid ??
+          selections.reduce((total, selection) => {
+            return total + selection.usd * 100;
+          }, 0),
         parent: {
           subscription_details: { subscription: subscriptionId, metadata },
         },
@@ -226,14 +239,24 @@ export async function purchaseUsagePacks(
       },
     },
   };
-  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(event);
-  await accept(
-    setupApp({ context, routes: webhooksStripeRoutes })(
-      webhookStripeContract,
-    ).post({
-      body: JSON.stringify(event),
-      extraHeaders: { "stripe-signature": "t=1,v1=public-usage-pack" },
+  const deliveries = options.deliveries ?? 1;
+  for (let index = 0; index < deliveries; index++) {
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
+  }
+  await Promise.all(
+    Array.from({ length: deliveries }, () => {
+      return accept(
+        setupApp({ context, routes: webhooksStripeRoutes })(
+          webhookStripeContract,
+        ).post({
+          body: JSON.stringify(event),
+          extraHeaders: { "stripe-signature": "t=1,v1=public-usage-pack" },
+        }),
+        [200],
+      );
     }),
-    [200],
   );
+  return event;
 }

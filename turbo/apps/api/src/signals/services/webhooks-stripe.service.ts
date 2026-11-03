@@ -29,6 +29,7 @@ import {
   requireNoPendingOrgCreditExpiration,
 } from "./org-credit-expiration";
 import { grantPurchasedOrgCredits$ } from "./org-credit-grant.service";
+import { grantPaidFriendReferralRewards$ } from "./friend-referrals.service";
 import {
   orgTierSchema,
   type OrgTier,
@@ -168,6 +169,9 @@ interface CheckoutSessionInput {
 
 interface InvoiceInput {
   readonly billing_reason?: string | null;
+  readonly status?: StripeInvoice["status"];
+  readonly currency?: string;
+  readonly paid_out_of_band?: boolean;
   readonly id: string;
   readonly amount_paid: number;
   readonly customer: string | { readonly id: string } | null;
@@ -3549,7 +3553,7 @@ const handleConcurrencyInvoicePaid$ = command(
   },
 );
 
-const handleInvoicePaid$ = command(
+const fulfillPaidInvoice$ = command(
   async (
     { set },
     invoice: InvoiceInput,
@@ -3668,6 +3672,19 @@ const handleInvoicePaid$ = command(
       signal,
     );
     return concurrencyResult.drainOrgId ?? planDrainOrgId;
+  },
+);
+
+const handleInvoicePaid$ = command(
+  async ({ set }, invoice: InvoiceInput, signal: AbortSignal) => {
+    const orgId = await set(fulfillPaidInvoice$, invoice, signal);
+    signal.throwIfAborted();
+    if (orgId) {
+      // Billing reconciliation uses this same path, including after a reward
+      // publication failure following an already-committed usage-pack payment.
+      await set(grantPaidFriendReferralRewards$, invoice, orgId, signal);
+    }
+    return orgId;
   },
 );
 

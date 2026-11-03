@@ -1539,7 +1539,7 @@
           "unit": "pro Mitglied"
         },
         "pendingState": "{{amount}} ausstehend",
-        "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
+        "rewardsNote": "Aufgabenprämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "slack": {
           "action": "Hinzufügen",
           "description": "Da, wo dein Team schon arbeitet",
@@ -4171,6 +4171,23 @@
     "emptyDescription": "Neue Vorschläge erscheinen hier.",
     "emptyTitle": "Du bist auf dem neuesten Stand",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "copied": "Kopiert",
+    "copy": "Link kopieren",
+    "copyFailed": "Kopieren fehlgeschlagen. Wähle den Link oben aus und kopiere ihn.",
+    "description": "Erhalte Credits im Wert von $20, wenn sich ein Freund über deinen Link registriert, ein usage pack kauft und auf Pro oder höher wechselt.",
+    "earned": "Verdiente Credits",
+    "expiryNote": "Prämien für Freundesempfehlungen verfallen einen Monat nach der Gutschrift.",
+    "invite": "Einladen",
+    "linkLabel": "Dein Empfehlungslink",
+    "loadFailed": "Dein Empfehlungslink konnte nicht geladen werden. Versuche es erneut.",
+    "loading": "Dein Empfehlungslink wird geladen…",
+    "perFriend": "pro zahlendem Freund",
+    "registered": "Registrierte Freunde",
+    "retry": "Erneut versuchen",
+    "terms": "Nur für neue Nutzer. Pro Freund gibt es eine Prämie. Credits gehen an dein persönliches Guthaben in diesem Workspace und verfallen einen Monat nach der Gutschrift.",
+    "title": "Freunde einladen"
   },
   "global": {
     "errors": {

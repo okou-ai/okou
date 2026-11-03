@@ -922,6 +922,17 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "friend-referrals",
+    contracts: ["friendReferralsContract"],
+    bindings: [
+      {
+        name: "FRIEND_REFERRAL_REWARD_CREDITS",
+        source: "validators/friend-referrals",
+        imported: "FRIEND_REFERRAL_REWARD_CREDITS",
+      },
+    ],
+  },
+  {
     module: "get-started",
     contracts: ["cronGetStartedContract", "getStartedContract"],
     bindings: [

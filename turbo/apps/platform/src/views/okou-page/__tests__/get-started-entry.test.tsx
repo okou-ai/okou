@@ -2,6 +2,8 @@ import {
   catalogFixture,
   requireConnectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
+import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GET_STARTED_REWARDS,
   GET_STARTED_REWARDS_CHANGED_EVENT,
@@ -44,6 +46,112 @@ import {
 
 const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
+
+test("Friends have a separate referral link with paid-pack qualification and one-month rewards", async () => {
+  configureQuestPage(context, "admin");
+  const linkReady = context.mocks.deferred<void>();
+  context.mocks.api(friendReferralsContract.link, async ({ respond }) => {
+    await linkReady.promise;
+    return respond(200, {
+      code: "77777777-7777-4777-a777-777777777777",
+      registeredCount: 3,
+      rewardedCount: 2,
+      earnedCredits: 40_000,
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("Invite your team")).toBeInTheDocument();
+  click(within(panel).getByText("Invite your friends"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Invite your friends",
+  });
+  expect(
+    within(dialog).getByText(
+      /buys a usage pack, and upgrades to Pro or above/u,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(/expire one month after they are granted/u),
+  ).toBeInTheDocument();
+  expect(await within(dialog).findByRole("status")).toHaveTextContent(
+    "Getting your referral link…",
+  );
+  linkReady.resolve();
+  const link = await within(dialog).findByLabelText("Your referral link");
+  expect(link).toHaveValue(
+    `${location.origin}/sign-up?friend_referral=77777777-7777-4777-a777-777777777777`,
+  );
+  expect(within(dialog).getByText("40,000")).toBeInTheDocument();
+  click(buttonNamed("Copy link", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
+  expect(await navigator.clipboard.readText()).toBe(
+    `${location.origin}/sign-up?friend_referral=77777777-7777-4777-a777-777777777777`,
+  );
+});
+
+test("Referral link failures can be retried in the same dialog", async () => {
+  configureQuestPage(context, "admin");
+  let failed = true;
+  context.mocks.api(friendReferralsContract.link, ({ respond }) => {
+    return failed
+      ? respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Friend referrals are not available",
+          },
+        })
+      : respond(200, {
+          code: "77777777-7777-4777-a777-777777777777",
+          registeredCount: 0,
+          rewardedCount: 0,
+          earnedCredits: 0,
+        });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  click(within(await openQuestPanel()).getByText("Invite your friends"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Invite your friends",
+  });
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+    "Your referral link could not be loaded. Try again.",
+  );
+  failed = false;
+  click(buttonNamed("Try again", dialog));
+  expect(
+    await within(dialog).findByLabelText("Your referral link"),
+  ).toBeInTheDocument();
+});
 
 function normalizedText(element: Element): string {
   return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";

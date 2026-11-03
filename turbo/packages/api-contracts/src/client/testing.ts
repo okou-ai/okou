@@ -346,6 +346,8 @@ import { feishuEventsContract as OriginalFeishuEventsContract } from "../contrac
 import { feishuEventsContract } from "./feishu-events";
 import { feishuOauthContract as OriginalFeishuOauthContract } from "../contracts/feishu-oauth";
 import { feishuOauthContract } from "./feishu-oauth";
+import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
+import { friendReferralsContract } from "./friend-referrals";
 import {
   cronGetStartedContract as OriginalCronGetStartedContract,
   getStartedContract as OriginalGetStartedContract,
@@ -1037,6 +1039,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [larkConnectContract, OriginalLarkConnectContract],
   [feishuEventsContract, OriginalFeishuEventsContract],
   [feishuOauthContract, OriginalFeishuOauthContract],
+  [friendReferralsContract, OriginalFriendReferralsContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],

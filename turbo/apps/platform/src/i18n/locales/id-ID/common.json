@@ -1537,7 +1537,7 @@
           "unit": "per anggota"
         },
         "pendingState": "{{amount}} tertunda",
-        "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
+        "rewardsNote": "Hadiah tugas kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
         "slack": {
           "action": "Tambahkan",
           "description": "Tempat tim kamu sudah bekerja",
@@ -4157,6 +4157,23 @@
     "emptyDescription": "Saran baru akan muncul di sini.",
     "emptyTitle": "Semua sudah terkini",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "copied": "Disalin",
+    "copy": "Salin tautan",
+    "copyFailed": "Gagal menyalin. Pilih dan salin tautan di atas.",
+    "description": "Dapatkan kredit senilai $20 saat teman mendaftar melalui tautan Anda, membeli usage pack, dan beralih ke Pro atau lebih tinggi.",
+    "earned": "Kredit diperoleh",
+    "expiryNote": "Hadiah referral teman kedaluwarsa satu bulan setelah diberikan.",
+    "invite": "Undang",
+    "linkLabel": "Tautan referral Anda",
+    "loadFailed": "Tautan referral Anda tidak dapat dimuat. Coba lagi.",
+    "loading": "Memuat tautan referral Anda…",
+    "perFriend": "per teman berbayar",
+    "registered": "Teman terdaftar",
+    "retry": "Coba lagi",
+    "terms": "Hanya untuk pengguna baru. Satu hadiah per teman. Kredit masuk ke saldo pribadi Anda di ruang kerja ini dan kedaluwarsa satu bulan setelah diberikan.",
+    "title": "Undang teman Anda"
   },
   "global": {
     "errors": {

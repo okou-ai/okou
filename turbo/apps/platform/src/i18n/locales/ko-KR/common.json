@@ -1537,7 +1537,7 @@
           "unit": "멤버당"
         },
         "pendingState": "{{amount}}명 대기 중",
-        "rewardsNote": "보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
+        "rewardsNote": "작업 보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
         "slack": {
           "action": "추가",
           "description": "팀이 이미 일하고 있는 곳으로",
@@ -4157,6 +4157,23 @@
     "emptyDescription": "새로운 제안이 여기에 표시됩니다.",
     "emptyTitle": "모두 확인했어요",
     "title": "피드"
+  },
+  "friendReferrals": {
+    "copied": "복사됨",
+    "copy": "링크 복사",
+    "copyFailed": "복사하지 못했어요. 위 링크를 선택해 복사해 주세요.",
+    "description": "친구가 내 링크로 가입하고 usage pack을 구매해 Pro 이상으로 업그레이드하면 $20 상당의 크레딧을 받아요.",
+    "earned": "받은 크레딧",
+    "expiryNote": "친구 추천 보상은 지급 후 1개월 뒤 만료돼요.",
+    "invite": "초대",
+    "linkLabel": "내 추천 링크",
+    "loadFailed": "추천 링크를 불러오지 못했어요. 다시 시도해 주세요.",
+    "loading": "추천 링크를 가져오는 중…",
+    "perFriend": "유료 친구 1명당",
+    "registered": "가입한 친구",
+    "retry": "다시 시도",
+    "terms": "신규 사용자만 해당하며 친구 1명당 한 번만 보상해요. 이 워크스페이스의 개인 잔액으로 지급되며 지급 후 1개월 뒤 만료돼요.",
+    "title": "친구 초대"
   },
   "global": {
     "errors": {

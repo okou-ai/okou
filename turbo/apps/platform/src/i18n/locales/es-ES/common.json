@@ -1562,7 +1562,7 @@
           "unit": "por miembro"
         },
         "pendingState": "{{amount}} pendientes",
-        "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
+        "rewardsNote": "Las recompensas de tareas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
         "slack": {
           "action": "Añadir",
           "description": "Donde tu equipo ya trabaja",
@@ -4224,6 +4224,23 @@
     "emptyDescription": "Las nuevas sugerencias aparecerán aquí.",
     "emptyTitle": "Estás al día",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "copied": "Copiado",
+    "copy": "Copiar enlace",
+    "copyFailed": "No se pudo copiar. Selecciona y copia el enlace de arriba.",
+    "description": "Gana $20 en créditos cuando un amigo se registre con tu enlace, compre un usage pack y cambie a Pro o superior.",
+    "earned": "Créditos ganados",
+    "expiryNote": "Las recompensas por referidos caducan un mes después de recibirlas.",
+    "invite": "Invitar",
+    "linkLabel": "Tu enlace de referido",
+    "loadFailed": "No se pudo cargar tu enlace de referido. Inténtalo de nuevo.",
+    "loading": "Obteniendo tu enlace de referido…",
+    "perFriend": "por amigo de pago",
+    "registered": "Amigos registrados",
+    "retry": "Reintentar",
+    "terms": "Solo para nuevos usuarios. Una recompensa por amigo. Los créditos se añaden a tu saldo personal en este espacio y caducan un mes después de recibirlos.",
+    "title": "Invita a tus amigos"
   },
   "global": {
     "errors": {

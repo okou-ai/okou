@@ -336,6 +336,7 @@ export interface StripeInvoice {
   readonly currency: string;
   readonly status: "draft" | "open" | "paid" | "uncollectible" | "void" | null;
   readonly paid?: boolean;
+  readonly paid_out_of_band?: boolean;
   readonly payments?: {
     readonly data: readonly {
       readonly status: string;
