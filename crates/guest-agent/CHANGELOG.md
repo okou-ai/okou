@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.33](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.32...guest-agent-v0.109.33) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-agent:** unify heartbeat task cancellation ownership ([#44780](https://github.com/okou-ai/okou/issues/44780)) ([70f9370](https://github.com/okou-ai/okou/commit/70f9370e0a6171952985fdd6b44919b76185a8ef))
+
 ## [0.109.32](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.31...guest-agent-v0.109.32) (2026-11-02)
 
 ## [0.109.31](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.30...guest-agent-v0.109.31) (2026-11-02)

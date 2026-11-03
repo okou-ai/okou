@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.51](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.50...guest-tool-exec-v0.3.51) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
 ## [0.3.50](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.49...guest-tool-exec-v0.3.50) (2026-11-02)
 
 ## [0.3.49](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.48...guest-tool-exec-v0.3.49) (2026-11-02)

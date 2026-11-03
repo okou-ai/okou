@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.69](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.68...guest-control-server-v0.24.69) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** encapsulate exec stdin worker ownership ([#44766](https://github.com/okou-ai/okou/issues/44766)) ([3227ed7](https://github.com/okou-ai/okou/commit/3227ed7c8e055d4584b43c23e99216448c7ca16f))
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
 ## [0.24.68](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.67...guest-control-server-v0.24.68) (2026-11-02)
 
 

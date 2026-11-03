@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.62](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.61...sandbox-firecracker-v0.53.62) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** type single-task abort ownership ([#44786](https://github.com/okou-ai/okou/issues/44786)) ([7883190](https://github.com/okou-ai/okou/commit/78831900d6af8fc1f0958b02e93052f8578c18bf))
+
 ## [0.53.61](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.60...sandbox-firecracker-v0.53.61) (2026-11-02)
 
 ## [0.53.60](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.59...sandbox-firecracker-v0.53.60) (2026-11-02)

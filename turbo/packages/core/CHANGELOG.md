@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.811.0](https://github.com/okou-ai/okou/compare/core-v8.810.0...core-v8.811.0) (2026-11-03)
+
+
+### Features
+
+* **app:** add homepage task discovery ([#44734](https://github.com/okou-ai/okou/issues/44734)) ([9a61c65](https://github.com/okou-ai/okou/commit/9a61c65def6f53af57ed38f9272a61d612bf6999))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.35.0
+
 ## [8.810.0](https://github.com/okou-ai/okou/compare/core-v8.809.1...core-v8.810.0) (2026-11-02)
 
 

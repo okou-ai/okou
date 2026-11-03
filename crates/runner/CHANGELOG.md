@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.243.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.8...runner-rs-v0.243.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Bug Fixes
+
+* **runner:** fail exec when host output delivery fails ([#44769](https://github.com/okou-ai/okou/issues/44769)) ([0c011c3](https://github.com/okou-ai/okou/commit/0c011c38d50b68b45bd409aba6a508aa78d9be58))
+
+
+### Refactoring
+
+* **python:** centralize strict native witness envelopes ([#44754](https://github.com/okou-ai/okou/issues/44754)) ([f8c7c0d](https://github.com/okou-ai/okou/commit/f8c7c0dd051e6a525e1547d3021cd2d4c4851627))
+* **python:** share static first-argument outcome projection ([#44782](https://github.com/okou-ai/okou/issues/44782)) ([f5e80d0](https://github.com/okou-ai/okou/commit/f5e80d07e022ec2362e97f7a357d12f56d31f253))
+* **python:** unify firewall ipv6 host normalization ([#44788](https://github.com/okou-ai/okou/issues/44788)) ([b9b6efc](https://github.com/okou-ai/okou/commit/b9b6efc5562476a64e493b4e601a751ec30de484))
+* **python:** unify metadata key expression projection ([#44773](https://github.com/okou-ai/okou/issues/44773)) ([3c2eeed](https://github.com/okou-ai/okou/commit/3c2eeede59e81f7d9be0d88290ab2e96520baae9))
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+* **test:** reuse the x usage billing harness ([#44767](https://github.com/okou-ai/okou/issues/44767)) ([ad64770](https://github.com/okou-ai/okou/commit/ad64770af328d42689824b6b4764a12bf49b6db0))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.242.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.7...runner-rs-v0.242.8) (2026-11-02)
 
 

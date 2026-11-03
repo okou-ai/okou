@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-types-v0.11.8...runner-types-v0.12.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+
 ## [0.11.8](https://github.com/okou-ai/okou/compare/runner-types-v0.11.7...runner-types-v0.11.8) (2026-11-02)
 
 ## [0.11.7](https://github.com/okou-ai/okou/compare/runner-types-v0.11.6...runner-types-v0.11.7) (2026-11-02)

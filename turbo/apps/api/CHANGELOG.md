@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.41.1](https://github.com/okou-ai/okou/compare/api-v2.41.0...api-v2.41.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **e2e:** retry stalled agent creation after five seconds safely ([#44770](https://github.com/okou-ai/okou/issues/44770)) ([8cfb1c3](https://github.com/okou-ai/okou/commit/8cfb1c34bf6ed6e28127fb8aaff1e1f6d6f231bd))
+
+
+### Refactoring
+
+* **skills:** detach legacy seed storage bindings ([#44760](https://github.com/okou-ai/okou/issues/44760)) ([352c12e](https://github.com/okou-ai/okou/commit/352c12e45336e4d35e27394d92de09ec170f728c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.35.0
+    * @okouai/core bumped to 8.811.0
+    * @okouai/db bumped to 2.18.1
+    * @okouai/pi-agent-runtime bumped to 1.51.53
+
 ## [2.41.0](https://github.com/okou-ai/okou/compare/api-v2.40.1...api-v2.41.0) (2026-11-02)
 
 

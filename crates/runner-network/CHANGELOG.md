@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-network-v0.3.22...runner-network-v0.4.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
 ## [0.3.22](https://github.com/okou-ai/okou/compare/runner-network-v0.3.21...runner-network-v0.3.22) (2026-11-02)
 
 ## [0.3.21](https://github.com/okou-ai/okou/compare/runner-network-v0.3.20...runner-network-v0.3.21) (2026-11-02)

@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1086.0](https://github.com/okou-ai/okou/compare/app-v0.1085.0...app-v0.1086.0) (2026-11-03)
+
+
+### Features
+
+* **app:** add homepage task discovery ([#44734](https://github.com/okou-ai/okou/issues/44734)) ([9a61c65](https://github.com/okou-ai/okou/commit/9a61c65def6f53af57ed38f9272a61d612bf6999))
+
+
+### Bug Fixes
+
+* **app:** group subscription usage and surface recovery when needed ([#44761](https://github.com/okou-ai/okou/issues/44761)) ([156d007](https://github.com/okou-ai/okou/commit/156d0079d730401b1af49e5229d2f966b4eeec37))
+* **browser:** recover scoped targets across selection phases ([#44688](https://github.com/okou-ai/okou/issues/44688)) ([2563c30](https://github.com/okou-ai/okou/commit/2563c30f45698ee02848ed3749cc30e23edca37d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.35.0
+    * @okouai/core bumped to 8.811.0
+
 ## [0.1085.0](https://github.com/okou-ai/okou/compare/app-v0.1084.1...app-v0.1085.0) (2026-11-02)
 
 
