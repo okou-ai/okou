@@ -223,14 +223,22 @@ final class ChatModelCommandTests: XCTestCase {
     }
   }
 
-  func testInFlightAndUncertainSaveBlockSendsUntilAuthoritativeRefresh() async throws {
+  func testUncertainModelSaveAutomaticallyReadsBackBeforeAllowingSends() async throws {
     let gate = ModelResponseGate()
     let saveStarted = expectation(description: "Save reached HTTP")
+    let readbackStarted = expectation(description: "Automatic readback reached HTTP")
+    let readback = ModelResponseGate()
+    let checking = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path.hasSuffix("model-selection") {
         saveStarted.fulfill()
         await gate.wait()
+        checking.withLock { $0 = true }
         return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Save unavailable\"}}")
+      }
+      if request.url!.path.hasSuffix("/metadata"), checking.withLock({ $0 }) {
+        readbackStarted.fulfill()
+        await readback.wait()
       }
       return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
     }
@@ -239,6 +247,7 @@ final class ChatModelCommandTests: XCTestCase {
     let selection = ChatModelSelectionStore(models: resource, thread: thread())
     defer {
       gate.open()
+      readback.open()
       resource.close()
       selection.close()
     }
@@ -261,16 +270,17 @@ final class ChatModelCommandTests: XCTestCase {
     XCTAssertEqual(conversation.draft, "Keep this draft until model settings are confirmed")
     XCTAssertTrue(conversation.pending.isEmpty)
     gate.open()
-    await save.value
+    await fulfillment(of: [readbackStarted], timeout: 3)
     XCTAssertFalse(selection.canSend)
     XCTAssertTrue(selection.uncertain)
-    XCTAssertNotNil(selection.error)
     await conversation.send()
     XCTAssertTrue(conversation.pending.isEmpty)
     XCTAssertFalse(conversation.draft.isEmpty)
-    await selection.refresh()
+    readback.open()
+    await save.value
     XCTAssertTrue(selection.canSend)
     XCTAssertEqual(selection.selection.model, "codex-model")
+    XCTAssertNotNil(selection.error, "The readback confirms the requested change was not saved")
   }
 
   func testNewChatKeepsEachModelsEffortAndSavesDefaultOnlyOnExplicitAction() async throws {

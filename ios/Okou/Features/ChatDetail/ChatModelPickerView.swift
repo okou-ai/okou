@@ -37,6 +37,12 @@ struct ChatModelPickerButton: View {
     }
     .tint(.primary)
     .accessibilityIdentifier("chat-model-picker")
+    .overlay(alignment: .topTrailing) {
+      if hasError {
+        Image(systemName: "exclamationmark.circle.fill").font(.caption2).foregroundStyle(.orange)
+          .accessibilityHidden(true)
+      }
+    }
     .accessibilityLabel("Model settings")
     .accessibilityValue(accessibilityValue)
     .accessibilityHint("Choose a model, thinking effort, or Fast mode for this chat")

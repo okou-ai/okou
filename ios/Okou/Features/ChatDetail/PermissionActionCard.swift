@@ -15,7 +15,7 @@ struct PermissionActionCard: View {
     if store.isLoading || (store.snapshot == nil && store.error == nil) {
       return String(localized: "Checking permission…")
     }
-    if store.error != nil { return String(localized: "Open details to retry") }
+    if store.error != nil { return String(localized: "Open details to check permission") }
     if store.snapshot != nil && !store.hasPermission {
       return String(localized: "Permission unavailable")
     }
@@ -53,7 +53,7 @@ struct PermissionActionCard: View {
         )
         .font(.caption)
         .lineLimit(1, reservesSpace: true)
-        .foregroundStyle(store.error == nil ? Color.secondary : Color.red)
+        .foregroundStyle(.secondary)
       }
     } actions: {
       if store.applied && !store.needsContinuation && store.error == nil && !store.isLoading

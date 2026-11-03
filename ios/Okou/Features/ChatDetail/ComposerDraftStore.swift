@@ -169,6 +169,9 @@ final class ComposerDraftStore {
   let attachments: AttachmentDraftStore
   let editor = ComposerEditor()
   var error: String? { localError ?? syncError }
+  var hasLocalFailure: Bool { localError != nil }
+  var canRetryLocalSave: Bool { !localReadFailed }
+  func retryLocalSave() { persist() }
   private var localReadFailed = false
   private var localError: String?
   private var syncError: String?

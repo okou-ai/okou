@@ -15,7 +15,12 @@ struct ComposerConnectorPermissions: View {
 
   var body: some View {
     List {
-      if let error { ConnectorLoadError(error: error) { await load() } }
+      if let error {
+        ConnectorLoadError(error: error, isLoading: loading || store.isLoading) {
+          await store.refresh()
+          await load()
+        }
+      }
       if loading { ProgressView("Loading permissions…") }
       if let state {
         Section {
@@ -131,7 +136,7 @@ struct ComposerConnectorPermissions: View {
       state = result
       error = nil
     } catch is CancellationError {
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = ChatRequestFailure.message(for: error) }
   }
   private func save(_ edits: [ChatPermissionEdit], reset: Bool = false) async {
     guard let agentID = store.agentID else { return }

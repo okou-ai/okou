@@ -79,6 +79,17 @@ final class ConversationStore {
   }
   private(set) var isLoading = false
   private(set) var isSending = false
+  enum DeliveryFailure {
+    case notSent(String)
+    case unconfirmed
+  }
+  private(set) var deliveryFailures: [String: DeliveryFailure] = [:]
+  private(set) var stopIssue: String?
+
+  func deliveryFailureText(_ id: String) -> String {
+    if case .notSent(let reason) = deliveryFailures[id] { return reason }
+    return String(localized: "Delivery not confirmed")
+  }
   private(set) var isRecoveringFailure = false
   private var failureAccountsReadyID: String?
   private var failureAccountBaseline: Int?
@@ -246,6 +257,7 @@ final class ConversationStore {
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
           historySyncError = nil
+          if !result.canStop { stopIssue = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
           if suppressAutomaticRead, let unreadThrough {
             if let manualUnreadThrough {
@@ -483,10 +495,12 @@ final class ConversationStore {
         sendTask = nil
         didSettle()
       }
+      var submitted = false
       do {
         let workflowIDs =
           try await workflowSource?.prepareUse(
             in: message.text, document: message.document, agentID: thread.agentID) ?? []
+        submitted = true
         _ = try await commands.send(
           thread: thread, text: message.text, attachments: message.attachments,
           document: message.document,
@@ -498,12 +512,20 @@ final class ConversationStore {
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }
+        deliveryFailures[message.id] = nil
         error = nil
         return true
       } catch {
         guard !closed else { return false }
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = true
+        }
+        let status = (error as? APIClientError)?.statusCode
+        if !submitted || status.map({ (400..<500).contains($0) && ![408, 409].contains($0) }) == true {
+          deliveryFailures[message.id] = .notSent(
+            String(localized: "Message not sent. ") + ChatRequestFailure.message(for: error))
+        } else {
+          deliveryFailures[message.id] = .unconfirmed
         }
         report(error)
         return false
@@ -520,6 +542,7 @@ final class ConversationStore {
   func stop() async {
     guard !isStopping, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isStopping = true
+    stopIssue = nil
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
@@ -533,7 +556,12 @@ final class ConversationStore {
         guard !closed else { return }
         await refresh()
       } catch is CancellationError {
-      } catch { show(error) }
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        stopIssue = String(localized: "Stopping has not been confirmed.")
+        report(error)
+        await refresh()
+      }
     }
     stopTask = task
     await task.value
@@ -689,6 +717,8 @@ final class ConversationStore {
 
   private func rebuildMessages() {
     let persisted = history?.persistedEventIDs ?? []
+    let pendingIDs = Set(pending.map(\.id))
+    deliveryFailures = deliveryFailures.filter { pendingIDs.contains($0.key) }
     let next =
       (history?.messages ?? []) + pending.filter { !persisted.contains($0.id) }.map(\.message)
     if messages != next { messages = next }

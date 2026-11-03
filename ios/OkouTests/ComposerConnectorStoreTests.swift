@@ -198,7 +198,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
       if request.url!.path == "/api/remotes/overview", blocked.withLock({ $0 }) {
         reading.fulfill()
         await response.wait()
-        throw URLError(.cancelled)
       }
       if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
         request.httpMethod == "PUT"
@@ -207,6 +206,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
           $0.enabled = false
           $0.writes += 1
         }
+        blocked.withLock { $0 = true }
         throw URLError(.networkConnectionLost)
       }
       if request.url!.path.hasSuffix("/remote-access") {
@@ -226,26 +226,22 @@ final class ComposerConnectorStoreTests: XCTestCase {
     defer { store.close() }
     await store.refresh()
     let host = try XCTUnwrap(store.hosts(.ssh).first)
-    await store.setRemote(host, protocol: .ssh, enabled: false)
-    XCTAssertFalse(store.canSend)
-
-    blocked.withLock { $0 = true }
-    let refresh = Task { await store.refresh() }
+    let saving = Task { await store.setRemote(host, protocol: .ssh, enabled: false) }
     addTeardownBlock {
-      refresh.cancel()
+      saving.cancel()
       response.open()
-      await refresh.value
+      await saving.value
     }
     await fulfillment(of: [reading], timeout: 3)
-    refresh.cancel()
+    XCTAssertFalse(store.canSend)
+    await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertEqual(server.withLock { $0.writes }, 1)
+    blocked.withLock { $0 = false }
     response.open()
-    await refresh.value
+    await saving.value
     XCTAssertNil(store.connectorError)
     XCTAssertNil(store.remoteError)
-    XCTAssertFalse(store.canSend)
-
-    blocked.withLock { $0 = false }
-    await store.refresh()
+    XCTAssertNotNil(store.notice)
     XCTAssertTrue(store.canSend)
     XCTAssertEqual(store.hosts(.ssh).first?.overrideEnabled, false)
     XCTAssertEqual(server.withLock { $0.writes }, 1)

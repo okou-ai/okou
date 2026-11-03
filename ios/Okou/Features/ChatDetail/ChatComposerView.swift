@@ -1,6 +1,7 @@
 import ChatDomain
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ChatComposerView: View {
@@ -57,12 +58,22 @@ struct ChatComposerView: View {
             .font(.caption).foregroundStyle(.secondary).lineLimit(3)
             .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
         }
-        if let draftError = state.error {
+        if let draftError = state.error,
+          state.document.isSupported || state.hasLocalFailure || state.conflictingRemote != nil
+        {
           Text(draftError).font(.caption).foregroundStyle(.red)
           if state.conflictingRemote != nil {
             HStack {
               Button("Keep this draft") { state.keepLocal() }.frame(minHeight: 44)
               Button("Use other device's draft") { state.useRemote() }.frame(minHeight: 44)
+            }.font(.caption)
+          } else if state.hasLocalFailure {
+            HStack {
+              Button("Copy draft text") { UIPasteboard.general.string = state.text }
+                .disabled(state.text.isEmpty)
+              Button("Save on this device") { state.retryLocalSave() }
+                .disabled(!state.canRetryLocalSave)
+              Link("Open on web", destination: attachmentURL)
             }.font(.caption)
           } else {
             Button("Retry draft sync") { Task { await state.synchronize() } }.font(.caption)

@@ -30,7 +30,7 @@ struct ConnectorActionCard: View {
           case .unavailable:
             Color.clear.frame(height: 44).accessibilityHidden(true).allowsHitTesting(false)
           case .failed:
-            Button("Retry") { Task { await store.refresh(action) } }
+            Button("Review connection") { store.activate(action) }
           case .ready(let status):
             HStack {
               Button(button(status)) { store.activate(action) }
@@ -63,12 +63,12 @@ struct ConnectorActionCard: View {
         Text("This action no longer matches an available connector in this conversation.")
           .lineLimit(2, reservesSpace: true)
       }
-    case .failed(let error):
+    case .failed:
       ChatCardHeader(
-        title: String(localized: "Could not load connector"), systemImage: "exclamationmark.circle",
+        title: String(localized: "Connection details unavailable"), systemImage: "link",
         titleLineLimit: 1
       ) {
-        Text(error).font(.caption).lineLimit(2, reservesSpace: true).textSelection(.enabled)
+        Text("Open this connection to try again.").font(.caption).lineLimit(2, reservesSpace: true)
       }
     case .ready(let status):
       ChatCardHeader(title: status.label, systemImage: "link", titleLineLimit: 1) {

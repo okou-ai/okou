@@ -122,7 +122,7 @@ final class ConnectorActionStore {
     } catch is CancellationError {
     } catch {
       guard !closed else { return }
-      states[action.id] = .failed(error.localizedDescription)
+      states[action.id] = .failed(ChatRequestFailure.message(for: error))
       didFail(error)
     }
   }
@@ -235,7 +235,7 @@ final class ConnectorActionStore {
       } catch is CancellationError {
       } catch {
         guard active === flow, !closed else { return }
-        flow.error = error.localizedDescription
+        flow.error = ChatRequestFailure.message(for: error)
         didFail(error)
       }
     }
@@ -265,7 +265,7 @@ final class ConnectorActionStore {
           }
         } catch is CancellationError { return } catch {
           guard active === flow, !closed else { return }
-          flow.error = error.localizedDescription
+          flow.error = ChatRequestFailure.message(for: error)
           flow.session = nil
           flow.browserURL = nil
           didFail(error)

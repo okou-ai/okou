@@ -69,7 +69,7 @@ final class PersonalSubscriptionStore {
     } catch is CancellationError {
     } catch {
       guard !closed, request == readRevision else { return false }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       didFail(error)
     }
     return false
@@ -114,7 +114,7 @@ final class PersonalSubscriptionStore {
     } catch is CancellationError {
     } catch {
       guard !closed else { return false }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       didFail(error)
     }
     return false
@@ -173,7 +173,7 @@ final class PersonalSubscriptionStore {
       } catch is CancellationError {
       } catch {
         guard authRevision == request, !closed else { return }
-        authError = error.localizedDescription
+        authError = ChatRequestFailure.message(for: error)
         phase = .failed
         if let session { await cancelRemote(type: type, token: session.sessionToken) }
         clearSecrets()
@@ -205,7 +205,7 @@ final class PersonalSubscriptionStore {
     } catch {
       guard !closed, authRevision == request else { return }
       authorizationCode = ""
-      authError = error.localizedDescription
+      authError = ChatRequestFailure.message(for: error)
       phase = .pending
       didFail(error)
     }
@@ -268,7 +268,7 @@ final class PersonalSubscriptionStore {
   private func cancelRemote(type: PersonalSubscriptionType, token: String) async {
     do { try await service.cancel(type: type, token: token) } catch let error as APIClientError
       where error.statusCode == 404
-    {} catch { if !closed { self.error = error.localizedDescription } }
+    {} catch { if !closed { self.error = ChatRequestFailure.message(for: error) } }
   }
   func close() {
     closed = true

@@ -21,6 +21,8 @@ final class ComposerConnectorStore {
   private(set) var isLoading = false
   private(set) var isSaving = false
   private(set) var uncertain = false
+  private(set) var notice: String?
+  private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private(set) var pendingOptions = ChatComposerOptions()
   private var pendingByAgent: [String: ChatComposerOptions] = [:]
   private let authorizationService: ChatConnectorService
@@ -39,8 +41,13 @@ final class ComposerConnectorStore {
 
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
-    thread: ChatThread? = nil, didFail: @escaping @MainActor (Error) -> Void
+    thread: ChatThread? = nil,
+    readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    },
+    didFail: @escaping @MainActor (Error) -> Void
   ) {
+    self.readRetrySleep = readRetrySleep
     self.service = service
     self.authorizationService = authorizationService
     self.webURL = webURL
@@ -68,6 +75,7 @@ final class ComposerConnectorStore {
     connectorError = nil
     remoteError = nil
     error = nil
+    notice = nil
     uncertain = false
     isSaving = false
     isLoading = false
@@ -101,7 +109,8 @@ final class ComposerConnectorStore {
     } catch {
       guard !closed, !Task.isCancelled, request == generation else { return false }
       connectorError =
-        isCancellation(error) ? "Could not load connectors. Try again." : error.localizedDescription
+        isCancellation(error)
+        ? "Could not load connectors. Try again." : ChatRequestFailure.message(for: error)
       didFail(error)
       return false
     }
@@ -132,7 +141,7 @@ final class ComposerConnectorStore {
       guard !closed, !Task.isCancelled, request == generation else { return false }
       remoteError =
         isCancellation(error)
-        ? "Could not load remote access. Try again." : error.localizedDescription
+        ? "Could not load remote access. Try again." : ChatRequestFailure.message(for: error)
       didFail(error)
       return false
     }
@@ -142,13 +151,16 @@ final class ComposerConnectorStore {
   private func read<Value: Sendable>(
     request: UUID, _ body: @MainActor () async throws -> Value
   ) async throws -> Value {
-    do {
-      return try await body()
-    } catch {
-      guard !closed, !Task.isCancelled, request == generation, isCancellation(error) else {
-        throw error
+    return try await ChatReadRecovery.read("connector settings", sleep: readRetrySleep) {
+      guard !closed, !Task.isCancelled, request == generation else { throw CancellationError() }
+      do {
+        return try await body()
+      } catch {
+        guard !closed, !Task.isCancelled, request == generation, isCancellation(error) else {
+          throw error
+        }
+        return try await body()
       }
-      return try await body()
     }
   }
 
@@ -157,13 +169,16 @@ final class ComposerConnectorStore {
   }
 
   func perform(_ operation: @MainActor () async throws -> Void) async {
-    guard !closed, !isSaving, let agentID else { return }
+    guard !closed, !isSaving, !uncertain, let agentID else { return }
     let request = generation
     isSaving = true
+    notice = nil
+    var submitted = false
     defer { if request == generation { isSaving = false } }
     do {
       try await service.validate(agentID: agentID, threadID: threadID)
       guard !closed, !Task.isCancelled, request == generation else { return }
+      submitted = true
       try await operation()
       guard !closed, !Task.isCancelled, request == generation else { return }
       await refresh()
@@ -171,8 +186,16 @@ final class ComposerConnectorStore {
     } catch {
       guard !closed, request == generation else { return }
       uncertain = true
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       didFail(error)
+      if submitted {
+        await refresh()
+        guard !closed, !Task.isCancelled, request == generation else { return }
+        if !uncertain {
+          notice = String(
+            localized: "Settings checked. Review the current choices before continuing.")
+        }
+      }
     }
   }
 

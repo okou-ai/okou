@@ -97,7 +97,10 @@ struct MessageArtifactCard: View {
         prepared = Prepared(key: key, card: value, error: nil)
       } catch {
         guard !Task.isCancelled else { return }
-        prepared = Prepared(key: key, card: nil, error: MessageArtifactStore.message(for: error))
+        prepared = Prepared(
+          key: key, card: nil,
+          error: ChatRequestFailure.isTransient(error)
+            ? String(localized: "Tap to load preview") : MessageArtifactStore.message(for: error))
       }
     }
   }

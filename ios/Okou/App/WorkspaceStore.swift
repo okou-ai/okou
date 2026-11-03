@@ -75,7 +75,8 @@ final class WorkspaceStore {
   }
 
   @ObservationIgnored lazy var modelStore = ChatModelStore(
-    client: client, webURL: webURL, didFail: { [weak self] in self?.handle($0) })
+    client: client, webURL: webURL, readRetrySleep: readRetrySleep,
+    didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
     client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)

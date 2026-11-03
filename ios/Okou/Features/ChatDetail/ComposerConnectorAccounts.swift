@@ -15,7 +15,12 @@ struct ComposerConnectorAccounts: View {
 
   var body: some View {
     List {
-      if let error { ConnectorLoadError(error: error) { await load() } }
+      if let error {
+        ConnectorLoadError(error: error, isLoading: loading || store.isLoading) {
+          await store.refresh()
+          await load()
+        }
+      }
       Section {
         Button {
           Task { await choose(nil) }
@@ -112,7 +117,7 @@ struct ComposerConnectorAccounts: View {
     } catch is CancellationError {
     } catch {
       guard requestID == request else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
     }
   }
   private func choose(_ id: String?) async {

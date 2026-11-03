@@ -13,6 +13,13 @@ struct ComposerConnectorButton: View {
     }
     .accessibilityLabel("Connectors")
     .accessibilityIdentifier("composer-connectors")
+    .accessibilityValue(store.uncertain ? "Confirm settings before sending" : "")
+    .overlay(alignment: .topTrailing) {
+      if store.uncertain {
+        Image(systemName: "exclamationmark.circle.fill").font(.caption2).foregroundStyle(.orange)
+          .accessibilityHidden(true)
+      }
+    }
     .disabled(store.agentID == nil)
     .sheet(isPresented: $presented) {
       ComposerConnectorSheet(store: store)
@@ -36,6 +43,9 @@ struct ComposerConnectorSheet: View {
         if let error = store.error {
           ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
         }
+        if let notice = store.notice {
+          Text(notice).font(.footnote).foregroundStyle(.secondary)
+        }
         Section {
           NavigationLink {
             ComposerRemoteControls(store: store)
@@ -44,7 +54,7 @@ struct ComposerConnectorSheet: View {
           }
         }
         Section {
-          if let error = store.connectorError {
+          if let error = store.connectorError, store.error == nil {
             ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
           } else if store.isLoading && store.connectors.isEmpty {
             ProgressView("Loading connectors…")

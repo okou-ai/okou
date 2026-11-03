@@ -106,7 +106,7 @@ struct ComposerConnectorDirectory: View {
     } catch is CancellationError {
     } catch {
       guard requestID == request else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
     }
   }
 }

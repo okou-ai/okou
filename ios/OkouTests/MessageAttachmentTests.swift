@@ -54,6 +54,7 @@ final class MessageAttachmentTests: XCTestCase {
     XCTAssertTrue(
       viewer.preview?.error?.contains("permission") == true,
       viewer.preview?.error ?? "Missing error")
+    XCTAssertEqual(viewer.preview?.canRetry, false)
     denied.withLock { $0 = false }
     viewer.open(file)
     try await waitForBusinessResult { viewer.preview?.file != nil }
