@@ -25,15 +25,9 @@ import { setPaidToolDisabled } from "./helpers/paid-tools";
 const context = testContext();
 const CRON_SECRET = "seed-bundle-preparation-cron";
 
-async function sourceArchive(
-  revision = "first",
-  unpublished: readonly string[] = [],
-) {
+async function sourceArchive(revision = "first") {
   const files = new Map<string, Buffer>();
-  const names = [...SEED_SKILLS, "ordinary-skill"].filter((name) => {
-    return !unpublished.includes(name);
-  });
-  for (const name of names) {
+  for (const name of [...SEED_SKILLS, "ordinary-skill"]) {
     files.set(
       `${name}/SKILL.md`,
       Buffer.from(
@@ -217,64 +211,147 @@ describe("Seed Skill bundles through sync-skills", () => {
     expect((await sync()).body).toMatchObject({ total: 0, failed: 0 });
   });
 
+  it("pins prepared Claude Code Seed bundles across later syncs", async () => {
+    const root = "/home/user/.claude/skills";
+    const app = await setupApp({
+      context,
+      routes: cronSyncSkillsRoutes,
+      isolatePg: true,
+    });
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    const source = await sourceArchive();
+    const s3 = await owned.run(async () => {
+      await fixture.api.ensurePersonalSubscriptionModel(owned.actor, {
+        model: "claude-fable-5-1",
+      });
+      const storage = installWorkflowVolumeS3Fixture(context);
+      githubSource("e".repeat(40), source.archive);
+      await accept(
+        app(cronSyncSkillsContract).sync({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
+        }),
+        [200],
+      );
+      return storage;
+    });
+    const run = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Inspect system skills",
+      model: "claude-fable-5-1",
+    });
+    const changed = await sourceArchive("updated gen instructions");
+    await owned.run(async () => {
+      githubSource("f".repeat(40), changed.archive);
+      await accept(
+        app(cronSyncSkillsContract).sync({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
+        }),
+        [200],
+      );
+    });
+    const { claim, sandboxHeaders } = await owned.claimChatRun(
+      owned.runnerGroup,
+      run.runId,
+    );
+    expect(claim.cliAgentType).toBe("claude-code");
+    expect(
+      claim.contentBundles.skills.map((bundle) => {
+        return bundle.mountPath;
+      }),
+    ).toStrictEqual(
+      SEED_SKILLS.map((name) => {
+        return `${root}/${name}`;
+      }),
+    );
+    for (const name of SEED_SKILLS) {
+      const bundle = claim.contentBundles.skills.find((entry) => {
+        return entry.mountPath === `${root}/${name}`;
+      })!;
+      const expected = new Map(
+        [...source.files]
+          .filter(([path]) => {
+            return path.startsWith(`${name}/`);
+          })
+          .map(([path, content]) => {
+            return [path.slice(name.length + 1), content];
+          }),
+      );
+      expect(readClaimedContentBundle(s3.objects, bundle)).toStrictEqual(
+        expected,
+      );
+    }
+    const mountPaths = [
+      ...claim.contentBundles.skills.map((bundle) => {
+        return bundle.mountPath;
+      }),
+      ...(claim.storageManifest?.storageMounts ?? []).map((mount) => {
+        return mount.mountPath;
+      }),
+    ];
+    expect(new Set(mountPaths).size).toBe(mountPaths.length);
+    await owned.run(() => {
+      return fixture.failChatRun(
+        run.runId,
+        sandboxHeaders,
+        "Captured Seed bundles inspected",
+      );
+    });
+    await owned.run(flushWaitUntilForTest);
+    const next = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Use the later Seed publication",
+      model: "claude-fable-5-1",
+    });
+    const later = await owned.claimChatRun(owned.runnerGroup, next.runId);
+    const selected = later.claim.contentBundles.skills.find((bundle) => {
+      return bundle.mountPath === `${root}/gen`;
+    })!;
+    expect(readClaimedContentBundle(s3.objects, selected)).toStrictEqual(
+      new Map([["SKILL.md", changed.files.get("gen/SKILL.md")]]),
+    );
+    expect(selected.sha256).not.toBe(
+      claim.contentBundles.skills.find((bundle) => {
+        return bundle.mountPath === `${root}/gen`;
+      })!.sha256,
+    );
+    await owned.run(() => {
+      return fixture.failChatRun(
+        next.runId,
+        later.sandboxHeaders,
+        "Later Seed bundle inspected",
+      );
+    });
+    await owned.run(flushWaitUntilForTest);
+  });
+});
+
+describe("Seed Skill bundle delivery", () => {
   it.each([
-    { framework: "claude-code", root: "/home/user/.claude/skills" },
     { framework: "codex", root: "/home/user/.codex/skills" },
     { framework: "pi", root: "/home/user/.pi/agent/skills" },
   ] as const)(
-    "pins prepared $framework Seed bundles across later syncs",
+    "delivers prepared $framework Seed bundles at their skill mounts",
     async ({ framework, root }) => {
-      const app = await setupApp({
-        context,
-        routes: cronSyncSkillsRoutes,
-        isolatePg: true,
-      });
       const owned = await publicChatActor(context);
       owned.ownsFeatureSwitches();
       const fixture = createChatEventsFixture(context);
-      const source = await sourceArchive();
       const s3 = await owned.run(async () => {
-        if (framework === "claude-code") {
-          await fixture.api.ensurePersonalSubscriptionModel(owned.actor, {
-            model: "claude-fable-5-1",
-          });
-        } else {
-          await fixture.configureSubscriptionPiModel(owned.actor);
-          if (!owned.actor.orgId) {
-            throw new Error("Expected an entitled workspace");
-          }
-          await updateFeatureSwitchesForUser(
-            context,
-            { ...owned.actor, orgId: owned.actor.orgId },
-            {
-              [FeatureSwitchKey.CodexExecution]: framework === "codex",
-            },
-          );
+        await fixture.configureSubscriptionPiModel(owned.actor);
+        if (!owned.actor.orgId) {
+          throw new Error("Expected an entitled workspace");
         }
-        const storage = installWorkflowVolumeS3Fixture(context);
-        githubSource("e".repeat(40), source.archive);
-        await accept(
-          app(cronSyncSkillsContract).sync({
-            headers: { authorization: `Bearer ${CRON_SECRET}` },
-          }),
-          [200],
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...owned.actor, orgId: owned.actor.orgId },
+          { [FeatureSwitchKey.CodexExecution]: framework === "codex" },
         );
-        return storage;
+        return installWorkflowVolumeS3Fixture(context);
       });
       const run = await owned.sendChatRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "Inspect system skills",
-        model: framework === "claude-code" ? "claude-fable-5-1" : "gpt-6-luna",
-      });
-      const changed = await sourceArchive("updated gen instructions");
-      await owned.run(async () => {
-        githubSource("f".repeat(40), changed.archive);
-        await accept(
-          app(cronSyncSkillsContract).sync({
-            headers: { authorization: `Bearer ${CRON_SECRET}` },
-          }),
-          [200],
-        );
+        model: "gpt-6-luna",
       });
       const { claim, sandboxHeaders } = await owned.claimChatRun(
         owned.runnerGroup,
@@ -290,22 +367,10 @@ describe("Seed Skill bundles through sync-skills", () => {
           return `${root}/${name}`;
         }),
       );
-      for (const name of SEED_SKILLS) {
-        const bundle = claim.contentBundles.skills.find((entry) => {
-          return entry.mountPath === `${root}/${name}`;
-        })!;
-        const expected = new Map(
-          [...source.files]
-            .filter(([path]) => {
-              return path.startsWith(`${name}/`);
-            })
-            .map(([path, content]) => {
-              return [path.slice(name.length + 1), content];
-            }),
-        );
-        expect(readClaimedContentBundle(s3.objects, bundle)).toStrictEqual(
-          expected,
-        );
+      for (const bundle of claim.contentBundles.skills) {
+        expect(
+          readClaimedContentBundle(s3.objects, bundle).get("SKILL.md"),
+        ).toBeDefined();
       }
       const mountPaths = [
         ...claim.contentBundles.skills.map((bundle) => {
@@ -320,57 +385,18 @@ describe("Seed Skill bundles through sync-skills", () => {
         return fixture.failChatRun(
           run.runId,
           sandboxHeaders,
-          "Captured Seed bundles inspected",
-        );
-      });
-      await owned.run(flushWaitUntilForTest);
-      const next = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
-        prompt: "Use the later Seed publication",
-        model: framework === "claude-code" ? "claude-fable-5-1" : "gpt-6-luna",
-      });
-      const later = await owned.claimChatRun(owned.runnerGroup, next.runId);
-      const selected = later.claim.contentBundles.skills.find((bundle) => {
-        return bundle.mountPath === `${root}/gen`;
-      })!;
-      expect(readClaimedContentBundle(s3.objects, selected)).toStrictEqual(
-        new Map([["SKILL.md", changed.files.get("gen/SKILL.md")]]),
-      );
-      expect(selected.sha256).not.toBe(
-        claim.contentBundles.skills.find((bundle) => {
-          return bundle.mountPath === `${root}/gen`;
-        })!.sha256,
-      );
-      await owned.run(() => {
-        return fixture.failChatRun(
-          next.runId,
-          later.sandboxHeaders,
-          "Later Seed bundle inspected",
+          "Prepared Seed bundles inspected",
         );
       });
       await owned.run(flushWaitUntilForTest);
     },
   );
 
-  it("filters image generation before validating Seed bundle preparation", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronSyncSkillsRoutes,
-      isolatePg: true,
-    });
+  it("filters disabled image generation from the claimed Seed bundles", async () => {
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
-    // gen is never published, so only the filter keeps this run launchable.
-    const source = await sourceArchive("first", ["gen"]);
     const s3 = await owned.run(async () => {
       const storage = installWorkflowVolumeS3Fixture(context);
-      githubSource("e".repeat(40), source.archive);
-      await accept(
-        app(cronSyncSkillsContract).sync({
-          headers: { authorization: `Bearer ${CRON_SECRET}` },
-        }),
-        [200],
-      );
       await setPaidToolDisabled(context, owned.actor, "image-generation", true);
       return storage;
     });

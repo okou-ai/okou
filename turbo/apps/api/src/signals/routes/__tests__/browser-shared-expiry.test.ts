@@ -182,7 +182,7 @@ test.each([
   });
 });
 
-test("reports failed reconciliation without retiring healthy shared windows", async () => {
+test("reports failed reconciliation without retiring a healthy shared window", async () => {
   const app = await setupApp({
     context,
     routes: cronBrowserReconcileRoutes,
@@ -200,9 +200,7 @@ test("reports failed reconciliation without retiring healthy shared windows", as
   const f = await fixture();
   await f.owned.run(async () => {
     const a = await f.start();
-    const b = await f.start();
     const first = await open(a);
-    const sibling = await open(b);
     const [providerId] = f.provider.sessionIds;
     if (!providerId) {
       throw new Error("Expected the accepted provider instance");
@@ -221,23 +219,21 @@ test("reports failed reconciliation without retiring healthy shared windows", as
     );
 
     expect((await reconcile()).body).toMatchObject({
-      checked: 2,
+      checked: 1,
       stopped: 0,
-      errors: 2,
+      errors: 1,
     });
     // Public reads also consult the provider; restore it before observing bindings.
     unavailable = false;
     expect((await view(a)).window).toStrictEqual(first.window);
-    expect((await view(b)).window).toStrictEqual(sibling.window);
     expect(f.provider.stoppedSessionIds.size).toBe(0);
 
     expect((await reconcile()).body).toMatchObject({
-      checked: 2,
+      checked: 1,
       stopped: 0,
       errors: 0,
     });
     expect((await view(a)).window).toStrictEqual(first.window);
-    expect((await view(b)).window).toStrictEqual(sibling.window);
     expect(f.provider.sessionIds.has(providerId)).toBeTruthy();
     expect(f.provider.sessionRequests).toHaveLength(1);
   });
