@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.65](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.64...sandbox-firecracker-v0.53.65) (2026-11-03)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** share abnormal cleanup-group drop pass ([#44988](https://github.com/okou-ai/okou/issues/44988)) ([3e9fd2b](https://github.com/okou-ai/okou/commit/3e9fd2b8737e542acfc5965764a5f0b6fe0a1439))
+
 ## [0.53.64](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.63...sandbox-firecracker-v0.53.64) (2026-11-03)
 
 

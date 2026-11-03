@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.6...runner-rs-v0.244.7) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** retain service artifacts until shutdown is confirmed ([#44990](https://github.com/okou-ai/okou/issues/44990)) ([73f9c29](https://github.com/okou-ai/okou/commit/73f9c29a1b9378daad63d5b4c425240051afd7c4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.5...runner-rs-v0.244.6) (2026-11-03)
 
 

@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.46.0](https://github.com/okou-ai/okou/compare/api-v2.45.1...api-v2.46.0) (2026-11-03)
+
+
+### Features
+
+* add friend referrals with expiring credit rewards ([#44961](https://github.com/okou-ai/okou/issues/44961)) ([beaff0e](https://github.com/okou-ai/okou/commit/beaff0e0ddf72f5d2fcd835314f14d6661e721af))
+* shorten marketing handoff links to twelve characters ([#44980](https://github.com/okou-ai/okou/issues/44980)) ([046a7ba](https://github.com/okou-ai/okou/commit/046a7bac03cc5f5a94cc67394756f69be2eaf111))
+
+
+### Performance Improvements
+
+* **api:** batch incremental marketing handoff publication ([#44976](https://github.com/okou-ai/okou/issues/44976)) ([392e0ef](https://github.com/okou-ai/okou/commit/392e0ef3ddc3f55fa2842c3c48459adfe2891a33))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.39.0
+    * @okouai/connectors bumped to 3.21.2
+    * @okouai/core bumped to 8.814.0
+    * @okouai/db bumped to 2.20.0
+    * @okouai/pi-agent-runtime bumped to 1.51.60
+
 ## [2.45.1](https://github.com/okou-ai/okou/compare/api-v2.45.0...api-v2.45.1) (2026-11-03)
 
 
