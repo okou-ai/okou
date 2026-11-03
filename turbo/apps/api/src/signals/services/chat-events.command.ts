@@ -654,14 +654,15 @@ const loadExistingSendThreadRow$ = command(
     return thread;
   },
 );
-type ExistingSendThreadRow = NonNullable<
-  Awaited<ReturnType<(typeof loadExistingSendThreadRow$)["write"]>>
+type ExistingSendThreadRowRead = ReturnType<
+  (typeof loadExistingSendThreadRow$)["write"]
 >;
+type ExistingSendThreadRow = NonNullable<Awaited<ExistingSendThreadRowRead>>;
 const loadAuthorizedExistingSendThread$ = command(
   async (
-    { get, set },
+    { get },
     args: NormalSendArgs & { readonly context: AgentRunContextSignals },
-    threadId: string,
+    threadRow: ExistingSendThreadRowRead,
     signal: AbortSignal,
   ): Promise<
     | {
@@ -671,7 +672,7 @@ const loadAuthorizedExistingSendThread$ = command(
     | NormalSendFailure
   > => {
     const [thread, loadedAgent] = await Promise.all([
-      set(loadExistingSendThreadRow$, args, threadId, signal),
+      threadRow,
       get(args.context.agent$),
     ]);
     signal.throwIfAborted();
@@ -2012,7 +2013,11 @@ const appendNormalSendInput$ = command(
 const prepareNormalSend$ = command(
   async (
     { get, set },
-    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
+    args: NormalSendArgs & {
+      readonly context: AgentRunContextSignals;
+      /** The existing thread's row read, started before the preload. */
+      readonly existingThreadRow: ExistingSendThreadRowRead | undefined;
+    },
     signal: AbortSignal,
   ): Promise<
     | {
@@ -2027,23 +2032,13 @@ const prepareNormalSend$ = command(
     | NormalSendFailure
     | CreatedChatEventResponse
   > => {
-    // MCP attribution is server-owned. Reject a forged source even on an
-    // idempotent retry.
-    if (
-      args.body.userMessage.parts.some((part) => {
-        return part.type === "source" && part.kind === "mcp";
-      })
-    ) {
-      return badRequestMessage("MCP source annotations are server-managed");
-    }
-    const existingThreadId = args.body.threadId;
     const authorized =
-      existingThreadId === undefined
+      args.existingThreadRow === undefined
         ? await set(loadAuthorizedAgent$, args, signal)
         : await set(
             loadAuthorizedExistingSendThread$,
             args,
-            existingThreadId,
+            args.existingThreadRow,
             signal,
           );
     signal.throwIfAborted();
@@ -2331,17 +2326,34 @@ const prepareNormalSendModels$ = command(
 
 const prepareNormalSendContext$ = command(
   async ({ set }, args: NormalSendArgs, signal: AbortSignal) => {
+    // MCP attribution is server-owned. Reject a forged source even on an
+    // idempotent retry, before any read starts.
+    if (
+      args.body.userMessage.parts.some((part) => {
+        return part.type === "source" && part.kind === "mcp";
+      })
+    ) {
+      return badRequestMessage("MCP source annotations are server-managed");
+    }
     const context = createAgentRunContextSignals(
       args.userId,
       args.orgId,
       args.body.agentId,
     );
+    // The pool serves checkouts in dispatch order. Issue the request-critical
+    // thread row before the preload's roots, several of which this request
+    // never awaits, so it takes a warm connection instead of opening one.
+    // Authorization joins it with the Agent read in this same turn.
+    const existingThreadRow =
+      args.body.threadId === undefined
+        ? undefined
+        : set(loadExistingSendThreadRow$, args, args.body.threadId, signal);
     // Start authenticated org/member reads immediately; authorization consumes
     // the same promises. Settled waitUntil work stays owned on rejection/abort.
     set(preloadAgentRunContext$, context, signal);
     const prepared = await set(
       prepareNormalSend$,
-      { ...args, context },
+      { ...args, context, existingThreadRow },
       signal,
     );
     if ("status" in prepared) {
