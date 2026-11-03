@@ -236,9 +236,10 @@ test("Overlapping closes retain one blank tab in the assigned window", async () 
   });
   await screen.findByLabelText("Other", { selector: '[role="tab"]' });
   const close = browser.holdNext("Target.closeTarget");
+  // Start both closes before either remote operation completes.
   click(screen.getByLabelText("Close Example"));
-  await close.received;
   click(screen.getByLabelText("Close Other"));
+  await close.received;
   await waitFor(() => {
     expect(queryAllByRoleFast("tab")).toHaveLength(1);
     expect(
