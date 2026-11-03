@@ -955,6 +955,52 @@ describe("chat-window CDP proxy protocol", () => {
     },
   );
 
+  it.each([false, true])(
+    "preserves an owned session when another tab moves during root observation (browser session=%s)",
+    async (browserSession) => {
+      const channel = browserSession
+        ? String(
+            (await connection.request("Target.attachToBrowserTarget"))
+              .sessionId,
+          )
+        : undefined;
+      const attached = connection.event((message) => {
+        return (
+          message.method === "Target.attachedToTarget" &&
+          message.sessionId === channel &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "A"
+        );
+      });
+      const select = () => {
+        return connection.request(
+          "Target.autoAttachRelated",
+          {
+            targetId: "BROWSER",
+            waitForDebuggerOnStart: false,
+            filter: [{ type: "page" }],
+          },
+          channel,
+        );
+      };
+      await select();
+      const original = String((await attached).params?.sessionId);
+      const lookup = provider.holdWindowLookup("TAB-A");
+      try {
+        provider.move("B", 0);
+        await lookup.observed;
+        provider.move("B", 1);
+        lookup.resume();
+        await select();
+        expect(
+          await connection.request("Runtime.enable", {}, original),
+        ).toStrictEqual({});
+      } finally {
+        lookup.resume();
+      }
+    },
+  );
+
   it("never attaches foreign pages through a browser-global source and releases only owned browser sessions", async () => {
     const explicit = String(
       (

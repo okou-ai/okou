@@ -292,10 +292,12 @@ export class WindowScope {
           (value) => {
             if (!record(value) || typeof value.windowId !== "number")
               throw new Error("Invalid Browser window");
-            const allowed =
-              generation === this.generation &&
-              !this.stopped &&
-              value.windowId === this.windowId;
+            if (this.stopped || !this.targets.has(info.targetId)) return false;
+            // Invalidated observations are unknown, not proof that a live root
+            // left. Join its current observation before retiring native sessions.
+            if (generation !== this.generation)
+              return this.allows(info.targetId);
+            const allowed = value.windowId === this.windowId;
             if (allowed) this.admitted.add(info.targetId);
             return allowed;
           },
