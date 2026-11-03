@@ -4,6 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use guest_contracts::managed_task::{TaskHandle, TaskStartup, is_task_runtime_path};
 
@@ -27,19 +28,19 @@ import json, math, os, select, subprocess, sys, time
 def task_stage(stage):
     print("task OOM stage: " + stage, file=sys.stderr, flush=True)
 
-def task_remaining(stage, cap=None):
+def task_remaining(stage):
     deadline = float(os.environ["VM0_TEST_TASK_DEADLINE"])
     remaining = deadline - time.monotonic()
     if not math.isfinite(deadline) or remaining <= 0:
         raise TimeoutError(stage + ": task fixture deadline expired")
-    return min(remaining, cap) if cap is not None else remaining
+    return remaining
 
 def wait_for_allocators(fd, count):
     task_stage("await all resident allocators")
     with os.fdopen(fd, "rb", buffering=0) as reports:
         pending = count
         while pending:
-            if not select.select([reports], [], [], task_remaining("allocator readiness", 5))[0]:
+            if not select.select([reports], [], [], task_remaining("allocator readiness"))[0]:
                 raise TimeoutError("allocator readiness: missing worker report")
             ready = os.read(reports.fileno(), pending)
             if not ready:
@@ -47,6 +48,7 @@ def wait_for_allocators(fd, count):
             if ready != b"R" * len(ready):
                 raise RuntimeError("allocator readiness: invalid worker report")
             pending -= len(ready)
+            task_stage("resident allocators: " + str(count - pending) + "/" + str(count))
 
 def launch(program, stdin=subprocess.DEVNULL):
     read_fd, report_fd = os.pipe()
@@ -58,7 +60,7 @@ def launch(program, stdin=subprocess.DEVNULL):
     os.close(report_fd)
     try:
         with os.fdopen(read_fd) as report:
-            assert select.select([report], [], [], task_remaining("task admission", 5))[0], "task admission timed out"
+            assert select.select([report], [], [], task_remaining("task admission"))[0], "task admission timed out"
             startup = json.loads(report.readline(4097))
         assert startup["pid"] == child.pid
         return child, startup
@@ -69,9 +71,9 @@ def launch(program, stdin=subprocess.DEVNULL):
 "#;
 
 pub(super) const CONTROLLER_PROGRAM: &str = r#"
-import os, pathlib, time
-os.environ["VM0_TEST_TASK_DEADLINE"] = str(time.monotonic() + float(os.environ["VM0_TEST_TASK_TIMEOUT_SECONDS"]))
+import os, pathlib
 exec(os.environ["VM0_TEST_TASK_SUPPORT"])
+task_remaining("controller start")
 assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
 task_stage("controller launch")
 child, startup = launch(os.environ["VM0_TEST_TASK_RUNTIME"], stdin=subprocess.PIPE)
@@ -142,6 +144,30 @@ if injected:
 while True:
     os.wait()
 "#;
+
+pub(super) fn monotonic_deadline(deadline: Instant) -> Result<String, String> {
+    let mut now = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: now is a valid writable timespec, read only after a successful call.
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut now) } != 0 {
+        return Err(format!(
+            "read task monotonic clock: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let seconds =
+        u64::try_from(now.tv_sec).map_err(|error| format!("task monotonic seconds: {error}"))?;
+    let nanoseconds = u32::try_from(now.tv_nsec)
+        .map_err(|error| format!("task monotonic nanoseconds: {error}"))?;
+    // Sample remaining time after CLOCK_MONOTONIC so the handoff cannot add
+    // time. Python inherits this absolute bound, including process-start delay.
+    let absolute = Duration::new(seconds, nanoseconds)
+        .checked_add(deadline.saturating_duration_since(Instant::now()))
+        .ok_or("task monotonic deadline overflowed")?;
+    Ok(absolute.as_secs_f64().to_string())
+}
 
 pub(super) fn diagnostics_file() -> Result<File, String> {
     OpenOptions::new()
