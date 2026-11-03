@@ -398,15 +398,6 @@ async function servedConnectors() {
 
 async function servedRelease() {
   routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-    }),
-    [200],
-  );
   const response = await accept(
     setupApp({ context, routes: connectorCatalogRoutes })(
       connectorCatalogContract,
@@ -443,19 +434,6 @@ describe("connector catalog cron authentication", () => {
       routes: cronConnectorCatalogRoutes,
     }).request("/api/cron/sync-connector-catalog", { method: "GET" });
     expect(missing.status).toBe(401);
-  });
-});
-
-describe("connector catalog release access", () => {
-  it("requires Debug to inspect the serving release", async () => {
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const response = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).release({ headers: { authorization: "Bearer clerk-session" } }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("FORBIDDEN");
   });
 });
 

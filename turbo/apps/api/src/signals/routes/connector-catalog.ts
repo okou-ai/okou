@@ -1,7 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -42,11 +41,7 @@ import {
   connectorCatalogSlugJoin,
   connectorCatalogSlugSourceFromRows,
 } from "../services/connector-catalog-slug-source.service";
-import {
-  notFound,
-  providerUnavailable,
-  resourceUnavailable,
-} from "../../lib/error";
+import { notFound, providerUnavailable } from "../../lib/error";
 import { settle } from "../utils";
 import { builtinConnectorAccountSlugs } from "../services/connector-account-lifecycle.service";
 import { acceptedConnectorCatalogRelease$ } from "../services/connector-catalog-release.service";
@@ -390,13 +385,6 @@ const getConnectorCatalogPermissionsInner$ = command(
 
 const getConnectorCatalogReleaseInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const { featureStates } = await set(connectorCatalogRequestContext$);
-    signal.throwIfAborted();
-    if (!featureStates[FeatureSwitchKey.OkouDebug]) {
-      return resourceUnavailable(
-        "Connector catalog release information requires Okou Debug",
-      );
-    }
     const catalog = await get(acceptedConnectorCatalogRelease$);
     signal.throwIfAborted();
     set(setResHeader$, "Cache-Control", "no-store");
