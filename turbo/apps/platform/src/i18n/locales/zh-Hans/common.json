@@ -5402,10 +5402,10 @@
       "settings": "设置",
       "signOut": "退出登录",
       "subscriptions": {
-        "label": "订阅用量",
-        "lowUsage": "订阅用量：剩余额度低于 20%",
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
+        "label": "订阅用量",
+        "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩余用量",

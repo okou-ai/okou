@@ -5402,10 +5402,10 @@
       "settings": "Setelan",
       "signOut": "Keluar",
       "subscriptions": {
-        "label": "Penggunaan langganan",
-        "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
+        "label": "Penggunaan langganan",
+        "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
         "usageRemaining": "Sisa {{provider}} {{window}}",
