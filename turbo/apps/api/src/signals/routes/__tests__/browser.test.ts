@@ -7648,7 +7648,7 @@ describe("okou browser route", () => {
       "Browser tab continuity:",
     );
     expect(claim.appendSystemPrompt ?? "").not.toContain(
-      "Browser chat window:",
+      "Browser shared profile:",
     );
     const browserToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!browserToken) {
@@ -7688,7 +7688,7 @@ describe("okou browser route", () => {
       "Browser tab continuity: When resuming a page after `okou browser use`",
     );
     expect(appendSystemPrompt).toContain("`okou browser tab list`");
-    expect(appendSystemPrompt).not.toContain("Browser chat window:");
+    expect(appendSystemPrompt).not.toContain("Browser shared profile:");
     expect(appendSystemPrompt).toContain(
       "Keep the selected tab only if non-sensitive page evidence confirms it",
     );
@@ -7708,35 +7708,62 @@ describe("okou browser route", () => {
     );
   });
 
-  it("guides enabled chats to their shared Browser window", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserSharedOwner]: true,
-    });
-    const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "Use this chat's shared Browser window",
-      cloudBrowserEnabled: true,
-    });
+  it.each([false, true])(
+    "guides ordinary shared Browser operations with native input %s",
+    async (nativeInput) => {
+      const { runs, chat, actor, agent } = await setupBrowserScenario();
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+        [FeatureSwitchKey.BrowserNativeInput]: nativeInput,
+      });
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt: "Use this chat's shared Browser",
+        cloudBrowserEnabled: true,
+      });
 
-    await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain("this chat's managed Browser");
-    expect(appendSystemPrompt).toContain(
-      "initially selects a page in the reported chat window",
-    );
-    expect(appendSystemPrompt).toContain(
-      "shows the driver's safe tab inventory",
-    );
-    expect(appendSystemPrompt).toContain("Every CDP API remains callable");
-    expect(appendSystemPrompt).toContain(
-      "source-less `Target.createTarget` pages",
-    );
-    expect(appendSystemPrompt).toContain(
-      "login, logout and account switching affect sibling chats",
-    );
-  });
+      await flushWaitUntilForTest();
+      const claim = await runs.claimRunnerJob(sent.runId);
+      const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+      expect(appendSystemPrompt).toContain("this chat's managed Browser");
+      expect(appendSystemPrompt).toContain(
+        "The connection automatically scopes tabs and new pages to this chat",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Use ordinary browser and tab operations",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Chats sharing a Browser profile share cookies and localStorage",
+      );
+      expect(appendSystemPrompt).toContain(
+        "login, logout and account switching affect other chats",
+      );
+      expect(appendSystemPrompt).toContain(
+        "separate chats do not provide separate website accounts",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Browser tab continuity: When resuming a page after `okou browser use`",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Keep the selected tab only if non-sensitive page evidence confirms it",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Origin or selection alone is not proof, even with one match",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
+      );
+      if (nativeInput) {
+        expect(appendSystemPrompt).toContain("Browser user input priority:");
+        expect(appendSystemPrompt).toContain(
+          "prefer `okou browser input-request` over direct Browser takeover",
+        );
+        expect(appendSystemPrompt).toContain("Browser input completion:");
+      } else {
+        expect(appendSystemPrompt).not.toContain("okou browser input-request");
+      }
+    },
+  );
 
   it("prioritizes native input when both browser and native input are enabled", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
