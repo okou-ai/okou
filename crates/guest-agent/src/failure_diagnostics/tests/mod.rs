@@ -100,18 +100,17 @@ fn terminal_provider_status_preserves_quota_precedence() {
     }
 }
 
-struct SystemLogOverrideGuard;
+struct SystemLogOverrideGuard {
+    _override: guest_telemetry::test_support::SystemLogOverrideGuard,
+}
 
 impl SystemLogOverrideGuard {
     fn set(path: &std::path::Path) -> Self {
-        guest_telemetry::log::set_system_log_file(path.to_string_lossy().as_ref());
-        Self
-    }
-}
-
-impl Drop for SystemLogOverrideGuard {
-    fn drop(&mut self) {
-        guest_telemetry::log::clear_system_log_file();
+        Self {
+            _override: guest_telemetry::test_support::SystemLogOverrideGuard::set(
+                path.to_string_lossy().as_ref(),
+            ),
+        }
     }
 }
 

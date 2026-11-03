@@ -3,6 +3,7 @@ use guest_contracts::diagnostics::{
     AgentFramework, CliObservedExitDiagnostic, CliTerminationDiagnostic, CliTerminationSignal,
     FailureDetailSource, PromptMetadata, SessionHistoryStatus,
 };
+use guest_telemetry::test_support::SandboxOpsOverrideGuard;
 use httpmock::prelude::*;
 use serde_json::json;
 use std::sync::LazyLock;
@@ -153,33 +154,17 @@ impl Drop for TestRuntimeRootGuard {
     }
 }
 
-struct SystemLogOverrideGuard;
+struct SystemLogOverrideGuard {
+    _override: guest_telemetry::test_support::SystemLogOverrideGuard,
+}
 
 impl SystemLogOverrideGuard {
     fn set(path: &std::path::Path) -> Self {
-        guest_telemetry::log::set_system_log_file(path.to_string_lossy().as_ref());
-        Self
-    }
-}
-
-impl Drop for SystemLogOverrideGuard {
-    fn drop(&mut self) {
-        guest_telemetry::log::clear_system_log_file();
-    }
-}
-
-struct SandboxOpsOverrideGuard;
-
-impl SandboxOpsOverrideGuard {
-    fn set(path: &std::path::Path) -> Self {
-        guest_telemetry::telemetry::set_sandbox_ops_log_file(path);
-        Self
-    }
-}
-
-impl Drop for SandboxOpsOverrideGuard {
-    fn drop(&mut self) {
-        guest_telemetry::telemetry::clear_sandbox_ops_log_file();
+        Self {
+            _override: guest_telemetry::test_support::SystemLogOverrideGuard::set(
+                path.to_string_lossy().as_ref(),
+            ),
+        }
     }
 }
 

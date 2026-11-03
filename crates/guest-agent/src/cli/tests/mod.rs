@@ -11,27 +11,13 @@ use crate::session_metadata::SessionHistoryLaunchSource;
 use crate::{constants, env};
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
 use guest_contracts::diagnostics::{FailureDetailSource, FailureReason};
+use guest_telemetry::test_support::SystemLogOverrideGuard;
 use std::borrow::Cow;
 use std::collections::HashMap;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
-
-struct SystemLogOverrideGuard;
-
-impl SystemLogOverrideGuard {
-    fn set(path: &Path) -> Self {
-        guest_telemetry::log::set_system_log_file(path);
-        Self
-    }
-}
-
-impl Drop for SystemLogOverrideGuard {
-    fn drop(&mut self) {
-        guest_telemetry::log::clear_system_log_file();
-    }
-}
 
 fn guest_config_for_agent_context(user_env: HashMap<String, String>) -> env::GuestConfig {
     env::GuestConfig {

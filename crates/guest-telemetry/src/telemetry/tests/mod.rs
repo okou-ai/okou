@@ -1,29 +1,31 @@
 use super::*;
+use crate::test_support::SandboxOpsOverrideGuard;
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 static TELEMETRY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn telemetry_owner_clears_sandbox_ops_destination() {
+    let _lock = lock_test_state();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sandbox-ops.jsonl");
+    let owner = SandboxOpsOverrideGuard::set(&path);
+    record_sandbox_op("before-owned-clear", Duration::ZERO, true, None);
+
+    drop(owner);
+    record_sandbox_op("after-owned-clear", Duration::ZERO, true, None);
+
+    let contents = std::fs::read_to_string(path).unwrap();
+    assert_eq!(contents.lines().count(), 1);
+    assert!(contents.contains("before-owned-clear"));
+}
+
 fn lock_test_state() -> MutexGuard<'static, ()> {
     TELEMETRY_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-struct SandboxOpsOverrideGuard;
-
-impl SandboxOpsOverrideGuard {
-    fn set(path: impl AsRef<Path>) -> Self {
-        set_sandbox_ops_log_file(path);
-        Self
-    }
-}
-
-impl Drop for SandboxOpsOverrideGuard {
-    fn drop(&mut self) {
-        clear_sandbox_ops_log_file();
-    }
 }
 
 #[test]

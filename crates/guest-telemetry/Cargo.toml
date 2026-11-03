@@ -3,6 +3,9 @@ name = "guest-telemetry"
 version = "0.3.184"
 edition.workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 chrono = { workspace = true, features = ["clock", "std"] }
 guest-contracts.workspace = true
