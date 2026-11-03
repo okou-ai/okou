@@ -1254,6 +1254,178 @@ describe("POST /api/webhooks/gmail", () => {
     expect(startHistoryIds.sort()).toStrictEqual(["202", "300"]);
   });
 
+  it.each([
+    {
+      name: "transport failure",
+      failure: () => {
+        return HttpResponse.error();
+      },
+    },
+    {
+      name: "rate limiting",
+      failure: () => {
+        return HttpResponse.json({ error: {} }, { status: 429 });
+      },
+    },
+    {
+      name: "server failure",
+      failure: () => {
+        return HttpResponse.json({ error: {} }, { status: 503 });
+      },
+    },
+    {
+      name: "Gmail's HTTP 403 user rate limit",
+      failure: () => {
+        return HttpResponse.json(
+          { error: { errors: [{ reason: "userRateLimitExceeded" }] } },
+          { status: 403 },
+        );
+      },
+    },
+  ])(
+    "retries history pagination after $name without losing or duplicating events",
+    async ({ failure }) => {
+      configureGmailEnv();
+      runsApi.configureRunnerGroup();
+      configureGmailWatchMock();
+      const { actor, workflowId } = await setupFixture();
+      const gmailEmail = uniqueGmailEmail();
+      await connectGmail(actor, gmailEmail);
+      configureGmailMessageMocks(gmailEmail);
+      await configureWorkspaceModelProvider(actor);
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: { provider: "gmail", event: "new_message" },
+          },
+        }),
+        [201],
+      );
+      const chatThreadId = requireAutomationChatThreadId(created.body);
+      await configureAutomationThreadModel(actor, chatThreadId);
+
+      let historyAvailable = false;
+      server.use(
+        http.get(
+          "https://gmail.googleapis.com/gmail/v1/users/me/history",
+          ({ request }) => {
+            const query = new URL(request.url).searchParams;
+            if (query.get("startHistoryId") !== "100") {
+              return HttpResponse.json({ history: [], historyId: "101" });
+            }
+            if (query.has("pageToken")) {
+              return historyAvailable
+                ? HttpResponse.json({ historyId: "101" })
+                : failure();
+            }
+            return HttpResponse.json({
+              history: [
+                {
+                  id: "101",
+                  messagesAdded: [
+                    { message: { id: "msg-1", labelIds: ["INBOX"] } },
+                  ],
+                },
+              ],
+              nextPageToken: "remaining-history",
+            });
+          },
+        ),
+      );
+      const body = gmailPushBody({
+        emailAddress: gmailEmail,
+        historyId: "101",
+        messageId: "pubsub-history-retry",
+      });
+
+      const failed = await postGmailWebhook(body);
+      expectResponseStatus(failed, 503);
+      expect(failed.body).toStrictEqual({
+        error:
+          "Gmail history is temporarily unavailable; retry this notification",
+      });
+      await expect(
+        readAutomation(actor, created.body.id),
+      ).resolves.toMatchObject({
+        lastRunAt: null,
+      });
+
+      historyAvailable = true;
+      const retried = await postGmailWebhook(body);
+      expectResponseStatus(retried, 200);
+      expect(retried.body).toMatchObject({ dispatched: 1, duplicates: 0 });
+      await flushWaitUntilForTest();
+      await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(
+        1,
+      );
+
+      // A duplicate provider delivery can overlap the previous cursor snapshot.
+      configureGmailMessageMocks(gmailEmail);
+      const duplicate = await postGmailWebhook(body);
+      expectResponseStatus(duplicate, 200);
+      expect(duplicate.body).toMatchObject({ dispatched: 0, duplicates: 1 });
+      await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it.each([
+    { status: 401, reason: "authError" },
+    { status: 403, reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" },
+  ])(
+    "acknowledges permanent Gmail HTTP $status authorization failures",
+    async ({ status, reason }) => {
+      configureGmailEnv();
+      configureGmailWatchMock();
+      const { actor, workflowId } = await setupFixture();
+      const gmailEmail = uniqueGmailEmail();
+      await connectGmail(actor, gmailEmail);
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: { provider: "gmail", event: "new_message" },
+          },
+        }),
+        [201],
+      );
+      server.use(
+        http.get(
+          "https://gmail.googleapis.com/gmail/v1/users/me/history",
+          () => {
+            return HttpResponse.json(
+              { error: { details: [{ domain: "googleapis.com", reason }] } },
+              { status },
+            );
+          },
+        ),
+      );
+
+      const response = await postGmailWebhook(
+        gmailPushBody({
+          emailAddress: gmailEmail,
+          historyId: "101",
+          messageId: "pubsub-history-authorization",
+        }),
+      );
+      expectResponseStatus(response, 200);
+      expect(response.body).toMatchObject({ dispatched: 0, duplicates: 0 });
+      await expect(
+        readAutomation(actor, created.body.id),
+      ).resolves.toMatchObject({
+        lastRunAt: null,
+      });
+    },
+  );
+
   it("dispatches matching new inbound messages and de-duplicates retries", async () => {
     configureGmailEnv();
     const runnerGroup = runsApi.configureRunnerGroup();
