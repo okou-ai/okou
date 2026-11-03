@@ -37,7 +37,7 @@ case "$operation" in
         ;;
     esac
     if [ "$conditional" = true ] && [ -f "$object" ]; then
-      echo 'PreconditionFailed: 412' >&2
+      echo '{"Code":"PreconditionFailed"}' >&2
       exit 1
     fi
     mkdir -p "$(dirname "$object")"

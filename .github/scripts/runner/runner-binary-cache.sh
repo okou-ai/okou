@@ -225,29 +225,24 @@ fetch_verified_r2_runner() {
   local expected_runner_sha=$4
   local compressed_path=$5
   local runner_path=$6
-  local endpoint head_json observed_object_size downloaded_size decompressed_size actual_sha
-  local get_status=0 decompress_status=0
+  local head_path observed_object_size downloaded_size decompressed_size actual_sha
+  local decompress_status=0
   local aws_error_log="${compressed_path}.aws.err"
   local zstd_error_log="${compressed_path}.zstd.err"
 
   R2_VERIFICATION_REASON=""
   R2_VERIFICATION_MESSAGE=""
   R2_VERIFIED_OBJECT_SIZE=""
-  endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+  head_path="${compressed_path}.head.json"
 
-  if ! head_json=$(aws s3api head-object \
-    --endpoint-url "$endpoint" \
-    --bucket "$R2_BUCKET_NAME" \
-    --key "$object_key" \
-    --output json \
-    --cli-connect-timeout 5 \
-    --cli-read-timeout 30 2>"$aws_error_log"); then
+  if ! runner_binary_r2_read binary-head "$head_path" "$aws_error_log" \
+    head-object --key "$object_key" --output json; then
     R2_VERIFICATION_REASON="head-failed"
     R2_VERIFICATION_MESSAGE="the R2 object could not be inspected"
     return 1
   fi
   if ! observed_object_size=$(jq -er '.ContentLength | select(type == "number" and floor == .)' \
-    <<<"$head_json" 2>/dev/null); then
+    "$head_path" 2>/dev/null); then
     R2_VERIFICATION_REASON="head-malformed"
     R2_VERIFICATION_MESSAGE="the R2 object metadata was malformed"
     return 1
@@ -264,16 +259,9 @@ fetch_verified_r2_runner() {
     return 1
   fi
 
-  aws s3api get-object \
-    --endpoint-url "$endpoint" \
-    --bucket "$R2_BUCKET_NAME" \
-    --key "$object_key" \
-    --range "bytes=0-${RUNNER_BINARY_MAX_COMPRESSED_BYTES}" \
-    --cli-connect-timeout 5 \
-    --cli-read-timeout 30 \
-    "$compressed_path" \
-    >/dev/null 2>"$aws_error_log" || get_status=$?
-  if [ "$get_status" -ne 0 ]; then
+  if ! runner_binary_r2_read binary-get "${compressed_path}.get.json" "$aws_error_log" \
+    get-object --key "$object_key" --range "bytes=0-${RUNNER_BINARY_MAX_COMPRESSED_BYTES}" \
+    "$compressed_path"; then
     R2_VERIFICATION_REASON="get-failed"
     R2_VERIFICATION_MESSAGE="the R2 object could not be downloaded"
     return 1
@@ -343,6 +331,7 @@ validate_producer_inputs() {
 }
 
 publish() {
+  runner_binary_r2_publication_init
   load_fresh
   validate_producer_inputs
   require_env OUTPUT_DIR
@@ -363,15 +352,18 @@ publish() {
     publish_failure "zstd-unavailable" "zstd is unavailable"
   fi
 
-  local temp_root compressed retained decompressed error_log
+  local temp_root compressed retained decompressed compression_started=$SECONDS
   temp_root=$(mktemp -d "${RUNNER_TEMP:-${OUTPUT_DIR}}/runner-binary-publish.XXXXXX")
   compressed="${temp_root}/runner.zst"
   retained="${temp_root}/retained.zst"
   decompressed="${temp_root}/retained-runner"
-  error_log="${temp_root}/aws.err"
   PUBLISH_TEMP_ROOT="$temp_root"
   trap 'rm -rf "$PUBLISH_TEMP_ROOT"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
 
+  printf 'R2 publication stage=compress target=%s event=start\n' "$EXPECTED_TARGET" >&2
   if ! zstd -q -3 -T0 -f -o "$compressed" "$RUNNER_PATH"; then
     publish_failure "compression-failed" "runner compression failed"
   fi
@@ -380,24 +372,17 @@ publish() {
   if [ "$compressed_size" -le 0 ] || [ "$compressed_size" -gt "$RUNNER_BINARY_MAX_COMPRESSED_BYTES" ]; then
     publish_failure "compressed-size-invalid" "compressed runner is outside the configured bound"
   fi
+  printf 'R2 publication stage=compress target=%s elapsed=%ss bytes=%s category=success\n' \
+    "$EXPECTED_TARGET" "$((SECONDS - compression_started))" "$compressed_size" >&2
 
-  local object_key endpoint put_status
+  local object_key put_result
   object_key="runner-binaries/${FRESH_TARGET}/${FRESH_RUNNER_SHA}.zst"
-  endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-  put_status=0
-  aws s3api put-object \
-    --endpoint-url "$endpoint" \
-    --bucket "$R2_BUCKET_NAME" \
-    --key "$object_key" \
-    --body "$compressed" \
+  if ! runner_binary_r2_put binary-put "$object_key" "$compressed" create "$temp_root" \
     --content-type application/zstd \
-    --cache-control 'private, max-age=259200' \
-    --if-none-match '*' \
-    --cli-connect-timeout 5 --cli-read-timeout 30 \
-    >/dev/null 2>"$error_log" || put_status=$?
-  if [ "$put_status" -ne 0 ] && ! grep -Eq 'PreconditionFailed|precondition|412' "$error_log"; then
+    --cache-control 'private, max-age=259200'; then
     publish_failure "put-failed" "R2 rejected the runner object upload"
   fi
+  put_result=$RUNNER_R2_PUT_RESULT
 
   local retained_size publish_reason
   if ! fetch_verified_r2_runner \
@@ -469,7 +454,7 @@ publish() {
     "$0" manifest-validate >/dev/null
 
   emit "published" "true"
-  emit "publish-reason" "$([ "$put_status" -eq 0 ] && echo uploaded || echo existing-validated)"
+  emit "publish-reason" "$put_result"
   emit "manifest-path" "${OUTPUT_DIR}/manifest.json"
   emit "object-key" "$object_key"
   emit "object-size-bytes" "$retained_size"

@@ -57,6 +57,7 @@
 2 runner-binary-github-test.sh
 2 runner-binary-test-inputs-test.sh
 2 runner-binary-transport-test.sh
+2 runner-binary-publication-test.sh
 2 runner-guest-binaries-test.sh
 2 runner-host-architecture-groups-test.sh
 2 runner-image-architecture-test.sh
