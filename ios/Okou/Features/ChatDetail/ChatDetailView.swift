@@ -103,6 +103,13 @@ struct ChatDetailView: View {
         .environment(\.openChatSource, openChatSource)
     }
     .ignoresSafeArea(.container, edges: .vertical)
+    .overlay {
+      if conversation.history == nil && conversation.historySyncError != nil {
+        ContentUnavailableView(
+          "Unable to load chat", systemImage: "bubble.left.and.exclamationmark.bubble.right",
+          description: Text("Try updating chats again. Your draft is still available."))
+      }
+    }
     .onAppear {
       scrolling.activate(reduceMotion: reduceMotion)
       conversation.setDetailVisible(true, owner: activityOwner)

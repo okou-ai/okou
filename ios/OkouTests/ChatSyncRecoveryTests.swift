@@ -41,6 +41,28 @@ final class ChatSyncRecoveryTests: XCTestCase {
     XCTAssertNil(store.list.error)
   }
 
+  func testServerAndRateLimitRecoveryKeepsChatsAndHonorsTheServerDeadline() async {
+    for (status, retryAfter) in [(503, nil), (429, "17")] {
+      let fixture = SyncRecoveryFixture()
+      let delays = Mutex<[Duration]>([])
+      let store = fixture.workspace { delay in delays.withLock { $0.append(delay) } }
+      defer { store.close() }
+      await store.refresh([.threadList])
+      fixture.state.value.withLock {
+        $0.listFailures = 1
+        $0.listHTTPStatus = status
+        $0.retryAfter = retryAfter
+        $0.title = "Recovered after server failure"
+      }
+
+      await store.refresh([.threadList])
+
+      XCTAssertEqual(store.list.threads.first?.title, "Recovered after server failure")
+      XCTAssertEqual(delays.withLock { $0 }, [Duration.seconds(status == 429 ? 17 : 1)])
+      XCTAssertNil(store.synchronizationState)
+    }
+  }
+
   func testExhaustedReadRetriesKeepChatsAvailableAndManualRetryClearsTheSyncError() async {
     let fixture = SyncRecoveryFixture()
     let store = fixture.workspace { _ in }
@@ -238,6 +260,8 @@ private final class SyncRecoveryFixture: Sendable {
     var messages = ["Saved answer"]
     var listReads = 0
     var listFailures = 0
+    var listHTTPStatus: Int?
+    var retryAfter: String?
     var listOffline = false
     var renameOffline = false
     var renameRequests = 0
@@ -263,9 +287,18 @@ private final class SyncRecoveryFixture: Sendable {
           value.listReads += 1
           let failing = value.listOffline || value.listFailures > 0
           value.listFailures = max(0, value.listFailures - 1)
-          return (value.title, failing)
+          return (value.title, failing, value.listHTTPStatus, value.retryAfter)
         }
-        if result.1 { throw URLError(.networkConnectionLost) }
+        if result.1 {
+          if let status = result.2 {
+            var headers = ["Content-Type": "application/json"]
+            if let retryAfter = result.3 { headers["Retry-After"] = retryAfter }
+            return ChatHTTPResponse(
+              status: status, body: #"{"error":{"message":"Temporarily unavailable"}}"#,
+              headers: headers)
+          }
+          throw URLError(.networkConnectionLost)
+        }
         return ChatHTTPResponse(
           body: """
             {"chatThreads":[{"id":"\(Self.threadID)","agentId":"\(Self.agentID)",\

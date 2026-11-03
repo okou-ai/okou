@@ -186,7 +186,7 @@ private struct WorkspaceRootView: View {
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
           notifications: notifications,
-          headerHeight: headerHeight,
+          headerHeight: headerHeight, showsSynchronizationStatus: sidebar.isOpen,
           accountError: $accountError,
           close: closeSidebar,
           newChat: startNewChat
@@ -243,10 +243,8 @@ private struct WorkspaceRootView: View {
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
             ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
-            if let error = store.list.syncError {
-              ChatSyncFailureView(message: error, isRefreshing: store.list.isLoading) {
-                await store.refresh()
-              }
+            ChatSyncStatusView(state: sidebar.isOpen ? nil : store.synchronizationState) {
+              await store.retrySynchronization()
             }
           }
           .onGeometryChange(for: CGFloat.self) {

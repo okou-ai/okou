@@ -92,6 +92,8 @@ final class ConversationStore {
   private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
   private(set) var error: String?
   private(set) var readSyncError: String?
+  private(set) var historySyncError: String?
+  var syncError: String? { historySyncError ?? readSyncError }
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
@@ -161,7 +163,8 @@ final class ConversationStore {
     draftTarget = .thread(thread.id)
     composer = ComposerDraftStore(
       target: draftTarget, commands: commands,
-      repository: draftRepository, storage: draftStorage, didFail: didFail)
+      repository: draftRepository, storage: draftStorage, didFail: didFail,
+      syncSleep: readRetrySleep)
     self.sync = sync
     self.commands = commands
     self.webURL = webURL
@@ -242,7 +245,7 @@ final class ConversationStore {
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
-          if !pending.contains(where: \.needsRetry) { error = nil }
+          historySyncError = nil
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
           if suppressAutomaticRead, let unreadThrough {
             if let manualUnreadThrough {
@@ -271,12 +274,15 @@ final class ConversationStore {
               readSyncError = error.localizedDescription
               report(error)
             }
+          } else {
+            readSyncError = nil
           }
         } catch is CancellationError {
           return
         } catch {
           guard !Task.isCancelled, refreshGeneration == generation else { return }
-          show(error)
+          historySyncError = error.localizedDescription
+          report(error)
         }
       } while refreshAgain && !closed && !needsUpgrade && !Task.isCancelled
     }
@@ -347,7 +353,7 @@ final class ConversationStore {
     await refresh()
     // An existing refresh must finish reconciliation before an explicit resubmission.
     if let refreshTask { await refreshTask.value }
-    guard pending.contains(where: { $0.id == message.id }) else { return }
+    guard historySyncError == nil, pending.contains(where: { $0.id == message.id }) else { return }
     await submit(message)
   }
 
@@ -432,7 +438,7 @@ final class ConversationStore {
       await refresh()
       if let refreshTask { await refreshTask.value }
       guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
-        history?.latestFailureID == id, pending.isEmpty, error == nil,
+        history?.latestFailureID == id, pending.isEmpty, historySyncError == nil, error == nil,
         failureState(failure).recovery.canRetry,
         modelSelection?.canSendConfirmedSelection != false
       else { return }

@@ -82,6 +82,7 @@ final class NotificationService {
   private var binding: Binding?
   private(set) var status = UNAuthorizationStatus.notDetermined
   private(set) var error: String?
+  private(set) var registrationError: String?
   private(set) var pendingDestination: NotificationDestination?
   private var backgroundTasks: [String: Task<Bool, Never>] = [:]
   @ObservationIgnored var didSynchronize: (@MainActor (String) -> Void)?
@@ -162,6 +163,7 @@ final class NotificationService {
 
   func update(workspace: NotificationWorkspace?) async {
     if self.workspace?.scopeID != workspace?.scopeID {
+      registrationError = nil
       generation = UUID()
       notificationStateRequest?.cancel()
       registrationTask?.cancel()
@@ -214,6 +216,11 @@ final class NotificationService {
     } catch { self.error = error.localizedDescription }
   }
 
+  func retryRegistration() async {
+    await refreshRegistration()
+    error = registrationError
+  }
+
   func didRegister(deviceToken: Data) {
     // The OS supplies the token again on launch; no persisted token is authoritative.
     self.deviceToken = deviceToken.map { String(format: "%02x", $0) }.joined()
@@ -223,7 +230,7 @@ final class NotificationService {
 
   func registrationFailed(_ error: Error) {
     requestedDeviceToken = false
-    self.error = error.localizedDescription
+    registrationError = error.localizedDescription
   }
 
   func refreshRegistration() async {
@@ -253,12 +260,12 @@ final class NotificationService {
         "/api/ios-push-registrations", method: "POST", body: JSONEncoder().encode(next))
       try Task.checkCancellation()
       guard self.generation == generation else { return }
-      error = nil
+      registrationError = nil
       requestNotificationStateRefresh()
     } catch {
       guard self.generation == generation, !Task.isCancelled else { return }
       binding = nil
-      self.error = error.localizedDescription
+      registrationError = error.localizedDescription
     }
   }
 

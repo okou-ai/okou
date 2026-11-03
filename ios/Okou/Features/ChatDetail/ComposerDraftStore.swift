@@ -172,6 +172,8 @@ final class ComposerDraftStore {
   private var localReadFailed = false
   private var localError: String?
   private var syncError: String?
+  private(set) var syncWarning: String?
+  private let syncSleep: @Sendable (Duration) async throws -> Void
   private(set) var conflictingRemote: ComposerDraft?
   var contextLabels: [String] { document.contextLabels }
   var canSend: Bool {
@@ -227,8 +229,12 @@ final class ComposerDraftStore {
 
   init(
     target: ChatDraftTarget, commands: ChatCommands, repository: ChatDraftRepository? = nil,
-    storage: ChatDraftStorage? = nil, didFail: @escaping @MainActor (Error) -> Void
+    storage: ChatDraftStorage? = nil, didFail: @escaping @MainActor (Error) -> Void,
+    syncSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
   ) {
+    self.syncSleep = syncSleep
     self.target = target
     self.repository = repository
     self.storage = storage
@@ -323,10 +329,14 @@ final class ComposerDraftStore {
       defer {
         if syncGeneration == generation { syncTask = nil }
       }
+      var retryAttempt = 0
+      var retryPending = false
       repeat {
+        retryPending = false
         let startedRevision = revision
         do {
           let remote = try await repository.load(target)
+          syncWarning = nil
           try Task.checkCancellation()
           guard !closed else { return }
           if dirty {
@@ -385,11 +395,19 @@ final class ComposerDraftStore {
           persist()
         } catch is CancellationError { return } catch {
           guard !closed, !Task.isCancelled else { return }
-          report(error)
           persist()
-          return
+          if let delay = ChatReadRecovery.retryDelay(for: error, attempt: retryAttempt) {
+            retryAttempt += 1
+            do { try await syncSleep(delay) } catch { return }
+            guard !closed, !Task.isCancelled, syncGeneration == generation else { return }
+            // Every retry reads the remote draft before writing, preserving conflict detection.
+            retryPending = true
+          } else {
+            report(error)
+            return
+          }
         }
-      } while dirty && !closed && !Task.isCancelled
+      } while (dirty || retryPending) && !closed && !Task.isCancelled
     }
     syncTask = task
     await task.value
@@ -465,16 +483,9 @@ final class ComposerDraftStore {
 
   private func report(_ failure: Error) {
     didFail(failure)
-    if let transport = failure as? URLError {
-      switch transport.code {
-      case .cancelled, .timedOut, .notConnectedToInternet, .networkConnectionLost,
-        .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
-        return
-      default: break
-      }
-    }
+    if (failure as? URLError)?.code == .cancelled { return }
     let status = (failure as? APIClientError)?.statusCode
     guard status != 401, status != 426 else { return }
-    syncError = "Draft sync unavailable. " + failure.localizedDescription
+    syncWarning = "This draft has not synced to your other devices. Try again when connected."
   }
 }

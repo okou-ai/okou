@@ -69,6 +69,13 @@ struct ChatComposerView: View {
           }
         }
       }
+      if let state = draftState, let warning = state.syncWarning {
+        DisclosureGroup("Draft sync delayed") {
+          Text(warning).font(.caption).foregroundStyle(.secondary)
+          Button("Sync draft") { Task { await state.synchronize() } }.font(.caption)
+        }
+        .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
+      }
       if !attachments.items.isEmpty {
         ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
       }
