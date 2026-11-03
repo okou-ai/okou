@@ -108,7 +108,7 @@ final class ConversationStore {
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
-  let measurements = ConversationMeasurementCache()
+  let measurements: ConversationMeasurementCache
   let activitySummary: ConversationActivitySummary
   let runUsage: ConversationRunUsageStore
   private var detailOwner: UUID?
@@ -157,6 +157,7 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
+    measurementScope: ChatCacheScope? = nil,
     didRequestNewChat: @escaping @MainActor () -> Void = {},
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -170,6 +171,10 @@ final class ConversationStore {
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
+    measurements = ConversationMeasurementCache(
+      namespace: measurementScope.map {
+        [$0.apiBaseURL.absoluteString, $0.userID, $0.workspaceID, thread.id]
+      })
     self.draftStorage = draftStorage
     draftTarget = .thread(thread.id)
     composer = ComposerDraftStore(

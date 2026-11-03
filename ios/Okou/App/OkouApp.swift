@@ -162,12 +162,12 @@ private struct WorkspaceRootView: View {
     self.userID = userID
     _accountError = accountError
     self.notifications = notifications
+    let cacheScope = ChatCacheScope(
+      apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)
     _store = State(
       initialValue: WorkspaceStore(
         client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
-        draftStorage: ChatDraftStorage(
-          scope: ChatCacheScope(
-            apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)),
+        draftStorage: ChatDraftStorage(scope: cacheScope), measurementScope: cacheScope,
         didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
   }
 

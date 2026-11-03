@@ -472,24 +472,54 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
     preparation = Task { [weak self] in
       guard let self else { return }
+      let disk = ConversationHeightDiskCache.shared
+      var keys: [String: ConversationHeightDiskCache.Key] = [:]
+      var warmed = Set<String>()
+      if let namespace = source.measurements.namespace, missing.count <= 64 {
+        let layout = diskLayout(width: width)
+        for row in missing {
+          guard let message = row.message, message.role == .assistant else { continue }
+          _ = await source.markdown.content(for: message.text)
+          guard !Task.isCancelled, preparationID == generation else { return }
+          warmed.insert(row.id)
+        }
+        for row in missing {
+          keys[row.id] = diskKey(for: row, namespace: namespace, layout: layout)
+        }
+        if !keys.isEmpty {
+          let heights = await disk.heights(for: keys)
+          guard !Task.isCancelled, preparationID == generation else { return }
+          for row in missing {
+            if let height = heights[row.id] {
+              preparedMeasurements[row.id] = Measurement(
+                row: row, width: width, category: category, height: height, diskKey: keys[row.id])
+            }
+          }
+        }
+      }
+      let unmeasured = missing.filter { preparedMeasurements[$0.id] == nil }
+      var settledHeights: [ConversationHeightDiskCache.Key: Double] = [:]
       // Four temporary hosts at a time bound retained views even in an expanded history.
-      for start in stride(from: 0, to: missing.count, by: 4) {
-        let batch = Array(missing[start..<min(start + 4, missing.count)])
-        for row in batch {
+      for start in stride(from: 0, to: unmeasured.count, by: 4) {
+        let batch = Array(unmeasured[start..<min(start + 4, unmeasured.count)])
+        for row in batch where !warmed.contains(row.id) {
           if let message = row.message { _ = await source.markdown.content(for: message.text) }
           guard !Task.isCancelled, preparationID == generation else { return }
         }
-        let heights = await measure(batch, width: width)
+        let (heights, settled) = await measure(batch, width: width)
         guard !Task.isCancelled, preparationID == generation else { return }
         for (row, height) in zip(batch, heights) {
+          let key = settled ? keys[row.id] : nil
+          if let key { settledHeights[key] = height }
           preparedMeasurements[row.id] = Measurement(
-            row: row, width: width, category: category, height: height)
+            row: row, width: width, category: category, height: height, diskKey: key)
         }
       }
       guard !Task.isCancelled, preparationID == generation, !stopped else { return }
       preparation = nil
       preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
       applyPreparedRows()
+      if !settledHeights.isEmpty { await disk.store(settledHeights) }
     }
   }
 
@@ -517,7 +547,56 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     loading.stopAnimating()
   }
 
-  private func measure(_ rows: [ConversationCollectionRow], width: CGFloat) async -> [CGFloat] {
+  private func diskLayout(width: CGFloat) -> ConversationHeightDiskCache.Layout {
+    ConversationHeightDiskCache.Layout(
+      width: width, scale: traitCollection.displayScale,
+      category: traitCollection.preferredContentSizeCategory.rawValue,
+      direction: traitCollection.layoutDirection.rawValue,
+      legibility: traitCollection.legibilityWeight.rawValue,
+      style: traitCollection.userInterfaceStyle.rawValue, locale: Locale.current.identifier,
+      renderer: Self.rendererVersion)
+  }
+
+  private static var rendererVersion: String {
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+    return build + "/" + ProcessInfo.processInfo.operatingSystemVersionString
+  }
+
+  private func diskKey(
+    for row: ConversationCollectionRow, namespace: [String],
+    layout: ConversationHeightDiskCache.Layout
+  ) -> ConversationHeightDiskCache.Key? {
+    guard case .message(let message, let avatar, let spacing, nil, false, let work) = row,
+      message.attachments.isEmpty, message.modelChange == nil, message.inputError == nil,
+      !message.isError, message.role != .system
+    else { return nil }
+    var text = message.text
+    if message.role == .user, let document = message.userMessage {
+      let parts = document.bodyParts
+      guard document.annotation == nil, parts.count == 1, let part = parts.first,
+        part.type == "text"
+      else { return nil }
+      text = part.displayText
+    } else if message.role == .assistant {
+      // Links can resolve to cards and attachments can grow after initial layout.
+      guard let content = source.markdown.cached(text),
+        content.runs.allSatisfy({ run in
+          guard run.link == nil, run.imageURL == nil else { return false }
+          return run.presentationIntent?.components.allSatisfy { component in
+            guard case .codeBlock(let language) = component.kind else { return true }
+            return language?.lowercased() != "mermaid" && language?.lowercased() != "math"
+          } != false
+        })
+      else { return nil }
+    }
+    return ConversationHeightDiskCache.Key(
+      namespace: namespace, id: row.id, text: text, role: message.role.rawValue,
+      showsAvatar: avatar, spacing: spacing, workHistory: work, layout: layout)
+  }
+
+  private func measure(
+    _ rows: [ConversationCollectionRow], width: CGFloat
+  ) async -> (heights: [CGFloat], settled: Bool) {
     let hosts = rows.map { row in
       let host = UIHostingController(
         rootView: source.content(row, nil).fixedSize(horizontal: false, vertical: true))
@@ -544,7 +623,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     // Later asynchronous attachment growth is measured separately by visible cells.
     for _ in 0..<30 {
       await conversationLayoutFrame()
-      guard !Task.isCancelled else { return previous }
+      guard !Task.isCancelled else { return (previous, false) }
       let heights = hosts.map { host in
         let size = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
         let height = pixelHeight(size.height)
@@ -554,9 +633,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       }
       stableFrames = heights == previous ? stableFrames + 1 : 0
       previous = heights
-      if stableFrames >= 2 { break }
+      if stableFrames >= 2 { return (previous, true) }
     }
-    return previous
+    return (previous, false)
   }
 
   private func measureImmediately(_ rows: [ConversationCollectionRow], width: CGFloat) -> [CGFloat]
@@ -854,17 +933,26 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       || collection.contentSize.height + collection.adjustedContentInset.bottom
         - collection.bounds.maxY <= 20
     var changed: [String] = []
+    var corrected: [ConversationHeightDiskCache.Key: Double] = [:]
     for (id, observed) in observedHeights where resizeTasks[id] == nil {
       if let previous = measurements[id], previous.row == observed.row,
         previous.width == observed.width, previous.category == observed.category,
         abs(previous.height - observed.height) > 0.5
       {
         measurements[id]?.height = observed.height
-        if let measurement = measurements[id] { source.measurements.store(measurement) }
+        if let measurement = measurements[id] {
+          source.measurements.store(measurement)
+          if let key = measurement.diskKey, key.layout == diskLayout(width: measurement.width) {
+            corrected[key] = measurement.height
+          }
+        }
         changed.append(id)
       }
     }
     guard !changed.isEmpty else { return }
+    if !corrected.isEmpty {
+      Task { await ConversationHeightDiskCache.shared.store(corrected) }
+    }
     source.sendTransition?.prepareForSnapshot()
     // Capture the presented position after pausing any send animation.
     let position = source.anchor.preservedPosition ?? captureReadingPosition()
