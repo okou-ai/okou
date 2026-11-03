@@ -125,6 +125,7 @@ import { reckonProvider } from "./connectors/reckon/provider";
 import { playstationProvider } from "./connectors/playstation/provider";
 import { spotifyProvider } from "./connectors/spotify/provider";
 import { steamProvider } from "./connectors/steam/provider";
+import { tiktokProvider } from "./connectors/tiktok/provider";
 import { tiktokAdsProvider } from "./connectors/tiktok-ads/provider";
 import { xProvider } from "./connectors/x/provider";
 import { xeroProvider } from "./connectors/xero/provider";
@@ -1103,6 +1104,7 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeProviderEntry("vercel", "oauth", vercelProvider),
   authCodeProviderEntry("webflow", "oauth", webflowProvider),
   authCodeRefreshProviderEntry("meta-ads", "oauth", metaAdsProvider),
+  authCodeRefreshTokenRevokeProviderEntry("tiktok", "oauth", tiktokProvider),
   authCodeProviderEntry("tiktok-ads", "oauth", tiktokAdsProvider),
   authCodeRefreshProviderEntry("x", "oauth", xProvider),
   authCodeRefreshProviderEntry("xero", "oauth", xeroProvider),
