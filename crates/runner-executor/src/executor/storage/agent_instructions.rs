@@ -3,16 +3,15 @@
 use super::super::{
     DEFAULT_EXEC_TIMEOUT, JobTelemetry, RunnerError, RunnerResult, guest_runtime_dir,
 };
-use super::{format_helper_exec_failure, guest_storage_apply_env, helper_exec_succeeded};
+use super::{format_helper_exec_failure, helper_exec_succeeded};
 use guest_contracts::agent_instructions::{
-    InstructionApplication, InstructionCheck, MAX_CHECK_METADATA_BYTES, MAX_METADATA_BYTES,
-    instruction_paths,
+    InstructionApplication, InstructionCheck, InstructionOperation, MAX_CHECK_METADATA_BYTES,
+    MAX_METADATA_BYTES, instruction_paths,
 };
-use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
 use guest_contracts::home_mount::HOME_DIR;
 use runner_storage::storage_plan::{StoragePlan, build_storage_plan};
 use runner_types::{storage_fingerprints::StorageFingerprints, types::ExecutionContext};
-use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecResult, Sandbox};
+use sandbox::{AgentInstructionsRequest, ExecResult, Sandbox};
 use std::{path::Path, time::Instant};
 
 const _: () = assert!(MAX_METADATA_BYTES <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
@@ -148,8 +147,7 @@ async fn check_batch(
     let result = exec(
         sandbox,
         context,
-        "--instructions-check-stdin",
-        "instruction-file-check",
+        InstructionOperation::Check,
         input,
         MAX_CHECK_METADATA_BYTES,
     )
@@ -180,8 +178,7 @@ pub(in crate::executor) async fn apply_agent_instructions(
         let result = exec(
             sandbox,
             context,
-            "--instructions-stdin",
-            "agent-instructions",
+            InstructionOperation::Apply,
             &input,
             MAX_METADATA_BYTES,
         )
@@ -208,8 +205,7 @@ pub(in crate::executor) async fn apply_agent_instructions(
 async fn exec(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
-    flag: &str,
-    label: &'static str,
+    operation: InstructionOperation,
     input: &impl serde::Serialize,
     metadata_limit: usize,
 ) -> RunnerResult<ExecResult> {
@@ -221,19 +217,13 @@ async fn exec(
             "Instruction metadata exceeds bound".into(),
         ));
     }
-    let command = format!("{STORAGE_APPLY_PATH} {flag}");
     Ok(sandbox
-        .exec_with_diagnostic_label(
-            &ExecRequest {
-                cmd: &command,
-                timeout: DEFAULT_EXEC_TIMEOUT,
-                env: &guest_storage_apply_env(&context.run_id.to_string(), &runtime),
-                sudo: false,
-                expected_exit_codes: &[],
-                stdin_bytes: Some(&metadata),
-                output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
-            },
-            label,
-        )
+        .run_agent_instructions(&AgentInstructionsRequest {
+            operation,
+            timeout: DEFAULT_EXEC_TIMEOUT,
+            run_id: &context.run_id.to_string(),
+            runtime_dir: &runtime,
+            metadata: &metadata,
+        })
         .await?)
 }

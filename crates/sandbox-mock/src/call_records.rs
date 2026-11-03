@@ -3,7 +3,23 @@ use std::time::Duration;
 
 use ::sandbox::{ExecOutputLimits, ProcessOutputMode, SandboxControlTarget};
 
-/// Behavior override applied to exec calls whose command contains the pattern.
+/// Captured typed instruction operation, distinct from a generic shell exec.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentInstructionsCall {
+    /// Fixed check/application action selected by the caller.
+    pub operation: guest_contracts::agent_instructions::InstructionOperation,
+    /// Bounded opaque metadata supplied on helper stdin.
+    pub metadata: Vec<u8>,
+    /// Current run context.
+    pub run_id: String,
+    /// Absolute run runtime directory.
+    pub runtime_dir: String,
+    /// Requested helper timeout.
+    pub timeout: Duration,
+}
+
+/// Behavior override applied to exec calls or canonical fixed instruction-helper
+/// invocations whose command contains the pattern.
 ///
 /// The matcher configures an ordinary [`ExecResult`](::sandbox::ExecResult).
 /// The result remains subject to the executing

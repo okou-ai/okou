@@ -78,12 +78,12 @@ pub use storage_manifest_timing::{
     StorageManifestTiming,
 };
 pub use types::{
-    CopyFileOptions, CopyFileResult, DEFAULT_PROCESS_START_TIMEOUT, EXEC_OUTPUT_LIMIT_1_MIB,
-    EXEC_OUTPUT_LIMIT_7_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecOutputLimits, ExecRequest, ExecResult,
-    ExecTermination, GuestAgentProcessHandle, GuestAgentStartTiming, GuestProcessCancelHandle,
-    GuestProcessControlHandle, GuestProcessControlOutcomeFuture, GuestProcessHandle,
-    GuestProcessWaiter, GuestStateRestoreRequest, GuestStateRestoreTimezone, ProcessControlAck,
-    ProcessControlFailureKind, ProcessControlGuestStatus, ProcessControlOutcome,
+    AgentInstructionsRequest, CopyFileOptions, CopyFileResult, DEFAULT_PROCESS_START_TIMEOUT,
+    EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_7_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecOutputLimits,
+    ExecRequest, ExecResult, ExecTermination, GuestAgentProcessHandle, GuestAgentStartTiming,
+    GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessControlOutcomeFuture,
+    GuestProcessHandle, GuestProcessWaiter, GuestStateRestoreRequest, GuestStateRestoreTimezone,
+    ProcessControlAck, ProcessControlFailureKind, ProcessControlGuestStatus, ProcessControlOutcome,
     ProcessControlWriteState, ProcessExit, ProcessOutputChunk, ProcessOutputMode,
     ProcessOutputReceiver, StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest,
     WriteFileEntry,

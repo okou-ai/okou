@@ -55,6 +55,66 @@ impl GuestStorageManifestResult {
 }
 
 impl GuestControlClient {
+    /// Execute a fixed instruction action with the storage worker's owned lifetime.
+    ///
+    /// This tracked normal operation settles child IO and cleanup before its
+    /// terminal result. Abandoning a transmitted request makes it non-parkable.
+    pub async fn guest_agent_instructions(
+        &self,
+        request: &sandbox::AgentInstructionsRequest<'_>,
+        request_timeout: Duration,
+    ) -> io::Result<GuestStorageManifestResult> {
+        use guest_control_proto::{
+            MSG_GUEST_AGENT_INSTRUCTIONS_RESULT, decode_guest_agent_instructions_result,
+            encode_guest_agent_instructions_request_frame_into,
+        };
+        let response = normal_request_on_shared_with_timing_frame_builder(
+            &self.shared,
+            &[MSG_ERROR, MSG_GUEST_AGENT_INSTRUCTIONS_RESULT],
+            request_timeout,
+            FrameWriteObserver::noop(),
+            |seq, frame| {
+                encode_guest_agent_instructions_request_frame_into(
+                    frame,
+                    seq,
+                    request.operation,
+                    request.timeout_ms(),
+                    request.run_id,
+                    request.runtime_dir,
+                    request.metadata,
+                )
+                .map_err(protocol_invalid_input)
+            },
+            None,
+        )
+        .await?;
+        if response.msg_type == MSG_ERROR {
+            let message = guest_control_proto::decode_error(&response.payload)
+                .map_err(protocol_invalid_data)?;
+            return Err(io::Error::other(message.to_owned()));
+        }
+        if response.msg_type != MSG_GUEST_AGENT_INSTRUCTIONS_RESULT {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unexpected instruction result type",
+            ));
+        }
+        let decoded = decode_guest_agent_instructions_result(&response.payload)
+            .map_err(protocol_invalid_data)?;
+        let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
+        let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
+        Ok(GuestStorageManifestResult {
+            resources: None,
+            termination: decoded.termination,
+            duration_ms: decoded.duration_ms,
+            stdout,
+            stderr,
+            stdout_truncated,
+            stderr_truncated,
+            diagnostic: decoded.diagnostic.to_owned(),
+        })
+    }
+
     /// Apply canonical manifest bytes through the fixed guest storage helper.
     ///
     /// The guest chooses the executable, argument, identity, containment, and
