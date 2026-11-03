@@ -674,6 +674,12 @@ final class ConversationStore {
     return true
   }
 
+  func earlierWindowMessages() -> [ChatMessage] {
+    var expanded = renderWindow
+    expanded.expand()
+    return items[expanded.range.lowerBound..<renderWindow.range.lowerBound].compactMap(\.message)
+  }
+
   func loadEarlierMessages() async {
     guard !closed, !needsUpgrade, !Task.isCancelled, hasEarlierMessages, expansionTask == nil else {
       return
