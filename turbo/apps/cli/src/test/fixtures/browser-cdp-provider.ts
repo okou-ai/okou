@@ -310,8 +310,15 @@ export async function browserCdpProvider() {
       params: { sessionId },
     });
   }
-  function destroyTarget(targetId: string, deferDetach = false) {
+  function destroyTarget(
+    targetId: string,
+    deferDetach = false,
+    deferDestroyed = false,
+  ) {
+    const target = targets.get(targetId);
     targets.delete(targetId);
+    if (target?.type === "page")
+      native("tab-removed", { tabId: target.tab, windowId: target.window });
     const notifications: (() => void)[] = [];
     for (const connection of connections) {
       for (const handler of connection.related.values())
@@ -333,7 +340,11 @@ export async function browserCdpProvider() {
       for (const notify of notifications.splice(0)) notify();
     };
     if (!deferDetach) resume();
-    broadcast("Target.targetDestroyed", { targetId });
+    if (deferDestroyed)
+      notifications.push(() => {
+        return broadcast("Target.targetDestroyed", { targetId });
+      });
+    else broadcast("Target.targetDestroyed", { targetId });
     return { resume };
   }
   server.on("connection", (socket) => {

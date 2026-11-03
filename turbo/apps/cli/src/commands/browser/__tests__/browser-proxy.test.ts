@@ -873,13 +873,15 @@ describe("chat-window CDP proxy protocol", () => {
   );
 
   it.each([
-    { browserSession: false, deferDetach: false },
-    { browserSession: true, deferDetach: false },
-    { browserSession: false, deferDetach: true },
-    { browserSession: true, deferDetach: true },
+    { browserSession: false, deferDetach: false, deferDestroyed: false },
+    { browserSession: true, deferDetach: false, deferDestroyed: false },
+    { browserSession: false, deferDetach: true, deferDestroyed: false },
+    { browserSession: true, deferDetach: true, deferDestroyed: false },
+    { browserSession: false, deferDetach: true, deferDestroyed: true },
+    { browserSession: true, deferDetach: true, deferDestroyed: true },
   ])(
     "preserves the other root's original session when a selected target dies: %j",
-    async ({ browserSession, deferDetach }) => {
+    async ({ browserSession, deferDetach, deferDestroyed }) => {
       const channel = browserSession
         ? String(
             (await connection.request("Target.attachToBrowserTarget"))
@@ -920,8 +922,13 @@ describe("chat-window CDP proxy protocol", () => {
           channel,
         );
       const original = String((await attached).params?.sessionId);
-      const closed = provider.destroyTarget("B", deferDetach);
+      const lookup = deferDestroyed ? provider.holdWindowLookup("B") : null;
+      const closed = provider.destroyTarget("B", deferDetach, deferDestroyed);
       try {
+        if (lookup) {
+          await lookup.observed;
+          lookup.resume();
+        }
         // The fresh target requires a scope-control observation after B died.
         provider.addPage("CONTROL-BARRIER", 1);
         await connection.request(
@@ -942,6 +949,7 @@ describe("chat-window CDP proxy protocol", () => {
           await connection.request("Runtime.enable", {}, original),
         ).toStrictEqual({});
       } finally {
+        lookup?.resume();
         closed.resume();
       }
     },

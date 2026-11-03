@@ -95,14 +95,7 @@ export class WindowScope {
       event.method === "Target.targetDestroyed" &&
       typeof event.params.targetId === "string"
     ) {
-      const id = event.params.targetId;
-      this.targets.delete(id);
-      this.membership.delete(id);
-      this.admitted.delete(id);
-      this.descendants.delete(id);
-      this.created.delete(id);
-      this.creating.delete(id);
-      this.scheduleRefresh();
+      this.forgetTarget(event.params.targetId);
     } else if (
       ["Target.targetCreated", "Target.targetInfoChanged"].includes(
         event.method,
@@ -114,6 +107,16 @@ export class WindowScope {
         this.scheduleRefresh();
       }
     }
+  }
+
+  private forgetTarget(id: string): void {
+    this.targets.delete(id);
+    this.membership.delete(id);
+    this.admitted.delete(id);
+    this.descendants.delete(id);
+    this.created.delete(id);
+    this.creating.delete(id);
+    this.scheduleRefresh();
   }
 
   private scheduleRefresh(): void {
@@ -312,8 +315,10 @@ export class WindowScope {
                 !inventory.targetInfos.some((value) => {
                   return targetInfo(value)?.targetId === info.targetId;
                 })
-              )
+              ) {
+                this.forgetTarget(info.targetId);
                 return false;
+              }
             }
             throw error;
           },
