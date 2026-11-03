@@ -6,7 +6,13 @@ import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validato
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  SlidersHorizontal,
+  Users,
+} from "lucide-react";
 import {
   Button,
   buttonVariants,
@@ -380,6 +386,11 @@ function AccountPanelFooter({
                 permissions(permissionTarget);
               }}
             >
+              <SlidersHorizontal
+                size={16}
+                aria-hidden="true"
+                className="text-muted-foreground"
+              />
               {t(($) => {
                 return $.connectorChatAccess.permissions;
               })}
@@ -400,6 +411,7 @@ function AccountPanelFooter({
           "w-full justify-start px-2 text-foreground",
         )}
       >
+        <Users size={16} aria-hidden="true" className="text-muted-foreground" />
         {t(($) => {
           return $.connectorChatAccess.manageAccounts;
         })}
