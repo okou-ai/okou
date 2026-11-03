@@ -372,3 +372,35 @@ test("A rejected reload stays unavailable until a deliberate new action", async 
   click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
   await ready("https://other.example.com");
 });
+
+test("Hiding the viewer cancels a pending crash reload even if visibility returns before its reply", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await openViewer();
+  act(() => {
+    browser.crash("example-page");
+  });
+  await unavailable();
+  const attachment = browser.holdNext("Target.attachToTarget");
+  click(screen.getByText("Reload", { selector: "button" }));
+  await attachment.received;
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await screen.findByText("Browser view unavailable");
+  await act(async () => {
+    await attachment.release();
+  });
+  await unavailable();
+  expect(
+    browser.requests.filter((request) => {
+      return request.method === "Page.reload";
+    }),
+  ).toHaveLength(0);
+  click(screen.getByText("Reload", { selector: "button" }));
+  await ready();
+  expect(browser.connections()).toBe(1);
+});

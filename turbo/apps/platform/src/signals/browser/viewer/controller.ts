@@ -25,6 +25,7 @@ import {
   sentryLogContext,
 } from "../../../lib/sentry-config.ts";
 import { diagnostic } from "./diagnostic.ts";
+import { i18n } from "../../../i18n/index.ts";
 import {
   createTargetDirectory,
   pageTarget,
@@ -99,6 +100,10 @@ interface Retirement {
   readonly session: SelectedSession;
   /** Original evidence; native capture closure is reconciled when consumed. */
   readonly receipts: RetirementReceipts | null;
+}
+interface PageCrash {
+  readonly owner: SelectionOwner;
+  readonly intent: object;
 }
 interface CaptureChange {
   readonly settings: CaptureSettings;
@@ -515,10 +520,7 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   const bootstrapping$ = state(true);
   const chosenOnce$ = state(false);
   const selection = createSelectionLifecycle();
-  const crashedSelection$ = state<{
-    readonly owner: SelectionOwner;
-    readonly intent: object;
-  } | null>(null);
+  const crashedSelection$ = state<PageCrash | null>(null);
   const retirements$ = state<ReadonlyMap<string, Retirement>>(new Map());
   const wakeListeners$ = state<ReadonlySet<() => void>>(new Set());
   const displaySize$ = state<DisplaySize | null>(null);
@@ -2468,7 +2470,9 @@ function createCrashedEvent(
       type: "failed",
       error: {
         kind: "target-crashed",
-        message: "The selected browser page crashed.",
+        message: i18n.t(($) => {
+          return $.browserViewer.unavailable;
+        }),
       },
     });
   });
@@ -3308,14 +3312,20 @@ function createCrashedPageReload(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const { crashed$, clientState$, directory$, assertAvailable$ } = context;
-  return command(
-    async ({ get, set }, signal: AbortSignal): Promise<NavigationReceipt> => {
+  const {
+    crashed$,
+    clientState$,
+    directory$,
+    assertAvailable$,
+    resetSelection$,
+  } = context;
+  const reload$ = command(
+    async (
+      { get, set },
+      crash: PageCrash,
+      signal: AbortSignal,
+    ): Promise<void> => {
       set(assertAvailable$, signal);
-      const crash = get(crashed$);
-      if (!crash) {
-        throw cancelled();
-      }
       const targetId = crash.owner.targetId;
       const client = get(clientState$)!;
       const directory = get(directory$)!;
@@ -3367,7 +3377,25 @@ function createCrashedPageReload(
       current();
       client.notify("Target.detachFromTarget", { sessionId });
       sessionId = null;
-      await set(get(links$).selectTab$, targetId, signal);
+    },
+  );
+  return command(
+    async ({ get, set }, signal: AbortSignal): Promise<NavigationReceipt> => {
+      set(assertAvailable$, signal);
+      const crash = get(crashed$);
+      if (!crash) {
+        throw cancelled();
+      }
+      const operation = set(resetSelection$, get(clientState$)!.signal, signal);
+      await set(reload$, crash, operation);
+      signal.throwIfAborted();
+      operation.throwIfAborted();
+      if (get(crashed$) !== crash) {
+        throw cancelled();
+      }
+      // Normal selection replaces the recovery lifetime. It inherits the caller,
+      // so retiring recovery cannot cancel its own fresh page attachment.
+      await set(get(links$).selectTab$, crash.owner.targetId, signal);
       return { kind: "ack" };
     },
   );
@@ -3639,7 +3667,9 @@ function createSelectionSettingsGraph(
           type: "failed",
           error: {
             kind: "target-crashed",
-            message: "The selected browser page crashed.",
+            message: i18n.t(($) => {
+              return $.browserViewer.unavailable;
+            }),
           },
         });
         return "ready";
