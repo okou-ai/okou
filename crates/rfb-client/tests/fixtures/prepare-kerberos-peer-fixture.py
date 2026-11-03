@@ -75,16 +75,24 @@ def main():
     for key, value in settings.items():
         options.extend(["-o", key + "=" + value])
     call(["apt-get", *options, "update"], cwd=base)
-    packages = {}
-    runtime = base / "runtime"
-    for name in (*KERBEROS, *SUPPORT):
-        selector = name + "=" + MIT if name in KERBEROS else name
-        metadata = call(["apt-cache", *options, "show", selector], cwd=base)
+    names = (*KERBEROS, *SUPPORT)
+    selectors = [name + "=" + MIT if name in KERBEROS else name for name in names]
+    metadata = call(["apt-cache", *options, "show", *selectors], cwd=base)
+    records = {}
+    for stanza in metadata.strip().split("\n\n"):
         record = {}
-        for line in metadata.split("\n\n", 1)[0].splitlines():
+        for line in stanza.splitlines():
             if line and not line.startswith(" ") and ": " in line:
                 key, value = line.split(": ", 1)
                 record[key] = value
+        name = record.get("Package")
+        assert name in names
+        records.setdefault(name, record)
+    assert set(records) == set(names)
+    packages = {}
+    runtime = base / "runtime"
+    for name in names:
+        record = records[name]
         assert record.get("Package") == name and record.get("Architecture") == arch, name
         assert record["Origin"] == "Ubuntu"
         version, digest = record["Version"], record["SHA256"]
