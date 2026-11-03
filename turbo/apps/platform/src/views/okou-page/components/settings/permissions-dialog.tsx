@@ -386,7 +386,7 @@ function UnknownEndpointsToggle({
   const { t } = useTranslation();
   return (
     <div className="border-t border-border/40 -mx-6 px-3 pt-3 pb-1">
-      <div className="flex items-center justify-between px-3">
+      <div className="flex flex-col items-stretch gap-2.5 px-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
           <span className="text-xs font-medium text-foreground">
             {t(($) => {
@@ -994,7 +994,7 @@ function PermissionRow({
       <div
         role="group"
         aria-label={permission.name}
-        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-state-hover transition-colors ${indent ? "pl-8" : ""}`}
+        className={`flex flex-col items-stretch gap-2.5 px-3 py-2.5 rounded-md hover:bg-state-hover transition-colors sm:flex-row sm:items-center ${indent ? "pl-8" : ""}`}
       >
         <div className="min-w-0 flex-1">
           <code className="block whitespace-normal break-words text-xs font-medium text-foreground [overflow-wrap:anywhere]">
