@@ -276,6 +276,11 @@ or `nowDate()` rather than `Date.now()`; only `lib/time.ts` may call
 `Date.now()`. Do not use fake timers, `vi.setSystemTime`, or a `Date.now()`
 spy. Continue using real timers with Testing Library queries and `waitFor`.
 
+Elapsed-time deadlines use `monotonicNow()` and the independently scoped
+`mockMonotonicNow(value, signal)` override. Advance that clock to exercise a
+deadline; changing `mockNow` models a system clock correction without changing
+the elapsed-time budget. Keep the real timers and owning signal in place.
+
 For a race that crosses a clock boundary between synchronous reads, `mockNow`
 also accepts a `() => number` reader. Install it at the relevant external
 response boundary and pass `context.signal` so the shared lifecycle removes

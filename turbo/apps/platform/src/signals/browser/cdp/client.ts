@@ -10,7 +10,7 @@ import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import { addBreadcrumb } from "@sentry/browser";
 import { CdpFault, isRecord, type CdpConnectionObservation } from "./errors.ts";
 import { maximumCdpMessageLength } from "../display/limits.ts";
-import { now } from "../../../lib/time.ts";
+import { monotonicNow } from "../../../lib/time.ts";
 
 const responseTimeoutMs = 30_000;
 
@@ -186,7 +186,7 @@ function createRequests(
     const entry: Pending = {
       method,
       sessionId,
-      deadline: now() + responseTimeoutMs,
+      deadline: monotonicNow() + responseTimeoutMs,
       resolve: (result) => {
         if (!deferred.settled()) {
           deferred.resolve(result);
@@ -486,14 +486,14 @@ function observeDeadlines(
   signal: AbortSignal,
   role: ConnectionRole | undefined,
 ): void {
-  const openingDeadline = now() + responseTimeoutMs;
+  const openingDeadline = monotonicNow() + responseTimeoutMs;
   setLoop(
     () => {
       if (connection.failure) {
         return true;
       }
       const opening = !connection.opening.settled();
-      const time = now();
+      const time = monotonicNow();
       const expired = [...connection.pending.values()].find((entry) => {
         return time >= entry.deadline;
       });

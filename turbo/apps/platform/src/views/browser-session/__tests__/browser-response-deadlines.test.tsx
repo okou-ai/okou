@@ -17,7 +17,7 @@ import {
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockNow } from "../../../lib/time.ts";
+import { mockMonotonicNow, mockNow } from "../../../lib/time.ts";
 import { initSentry } from "../../../lib/sentry.ts";
 
 const context = testContext();
@@ -27,8 +27,12 @@ const endpoint = "wss://browser.example/deadlines?token=private-token";
 
 function mockViewer(autoOpen = true) {
   let time = Date.parse("2026-09-01T10:00:00.000Z");
+  let elapsed = 0;
   mockNow(() => {
     return time;
+  }, context.signal);
+  mockMonotonicNow(() => {
+    return elapsed;
   }, context.signal);
   const startupErrors = recordBrowserStartupErrors();
   const sentry = context.mocks.sentry();
@@ -97,6 +101,12 @@ function mockViewer(autoOpen = true) {
     sentry,
     startupErrors,
     advance(ms: number) {
+      act(() => {
+        time += ms;
+        elapsed += ms;
+      });
+    },
+    adjustWallClock(ms: number) {
       act(() => {
         time += ms;
       });
@@ -250,6 +260,35 @@ test("Healthy HTTP renewal and queued invalidations cannot extend a dead native 
     },
   });
 });
+
+test.each(["opening", "native read"] as const)(
+  "A wall-clock rollback cannot extend the %s deadline",
+  async (phase) => {
+    const viewer = mockViewer(phase !== "opening");
+    const { browser } = viewer;
+    const receipt =
+      phase === "native read" ? browser.holdNextNative("getWindow") : null;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    if (receipt) {
+      await receipt.received;
+    }
+    await waitFor(() => {
+      expect(browser.connections()).toBe(1);
+    });
+    viewer.adjustWallClock(-3_600_000);
+    viewer.advance(31_000);
+    await screen.findByText("Browser view unavailable");
+    reconnect();
+    await waitFor(() => {
+      expect(browser.connections()).toBe(2);
+    });
+    act(() => {
+      browser.openConnection();
+    });
+    await expectReady();
+    await receipt?.release();
+  },
+);
 
 async function recoverEffect(
   viewer: ReturnType<typeof mockViewer>,
