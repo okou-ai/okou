@@ -214,7 +214,7 @@ test("A chat can restore multiple SSH host defaults independently", async () => 
   await expectReopenedRemoteAccessCount("2 enabled");
 });
 
-test("Remote host choices stay disabled across resize until a save completes", async () => {
+test("Remote host choices stay read-only across resize and reopen until a save completes", async () => {
   const viewport = context.mocks.browser.matchMedia(true);
   const saveResponse = context.mocks.deferred<void>();
   const { first, second } = await prepareRemoteDefaults(
@@ -224,34 +224,54 @@ test("Remote host choices stay disabled across resize until a save completes", a
 
   await chooseRemoteHost(first, "Off");
   await waitFor(() => {
-    expect(first).toBeDisabled();
-    expect(second).toBeDisabled();
+    expect(first).toHaveAttribute("aria-readonly", "true");
+    expect(second).toHaveAttribute("aria-readonly", "true");
   });
 
   act(() => {
     viewport.setMatches(false);
   });
   const dialog = await screen.findByRole("dialog", { name: "Remote access" });
-  const resizedFirst = within(dialog).getByRole("combobox", {
-    name: "SSH SSH host 1",
-  });
+  expect(
+    within(dialog).getByRole("combobox", {
+      name: "SSH SSH host 1",
+    }),
+  ).toHaveAttribute("aria-readonly", "true");
   const resizedSecond = within(dialog).getByRole("combobox", {
     name: "SSH SSH host 2",
   });
-  expect(resizedFirst).toBeDisabled();
-  expect(resizedSecond).toBeDisabled();
+  expect(resizedSecond).toHaveAttribute("aria-readonly", "true");
+  await closeRemoteAccess();
+  click(await findFastControl("button", "Connectors"));
+  click(await screen.findByText("Remote access"));
+  const reopenedFirst = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  const reopenedSecond = screen.getByRole("combobox", {
+    name: "SSH SSH host 2",
+  });
+  expect(reopenedFirst).toHaveAttribute("aria-readonly", "true");
+  expect(reopenedSecond).toHaveAttribute("aria-readonly", "true");
+  const user = userEvent.setup({ delay: null });
+  reopenedSecond.focus();
+  await user.keyboard("{Enter}{ArrowDown}{Enter}");
+  click(reopenedFirst);
+  expect(screen.queryByRole("listbox")).toBeNull();
+  reopenedSecond.focus();
 
   saveResponse.resolve();
   await waitFor(() => {
-    expect(resizedFirst).toHaveTextContent("Off");
-    expect(resizedFirst).toBeEnabled();
-    expect(resizedSecond).toBeEnabled();
+    expect(reopenedFirst).toHaveTextContent("Off");
+    expect(reopenedSecond).toHaveTextContent("Default (Off)");
+    expect(reopenedFirst).not.toHaveAttribute("aria-readonly", "true");
+    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
   });
-  await chooseRemoteHost(resizedSecond, "On");
+  expect(reopenedSecond).toHaveFocus();
+  await chooseRemoteHost(reopenedSecond, "On");
   await waitFor(() => {
-    expect(resizedFirst).toHaveTextContent("Off");
-    expect(resizedSecond).toHaveTextContent("On");
-    expect(resizedSecond).toBeEnabled();
+    expect(reopenedFirst).toHaveTextContent("Off");
+    expect(reopenedSecond).toHaveTextContent("On");
+    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
   });
 });
 
