@@ -63,16 +63,19 @@ struct ChatModelPickerView: View {
   private var models: ChatModelStore { selection.models }
   private var subscriptions: PersonalSubscriptionStore { models.subscriptions }
   @State private var showsAuth = false
+  @State private var pendingChange: PendingChange?
+
+  private enum PendingChange: Equatable {
+    case model(String?)
+    case effort
+    case fast
+    case futureChats
+  }
 
   var body: some View {
     NavigationStack {
       List {
         if let configuration = models.configuration {
-          if selection.isSaving {
-            ProgressView("Saving model settings…")
-          } else if selection.isLoading {
-            ProgressView("Loading model settings")
-          }
           ForEach(["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self) {
             type in
             let rows = configuration.models.filter {
@@ -95,18 +98,22 @@ struct ChatModelPickerView: View {
                     }),
                       let window = account.limitingWindow, let remaining = window.remaining
                     {
-                      VStack(alignment: .trailing) {
+                      HStack(spacing: 4) {
                         Text("\(remaining, specifier: "%.0f")% remaining")
+                        Text("·")
                         Text(
                           account.limitingUsage?.id == "week"
                             ? LocalizedStringKey("Week") : LocalizedStringKey("5 hours"))
                       }
+                      .font(.caption)
                     }
                   }
+                  .font(.subheadline).fontWeight(.regular)
                 } else {
-                  Text("Okou credits")
+                  Text("Okou credits").font(.subheadline).fontWeight(.regular)
                 }
               }
+              .textCase(nil)
             }
           }
           if let row = configuration.row(for: selection.selection) {
@@ -118,7 +125,10 @@ struct ChatModelPickerView: View {
                   {
                     Button("Reconnect") {
                       Task { showsAuth = await subscriptions.reconnect(type: type) }
-                    }.disabled(!configuration.canLinkSubscriptions || subscriptions.isLoading)
+                    }
+                    .disabled(
+                      !configuration.canLinkSubscriptions || subscriptions.isLoading
+                        || selection.isBusy)
                   }
                 } else {
                   Text("This model is restricted by your plan.")
@@ -130,63 +140,94 @@ struct ChatModelPickerView: View {
             Section { Text("This model is unavailable. Choose an available model before sending.") }
           }
           let efforts = configuration.efforts(for: selection.selection)
-          if !efforts.isEmpty, let effectiveEffort = selection.effectiveEffort {
+          if !efforts.isEmpty || configuration.canUseFast(selection.selection) {
             Section {
-              Picker(
-                "Thinking effort",
-                selection: Binding(
-                  get: { effectiveEffort },
-                  set: { value in Task { await selection.choose(effort: value) } }
-                )
-              ) {
-                ForEach(efforts, id: \.self) { Text(effortLabel($0)).tag($0) }
+              if !efforts.isEmpty, let effectiveEffort = selection.effectiveEffort {
+                Picker(
+                  selection: Binding(
+                    get: { effectiveEffort },
+                    set: { value in
+                      Task { await save(.effort) { await selection.choose(effort: value) } }
+                    })
+                ) {
+                  ForEach(efforts, id: \.self) { Text(effortLabel($0)).tag($0) }
+                } label: {
+                  HStack(spacing: 8) {
+                    Text("Thinking effort")
+                    if selection.isSaving && pendingChange == .effort {
+                      ProgressView().controlSize(.small)
+                    }
+                  }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("chat-model-effort")
+                .disabled(selection.isBusy || selection.uncertain)
               }
-              .pickerStyle(.menu)
-              .accessibilityIdentifier("chat-model-effort")
-              .disabled(selection.uncertain)
-              HStack {
-                Text("Faster · lower usage")
-                Spacer()
-                Text("Smarter · higher usage")
-              }.font(.caption).foregroundStyle(.secondary)
+              if configuration.canUseFast(selection.selection) {
+                Toggle(
+                  isOn: Binding(
+                    get: { selection.selection.serviceTier == "priority" },
+                    set: { fast in
+                      Task { await save(.fast) { await selection.setFast(fast) } }
+                    })
+                ) {
+                  HStack(spacing: 8) {
+                    Label("Fast mode", systemImage: "bolt.fill")
+                    if selection.isSaving && pendingChange == .fast {
+                      ProgressView().controlSize(.small)
+                    }
+                  }
+                }
+                .tint(.green)
+                .accessibilityIdentifier("chat-model-fast")
+                .disabled(selection.isBusy || selection.uncertain)
+              }
+            } footer: {
+              VStack(alignment: .leading, spacing: 6) {
+                if !efforts.isEmpty {
+                  HStack {
+                    Text("Faster · lower usage")
+                    Spacer()
+                    Text("Smarter · higher usage")
+                  }
+                }
+                if configuration.canUseFast(selection.selection) {
+                  if let multiplier = configuration.catalog.fastMultiplier(
+                    selection.selection.model),
+                    configuration.row(for: selection.selection)?.memberEffective.runtimeProviderType
+                      == "codex-oauth-token"
+                  {
+                    Text(
+                      "Uses \(multiplier, specifier: "%g")× your ChatGPT subscription allowance.")
+                  } else {
+                    Text("Uses more of your subscription allowance.")
+                  }
+                }
+              }
             }
           }
-          if configuration.canUseFast(selection.selection) {
-            Section {
-              Toggle(
-                isOn: Binding(
-                  get: { selection.selection.serviceTier == "priority" },
-                  set: { fast in Task { await selection.setFast(fast) } }
-                )
-              ) {
-                Label("Fast mode", systemImage: "bolt.fill")
+          Section {
+            if configuration.models.contains(where: { $0.selectedModel != nil }) {
+              Button {
+                Task { await save(.futureChats) { await selection.saveForFutureChats() } }
+              } label: {
+                HStack {
+                  Text(
+                    selection.savedDefault
+                      ? LocalizedStringKey("Default saved")
+                      : LocalizedStringKey("Use for future chats too"))
+                  Spacer()
+                  if selection.isSaving && pendingChange == .futureChats {
+                    ProgressView().controlSize(.small)
+                  } else if selection.savedDefault {
+                    Image(systemName: "checkmark")
+                  }
+                }
               }
-              .tint(.green)
-              .accessibilityIdentifier("chat-model-fast")
-              .disabled(selection.uncertain)
-              if let multiplier = configuration.catalog.fastMultiplier(selection.selection.model),
-                configuration.row(for: selection.selection)?.memberEffective.runtimeProviderType
-                  == "codex-oauth-token"
-              {
-                Text("Uses \(multiplier, specifier: "%g")× your ChatGPT subscription allowance.")
-                  .font(.caption).foregroundStyle(.secondary)
-              } else {
-                Text("Uses more of your subscription allowance.").font(.caption).foregroundStyle(
-                  .secondary)
-              }
+              .accessibilityIdentifier("save-model-default")
+              .disabled(selection.isBusy || selection.uncertain)
             }
-          }
-          if configuration.models.contains(where: { $0.selectedModel != nil }) {
-            Section {
-              Text("Changes apply to this chat.")
-              Button("Use for future chats too") { Task { await selection.saveForFutureChats() } }
-                .accessibilityIdentifier("save-model-default")
-                .disabled(selection.uncertain)
-              if selection.savedDefault { Label("Default saved", systemImage: "checkmark") }
-            }
-          }
-          if configuration.canLinkSubscriptions {
-            Section {
+            if configuration.canLinkSubscriptions {
               ForEach(PersonalSubscriptionType.allCases) { type in
                 if !configuration.models.contains(where: {
                   $0.selectedModel != nil && $0.memberEffective.providerType == type.rawValue
@@ -201,15 +242,17 @@ struct ChatModelPickerView: View {
                       SubscriptionBrandIcon(type: type)
                     }
                   }
+                  .disabled(selection.isBusy)
                 }
               }
               NavigationLink("Manage subscriptions") {
                 PersonalSubscriptionsView(store: subscriptions)
               }
+              .disabled(selection.isBusy)
             }
+          } footer: {
+            Text("Changes apply to this chat.")
           }
-        } else if models.isLoading {
-          ProgressView("Loading models…")
         }
         if let error = selection.error ?? models.error ?? subscriptions.error {
           Section {
@@ -220,10 +263,16 @@ struct ChatModelPickerView: View {
                 await selection.refresh()
               }
             }
+            .disabled(selection.isBusy)
           }
         }
       }
-      .disabled(selection.isBusy)
+      .listSectionSpacing(16)
+      .overlay {
+        if models.configuration == nil && models.error == nil && selection.error == nil {
+          ChatSettingsLoadingView(title: "Loading models…")
+        }
+      }
       .navigationTitle("Chat models")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -240,15 +289,11 @@ struct ChatModelPickerView: View {
     -> some View
   {
     Button {
-      Task { await selection.choose(model: row.selectedModel) }
+      Task {
+        await save(.model(row.selectedModel)) { await selection.choose(model: row.selectedModel) }
+      }
     } label: {
       HStack(spacing: 10) {
-        if let type = PersonalSubscriptionType(rawValue: row.memberEffective.providerType) {
-          SubscriptionBrandIcon(type: type)
-        } else {
-          Image("OkouMark").renderingMode(.template).resizable().scaledToFit().frame(
-            width: 20, height: 20)
-        }
         VStack(alignment: .leading) {
           Text(configuration.catalog.name(row.selectedModel))
           if row.memberEffective.availability == "plan_restricted" {
@@ -259,13 +304,36 @@ struct ChatModelPickerView: View {
           }
         }
         Spacer()
-        if row.selectedModel == selection.selection.model { Image(systemName: "checkmark") }
+        if selection.isSaving && pendingChange == .model(row.selectedModel) {
+          HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text("Saving…").font(.caption).foregroundStyle(.secondary)
+          }
+        } else if row.selectedModel == selection.selection.model {
+          Image(systemName: "checkmark")
+        }
       }.frame(minHeight: 32).contentShape(Rectangle())
+        .foregroundStyle(.primary)
     }
-    .buttonStyle(.plain)
-    .disabled(!row.isConfigurable || selection.uncertain)
+    .buttonStyle(ModelChoiceButtonStyle())
+    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+    .disabled(!row.isConfigurable || selection.isBusy || selection.uncertain)
     .accessibilityIdentifier("chat-model-\(row.id)")
     .accessibilityAddTraits(row.selectedModel == selection.selection.model ? [.isSelected] : [])
+  }
+
+  private func save(_ change: PendingChange, operation: @MainActor () async -> Void) async {
+    guard !selection.isBusy, !selection.uncertain else { return }
+    pendingChange = change
+    defer { pendingChange = nil }
+    await operation()
+  }
+}
+
+private struct ModelChoiceButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    // Keep the confirmed choices readable while conflicting mutations are disabled.
+    configuration.label.opacity(configuration.isPressed ? 0.65 : 1)
   }
 }
 

@@ -47,7 +47,6 @@ struct ComposerConnectorAccounts: View {
             }
           }
         }
-        if loading { ProgressView("Loading accounts…") }
         if !loading, selection != nil, !accounts.contains(where: { $0.id == selection }) {
           Text("The selected account is unavailable. Choose an account or use default.")
             .font(.footnote).foregroundStyle(.secondary)
@@ -62,6 +61,11 @@ struct ComposerConnectorAccounts: View {
         Button("Add account") { store.connect(target: connector.target) }.disabled(store.isSaving)
       } footer: {
         Text("This account choice applies to this chat. The default account stays unchanged.")
+      }
+    }
+    .overlay {
+      if loading && accounts.isEmpty && defaultAccount == nil && error == nil {
+        ChatSettingsLoadingView(title: "Loading accounts…")
       }
     }
     .searchable(text: $search, prompt: "Find accounts")
