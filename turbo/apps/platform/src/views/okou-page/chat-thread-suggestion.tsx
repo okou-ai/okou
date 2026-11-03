@@ -1,6 +1,7 @@
 import type { ComponentProps, Ref } from "react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { Folder } from "lucide-react";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
@@ -21,11 +22,13 @@ function scrollSelectedSuggestionIntoView(
 function ComposerMentionSuggestionItem({
   name,
   avatarUrl,
+  project,
   selected,
   onSelect,
 }: {
   readonly name: string;
   readonly avatarUrl: string | null;
+  readonly project?: true;
   readonly selected: boolean;
   readonly onSelect: () => void;
 }) {
@@ -40,12 +43,20 @@ function ComposerMentionSuggestionItem({
       )}
       onClick={onSelect}
     >
-      <AvatarFromUrl
-        avatarUrl={avatarUrl}
-        alt=""
-        className="h-5 w-5 shrink-0 rounded-full"
-        size={20}
-      />
+      {project ? (
+        <Folder
+          size={20}
+          className="shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+      ) : (
+        <AvatarFromUrl
+          avatarUrl={avatarUrl}
+          alt=""
+          className="h-5 w-5 shrink-0 rounded-full"
+          size={20}
+        />
+      )}
       <span className="truncate text-sm text-popover-foreground">{name}</span>
     </button>
   );
@@ -115,6 +126,7 @@ export function ComposerMentionSuggestionMenu({
             <ComposerMentionSuggestionItem
               name={chatThread.title}
               avatarUrl={chatThread.avatarUrl}
+              project={chatThread.project}
               selected={selected}
               onSelect={() => {
                 onSelectChatThread(chatThread);
