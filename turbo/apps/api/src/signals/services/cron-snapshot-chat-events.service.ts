@@ -299,11 +299,15 @@ type SnapshotDownloadFailureClass =
   | "upstream"
   | "timeout"
   | "transport"
+  | "local_resource"
   | "body"
   | "unknown";
 
+type SnapshotLocalResourceErrorCode = "EBUSY" | "EMFILE";
+
 interface SnapshotDownloadFailure {
   readonly failureClass: SnapshotDownloadFailureClass;
+  readonly failureCode?: SnapshotLocalResourceErrorCode;
   readonly downloadStage?: S3DownloadFailureDiagnostics["stage"];
   readonly providerStatus?: number;
   /** SDK attempts include the initial request; retries exclude it. */
@@ -598,6 +602,36 @@ function snapshotDownloadFailureClass(
   return stage === "read_body" ? "body" : "unknown";
 }
 
+function snapshotLocalResourceErrorCode(
+  error: unknown,
+): SnapshotLocalResourceErrorCode | undefined {
+  // SDK errors may wrap local failures. Bound both traversal and allocation;
+  // unknown codes and causes outside this budget must remain unattributed.
+  const maxNodes = 8;
+  const pending: unknown[] = [error];
+  const seen = new Set<object>();
+  for (const current of pending) {
+    if (typeof current !== "object" || current === null || seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+    if (
+      "code" in current &&
+      (current.code === "EBUSY" || current.code === "EMFILE")
+    ) {
+      return current.code;
+    }
+    if ("cause" in current && pending.length < maxNodes) {
+      pending.push(current.cause);
+    }
+    if (current instanceof AggregateError) {
+      const errors: readonly unknown[] = current.errors;
+      pending.push(...errors.slice(0, maxNodes - pending.length));
+    }
+  }
+  return undefined;
+}
+
 function snapshotDownloadFailure(
   error: unknown,
   diagnostics: S3DownloadFailureDiagnostics | undefined,
@@ -619,12 +653,18 @@ function snapshotDownloadFailure(
     attempts <= 100
       ? attempts
       : undefined;
+  const failureClass = snapshotDownloadFailureClass(
+    error,
+    diagnostics?.stage,
+    providerStatus,
+  );
+  const failureCode =
+    failureClass === "unknown" || failureClass === "body"
+      ? snapshotLocalResourceErrorCode(error)
+      : undefined;
   return {
-    failureClass: snapshotDownloadFailureClass(
-      error,
-      diagnostics?.stage,
-      providerStatus,
-    ),
+    failureClass: failureCode === undefined ? failureClass : "local_resource",
+    ...(failureCode === undefined ? {} : { failureCode }),
     ...(diagnostics === undefined ? {} : { downloadStage: diagnostics.stage }),
     ...(providerStatus === undefined ? {} : { providerStatus }),
     ...(providerAttempts === undefined
