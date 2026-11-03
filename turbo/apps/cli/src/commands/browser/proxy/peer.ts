@@ -1,9 +1,9 @@
 import type { WebSocket as ClientSocket } from "ws";
-import { ProtocolError, record } from "./wire";
+import { ProtocolError, record, scopedError } from "./wire";
 import {
   WindowScope,
   targetInfo,
-  outsideWindow,
+  unavailableTarget,
   type TargetInfo,
 } from "./scope";
 
@@ -70,6 +70,15 @@ const CLOSE_COMMANDS = new Set([
   "Target.disposeBrowserContext",
   "Page.close",
 ]);
+
+const UNCONFIRMED_OPERATION =
+  "Scoped Browser operation could not be confirmed; inspect before retrying";
+
+function unavailableSession(): ProtocolError {
+  return scopedError(
+    "The session is unavailable in this chat's Browser connection; attach to a current target before sending session commands",
+  );
+}
 
 function relatedParameters(params: Message): boolean {
   return (
@@ -244,7 +253,7 @@ export class ProxyPeer {
         return this.send(JSON.stringify(message));
       };
     const session = this.sessions.get(channel);
-    if (!session) throw outsideWindow();
+    if (!session) throw unavailableSession();
     if (session.flatten)
       return (message) => {
         return this.send(JSON.stringify({ ...message, sessionId: channel }));
@@ -271,7 +280,9 @@ export class ProxyPeer {
     if (this.liveSession(channel)) return false;
     pending.reply({
       id: message.id,
-      error: record(message.error) ? message.error : outsideWindow().detail,
+      error: record(message.error)
+        ? message.error
+        : scopedError(UNCONFIRMED_OPERATION).detail,
     });
     return true;
   }
@@ -294,13 +305,13 @@ export class ProxyPeer {
   ): Promise<void> {
     if (channel && this.sessions.has(channel) && !this.liveSession(channel))
       await this.scope.stable();
-    if (channel && !this.liveSession(channel)) throw outsideWindow();
+    if (channel && !this.liveSession(channel)) throw unavailableSession();
     if (
       TARGET_ADDRESSES.has(method) &&
       typeof params.targetId === "string" &&
       !(await this.scope.allows(params.targetId))
     )
-      throw outsideWindow();
+      throw unavailableTarget();
     if (
       ["Target.detachFromTarget", "Target.sendMessageToTarget"].includes(
         method,
@@ -308,8 +319,11 @@ export class ProxyPeer {
       typeof params.sessionId === "string" &&
       !this.liveSession(params.sessionId)
     )
-      throw outsideWindow();
-    if (method === "Target.openDevTools") throw outsideWindow();
+      throw unavailableSession();
+    if (method === "Target.openDevTools")
+      throw scopedError(
+        "Opening DevTools is not supported by this chat's Browser connection",
+      );
   }
   private async nested(
     params: Message,
@@ -324,7 +338,7 @@ export class ProxyPeer {
       });
       if (candidates.length === 1) child = candidates[0]![0];
     }
-    if (!child || !this.liveSession(child)) throw outsideWindow();
+    if (!child || !this.liveSession(child)) throw unavailableSession();
     const raw = String(params.message);
     const nested: unknown = JSON.parse(raw);
     if (
@@ -426,7 +440,7 @@ export class ProxyPeer {
     this.autoAttach.set(channel, auto);
     try {
       const result = await this.relate(channel, auto, targetId);
-      if (!auto.selectors.has(targetId)) throw outsideWindow();
+      if (!auto.selectors.has(targetId)) throw unavailableTarget();
       return result;
     } catch (error) {
       try {
@@ -665,8 +679,7 @@ export class ProxyPeer {
             ? error.detail
             : {
                 code: -32000,
-                message:
-                  "Scoped Browser operation could not be confirmed; inspect before retrying",
+                message: UNCONFIRMED_OPERATION,
               },
       };
       if (reply) reply(failure);

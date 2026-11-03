@@ -399,21 +399,22 @@ export async function browserCdpProvider() {
       const command = commandSchema.parse(JSON.parse(data.toString()));
       const { id, method, params, sessionId } = command;
       commands.push({ method, params, sessionId });
-      const reply = (result: unknown) => {
+      const respond = (response: Record<string, unknown>) => {
         const held = heldReply;
         if (held && held.method === method && held.targetId === selected) {
           held.respond = () => {
-            send(connection, { id, sessionId, result });
+            send(connection, { id, sessionId, ...response });
           };
           held.requested();
           return;
         }
-        return send(connection, { id, sessionId, result });
+        return send(connection, { id, sessionId, ...response });
+      };
+      const reply = (result: unknown) => {
+        return respond({ result });
       };
       const fail = (code: number, message: string, extra?: unknown) => {
-        return send(connection, {
-          id,
-          sessionId,
+        return respond({
           error: {
             code,
             message,
