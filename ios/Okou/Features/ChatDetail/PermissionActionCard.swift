@@ -219,7 +219,8 @@ struct PermissionActionDetails: View {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
         }
         .buttonStyle(.borderedProminent).controlSize(.large)
-        .tint(.accentColor)
+        .buttonBorderShape(.roundedRectangle(radius: 12))
+        .tint(Color("AccentColor"))
         .disabled(!store.canConfirm)
         .accessibilityIdentifier("permission-confirm")
         if store.action.callbackPrompt != nil {

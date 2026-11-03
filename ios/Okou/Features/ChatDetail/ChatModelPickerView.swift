@@ -108,8 +108,9 @@ struct ChatModelPickerView: View {
                       .font(.caption)
                     }
                   }
+                  .font(.subheadline).fontWeight(.regular)
                 } else {
-                  Text("Okou credits")
+                  Text("Okou credits").font(.subheadline).fontWeight(.regular)
                 }
               }
               .textCase(nil)
@@ -293,12 +294,6 @@ struct ChatModelPickerView: View {
       }
     } label: {
       HStack(spacing: 10) {
-        if let type = PersonalSubscriptionType(rawValue: row.memberEffective.providerType) {
-          SubscriptionBrandIcon(type: type)
-        } else {
-          Image("OkouMark").renderingMode(.template).resizable().scaledToFit().frame(
-            width: 20, height: 20)
-        }
         VStack(alignment: .leading) {
           Text(configuration.catalog.name(row.selectedModel))
           if row.memberEffective.availability == "plan_restricted" {
@@ -320,7 +315,8 @@ struct ChatModelPickerView: View {
       }.frame(minHeight: 32).contentShape(Rectangle())
         .foregroundStyle(.primary)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(ModelChoiceButtonStyle())
+    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
     .disabled(!row.isConfigurable || selection.isBusy || selection.uncertain)
     .accessibilityIdentifier("chat-model-\(row.id)")
     .accessibilityAddTraits(row.selectedModel == selection.selection.model ? [.isSelected] : [])
@@ -331,6 +327,13 @@ struct ChatModelPickerView: View {
     pendingChange = change
     defer { pendingChange = nil }
     await operation()
+  }
+}
+
+private struct ModelChoiceButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    // Keep the confirmed choices readable while conflicting mutations are disabled.
+    configuration.label.opacity(configuration.isPressed ? 0.65 : 1)
   }
 }
 

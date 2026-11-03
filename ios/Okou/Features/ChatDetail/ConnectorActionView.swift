@@ -213,7 +213,8 @@ struct ConnectorAuthorizationSheet: View {
             ChatSettingsActionLabel(title: confirmationTitle, isBusy: flow.busy)
           }
           .buttonStyle(.borderedProminent).controlSize(.large)
-          .tint(.accentColor)
+          .buttonBorderShape(.roundedRectangle(radius: 12))
+          .tint(Color("AccentColor"))
           .disabled(!flow.canSubmit)
           .accessibilityIdentifier("connector-confirm")
         }

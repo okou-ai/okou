@@ -20,8 +20,12 @@ struct ChatSettingsActionLabel: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      if isBusy { ProgressView().controlSize(.small) }
-      Text(title)
+      if isBusy {
+        ProgressView().controlSize(.small).tint(.primary)
+        Text(title).foregroundStyle(.primary)
+      } else {
+        Text(title)
+      }
     }
     .frame(maxWidth: .infinity, minHeight: 24)
   }
