@@ -29,6 +29,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { env } from "../../lib/env";
+import { singleton } from "../../lib/singleton";
 import { detach, Mechanism, settle } from "../utils";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
@@ -212,6 +213,7 @@ export class S3ObjectSizeLimitError extends Error {
 function createS3Client(
   endpoint: string,
   credentials: S3Credentials,
+  requestHandler?: S3Client["config"]["requestHandler"],
 ): S3Client {
   return new S3Client({
     region: env("S3_REGION") ?? "auto",
@@ -219,6 +221,7 @@ function createS3Client(
     credentials,
     forcePathStyle: env("S3_FORCE_PATH_STYLE") === "true",
     requestChecksumCalculation: "WHEN_REQUIRED",
+    ...(requestHandler ? { requestHandler } : {}),
   });
 }
 
@@ -306,16 +309,30 @@ const privateArtifactsPublicS3Client$ = computed((get): S3Client => {
     : get(privateArtifactsS3Client$);
 });
 
+const marketingHandoffTransport = singleton(
+  (): {
+    requestHandler?: S3Client["config"]["requestHandler"];
+  } => {
+    return {};
+  },
+);
+
 const marketingHandoffS3Client$ = computed((): S3Client => {
   const accessKeyId = env("R2_MARKETING_HANDOFF_ACCESS_KEY_ID");
   const secretAccessKey = env("R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY");
   if (!accessKeyId || !secretAccessKey) {
     throw new Error("Marketing handoff storage credentials are not configured");
   }
-  return createS3Client(env("S3_ENDPOINT") ?? defaultS3Endpoint(), {
-    accessKeyId,
-    secretAccessKey,
-  });
+  // The runtime owns the SDK's bounded connection pool; request stores retain
+  // independent signing configuration and credential validation.
+  const transport = marketingHandoffTransport();
+  const client = createS3Client(
+    env("S3_ENDPOINT") ?? defaultS3Endpoint(),
+    { accessKeyId, secretAccessKey },
+    transport.requestHandler,
+  );
+  transport.requestHandler ??= client.config.requestHandler;
+  return client;
 });
 
 function s3ClientForBucket(
