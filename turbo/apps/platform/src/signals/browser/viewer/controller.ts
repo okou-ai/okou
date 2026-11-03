@@ -697,7 +697,6 @@ function createDiscoveryFailure(
     }
     set(readinessFailure$, error);
     set(context.connectedState$, false);
-    set(model.setConnected$, false);
     set(get(links$).retireCurrent$, "target-replaced", false);
     set(model.transition$, {
       type: "discovery-failed",
@@ -2881,7 +2880,6 @@ function createConnectionBootstrap(
       signal,
     );
     set(connectedState$, true);
-    set(model.setConnected$, true);
     const display = get(get(links$).displayGraph$)!;
     set(display.setMode$, get(model.windowSizeSync$));
     set(display.measure$, get(displaySize$));
@@ -3999,6 +3997,7 @@ export function createBrowserController(
     ...disposal,
   };
   return {
+    connected$: context.connected$,
     start$: graph.start$,
     dispose$: graph.dispose$,
     waitForClosed$: graph.waitForClosed$,

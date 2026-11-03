@@ -153,10 +153,15 @@ function createRuntimeState(
     const lease = get(installed$);
     return lease !== null && get(lease.controller.canCreate$);
   });
+  const connectedSource$ = computed((get) => {
+    const lease = get(installed$);
+    return lease !== null && get(lease.controller.connected$);
+  });
   const model = createViewerSignals(
     remoteNavigation$,
     remoteNavigationScope$,
     creationReadySource$,
+    connectedSource$,
   );
   const confirmedRequest$ = state<
     Promise<BrowserConnection | null> | undefined

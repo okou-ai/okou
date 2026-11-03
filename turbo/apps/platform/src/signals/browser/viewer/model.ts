@@ -83,20 +83,20 @@ function confirmsSubmission(
   );
 }
 
-function initialSnapshot(): ViewerSnapshot {
+type ViewerLifecycle = Omit<ViewerSnapshot, "targets">;
+
+function initialLifecycle(): ViewerLifecycle {
   return {
     status: "connecting",
-    targets: [],
     selectedTargetId: null,
     error: null,
   };
 }
 function createModelAtoms() {
-  const snapshotState$ = state<ViewerSnapshot>(initialSnapshot());
+  const lifecycleState$ = state<ViewerLifecycle>(initialLifecycle());
   const intentState$ = state(initialIntent());
   const inventoryInternal$ = state(initialInventory());
   const imageState$ = state<ImageRecovery | null>(null);
-  const connectedState$ = state(false);
   const scopedState$ = state(false);
   const loadingPreviewState$ = state(false);
   const faviconState$ = state<
@@ -108,11 +108,10 @@ function createModelAtoms() {
   const transportState$ = state<ViewerTransport>("shared");
   const modeState$ = state<WindowSizeSync>("live");
   return {
-    snapshotState$,
+    lifecycleState$,
     intentState$,
     inventoryInternal$,
     imageState$,
-    connectedState$,
     scopedState$,
     loadingPreviewState$,
     faviconState$,
@@ -129,13 +128,13 @@ function createModelValues(
   atoms: ModelAtoms,
   navigationSource$: Computed<ViewerNavigation | null>,
   navigationScopeSource$: Computed<object | null>,
+  connectedSource$: Computed<boolean>,
 ) {
   const {
-    snapshotState$,
+    lifecycleState$,
     intentState$,
     inventoryInternal$,
     imageState$,
-    connectedState$,
     captureState$,
     transportState$,
     modeState$,
@@ -143,8 +142,11 @@ function createModelValues(
     draftState$,
     spaceState$,
   } = atoms;
-  const snapshot$ = computed((get) => {
-    return get(snapshotState$);
+  const targets$ = computed((get) => {
+    return inventoryTargets(get(inventoryInternal$));
+  });
+  const snapshot$ = computed((get): ViewerSnapshot => {
+    return { ...get(lifecycleState$), targets: get(targets$) };
   });
   const intent$ = computed((get) => {
     return get(intentState$);
@@ -154,9 +156,6 @@ function createModelValues(
   });
   const imageRecovery$ = computed((get) => {
     return get(imageState$);
-  });
-  const connected$ = computed((get) => {
-    return get(connectedState$);
   });
   const capture$ = computed((get) => {
     return get(captureState$);
@@ -168,7 +167,7 @@ function createModelValues(
     return get(modeState$);
   });
   const tabs$ = computed((get) => {
-    return get(snapshot$).targets.map((tab) => {
+    return get(targets$).map((tab) => {
       const icon = get(faviconState$).get(tab.id);
       return {
         ...tab,
@@ -177,7 +176,7 @@ function createModelValues(
     });
   });
   const selectedTabId$ = computed((get) => {
-    return get(snapshot$).selectedTargetId;
+    return get(lifecycleState$).selectedTargetId;
   });
   const navigation$ = computed((get): ViewerNavigation | null => {
     return get(navigationSource$);
@@ -209,10 +208,11 @@ function createModelValues(
   });
   return {
     snapshot$,
+    targets$,
     intent$,
     inventoryState$,
     imageRecovery$,
-    connected$,
+    connected$: connectedSource$,
     capture$,
     transport$,
     windowSizeSync$,
@@ -302,19 +302,18 @@ function createModelPresentation(
   return { presentation$, controls$ };
 }
 
-function createModelPublication(atoms: ModelAtoms) {
-  const { snapshotState$, inventoryInternal$, faviconState$ } = atoms;
-  const update$ = command(({ get, set }, patch: Partial<ViewerSnapshot>) => {
-    const previous = get(snapshotState$);
+function createModelPublication(atoms: ModelAtoms, values: ModelValues) {
+  const { lifecycleState$, inventoryInternal$, faviconState$ } = atoms;
+  const update$ = command(({ get, set }, patch: Partial<ViewerLifecycle>) => {
+    const previous = get(lifecycleState$);
     const next = { ...previous, ...patch };
-    set(snapshotState$, next);
+    set(lifecycleState$, next);
   });
   const inventoryUpdate$ = command(({ get, set }, event: InventoryEvent) => {
     const next = transitionInventory(get(inventoryInternal$), event);
     set(inventoryInternal$, next);
-    set(update$, { targets: inventoryTargets(next) });
     const ids = new Set(
-      inventoryTargets(next).map((target) => {
+      get(values.targets$).map((target) => {
         return target.id;
       }),
     );
@@ -384,22 +383,15 @@ function createSnapshotTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
 ) {
-  const {
-    connectedState$,
-    faviconState$,
-    draftState$,
-    imageState$,
-    snapshotState$,
-  } = atoms;
+  const { faviconState$, draftState$, imageState$, lifecycleState$ } = atoms;
   const { inventoryUpdate$, update$ } = publication;
   return command(({ get, set }, event: SnapshotTransition) => {
     switch (event.type) {
       case "reset": {
         set(inventoryUpdate$, { type: "reset" });
-        set(connectedState$, false);
         set(faviconState$, new Map());
         set(draftState$, null);
-        set(update$, initialSnapshot());
+        set(update$, initialLifecycle());
         break;
       }
       case "select": {
@@ -430,13 +422,13 @@ function createSnapshotTransitions(
         break;
       }
       case "stopped": {
-        if (event.retainFrame && get(snapshotState$).status === "streaming") {
+        if (event.retainFrame && get(lifecycleState$).status === "streaming") {
           set(update$, { status: "connecting" });
         }
         break;
       }
       case "pause": {
-        if (get(snapshotState$).selectedTargetId) {
+        if (get(lifecycleState$).selectedTargetId) {
           set(update$, {
             status: event.paused
               ? "paused"
@@ -452,7 +444,6 @@ function createSnapshotTransitions(
         break;
       }
       case "disconnected": {
-        set(connectedState$, false);
         set(update$, {
           status: event.established ? "disconnected" : "error",
           error: event.error,
@@ -460,7 +451,6 @@ function createSnapshotTransitions(
         break;
       }
       case "closed": {
-        set(connectedState$, false);
         set(draftState$, null);
         break;
       }
@@ -472,7 +462,7 @@ function createModelTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
 ) {
-  const { intentState$, imageState$, loadingPreviewState$, snapshotState$ } =
+  const { intentState$, imageState$, loadingPreviewState$, lifecycleState$ } =
     atoms;
   const imageTransition$ = createImageTransitions(atoms, publication);
   const snapshotTransition$ = createSnapshotTransitions(atoms, publication);
@@ -500,7 +490,7 @@ function createModelTransitions(
       loadingPreviewState$,
       event.type === "stopped"
         ? !!event.retainFrame &&
-            (get(snapshotState$).status === "streaming" ||
+            (get(lifecycleState$).status === "streaming" ||
               get(loadingPreviewState$))
         : event.type === "select" && !!event.preview && !event.paused,
     );
@@ -648,7 +638,6 @@ function createFaviconActions(atoms: ModelAtoms) {
 function createConfigurationActions(atoms: ModelAtoms) {
   const {
     spaceState$,
-    connectedState$,
     scopedState$,
     captureState$,
     transportState$,
@@ -657,9 +646,6 @@ function createConfigurationActions(atoms: ModelAtoms) {
   return {
     resizeTabs$: command(({ set }, space: TabSpace) => {
       set(spaceState$, space);
-    }),
-    setConnected$: command(({ set }, connected: boolean) => {
-      set(connectedState$, connected);
     }),
     configure$: command(({ set }, scoped: boolean) => {
       set(scopedState$, scoped);
@@ -681,19 +667,21 @@ export function createViewerSignals(
   navigationSource$: Computed<ViewerNavigation | null>,
   navigationScopeSource$: Computed<object | null>,
   creationReadySource$: Computed<boolean>,
+  connectedSource$: Computed<boolean>,
 ) {
   const atoms = createModelAtoms();
   const values = createModelValues(
     atoms,
     navigationSource$,
     navigationScopeSource$,
+    connectedSource$,
   );
   const presentation = createModelPresentation(
     atoms,
     values,
     creationReadySource$,
   );
-  const publication = createModelPublication(atoms);
+  const publication = createModelPublication(atoms, values);
   const transitions = createModelTransitions(atoms, publication);
   const address = createAddressActions(atoms, values);
   const favicon = createFaviconActions(atoms);
