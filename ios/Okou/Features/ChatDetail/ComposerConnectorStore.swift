@@ -29,6 +29,7 @@ final class ComposerConnectorStore {
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
   private var refreshAgain = false
+  private var confirmationRevision = 0
   private var closed = false
 
   struct WebDestination: Identifiable {
@@ -94,13 +95,14 @@ final class ComposerConnectorStore {
     defer { if request == generation { isLoading = false } }
     repeat {
       refreshAgain = false
+      let readRevision = confirmationRevision
       async let connected = loadConnectors(agentID: agentID, request: request)
       async let remote = loadRemotes(request: request)
       let (connectorsLoaded, remotesLoaded) = await (connected, remote)
       guard !closed, !Task.isCancelled, request == generation else { return }
       // A write requested another read; this older snapshot cannot confirm it.
       if refreshAgain { continue }
-      guard connectorsLoaded, remotesLoaded else { return }
+      guard readRevision == confirmationRevision, connectorsLoaded, remotesLoaded else { return }
       uncertain = false
       error = nil
     } while refreshAgain
@@ -191,11 +193,13 @@ final class ComposerConnectorStore {
       submitted = true
       try await operation()
       guard !closed, !Task.isCancelled, request == generation else { return }
+      confirmationRevision += 1
       uncertain = true
       await refresh()
       if connectorError != nil || remoteError != nil { uncertain = true }
     } catch {
       guard !closed, request == generation else { return }
+      confirmationRevision += 1
       uncertain = true
       self.error = ChatRequestFailure.message(for: error)
       didFail(error)

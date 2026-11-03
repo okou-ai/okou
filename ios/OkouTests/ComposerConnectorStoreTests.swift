@@ -187,6 +187,9 @@ final class ComposerConnectorStoreTests: XCTestCase {
 
   func testRejectedRemoteWriteKeepsItsBusinessReasonUntilExplicitReadback() async throws {
     let writes = Mutex(0)
+    let holdOld = Mutex(false)
+    let oldReading = expectation(description: "Old read captured before rejection")
+    let oldResponse = ConnectorResponseGate()
     let fixture = ChatHTTPFixture { request in
       if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
         request.httpMethod == "PUT"
@@ -195,7 +198,16 @@ final class ComposerConnectorStoreTests: XCTestCase {
         return ChatHTTPResponse(
           status: 403, body: #"{"error":{"message":"Remote access is blocked"}}"#)
       }
-      return try composerResponse(request)
+      let response = try composerResponse(request)
+      if request.url!.path.hasSuffix("/remote-access"), holdOld.withLock({ value in
+        let held = value
+        value = false
+        return held
+      }) {
+        oldReading.fulfill()
+        await oldResponse.wait()
+      }
+      return response
     }
     let thread = ChatThread(
       id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
@@ -205,7 +217,19 @@ final class ComposerConnectorStoreTests: XCTestCase {
     defer { store.close() }
     await store.refresh()
     let host = try XCTUnwrap(store.hosts(.ssh).first)
+    holdOld.withLock { $0 = true }
+    let background = Task { await store.refresh() }
+    addTeardownBlock {
+      background.cancel()
+      oldResponse.open()
+      await background.value
+    }
+    await fulfillment(of: [oldReading], timeout: 3)
     await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertTrue(store.error?.contains("Remote access is blocked") == true)
+    XCTAssertFalse(store.canSend)
+    oldResponse.open()
+    await background.value
     XCTAssertTrue(store.error?.contains("Remote access is blocked") == true)
     XCTAssertFalse(store.canSend)
     await store.setRemote(host, protocol: .ssh, enabled: true)
