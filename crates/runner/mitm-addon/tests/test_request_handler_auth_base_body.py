@@ -441,7 +441,7 @@ async def test_auth_base_requestheaders_accepts_matching_duplicate_content_lengt
     assert metadata_keys.FIREWALL_ERROR not in flow.metadata
 
 
-async def test_requestheaders_skips_registry_for_bounded_body_headers(real_flow, headers):
+async def test_requestheaders_skips_registry_for_bounded_body_headers(real_flow, mitm_ctx, headers):
     flow = real_flow(
         with_response=False,
         client_ip="10.200.0.5",
@@ -454,7 +454,8 @@ async def test_requestheaders_skips_registry_for_bounded_body_headers(real_flow,
         ),
     )
 
-    mitm_addon.requestheaders(flow)
+    with mitm_ctx():
+        mitm_addon.requestheaders(flow)
 
     assert flow.response is None
     assert metadata_keys.SANDBOX_RUN_ID not in flow.metadata
