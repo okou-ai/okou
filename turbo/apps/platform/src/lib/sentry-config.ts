@@ -3,6 +3,7 @@ import type { BrowserOptions, Contexts, User } from "@sentry/browser";
 
 import { setLogErrorHandler } from "../signals/log.ts";
 import { CdpFault } from "../signals/browser/cdp/errors.ts";
+import { NativeNavigationFault } from "../signals/browser/navigation/rejection.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { SENTRY_APPLICATION_KEY } from "./sentry-application-key.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
@@ -149,10 +150,27 @@ export function captureSentryLogError(
     return arg instanceof Error || arg instanceof DOMException;
   });
   if (error) {
-    if (!claimCdpReport(error)) {
+    const faults = claimCdpReport(error);
+    if (!faults) {
       return;
     }
-    Sentry.captureException(error, captureContext);
+    const navigation = faults.find((fault) => {
+      return fault instanceof NativeNavigationFault;
+    });
+    Sentry.captureException(error, {
+      ...captureContext,
+      ...(navigation
+        ? {
+            contexts: {
+              ...captureContext.contexts,
+              browser_navigation: {
+                method: "Page.navigate",
+                reason: navigation.reason,
+              },
+            },
+          }
+        : {}),
+    });
     return;
   }
   Sentry.captureMessage(capturedArgs.map(String).join(" "), {
@@ -161,16 +179,19 @@ export function captureSentryLogError(
   });
 }
 
-/** Deduplicate only a captured CDP fault, including later causal wrappers. */
-function claimCdpReport(error: Error): boolean {
+/** Keep native refusals local; deduplicate captured faults through wrappers. */
+function claimCdpReport(error: Error): readonly CdpFault[] | null {
   const visited = new Set<Error>();
   const faults: CdpFault[] = [];
   let current: unknown = error;
   while (current instanceof Error && !visited.has(current)) {
     visited.add(current);
     if (current instanceof CdpFault) {
-      if (current.reported) {
-        return false;
+      if (
+        current.reported ||
+        (current instanceof NativeNavigationFault && current.expected)
+      ) {
+        return null;
       }
       faults.push(current);
     }
@@ -179,7 +200,7 @@ function claimCdpReport(error: Error): boolean {
   for (const fault of faults) {
     fault.reported = true;
   }
-  return true;
+  return faults;
 }
 
 export function setupSentryLogger(): void {
