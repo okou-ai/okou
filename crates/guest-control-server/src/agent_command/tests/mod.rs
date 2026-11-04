@@ -101,3 +101,56 @@ fn direct_agent_merges_stderr_into_streamed_stdout() {
     assert!(stderr.is_empty());
     assert!(spawned.env_script.is_none());
 }
+
+#[test]
+fn direct_agent_receives_system_path() {
+    let executable = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/agent-path-probe.sh"
+    ));
+    let mut spawned = spawn_agent_executable_with_pipes(
+        executable,
+        &[("PATH", "/unexpected-bootstrap-path")],
+        test_containment(6),
+    )
+    .unwrap();
+    let mut stdout = String::new();
+    spawned
+        .child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
+    assert!(spawned.child.wait().unwrap().success());
+
+    let path = stdout.trim_end();
+    let directories: Vec<&str> = path.split(':').collect();
+    assert_eq!(
+        directories.iter().take(6).copied().collect::<Vec<_>>(),
+        [
+            "/usr/local/sbin",
+            "/usr/local/bin",
+            "/usr/sbin",
+            "/usr/bin",
+            "/sbin",
+            "/bin",
+        ],
+        "direct Agent launch lost the rootfs system PATH: {path}"
+    );
+
+    #[cfg(not(any(debug_assertions, feature = "test-support")))]
+    {
+        let home = crate::user::sandbox_user_home().unwrap();
+        let user_directories = ["go/bin", ".cargo/bin", ".local/bin", "bin"]
+            .map(|relative| home.join(relative).to_string_lossy().into_owned());
+        assert!(
+            directories.ends_with(
+                &user_directories
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+            )
+        );
+    }
+}

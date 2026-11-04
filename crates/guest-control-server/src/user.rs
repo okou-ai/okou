@@ -11,7 +11,10 @@ static SANDBOX_USER_CREDENTIALS: OnceLock<UserCredentials> = OnceLock::new();
 #[cfg(not(any(debug_assertions, feature = "test-support")))]
 static SANDBOX_USER_CREDENTIALS_INIT: Mutex<()> = Mutex::new(());
 
-const SANDBOX_USER_BASE_PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games";
+// Keep the system prefix aligned with customize-rootfs.sh's /etc/environment
+// and guest-agent/src/cli/child_env.rs's fallback PATH.
+const SANDBOX_USER_BASE_PATH: &str =
+    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games";
 const AGENT_SHELL: &str = "/bin/bash";
 // [sync:etc-environment] Keep in sync with:
 // - crates/runner/scripts/customize-rootfs.sh
