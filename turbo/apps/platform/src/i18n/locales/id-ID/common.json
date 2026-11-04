@@ -3693,7 +3693,7 @@
         "copySuccess": "Nomor telepon disalin",
         "createCodeError": "Tidak dapat membuat kode koneksi.",
         "creatingCode": "Membuat kode koneksi…",
-        "description": "Akses {{assistantName}} lewat pesan teks",
+        "description": "Kirim pesan ke {{assistantName}} lewat SMS",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
@@ -3798,7 +3798,7 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Feishu ini.",
         "reviewGuideTitle": "Panduan tinjau Feishu",
-        "routeDescription": "Arahkan pesan Feishu ke agen",
+        "routeDescription": "Kirim pesan ke {{assistantName}} di chat Feishu",
         "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
@@ -3931,7 +3931,7 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Lark ini.",
         "reviewGuideTitle": "Panduan tinjau Lark",
-        "routeDescription": "Arahkan pesan Lark ke agen",
+        "routeDescription": "Kirim pesan ke {{assistantName}} di chat Lark",
         "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
@@ -7144,7 +7144,7 @@
       "connectedTitle": "Terhubung ke Discord",
       "connectTitle": "Hubungkan ke Discord",
       "defaultWorkspace": "Ruang kerja default untuk Discord",
-      "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
+      "description": "Tandai {{assistantName}} di server atau lewat DM",
       "disconnect": "Putuskan koneksi Discord",
       "installDescription": "Izinkan Okou di Discord menggunakan akun yang dapat mengelola server.",
       "installTitle": "Tambahkan Okou ke server",
@@ -7161,7 +7161,7 @@
     "feishuConnected": "Feishu berhasil terhubung",
     "github": {
       "adminInstall": "Minta admin organisasi untuk menginstal aplikasi GitHub",
-      "description": "Picu otomatisasi alur kerja dari peristiwa GitHub",
+      "description": "Jalankan alur kerja dari peristiwa GitHub",
       "install": "Instal aplikasi GitHub",
       "title": "GitHub"
     },
@@ -7171,7 +7171,7 @@
     },
     "slack": {
       "adminInstall": "Minta admin Anda untuk memasang integrasi Slack",
-      "description": "Komunikasi dan kolaborasi tim",
+      "description": "Tandai {{assistantName}} di channel",
       "install": "Pasang ke Slack",
       "permissionsUpdated": "Izin Slack telah diperbarui",
       "title": "Slack",
@@ -7179,8 +7179,8 @@
       "uninstallTitle": "Copot pemasangan integrasi Slack?"
     },
     "teams": {
-      "connectAccount": "Hubungkan akun Microsoft Anda untuk menyelesaikan penyiapan",
-      "description": "Komunikasi dan kolaborasi tim",
+      "connectAccount": "Masuk ke Microsoft untuk menyelesaikan penyiapan",
+      "description": "Kirim pesan ke {{assistantName}} di chat Teams",
       "disconnect": "Putuskan koneksi Microsoft Teams",
       "install": "Pasang di Teams",
       "moreOptions": "Opsi Microsoft Teams lainnya",
@@ -7191,7 +7191,7 @@
       "uninstallTitle": "Copot pemasangan integrasi Microsoft Teams?"
     },
     "telegram": {
-      "description": "Rutekan pesan Telegram ke agen",
+      "description": "Kirim pesan ke {{assistantName}} di chat Telegram",
       "title": "Telegram"
     },
     "wechat": {
@@ -7201,7 +7201,7 @@
       "connect": "Hubungkan",
       "connected": "Terhubung",
       "creating": "Membuat kode QR…",
-      "description": "Mengobrol dengan agen Anda di WeChat.",
+      "description": "Kirim pesan ke {{assistantName}} di WeChat",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat.",
@@ -7229,7 +7229,7 @@
       "connect": "Hubungkan WhatsApp",
       "connectDescription": "Hubungkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan agen Anda.",
       "connected": "WhatsApp terhubung",
-      "description": "Mengobrol dengan Okou langsung dari WhatsApp",
+      "description": "Kirim pesan ke {{assistantName}} di WhatsApp",
       "disconnected": "WhatsApp terputus",
       "expires": "Kode ini kedaluwarsa dalam 10 menit. Biarkan halaman ini terbuka untuk melihat konfirmasi koneksi.",
       "instructions": "Buka WhatsApp atau pindai kode QR, lalu kirim kode koneksi untuk menautkan akun Anda.",

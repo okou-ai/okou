@@ -68,13 +68,13 @@ test.each([
   {
     name: "configured admin without a server",
     data: { isAdmin: true },
-    message: "Mention Okou in a server or send the bot a direct message.",
+    message: "Mention Okou in servers or DMs",
     action: "Connect",
   },
   {
     name: "member without a server",
     data: { isAdmin: false },
-    message: "Mention Okou in a server or send the bot a direct message.",
+    message: "Mention Okou in servers or DMs",
     action: "Connect",
   },
   {
@@ -83,7 +83,7 @@ test.each([
       guildId: "123456789012345678",
       guildName: "Design team",
     },
-    message: "Mention Okou in a server or send the bot a direct message.",
+    message: "Mention Okou in servers or DMs",
     action: "Connect",
   },
 ])("Discord explains setup to a $name", async ({ data, message, action }) => {
@@ -205,7 +205,7 @@ test.each([true, false])(
     await setupDiscordPage();
     await expect(
       screen.findByText(
-        "Mention Okou in a server or send the bot a direct message.",
+        "Mention Okou in servers or DMs",
       ),
     ).resolves.toBeInTheDocument();
     const card = getIntegrationCard("Discord");
@@ -314,7 +314,7 @@ test.each([
     });
     await expect(
       screen.findByText(
-        "Mention Okou in a server or send the bot a direct message.",
+        "Mention Okou in servers or DMs",
       ),
     ).resolves.toBeInTheDocument();
     click(getAction("button", "Connect", getIntegrationCard("Discord")));
@@ -364,7 +364,7 @@ test("A failed authorization start closes its tab, reports the error, without cl
   await setupDiscordPage();
   await expect(
     screen.findByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
@@ -390,7 +390,7 @@ test.each([false, true])(
     await setupDiscordPage();
     await expect(
       screen.findByText(
-        "Mention Okou in a server or send the bot a direct message.",
+        "Mention Okou in servers or DMs",
       ),
     ).resolves.toBeInTheDocument();
     click(getAction("button", "Connect", getIntegrationCard("Discord")));
@@ -421,7 +421,7 @@ test("Leaving Works after consent opens cancels the retained opener proof withou
   await setupDiscordPage();
   await expect(
     screen.findByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).resolves.toBeInTheDocument();
   click(getAction("button", "Connect", getIntegrationCard("Discord")));
@@ -443,7 +443,7 @@ test("Leaving Works after consent opens cancels the retained opener proof withou
   click(getAction("link", "Where Okou works"));
   await expect(
     screen.findByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).resolves.toBeInTheDocument();
   expect(
@@ -469,7 +469,7 @@ test("Leaving Works aborts an in-flight authenticated completion request", async
   await setupDiscordPage();
   await expect(
     screen.findByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).resolves.toBeInTheDocument();
   click(getAction("button", "Connect", getIntegrationCard("Discord")));
@@ -507,7 +507,7 @@ test("Leaving Works cancels a pending authorization request and closes its blank
   await setupDiscordPage();
   await expect(
     screen.findByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).resolves.toBeInTheDocument();
   click(getAction("button", "Connect", getIntegrationCard("Discord")));
@@ -709,7 +709,7 @@ test("Leaving the consent route cancels automatic verification and destroys its 
   });
   await expect(
     screen.findByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).resolves.toBeInTheDocument();
   await act(() => {
@@ -752,7 +752,7 @@ test("Unapproved popup closure shows cancellation without failure capture", asyn
   await setupDiscordPage();
   await expect(
     screen.findByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
@@ -1053,7 +1053,7 @@ test.each([false, true])(
     );
     await setupDiscordPage();
     const description =
-      "Mention Okou in a server or send the bot a direct message.";
+      "Mention Okou in servers or DMs";
     await expect(screen.findByText(description)).resolves.toBeInTheDocument();
 
     click(
@@ -1109,7 +1109,7 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
   const discordCard = getIntegrationCard("Discord");
   expect(
     within(discordCard).getByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).toBeInTheDocument();
   expect(queryAllByRoleFast("button", discordCard)).toHaveLength(0);
@@ -1147,7 +1147,7 @@ test("A status error hides stale controls and recovers when returning to Works",
   });
   expect(
     within(card).getByText(
-      "Mention Okou in a server or send the bot a direct message.",
+      "Mention Okou in servers or DMs",
     ),
   ).toBeInTheDocument();
   expect(

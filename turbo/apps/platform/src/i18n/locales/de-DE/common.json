@@ -3707,7 +3707,7 @@
         "copySuccess": "Telefonnummer kopiert",
         "createCodeError": "Verbindungscode konnte nicht erstellt werden.",
         "creatingCode": "Verbindungscode wird erstellt…",
-        "description": "SMS-Zugriff auf {{assistantName}}",
+        "description": "{{assistantName}} per SMS schreiben",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",
@@ -3812,7 +3812,7 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Feishu-Bot an.",
         "reviewGuideTitle": "Feishu-Review-Leitfaden",
-        "routeDescription": "Leiten Sie Feishu-Nachrichten an Agenten weiter",
+        "routeDescription": "{{assistantName}} in Feishu-Chats schreiben",
         "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
@@ -3945,7 +3945,7 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Lark-Bot an.",
         "reviewGuideTitle": "Lark-Review-Leitfaden",
-        "routeDescription": "Leiten Sie Lark-Nachrichten an Agenten weiter",
+        "routeDescription": "{{assistantName}} in Lark-Chats schreiben",
         "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
@@ -7166,7 +7166,7 @@
       "connectedTitle": "Mit Discord verbunden",
       "connectTitle": "Mit Discord verbinden",
       "defaultWorkspace": "Standard-Workspace für Discord",
-      "description": "Erwähnen Sie Okou auf einem Server oder senden Sie dem Bot eine Direktnachricht.",
+      "description": "{{assistantName}} auf Servern oder per DM erwähnen",
       "disconnect": "Verbindung zu Discord trennen",
       "installDescription": "Autorisiere Okou in Discord mit einem Konto, das den Server verwalten kann.",
       "installTitle": "Okou zu einem Server hinzufügen",
@@ -7183,7 +7183,7 @@
     "feishuConnected": "Feishu hat erfolgreich eine Verbindung hergestellt",
     "github": {
       "adminInstall": "Bitten Sie einen Organisationsadministrator, die GitHub-App zu installieren",
-      "description": "Workflow-Automatisierungen durch GitHub-Ereignisse auslösen",
+      "description": "Workflows durch GitHub-Ereignisse ausführen",
       "install": "GitHub-App installieren",
       "title": "GitHub"
     },
@@ -7193,7 +7193,7 @@
     },
     "slack": {
       "adminInstall": "Bitten Sie Ihren Administrator, die Slack-Integration zu installieren",
-      "description": "Teamkommunikation und Zusammenarbeit",
+      "description": "{{assistantName}} in Channels erwähnen",
       "install": "Auf Slack installieren",
       "permissionsUpdated": "Slack-Berechtigungen wurden aktualisiert",
       "title": "Slack",
@@ -7201,8 +7201,8 @@
       "uninstallTitle": "Slack-Integration deinstallieren?"
     },
     "teams": {
-      "connectAccount": "Verbinden Sie Ihr Microsoft-Konto, um die Einrichtung abzuschließen",
-      "description": "Teamkommunikation und Zusammenarbeit",
+      "connectAccount": "Bei Microsoft anmelden, um die Einrichtung abzuschließen",
+      "description": "{{assistantName}} in Teams-Chats schreiben",
       "disconnect": "Trennen Sie die Verbindung zu Microsoft Teams",
       "install": "In Teams installieren",
       "moreOptions": "Weitere Microsoft Teams-Optionen",
@@ -7213,7 +7213,7 @@
       "uninstallTitle": "Microsoft Teams-Integration deinstallieren?"
     },
     "telegram": {
-      "description": "Leiten Sie Telegram-Nachrichten an Agenten weiter",
+      "description": "{{assistantName}} in Telegram-Chats schreiben",
       "title": "Telegram"
     },
     "wechat": {
@@ -7223,7 +7223,7 @@
       "connect": "Verbinden",
       "connected": "Verbunden",
       "creating": "QR-Code wird erstellt…",
-      "description": "Chatte mit deinem Agenten in WeChat.",
+      "description": "{{assistantName}} in WeChat schreiben",
       "disconnect": "Trennen",
       "expired": "Dieser QR-Code ist abgelaufen. Erstelle einen neuen.",
       "failed": "Die Verbindung zu WeChat ist fehlgeschlagen.",
@@ -7251,7 +7251,7 @@
       "connect": "WhatsApp verbinden",
       "connectDescription": "Verbinde dein WhatsApp-Konto mit {{brandName}}, um mit deinem Agenten zu chatten.",
       "connected": "WhatsApp verbunden",
-      "description": "Direkt in WhatsApp mit Okou chatten",
+      "description": "{{assistantName}} auf WhatsApp schreiben",
       "disconnected": "WhatsApp getrennt",
       "expires": "Dieser Code läuft in 10 Minuten ab. Lass diese Seite geöffnet, um die Verbindung zu bestätigen.",
       "instructions": "Öffne WhatsApp oder scanne den QR-Code. Sende dann den Verbindungscode, um dein Konto zu verknüpfen.",

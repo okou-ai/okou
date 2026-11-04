@@ -984,7 +984,7 @@ export function WorksPage() {
       </header>
 
       <main className="flex-1 overflow-auto px-4 sm:px-6 pt-3 pb-safe-or-8">
-        <div className="mx-auto max-w-[900px] flex flex-col gap-4">
+        <div className="mx-auto grid max-w-[900px] grid-cols-1 gap-4 md:grid-cols-2">
           <SlackCard displayName={displayName} />
           <TeamsCard displayName={displayName} />
           <DiscordCard />

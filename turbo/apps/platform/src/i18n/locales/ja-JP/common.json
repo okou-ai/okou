@@ -3693,7 +3693,7 @@
         "copySuccess": "電話番号をコピーしました",
         "createCodeError": "接続コードを作成できませんでした。",
         "creatingCode": "接続コードを作成中…",
-        "description": "{{assistantName}} へのテキスト メッセージ アクセス",
+        "description": "テキストメッセージで {{assistantName}} に連絡",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
@@ -3798,7 +3798,7 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Feishu ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Feishu レビュー ガイド",
-        "routeDescription": "Feishu メッセージをエージェントにルーティングする",
+        "routeDescription": "Feishu のチャットで {{assistantName}} にメッセージ",
         "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
@@ -3931,7 +3931,7 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Lark ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Lark レビュー ガイド",
-        "routeDescription": "Lark メッセージをエージェントにルーティングする",
+        "routeDescription": "Lark のチャットで {{assistantName}} にメッセージ",
         "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
@@ -7144,7 +7144,7 @@
       "connectedTitle": "Discord に接続済み",
       "connectTitle": "Discord に接続",
       "defaultWorkspace": "Discord の既定のワークスペース",
-      "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
+      "description": "サーバーや DM で {{assistantName}} にメンション",
       "disconnect": "Discord の接続を解除",
       "installDescription": "サーバーを管理できるアカウントで Discord にログインし、Okou を承認してください。",
       "installTitle": "Okou をサーバーに追加",
@@ -7161,7 +7161,7 @@
     "feishuConnected": "Feishu は正常に接続されました",
     "github": {
       "adminInstall": "組織管理者に GitHub App のインストールを依頼してください",
-      "description": "GitHub イベントからワークフローオートメーションを起動",
+      "description": "GitHub イベントでワークフローを実行",
       "install": "GitHub App をインストール",
       "title": "GitHub"
     },
@@ -7171,7 +7171,7 @@
     },
     "slack": {
       "adminInstall": "Slack 統合をインストールするように管理者に依頼してください",
-      "description": "チームのコミュニケーションとコラボレーション",
+      "description": "チャンネルで {{assistantName}} にメンション",
       "install": "Slack にインストールします",
       "permissionsUpdated": "Slack 権限が更新されました",
       "title": "Slack",
@@ -7179,8 +7179,8 @@
       "uninstallTitle": "Slack 統合をアンインストールしますか?"
     },
     "teams": {
-      "connectAccount": "Microsoft アカウントに接続してセットアップを完了してください",
-      "description": "チームのコミュニケーションとコラボレーション",
+      "connectAccount": "Microsoft にサインインしてセットアップを完了",
+      "description": "Teams のチャットで {{assistantName}} にメッセージ",
       "disconnect": "Microsoft Teams を切断します",
       "install": "Teams にインストールする",
       "moreOptions": "その他の Microsoft Teams オプション",
@@ -7191,7 +7191,7 @@
       "uninstallTitle": "Microsoft Teams 統合をアンインストールしますか?"
     },
     "telegram": {
-      "description": "Telegram メッセージをエージェントにルーティングする",
+      "description": "Telegram のチャットで {{assistantName}} にメッセージ",
       "title": "Telegram"
     },
     "wechat": {
@@ -7201,7 +7201,7 @@
       "connect": "接続",
       "connected": "接続済み",
       "creating": "QRコードを作成中…",
-      "description": "WeChatでエージェントとチャットできます。",
+      "description": "WeChat で {{assistantName}} にメッセージ",
       "disconnect": "接続解除",
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。",
@@ -7229,7 +7229,7 @@
       "connect": "WhatsAppを接続",
       "connectDescription": "WhatsApp アカウントを {{brandName}} に接続して、エージェントとチャットできます。",
       "connected": "WhatsAppに接続しました",
-      "description": "WhatsAppから直接Okouとチャット",
+      "description": "WhatsApp で {{assistantName}} にメッセージ",
       "disconnected": "WhatsAppの接続を解除しました",
       "expires": "このコードは10分後に期限切れになります。接続の完了を確認するまで、このページを開いたままにしてください。",
       "instructions": "WhatsAppを開くかQRコードをスキャンし、接続コードを送信してアカウントを連携してください。",

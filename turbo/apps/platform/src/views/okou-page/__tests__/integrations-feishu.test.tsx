@@ -325,7 +325,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.findByText(`${provider.name}`),
     ).resolves.toBeInTheDocument();
     expect(
-      screen.getByText(`Route ${provider.name} messages to agents`),
+      screen.getByText(`Message Okou in ${provider.name} chats`),
     ).toBeInTheDocument();
     click(getFeishuSettingsLink());
 

@@ -3693,7 +3693,7 @@
         "copySuccess": "电话号码已复制",
         "createCodeError": "无法创建连接码。",
         "creatingCode": "正在创建连接码…",
-        "description": "通过短信使用 {{assistantName}}",
+        "description": "通过短信给 {{assistantName}} 发消息",
         "openMessages": "打开 Messages",
         "options": "手机选项",
         "phoneLabel": "电话",
@@ -3798,7 +3798,7 @@
         "reviewGuide": "查看指南",
         "reviewGuideDescription": "查看此飞书机器人已完成的配置步骤。",
         "reviewGuideTitle": "飞书配置指南",
-        "routeDescription": "把飞书消息路由给智能体",
+        "routeDescription": "在飞书聊天中给 {{assistantName}} 发消息",
         "selectAgent": "选择智能体",
         "setupIncomplete": "配置未完成",
         "steps": {
@@ -3931,7 +3931,7 @@
         "reviewGuide": "查看指南",
         "reviewGuideDescription": "查看此 Lark 机器人已完成的配置步骤。",
         "reviewGuideTitle": "Lark 配置指南",
-        "routeDescription": "把 Lark 消息路由给智能体",
+        "routeDescription": "在 Lark 聊天中给 {{assistantName}} 发消息",
         "selectAgent": "选择智能体",
         "setupIncomplete": "配置未完成",
         "steps": {
@@ -7144,7 +7144,7 @@
       "connectedTitle": "已连接 Discord",
       "connectTitle": "连接 Discord",
       "defaultWorkspace": "Discord 默认工作区",
-      "description": "在服务器中提及 Okou，或给机器人发送私信。",
+      "description": "在服务器或私信中提及 {{assistantName}}",
       "disconnect": "断开 Discord 连接",
       "installDescription": "使用有服务器管理权限的账号，在 Discord 中授权 Okou。",
       "installTitle": "将 Okou 添加到服务器",
@@ -7161,7 +7161,7 @@
     "feishuConnected": "飞书连接成功",
     "github": {
       "adminInstall": "请组织管理员安装 GitHub App",
-      "description": "用 GitHub 事件触发工作流自动化",
+      "description": "用 GitHub 事件运行工作流",
       "install": "安装 GitHub App",
       "title": "GitHub"
     },
@@ -7171,7 +7171,7 @@
     },
     "slack": {
       "adminInstall": "请管理员安装 Slack 集成",
-      "description": "团队沟通与协作",
+      "description": "在频道中提及 {{assistantName}}",
       "install": "安装到 Slack",
       "permissionsUpdated": "Slack 权限已更新",
       "title": "Slack",
@@ -7179,8 +7179,8 @@
       "uninstallTitle": "卸载 Slack 集成？"
     },
     "teams": {
-      "connectAccount": "连接你的 Microsoft 账号以完成设置",
-      "description": "团队沟通与协作",
+      "connectAccount": "登录 Microsoft 以完成设置",
+      "description": "在 Teams 聊天中给 {{assistantName}} 发消息",
       "disconnect": "断开 Microsoft Teams",
       "install": "安装到 Teams",
       "moreOptions": "更多 Microsoft Teams 选项",
@@ -7191,7 +7191,7 @@
       "uninstallTitle": "卸载 Microsoft Teams 集成？"
     },
     "telegram": {
-      "description": "把 Telegram 消息转给智能体",
+      "description": "在 Telegram 聊天中给 {{assistantName}} 发消息",
       "title": "Telegram"
     },
     "wechat": {
@@ -7201,7 +7201,7 @@
       "connect": "连接",
       "connected": "已连接",
       "creating": "正在生成二维码…",
-      "description": "在微信中与智能体对话。",
+      "description": "在微信中给 {{assistantName}} 发消息",
       "disconnect": "断开连接",
       "expired": "二维码已过期，请重新生成。",
       "failed": "连接微信失败。",
@@ -7229,7 +7229,7 @@
       "connect": "连接 WhatsApp",
       "connectDescription": "将你的 WhatsApp 账号连接到 {{brandName}}，即可与你的智能体聊天。",
       "connected": "WhatsApp 已连接",
-      "description": "在 WhatsApp 中直接与 Okou 对话",
+      "description": "在 WhatsApp 上给 {{assistantName}} 发消息",
       "disconnected": "WhatsApp 已断开",
       "expires": "连接码在 10 分钟后过期。保持此页面打开以查看连接结果。",
       "instructions": "打开 WhatsApp 或扫描二维码，将连接码发送给 Okou 即可绑定账号。",

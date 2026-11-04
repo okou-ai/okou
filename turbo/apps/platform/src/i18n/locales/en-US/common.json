@@ -3705,7 +3705,7 @@
         "copySuccess": "Phone number copied",
         "createCodeError": "Couldn't create a connection code.",
         "creatingCode": "Creating connection code…",
-        "description": "Text-message access to {{assistantName}}",
+        "description": "Message {{assistantName}} by text",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
@@ -3810,7 +3810,7 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Feishu bot.",
         "reviewGuideTitle": "Feishu review guide",
-        "routeDescription": "Route Feishu messages to agents",
+        "routeDescription": "Message {{assistantName}} in Feishu chats",
         "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
@@ -3943,7 +3943,7 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Lark bot.",
         "reviewGuideTitle": "Lark review guide",
-        "routeDescription": "Route Lark messages to agents",
+        "routeDescription": "Message {{assistantName}} in Lark chats",
         "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
@@ -7164,7 +7164,7 @@
       "connectedTitle": "Connected to Discord",
       "connectTitle": "Connect to Discord",
       "defaultWorkspace": "Default workspace for Discord",
-      "description": "Mention Okou in a server or send the bot a direct message.",
+      "description": "Mention {{assistantName}} in servers or DMs",
       "disconnect": "Disconnect Discord",
       "installDescription": "Authorize Okou in Discord using an account that can manage the server.",
       "installTitle": "Add Okou to a server",
@@ -7181,7 +7181,7 @@
     "feishuConnected": "Feishu connected successfully",
     "github": {
       "adminInstall": "Ask an organization admin to install the GitHub App",
-      "description": "Trigger workflow automations from GitHub events",
+      "description": "Run workflows from GitHub events",
       "install": "Install GitHub App",
       "title": "GitHub"
     },
@@ -7191,7 +7191,7 @@
     },
     "slack": {
       "adminInstall": "Ask your admin to install the Slack integration",
-      "description": "Team communication and collaboration",
+      "description": "Mention {{assistantName}} in channels",
       "install": "Install to Slack",
       "permissionsUpdated": "Slack permissions have been updated",
       "title": "Slack",
@@ -7199,8 +7199,8 @@
       "uninstallTitle": "Uninstall Slack integration?"
     },
     "teams": {
-      "connectAccount": "Connect your Microsoft account to finish setup",
-      "description": "Team communication and collaboration",
+      "connectAccount": "Sign in to Microsoft to finish setup",
+      "description": "Message {{assistantName}} in Teams chats",
       "disconnect": "Disconnect Microsoft Teams",
       "install": "Install in Teams",
       "moreOptions": "More Microsoft Teams options",
@@ -7211,7 +7211,7 @@
       "uninstallTitle": "Uninstall Microsoft Teams integration?"
     },
     "telegram": {
-      "description": "Route Telegram messages to agents",
+      "description": "Message {{assistantName}} in Telegram chats",
       "title": "Telegram"
     },
     "wechat": {
@@ -7221,7 +7221,7 @@
       "connect": "Connect",
       "connected": "Connected",
       "creating": "Creating QR code…",
-      "description": "Chat with your agent in WeChat.",
+      "description": "Message {{assistantName}} in WeChat",
       "disconnect": "Disconnect",
       "expired": "This QR code expired. Create a new one.",
       "failed": "Could not connect to WeChat.",
@@ -7249,7 +7249,7 @@
       "connect": "Connect WhatsApp",
       "connectDescription": "Link your WhatsApp account to {{brandName}} to chat with your agent.",
       "connected": "WhatsApp connected",
-      "description": "Chat with Okou directly from WhatsApp",
+      "description": "Message {{assistantName}} on WhatsApp",
       "disconnected": "WhatsApp disconnected",
       "expires": "This code expires in 10 minutes. Keep this page open to see when you are connected.",
       "instructions": "Open WhatsApp or scan the QR code, then send the connection code to link your account.",
