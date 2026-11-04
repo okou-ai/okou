@@ -57,7 +57,7 @@ const prepareSubscriptionDialog$ = command(({ get, set }) => {
 export const openSidebarSubscriptionUsageDialog$ = command(
   async ({ set }, signal: AbortSignal) => {
     set(prepareSubscriptionDialog$);
-    await set(openSettingsDialogAt$, "usage-records", signal);
+    await set(openSettingsDialogAt$, "model", signal);
   },
 );
 
