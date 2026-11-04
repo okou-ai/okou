@@ -379,6 +379,8 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model(refere
         "/files/" + left + "{id}" + right for left, right in itertools.product(alphabet, repeat=2)
     ]
     forms_by_pattern = {pattern: _source_forms(pattern) for pattern in patterns}
+    # Declaration inputs are immutable; each request still owns its proof state.
+    compiled_by_pattern = {pattern: compiler.compile(pattern) for pattern in patterns}
     for path in (
         "/files/" + left + "x" + right for left, right in itertools.product(alphabet, repeat=2)
     ):
@@ -390,7 +392,7 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model(refere
             priorities = [
                 _priority(form) for form in forms if any(reference_matches(p, form) for p in views)
             ]
-            result = analysis.applicability(compiler.compile(pattern))
+            result = analysis.applicability(compiled_by_pattern[pattern])
             assert result.possible == any(outcomes), (pattern, path)
             assert result.certain == all(outcomes), (pattern, path)
             assert result.minimum == (min(priorities) if priorities else None), (pattern, path)
