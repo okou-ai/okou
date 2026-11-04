@@ -55,7 +55,16 @@ def test_packaged_runtime_dependencies_match_the_released_lock(tmp_path):
     shutil.copyfile(Path(__file__).with_name("packaged_runtime_probe.py"), probe)
     binary = Path(os.environ["MITMDUMP_CONTROL_TEST_BINARY"]).resolve(strict=True)
     result = subprocess.run(  # noqa: S603
-        [str(binary), "--quiet", "--set", "server=false", "--scripts", str(probe)],
+        [
+            str(binary),
+            "--quiet",
+            "--set",
+            "server=false",
+            "--set",
+            f"confdir={tmp_path / 'certificates'}",
+            "--scripts",
+            str(probe),
+        ],
         env={"PATH": os.defpath, "TMPDIR": str(tmp_path)},
         capture_output=True,
         text=True,
