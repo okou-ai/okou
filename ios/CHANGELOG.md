@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/okou-ai/okou/compare/ios-v0.24.0...ios-v0.24.1) (2026-11-04)
+
+
+### CI
+
+* **ios:** reuse verified validation for release metadata ([#45104](https://github.com/okou-ai/okou/issues/45104)) ([d762b49](https://github.com/okou-ai/okou/commit/d762b4926a3c13c56f592d11e0f9dc7b26314a73))
+
 ## [0.24.0](https://github.com/okou-ai/okou/compare/ios-v0.23.5...ios-v0.24.0) (2026-11-04)
 
 

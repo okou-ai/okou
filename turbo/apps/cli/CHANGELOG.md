@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.17.5](https://github.com/okou-ai/okou/compare/cli-v10.17.4...cli-v10.17.5) (2026-11-04)
+
+
+### Documentation
+
+* **cli:** remove incorrect listener account promise ([#45091](https://github.com/okou-ai/okou/issues/45091)) ([d9c4522](https://github.com/okou-ai/okou/commit/d9c4522622d8754eec8045f2952615d7a9644528))
+
 ## [10.17.4](https://github.com/okou-ai/okou/compare/cli-v10.17.3...cli-v10.17.4) (2026-11-04)
 
 

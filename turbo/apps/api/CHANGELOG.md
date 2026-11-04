@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.46.2](https://github.com/okou-ai/okou/compare/api-v2.46.1...api-v2.46.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **api:** keep automation listeners on allowed chat accounts after deletion ([#45052](https://github.com/okou-ai/okou/issues/45052)) ([9b16eed](https://github.com/okou-ai/okou/commit/9b16eedce1e66d9bc4ea4faffb0d2dfb0728efd5))
+* **api:** render notification emails with marked ([#45100](https://github.com/okou-ai/okou/issues/45100)) ([3188803](https://github.com/okou-ai/okou/commit/31888030d8487b938a27423463fa6d6e34692cac))
+* **api:** skip follow-ups after thread deletion ([#45110](https://github.com/okou-ai/okou/issues/45110)) ([2fddf0e](https://github.com/okou-ai/okou/commit/2fddf0e56cf6f94451acdedbe7a48c60fb287cd3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.20.2
+
 ## [2.46.1](https://github.com/okou-ai/okou/compare/api-v2.46.0...api-v2.46.1) (2026-11-04)
 
 
