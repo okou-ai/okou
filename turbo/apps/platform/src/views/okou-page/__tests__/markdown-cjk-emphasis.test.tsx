@@ -36,7 +36,7 @@ function paragraphTexts(frame: ParentNode) {
   });
 }
 
-test("Complete CJK emphasis pairs render semantic bold, italic, and nested emphasis", async () => {
+test("Complete CJK emphasis pairs render semantic bold, italic, and nested emphasis by default", async () => {
   const chat = createMarkdownChatFixture(context);
   const source = [
     "前文**（加粗）**后文",
@@ -56,7 +56,6 @@ test("Complete CJK emphasis pairs render semantic bold, italic, and nested empha
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
   });
 
   const bold = await screen.findByText("（加粗）", { selector: "strong" });

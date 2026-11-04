@@ -45,14 +45,17 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults CJK emphasis to staff and honors explicit overrides", () => {
+  it("defaults CJK emphasis on for everyone and honors explicit overrides", () => {
     const key = FeatureSwitchKey.MarkdownCjkEmphasis;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
-      [{}, false],
-      [{ orgId: "external-org" }, false],
+      [{}, true],
+      [{ userId: "external-user" }, true],
+      [{ orgId: "external-org" }, true],
+      [{ userId: "external-user", orgId: "external-org" }, true],
       [staff, true],
       [{ ...staff, overrides: { [key]: false } }, false],
+      [{ orgId: "external-org", overrides: { [key]: false } }, false],
       [{ orgId: "external-org", overrides: { [key]: true } }, true],
     ] as const) {
       expect(isFeatureEnabled(key, context)).toBe(enabled);
