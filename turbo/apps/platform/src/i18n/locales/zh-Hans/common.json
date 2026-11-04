@@ -4033,20 +4033,24 @@
     "actionFailed": "无法更新授权。",
     "allow": "允许 1 小时",
     "approved": "已授权",
-    "deadline": "到期时间：{{date}}",
+    "blocked": {
+      "chatBusy": "当前聊天正在运行，结束后即可批准。",
+      "computerChanged": "已切换电脑，请选回 {{computer}} 后再批准。",
+      "runActive": "发起申请的运行尚未结束，结束后即可批准。",
+      "runUnavailable": "发起申请的运行已不可用，请在聊天中重新申请。"
+    },
     "denied": "已拒绝申请",
     "deny": "拒绝",
     "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
     "expired": "授权已到期",
     "loading": "正在加载授权…",
-    "pending": "等待批准",
+    "reasonTitle": "申请用途",
+    "requestExpired": "申请已过期",
     "revoke": "撤销授权",
     "revoked": "已撤销 Shell 授权",
-    "scope": "仅限当前 Chat 和电脑",
-    "terminalNotice": "授权结束后，已有终端仍保持打开。",
-    "title": "Desktop Shell 授权",
+    "title": "Shell 访问",
     "unavailable": "授权不可用",
-    "waiting": "Run 仍在运行或已切换电脑，暂时无法批准。"
+    "viewReason": "查看完整说明"
   },
   "documentTemplates": {
     "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
@@ -5388,8 +5392,10 @@
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
         "label": "订阅用量",
+        "leftSide": "左侧",
         "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
+        "rightSide": "右侧",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩余用量",
         "weeklyLimit": "每周额度"

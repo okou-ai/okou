@@ -4100,20 +4100,24 @@
     "actionFailed": "No se pudo actualizar la autorización.",
     "allow": "Permitir durante 1 hora",
     "approved": "Permitido",
-    "deadline": "Caduca el {{date}}",
+    "blocked": {
+      "chatBusy": "Espera a que termine el Run actual de este chat antes de aprobar.",
+      "computerChanged": "Vuelve a seleccionar {{computer}} antes de aprobar.",
+      "runActive": "Espera a que termine el Run que hizo la solicitud antes de aprobar.",
+      "runUnavailable": "El Run que hizo la solicitud no está disponible. Pide una nueva solicitud en este chat."
+    },
     "denied": "Solicitud rechazada",
     "deny": "Rechazar",
     "description": "El agente necesita permiso para usar Shell en tu ordenador.",
     "expired": "Autorización caducada",
     "loading": "Cargando autorización…",
-    "pending": "Lista para aprobar",
+    "reasonTitle": "Motivo del acceso",
+    "requestExpired": "Solicitud caducada",
     "revoke": "Revocar acceso",
     "revoked": "Acceso a Shell revocado",
-    "scope": "Solo este chat y ordenador",
-    "terminalNotice": "Los terminales existentes permanecen abiertos al finalizar el acceso.",
-    "title": "Acceso a Desktop Shell",
+    "title": "Acceso a Shell",
     "unavailable": "Autorización no disponible",
-    "waiting": "No se puede aprobar mientras haya un Run activo o si ha cambiado el ordenador seleccionado."
+    "viewReason": "Ver el motivo completo"
   },
   "documentTemplates": {
     "agreementNote": "Un punto de partida para tu acuerdo. Revisa las condiciones de tu proyecto y jurisdicción antes de firmar.",
@@ -5466,8 +5470,10 @@
         "credits": "Créditos",
         "fiveHourLimit": "Límite de 5 horas",
         "label": "Uso de suscripciones",
+        "leftSide": "Izquierda",
         "lowUsage": "Uso de suscripciones: queda menos del 20 %",
         "resetTimeUnavailable": "Hora de reinicio no disponible",
+        "rightSide": "Derecha",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{window}} restante de {{provider}}",
         "weeklyLimit": "Límite semanal"

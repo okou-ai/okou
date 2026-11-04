@@ -69,6 +69,9 @@ import { userPermissionGrantsContract } from "../contracts/user-permission-grant
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { vncConnectionsContract } from "../contracts/vnc-connections";
 import { webFilesContract } from "../contracts/web-files";
+import { voiceIoQuotaContract } from "../contracts/voice-io-quota";
+import { voiceIoTranscribeContract } from "../contracts/voice-io-transcribe";
+import { voiceIoPolishSegmentsContract } from "../contracts/voice-io-polish";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
@@ -445,6 +448,15 @@ const iosContracts: readonly {
   { id: "ios.userPreferencesContract.get", route: userPreferencesContract.get },
   { id: "ios.vncConnectionsContract.list", route: vncConnectionsContract.list },
   { id: "ios.webFilesContract.fileUrl", route: webFilesContract.fileUrl },
+  { id: "ios.voiceIoQuotaContract.get", route: voiceIoQuotaContract.get },
+  {
+    id: "ios.voiceIoTranscribeContract.segment",
+    route: voiceIoTranscribeContract.segment,
+  },
+  {
+    id: "ios.voiceIoPolishSegmentsContract.post",
+    route: voiceIoPolishSegmentsContract.post,
+  },
   {
     id: "ios.workflowsCollectionContract.composer",
     route: workflowsCollectionContract.composer,

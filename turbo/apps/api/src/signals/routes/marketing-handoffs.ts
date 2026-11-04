@@ -30,7 +30,7 @@ import {
   importMarketingFiles$,
   marketingContentHash,
   marketingHandoffBucket,
-  publicMarketingContentHashes$,
+  publicMarketingManifestHashes$,
   publishMarketingManifests$,
   readMarketingManifest$,
   storeMarketingManifest$,
@@ -556,13 +556,14 @@ const publishStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const hashes = [...new Set(body.data.hashes)];
   const published = await set(
-    publicMarketingContentHashes$,
-    { resourceType: "manifest", hashes },
+    publicMarketingManifestHashes$,
+    { bucket: context.bucket, hashes },
     signal,
   );
   return {
     status: 200 as const,
     body: {
+      shortAddressesVerified: true as const,
       missing: hashes.filter((hash) => {
         return !published.has(hash);
       }),
@@ -597,6 +598,9 @@ const publishBatch$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   if (!hashes) {
     return notFound("Publish files before publishing a manifest");
+  }
+  if (!Array.isArray(hashes)) {
+    return hashes;
   }
   return { status: 200 as const, body: { hashes } };
 });

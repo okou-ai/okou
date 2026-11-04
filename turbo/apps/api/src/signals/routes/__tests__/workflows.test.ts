@@ -3,6 +3,7 @@ import {
   readContentBundle,
 } from "@okouai/core/content-bundle";
 import { randomUUID } from "node:crypto";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -2605,7 +2606,9 @@ describe("workflows", () => {
     const originalBundle = [...s3.writes].reverse().find((write) => {
       return write.key.startsWith("bundles/v1/");
     });
+    expect(originalBundle).toBeDefined();
     s3.clearWrites();
+    const previousRequests = context.mocks.s3.send.mock.calls.length;
     const previous = process.umask(0o077);
     onTestFinished(() => {
       process.umask(previous);
@@ -2617,8 +2620,13 @@ describe("workflows", () => {
     const repeatedBundle = [...s3.writes].reverse().find((write) => {
       return write.key.startsWith("bundles/v1/");
     });
-    expect(repeatedBundle?.key).toBe(originalBundle?.key);
-    expect(repeatedBundle?.body.equals(originalBundle!.body)).toBeTruthy();
+    const checkedKeys = context.mocks.s3.send.mock.calls
+      .slice(previousRequests)
+      .flatMap(([command]) => {
+        return command instanceof HeadObjectCommand ? [command.input.Key] : [];
+      });
+    expect(checkedKeys).toContain(originalBundle?.key);
+    expect(repeatedBundle).toBeUndefined();
     const second = await accept(
       detailClient().get({
         headers: authHeaders(actor),

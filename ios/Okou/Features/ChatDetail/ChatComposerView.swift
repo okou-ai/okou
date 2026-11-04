@@ -30,6 +30,8 @@ struct ChatComposerView: View {
   @State private var showsPhotos = false
   @State private var showsFiles = false
   @State private var selectedPhotos: [PhotosPickerItem] = []
+  @State private var mountedVoice: ComposerVoiceInputStore?
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private let actionSize: CGFloat = 44
 
@@ -40,11 +42,22 @@ struct ChatComposerView: View {
   private var hasContent: Bool {
     hasText || attachments.hasAttachments || draftState?.hasContent == true
   }
-  private var expandsInput: Bool { isFocused || draftState?.document.hasFeedback == true }
+  private var expandsInput: Bool {
+    isFocused || draftState?.document.hasFeedback == true || draftState?.voice?.phase == .recording
+      || draftState?.voice?.phase == .processing || draftState?.voice?.phase == .saved
+  }
   private var showsStop: Bool { canStop && !hasContent }
+  private var voiceActive: Bool {
+    guard let voice = draftState?.voice else { return false }
+    return voice.phase == .recording || voice.phase == .processing || voice.phase == .saved
+  }
+  private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
+      if let voice = draftState?.voice, voice.error != nil || voiceActive {
+        ComposerVoiceInputTray(voice: voice)
+      }
       if let state = draftState {
         if !state.document.isSupported {
           Text("This draft contains content this app cannot edit. Open it on the web.")
@@ -193,40 +206,50 @@ struct ChatComposerView: View {
       }
       .overlay(alignment: expandsInput ? .bottomTrailing : .trailing) {
         HStack(spacing: 4) {
+          if let voice = draftState?.voice, expandsInput && !replacesSendWithMic && !voiceActive {
+            ComposerVoiceInputButton(voice: voice)
+              .disabled(isBusy || needsUpgrade || draftState?.canEditVoice != true)
+          }
           if let modelSelection {
             ChatModelPickerButton(selection: modelSelection)
               .disabled(isBusy || needsUpgrade)
           }
-          Button {
-            // The send operation captures native text for motion before ending editing.
-            Task { await submit() }
-          } label: {
-            Group {
-              if showsProgress {
-                ProgressView()
-                  .controlSize(.small)
-                  .tint(Color(uiColor: .systemBackground))
-              } else {
-                Image(systemName: showsStop ? "stop.fill" : "arrow.up")
+          if replacesSendWithMic, let voice = draftState?.voice {
+            ComposerVoiceInputButton(voice: voice)
+              .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
+          } else {
+            Button {
+              // The send operation captures native text for motion before ending editing.
+              Task { await submit() }
+            } label: {
+              Group {
+                if showsProgress {
+                  ProgressView()
+                    .controlSize(.small)
+                    .tint(Color(uiColor: .systemBackground))
+                } else {
+                  Image(systemName: showsStop ? "stop.fill" : "arrow.up")
+                }
               }
+              .font(.system(size: 16, weight: .semibold))
+              .frame(width: 22, height: 22)
+              .foregroundStyle(Color(uiColor: .systemBackground))
             }
-            .font(.system(size: 16, weight: .semibold))
-            .frame(width: 22, height: 22)
-            .foregroundStyle(Color(uiColor: .systemBackground))
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .controlSize(.small)
+            .tint(Color.primary)
+            .disabled(
+              (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
+                || voiceActive
+                || draftState?.canSend == false
+                || (!showsStop && modelSelection?.canSend == false)
+            )
+            .accessibilityLabel(showsStop ? "Stop" : "Send message")
+            .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
+            .frame(width: actionSize, height: actionSize)
+            .contentShape(Circle())
           }
-          .buttonStyle(.glassProminent)
-          .buttonBorderShape(.circle)
-          .controlSize(.small)
-          .tint(Color.primary)
-          .disabled(
-            (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
-              || draftState?.canSend == false
-              || (!showsStop && modelSelection?.canSend == false)
-          )
-          .accessibilityLabel(showsStop ? "Stop" : "Send message")
-          .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-          .frame(width: actionSize, height: actionSize)
-          .contentShape(Circle())
         }
         .padding(.trailing, actionInset)
         .padding(.bottom, expandsInput ? actionInset : 0)
@@ -253,7 +276,17 @@ struct ChatComposerView: View {
       _, _ in
       draftState?.editor.workflows.configure(source: workflowSource, agentID: agentID)
     }
-    .onDisappear { draftState?.editor.workflows.dismiss() }
+    .onChange(of: draftState.map(ObjectIdentifier.init), initial: true) { _, _ in
+      mountedVoice?.suspend()
+      mountedVoice = draftState?.voice
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .background { mountedVoice?.suspend() }
+    }
+    .onDisappear {
+      draftState?.editor.workflows.dismiss()
+      mountedVoice?.suspend()
+    }
     .photosPicker(
       isPresented: $showsPhotos, selection: $selectedPhotos,
       matching: .any(of: [.images, .videos]), preferredItemEncoding: .current

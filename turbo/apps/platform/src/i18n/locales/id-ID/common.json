@@ -4033,20 +4033,24 @@
     "actionFailed": "Tidak dapat memperbarui otorisasi.",
     "allow": "Izinkan selama 1 jam",
     "approved": "Diizinkan",
-    "deadline": "Berakhir {{date}}",
+    "blocked": {
+      "chatBusy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
+      "computerChanged": "Pilih kembali {{computer}} sebelum menyetujui.",
+      "runActive": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
+      "runUnavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini."
+    },
     "denied": "Permintaan ditolak",
     "deny": "Tolak",
     "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
     "expired": "Otorisasi kedaluwarsa",
     "loading": "Memuat otorisasi…",
-    "pending": "Siap disetujui",
+    "reasonTitle": "Alasan akses",
+    "requestExpired": "Permintaan kedaluwarsa",
     "revoke": "Cabut akses",
     "revoked": "Akses Shell dicabut",
-    "scope": "Hanya chat dan komputer ini",
-    "terminalNotice": "Terminal yang ada tetap terbuka saat akses berakhir.",
-    "title": "Akses Desktop Shell",
+    "title": "Akses Shell",
     "unavailable": "Otorisasi tidak tersedia",
-    "waiting": "Persetujuan tidak tersedia saat Run aktif atau komputer yang dipilih telah berubah."
+    "viewReason": "Lihat alasan lengkap"
   },
   "documentTemplates": {
     "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
@@ -5388,8 +5392,10 @@
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
         "label": "Penggunaan langganan",
+        "leftSide": "Kiri",
         "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
+        "rightSide": "Kanan",
         "usage": "Penggunaan {{provider}}",
         "usageRemaining": "Sisa {{provider}} {{window}}",
         "weeklyLimit": "Batas mingguan"

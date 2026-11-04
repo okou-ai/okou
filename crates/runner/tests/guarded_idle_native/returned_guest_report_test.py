@@ -65,10 +65,6 @@ class ReturnedGuestTests(unittest.TestCase):
                     "runnerId": runner, "snapshotGeneration": 1, "snapshotSequence": sequence,
                     "group": "native-foreground", "mode": "running", "allocatedVcpu": 4, "allocatedMemoryMb": 8192}},
                     "send_joined": True, "completed_ns": clock(ms+5)}
-            def result(retained):
-                label = "home_mount" if stage == "mount" else stage
-                return {"finished": True, "prepared": False, "published": False, "retained_resource": retained,
-                        "error": f"{label}: optional work cancelled; resource retained"}
             completion = {"sandbox_id": sandbox_id, "backing_generation": backing, "positive_backing_wait": True,
                           "workspace": str(pathlib.PurePosixPath(path).parent), "workspace_absent": True,
                           "last_home": copy.deepcopy(home), "cleanup_ns": clock(750),
@@ -78,11 +74,6 @@ class ReturnedGuestTests(unittest.TestCase):
                 {"policy": self.policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
                  "snapshot_sha256": self.artifacts["snapshot_files"]["memory.bin"], "snapshot_bytes": startup.BYTES,
                  "stage": stage, "allocated": [2,4096,1], "checkpoint_models_stalled_io": False},
-                {"pool_pending_ns": clock(20), "foreground_acquired_ns": clock(30), "joined_ns": clock(40),
-                 "pool_released_ns": clock(80), "wait_pending": True, "wait_dropped": True, "no_provider_create": True,
-                 "result": {"finished": True, "prepared": False, "published": False, "retained_resource": False,
-                            "error": "optional pool wait cancelled"}, "observer": observer(50),
-                 "allocated": [2,4096,1], "accounting": returned.ZERO},
                 {"actual": actual, "samples": [{"started_ns": clock(ms), "finished_ns": clock(ms)+3,
                     "read_start_offset_ns": ms*1_000_000, "available_bytes": 32*1024**3, "age_ns": 2, "read_duration_ns": 1}
                     for ms in (200,400)], "available_bytes": 32*1024**3,
@@ -91,17 +82,18 @@ class ReturnedGuestTests(unittest.TestCase):
                  "foreground_acquired_ns": clock(540), "first_pending": True, "first_dropped": True, "second_pending": True,
                  "release_byte_withheld": True, "allocated": [4,8192,2], "accounting": copy.deepcopy(held),
                  "heartbeat": heartbeat(550,1), "observer": observer(570)},
-                {"released_ns": clock(610), "joined_ns": clock(690), "result": result(True), "allocated": [4,8192,2], "accounting": uncertain},
-                {"actual": cleanup_actual, "pending_ns": clock(760), "invalid_mode": "Draining", "cleanup_pending": True,
-                 "release_byte_withheld": True, "result": result(True), "allocated": [4,8192,2],
+                {"released_ns": clock(610), "joined_ns": clock(690), "resource_id": sandbox_id,
+                 "prepared": stage == "park", "allocated": [4,8192,2], "accounting": uncertain},
+                {"actual": cleanup_actual, "pending_ns": clock(760), "cleanup_pending": True,
+                 "release_byte_withheld": True, "allocated": [4,8192,2],
                  "accounting": copy.deepcopy(cleaning), "heartbeat": heartbeat(770,2), "observer": observer(780)},
                 {"release_ns": clock(810), "joined_ns": clock(840), "positive_backing_wait": True, "blank_count": 0,
-                 "result": result(False), "allocated": [2,4096,1], "accounting": copy.deepcopy(uncertain)},
-                {"optional_joined": True, "pressure_stopped": True, "heartbeat_joined": True, "provider_joined": True,
+                 "resource_id": sandbox_id, "allocated": [2,4096,1], "accounting": copy.deepcopy(uncertain)},
+                {"preparation_joined": True, "pressure_stopped": True, "heartbeat_joined": True, "provider_joined": True,
                  "peer_joined": True, "snapshot_reverified": True, "allocated": [2,4096,1], "accounting": copy.deepcopy(uncertain)},
                 dict(uncertain, closed=True, allocated=[0,0,0]),
             ]
-            clocks = [clock(ms) for ms in (10,100,500,600,700,800,850,900)]+[terminal[4]["monotonic_ns"]+1]
+            clocks = [clock(ms) for ms in (10,500,600,700,800,850,900)]+[terminal[4]["monotonic_ns"]+1]
             for phase, value, ns in zip(returned.PHASES, values, clocks):
                 self.witnesses.append({"version": 1, "case": case, "phase": phase, "monotonic_ns": ns, "unix_ns": ns+1000,
                     "sandbox_id": original_id, "backing_generation": original_backing, "evidence": value})
@@ -126,7 +118,7 @@ class ReturnedGuestTests(unittest.TestCase):
     def test_cli_accepts_complete_and_refuses_missing_physical_join(self):
         self.write()
         command = [sys.executable, str(pathlib.Path(__file__).with_name("returned_guest_report.py")), str(self.root)]
-        self.assertEqual(json.loads(subprocess.run(command, capture_output=True, text=True, check=True).stdout)["format"], "native-returned-guest-report-v1")
+        self.assertEqual(json.loads(subprocess.run(command, capture_output=True, text=True, check=True).stdout)["format"], "native-returned-guest-report-v2")
         self.witnesses.pop()
         self.write()
         self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
@@ -140,7 +132,7 @@ class ReturnedGuestTests(unittest.TestCase):
             elif isinstance(value, list):
                 for index, item in enumerate(value): yield from leaves(item, path+(index,))
             else: yield path, value
-        for index, event in enumerate(original[:9]):
+        for index, event in enumerate(original[:8]):
             for path, value in leaves(event):
                 node = event
                 for key in path[:-1]: node = node[key]
@@ -164,7 +156,7 @@ class ReturnedGuestTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.validate()
 
     def test_floating_lease_and_growth_values_are_refused(self):
-        for index, path in ((2,("allocated",1)), (3,("accounting","ordinary_growth_bytes")), (5,("accounting","cleanup_growth_bytes"))):
+        for index, path in ((1,("allocated",1)), (2,("accounting","ordinary_growth_bytes")), (4,("accounting","cleanup_growth_bytes"))):
             original = copy.deepcopy(self.witnesses)
             node = self.witnesses[index]["evidence"]
             for key in path[:-1]: node = node[key]
@@ -173,8 +165,8 @@ class ReturnedGuestTests(unittest.TestCase):
             self.witnesses = original
 
     def test_self_consistent_replayed_home_generation_is_refused(self):
-        replayed = self.witnesses[2]["evidence"]["actual"]["created"]["home"]["filesystem_uuid"]
-        for index in (11,14):
+        replayed = self.witnesses[1]["evidence"]["actual"]["created"]["home"]["filesystem_uuid"]
+        for index in (9,12):
             actual = self.witnesses[index]["evidence"]["actual"]
             homes = [actual["created"]["home"], *(s["home"] for s in actual["stages"])]
             if actual["cleanup"] is not None:

@@ -4100,20 +4100,24 @@
     "actionFailed": "Não foi possível atualizar a autorização.",
     "allow": "Permitir por 1 hora",
     "approved": "Permitido",
-    "deadline": "Expira em {{date}}",
+    "blocked": {
+      "chatBusy": "Aguarde o Run atual deste chat terminar antes de aprovar.",
+      "computerChanged": "Selecione {{computer}} novamente antes de aprovar.",
+      "runActive": "Aguarde o Run que fez a solicitação terminar antes de aprovar.",
+      "runUnavailable": "O Run que fez a solicitação não está disponível. Peça uma nova solicitação neste chat."
+    },
     "denied": "Solicitação negada",
     "deny": "Negar",
     "description": "O agente precisa de permissão para usar o Shell no seu computador.",
     "expired": "Autorização expirada",
     "loading": "Carregando autorização…",
-    "pending": "Pronta para aprovação",
+    "reasonTitle": "Motivo do acesso",
+    "requestExpired": "Solicitação expirada",
     "revoke": "Revogar acesso",
     "revoked": "Acesso ao Shell revogado",
-    "scope": "Somente este chat e computador",
-    "terminalNotice": "Os terminais existentes permanecem abertos quando o acesso termina.",
-    "title": "Acesso ao Desktop Shell",
+    "title": "Acesso ao Shell",
     "unavailable": "Autorização indisponível",
-    "waiting": "Não é possível aprovar enquanto houver um Run ativo ou se o computador selecionado tiver mudado."
+    "viewReason": "Ver o motivo completo"
   },
   "documentTemplates": {
     "agreementNote": "Um ponto de partida para seu acordo. Revise os termos do projeto e da jurisdição aplicável antes de assinar.",
@@ -5466,8 +5470,10 @@
         "credits": "Créditos",
         "fiveHourLimit": "Limite de 5 horas",
         "label": "Uso de assinaturas",
+        "leftSide": "Esquerda",
         "lowUsage": "Uso de assinaturas: menos de 20% restante",
         "resetTimeUnavailable": "Horário de redefinição indisponível",
+        "rightSide": "Direita",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{provider}}: {{window}} restante",
         "weeklyLimit": "Limite semanal"

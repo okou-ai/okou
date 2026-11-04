@@ -69,7 +69,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Marketing content handoff",
     description:
       "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.ConnectorChatAccountAccess]: {
     maintainer: "liangyou@okou.ai",
@@ -139,6 +139,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Cloud browser panel",
     description:
       "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.HostedSiteShareRows]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Website share rows",
+    description:
+      "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: false,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
