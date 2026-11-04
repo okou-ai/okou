@@ -454,7 +454,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Auto-continue busy chats",
     description:
-      "Continue chats interrupted by a busy model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
+      "Continue chats interrupted by a busy or rate-limited model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
     enabled: false,
     enabledUserHashes: ["032a75d8"],
   },

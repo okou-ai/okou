@@ -147,7 +147,49 @@ async function latestRun(
 }
 
 describe("Automatic continuation after a busy model", () => {
-  it("continues newly created chats once per failure with bounded 1, 3, 5 minute backoff", async () => {
+  it.each(["provider_overloaded", "provider_rate_limited"] as const)(
+    "continues %s chats once per failure with bounded 1, 3, 5 minute backoff",
+    async (failureReason) => {
+      // The real cron sweeps jobs across tenants.
+      await setupApp({
+        context,
+        routes: cronProcessBackgroundJobsRoutes,
+        isolatePg: true,
+      });
+      const fixture = await setupFixture();
+      const threadId = await fixture.send();
+      for (const [index, delay] of [60_000, 180_000, 300_000].entries()) {
+        await fixture.fail(await latestRun(fixture, threadId), failureReason);
+        await fixture.tick(delay - 1);
+        await expect(fixture.runs(threadId)).resolves.toHaveLength(index + 1);
+        await Promise.all([fixture.tick(1), fixture.tick()]);
+        await expect(fixture.runs(threadId)).resolves.toHaveLength(index + 2);
+        await fixture.tick();
+        await expect(fixture.runs(threadId)).resolves.toHaveLength(index + 2);
+      }
+      await fixture.fail(await latestRun(fixture, threadId), failureReason);
+      await fixture.tick(600_000);
+      await expect(fixture.runs(threadId)).resolves.toHaveLength(4);
+      const page = await chat.listThreadEvents(fixture.actor, threadId);
+      expect(
+        page.events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            event.runId !== undefined &&
+            chatEventDisplayText(event) === "continue"
+          );
+        }),
+      ).toHaveLength(3);
+
+      // The cap belongs to the incident, not the account or another new chat.
+      const another = await fixture.send();
+      await fixture.fail(await latestRun(fixture, another), failureReason);
+      await fixture.tick(60_000);
+      await expect(fixture.runs(another)).resolves.toHaveLength(2);
+    },
+  );
+
+  it("shares the retry budget across busy and rate-limited failures", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({
       context,
@@ -156,37 +198,27 @@ describe("Automatic continuation after a busy model", () => {
     });
     const fixture = await setupFixture();
     const threadId = await fixture.send();
-    for (const [index, delay] of [60_000, 180_000, 300_000].entries()) {
-      await fixture.fail(await latestRun(fixture, threadId));
+    const failures = [
+      ["provider_rate_limited", 60_000],
+      ["provider_overloaded", 180_000],
+      ["provider_rate_limited", 300_000],
+    ] as const;
+    for (const [index, [failureReason, delay]] of failures.entries()) {
+      await fixture.fail(await latestRun(fixture, threadId), failureReason);
       await fixture.tick(delay - 1);
       await expect(fixture.runs(threadId)).resolves.toHaveLength(index + 1);
-      await Promise.all([fixture.tick(1), fixture.tick()]);
-      await expect(fixture.runs(threadId)).resolves.toHaveLength(index + 2);
-      await fixture.tick();
+      await fixture.tick(1);
       await expect(fixture.runs(threadId)).resolves.toHaveLength(index + 2);
     }
-    await fixture.fail(await latestRun(fixture, threadId));
+    await fixture.fail(
+      await latestRun(fixture, threadId),
+      "provider_overloaded",
+    );
     await fixture.tick(600_000);
     await expect(fixture.runs(threadId)).resolves.toHaveLength(4);
-    const page = await chat.listThreadEvents(fixture.actor, threadId);
-    expect(
-      page.events.filter((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          event.runId !== undefined &&
-          chatEventDisplayText(event) === "continue"
-        );
-      }),
-    ).toHaveLength(3);
-
-    // The cap belongs to the incident, not the account or another new chat.
-    const another = await fixture.send();
-    await fixture.fail(await latestRun(fixture, another));
-    await fixture.tick(60_000);
-    await expect(fixture.runs(another)).resolves.toHaveLength(2);
   });
 
-  it("cancels waiting retries when the owner disables the switch", async () => {
+  it("cancels waiting rate-limit retries when the owner disables the switch", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({
       context,
@@ -195,9 +227,30 @@ describe("Automatic continuation after a busy model", () => {
     });
     const fixture = await setupFixture();
     const threadId = await fixture.send();
-    await fixture.fail(await latestRun(fixture, threadId));
+    await fixture.fail(
+      await latestRun(fixture, threadId),
+      "provider_rate_limited",
+    );
     await setEnabled(fixture.actor, false);
     await fixture.tick(60_000);
+    await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
+  });
+
+  it("leaves rate-limited chats idle while the switch is disabled", async () => {
+    // The real cron sweeps jobs across tenants.
+    await setupApp({
+      context,
+      routes: cronProcessBackgroundJobsRoutes,
+      isolatePg: true,
+    });
+    const fixture = await setupFixture();
+    await setEnabled(fixture.actor, false);
+    const threadId = await fixture.send();
+    await fixture.fail(
+      await latestRun(fixture, threadId),
+      "provider_rate_limited",
+    );
+    await fixture.tick(600_000);
     await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
   });
 
@@ -224,7 +277,7 @@ describe("Automatic continuation after a busy model", () => {
     ).toBeTruthy();
   });
 
-  it("leaves a manual continuation alone", async () => {
+  it("leaves a manual continuation alone after rate limiting", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({
       context,
@@ -233,7 +286,10 @@ describe("Automatic continuation after a busy model", () => {
     });
     const fixture = await setupFixture();
     const threadId = await fixture.send();
-    await fixture.fail(await latestRun(fixture, threadId));
+    await fixture.fail(
+      await latestRun(fixture, threadId),
+      "provider_rate_limited",
+    );
     await fixture.send(threadId);
     await fixture.tick(60_000);
     await expect(fixture.runs(threadId)).resolves.toHaveLength(2);
@@ -254,7 +310,7 @@ describe("Automatic continuation after a busy model", () => {
     ).toBeFalsy();
   });
 
-  it("does not resume a chat the user archived", async () => {
+  it("does not resume a rate-limited chat the user archived", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({
       context,
@@ -263,7 +319,10 @@ describe("Automatic continuation after a busy model", () => {
     });
     const fixture = await setupFixture();
     const threadId = await fixture.send();
-    await fixture.fail(await latestRun(fixture, threadId));
+    await fixture.fail(
+      await latestRun(fixture, threadId),
+      "provider_rate_limited",
+    );
     createRouteMocks(context).clerk.session(
       fixture.actor.userId,
       fixture.actor.orgId,
