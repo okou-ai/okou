@@ -16,7 +16,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub(crate) const MAX_CONCURRENT: usize = 4;
+const LOCAL_CONCURRENT: usize = 4;
+const MAX_CONCURRENT: usize = 16;
 type AttemptRunner = fn(&mut StartedDownload) -> Result<(), DownloadError>;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -130,10 +131,11 @@ struct StartedDownload {
     opened_file_compressed_bytes: Option<u64>,
     remote_metrics: Option<RemoteArchiveTaskMetrics>,
     local_metrics: Option<LocalArchiveTaskMetrics>,
+    concurrency: usize,
 }
 
 impl StartedDownload {
-    fn new(download: PendingDownload) -> Self {
+    fn new(download: PendingDownload, concurrency: usize) -> Self {
         let start = Instant::now();
         log_info!(
             LOG_TAG,
@@ -148,6 +150,7 @@ impl StartedDownload {
             task: download.task,
             start,
             opened_file_compressed_bytes: None,
+            concurrency,
         }
     }
 
@@ -218,15 +221,17 @@ struct DownloadScheduler {
     pending: VecDeque<PendingDownload>,
     reservations: Vec<DownloadReservation>,
     active_attempts: usize,
+    concurrency: usize,
     all_success: bool,
 }
 
 impl DownloadScheduler {
-    fn new(pending: VecDeque<PendingDownload>) -> Self {
+    fn new(pending: VecDeque<PendingDownload>, concurrency: usize) -> Self {
         Self {
             pending,
             reservations: Vec::new(),
             active_attempts: 0,
+            concurrency,
             all_success: true,
         }
     }
@@ -244,7 +249,7 @@ impl DownloadScheduler {
         work_tx: &mpsc::SyncSender<StartedDownload>,
         telemetry: &mut DownloadRunTelemetry,
     ) -> bool {
-        while self.active_attempts < MAX_CONCURRENT {
+        while self.active_attempts < self.concurrency {
             let Some((index, _)) = find_startable_download(
                 &self.pending,
                 &self.reservations,
@@ -258,7 +263,7 @@ impl DownloadScheduler {
                 log_error!(LOG_TAG, "Download scheduler selected a missing task");
                 return false;
             };
-            let download = StartedDownload::new(download);
+            let download = StartedDownload::new(download, self.concurrency);
             self.reservations.push(DownloadReservation::new(&download));
 
             if work_tx.send(download).is_err() {
@@ -299,8 +304,8 @@ pub(crate) fn prepare_download_tasks(
 }
 
 /// Download all prepared tasks in parallel using std::thread.
-/// Limits active archive attempts to MAX_CONCURRENT and serializes logically or
-/// physically overlapping mount paths in task order.
+/// Allows additional overlap for remote header waits while keeping local-only
+/// extraction bounded. Serializes logically or physically overlapping mounts.
 /// Returns true if all downloads succeeded, false if any failed.
 pub(crate) fn download_all_parallel(tasks: Vec<PreparedDownloadTask>) -> bool {
     download_all_parallel_with_runner(tasks, run_download_attempt)
@@ -310,6 +315,15 @@ fn download_all_parallel_with_runner(
     tasks: Vec<PreparedDownloadTask>,
     attempt_runner: AttemptRunner,
 ) -> bool {
+    // Remote requests spend time waiting for headers before extraction can
+    // start. Grow only for actual remote work; decoded HTTP-origin inputs and
+    // file archives retain the smaller CPU-bound worker budget.
+    let concurrency = tasks
+        .iter()
+        .filter(|task| task.task.telemetry.is_remote())
+        .count()
+        .clamp(LOCAL_CONCURRENT, MAX_CONCURRENT)
+        .min(tasks.len());
     let pending = tasks
         .into_iter()
         .enumerate()
@@ -330,17 +344,17 @@ fn download_all_parallel_with_runner(
         LOG_TAG,
         "Downloading {} items (max {} concurrent)",
         pending.len(),
-        MAX_CONCURRENT
+        concurrency
     );
 
     let success = thread::scope(|scope| {
         let (completion_tx, completion_rx) = mpsc::channel();
         // Admission counts queued and running attempts together, so this queue
-        // cannot add work beyond the existing four-attempt bound. The sender is
+        // cannot add work beyond the selected bound. The sender is
         // local to this scope's closure: every return closes it before joining.
-        let (work_tx, work_rx) = mpsc::sync_channel::<StartedDownload>(MAX_CONCURRENT);
+        let (work_tx, work_rx) = mpsc::sync_channel::<StartedDownload>(concurrency);
         let work_rx = Arc::new(Mutex::new(work_rx));
-        for _ in 0..pending.len().min(MAX_CONCURRENT) {
+        for _ in 0..concurrency {
             let work_rx = Arc::clone(&work_rx);
             let completion_tx = completion_tx.clone();
             scope.spawn(move || {
@@ -368,7 +382,7 @@ fn download_all_parallel_with_runner(
         }
         drop(work_rx);
         drop(completion_tx);
-        let mut scheduler = DownloadScheduler::new(pending);
+        let mut scheduler = DownloadScheduler::new(pending, concurrency);
 
         while scheduler.has_work() {
             if !scheduler.start_ready_attempts(&work_tx, &mut telemetry) {
@@ -464,8 +478,12 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 /// Download and extract one archive. Files written before an error remain in place.
 fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadError> {
     if let Some(files) = &download.task.task.files {
-        return crate::files::materialize(files, download.task.effective_mount_path())
-            .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
+        return crate::files::materialize(
+            files,
+            download.task.effective_mount_path(),
+            download.concurrency,
+        )
+        .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
     }
     download_and_extract(
         &download.task.task.url,
@@ -473,6 +491,7 @@ fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadEr
         &mut download.opened_file_compressed_bytes,
         download.remote_metrics.as_mut(),
         download.local_metrics.as_mut(),
+        download.concurrency,
     )
 }
 
@@ -482,6 +501,7 @@ fn download_and_extract(
     opened_file_compressed_bytes: &mut Option<u64>,
     remote_metrics: Option<&mut RemoteArchiveTaskMetrics>,
     local_metrics: Option<&mut LocalArchiveTaskMetrics>,
+    concurrency: usize,
 ) -> Result<(), DownloadError> {
     fs::create_dir_all(target_path).map_err(|e| {
         DownloadError::new(format!(
@@ -511,7 +531,7 @@ fn download_and_extract(
     };
     *opened_file_compressed_bytes = reader.compressed_bytes();
     let extract_start = Instant::now();
-    let result = archive::extract_tar_gz(reader, target_path);
+    let result = archive::extract_tar_gz(reader, target_path, concurrency);
     let extract_wall = extract_start.elapsed();
     if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);

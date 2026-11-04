@@ -30,10 +30,10 @@ pub(crate) struct RootedWriter<'a> {
 }
 
 impl<'a> RootedWriter<'a> {
-    pub(crate) fn new(target: &'a Path) -> Self {
+    pub(crate) fn new(target: &'a Path, concurrency: usize) -> Self {
         Self {
             target,
-            cache_directories: has_descriptor_budget(),
+            cache_directories: has_descriptor_budget(concurrency),
             root: None,
             root_path_bytes: target.as_os_str().as_bytes().len(),
             parents: HashMap::new(),
@@ -212,7 +212,7 @@ fn copy_buffered<R: Read>(entry: &mut tar::Entry<'_, R>, file: &mut File) -> io:
     Ok(copied)
 }
 
-fn has_descriptor_budget() -> bool {
+fn has_descriptor_budget(concurrency: usize) -> bool {
     let mut limit = libc::rlimit {
         rlim_cur: 0,
         rlim_max: 0,
@@ -224,7 +224,7 @@ fn has_descriptor_budget() -> bool {
     // All workers can retain a full directory cache at once. Keep the same
     // number of slots free for source setup and checked file IO: releasing one
     // worker's handles on EMFILE cannot release handles held by its peers.
-    let required = (2 * MAX_DIRECTORY_HANDLES * crate::download::MAX_CONCURRENT) as libc::rlim_t;
+    let required = (2 * MAX_DIRECTORY_HANDLES * concurrency) as libc::rlim_t;
     if limit.rlim_cur < required {
         return false;
     }

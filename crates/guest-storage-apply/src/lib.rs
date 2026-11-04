@@ -1,7 +1,8 @@
 //! Apply guest storage/artifact manifests and replace claim-time Agent instructions.
 //!
 //! Features:
-//! - Parallel downloads using std::thread (max 4 concurrent)
+//! - Bounded parallel downloads using std::thread (up to 16 for remote inputs,
+//!   with 4 workers for local-only extraction)
 //! - Streaming extraction (no temp files)
 //!
 //! ## Manifest application and failure semantics

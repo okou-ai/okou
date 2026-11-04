@@ -45,8 +45,12 @@ pub(crate) mod rooted;
 /// An unreadable archive entry or entry path, a failure to unpack an
 /// accepted entry, or a gzip validation failure terminates extraction. Files
 /// written before an error remain in the target directory.
-pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(), DownloadError> {
-    extract_tar_gz_checked(source, target, u64::MAX, |_, _, _| Ok(()))
+pub(crate) fn extract_tar_gz(
+    source: ArchiveSource,
+    target: &Path,
+    concurrency: usize,
+) -> Result<(), DownloadError> {
+    extract_tar_gz_checked(source, target, concurrency, u64::MAX, |_, _, _| Ok(()))
 }
 
 /// Reuse Storage extraction with an additional package contract before each write.
@@ -54,12 +58,14 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
 pub(crate) fn extract_tar_gz_checked(
     source: ArchiveSource,
     target: &Path,
+    concurrency: usize,
     max_unpacked_bytes: u64,
     mut validate_entry: impl FnMut(&Path, tar::EntryType, u64) -> io::Result<()>,
 ) -> Result<(), DownloadError> {
+    debug_assert!(concurrency > 0);
     let mut skipped_entries = SkippedEntries { target, skipped: 0 };
     #[cfg(target_os = "linux")]
-    let mut rooted = rooted::RootedWriter::new(target);
+    let mut rooted = rooted::RootedWriter::new(target, concurrency);
     let (reader, http_body_read_failure) = source.into_parts();
     let decoder = flate2::read::GzDecoder::new(reader).take(max_unpacked_bytes.saturating_add(1));
     let budget = MetadataBudget::default();
