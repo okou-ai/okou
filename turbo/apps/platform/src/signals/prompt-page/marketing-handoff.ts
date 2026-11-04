@@ -150,9 +150,7 @@ export const saveMarketingHandoff$ = command(
     if (owner !== get(handoffOwner$)) {
       throw new DOMException("Session changed", "AbortError");
     }
-    // New App assets can reach a preceding API during rollout or rollback.
-    // Remove this fallback once every supported API returns shortHash (#44978).
-    const hash = result.body.shortHash ?? result.body.hash;
+    const hash = result.body.shortHash;
     const intentId = set(
       handoffIntent$,
       hash,

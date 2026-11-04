@@ -21,8 +21,7 @@ const marketingHandoffHashSchema = string().regex(
 );
 const marketingHandoffCreatedSchema = object({
   hash: marketingContentHashSchema,
-  // Older API deployments return only the full content digest.
-  shortHash: marketingHandoffShortHashSchema.optional(),
+  shortHash: marketingHandoffShortHashSchema,
 });
 export const marketingHandoffFileSchema = object({
   hash: marketingContentHashSchema,

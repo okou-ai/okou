@@ -522,13 +522,13 @@ test.each([true, false])(
       ({ params, respond }) => {
         return respond(
           200,
-          params.hash === "b".repeat(64) && edited ? edited : received,
+          params.hash === "b".repeat(12) && edited ? edited : received,
         );
       },
     );
     context.mocks.api(marketingHandoffsContract.create, ({ body, respond }) => {
       edited = body;
-      return respond(200, { hash: "b".repeat(64) });
+      return respond(200, { hash: "b".repeat(64), shortHash: "b".repeat(12) });
     });
     context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
       return respond(200, { files: [] });

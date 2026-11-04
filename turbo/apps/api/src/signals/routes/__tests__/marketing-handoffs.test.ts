@@ -184,7 +184,7 @@ describe("Marketing content handoff", () => {
     expect(resolved.body).toStrictEqual(manifest());
     const short = await accept(
       api().resolve({
-        params: { hash: first.body.shortHash! },
+        params: { hash: first.body.shortHash },
         body: {},
         headers: auth,
         extraHeaders: { origin },
@@ -214,7 +214,7 @@ describe("Marketing content handoff", () => {
     expect(
       (
         await api().resolve({
-          params: { hash: first.body.shortHash! },
+          params: { hash: first.body.shortHash },
           body: {},
           headers: auth,
           extraHeaders: { origin },
@@ -224,7 +224,7 @@ describe("Marketing content handoff", () => {
     mocks.clerk.session(firstActor.userId, firstActor.orgId);
     const resolved = await accept(
       api().resolve({
-        params: { hash: first.body.shortHash! },
+        params: { hash: first.body.shortHash },
         body: {},
         headers: auth,
         extraHeaders: { origin },
@@ -283,7 +283,7 @@ describe("Marketing content handoff", () => {
     const created = await create();
     await enableActor();
     const result = await api().resolve({
-      params: { hash: created.body.shortHash! },
+      params: { hash: created.body.shortHash },
       body: {},
       headers: auth,
       extraHeaders: { origin },
@@ -899,7 +899,7 @@ describe("Marketing content handoff", () => {
     );
     const retry = await accept(
       api().import({
-        params: { hash: created.body.shortHash! },
+        params: { hash: created.body.shortHash },
         body: { intentId },
         headers: auth,
         extraHeaders: { origin },
