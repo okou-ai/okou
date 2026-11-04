@@ -67,8 +67,6 @@ pub use sandbox::{
     SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
     SandboxGuestConnectionPhase, SandboxParkNonReusableReason, SandboxParkOutcome,
     SandboxStartObserver, SandboxStartStage, SevereMemoryRetentionDiagnostics,
-    StagedFileDisposition, StagedFileFinalizeMeasurements, StagedFileFinalizeOutcome,
-    StagedFileFinalizeRequest, StagedFileNotPublishedReason, StagedFilePublicationMode,
 };
 pub use snapshot::{
     PendingSnapshotPublish, SnapshotCreateConfig, SnapshotError, SnapshotOutput, SnapshotProvider,
