@@ -216,6 +216,10 @@ test.each([false, true])(
       owned.runnerGroup,
       runId,
     );
+    expect(claim.appendSystemPrompt).toContain(
+      "# Suggestions feedback context",
+    );
+    expect(claim.appendSystemPrompt).toContain('"complete":true,"records":[]');
     const bundle = claim.contentBundles.skills.find((skill) => {
       return skill.mountPath.endsWith("/agent-suggestions");
     });

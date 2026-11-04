@@ -6,15 +6,9 @@ import {
   suggestionReceiptSchema,
   suggestionSchema,
 } from "@okouai/api-contracts/contracts/suggestions";
-import { pendingSuggestionFeedback as learningInputs } from "@okouai/api-contracts/contracts/suggestion-memory";
 import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import {
-  liveSuggestion,
-  pendingSuggestionFeedback,
-  retainedSuggestion,
-  suggestionRow,
-} from "./agent-suggestions-lifecycle";
+import { liveSuggestion, suggestionRow } from "./agent-suggestions-lifecycle";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
 
 interface Owner {
@@ -176,26 +170,5 @@ export const readSuggestionManagement$ = command(
         nextAfter: rows.length > 100 ? (page.at(-1)?.id ?? null) : null,
       },
     };
-  },
-);
-export const pendingSuggestionInputs$ = command(
-  async ({ get }, owner: Owner, signal: AbortSignal) => {
-    const rows = await get(db$)
-      .select({
-        id: agentSuggestions.id,
-        feedbacks: agentSuggestions.feedbacks,
-      })
-      .from(agentSuggestions)
-      .where(
-        and(
-          suggestionOwner(owner),
-          pendingSuggestionFeedback(),
-          retainedSuggestion(nowDate()),
-        ),
-      )
-      .orderBy(asc(agentSuggestions.updatedAt), asc(agentSuggestions.id))
-      .limit(100);
-    signal.throwIfAborted();
-    return learningInputs(rows);
   },
 );

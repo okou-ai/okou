@@ -43,6 +43,7 @@ export const suggestionFeedbackSchema = object({
     "reason",
   ]),
   createdAt: iso.datetime(),
+  // Legacy persisted receipt; feedback context never consumes or acknowledges events.
   learnedAt: iso.datetime().nullable(),
   targetId: uuid().toLowerCase().nullable(),
   note: string().max(512),

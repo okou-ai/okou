@@ -1,3 +1,4 @@
+import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -192,6 +193,11 @@ export function createPromptAndSkillVolumesSignals(
     cloudBrowserEnabled$,
     disabledPaidTools$,
   );
+  const suggestionsPrompt$ = createSuggestionsPrompt(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
   const userPrompt$ = createUserPrompt(memberMetadata$);
   const computerUsePrompt$ = createComputerUsePrompt(
     pickedEvent$,
@@ -228,6 +234,7 @@ export function createPromptAndSkillVolumesSignals(
       connectors,
       systemSkills,
       runtime,
+      suggestions,
     ] = await Promise.all([
       get(integrationPrompts[contextType]),
       automation ? null : get(rotatedPrompt$),
@@ -238,6 +245,7 @@ export function createPromptAndSkillVolumesSignals(
       get(connectors$),
       get(systemSkills$),
       get(runtimePrompt$),
+      get(suggestionsPrompt$),
     ]);
     if (!integration) {
       throw new PromptAndSkillVolumesError(
@@ -263,6 +271,7 @@ export function createPromptAndSkillVolumesSignals(
       connectors,
       systemSkills,
       runtime,
+      suggestions,
     ]);
     const prompts = renderRunPrompts(combined);
     return {
