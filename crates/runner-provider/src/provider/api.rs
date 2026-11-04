@@ -567,13 +567,19 @@ impl ApiProvider {
             )
         };
         let result = claim().await;
-        if !matches!(
-            &result,
+        let (status, failure_cause) = match &result {
             Err(ClaimApiError::Request(ProviderError::ApiStatus(error)))
-                if error.status == StatusCode::INTERNAL_SERVER_ERROR
-        ) {
-            return result;
-        }
+                if error.status == StatusCode::INTERNAL_SERVER_ERROR =>
+            {
+                (Some(error.status.as_u16()), None)
+            }
+            Err(ClaimApiError::Request(ProviderError::ApiTransport(error)))
+                if error.failure_cause == ApiTransportCause::ConnectionReset =>
+            {
+                (None, Some(error.failure_cause.as_str()))
+            }
+            _ => return result,
+        };
         let Some(preference) = candidate.runner_preference().filter(|preference| {
             preference.targets(self.runner_identity)
                 && preference.remaining() > PREFERRED_CLAIM_RETRY_DELAY
@@ -594,7 +600,8 @@ impl ApiProvider {
         }
         warn!(
             run_id = %candidate.run_id(),
-            status = 500,
+            status,
+            failure_cause,
             retry_after_ms = duration_ms(PREFERRED_CLAIM_RETRY_DELAY),
             "claim failed, retrying preferred candidate"
         );
