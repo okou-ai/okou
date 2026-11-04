@@ -1122,6 +1122,7 @@ version = "0.12.45"
 dependencies = [
  "chrono",
  "clap",
+ "cli-test-support",
  "guest-contracts",
  "libc",
  "serde_json",
@@ -2243,6 +2244,7 @@ dependencies = [
 name = "guest-write-file"
 version = "0.1.272"
 dependencies = [
+ "cli-test-support",
  "guest-contracts",
  "guest-control-proto",
  "libc",
