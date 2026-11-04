@@ -1,19 +1,7 @@
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import {
-  Bell,
-  ChartNoAxesCombined,
-  FileSearch,
-  Globe,
-  ListTodo,
-  Newspaper,
-  Route,
-  Search,
-  Users,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { ChartNoAxesCombined, Globe, Route, X } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { cn } from "@okouai/ui/lib/utils";
@@ -23,7 +11,8 @@ const CREATE_CONTROL_FOCUS =
   "focus-visible:bg-state-hover focus-visible:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
 
 /**
- * The footer shows a removable chip for the chosen task or discovery entry.
+ * The footer states one type at a time, as the chip the chosen task leaves
+ * behind.
  *
  * `leading-5` pairs a line height with the arbitrary font size: `text-[13px]`
  * emits `font-size` alone, so without it the control inherits whatever line
@@ -43,15 +32,6 @@ const TASK_ICONS = {
   workflow: Route,
   website: Globe,
   visualization: ChartNoAxesCombined,
-  jobs: ListTodo,
-} as const;
-
-const HOME_ENTRY_ICONS = {
-  people: Users,
-  information: FileSearch,
-  general: Search,
-  briefs: Newspaper,
-  monitor: Bell,
 } as const;
 
 function ComposerSelectedTask({
@@ -61,7 +41,6 @@ function ComposerSelectedTask({
 }) {
   const { t } = useTranslation();
   const task = useGet(signals.taskChips.task$);
-  const homeDiscoveryEnabled = useGet(signals.homeDiscovery.enabled$);
   const selectTask = useSet(signals.taskChips.selectTask$);
   const labels = t(
     ($) => {
@@ -69,53 +48,10 @@ function ComposerSelectedTask({
     },
     { returnObjects: true },
   );
-  if (!task || (task === "jobs" && !homeDiscoveryEnabled)) {
+  if (!task || task === "jobs") {
     return null;
   }
   const Icon = TASK_ICONS[task];
-  return (
-    <ComposerSelectionChip
-      icon={Icon}
-      label={labels[task]}
-      onRemove={() => {
-        selectTask(null);
-      }}
-    />
-  );
-}
-
-function ComposerSelectedHomeEntry({
-  signals,
-}: {
-  readonly signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const entry = useGet(signals.homeDiscovery.activeEntry$);
-  const clearSelection = useSet(signals.homeDiscovery.clearSelection$);
-  if (entry === null) {
-    return null;
-  }
-  return (
-    <ComposerSelectionChip
-      icon={HOME_ENTRY_ICONS[entry]}
-      label={t(($) => {
-        return $.chat.homeDiscovery.entries[entry].label;
-      })}
-      onRemove={clearSelection}
-    />
-  );
-}
-
-function ComposerSelectionChip({
-  icon: Icon,
-  label,
-  onRemove,
-}: {
-  readonly icon: LucideIcon;
-  readonly label: string;
-  readonly onRemove: () => void;
-}) {
-  const { t } = useTranslation();
   /*
     One control, not a label plus a button. The chip is the exit: its leading
     type icon becomes the cross on hover, so nothing operable is visible while
@@ -135,9 +71,11 @@ function ComposerSelectionChip({
         ($) => {
           return $.chat.taskChips.removeTask;
         },
-        { task: label },
+        { task: labels[task] },
       )}
-      onClick={onRemove}
+      onClick={() => {
+        selectTask(null);
+      }}
     >
       {/*
         Both glyphs share one box and cross-fade, so the chip's width does not
@@ -155,13 +93,13 @@ function ComposerSelectionChip({
           aria-hidden
         />
       </span>
-      <span className={TASK_CONTROL_LABEL}>{label}</span>
+      <span className={TASK_CONTROL_LABEL}>{labels[task]}</span>
     </Button>
   );
 }
 
 /**
- * The selected creation task and discovery context in the footer's icon row.
+ * What the run will make, at the end of the footer's icon row.
  *
  * The divider marks the break the row now carries: everything left of it adds
  * content to the message and is cleared by a send, everything right of it is
@@ -174,15 +112,14 @@ export function ComposerTaskControls({
 }: {
   readonly signals: ComposerSignals;
 }) {
-  const hasSelection = useGet(signals.homeDiscovery.hasSelection$);
-  if (!hasSelection) {
+  const task = useGet(signals.taskChips.task$);
+  if (task === null) {
     return null;
   }
   return (
     <>
       <div className="h-5 w-px shrink-0 bg-divider/60" aria-hidden />
       <ComposerSelectedTask signals={signals} />
-      <ComposerSelectedHomeEntry signals={signals} />
       <ComposerPresentationOptions signals={signals} />
     </>
   );
