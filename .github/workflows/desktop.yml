@@ -51,6 +51,7 @@ defaults:
 
 jobs:
   detect-desktop-version:
+    if: github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -64,24 +65,12 @@ jobs:
       - name: Detect Desktop version change
         id: version
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha || '' }}
-          PUSH_BEFORE_SHA: ${{ github.event.before || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
 
-          case "$EVENT_NAME" in
-            merge_group) base_sha="$MERGE_GROUP_BASE_SHA" ;;
-            push) base_sha="$PUSH_BEFORE_SHA" ;;
-            *)
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "version=$(cat desktop/version.txt)" >> "$GITHUB_OUTPUT"
-              exit 0
-              ;;
-          esac
-
           result="$(bash .github/scripts/release/resolve-desktop-version-change.sh \
-            "$base_sha" \
+            "$MERGE_GROUP_BASE_SHA" \
             "$GITHUB_SHA")"
           {
             echo "changed=$(jq -r .changed <<<"$result")"
@@ -94,8 +83,10 @@ jobs:
     # Release PRs only update versions/changelogs; merge groups still build artifacts.
     if: >-
       ${{
+        !cancelled() &&
         !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--branches--')) &&
-        (github.event_name != 'merge_group' || needs.detect-desktop-version.outputs.changed != 'true')
+        (github.event_name != 'merge_group' ||
+          (needs.detect-desktop-version.result == 'success' && needs.detect-desktop-version.outputs.changed != 'true'))
       }}
     runs-on: macos-latest
     timeout-minutes: 30
