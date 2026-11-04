@@ -1,5 +1,85 @@
 use super::*;
 
+async fn ready_after_expiry_skips_publication(mut f: Fixture, pressured_copy: bool) {
+    let held = f
+        .cache
+        .inner
+        .publication_admission
+        .acquire_many(if pressured_copy { 3 } else { 4 })
+        .await
+        .unwrap();
+    let notified = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Semaphore::new(0));
+    if pressured_copy {
+        f.cache.publication_io_held_test_gate = Some((notified.clone(), release.clone()));
+    }
+    let owned = context(&f, "ready-after-expiry").await;
+    let active = f.paths.active_home_image(&owned.sandbox_id());
+    let original = tokio::fs::read(&active).await.unwrap();
+    let paths = f.cache.entry_paths(&f.key("ready-after-expiry"));
+    let staging = paths.tmp_image(owned.run_id());
+    let candidate = paths.image(&owned.publication_generation()).unwrap();
+    let task = tokio::spawn(async move {
+        let result = owned.promote().await;
+        (owned, result)
+    });
+    if pressured_copy {
+        tokio::time::timeout(Duration::from_secs(5), notified.notified())
+            .await
+            .unwrap();
+        // Let the initial one-slot pass upgrade; an incorrectly admitted
+        // all-slot pass must also be able to complete and expose the bug.
+        release.add_permits(2);
+    }
+    entered(&f, if pressured_copy { 2 } else { 1 }).await;
+
+    // Advance inline, then release permits before the waiting task can run.
+    // Resume time before yielding to any real publication filesystem work.
+    tokio::time::pause();
+    let mut advance = std::pin::pin!(tokio::time::advance(Duration::from_secs(31)));
+    let advanced = poll_fn(|cx| std::task::Poll::Ready(advance.as_mut().poll(cx))).await;
+    drop(held);
+    tokio::time::resume();
+    if advanced.is_pending() {
+        advance.await;
+    }
+    let (owned, result) = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        result.unwrap(),
+        HomeImagePromotionOutcome::SkippedUnpublished
+    );
+    assert_eq!(tokio::fs::read(&active).await.unwrap(), original);
+    assert!(!staging.exists());
+    assert!(!candidate.exists());
+    assert!(!paths.metadata().exists());
+    assert_eq!(f.cache.inner.publication_admission.available_permits(), 4);
+
+    release.add_permits(2);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), owned.promote())
+            .await
+            .unwrap()
+            .unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    drop(owned);
+    published_bytes(&f, "ready-after-expiry", &original).await;
+}
+
+#[tokio::test]
+async fn move_admission_ready_after_expiry_preserves_the_unpublished_source() {
+    ready_after_expiry_skips_publication(Fixture::new().await, false).await;
+}
+
+#[tokio::test]
+async fn pressured_copy_admission_ready_after_expiry_preserves_the_unpublished_source() {
+    let (f, _destination) = fixture().await;
+    ready_after_expiry_skips_publication(f, true).await;
+}
+
 #[tokio::test]
 async fn pressured_publishers_join_one_accepted_reclaim_before_retrying() {
     let (mut f, _destination) = fixture().await;
