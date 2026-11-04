@@ -5,7 +5,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 
 import { db$ } from "../external/db";
@@ -106,6 +106,7 @@ export const resolveTeamsWriteTarget$ = command(
       readonly tenantId?: string;
       readonly allowSource?: boolean;
       readonly sourceOnly?: boolean;
+      readonly recipientId?: string;
       readonly body: {
         readonly conversationId?: string;
         readonly user?: string;
@@ -173,6 +174,7 @@ export const resolveTeamsWriteTarget$ = command(
         orgId: args.orgId,
         userId: args.userId,
         body: args.body,
+        recipientId: args.recipientId,
       },
       signal,
     );

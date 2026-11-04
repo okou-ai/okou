@@ -18,7 +18,12 @@ import {
   CanonicalPublicationConflictError,
 } from "../services/canonical-asset.service";
 import { settle } from "../utils";
-import { conflict, notFound, badRequestMessage } from "../../lib/error";
+import {
+  conflict,
+  notFound,
+  badRequestMessage,
+  resourceUnavailable,
+} from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 
 const prepareCanonicalTeamsUpload$ = command(
@@ -27,7 +32,7 @@ const prepareCanonicalTeamsUpload$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly runId: string;
+      readonly runId: string | null;
       readonly body: TeamsUploadInitBody & {
         readonly canonical: NonNullable<TeamsUploadInitBody["canonical"]>;
       };
@@ -45,7 +50,7 @@ const prepareCanonicalTeamsUpload$ = command(
     const target = await set(
       resolveTeamsWriteTarget$,
       {
-        runId,
+        ...(runId !== null ? { runId } : {}),
         userId: userId,
         orgId: orgId,
         body: body.canonical,
@@ -73,6 +78,7 @@ const prepareCanonicalTeamsUpload$ = command(
             tenantId: target.installation.teamsTenantId,
             conversationId: target.conversationId,
             source: target.source,
+            ...(target.recipientId ? { recipientId: target.recipientId } : {}),
             ...(body.canonical.activityId
               ? { activityId: body.canonical.activityId }
               : {}),
@@ -104,9 +110,7 @@ const prepareCanonicalTeamsUpload$ = command(
         filename: body.filename,
         contentType,
         size: body.length,
-        ...(prepared.uploadHeaders
-          ? { uploadHeaders: prepared.uploadHeaders }
-          : {}),
+        uploadHeaders: prepared.uploadHeaders ?? {},
       },
     };
   },
@@ -124,13 +128,20 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const body = bodyResult.data;
   const runId = "runId" in auth ? auth.runId : undefined;
-  if (body.canonical && runId && auth.orgId) {
+  if (body.canonical?.version === 2 && !auth.orgId) {
+    return resourceUnavailable(
+      "Choose an organization before uploading to Teams",
+    );
+  }
+  // The v2 caller ships only after this API preparation has deployed (#43729).
+  // Keep unversioned non-Run uploads until those clients and rollback targets retire.
+  if (body.canonical && (runId || body.canonical.version === 2) && auth.orgId) {
     return await set(
       prepareCanonicalTeamsUpload$,
       {
         userId: auth.userId,
         orgId: auth.orgId,
-        runId,
+        runId: runId ?? null,
         body: { ...body, canonical: body.canonical },
       },
       signal,

@@ -230,19 +230,12 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
   if (body.operationId) {
-    if (!runId) {
-      return routeError(
-        400,
-        "Canonical Teams uploads require a Run token",
-        "BAD_REQUEST",
-      );
-    }
     return await set(
       completeCanonicalTeamsUpload$,
       {
         assetId: body.uploadId,
         operationId: body.operationId,
-        runId,
+        runId: runId ?? null,
         userId: auth.userId,
         orgId: auth.orgId,
       },

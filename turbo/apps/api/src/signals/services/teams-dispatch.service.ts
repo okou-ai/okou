@@ -10,7 +10,7 @@ import type {
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";

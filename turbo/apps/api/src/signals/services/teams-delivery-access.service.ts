@@ -1,6 +1,6 @@
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { command } from "ccstate";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { and, eq } from "drizzle-orm";
 

@@ -1,0 +1,5 @@
+The first-parent main commit adding this marker is the minimum API rollback
+version for canonical Teams v2 non-Run uploads and the application mapping that
+omits legacy_installation_tenant_id. Enforce this preparation before activating
+the v2 CLI and before the later physical contraction in #43729. This marker
+alone does not establish production deployment, old-client exit or row cleanup.

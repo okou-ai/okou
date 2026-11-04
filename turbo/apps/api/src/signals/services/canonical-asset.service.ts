@@ -1202,7 +1202,7 @@ type PrepareCanonicalPublishedAssetArgs = CanonicalPublicationFileArgs &
   (
     | {
         readonly provider: "teams";
-        readonly runId: string;
+        readonly runId: string | null;
         readonly destination: CanonicalAssetTeamsDeliveryDestination;
       }
     | {
@@ -1318,6 +1318,8 @@ function sameTeamsDeliveryDestination(
     stored.conversationId === requested.conversationId &&
     stored.activityId === requested.activityId &&
     stored.text === requested.text &&
+    // The provider conversation is the destination identity. The optional DM
+    // member is a revalidation hint, absent from retained and explicit-conversation operations.
     stored.source === requested.source
   );
 }
@@ -1431,6 +1433,9 @@ const ensureCanonicalDelivery$ = command(
 );
 
 function canonicalPublicationScope(args: PrepareCanonicalPublishedAssetArgs) {
+  if (args.provider === "teams" && args.runId === null) {
+    return `teams:${args.orgId}`;
+  }
   return (args.provider === "discord" || args.provider === "wechat") &&
     args.runId === null
     ? `${args.provider}:${args.destination.connectionId}`

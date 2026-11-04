@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 
 import { db$ } from "../external/db";

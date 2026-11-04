@@ -6,7 +6,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { agents } from "@okouai/db/schema/agent";
 import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
