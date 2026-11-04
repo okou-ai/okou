@@ -35,6 +35,8 @@ git -C "$SEED" config user.name Test
 mkdir -p \
   "${SEED}/.github/scripts/checks" \
   "${SEED}/.github/workflows" \
+  "${SEED}/ios/scripts" \
+  "${SEED}/ios/Config" \
   "${SEED}/native/helper/src" \
   "${SEED}/native/guest-control-tests/src" \
   "${SEED}/turbo/apps/app/src" \
@@ -42,6 +44,11 @@ mkdir -p \
 cp "$CHECK_COVERAGE" "${SEED}/.github/scripts/checks/check-release-please-workspace-coverage.sh"
 cp "$CHECK_CYCLES" "${SEED}/.github/scripts/checks/check-rust-workspace-cycles.py"
 cp "$CHECK_ACTION_PINS" "${SEED}/.github/scripts/checks/check-action-pins.py"
+cp "${SOURCE_REPO_ROOT}/ios/scripts/archive-promotion.py" "${SEED}/ios/scripts/archive-promotion.py"
+printf 'let value = 1\n' >"${SEED}/ios/App.swift"
+printf '1.0.0\n' >"${SEED}/ios/version.txt"
+printf 'Prior releases\n' >"${SEED}/ios/CHANGELOG.md"
+printf 'MARKETING_VERSION = 1.0.0 // x-release-please-version\n' >"${SEED}/ios/Config/Shared.xcconfig"
 cat > "${SEED}/.github/workflows/pins.yml" <<'YAML'
 jobs:
   test:
@@ -49,6 +56,7 @@ jobs:
     steps:
       - run: echo fixture
 YAML
+cp "${SEED}/.github/workflows/pins.yml" "${SEED}/.github/workflows/ios.yml"
 printf '%s\n' \
   '{"native/guest-control-tests":"Integration-test harness","turbo/packages/tool":"Development tool"}' \
   >"${SEED}/.github/release-please-workspace-exclusions.json"
@@ -86,10 +94,10 @@ printf 'helper source\n' >"${SEED}/native/helper/src/lib.rs"
 printf 'test source\n' >"${SEED}/native/guest-control-tests/src/lib.rs"
 cargo generate-lockfile --quiet --manifest-path "${SEED}/native/Cargo.toml"
 printf '%s\n' \
-  '{"packages":{"native/helper":{"release-type":"rust"},"turbo/apps/app":{"release-type":"node"}},"plugins":[{"type":"cargo-workspace","cargoWorkspacePath":"native"}]}' \
+  '{"packages":{"ios":{"release-type":"simple"},"native/helper":{"release-type":"rust"},"turbo/apps/app":{"release-type":"node"}},"plugins":[{"type":"cargo-workspace","cargoWorkspacePath":"native"}]}' \
   >"${SEED}/release-please-config.json"
 printf '%s\n' \
-  '{"native/helper":"1.0.0","turbo/apps/app":"1.0.0"}' \
+  '{"ios":"1.0.0","native/helper":"1.0.0","turbo/apps/app":"1.0.0"}' \
   >"${SEED}/.release-please-manifest.json"
 
 git -C "$SEED" add --all
@@ -162,20 +170,32 @@ set -euo pipefail
 
 case "${1:-} ${2:-}" in
   "pr view")
-    printf '{"number":42,"headRefOid":"%s","headRefName":"release-valid"}\n' "$MOCK_PR_HEAD"
+    head=$MOCK_PR_HEAD
+    if [ "${3:-}" = 42 ]; then head=${MOCK_LIVE_HEAD:-$head}; fi
+    printf '{"number":42,"headRefOid":"%s","headRefName":"release-valid","baseRefOid":"%s","baseRefName":"main"}\n' "$head" "$MOCK_MAIN_HEAD"
     ;;
   "workflow run")
     printf '%s\n' "$*" >>"$MOCK_GH_LOG"
     if [ "${MOCK_DISPATCH_FAILURE:-false}" = true ]; then exit 1; fi
     ;;
-  "pr diff")
-    printf '%s\n' .release-please-manifest.json native/helper/Cargo.toml native/Cargo.lock
-    if [ -n "${MOCK_ADDITIONAL_CHANGED_FILE:-}" ]; then
-      printf '%s\n' "$MOCK_ADDITIONAL_CHANGED_FILE"
+  "api repos/okou-ai/okou/actions/workflows/ios.yml/runs"*)
+    if [[ "$2" == *event=workflow_dispatch* ]]; then
+      if [ "${MOCK_IOS_LOOKUP_FAILURE:-false}" = true ]; then exit 1; fi
+      printf '[{"workflow_runs":%s}]\n' "${MOCK_EXISTING_IOS_RUNS:-[]}"
+    elif [ "${MOCK_MAIN_IOS_PROOF:-false}" = true ] && [[ "$2" == *"head_sha=${MOCK_MAIN_HEAD}"* ]]; then
+      printf '{"workflow_runs":[{"id":123,"run_attempt":1,"head_sha":"%s","event":"merge_group","path":".github/workflows/ios.yml","head_branch":"gh-readonly-queue/main/pr-1","conclusion":"success","html_url":"https://github.com/okou-ai/okou/actions/runs/123"}]}\n' "$MOCK_MAIN_HEAD"
+    else
+      printf '{"workflow_runs":[]}\n'
     fi
-    if [ -n "${MOCK_ADDITIONAL_CHANGED_FILES_PATH:-}" ]; then
-      cat "$MOCK_ADDITIONAL_CHANGED_FILES_PATH"
-    fi
+    ;;
+  "api repos/okou-ai/okou/commits"*)
+    printf '[{"sha":"%s"}]\n' "$MOCK_MAIN_HEAD"
+    ;;
+  "api repos/okou-ai/okou/actions/runs/123/attempts/1/jobs"*)
+    printf '[{"jobs":[{"name":"build-test","conclusion":"success","steps":[{"name":"Build app and run isolated simulator tests","conclusion":"success"}]},{"name":"test-packages","conclusion":"success","steps":[{"name":"Run isolated Swift package tests","conclusion":"success"}]}]}]\n'
+    ;;
+  "api repos/okou-ai/okou/actions/runs/123/attempts/1")
+    printf '{"head_sha":"%s","event":"merge_group","path":".github/workflows/ios.yml","head_branch":"gh-readonly-queue/main/pr-1"}\n' "$MOCK_MAIN_HEAD"
     ;;
   "api repos/okou-ai/okou/check-runs")
     printf '%s\n' "$*" >>"$MOCK_GH_LOG"
@@ -197,6 +217,7 @@ run_gates() {
       GITHUB_REPOSITORY=okou-ai/okou \
       MOCK_GH_LOG="$GH_LOG" \
       MOCK_PR_HEAD="$head" \
+      MOCK_MAIN_HEAD="$MAIN_HEAD" \
       PATH="${FAKE_BIN}:$PATH" \
       bash "$PASS_GATES"
   )
@@ -271,10 +292,22 @@ for gate in ci-gate-turbo ci-gate-crates ci-gate-security ci-gate-ios; do
     fail "the valid fast path should pass ${gate}"
 done
 
-for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/scripts/checks/changed-base-ref.sh; do
+for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/scripts/checks/changed-base-ref.sh $'ios/line\nbreak.swift'; do
+  git -C "$SEED" switch -q --detach "$VALID_HEAD"
+  mkdir -p "${SEED}/$(dirname "$ios_input")"
+  if [[ "$ios_input" == *.yml ]]; then
+    cp "${SEED}/.github/workflows/pins.yml" "${SEED}/${ios_input}"
+    printf '# fixture change\n' >>"${SEED}/${ios_input}"
+  else
+    printf 'fixture change\n' >"${SEED}/${ios_input}"
+  fi
+  git -C "$SEED" add --all
+  git -C "$SEED" commit -qm "change native input"
+  IOS_SOURCE_HEAD=$(git -C "$SEED" rev-parse HEAD)
+  git -C "$SEED" push -q origin "HEAD:refs/heads/ios-source-${IOS_SOURCE_HEAD}"
   : >"$GH_LOG"
   ios_output=""
-  ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$ios_input" run_gates "$VALID_HEAD" 2>&1)
+  ios_output=$(run_gates "$IOS_SOURCE_HEAD" 2>&1)
   grep -Fq "workflow run ios.yml --repo okou-ai/okou --ref release-valid" "$GH_LOG" ||
     fail "changed iOS inputs must dispatch real iOS validation"
   if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
@@ -284,16 +317,19 @@ for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/sc
 done
 
 # A large diff must not turn an early iOS match into an unearned successful gate.
-long_changed_files_path="${TEST_ROOT}/long-changed-files.txt"
-{
-  printf '%s\n' ios/Okou/App/OkouApp.swift
-  for ((i = 0; i < 2000; i++)); do
-    printf 'docs/release-changelog-fixture-with-a-long-filename-to-exercise-large-changed-file-lists-%04d.md\n' "$i"
-  done
-} >"$long_changed_files_path"
+git -C "$SEED" switch -q --detach "$VALID_HEAD"
+mkdir -p "${SEED}/docs"
+for ((i = 0; i < 2000; i++)); do
+  printf 'fixture\n' >"${SEED}/docs/release-changelog-fixture-${i}.md"
+done
+printf 'let changed = 2\n' >"${SEED}/ios/App.swift"
+git -C "$SEED" add --all
+git -C "$SEED" commit -qm "large release diff with native changes"
+IOS_LARGE_HEAD=$(git -C "$SEED" rev-parse HEAD)
+git -C "$SEED" push -q origin HEAD:refs/heads/ios-large
 : >"$GH_LOG"
 ios_output=""
-ios_output=$(MOCK_ADDITIONAL_CHANGED_FILES_PATH="$long_changed_files_path" run_gates "$VALID_HEAD" 2>&1)
+ios_output=$(run_gates "$IOS_LARGE_HEAD" 2>&1)
 grep -Fq "workflow run ios.yml --repo okou-ai/okou --ref release-valid" "$GH_LOG" ||
   fail "a large diff containing iOS changes must dispatch iOS validation"
 if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
@@ -302,15 +338,79 @@ fi
 assert_contains "$ios_output" "Dispatched iOS validation"
 
 : >"$GH_LOG"
-if MOCK_DISPATCH_FAILURE=true MOCK_ADDITIONAL_CHANGED_FILE=ios/Config/Shared.xcconfig run_gates "$VALID_HEAD" >/dev/null 2>&1; then
+if MOCK_DISPATCH_FAILURE=true run_gates "$IOS_SOURCE_HEAD" >/dev/null 2>&1; then
   fail "a failed iOS workflow dispatch must fail the release refresh"
 fi
 if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
   fail "dispatch failure cannot create a successful gate"
 fi
 
+# Exercise the actual release caller on a version-only Git head, not a path-name mock.
+git -C "$SEED" switch -q --detach "$MAIN_HEAD"
+printf '1.0.1\n' >"${SEED}/ios/version.txt"
+printf 'MARKETING_VERSION = 1.0.1 // x-release-please-version\n' >"${SEED}/ios/Config/Shared.xcconfig"
+printf 'Release notes\n' >"${SEED}/ios/CHANGELOG.md"
+jq '.["ios"] = "1.0.1"' "${SEED}/.release-please-manifest.json" >"${SEED}/manifest.next"
+mv "${SEED}/manifest.next" "${SEED}/.release-please-manifest.json"
+git -C "$SEED" add --all
+git -C "$SEED" commit -qm "release ios metadata"
+IOS_METADATA_HEAD=$(git -C "$SEED" rev-parse HEAD)
+git -C "$SEED" push -q origin HEAD:refs/heads/ios-metadata
+: >"$GH_LOG"
+metadata_output=$(MOCK_MAIN_IOS_PROOF=true run_gates "$IOS_METADATA_HEAD" 2>&1) || {
+  echo "$metadata_output" >&2
+  fail "verified release metadata should retain the native fast path"
+}
+grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG" || fail "verified metadata should reuse main tests"
+assert_contains "$(cat "$GH_LOG")" "Release metadata verified against main tests"
+if grep -Fq 'workflow run' "$GH_LOG"; then fail "verified metadata dispatched native validation"; fi
+
+: >"$GH_LOG"
+run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1
+grep -Fq 'workflow run ios.yml' "$GH_LOG" || fail "missing main evidence must retain native validation"
+
+for state in in_progress queued success failure cancelled action_required; do
+  status=completed
+  conclusion=$state
+  if [ "$state" = in_progress ] || [ "$state" = queued ]; then status=$state; conclusion=null; fi
+  runs=$(jq -nc --arg head "$IOS_METADATA_HEAD" --arg status "$status" --arg conclusion "$conclusion" \
+    '[{head_sha:$head,head_branch:"release-valid",status:$status,conclusion:(if $conclusion == "null" then null else $conclusion end),created_at:"2026-11-04T00:00:00Z",html_url:"https://github.com/okou-ai/okou/actions/runs/456"}]')
+  : >"$GH_LOG"
+  if MOCK_MAIN_IOS_PROOF=true MOCK_EXISTING_IOS_RUNS="$runs" run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then
+    case "$state" in failure | cancelled | action_required) fail "nonpassing existing validation was accepted" ;; esac
+  else
+    case "$state" in in_progress | queued | success) fail "existing validation should be retained" ;; esac
+    grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" || fail "nonpassing validation must remain visible"
+  fi
+  if grep -Fq 'workflow run' "$GH_LOG"; then fail "same-SHA validation was dispatched again"; fi
+  if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then fail "existing validation was replaced with an unearned pass"; fi
+done
+
+: >"$GH_LOG"
+runs=$(jq -nc --arg head "$IOS_METADATA_HEAD" '[
+  {id:456,head_sha:$head,head_branch:"release-valid",status:"completed",conclusion:"failure",created_at:"2026-11-04T00:00:00Z",html_url:"https://github.com/okou-ai/okou/actions/runs/456"},
+  {id:455,head_sha:$head,head_branch:"release-valid",status:"completed",conclusion:"success",created_at:"2026-11-04T00:00:00Z",html_url:"https://github.com/okou-ai/okou/actions/runs/455"}
+]')
+if MOCK_EXISTING_IOS_RUNS="$runs" MOCK_MAIN_IOS_PROOF=true run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then
+  fail "an older success must not conceal newer failed validation"
+fi
+grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" || fail "latest validation failure was not retained"
+
+: >"$GH_LOG"
+MOCK_LIVE_HEAD="$VALID_HEAD" MOCK_MAIN_IOS_PROOF=true run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1
+[ ! -s "$GH_LOG" ] || fail "a superseded head must not schedule validation or publish checks"
+: >"$GH_LOG"
+if MOCK_IOS_LOOKUP_FAILURE=true run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then fail "an API failure must not be treated as absent validation"; fi
+[ ! -s "$GH_LOG" ] || fail "failed validation lookup produced an unearned check"
+
 command -v yq >/dev/null || fail "yq is required"
 security_json=$(yq -o=json '.' "$SECURITY_WORKFLOW")
+for workflow in release-please.yml release-please-refresh.yml; do
+  yq -o=json '.' "${SOURCE_REPO_ROOT}/.github/workflows/${workflow}" | jq -e '
+    .jobs["refresh-release-pull-request"].concurrency |
+    .group == "release-please-pr-validation" and ."cancel-in-progress" == false
+  ' >/dev/null || fail "release callers must serialize validation scheduling"
+done
 jq -e '
   .jobs["release-workspace-coverage"] as $validation |
   .jobs["action-pins"] as $pins |

@@ -22,6 +22,9 @@ concurrency:
 
 jobs:
   refresh-release-pull-request:
+    concurrency:
+      group: release-please-pr-validation
+      cancel-in-progress: false
     # Release commits are refreshed by release-please.yml instead, because that
     # workflow creates the tags before it regenerates the pull request. Doing it
     # here first would rebuild the pull request from a baseline whose releases do
@@ -33,6 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
+          filter: blob:none
 
       # Refreshing the release pull request is best effort. release-please force
       # updates the release branch, and GitHub rejects that update while the
