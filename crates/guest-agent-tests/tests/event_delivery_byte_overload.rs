@@ -5,6 +5,7 @@ use guest_agent_tests as common;
 use common::json_fixture::JsonFieldTemplate;
 use guest_agent::masker::SecretMasker;
 use serde_json::json;
+use std::io::{BufWriter, Write};
 use std::time::Duration;
 
 const EVENT_BYTES: usize = 2 * 1024 * 1024;
@@ -27,17 +28,23 @@ async fn claude_code_event_delivery_byte_overload_keeps_recent_events()
         }),
         "index",
     )?;
-    let mut prompt = b"@ECHO@".to_vec();
-    for index in 0..EVENT_COUNT {
-        prompt.push(b'\n');
-        event.write(&mut prompt, &index)?;
+    let input_path = tmp.path().join("mock-output.jsonl");
+    {
+        let mut events = BufWriter::new(std::fs::File::create(&input_path)?);
+        for index in 0..EVENT_COUNT {
+            event.write(&mut events, &index)?;
+            events.write_all(b"\n")?;
+        }
+        serde_json::to_writer(
+            &mut events,
+            &json!({"type":"result","marker":"byte-overload-finished"}),
+        )?;
+        events.flush()?;
     }
-    prompt.push(b'\n');
-    serde_json::to_writer(
-        &mut prompt,
-        &json!({"type":"result","marker":"byte-overload-finished"}),
-    )?;
-    let prompt = String::from_utf8(prompt)?;
+    let prompt = format!(
+        "@ECHO-FILE@\n{}",
+        input_path.to_str().ok_or("mock input path is not UTF-8")?
+    );
 
     unsafe {
         common::setup_env_with_owned_prompt(&mock_cli, tmp.path(), prompt, 1, 1)?;

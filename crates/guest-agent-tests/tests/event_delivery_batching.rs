@@ -5,7 +5,7 @@ use guest_agent_tests as common;
 use common::json_fixture::JsonFieldTemplate;
 use guest_agent::masker::SecretMasker;
 use serde_json::{Value, json};
-use std::io;
+use std::io::{self, BufWriter, Write};
 use std::time::Duration;
 
 const SMALL_EVENT_COUNT: usize = 70;
@@ -59,14 +59,6 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
     let mock_cli = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
     let mut server = common::ControlledHttpServer::start().await?;
-    let mut prompt = b"@ECHO@".to_vec();
-    for index in 0..SMALL_EVENT_COUNT {
-        prompt.push(b'\n');
-        serde_json::to_writer(
-            &mut prompt,
-            &json!({ "type": "assistant", "index": index, "content": "small" }),
-        )?;
-    }
     // Hold more than 16 MiB, but less than 32 MiB, behind the first HTTP response.
     let event = JsonFieldTemplate::new(
         &json!({
@@ -76,16 +68,30 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
         }),
         "marker",
     )?;
-    for index in 0..LARGE_EVENT_COUNT {
-        prompt.push(b'\n');
-        event.write(&mut prompt, &format!("large-{index}"))?;
+    let input_path = tmp.path().join("mock-output.jsonl");
+    {
+        let mut events = BufWriter::new(std::fs::File::create(&input_path)?);
+        for index in 0..SMALL_EVENT_COUNT {
+            serde_json::to_writer(
+                &mut events,
+                &json!({ "type": "assistant", "index": index, "content": "small" }),
+            )?;
+            events.write_all(b"\n")?;
+        }
+        for index in 0..LARGE_EVENT_COUNT {
+            event.write(&mut events, &format!("large-{index}"))?;
+            events.write_all(b"\n")?;
+        }
+        serde_json::to_writer(
+            &mut events,
+            &json!({ "type": "result", "marker": "batching-sentinel" }),
+        )?;
+        events.flush()?;
     }
-    prompt.push(b'\n');
-    serde_json::to_writer(
-        &mut prompt,
-        &json!({ "type": "result", "marker": "batching-sentinel" }),
-    )?;
-    let prompt = String::from_utf8(prompt)?;
+    let prompt = format!(
+        "@ECHO-FILE@\n{}",
+        input_path.to_str().ok_or("mock input path is not UTF-8")?
+    );
     let total_events = SMALL_EVENT_COUNT + LARGE_EVENT_COUNT + 1;
 
     unsafe {
