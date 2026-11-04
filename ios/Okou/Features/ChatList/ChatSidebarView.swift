@@ -61,6 +61,8 @@ struct ChatSidebarView: View {
       if store.list.isLoading && !store.list.hasLoadedThreads {
         ProgressView("Loading chats…")
           .frame(maxWidth: .infinity)
+          .listRowInsets(.horizontal, 0)
+          .listRowSeparator(.hidden)
       } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
         Text("Your chats could not be loaded. Try updating again.")
           .font(.footnote).foregroundStyle(.secondary)
