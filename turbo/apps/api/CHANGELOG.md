@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.46.1](https://github.com/okou-ai/okou/compare/api-v2.46.0...api-v2.46.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **api:** preserve atlassian mcp discovery ranking ([#45022](https://github.com/okou-ai/okou/issues/45022)) ([bb377bb](https://github.com/okou-ai/okou/commit/bb377bbc4144455628028f135f274342d4499c9f))
+* **api:** show claude max and ultra plan names ([#45011](https://github.com/okou-ai/okou/issues/45011)) ([af4db60](https://github.com/okou-ai/okou/commit/af4db608f8700c96b1059caaa01b9e0441b580f4))
+* **api:** synchronize automation listeners after chat account changes ([#45040](https://github.com/okou-ai/okou/issues/45040)) ([8441431](https://github.com/okou-ai/okou/commit/84414314b470b9bee9db37ff16af3ea590fad198))
+
+
+### Refactoring
+
+* **api:** require available accounts for every initial connector choice ([#45058](https://github.com/okou-ai/okou/issues/45058)) ([83ae79f](https://github.com/okou-ai/okou/commit/83ae79f68d6a7cfbeabb93e1726d0420dcd762fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.0
+    * @okouai/core bumped to 8.815.0
+    * @okouai/db bumped to 2.20.1
+    * @okouai/pi-agent-runtime bumped to 1.51.61
+
 ## [2.46.0](https://github.com/okou-ai/okou/compare/api-v2.45.1...api-v2.46.0) (2026-11-03)
 
 

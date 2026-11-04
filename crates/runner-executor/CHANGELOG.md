@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.6...runner-executor-v0.19.7) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
 ## [0.19.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.5...runner-executor-v0.19.6) (2026-11-03)
 
 ## [0.19.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.4...runner-executor-v0.19.5) (2026-11-03)

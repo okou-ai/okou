@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.9](https://github.com/okou-ai/okou/compare/sandbox-v0.28.8...sandbox-v0.28.9) (2026-11-04)
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
 ## [0.28.8](https://github.com/okou-ai/okou/compare/sandbox-v0.28.7...sandbox-v0.28.8) (2026-11-03)
 
 
