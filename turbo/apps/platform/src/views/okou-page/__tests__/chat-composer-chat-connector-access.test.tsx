@@ -281,8 +281,8 @@ test("Directory permissions use the same connector rules without enabling accoun
   const editor = await screen.findByRole("dialog", {
     name: "GitHub permissions",
   });
-  const permission = await within(editor).findByRole("group", {
-    name: "repos|write",
+  const permission = await within(editor).findByLabelText("repos|write", {
+    selector: '[role="group"]',
   });
   await waitFor(() => {
     expect(editor.contains(document.activeElement)).toBeTruthy();
@@ -302,8 +302,8 @@ test("Directory permissions use the same connector rules without enabling accoun
   const saved = await screen.findByRole("dialog", {
     name: "GitHub permissions",
   });
-  const savedPermission = await within(saved).findByRole("group", {
-    name: "repos|write",
+  const savedPermission = await within(saved).findByLabelText("repos|write", {
+    selector: '[role="group"]',
   });
   await expect(
     findFastControl("button", "Deny", savedPermission),
