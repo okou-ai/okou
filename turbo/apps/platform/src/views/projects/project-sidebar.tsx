@@ -1,4 +1,7 @@
-import { projectThreadItems$ } from "../../signals/projects/project-threads.ts";
+import {
+  projectThreadItems$,
+  unreadProjectIds$,
+} from "../../signals/projects/project-threads.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -43,6 +46,7 @@ import { projectCreationAgentId$ } from "../../signals/projects/project-selected
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadItem } from "../okou-page/sidebar-threads.tsx";
+import { ChatThreadStateText } from "../okou-page/sidebar-shared.tsx";
 import { projectThreadDragEventsRef$ } from "../../signals/projects/project-thread-drag.ts";
 import { ProjectThreadDropZone } from "./project-thread-drop-zone.tsx";
 import { ProjectThreadDragHint } from "./project-thread-drag-hint.tsx";
@@ -59,10 +63,12 @@ function ProjectFolderMenu({
   project,
   archived,
   touch,
+  unread,
 }: {
   project: Project;
   archived: boolean;
   touch: boolean;
+  unread: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
@@ -78,7 +84,10 @@ function ProjectFolderMenu({
             variant="quiet"
             size="icon-sm"
             iconSize="md"
-            className={cn("shrink-0", touch && "min-h-11 min-w-11")}
+            className={cn(
+              "group/project-menu shrink-0",
+              touch && "min-h-11 min-w-11",
+            )}
             aria-label={t(
               ($) => {
                 return $.projects.options;
@@ -90,7 +99,20 @@ function ProjectFolderMenu({
           />
         }
       >
-        <Ellipsis />
+        {unread ? (
+          <>
+            <span
+              aria-hidden="true"
+              data-testid="project-unread-indicator"
+              className="flex items-center justify-center md:group-hover/project:hidden group-focus-visible/project-menu:hidden md:group-data-[popup-open]/project-menu:hidden"
+            >
+              <span className="h-2 w-2 rounded-full bg-sky-600" />
+            </span>
+            <Ellipsis className="hidden md:group-hover/project:block group-focus-visible/project-menu:block md:group-data-[popup-open]/project-menu:block" />
+          </>
+        ) : (
+          <Ellipsis />
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" finalFocus={dialog ? false : undefined}>
         <DropdownMenuItem
@@ -168,6 +190,57 @@ interface ProjectFolderProps {
   readonly project: Project;
   readonly touch: boolean;
   readonly layout: ProjectSidebarLayout;
+}
+
+function ProjectFolderActions({
+  project,
+  archived,
+  touch,
+  layout,
+  unread,
+  creating,
+  onNewChat,
+}: ProjectFolderProps & {
+  archived: boolean;
+  unread: boolean;
+  creating: boolean;
+  onNewChat: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className={cn(
+        "group/project-actions flex shrink-0 items-center group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100",
+        !unread && "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0",
+        layout === "list" ? "gap-1" : "gap-0.5",
+      )}
+    >
+      <Button
+        variant="quiet"
+        size="icon-sm"
+        iconSize="md"
+        className={cn(
+          "shrink-0",
+          touch && "min-h-11 min-w-11",
+          unread &&
+            "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project-actions:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
+        )}
+        aria-label={t(($) => {
+          return $.projects.newChat;
+        })}
+        disabled={creating}
+        onClick={onNewChat}
+      >
+        <Plus />
+      </Button>
+      <ProjectFolderMenu
+        project={project}
+        archived={archived}
+        touch={touch}
+        unread={unread}
+      />
+    </div>
+  );
 }
 
 function ProjectFolderRenameForm({
@@ -251,9 +324,11 @@ function ProjectFolderTrigger({
   layout,
   expanded,
   contentsId,
+  unread,
 }: ProjectFolderProps & {
   readonly expanded: boolean;
   readonly contentsId: string;
+  readonly unread: boolean;
 }) {
   const toggle = useSet(toggleProject$);
   const edit = useGet(projectInlineRename$);
@@ -294,6 +369,7 @@ function ProjectFolderTrigger({
         <span className={cn("truncate", renaming && "invisible")}>
           {project.name}
         </span>
+        <ChatThreadStateText state={unread ? "unread" : null} />
       </button>
       {renaming && (
         <ProjectFolderRenameForm
@@ -312,6 +388,8 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const { t } = useTranslation();
   const agent = useLastResolved(projectCreationAgentId$);
   const expanded = useGet(expandedProjectIds$).has(project.id);
+  const unread = useLastResolved(unreadProjectIds$)?.has(project.id) ?? false;
+  const showUnread = !expanded && unread;
   const archived = useGet(archivedProjectIds$).has(project.id);
   const limit = useGet(projectThreadLimits$)[project.id] ?? 20;
   const items = useGet(projectThreadItems$).filter(({ thread }) => {
@@ -333,32 +411,17 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
           layout={layout}
           expanded={expanded}
           contentsId={contentsId}
+          unread={showUnread}
         />
-        <div
-          className={cn(
-            "flex shrink-0 items-center md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100",
-            layout === "list" ? "gap-1" : "gap-0.5",
-          )}
-        >
-          <Button
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className={cn("shrink-0", touch && "min-h-11 min-w-11")}
-            aria-label={t(($) => {
-              return $.projects.newChat;
-            })}
-            disabled={creation.state === "loading"}
-            onClick={newChat}
-          >
-            <Plus />
-          </Button>
-          <ProjectFolderMenu
-            project={project}
-            archived={archived}
-            touch={touch}
-          />
-        </div>
+        <ProjectFolderActions
+          project={project}
+          archived={archived}
+          touch={touch}
+          layout={layout}
+          unread={showUnread}
+          creating={creation.state === "loading"}
+          onNewChat={newChat}
+        />
       </div>
       {creation.state === "hasError" && (
         <p role="alert" className="px-3 py-1 text-xs text-destructive">
