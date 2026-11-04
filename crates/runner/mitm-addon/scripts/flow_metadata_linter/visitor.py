@@ -32,6 +32,7 @@ from flow_metadata_linter.ast_helpers import (
     _type_params,
 )
 from flow_metadata_linter.metadata_rules import (
+    _contains_registered_key,
     _is_metadata_attribute,
     _metadata_dict_key_violations,
     _metadata_key_expression_violations,
@@ -669,22 +670,26 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self._visit_deferred_expression(annotation, type_param_names)
         if node.returns is not None:
             self._visit_deferred_expression(node.returns, type_param_names)
-        body_scope_bindings = _scope_bound_name_visitor(node.body)
-        body_global_names = body_scope_bindings.global_names
-        shadowed_names = (
-            (
-                _argument_names(node.args)
-                | body_scope_bindings.local_names
-                | (type_param_names - body_global_names)
-            )
-            - metadata_defaults
-        ) | {node.name}
-        body_base_aliases = self._nested_function_base_aliases()
-        body_base_aliases.difference_update(body_global_names)
-        body_base_aliases.update(self._metadata_alias_scopes[0] & body_global_names)
-        self._exception_alias_scopes.append(_ExceptionAliasState())
-        self._visit_scoped_body(node.body, shadowed_names, metadata_defaults, body_base_aliases)
-        self._exception_alias_scopes.pop()
+        # Body aliases and exceptions stay in the callable scope. Definition-time
+        # expressions above and decorator application below still affect the caller.
+        # Keep the existing path when an enclosing loop is collecting control exits.
+        if self._loop_control_alias_scopes or _contains_registered_key(node.body):
+            body_scope_bindings = _scope_bound_name_visitor(node.body)
+            body_global_names = body_scope_bindings.global_names
+            shadowed_names = (
+                (
+                    _argument_names(node.args)
+                    | body_scope_bindings.local_names
+                    | (type_param_names - body_global_names)
+                )
+                - metadata_defaults
+            ) | {node.name}
+            body_base_aliases = self._nested_function_base_aliases()
+            body_base_aliases.difference_update(body_global_names)
+            body_base_aliases.update(self._metadata_alias_scopes[0] & body_global_names)
+            self._exception_alias_scopes.append(_ExceptionAliasState())
+            self._visit_scoped_body(node.body, shadowed_names, metadata_defaults, body_base_aliases)
+            self._exception_alias_scopes.pop()
         if node.decorator_list:
             self._record_implicit_exception_aliases()
         self._metadata_aliases.discard(node.name)
@@ -701,6 +706,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         for default in [*node.args.defaults, *node.args.kw_defaults]:
             if default is not None:
                 self._visit_default_value(default)
+        if not _contains_registered_key([node.body]):
+            return
         self._exception_alias_scopes.append(_ExceptionAliasState())
         self._visit_scoped_expression(
             node.body,
