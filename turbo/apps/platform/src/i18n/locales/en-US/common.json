@@ -4045,20 +4045,24 @@
     "actionFailed": "Could not update authorization.",
     "allow": "Allow for 1 hour",
     "approved": "Allowed",
-    "deadline": "Expires {{date}}",
+    "blocked": {
+      "chatBusy": "Wait for the current Run in this chat to finish before approving.",
+      "computerChanged": "Select {{computer}} again before approving.",
+      "runActive": "Wait for the requesting Run to finish before approving.",
+      "runUnavailable": "The requesting Run is unavailable. Ask for a new request in this chat."
+    },
     "denied": "Request denied",
     "deny": "Deny",
     "description": "The agent needs permission to use Shell on your computer.",
     "expired": "Authorization expired",
     "loading": "Loading authorization…",
-    "pending": "Ready for approval",
+    "reasonTitle": "Reason for access",
+    "requestExpired": "Request expired",
     "revoke": "Revoke access",
     "revoked": "Shell access revoked",
-    "scope": "Only this chat and computer",
-    "terminalNotice": "Existing terminals stay open when access ends.",
-    "title": "Desktop Shell access",
+    "title": "Shell access",
     "unavailable": "Authorization unavailable",
-    "waiting": "Approval is unavailable while a Run is active or the selected computer has changed."
+    "viewReason": "View full reason"
   },
   "documentTemplates": {
     "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",

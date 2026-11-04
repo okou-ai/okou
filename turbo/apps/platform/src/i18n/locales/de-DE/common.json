@@ -4047,20 +4047,24 @@
     "actionFailed": "Autorisierung konnte nicht aktualisiert werden.",
     "allow": "Für 1 Stunde erlauben",
     "approved": "Erlaubt",
-    "deadline": "Läuft ab: {{date}}",
+    "blocked": {
+      "chatBusy": "Warte vor der Genehmigung, bis der aktuelle Run in diesem Chat beendet ist.",
+      "computerChanged": "Wähle vor der Genehmigung erneut {{computer}} aus.",
+      "runActive": "Warte vor der Genehmigung, bis der anfragende Run beendet ist.",
+      "runUnavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage."
+    },
     "denied": "Anfrage abgelehnt",
     "deny": "Ablehnen",
     "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
     "expired": "Autorisierung abgelaufen",
     "loading": "Autorisierung wird geladen…",
-    "pending": "Bereit zur Genehmigung",
+    "reasonTitle": "Grund für den Zugriff",
+    "requestExpired": "Anfrage abgelaufen",
     "revoke": "Zugriff widerrufen",
     "revoked": "Shell-Zugriff widerrufen",
-    "scope": "Nur dieser Chat und Computer",
-    "terminalNotice": "Bestehende Terminals bleiben nach Ablauf geöffnet.",
-    "title": "Desktop-Shell-Zugriff",
+    "title": "Shell-Zugriff",
     "unavailable": "Autorisierung nicht verfügbar",
-    "waiting": "Eine Genehmigung ist während eines aktiven Runs oder nach einem Computerwechsel nicht möglich."
+    "viewReason": "Vollständige Begründung ansehen"
   },
   "documentTemplates": {
     "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",

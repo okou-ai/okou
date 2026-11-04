@@ -4100,20 +4100,24 @@
     "actionFailed": "Impossible de mettre à jour l’autorisation.",
     "allow": "Autoriser pendant 1 heure",
     "approved": "Autorisé",
-    "deadline": "Expire le {{date}}",
+    "blocked": {
+      "chatBusy": "Attendez la fin du Run en cours dans ce chat avant d’approuver.",
+      "computerChanged": "Sélectionnez à nouveau {{computer}} avant d’approuver.",
+      "runActive": "Attendez la fin du Run à l’origine de la demande avant d’approuver.",
+      "runUnavailable": "Le Run à l’origine de la demande est indisponible. Demandez une nouvelle demande dans ce chat."
+    },
     "denied": "Demande refusée",
     "deny": "Refuser",
     "description": "L’agent a besoin d’une autorisation pour utiliser Shell sur votre ordinateur.",
     "expired": "Autorisation expirée",
     "loading": "Chargement de l’autorisation…",
-    "pending": "Prête à être approuvée",
+    "reasonTitle": "Motif de l’accès",
+    "requestExpired": "Demande expirée",
     "revoke": "Révoquer l’accès",
     "revoked": "Accès à Shell révoqué",
-    "scope": "Uniquement ce chat et cet ordinateur",
-    "terminalNotice": "Les terminaux existants restent ouverts à la fin de l’accès.",
-    "title": "Accès à Desktop Shell",
+    "title": "Accès Shell",
     "unavailable": "Autorisation indisponible",
-    "waiting": "L’approbation est indisponible pendant un Run actif ou si l’ordinateur sélectionné a changé."
+    "viewReason": "Voir le motif complet"
   },
   "documentTemplates": {
     "agreementNote": "Un point de départ pour votre accord. Vérifiez les conditions de votre projet et le droit applicable avant de signer.",
