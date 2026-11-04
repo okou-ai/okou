@@ -1,5 +1,5 @@
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
@@ -1243,7 +1243,19 @@ test.each([false, true])(
       },
     });
 
-    const card = await screen.findByTestId("connector-account-action-card");
+    const chat = screen.getByRole("region", { name: "Chat thread" });
+    // These reply queries depend on text and children, not attribute changes.
+    const replyWaitOptions = {
+      container: chat,
+      mutationObserverOptions: {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      },
+    };
+    const card = await within(chat).findByTestId(
+      "connector-account-action-card",
+    );
     expect(card).toHaveTextContent("Switch to Work GitHub?");
     await waitFor(() => {
       expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
@@ -1269,13 +1281,16 @@ test.each([false, true])(
       connectionId,
       otherConnectionId,
     );
-    lifecycle.completeRun(
-      `Use the personal account\n\n${otherSwitchUrl.toString()}`,
-    );
-    // Duplicate realtime delivery can overlap reads of an already-applied tail.
-    createChatEvent(THREAD_ID);
+    // Fixture-driven realtime inputs bypass Testing Library's DOM actions.
+    await act(() => {
+      lifecycle.completeRun(
+        `Use the personal account\n\n${otherSwitchUrl.toString()}`,
+      );
+      // Duplicate realtime delivery can overlap reads of an applied tail.
+      createChatEvent(THREAD_ID);
+    });
     await expect(
-      screen.findByText("Use the personal account"),
+      within(chat).findByText("Use the personal account", {}, replyWaitOptions),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
       expect(
@@ -1293,10 +1308,16 @@ test.each([false, true])(
       expect(callbackIds).toHaveLength(2);
     });
     expect(selectionWrites).toBe(2);
-    lifecycle.completeRun("Continued with Personal GitHub");
-    createChatEvent(THREAD_ID);
+    await act(() => {
+      lifecycle.completeRun("Continued with Personal GitHub");
+      createChatEvent(THREAD_ID);
+    });
     await expect(
-      screen.findByText("Continued with Personal GitHub"),
+      within(chat).findByText(
+        "Continued with Personal GitHub",
+        {},
+        replyWaitOptions,
+      ),
     ).resolves.toBeInTheDocument();
 
     click(buttonIn(card, "Switch"));
@@ -1319,10 +1340,16 @@ test.each([false, true])(
     });
     expect(new Set(clientEventIds).size).toBe(3);
     expect(new Set(chatThreadSortEventIds).size).toBe(3);
-    lifecycle.completeRun("Continued with Work GitHub again");
-    createChatEvent(THREAD_ID);
+    await act(() => {
+      lifecycle.completeRun("Continued with Work GitHub again");
+      createChatEvent(THREAD_ID);
+    });
     await expect(
-      screen.findByText("Continued with Work GitHub again"),
+      within(chat).findByText(
+        "Continued with Work GitHub again",
+        {},
+        replyWaitOptions,
+      ),
     ).resolves.toBeInTheDocument();
   },
 );

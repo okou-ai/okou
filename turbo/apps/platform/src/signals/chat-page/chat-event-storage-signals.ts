@@ -102,25 +102,13 @@ function hasNewInsufficientCreditsRejection({
 }
 
 function mergePersistentEvents(
-  previous: PersistedChatEvent[],
-  incoming: readonly PersistedChatEvent[],
+  eventSets: readonly (readonly PersistedChatEvent[])[],
 ): PersistedChatEvent[] {
-  const byId = new Map(
-    previous.map((event) => {
-      return [event.id, event];
-    }),
-  );
-  let changed = false;
-  for (const event of incoming) {
-    // Durable events are immutable at their ID and sequence position. Overlapping
-    // catch-ups can return the same tail after another read already applied it.
-    if (byId.get(event.id)?.seqId !== event.seqId) {
+  const byId = new Map<string, PersistedChatEvent>();
+  for (const events of eventSets) {
+    for (const event of events) {
       byId.set(event.id, event);
-      changed = true;
     }
-  }
-  if (!changed) {
-    return previous;
   }
   return Array.from(byId.values()).sort((left, right) => {
     return left.seqId - right.seqId;
@@ -193,7 +181,7 @@ function createSharedDatabaseEventSignals({
         return chatEventFromRow(row);
       });
       set(persistentChatEvents$, (previous) => {
-        return mergePersistentEvents(previous, events);
+        return mergePersistentEvents([previous, events]);
       });
       set(reconcileOptimisticChatEvents$, { threadId, events });
       await set(notifyChatEventsChanged$, chatEvents$, signal);
@@ -277,10 +265,6 @@ export function createChatEventStorageSignals({
         return;
       }
       const persistentEvents = get(persistentChatEvents$);
-      const merged = mergePersistentEvents(persistentEvents, events);
-      if (merged === persistentEvents) {
-        return;
-      }
       reportNewCompletedRuns({ persistentEvents, events });
       const pendingUserMessageIds = new Set(
         get(optimisticEvents$).flatMap((entry) => {
@@ -298,7 +282,9 @@ export function createChatEventStorageSignals({
       ) {
         set(reloadBillingStatus$);
       }
-      set(persistentChatEvents$, merged);
+      set(persistentChatEvents$, (previous) => {
+        return mergePersistentEvents([previous, events]);
+      });
       set(reconcileOptimisticChatEvents$, { threadId, events });
       await set(notifyChatEventsChanged$, chatEvents$, signal);
       signal.throwIfAborted();
