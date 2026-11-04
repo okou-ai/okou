@@ -188,7 +188,7 @@ export const resolveTeamsMessageTarget$ = command(
     return {
       conversationId,
       activityId: args.body.activityId,
-      ...(args.body.user || args.recipientId ? { recipientId: memberId } : {}),
+      recipientId: args.body.user ? memberId : args.recipientId,
     };
   },
 );
