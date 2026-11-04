@@ -1318,7 +1318,8 @@ function sameTeamsDeliveryDestination(
     stored.conversationId === requested.conversationId &&
     stored.activityId === requested.activityId &&
     stored.text === requested.text &&
-    stored.source === requested.source
+    stored.source === requested.source &&
+    stored.recipientId === requested.recipientId
   );
 }
 

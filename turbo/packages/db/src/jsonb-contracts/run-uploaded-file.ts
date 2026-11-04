@@ -95,6 +95,8 @@ export interface CanonicalAssetTeamsDeliveryDestination {
   readonly tenantId: string;
   readonly conversationId: string;
   readonly source: boolean;
+  /** Recipient selected when opening a bot DM; completion rechecks this member. */
+  readonly recipientId?: string;
   readonly activityId?: string;
   readonly text?: string;
 }

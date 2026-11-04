@@ -222,6 +222,7 @@ export const completeCanonicalTeamsUpload$ = command(
         tenantId: destination.tenantId,
         allowSource: destination.source,
         sourceOnly: destination.source,
+        recipientId: destination.recipientId,
         body: {
           conversationId: destination.conversationId,
           activityId: destination.activityId,

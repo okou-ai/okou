@@ -338,14 +338,27 @@ describe("Microsoft Teams integration CLI routes", () => {
     },
   );
 
-  it.each(["delivered", "uncertain"])(
-    "owns a non-Run v2 upload and preserves its %s delivery outcome",
-    async (outcome) => {
+  it.each(
+    ["delivered", "uncertain"].flatMap((outcome) => {
+      return ["conversation", "me", "29:other-recipient"].map((target) => {
+        return {
+          outcome,
+          target,
+        };
+      });
+    }),
+  )(
+    "owns a non-Run v2 $target upload and preserves its $outcome delivery outcome",
+    async ({ outcome, target }) => {
       const fixture = teamsFixture();
       fixtures.push(fixture);
       await seedConnectedTeams(fixture);
       const captured: CapturedTeamsActivity = {};
-      const outgoing = mockOutgoingTeams(fixture, captured);
+      const outgoing = mockOutgoingTeams(
+        fixture,
+        captured,
+        target === "29:other-recipient" ? target : fixture.teamsUserId,
+      );
       installSharedThreadStorage(context);
       let sends = 0;
       server.use(
@@ -379,7 +392,9 @@ describe("Microsoft Teams integration CLI routes", () => {
           version: 2 as const,
           operationId,
           checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-          conversationId: fixture.teamsConversationId,
+          ...(target === "conversation"
+            ? { conversationId: fixture.teamsConversationId }
+            : { user: target }),
           text: "Pinned account report",
         },
       };
@@ -418,7 +433,11 @@ describe("Microsoft Teams integration CLI routes", () => {
       expect(replayed.status).toBe(response.status);
       expect(replayed.body).toStrictEqual(response.body);
       expect(sends).toBe(1);
-      expect(captured.conversationId).toBe(fixture.teamsConversationId);
+      expect(captured.conversationId).toBe(
+        target === "conversation"
+          ? fixture.teamsConversationId
+          : outgoing.dmConversationId,
+      );
       expect(captured.body?.text).toContain("Pinned account report");
       expect(captured.body?.text).not.toContain("Replacement text");
       const reused = await accept(

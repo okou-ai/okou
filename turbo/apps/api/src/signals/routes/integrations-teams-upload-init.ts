@@ -78,6 +78,7 @@ const prepareCanonicalTeamsUpload$ = command(
             tenantId: target.installation.teamsTenantId,
             conversationId: target.conversationId,
             source: target.source,
+            ...(target.recipientId ? { recipientId: target.recipientId } : {}),
             ...(body.canonical.activityId
               ? { activityId: body.canonical.activityId }
               : {}),
