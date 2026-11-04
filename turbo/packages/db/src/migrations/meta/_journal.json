@@ -3123,6 +3123,20 @@
       "when": 1793847220353,
       "tag": "1524_connector_skill_bundle_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 1525,
+      "version": "7",
+      "when": 1793866569643,
+      "tag": "1525_disconnect_unowned_teams_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 1526,
+      "version": "7",
+      "when": 1793866751077,
+      "tag": "1526_retire_teams_installation_identity",
+      "breakpoints": true
     }
   ]
 }
