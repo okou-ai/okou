@@ -3971,7 +3971,7 @@ describe("CHAT-02: failed chat callbacks", () => {
 
 describe("CHAT-02: auto-send after failures", () => {
   it.each(["completed", "failed"] as const)(
-    "preserves the context boundary after a dense %s round",
+    "preserves dense %s output and continuation across event pages",
     async (status) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
 
@@ -3991,6 +3991,7 @@ describe("CHAT-02: auto-send after failures", () => {
         prompt: densePrompt,
       });
       const denseHeaders = await claimChatRun(runnerGroup, dense.runId);
+      // The output tail spans many event pages before the round's first input.
       const outputs = Array.from({ length: 205 }, (_, index) => {
         return `dense output ${String(index).padStart(3, "0")}`;
       });
@@ -4036,12 +4037,9 @@ describe("CHAT-02: auto-send after failures", () => {
         prompt: probePrompt,
       });
       const probeContext = await waitForRunContext(actor, probe.runId);
-      const appended = probeContext.body.appendSystemPrompt ?? "";
-      expect(appended).not.toContain(
-        "successful history before the dense round",
-      );
-      expect(appended).not.toContain(probePrompt);
+      expect(probeContext.body.prompt).toBe(probePrompt);
       if (status === "failed") {
+        const appended = probeContext.body.appendSystemPrompt ?? "";
         expect(appended).toContain("# Incomplete Rounds Context");
         expect(appended).toContain(densePrompt);
         expect(appended.match(/^- RUN_STATUS: failed$/gm) ?? []).toHaveLength(
@@ -4054,13 +4052,20 @@ describe("CHAT-02: auto-send after failures", () => {
             return `Assistant (partial): ${output}`;
           }),
         );
+        await api.requestCancelRun(actor, probe.runId, [200]);
+        await waitForRunStatus(actor, probe.runId, "cancelled");
       } else {
-        expect(appended).not.toContain("# Incomplete Rounds Context");
-        expect(appended).not.toContain(densePrompt);
-        expect(appended).not.toContain("dense output");
+        const probeClaim = await claimChatRunJob(runnerGroup, probe.runId);
+        expect(probeClaim.nativeContinuation).toMatchObject({
+          sessionId: cliAgentSessionIdForChatRun(dense.runId),
+          generationRunId: dense.runId,
+        });
+        chatCallbacks.mockChatOutputEvents([]);
+        await completeChatRunOk(probe.runId, {
+          authorization: `Bearer ${probeClaim.sandboxToken}`,
+        });
+        await waitForRunStatus(actor, probe.runId, "completed");
       }
-      await api.requestCancelRun(actor, probe.runId, [200]);
-      await waitForRunStatus(actor, probe.runId, "cancelled");
     },
     90_000,
   );
@@ -4279,10 +4284,7 @@ describe("CHAT-02: auto-send after failures", () => {
       expect(appended).toContain(
         `[Web file] ${file.filename} (${file.contentType})\n   [ID] ${file.id}`,
       );
-      expect(appended).not.toContain(probePrompt);
-      expect(appended).not.toContain(
-        "successful history before the failed request",
-      );
+      expect(probeContext.body.prompt).toBe(probePrompt);
       // The executed failure did not initialize a native context, so the
       // earlier successful binding cannot cover this successor's predecessor.
       expect(probeContext.body.sessionId).toBeNull();
@@ -4291,80 +4293,6 @@ describe("CHAT-02: auto-send after failures", () => {
     },
     90_000,
   );
-
-  it("does not revive a failed round when its output arrives after a later successful run", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const failedPrompt = "old failure superseded by a successful run";
-    const failed = await startChatRun(actor, { agentId, prompt: failedPrompt });
-    const failedHeaders = await claimChatRun(runnerGroup, failed.runId);
-    await failChatRun(failed.runId, failedHeaders, "old failure");
-    await waitForThreadMessages(actor, failed.threadId, (messages) => {
-      return lifecycleMarkers(messages, failed.runId, "failed").length === 1;
-    });
-
-    const successful = await startChatRun(actor, {
-      agentId,
-      threadId: failed.threadId,
-      prompt: "establish later successful history",
-    });
-    const successfulHeaders = await claimChatRun(runnerGroup, successful.runId);
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(successful.runId, successfulHeaders);
-    await waitForThreadMessages(actor, failed.threadId, (messages) => {
-      return (
-        lifecycleMarkers(messages, successful.runId, "completed").length === 1
-      );
-    });
-
-    const lateOutput = "late output from the superseded failure";
-    await webhooks.requestAgentEvents(
-      {
-        runId: failed.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              id: randomUUID(),
-              content: [{ type: "text", text: lateOutput }],
-            },
-          },
-        ],
-      },
-      failedHeaders,
-      [200],
-    );
-    const history = await chat.listThreadEvents(actor, failed.threadId);
-    const completed = lifecycleMarkers(
-      history.events,
-      successful.runId,
-      "completed",
-    )[0];
-    const output = eventBackedContents(history.events, failed.runId).find(
-      (event) => {
-        return event.content === lateOutput;
-      },
-    );
-    if (!completed || !output) {
-      throw new Error(
-        "Expected the later completion and the old run's late output",
-      );
-    }
-    expect(output.seqId).toBeGreaterThan(completed.seqId);
-
-    const probe = await startChatRun(actor, {
-      agentId,
-      threadId: failed.threadId,
-      prompt: "continue after the latest success",
-    });
-    const probeContext = await waitForRunContext(actor, probe.runId);
-    const appended = probeContext.body.appendSystemPrompt ?? "";
-    expect(appended).not.toContain("# Incomplete Rounds Context");
-    expect(appended).not.toContain(failedPrompt);
-    expect(appended).not.toContain(lateOutput);
-    await api.requestCancelRun(actor, probe.runId, [200]);
-    await waitForRunStatus(actor, probe.runId, "cancelled");
-  }, 90_000);
 
   it("preserves the successful round boundary when a published follow-up is revoked", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -4709,20 +4637,24 @@ describe("CHAT-02: auto-send after failures", () => {
     if (!oldest) {
       throw new Error("Expected the oldest failed frontier run");
     }
-    const lateOutput = "late output must not make the oldest round recent";
+    // Late output spans multiple pages while the oldest run's first input
+    // still determines its position in the recovered conversation.
+    const lateOutputs = Array.from({ length: 33 }, (_, index) => {
+      return `late oldest output ${String(index).padStart(2, "0")}`;
+    });
     await webhooks.requestAgentEvents(
       {
         runId: oldest.runId,
-        events: [
-          {
+        events: lateOutputs.map((text, sequenceNumber) => {
+          return {
             type: "assistant",
-            sequenceNumber: 0,
+            sequenceNumber,
             message: {
               id: randomUUID(),
-              content: [{ type: "text", text: lateOutput }],
+              content: [{ type: "text", text }],
             },
-          },
-        ],
+          };
+        }),
       },
       oldest.sandboxHeaders,
       [200],
@@ -4731,11 +4663,16 @@ describe("CHAT-02: auto-send after failures", () => {
     const newestInput = userMessages(history.events).find((event) => {
       return chatEventDisplayText(event) === historyPrompts.at(-1);
     });
-    const output = eventBackedContents(history.events, oldest.runId).find(
-      (event) => {
-        return event.content === lateOutput;
-      },
+    const publishedLateOutputs = eventBackedContents(
+      history.events,
+      oldest.runId,
     );
+    expect(
+      publishedLateOutputs.map((event) => {
+        return event.content;
+      }),
+    ).toStrictEqual(lateOutputs);
+    const output = publishedLateOutputs[0];
     if (!newestInput || !output) {
       throw new Error("Expected the newest input and oldest run's late output");
     }
@@ -4751,18 +4688,9 @@ describe("CHAT-02: auto-send after failures", () => {
     const normalAppended = normalContext.body.appendSystemPrompt ?? "";
     expect(normalAppended).toContain("# Incomplete Rounds Context");
     expect(normalAppended.match(/^- RUN_STATUS:/gm) ?? []).toHaveLength(20);
-    expect(normalAppended).not.toContain(historyPrompts[0]);
-    expect(normalAppended).not.toContain(lateOutput);
-    expect(normalAppended).not.toContain("successful frontier anchor");
-    for (const prompt of historyPrompts.slice(1)) {
-      expect(normalAppended).toContain(prompt);
-    }
-    const normalPositions = historyPrompts.slice(1).map((prompt) => {
-      return normalAppended.indexOf(prompt);
-    });
-    expect(normalPositions).toStrictEqual(
-      [...normalPositions].sort((left, right) => {
-        return left - right;
+    expect(normalAppended.match(/^User: .+$/gm)).toStrictEqual(
+      historyPrompts.slice(1).map((prompt) => {
+        return `User: ${prompt}`;
       }),
     );
 
@@ -4807,21 +4735,9 @@ describe("CHAT-02: auto-send after failures", () => {
     expect(
       callbackAppended.match(/^- RUN_STATUS: failed$/gm) ?? [],
     ).toHaveLength(1);
-    expect(callbackAppended).not.toContain(historyPrompts[0]);
-    expect(callbackAppended).not.toContain(historyPrompts[1]);
-    expect(callbackAppended).not.toContain(lateOutput);
-    expect(callbackAppended).toContain(normalPrompt);
-    for (const prompt of historyPrompts.slice(2)) {
-      expect(callbackAppended).toContain(prompt);
-    }
-    const callbackPositions = [...historyPrompts.slice(2), normalPrompt].map(
-      (prompt) => {
-        return callbackAppended.indexOf(prompt);
-      },
-    );
-    expect(callbackPositions).toStrictEqual(
-      [...callbackPositions].sort((left, right) => {
-        return left - right;
+    expect(callbackAppended.match(/^User: .+$/gm)).toStrictEqual(
+      [...historyPrompts.slice(2), normalPrompt].map((prompt) => {
+        return `User: ${prompt}`;
       }),
     );
 

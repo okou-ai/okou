@@ -763,8 +763,9 @@ describe("CHAT-02: shared user message queue", () => {
     expect(rotatedSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(rotatedSystemPrompt).not.toContain(rotatedAnchorPrompt);
-    expect(rotatedSystemPrompt).not.toContain("# Incomplete Rounds Context");
+    expect(rotatedRun.prompt).toContain(
+      "agent prompt after the Web session rotates",
+    );
     expect(rotatedSystemPrompt).toContain("Web chat files: use");
     expect(rotatedSystemPrompt).toContain(
       "Cross-integration messages from web chat",

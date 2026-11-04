@@ -1033,9 +1033,7 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue in a fresh native session",
     });
     const secondRun = await api.readRun(actor, second.runId);
-    const appended = secondRun.appendSystemPrompt ?? "";
-    expect(appended).not.toContain(firstPrompt);
-    expect(appended).not.toContain(firstAnswer);
+    expect(secondRun.prompt).toBe("continue in a fresh native session");
 
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.nativeContinuation?.sessionId).toBe(

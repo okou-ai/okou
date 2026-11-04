@@ -9,12 +9,10 @@ import {
   isNotNull,
   lt,
   min,
-  ne,
   or,
   sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
-import { boolean, object, string } from "zod";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   CHAT_EVENT_TYPES,
   chatEventCompatibilityRole,
@@ -22,9 +20,8 @@ import {
 } from "@okouai/api-contracts/contracts/chat-events";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { parseRawRows } from "../../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../../lib/db-structured-result";
-import { db$, rawSqlReadDb$ } from "../../external/db";
+import { db$ } from "../../external/db";
 import { canonicalChatEventContent } from "../canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "../chat-event-shared.service";
 import {
@@ -37,21 +34,10 @@ import type { PickedThreadInputEvent } from "./types";
 
 type IncompletePromptEvent = Pick<
   PickedThreadInputEvent,
-  "chatThreadId" | "contextType"
+  "chatThreadId" | "contextType" | "thread"
 >;
 
 type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
-
-const earlierRunEvent = alias(chatEvents, "earlier_run_event");
-
-const eligibleRun = alias(agentRuns, "eligible_run");
-
-const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
-
-const incompleteAnchorCandidate = alias(
-  chatEvents,
-  "incomplete_anchor_candidate",
-);
 
 interface IncompleteRoundEvent {
   readonly eventType: ChatEventType;
@@ -76,12 +62,14 @@ interface IncompleteRoundSelection {
 }
 
 const INCOMPLETE_ROUND_LIMIT = 20;
+const INCOMPLETE_EVENT_PAGE_SIZE = 16;
 
-const incompleteRoundFrontierRowSchema = object({
-  runId: string(),
-  runStatus: string(),
-  isSuccess: boolean(),
-});
+interface IncompleteRunFacts {
+  readonly runId: string;
+  readonly status: string;
+  readonly firstSeq: number;
+  readonly visible: boolean;
+}
 
 function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {
   return value === "cancelled" || value === "failed" || value === "timeout";
@@ -89,6 +77,77 @@ function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {
 
 interface IncompleteRound extends IncompleteRoundSelection {
   readonly events: IncompleteRoundEvent[];
+}
+
+function incompleteRunFactsQuery(threadId: string, runIds: readonly string[]) {
+  const query = new QueryBuilder();
+  // Revoked rows still determine ordering; the minimum covers the whole retained
+  // Run, including events outside the current page and its cursor.
+  const firstOwnedEvents = query
+    .select({
+      runId: chatEvents.runId,
+      firstSeq: min(chatEvents.seqId).mapWith(chatEvents.seqId).as("first_seq"),
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, threadId),
+        inArray(chatEvents.runId, runIds),
+        runOwnedChatEventCondition(),
+      ),
+    )
+    .groupBy(chatEvents.runId)
+    .as("first_owned_events");
+  return query
+    .select({
+      runId: agentRuns.id,
+      status: agentRuns.status,
+      firstSeq: firstOwnedEvents.firstSeq,
+      visible: exists(
+        query
+          .select({ id: chatEvents.id })
+          .from(chatEvents)
+          .where(
+            and(
+              eq(chatEvents.chatThreadId, threadId),
+              eq(chatEvents.runId, agentRuns.id),
+              runOwnedChatEventCondition(),
+              visibleChatEventCondition(),
+              or(
+                eq(agentRuns.status, "completed"),
+                chatEventTypeIn(CHAT_EVENT_TYPES),
+              ),
+            ),
+          ),
+      )
+        .mapWith(pgBooleanDecoder)
+        .as("visible"),
+    })
+    .from(agentRuns)
+    .innerJoin(firstOwnedEvents, eq(firstOwnedEvents.runId, agentRuns.id))
+    .where(
+      and(
+        inArray(agentRuns.id, runIds),
+        inArray(agentRuns.status, [
+          "completed",
+          "cancelled",
+          "failed",
+          "timeout",
+        ]),
+      ),
+    )
+    .as("incomplete_run_facts");
+}
+
+function incompleteRoundAnchors(
+  page: readonly Pick<typeof chatEvents.$inferSelect, "runId" | "seqId">[],
+  factsByRunId: ReadonlyMap<string, IncompleteRunFacts | null>,
+): IncompleteRunFacts[] {
+  return page.flatMap((event) => {
+    const fact =
+      event.runId === null ? undefined : factsByRunId.get(event.runId);
+    return fact?.visible && event.seqId === fact.firstSeq ? [fact] : [];
+  });
 }
 
 function buildWebChatIncompleteContext(
@@ -141,177 +200,105 @@ function truncateIncomplete(value: string): string {
 
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
 
-function createIncompleteRoundAnchors(
+function createIncompleteRoundSelection(
   pickedEvent$: Computed<Promise<IncompletePromptEvent | null>>,
-) {
-  return computed(async (get) => {
+): Computed<Promise<readonly IncompleteRoundSelection[]>> {
+  return computed(async (get): Promise<readonly IncompleteRoundSelection[]> => {
     const event = await get(pickedEvent$);
     if (!event?.contextType || !isWebChatContextType(event.contextType)) {
-      return null;
+      return [];
     }
     const threadId = event.chatThreadId;
     const db = get(db$);
-    const anchors = [undefined, sql`incomplete_frontier.seq_id`].map(
-      (beforeSeq) => {
-        const isSuccessfulRun = eq(agentRuns.status, "completed").mapWith(
-          pgBooleanDecoder,
+    const predecessorId = event.thread.frameworkSessionRunId;
+    if (predecessorId !== null) {
+      const [predecessor] = await db
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, predecessorId),
+            eq(agentRuns.chatThreadId, threadId),
+            eq(agentRuns.userId, event.thread.userId),
+            exists(
+              db
+                .select({ id: chatEvents.id })
+                .from(chatEvents)
+                .where(
+                  and(
+                    eq(chatEvents.chatThreadId, threadId),
+                    eq(chatEvents.runId, predecessorId),
+                    runOwnedChatEventCondition(),
+                    visibleChatEventCondition(),
+                  ),
+                ),
+            ),
+          ),
         );
-        // Grouping prevents PostgreSQL's MIN/MAX optimization from seeking forward
-        // through unrelated older runs in the thread-sequence index.
-        // Keep eligibility in this run-keyed lookup too: joining runs in the outer
-        // candidate scan can sort the entire thread before its caller's LIMIT.
-        const firstOwnedEvent = db
-          .select({ seqId: min(earlierRunEvent.seqId).as("first_seq") })
-          .from(earlierRunEvent)
-          .where(
-            and(
-              eq(earlierRunEvent.chatThreadId, threadId),
-              eq(earlierRunEvent.runId, incompleteRunAnchor.runId),
-              ne(earlierRunEvent.eventType, "control.interrupt"),
-              // Key status eligibility to the candidate run, not each owned
-              // event, so repeated events do not repeat the run PK lookup.
-              exists(
-                db
-                  .select({ id: eligibleRun.id })
-                  .from(eligibleRun)
-                  .where(
-                    and(
-                      eq(eligibleRun.id, incompleteRunAnchor.runId),
-                      or(
-                        eq(eligibleRun.status, "completed"),
-                        inArray(
-                          eligibleRun.status,
-                          sql`('cancelled', 'failed', 'timeout')`,
-                        ),
-                      ),
-                    ),
-                  ),
-              ),
-            ),
-          )
-          .groupBy(earlierRunEvent.runId)
-          .as("first_owned_event");
-        const candidates = db
-          .select({
-            runId: incompleteRunAnchor.runId,
-            seqId: incompleteRunAnchor.seqId,
-            firstSeq: firstOwnedEvent.seqId,
-          })
-          .from(incompleteRunAnchor)
-          .crossJoinLateral(firstOwnedEvent)
-          .where(
-            and(
-              eq(incompleteRunAnchor.chatThreadId, threadId),
-              beforeSeq === undefined
-                ? undefined
-                : lt(incompleteRunAnchor.seqId, beforeSeq),
-              isNotNull(incompleteRunAnchor.runId),
-              ne(incompleteRunAnchor.eventType, "control.interrupt"),
-            ),
-          )
-          .orderBy(desc(incompleteRunAnchor.seqId));
-        // Keep the equality outside this planner boundary so the lateral minimum
-        // can be memoized by run ID, not recomputed for every candidate sequence.
-        // Drizzle omits .offset(0); this shell must retain PostgreSQL's OFFSET 0.
-        const candidateSource = sql`(${candidates} OFFSET 0)
-      AS incomplete_anchor_candidate(run_id, seq_id, first_seq)`;
-        // A later append cannot move the first retained event for a run. Include
-        // revoked rows in this ordering fact; visibility only controls eligibility
-        // and content. control.interrupt targets a run without belonging to it.
-        // This reader remains hot-only: archival retention may remove its anchor.
-        return db
-          .select({
-            runId: agentRuns.id,
-            runStatus: agentRuns.status,
-            isSuccess: isSuccessfulRun,
-            // candidateSource is an opaque SQL FROM fragment; a bare column
-            // cannot pass Drizzle's typed-source membership validation here.
-            seqId: sql`${incompleteAnchorCandidate.seqId}`.mapWith(
-              chatEvents.seqId,
-            ),
-          })
-          .from(candidateSource)
-          .innerJoin(
-            agentRuns,
-            eq(agentRuns.id, incompleteAnchorCandidate.runId),
-          )
-          .where(
-            and(
-              eq(
-                incompleteAnchorCandidate.seqId,
-                sql`incomplete_anchor_candidate.first_seq`,
-              ),
-              exists(
-                db
-                  .select({ id: chatEvents.id })
-                  .from(chatEvents)
-                  .where(
-                    and(
-                      eq(chatEvents.chatThreadId, threadId),
-                      eq(chatEvents.runId, incompleteAnchorCandidate.runId),
-                      runOwnedChatEventCondition(),
-                      visibleChatEventCondition(),
-                      or(isSuccessfulRun, chatEventTypeIn(CHAT_EVENT_TYPES)),
-                    ),
-                  ),
-              ),
-            ),
-          )
-          .orderBy(desc(incompleteAnchorCandidate.seqId))
-          .limit(1);
-      },
-    );
-    const [newestAnchor, precedingAnchor] = anchors;
-    if (!newestAnchor || !precedingAnchor) {
-      throw new Error("Incomplete round anchors were not constructed");
+      // The latest executed predecessor defines the fast path, even when a
+      // newer pending Run failed before a Runner could start it.
+      if (predecessor?.status === "completed") {
+        return [];
+      }
     }
-    return { newestAnchor, precedingAnchor };
-  });
-}
 
-function createIncompleteRoundSelection(
-  anchors$: ReturnType<typeof createIncompleteRoundAnchors>,
-): Computed<Promise<readonly IncompleteRoundSelection[]>> {
-  return computed(async (get): Promise<readonly IncompleteRoundSelection[]> => {
-    const anchors = await get(anchors$);
-    if (!anchors) {
-      return [];
-    }
-    // Handwritten raw SQL needs `execute`; see rawSqlReadDb$.
-    const db = get(rawSqlReadDb$);
-    const { newestAnchor, precedingAnchor } = anchors;
-    const frontierQuery = sql`
-      WITH RECURSIVE incomplete_frontier AS (
-        SELECT candidate.*, 1 AS depth
-        FROM (${newestAnchor}) AS candidate(run_id, run_status, is_success, seq_id)
-
-        UNION ALL
-
-        SELECT candidate.*, incomplete_frontier.depth + 1
-        FROM incomplete_frontier
-        CROSS JOIN LATERAL (${precedingAnchor})
-          AS candidate(run_id, run_status, is_success, seq_id)
-        WHERE incomplete_frontier.depth < ${INCOMPLETE_ROUND_LIMIT + 1}
-          AND NOT incomplete_frontier.is_success
-      )
-      SELECT run_id AS "runId", run_status AS "runStatus", is_success AS "isSuccess"
-      FROM incomplete_frontier
-      ORDER BY depth
-    `;
-    const rowSchema = incompleteRoundFrontierRowSchema;
-    const rows = await (async () => {
-      return parseRawRows(rowSchema, await db.execute(frontierQuery));
-    })();
     const rounds: IncompleteRoundSelection[] = [];
-    for (const row of rows) {
-      if (row.isSuccess) {
+    const factsByRunId = new Map<string, IncompleteRunFacts | null>();
+    let beforeSeq: number | undefined;
+    while (rounds.length < INCOMPLETE_ROUND_LIMIT) {
+      const page = await db
+        .select({ seqId: chatEvents.seqId, runId: chatEvents.runId })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.chatThreadId, threadId),
+            isNotNull(chatEvents.runId),
+            runOwnedChatEventCondition(),
+            beforeSeq === undefined
+              ? undefined
+              : lt(chatEvents.seqId, beforeSeq),
+          ),
+        )
+        .orderBy(desc(chatEvents.seqId))
+        .limit(INCOMPLETE_EVENT_PAGE_SIZE);
+      const lastEvent = page.at(-1);
+      if (!lastEvent) {
         break;
       }
-      if (
-        rounds.length < INCOMPLETE_ROUND_LIMIT &&
-        isIncompleteRunStatus(row.runStatus)
-      ) {
-        rounds.push({ runId: row.runId, status: row.runStatus });
+      const runIds = [
+        ...new Set(
+          page.flatMap((row) => {
+            return row.runId !== null && !factsByRunId.has(row.runId)
+              ? [row.runId]
+              : [];
+          }),
+        ),
+      ];
+      if (runIds.length > 0) {
+        const runFacts = incompleteRunFactsQuery(threadId, runIds);
+        const facts = await db.select().from(runFacts);
+        for (const runId of runIds) {
+          factsByRunId.set(runId, null);
+        }
+        for (const fact of facts) {
+          factsByRunId.set(fact.runId, fact);
+        }
+      }
+      for (const fact of incompleteRoundAnchors(page, factsByRunId)) {
+        if (fact.status === "completed") {
+          return rounds.reverse();
+        }
+        if (isIncompleteRunStatus(fact.status)) {
+          rounds.push({ runId: fact.runId, status: fact.status });
+          if (rounds.length === INCOMPLETE_ROUND_LIMIT) {
+            return rounds.reverse();
+          }
+        }
+      }
+      // Always advance by the raw page, including pages with no eligible anchor.
+      beforeSeq = lastEvent.seqId;
+      if (page.length < INCOMPLETE_EVENT_PAGE_SIZE) {
+        break;
       }
     }
     return rounds.reverse();
@@ -396,8 +383,7 @@ function createIncompleteRounds(
 export function createIncompletePrompt(
   pickedEvent$: Computed<Promise<IncompletePromptEvent | null>>,
 ): Computed<Promise<string>> {
-  const anchors$ = createIncompleteRoundAnchors(pickedEvent$);
-  const selection$ = createIncompleteRoundSelection(anchors$);
+  const selection$ = createIncompleteRoundSelection(pickedEvent$);
   const rounds$ = createIncompleteRounds(pickedEvent$, selection$);
   return computed(async (get) => {
     return buildWebChatIncompleteContext(await get(rounds$));
