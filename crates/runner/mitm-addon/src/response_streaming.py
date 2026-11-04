@@ -712,6 +712,11 @@ def has_pending_response_inspection(flow: http.HTTPFlow) -> bool:
     )
 
 
+def _require_response_inspection_complete(flow: http.HTTPFlow) -> None:
+    if has_pending_response_inspection(flow):
+        raise RuntimeError("pending response inspection must be joined before finalization")
+
+
 async def drain_response_inspection(flow: http.HTTPFlow) -> None:
     inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
@@ -745,8 +750,7 @@ def finalize_model_json_usage(flow: http.HTTPFlow, proxy_log_path: str) -> None:
     On success, writes ``metadata_keys.MODEL_PROVIDER_USAGE``. Parse failures
     are logged to ``proxy_log_path``.
     """
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     if finish is None:
         return
@@ -773,8 +777,7 @@ def finalize_model_sse_usage(flow: http.HTTPFlow) -> None:
     The registered parser finalizer mutates the usage dictionary stored in
     ``metadata_keys.MODEL_PROVIDER_USAGE`` during response stream setup.
     """
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     if finish is not None:
         finish()
@@ -782,16 +785,14 @@ def finalize_model_sse_usage(flow: http.HTTPFlow) -> None:
 
 def observe_interrupted_model_json(flow: http.HTTPFlow) -> None:
     """Preserve complete JSON evidence on errors without changing billing admission."""
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     if finish is not None:
         finish()
 
 
 def _finish_connector_response_state(flow: http.HTTPFlow) -> None:
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
     if finish is not None:
         finish()
