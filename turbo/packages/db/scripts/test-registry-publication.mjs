@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
+import console from "node:console";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import {
@@ -14,8 +16,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import process from "node:process";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 import postgres from "postgres";
 
 const exec = promisify(execFile);
@@ -42,7 +45,8 @@ const root = await mkdtemp(path.join(tmpdir(), "registry-publication-"));
 const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 const objects = new Map();
 let interceptPut;
-const server = createServer(async (request, response) => {
+const requests = [];
+async function handleRequest(request, response) {
   try {
     const key = decodeURIComponent(
       new URL(request.url, "http://localhost").pathname.slice(1),
@@ -73,9 +77,18 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     response.writeHead(500).end(String(error));
   }
+}
+const server = createServer((request, response) => {
+  requests.push(
+    handleRequest(request, response).catch((error) => {
+      response.destroy(error);
+    }),
+  );
 });
 server.listen(0, "127.0.0.1");
-await new Promise((resolve) => server.once("listening", resolve));
+await new Promise((resolve) => {
+  return server.once("listening", resolve);
+});
 const endpoint = `http://127.0.0.1:${server.address().port}`;
 const toolDir = path.join(root, "tool");
 const toolModules = path.join(toolDir, "presentation-template-release");
@@ -112,8 +125,12 @@ const baseEnv = {
   R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID: "fixture",
   R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY: "fixture",
 };
-const run = (args, env = baseEnv) =>
-  exec(process.execPath, [tool, ...args], { env, maxBuffer: 2 * 1024 * 1024 });
+const run = (args, env = baseEnv) => {
+  return exec(process.execPath, [tool, ...args], {
+    env,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+};
 
 async function build(label) {
   const source = path.join(root, `source-${label}`);
@@ -266,7 +283,9 @@ try {
     objects.set(firstKey, Buffer.from("conflicting immutable object"));
     await assert.rejects(
       run(["publish", "--output-dir", next.output], conflict.env),
-      (e) => /immutable registry object conflicts/.test(e.stderr),
+      (e) => {
+        return /immutable registry object conflicts/.test(e.stderr);
+      },
     );
     assert.equal(
       objects.get(firstKey).toString(),
@@ -306,7 +325,9 @@ try {
     const writerEnv = { ...interrupted.env, DATABASE_URL: url.href };
     await assert.rejects(
       run(["publish", "--output-dir", next.output], writerEnv),
-      (error) => /permission denied/.test(error.stderr),
+      (error) => {
+        return /permission denied/.test(error.stderr);
+      },
     );
     const [partial] =
       await interrupted.sql`SELECT s.head_version_id,h.sha256 FROM storages s
@@ -350,8 +371,12 @@ try {
     };
     const first = run(["publish", "--output-dir", next.output], concurrent.env);
     const outcome = first.then(
-      () => ({ succeeded: true }),
-      (error) => ({ succeeded: false, error }),
+      () => {
+        return { succeeded: true };
+      },
+      (error) => {
+        return { succeeded: false, error };
+      },
     );
     try {
       await Promise.race([
@@ -384,7 +409,10 @@ try {
   }
 } finally {
   interceptPut = undefined;
-  await new Promise((resolve) => server.close(resolve));
+  await new Promise((resolve) => {
+    return server.close(resolve);
+  });
+  await Promise.all(requests);
   for (const schema of schemas)
     await admin`DROP SCHEMA ${admin(schema)} CASCADE`;
   for (const role of roles) await admin`DROP ROLE ${admin(role)}`;
