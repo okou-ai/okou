@@ -251,7 +251,10 @@ test.each([false, true])(
       "https://renamed-site.okou.app",
       "https://final-site.okou.app",
     ]);
-    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{Escape}", { delay: null });
+    await waitFor(() => {
+      expect(shareMenu).not.toBeInTheDocument();
+    });
     click(buttonNamed(sidebar ? "Close artifact" : "Close", preview));
     await waitFor(() => {
       expect(title).not.toBeInTheDocument();
