@@ -183,6 +183,7 @@ function mockWideScreen(): void {
 function openConversation(
   chatEvents: MockChatEventInput[],
   refined = false,
+  pwaNavigation = false,
 ): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -193,7 +194,10 @@ function openConversation(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: refined },
+    featureSwitches: {
+      [FeatureSwitchKey.CloudBrowserPanel]: refined,
+      [FeatureSwitchKey.PwaNavigation]: pwaNavigation,
+    },
   });
 }
 
@@ -494,6 +498,60 @@ test("The chat browser sidebar forwards a touch tap exactly once", async () => {
     }),
   ]);
 });
+
+test.each([
+  { pwaNavigation: false, active: false },
+  { pwaNavigation: false, active: true },
+  { pwaNavigation: true, active: false },
+  { pwaNavigation: true, active: true },
+])(
+  "Open the mobile chat browser and return to the conversation (PWA=$pwaNavigation, active=$active)",
+  async ({ pwaNavigation, active }) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(display-mode: standalone)" && pwaNavigation;
+    });
+    mockBrowserApi(active ? liveBrowserSession() : null);
+    await openConversation(completedConversationEvents(), true, pwaNavigation);
+    await expectConversationReady();
+
+    click(buttonByName("More actions"));
+    const menu = await screen.findByRole("menu");
+    const opener = await waitFor(() => {
+      const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+        return candidate.textContent?.trim() === "Open browser";
+      });
+      if (!item) {
+        throw new Error("Browser menu item is missing");
+      }
+      expect(item).not.toHaveAttribute("aria-disabled", "true");
+      return item;
+    });
+    click(opener);
+
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Cloud browser",
+    });
+    expect(buttonByName("More actions")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    if (!active) {
+      const start = await waitFor(() => {
+        return buttonByName("Start browser", sidebar);
+      });
+      click(start);
+    }
+    await expect(
+      within(sidebar).findByDisplayValue("https://example.com"),
+    ).resolves.toBeEnabled();
+
+    click(buttonByName("Close cloud browser", sidebar));
+    await waitFor(() => {
+      expect(sidebar).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
+  },
+);
 
 test("Start and close a browser from the thread sidebar", async () => {
   mockWideScreen();

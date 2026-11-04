@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 
 import {
@@ -197,6 +198,67 @@ test.each([true, false])(
     });
   },
 );
+
+test("Disable the mobile Browser menu during navigation and open the settled destination", async () => {
+  const mail = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+  await setupHeaders({
+    desktop: false,
+    mailGates: new Map([[destination.id, mail.promise]]),
+  });
+  await navigate(destination.id, false);
+  click(fastButton("More actions"));
+  const menu = await screen.findByRole("menu");
+  const browserItem = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Open browser";
+  });
+  expect(browserItem).toHaveAttribute("aria-disabled", "true");
+  if (!browserItem) {
+    throw new Error("Browser menu item is missing");
+  }
+  click(browserItem);
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Escape}");
+  expect(
+    screen.queryByRole("complementary", { name: "Cloud browser" }),
+  ).toBeNull();
+
+  mail.resolve();
+  await waitFor(() => {
+    expect(fastButton("Share messages")).toHaveAttribute(
+      "aria-disabled",
+      "false",
+    );
+  });
+  click(fastButton("More actions"));
+  const currentMenu = await screen.findByRole("menu");
+  const currentBrowser = queryAllByRoleFast("menuitem", currentMenu).find(
+    (item) => {
+      return item.textContent?.trim() === "Open browser";
+    },
+  );
+  expect(currentBrowser).not.toHaveAttribute("aria-disabled", "true");
+  if (!currentBrowser) {
+    throw new Error("Browser menu item is missing");
+  }
+  click(currentBrowser);
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  const pageLink = queryAllByRoleFast("link", sidebar).find((link) => {
+    return (
+      link.getAttribute("aria-label") === "Open this browser in a new page"
+    );
+  });
+  expect(pageLink).toHaveAttribute("href", `/browsers/${destination.id}`);
+});
 
 test("Keep preceding hidden entries until current mail is ready, then open the current list", async () => {
   const mail = context.mocks.deferred<void>();

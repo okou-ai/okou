@@ -8,6 +8,7 @@ import {
   BellOff,
   Clock,
   Ellipsis,
+  Globe,
   Pencil,
   Pin,
   PinOff,
@@ -23,7 +24,11 @@ import {
 } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { openThreadAutomations$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import {
+  openThreadAutomations$,
+  openThreadBrowserSession$,
+} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { useChatHeaderActions } from "./chat-header-actions.ts";
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { setChatThreadMutedWithFeedback$ } from "../../signals/chat-page/chat-thread-mute.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -100,6 +105,30 @@ function MobileMuteMenuItem({ thread }: { readonly thread: ChatPanelSignals }) {
         : t(($) => {
             return $.chat.sidebar.mute;
           })}
+    </DropdownMenuItem>
+  );
+}
+
+function MobileBrowserMenuItem({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const openBrowser = useSet(openThreadBrowserSession$);
+  const { transitioning } = useChatHeaderActions(thread);
+  return (
+    <DropdownMenuItem
+      className="min-h-11"
+      disabled={transitioning}
+      onClick={() => {
+        openBrowser(thread.threadId);
+      }}
+    >
+      <Globe size={16} />
+      {t(($) => {
+        return $.chat.thread.openBrowser;
+      })}
     </DropdownMenuItem>
   );
 }
@@ -202,7 +231,7 @@ export function MobileChatThreadMoreMenu({
                 })}
           </DropdownMenuItem>
         )}
-        {automations && automations.length > 0 && <DropdownMenuSeparator />}
+        <DropdownMenuSeparator />
         {automations && automations.length > 0 && (
           <DropdownMenuItem
             className="min-h-11"
@@ -217,6 +246,7 @@ export function MobileChatThreadMoreMenu({
             })}
           </DropdownMenuItem>
         )}
+        <MobileBrowserMenuItem thread={thread} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
