@@ -5,12 +5,12 @@ import { cn } from "@okouai/ui";
  * A focusable 12px pointer target on the edge between two resizable panes.
  * The caller positions it and leaves the resting line to the panes' own
  * border. Hover waits 150ms before showing a 2px line, so a pointer passing
- * over the edge does not flash it; a drag darkens the line and keyboard focus
- * paints it in the ring colour.
+ * over the edge does not flash it; drag and keyboard focus
+ * use the same brand-colour feedback.
  *
- * The target never takes a z-index. Each caller places it later in tree order
- * than the panes it overlaps, or wholly inside one of them, so ordinary paint
- * order puts it on top without ranking it against the shell.
+ * The primitive does not assign a z-index. The owning layout places it after
+ * overlapping panes where possible and owns any shell-level paint priority
+ * needed to keep both halves of the target reachable.
  */
 export function ResizeSeam({
   ref,
@@ -56,9 +56,9 @@ export function ResizeSeam({
         className={cn(
           "pointer-events-none absolute inset-y-0 w-px transition-[width,background-color] delay-0 duration-150",
           line === "center" ? "left-1/2 -translate-x-1/2" : "right-0",
-          "group-hover:w-0.5 group-hover:bg-gray-500 group-hover:delay-150",
-          "group-focus-visible:w-0.5 group-focus-visible:bg-ring group-focus-visible:delay-0",
-          "group-data-[resizing]:w-0.5 group-data-[resizing]:bg-gray-700 group-data-[resizing]:delay-0",
+          "group-hover:w-0.5 group-hover:bg-primary group-hover:delay-150",
+          "group-focus-visible:w-0.5 group-focus-visible:bg-primary group-focus-visible:delay-0",
+          "group-data-[resizing]:w-0.5 group-data-[resizing]:bg-primary group-data-[resizing]:delay-0",
         )}
       />
     </div>
