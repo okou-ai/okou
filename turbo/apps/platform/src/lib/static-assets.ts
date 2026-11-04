@@ -2,6 +2,11 @@ import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 
 const PLATFORM_RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 
+export const clerkSignupProviderIcons = {
+  apple: "https://img.clerk.com/static/apple.svg",
+  google: "https://img.clerk.com/static/google.svg",
+} as const;
+
 export function platformStaticAssetUrl(path: string) {
   return `${PLATFORM_RUNTIME_CONFIG.publicStaticAssetsBaseUrl}/platform/${path.replace(/^\/+/u, "")}`;
 }

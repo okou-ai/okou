@@ -107,6 +107,10 @@ impl AppServerState {
     }
 
     fn run<R: BufRead, W: Write>(&mut self, input: R, mut output: W) -> io::Result<()> {
+        if self.scenario == Scenario::SigtermDeafOnStdinEof {
+            // The initialize response must acknowledge that SIGTERM is already ignored.
+            ignore_sigterm();
+        }
         for line_result in input.lines() {
             let line = line_result?;
             if line.trim().is_empty() {
@@ -120,15 +124,9 @@ impl AppServerState {
             }
         }
         match self.scenario {
-            Scenario::HangOnStdinEof => loop {
+            Scenario::HangOnStdinEof | Scenario::SigtermDeafOnStdinEof => loop {
                 thread::park();
             },
-            Scenario::SigtermDeafOnStdinEof => {
-                ignore_sigterm();
-                loop {
-                    thread::park();
-                }
-            }
             Scenario::StderrHolderOnStdinEof => {
                 spawn_stderr_holder()?;
             }

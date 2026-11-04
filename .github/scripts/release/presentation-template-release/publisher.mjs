@@ -6,7 +6,13 @@ import {
   verifyDatabasePublication,
 } from "./database.mjs";
 import { requiredEnv } from "./options.mjs";
-import { createR2Client, uploadPackage, verifyR2Objects } from "./r2.mjs";
+import {
+  createR2Client,
+  createRegistryR2Client,
+  uploadPackage,
+  uploadRegistryPackage,
+  verifyR2Objects,
+} from "./r2.mjs";
 import { writeLine } from "./shared.mjs";
 
 function releasesForPublication(config, publication) {
@@ -55,6 +61,13 @@ async function uploadPackages(context) {
       pkg.slug,
       await uploadPackage({ ...context, pkg, release, current }),
     );
+    await uploadRegistryPackage({
+      client: context.registry.client,
+      bucket: context.registry.bucket,
+      outputDir: context.outputDir,
+      pkg,
+      release,
+    });
   }
 }
 
@@ -71,9 +84,14 @@ export async function publishBundle(outputDir) {
   const { config, publication } = await verifyBundle(outputDir);
   const releases = releasesForPublication(config, publication);
   const { bucket, client } = createR2Client();
-  const sql = createDatabaseClient(requiredEnv("DATABASE_URL"));
+  let registry;
+  let sql;
 
   try {
+    registry = createRegistryR2Client();
+    if (registry.bucket === bucket)
+      throw new Error("Registry archives require a separate private bucket");
+    sql = createDatabaseClient(requiredEnv("DATABASE_URL"));
     const state = await loadStorageState(sql, releases);
     await uploadPackages({
       bucket,
@@ -82,13 +100,18 @@ export async function publishBundle(outputDir) {
       publication,
       releases,
       state,
+      registry,
     });
     await registerPublication(sql, releases, state, publication.source.commit);
     await verifyDatabasePublication(sql, releases, state);
     await verifyR2Objects(client, bucket, releases, state);
     logPublishedReleases(releases, state);
   } finally {
-    await sql.end({ timeout: 5 });
-    client.destroy();
+    try {
+      await sql?.end({ timeout: 5 });
+    } finally {
+      client.destroy();
+      registry?.client.destroy();
+    }
   }
 }

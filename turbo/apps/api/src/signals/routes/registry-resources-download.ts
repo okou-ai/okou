@@ -1,7 +1,11 @@
 import { computed } from "ccstate";
 import { registryResourceDownloadContract } from "@okouai/api-contracts/contracts/registry-resources";
 import { findPresentationRunbookResource } from "@okouai/core/resource-registry";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
+import {
+  registryResourceArchives,
+  registryResourceHeads,
+} from "@okouai/db/schema/registry-resource-archive";
+import { registryResourceArchiveKey } from "@okouai/core/registry-resource-archive";
 import { and, eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
@@ -54,44 +58,29 @@ const downloadPresentationTemplateInner$ = computed(async (get) => {
   }
 
   const db = get(db$);
-  const [storage] = await db
+  const [archive] = await db
     .select({
-      id: storages.id,
-      headVersionId: storages.headVersionId,
+      sha256: registryResourceArchives.sha256,
     })
-    .from(storageVersions)
+    .from(registryResourceHeads)
     .innerJoin(
-      storages,
+      registryResourceArchives,
       and(
-        eq(storages.id, storageVersions.storageId),
-        eq(storages.name, anchor.storageName),
+        eq(
+          registryResourceArchives.resourceId,
+          registryResourceHeads.resourceId,
+        ),
+        eq(registryResourceArchives.sha256, registryResourceHeads.sha256),
       ),
     )
-    .where(eq(storageVersions.id, anchor.versionId))
+    .where(eq(registryResourceHeads.resourceId, entry.id))
     .limit(1);
 
-  if (!storage?.headVersionId) {
+  if (!archive) {
     return notFound(`Current archive for "${query.id}" was not found`);
   }
 
-  const [version] = await db
-    .select({
-      s3Key: storageVersions.s3Key,
-    })
-    .from(storageVersions)
-    .where(
-      and(
-        eq(storageVersions.storageId, storage.id),
-        eq(storageVersions.id, storage.headVersionId),
-      ),
-    )
-    .limit(1);
-
-  if (!version) {
-    return notFound(`Current archive for "${query.id}" was not found`);
-  }
-
-  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
   if (!bucket) {
     return storageServiceNotConfigured();
   }
@@ -99,7 +88,7 @@ const downloadPresentationTemplateInner$ = computed(async (get) => {
   const url = await get(
     generatePresignedGetUrl(
       bucket,
-      `${version.s3Key}/archive.tar.gz`,
+      registryResourceArchiveKey(archive.sha256),
       archiveFilename(query.id),
       true,
     ),
@@ -133,16 +122,15 @@ const downloadRegistryResourceInner$ = computed(async (get) => {
   const db = get(db$);
   const [version] = await db
     .select({
-      s3Key: storageVersions.s3Key,
-      fileCount: storageVersions.fileCount,
-      size: storageVersions.size,
+      versionId: registryResourceArchives.versionId,
+      fileCount: registryResourceArchives.fileCount,
+      size: registryResourceArchives.totalBytes,
     })
-    .from(storageVersions)
-    .innerJoin(storages, eq(storages.id, storageVersions.storageId))
+    .from(registryResourceArchives)
     .where(
       and(
-        eq(storages.name, privateArchive.storageName),
-        eq(storageVersions.id, privateArchive.versionId),
+        eq(registryResourceArchives.resourceId, entry.id),
+        eq(registryResourceArchives.sha256, privateArchive.sha256),
       ),
     )
     .limit(1);
@@ -151,7 +139,7 @@ const downloadRegistryResourceInner$ = computed(async (get) => {
     return notFound(`Private archive for "${query.id}" was not found`);
   }
 
-  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
   if (!bucket) {
     return storageServiceNotConfigured();
   }
@@ -159,7 +147,7 @@ const downloadRegistryResourceInner$ = computed(async (get) => {
   const url = await get(
     generatePresignedGetUrl(
       bucket,
-      `${version.s3Key}/archive.tar.gz`,
+      registryResourceArchiveKey(privateArchive.sha256),
       archiveFilename(query.id),
       true,
     ),
@@ -173,7 +161,7 @@ const downloadRegistryResourceInner$ = computed(async (get) => {
       type: archive.type,
       sha256: privateArchive.sha256,
       expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS,
-      versionId: privateArchive.versionId,
+      versionId: version.versionId,
       fileCount: version.fileCount,
       size: Number(version.size),
     },

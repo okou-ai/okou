@@ -29,6 +29,7 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { SlackMark } from "./components/slack-mark.tsx";
 import { GetStartedEntry } from "./get-started-entry.tsx";
+import { FriendReferralEntry } from "./friend-referral-entry.tsx";
 
 const telegramIconImg = settingsIconAssetUrl("telegram");
 
@@ -305,13 +306,14 @@ export function GrowthEntryHeader({
   // Slack as its own rows, so wherever it appears it replaces the split
   // control — for every role, since a member can connect, build, share and
   // check in alone. Where it does not, the split control remains the admin's
-  // entry and a member's corner stays empty.
+  // entry. Friend referrals have their own independently gated entry.
   const showGrowthEntry = isAdmin && !getStartedShown;
   return (
     <CornerHeader>
       {children}
       <GetStartedEntry />
       {showGrowthEntry ? <AdminGrowthEntry /> : null}
+      <FriendReferralEntry />
     </CornerHeader>
   );
 }

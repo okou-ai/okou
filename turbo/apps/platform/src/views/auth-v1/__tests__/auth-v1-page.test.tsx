@@ -1,17 +1,23 @@
-import { screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
 
 import { PRESENTATION_ONBOARDING_URL } from "../../../__tests__/presentation-onboarding-fixture.ts";
 import {
   queryAllByRoleFast,
+  fill,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { platformOkouWordmarkDarkImg } from "../../../lib/static-assets.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
+const signedInContext = createTestRuntime(context);
 
 test("An unavailable referral link still opens the normal signup form", async () => {
   context.mocks.api(friendReferralsContract.visit, ({ respond }) => {
@@ -21,7 +27,131 @@ test("An unavailable referral link still opens the normal signup form", async ()
   });
   await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
   expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Invitation code (optional)"),
+  ).not.toBeInTheDocument();
   expect(document.title).toBe("Sign up | Okou");
+});
+
+test("An invitation link prefills the signup code and keeps it through Clerk steps", async () => {
+  context.mocks.api(friendReferralsContract.visit, ({ body, respond }) => {
+    return body.code === "a7k2p9"
+      ? respond(200, { token: "signed-referral-visit" })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
+        });
+  });
+  await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
+  expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue(
+    "a7k2p9",
+  );
+  expect(screen.getByText("Invitation code applied")).toBeInTheDocument();
+
+  await registeredClerkRouter().push(
+    "/sign-up/verify-email-address",
+    clerkWindowNavigation(),
+  );
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/sign-up/verify-email-address");
+  });
+  await registeredClerkRouter().push("/sign-up", clerkWindowNavigation());
+  await waitFor(() => {
+    expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue(
+      "a7k2p9",
+    );
+  });
+  expect(screen.getByText("Invitation code applied")).toBeInTheDocument();
+});
+
+test("A friend can enter, correct, or remove an optional invitation code", async () => {
+  context.mocks.api(friendReferralsContract.visit, ({ body, respond }) => {
+    return body.code === "a7k2p9"
+      ? respond(200, { token: "signed-referral-visit" })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
+        });
+  });
+  await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
+  const code = screen.getByLabelText("Invitation code (optional)");
+  await fill(code, "");
+  expect(code).toHaveValue("");
+  const user = userEvent.setup({ delay: null });
+  await user.type(code, "wrong!");
+  expect(code).toHaveAttribute("aria-invalid", "true");
+  await fill(code, "");
+  await user.type(code, "A7K2P9");
+  await screen.findByText("Invitation code applied");
+  expect(code).toHaveValue("a7k2p9");
+  expect(code).toHaveAttribute("aria-invalid", "false");
+  await fill(code, "");
+  await waitFor(() => {
+    expect(code).toHaveAttribute("aria-invalid", "false");
+    expect(
+      screen.queryByText("Invitation code applied"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Changing a code while it is being checked does not apply the previous code", async () => {
+  const oldVisit = context.mocks.deferred<void>();
+  const newVisit = context.mocks.deferred<void>();
+  context.mocks.api(
+    friendReferralsContract.visit,
+    async ({ body, respond }) => {
+      if (body.code === "c9n4r1") {
+        return respond(200, { token: "beta-referral-visit" });
+      }
+      if (body.code === "a7k2p9") {
+        await oldVisit.promise;
+        return respond(200, { token: "old-referral-visit" });
+      }
+      await newVisit.promise;
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
+      });
+    },
+  );
+  await setupSignedOutPage("/sign-up?friend_referral=c9n4r1");
+  const code = screen.getByLabelText("Invitation code (optional)");
+  fireEvent.change(code, { target: { value: "a7k2p9" } });
+  await screen.findByText("Checking invitation code…");
+  fireEvent.change(code, { target: { value: "b8m3q0" } });
+  oldVisit.resolve();
+  newVisit.resolve();
+  await screen.findByText(
+    "This invitation code is unavailable. Check it or leave blank to continue.",
+  );
+  expect(code).toHaveValue("b8m3q0");
+  expect(code).toHaveAttribute("aria-invalid", "true");
+});
+
+test("The edited signup code reaches our registration API after authentication", async () => {
+  let registeredToken: string | undefined;
+  context.mocks.api(friendReferralsContract.visit, ({ body, respond }) => {
+    return respond(200, { token: `signed-visit:${body.code}` });
+  });
+  context.mocks.api(friendReferralsContract.register, ({ body, respond }) => {
+    registeredToken = body.token;
+    return respond(200, { status: "registered" });
+  });
+  await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
+  expect(screen.getByText("Invitation code applied")).toBeInTheDocument();
+  const code = screen.getByLabelText("Invitation code (optional)");
+  await fill(code, "b8m3q0");
+  await screen.findByText("Invitation code applied");
+  expect(code).toHaveValue("b8m3q0");
+
+  // Model the new authenticated document after Clerk returns to the same origin.
+  cleanup();
+  await setupPage({
+    context: signedInContext,
+    host: "app.okou.ai",
+    path: "/sign-up",
+  });
+  expect(registeredToken).toBe("signed-visit:b8m3q0");
+  expect(
+    screen.queryByLabelText("Invitation code (optional)"),
+  ).not.toBeInTheDocument();
 });
 
 function setupSignedOutPage(path: string): Promise<void> {
