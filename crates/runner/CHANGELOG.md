@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.244.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.10...runner-rs-v0.244.11) (2026-11-04)
+
+
+### Refactoring
+
+* **python:** centralize registry uuid string validation ([#45174](https://github.com/okou-ai/okou/issues/45174)) ([6dfb65a](https://github.com/okou-ai/okou/commit/6dfb65aec1a0b6009f6f95c730a5c9d04834221d))
+* **runner:** retire withdrawn optional blank preparation ([#45190](https://github.com/okou-ai/okou/issues/45190)) ([e5dd518](https://github.com/okou-ai/okou/commit/e5dd51855865ccd8af3ef50a3ee32b4064c2d208))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.9...runner-rs-v0.244.10) (2026-11-04)
 
 

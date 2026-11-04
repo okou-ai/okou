@@ -13,6 +13,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1094.0](https://github.com/okou-ai/okou/compare/app-v0.1093.0...app-v0.1094.0) (2026-11-04)
+
+
+### Features
+
+* **app:** add invitation code signup and gift entry ([#45113](https://github.com/okou-ai/okou/issues/45113)) ([e3a5087](https://github.com/okou-ai/okou/commit/e3a50872ffd66edfc312105fa3f8202869451324))
+* **app:** lay out the website share menu settings as menu rows behind a switch ([#45194](https://github.com/okou-ai/okou/issues/45194)) ([99fc106](https://github.com/okou-ai/okou/commit/99fc1069313e3edc6abc5d93dd20d4486869cb9e))
+* **app:** show subscription usage in the sidebar ring ([#45141](https://github.com/okou-ai/okou/issues/45141)) ([a7352b0](https://github.com/okou-ai/okou/commit/a7352b0be3b77f5f1e15d804aeb49cd2f5efea18))
+* **app:** support inline project renaming ([#45200](https://github.com/okou-ai/okou/issues/45200)) ([96cb0bd](https://github.com/okou-ai/okou/commit/96cb0bd3647768946e5ea09881fe8a62515e866d))
+* roll out marketing content handoff to all users ([#45187](https://github.com/okou-ai/okou/issues/45187)) ([58c27f0](https://github.com/okou-ai/okou/commit/58c27f02dfc1a8b171752cb634184b9318f89871))
+
+
+### Bug Fixes
+
+* **app:** keep subscription preview closed after dialog dismissal ([#45179](https://github.com/okou-ai/okou/issues/45179)) ([c7e872e](https://github.com/okou-ai/okou/commit/c7e872e209afb8fd584fd8fd447d6706a15b8ae9))
+* **app:** simplify shell authorization cards ([#45197](https://github.com/okou-ai/okou/issues/45197)) ([d9e6a3d](https://github.com/okou-ai/okou/commit/d9e6a3d28470df08f1ca63ee05864e8c5167e8e8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.41.0
+    * @okouai/core bumped to 8.817.0
+
 ## [0.1093.0](https://github.com/okou-ai/okou/compare/app-v0.1092.0...app-v0.1093.0) (2026-11-04)
 
 

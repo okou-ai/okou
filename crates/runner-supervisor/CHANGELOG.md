@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.32](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.31...runner-supervisor-v0.21.32) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** retire withdrawn optional blank preparation ([#45190](https://github.com/okou-ai/okou/issues/45190)) ([e5dd518](https://github.com/okou-ai/okou/commit/e5dd51855865ccd8af3ef50a3ee32b4064c2d208))
+
 ## [0.21.31](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.30...runner-supervisor-v0.21.31) (2026-11-04)
 
 ## [0.21.30](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.29...runner-supervisor-v0.21.30) (2026-11-04)

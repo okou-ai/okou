@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.817.0](https://github.com/okou-ai/okou/compare/core-v8.816.0...core-v8.817.0) (2026-11-04)
+
+
+### Features
+
+* **app:** lay out the website share menu settings as menu rows behind a switch ([#45194](https://github.com/okou-ai/okou/issues/45194)) ([99fc106](https://github.com/okou-ai/okou/commit/99fc1069313e3edc6abc5d93dd20d4486869cb9e))
+* roll out marketing content handoff to all users ([#45187](https://github.com/okou-ai/okou/issues/45187)) ([58c27f0](https://github.com/okou-ai/okou/commit/58c27f02dfc1a8b171752cb634184b9318f89871))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.41.0
+
 ## [8.816.0](https://github.com/okou-ai/okou/compare/core-v8.815.0...core-v8.816.0) (2026-11-04)
 
 
