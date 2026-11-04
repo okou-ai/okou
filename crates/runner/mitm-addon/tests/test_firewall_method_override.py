@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from mitmproxy.net.http import http1, validate
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
@@ -11,6 +12,20 @@ from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import _assert_no_request_stream, await_requestheaders_result
+
+
+class _UnreadOverrideValue(bytes):
+    def __bytes__(self) -> bytes:
+        raise AssertionError("method-override presence must not copy values")
+
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        raise AssertionError("method-override presence must not decode values")
+
+    def lower(self) -> bytes:
+        raise AssertionError("method-override presence must not lowercase values")
+
+    def strip(self, chars: bytes | None = None) -> bytes:
+        raise AssertionError("method-override presence must not strip values")
 
 
 @pytest.mark.parametrize("capture_bodies", [False, True])
@@ -120,6 +135,74 @@ async def test_override_cannot_delete_an_audience_with_only_member_write_permiss
     assert entry["level"] == "warn"
     assert entry["type"] == "firewall"
     assert "DELETE" not in json.dumps(entry)
+
+
+@pytest.mark.parametrize(
+    "body_size", [0, STREAM_BUFFER_LIMIT + 1], ids=["buffered", "header-streaming"]
+)
+@pytest.mark.parametrize(
+    ("guard_value", "early_presence"),
+    [(False, False), (True, False), (True, True)],
+    ids=["native-bytes", "unread-value", "early-presence"],
+)
+async def test_large_http1_override_is_rejected_without_value_conversion(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, body_size, guard_value, early_presence
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            api_entry={
+                "base": "https://api.example.com",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [{"name": "write", "rules": ["POST /items"]}],
+            },
+            network_policy={"allow": ["write"], "deny": [], "ask": [], "unknownPolicy": "deny"},
+        ),
+    )
+    request = http1.read_request_head(
+        [
+            b"POST https://api.example.com/items HTTP/1.1",
+            b"Host: api.example.com",
+            f"Content-Length: {body_size}".encode(),
+            *([b"X-HTTP-Method-Override: "] if early_presence else []),
+            b"X-hTtP-mEtHoD-oVeRrIdE: " + b"x" * 1_048_576,
+        ]
+    )
+    validate.validate_headers(request)
+    assert http1.expected_http_body_size(request) == body_size
+    if guard_value:
+        # Instrument the parsed bytes without changing the native header container.
+        name, value = request.headers.fields[-1]
+        request.headers.fields = (
+            *request.headers.fields[:-1],
+            (name, _UnreadOverrideValue(value)),
+        )
+    original_headers = request.headers.fields
+    flow = real_flow(with_response=False, client_ip="10.200.0.5", host="api.example.com")
+    flow.request = request
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+        fake_forwarder_upstream() as upstream,
+    ):
+        result = mitm_addon.requestheaders(flow)
+        if body_size:
+            await await_requestheaders_result(result)
+        else:
+            assert result is None
+        _assert_no_request_stream(flow)
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_not_called()
+    assert upstream.resolve_calls == []
+    assert upstream.connect_calls == []
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "BLOCK"
+    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "unsafe_auth_method_override"
+    assert flow.request.headers.fields == original_headers
 
 
 @pytest.mark.parametrize("managed_auth", [False, True])

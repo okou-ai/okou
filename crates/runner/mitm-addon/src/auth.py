@@ -546,7 +546,10 @@ def _build_firewall_auth_plan(
     failure = None
     if injects_credentials and _request_method_forbids_managed_credentials(flow.request.method):
         failure = _FirewallAuthPlanFailure.UNSAFE_METHOD
-    elif injects_credentials and "x-http-method-override" in flow.request.headers:
+    elif injects_credentials and any(
+        len(name) == len(b"x-http-method-override") and name.lower() == b"x-http-method-override"
+        for name, _value in flow.request.headers.fields
+    ):
         # The firewall authorizes the wire method. Providers such as Mailchimp
         # can reinterpret this header as DELETE even when only POST is allowed.
         failure = _FirewallAuthPlanFailure.METHOD_OVERRIDE
