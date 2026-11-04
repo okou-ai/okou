@@ -315,6 +315,8 @@ jobs:
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/report-sccache-stats.sh \
             .github/scripts/release/resolve-desktop-version-change.sh \
+            .github/scripts/release/verify-registry-publisher-cutover.sh \
+            .github/scripts/tests/verify-registry-publisher-cutover-test.sh \
             .github/scripts/checks/run-semgrep.sh \
             crates/nbd-cow/tests/run-nbd-cow-tests.sh \
             .github/scripts/run-workflow-script-test-shard.sh \

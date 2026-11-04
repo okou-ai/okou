@@ -21,6 +21,7 @@ connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/conn
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
 data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
 official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
+registry_archive_reader_floor=$(<"${repo_root}/.github/rollback-floors/registry-archive-reader")
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
@@ -33,6 +34,12 @@ case "${1:-}" in
   merge-base)
     if [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
       [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_REGISTRY_ARCHIVE_READER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_REGISTRY_ARCHIVE_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_REGISTRY_ARCHIVE_READER_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
@@ -382,6 +389,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/registry-archive-reader" ]; then
+      [ "${MOCK_REGISTRY_ARCHIVE_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_REGISTRY_ARCHIVE_READER_COMMIT-$MOCK_REGISTRY_ARCHIVE_READER_FLOOR}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/content-bundle-reference-only-api* ]]; then
       [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE:-1}" = "1" ] || exit 1
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
@@ -517,6 +529,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
+    MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR="$content_bundle_reference_api_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
@@ -2130,6 +2143,20 @@ for official_bundle_case in \
   [ ! -s "${tmp_dir}/official-workflow-bundle.output" ] || fail "incompatible Official bundle API must not publish rollback outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Official bundle reader floor must reject before provider or host access"
+  fi
+done
+
+for registry_reader_case in \
+  "MOCK_REGISTRY_ARCHIVE_READER_AVAILABLE=0|Cannot read the Registry archive reader rollback floor from main" \
+  "MOCK_REGISTRY_ARCHIVE_READER_COMMIT=invalid|Missing or invalid Registry archive reader rollback floor" \
+  "MOCK_REGISTRY_ARCHIVE_READER_ON_MAIN=0|Registry archive reader rollback floor is not on main" \
+  "MOCK_REGISTRY_ARCHIVE_READER_VALID=0|Rollback target predates independent Registry archive reads"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${registry_reader_case#*|}" \
+    run_resolver "${tmp_dir}/registry-reader.output" "${registry_reader_case%%|*}"
+  [ ! -s "${tmp_dir}/registry-reader.output" ] || fail "incompatible Registry API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Registry reader floor must reject before provider or host access"
   fi
 done
 

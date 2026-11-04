@@ -1,18 +1,12 @@
 import { verifyBundle } from "./bundle.mjs";
 import {
   createDatabaseClient,
-  loadStorageState,
+  loadPublicationState,
   registerPublication,
   verifyDatabasePublication,
 } from "./database.mjs";
 import { requiredEnv } from "./options.mjs";
-import {
-  createR2Client,
-  createRegistryR2Client,
-  uploadPackage,
-  uploadRegistryPackage,
-  verifyR2Objects,
-} from "./r2.mjs";
+import { createRegistryR2Client, uploadRegistryPackage } from "./r2.mjs";
 import { writeLine } from "./shared.mjs";
 
 function releasesForPublication(config, publication) {
@@ -55,19 +49,16 @@ async function uploadPackages(context) {
 
     const current = context.state.get(pkg.slug);
     if (!current) {
-      throw new Error(`${pkg.slug}: production storage state is missing`);
+      throw new Error(`${pkg.slug}: production registry state is missing`);
     }
-    context.state.set(
-      pkg.slug,
-      await uploadPackage({ ...context, pkg, release, current }),
-    );
-    await uploadRegistryPackage({
-      client: context.registry.client,
-      bucket: context.registry.bucket,
+    const uploaded = await uploadRegistryPackage({
+      client: context.client,
+      bucket: context.bucket,
       outputDir: context.outputDir,
       pkg,
       release,
     });
+    context.state.set(pkg.slug, { ...current, ...uploaded });
   }
 }
 
@@ -75,7 +66,7 @@ function logPublishedReleases(releases, state) {
   for (const release of releases) {
     const current = state.get(release.slug);
     writeLine(
-      `PUBLISHED ${release.slug} storage=${release.storageId} version=${release.newVersionId} sha256=${release.newSha256} previousVersion=${current.previousVersionId}`,
+      `PUBLISHED ${release.slug} resource=${release.resourceId} version=${release.newVersionId} sha256=${release.newSha256} previousVersion=${current.previousVersionId}`,
     );
   }
 }
@@ -83,16 +74,12 @@ function logPublishedReleases(releases, state) {
 export async function publishBundle(outputDir) {
   const { config, publication } = await verifyBundle(outputDir);
   const releases = releasesForPublication(config, publication);
-  const { bucket, client } = createR2Client();
-  let registry;
+  const { bucket, client } = createRegistryR2Client();
   let sql;
 
   try {
-    registry = createRegistryR2Client();
-    if (registry.bucket === bucket)
-      throw new Error("Registry archives require a separate private bucket");
     sql = createDatabaseClient(requiredEnv("DATABASE_URL"));
-    const state = await loadStorageState(sql, releases);
+    const state = await loadPublicationState(sql, releases);
     await uploadPackages({
       bucket,
       client,
@@ -100,18 +87,15 @@ export async function publishBundle(outputDir) {
       publication,
       releases,
       state,
-      registry,
     });
-    await registerPublication(sql, releases, state, publication.source.commit);
+    await registerPublication(sql, releases, state);
     await verifyDatabasePublication(sql, releases, state);
-    await verifyR2Objects(client, bucket, releases, state);
     logPublishedReleases(releases, state);
   } finally {
     try {
       await sql?.end({ timeout: 5 });
     } finally {
       client.destroy();
-      registry?.client.destroy();
     }
   }
 }

@@ -1,12 +1,4 @@
 import postgres from "postgres";
-import {
-  loadRegistryHead,
-  registerRegistryArchive,
-  publishRegistryHead,
-  verifyRegistryPublication,
-} from "./registry-index.mjs";
-
-const PUBLISHER = "github-actions-presentation-template-publisher";
 
 export function createDatabaseClient(databaseUrl) {
   return postgres(databaseUrl, {
@@ -16,178 +8,117 @@ export function createDatabaseClient(databaseUrl) {
   });
 }
 
-async function loadReleaseState(sql, release) {
-  const storageRows = await sql`
-    SELECT id, name, s3_prefix, head_version_id, xmin::text AS xmin
-    FROM storages
-    WHERE id = ${release.storageId}
-  `;
-  const storage = storageRows[0];
-  if (!storage) {
-    throw new Error(`${release.slug}: production storage is missing`);
-  }
-  if (storage.name !== `registry-resource@${release.resourceId}`) {
-    throw new Error(`${release.slug}: unexpected production storage name`);
-  }
-  if (!storage.head_version_id) {
-    throw new Error(`${release.slug}: production storage does not have a HEAD`);
-  }
-
-  const predecessorRows = await sql`
-    SELECT id
-    FROM storage_versions
-    WHERE
-      id = ${storage.head_version_id}
-      AND storage_id = ${release.storageId}
-  `;
-  if (!predecessorRows[0]) {
-    throw new Error(
-      `${release.slug}: production HEAD does not belong to its storage`,
-    );
-  }
-  const registryHead = await loadRegistryHead(sql, release, storage);
-  return { storage, registryHead, previousVersionId: storage.head_version_id };
-}
-
-export async function loadStorageState(sql, releases) {
+export async function loadPublicationState(sql, releases) {
   const state = new Map();
   for (const release of releases) {
-    state.set(release.slug, await loadReleaseState(sql, release));
+    const [head] = await sql`
+      SELECT h.sha256, h.xmin::text AS xmin, a.version_id
+      FROM registry_resource_heads h
+      JOIN registry_resource_archives a USING (resource_id, sha256)
+      WHERE h.resource_id = ${release.resourceId}
+    `;
+    if (!head) {
+      throw new Error(
+        `${release.slug}: registry HEAD is missing; reconcile before publication`,
+      );
+    }
+    state.set(release.slug, { head, previousVersionId: head.version_id });
   }
   return state;
 }
 
-function assertExistingVersion(existing, release, current) {
+async function verifyArchive(sql, release, current) {
+  const [row] = await sql`
+    SELECT version_id, archive_bytes, file_count, total_bytes
+    FROM registry_resource_archives
+    WHERE resource_id = ${release.resourceId} AND sha256 = ${release.newSha256}
+  `;
   if (
-    existing.storage_id !== release.storageId ||
-    existing.s3_key !== current.s3Key ||
-    Number(existing.size) !== current.pkg.totalSize ||
-    Number(existing.archive_size) !== current.archiveSize ||
-    existing.file_count !== current.pkg.fileCount
+    row &&
+    (row.version_id !== release.newVersionId ||
+      Number(row.archive_bytes) !== current.archiveSize ||
+      row.file_count !== current.pkg.fileCount ||
+      Number(row.total_bytes) !== current.pkg.totalSize)
   ) {
     throw new Error(
-      `${release.slug}: existing version row has different identity`,
+      `${release.slug}: immutable registry archive metadata conflicts`,
     );
   }
+  return Boolean(row);
 }
 
-async function insertVersion(sql, release, current, sourceCommit) {
+async function registerArchive(sql, release, current) {
+  if (await verifyArchive(sql, release, current)) return;
   await sql`
-    INSERT INTO storage_versions
-      (id, storage_id, s3_key, size, archive_size, file_count, message, created_by)
-    SELECT
-        ${release.newVersionId},
-        ${release.storageId},
-        ${current.s3Key},
-        ${current.pkg.totalSize},
-        ${current.archiveSize},
-        ${current.pkg.fileCount},
-        ${`Template-artifact@${sourceCommit}`},
-        ${PUBLISHER}
+    INSERT INTO registry_resource_archives
+      (resource_id, sha256, archive_bytes, version_id, file_count, total_bytes)
+    SELECT ${release.resourceId}, ${release.newSha256}, ${current.archiveSize},
+      ${release.newVersionId}, ${current.pkg.fileCount}, ${current.pkg.totalSize}
     WHERE EXISTS (
-      SELECT 1 FROM storages WHERE id = ${release.storageId}
-        AND xmin::text = ${current.storage.xmin}
-        AND head_version_id = ${current.previousVersionId}
-        AND name = ${current.storage.name} AND s3_prefix = ${current.storage.s3_prefix}
+      SELECT 1 FROM registry_resource_heads
+      WHERE resource_id = ${release.resourceId} AND sha256 = ${current.head.sha256}
+        AND xmin::text = ${current.head.xmin}
     )
-    ON CONFLICT (id) DO NOTHING
+    ON CONFLICT (resource_id, sha256) DO NOTHING
   `;
-}
-
-async function registerVersion(sql, release, current, sourceCommit) {
-  await insertVersion(sql, release, current, sourceCommit);
-  const existingRows = await sql`
-    SELECT id, storage_id, s3_key, size, archive_size, file_count
-    FROM storage_versions
-    WHERE id = ${release.newVersionId}
-  `;
-  const existing = existingRows[0];
-  if (!existing)
+  if (!(await verifyArchive(sql, release, current))) {
     throw new Error(
-      `${release.slug}: source changed before version registration`,
+      `${release.slug}: registry HEAD changed before archive registration`,
     );
-  assertExistingVersion(existing, release, current);
+  }
 }
 
-async function updateStorageHead(sql, release, current) {
-  await sql`
-    UPDATE storages
-    SET
-      head_version_id = ${release.newVersionId},
-      size = ${current.pkg.totalSize},
-      file_count = ${current.pkg.fileCount},
-      updated_at = now()
-    WHERE id = ${release.storageId} AND xmin::text = ${current.storage.xmin}
-      AND name = ${current.storage.name} AND s3_prefix = ${current.storage.s3_prefix}
-      AND head_version_id = ${current.previousVersionId}
-      AND (head_version_id IS DISTINCT FROM ${release.newVersionId}
-        OR size IS DISTINCT FROM ${current.pkg.totalSize}
-        OR file_count IS DISTINCT FROM ${current.pkg.fileCount})
-  `;
+async function publishHead(sql, release, current) {
+  if (current.head.sha256 === release.newSha256) {
+    return { ...current, publishedHeadXmin: current.head.xmin };
+  }
   const [published] = await sql`
-    SELECT xmin::text AS xmin FROM storages WHERE id = ${release.storageId}
-      AND name = ${current.storage.name} AND s3_prefix = ${current.storage.s3_prefix}
-      AND head_version_id = ${release.newVersionId}
-      AND size = ${current.pkg.totalSize} AND file_count = ${current.pkg.fileCount}
+    UPDATE registry_resource_heads SET sha256 = ${release.newSha256}, updated_at = now()
+    WHERE resource_id = ${release.resourceId}
+      AND sha256 = ${current.head.sha256} AND xmin::text = ${current.head.xmin}
+    RETURNING xmin::text AS xmin
   `;
-  if (!published)
-    throw new Error(`${release.slug}: storage HEAD changed before commit`);
-  return { ...current, publishedStorageXmin: published.xmin };
-}
-
-async function registerRelease(sql, release, current, sourceCommit) {
-  if (!current?.pkg) {
-    throw new Error(`${release.slug}: verified upload state is missing`);
-  }
-  await registerRegistryArchive(sql, release, current);
-  await registerVersion(sql, release, current, sourceCommit);
-  const published = await updateStorageHead(sql, release, current);
-  // The independent HEAD is the final publication point, after both immutable
-  // objects and version records are verified. Retain partial immutable work.
-  await publishRegistryHead(sql, release, published);
-  return published;
-}
-
-export async function registerPublication(sql, releases, state, sourceCommit) {
-  for (const release of releases) {
-    const published = await registerRelease(
-      sql,
-      release,
-      state.get(release.slug),
-      sourceCommit,
-    );
-    state.set(release.slug, published);
-  }
-}
-
-async function verifyRelease(sql, release, current) {
-  const rows = await sql`
-    SELECT
-      s.head_version_id,
-      count(v.id)::int AS version_count
-    FROM storages s
-    JOIN storage_versions v ON v.storage_id = s.id
-    WHERE
-      s.id = ${release.storageId}
-      AND v.id IN (${current.previousVersionId}, ${release.newVersionId})
-    GROUP BY s.head_version_id
-  `;
-  const expectedVersionCount =
-    current.previousVersionId === release.newVersionId ? 1 : 2;
-  if (
-    rows.length !== 1 ||
-    rows[0].head_version_id !== release.newVersionId ||
-    rows[0].version_count !== expectedVersionCount
-  ) {
+  if (!published) {
     throw new Error(
-      `${release.slug}: post-publication database verification failed`,
+      `${release.slug}: registry HEAD publication conflicted with another writer`,
     );
+  }
+  return { ...current, publishedHeadXmin: published.xmin };
+}
+
+async function verifyPublication(sql, release, current) {
+  if (!(await verifyArchive(sql, release, current))) {
+    throw new Error(`${release.slug}: registry archive index is missing`);
+  }
+  const [head] = await sql`
+    SELECT sha256 FROM registry_resource_heads
+    WHERE resource_id = ${release.resourceId}
+      AND xmin::text = ${current.publishedHeadXmin}
+  `;
+  if (head?.sha256 !== release.newSha256) {
+    throw new Error(
+      `${release.slug}: registry HEAD publication conflicted with another writer`,
+    );
+  }
+}
+
+export async function registerPublication(sql, releases, state) {
+  for (const release of releases) {
+    const current = state.get(release.slug);
+    if (!current?.pkg) {
+      throw new Error(`${release.slug}: verified upload state is missing`);
+    }
+    await registerArchive(sql, release, current);
+    // The independent HEAD is the final publication point. Retain immutable
+    // candidates after an interruption; never undo a competing publication.
+    const published = await publishHead(sql, release, current);
+    await verifyPublication(sql, release, published);
+    state.set(release.slug, published);
   }
 }
 
 export async function verifyDatabasePublication(sql, releases, state) {
   for (const release of releases) {
-    await verifyRelease(sql, release, state.get(release.slug));
-    await verifyRegistryPublication(sql, release, state.get(release.slug));
+    await verifyPublication(sql, release, state.get(release.slug));
   }
 }
