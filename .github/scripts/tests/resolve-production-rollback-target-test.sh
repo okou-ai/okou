@@ -40,6 +40,8 @@ case "${1:-}" in
       else
         [ "${MOCK_REGISTRY_ARCHIVE_READER_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d" ]; then
+      [ "${MOCK_TEAMS_IDENTITY_PREPARATION_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
@@ -291,6 +293,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/teams-identity-retirement-preparation* ]]; then
+      printf '%s\n' "${MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT-7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/seed-skill-bundle-only-api* ]]; then
       printf '%s\n' "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_COMMIT-7373737373737373737373737373737373737373}"
       exit 0
@@ -2199,6 +2205,19 @@ for expectation in \
   [ ! -s "${tmp_dir}/seed-skill-bundle-only-api.output" ] || fail "incompatible Seed publisher must not publish rollback outputs"
   if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
     fail "Seed publisher floor must fail before artifact or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT=|Cannot resolve the merged Teams identity preparation on main" \
+  "MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT=invalid|Cannot resolve the merged Teams identity preparation on main" \
+  "MOCK_TEAMS_IDENTITY_PREPARATION_VALID=0|Rollback target predates Teams identity preparation"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" \
+    run_resolver "${tmp_dir}/teams-identity-preparation.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/teams-identity-preparation.output" ] || fail "incompatible Teams API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Teams preparation floor must reject before provider or host access"
   fi
 done
 

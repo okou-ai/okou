@@ -1,0 +1,4 @@
+The first-parent main commit adding this marker is the minimum Runner artifact
+whose bundled Teams upload CLI always emits canonical.version 2 and requires
+the operation acknowledgement. Enforce it when #43729 retires v1 upload routes;
+API preparation alone does not prove that old CLI/Runner owners have exited.
