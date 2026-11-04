@@ -298,14 +298,15 @@ function ChatConnectorOverviewList({
               })?.icon
             : undefined;
         return (
-          <ConnectorOverviewRow
-            key={connectorAccountTargetKey(entry.target)}
-            entry={entry}
-            icon={icon}
-            onOpen={() => {
-              open(entry, signal);
-            }}
-          />
+          <div role="listitem" key={connectorAccountTargetKey(entry.target)}>
+            <ConnectorOverviewRow
+              entry={entry}
+              icon={icon}
+              onOpen={() => {
+                open(entry, signal);
+              }}
+            />
+          </div>
         );
       })}
     </div>

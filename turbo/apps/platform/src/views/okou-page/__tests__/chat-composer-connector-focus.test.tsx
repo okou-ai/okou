@@ -112,9 +112,13 @@ async function prepareLoadedConnectorSearch(chatAccounts: boolean) {
 describe.each([false, true])(
   "connector search, Chat accounts=%s",
   (chatAccounts) => {
-    it("focuses the loaded connector search during filter", async () => {
+    it("keeps filtered connectors accessible without losing search focus", async () => {
       await prepareLoadedConnectorSearch(chatAccounts);
       expect(screen.getByPlaceholderText("Find connectors...")).toHaveFocus();
+      const list = screen.getByRole("list", { name: "Connectors" });
+      expect(within(list).getByRole("listitem")).toHaveTextContent(
+        "Focus app 20",
+      );
     });
 
     it("focuses the loaded connector search during reopen", async () => {
