@@ -2181,6 +2181,7 @@ describe("artifact catalog source identity", () => {
     expect(resolved.body).toMatchObject({
       id: entry.id,
       kind: "shared-thread",
+      sharedThreadId: shared.id,
       sharedThread: { id: shared.id },
     });
     const byCatalogId = await accept(
