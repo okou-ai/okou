@@ -246,6 +246,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   ).toStrictEqual([
     "Share messages",
     "Manage emails",
+    "Open browser",
     "Artifacts and chats",
     "More actions",
   ]);

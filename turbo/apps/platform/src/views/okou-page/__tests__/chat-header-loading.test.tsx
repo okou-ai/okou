@@ -153,9 +153,7 @@ test.each([true, false])(
     expect(entry("Manage emails")).toBeInTheDocument();
     await navigate(destination.id, desktop);
     const user = userEvent.setup({ delay: null });
-    for (const label of desktop
-      ? ["Share messages", "Open browser"]
-      : ["Share messages"]) {
+    for (const label of ["Share messages", "Open browser"]) {
       const retainedAction = fastButton(label);
       expect(retainedAction).toHaveAttribute("aria-disabled", "true");
       expect(retainedAction).not.toBeDisabled();

@@ -22,6 +22,7 @@ import { Button, Sheet, SheetTrigger, cn, useMediaQuery } from "@okouai/ui";
 import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
 import {
   AutomationMenuButton,
+  BrowserMenuButton,
   ChatThreadHeaderTitle,
   ChatThreadSidebarPane,
   SettledChatThreadActions,
@@ -272,6 +273,7 @@ function MobileChatThreadActions({
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
       <ThreadMailButton thread={thread} header={header} />
+      <BrowserMenuButton thread={thread} largeTarget />
       <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
