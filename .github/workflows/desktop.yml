@@ -60,7 +60,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          sparse-checkout: |
+            /.github/scripts/release/resolve-desktop-version-change.sh
+            /desktop/version.txt
+          sparse-checkout-cone-mode: false
 
       - name: Detect Desktop version change
         id: version
@@ -68,6 +72,12 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
+
+          if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Desktop version detection requires a full lowercase base SHA-1"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 --filter=blob:none origin "$MERGE_GROUP_BASE_SHA"
 
           result="$(bash .github/scripts/release/resolve-desktop-version-change.sh \
             "$MERGE_GROUP_BASE_SHA" \
