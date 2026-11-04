@@ -159,11 +159,17 @@ describe("Discord Gateway API delivery", () => {
     "retries the same event after an API %i and removes it once accepted",
     async (status) => {
       const relay = await createRelay();
+      const acknowledgement = Promise.withResolvers<Response>();
+      let firstAttempt = true;
       relay.reply = () => {
-        return new Response(null, {
-          status,
-          headers: { "Retry-After": "1" },
-        });
+        if (firstAttempt) {
+          firstAttempt = false;
+          return new Response(null, {
+            status,
+            headers: { "Retry-After": "1" },
+          });
+        }
+        return acknowledgement.promise;
       };
       const gateway = await relay.start();
       gateway.hello();
@@ -171,16 +177,17 @@ describe("Discord Gateway API delivery", () => {
       gateway.ready();
       gateway.message();
       const first = await relay.deliveries.next();
+      const retried = await relay.deliveries.next();
+      expect(retried.rawBody).toBe(first.rawBody);
+      // Retry ingress can precede the health read. Hold its receipt so the
+      // failed event stays observable until retention has been verified.
       await expect
         .poll(() => {
           return relay.health();
         })
         .toMatchObject({ running: true, pending: 1, deliveryFailures: 1 });
 
-      relay.reply = () => {
-        return Response.json({ ok: true, outcome: "accepted" });
-      };
-      expect((await relay.deliveries.next()).rawBody).toBe(first.rawBody);
+      acknowledgement.resolve(Response.json({ ok: true, outcome: "accepted" }));
       await expect
         .poll(() => {
           return relay.health();
