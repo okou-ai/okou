@@ -30,6 +30,11 @@ configuration, helper presence, and bundled resources without signing in or
 registering a host. Production builds also require `SENTRY_DSN_DESKTOP`; package
 verification rejects a missing DSN so error reporting cannot silently disappear.
 
+Ordinary CI runs native checks and package construction on separate macOS runners. After
+both succeed, `build-macos-arm64` publishes the validated production and PR-preview
+ZIP/symbol artifacts under their existing names. The `okou-desktop-macos-arm64-staging`
+artifact is the intermediate handoff and is retained for one day.
+
 ### Error diagnostics
 
 Host heartbeat failures upload a correlated episode to the Desktop Sentry project.
