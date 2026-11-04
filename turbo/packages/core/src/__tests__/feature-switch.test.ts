@@ -45,8 +45,10 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults chat email quoting to staff and honors Lab overrides", () => {
-    const key = FeatureSwitchKey.ChatEmailQuote;
+  it.each([
+    FeatureSwitchKey.ChatEmailQuote,
+    FeatureSwitchKey.ConnectorChatAccountAccess,
+  ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
       [{}, false],
