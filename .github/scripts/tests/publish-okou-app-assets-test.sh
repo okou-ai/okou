@@ -32,6 +32,7 @@ printf '{}\n' > "${assets_directory}/data-IjKl9012.json"
 printf 'font\n' > "${assets_directory}/font-MnOp3456.woff2"
 printf '{}\n' > "${assets_directory}/app-AbCd1234.js.map"
 printf 'svg\n' > "${assets_directory}/nested/logo-Qrst7890.svg"
+printf 'space path\n' > "${assets_directory}/nested/space name-Zyxw9876.js"
 printf 'existing source\n' > "${assets_directory}/existing-UvWx1234.js"
 printf 'race source\n' > "${assets_directory}/race-Yzab5678.js"
 printf '{}\n' > "${assets_directory}/runtime.js.map"
@@ -49,7 +50,6 @@ shift 2
 endpoint=""
 bucket=""
 key=""
-prefix=""
 body=""
 content_type=""
 cache_control=""
@@ -59,13 +59,10 @@ while (( $# > 0 )); do
     --endpoint-url) endpoint=$2; shift 2 ;;
     --bucket) bucket=$2; shift 2 ;;
     --key) key=$2; shift 2 ;;
-    --prefix) prefix=$2; shift 2 ;;
     --body) body=$2; shift 2 ;;
     --content-type) content_type=$2; shift 2 ;;
     --cache-control) cache_control=$2; shift 2 ;;
     --if-none-match) if_none_match=$2; shift 2 ;;
-    --output) shift 2 ;;
-    --no-cli-pager) shift ;;
     *) echo "unexpected aws argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -81,14 +78,17 @@ printf '%s|%s|%s|%s|%s|%s|%s\n' \
 
 object_path="${MOCK_OBJECT_STORE}/${key}"
 case "$operation" in
-  list-objects-v2)
-    [[ "$prefix" == 'okou-app/assets/' ]] || exit 2
-    printf '{"Contents":[{"Key":"okou-app/assets/existing-UvWx1234.js"}]}\n'
-    ;;
   put-object)
+    [[ "$if_none_match" == '*' ]] || exit 2
+    if [[ "$key" == "${MOCK_FAIL_KEY:-}" ]]; then
+      echo "$MOCK_FAILURE" >&2
+      exit 254
+    fi
     if [[ "$key" == 'okou-app/assets/race-Yzab5678.js' ]]; then
-      printf 'concurrent writer bytes\n' > "$object_path"
-      echo 'An error occurred (PreconditionFailed) when calling the PutObject operation: 412' >&2
+      if [[ ! -f "$object_path" ]]; then
+        printf 'concurrent writer bytes\n' > "$object_path"
+      fi
+      echo 'aws: [ERROR]: An error occurred (412) when calling the PutObject operation: Precondition failed' >&2
       exit 254
     fi
     if [[ -f "$object_path" ]]; then
@@ -105,7 +105,7 @@ BASH
 chmod +x "${fake_bin}/aws"
 
 : > "$aws_log"
-output="$({
+publish_assets() {
   PATH="${fake_bin}:$PATH" \
     MOCK_AWS_LOG="$aws_log" \
     MOCK_OBJECT_STORE="$object_store" \
@@ -113,7 +113,8 @@ output="$({
       https://test.r2.example \
       test-bucket \
       "$assets_directory"
-} 2>&1)"
+}
+output="$(publish_assets 2>&1)"
 
 grep -Fq 'Skipping unhashed source map: runtime.js.map' <<< "$output" ||
   fail "unhashed source map was not reported as skipped"
@@ -124,12 +125,12 @@ grep -Fq 'App asset already exists: okou-app/assets/race-Yzab5678.js' <<< "$outp
 grep -Fq 'App asset publication complete' <<< "$output" ||
   fail "publication did not complete"
 
-if [[ "$(grep -Fc 'list-objects-v2|' "$aws_log")" -ne 1 ]]; then
-  fail "existing assets were not listed exactly once"
-fi
-if grep -Fq 'head-object|' "$aws_log"; then
-  fail "an asset used a redundant HEAD request"
-fi
+# Every eligible current-build file makes exactly one conditional request;
+# retained history cannot increase request volume.
+[[ "$(wc -l < "$aws_log")" -eq 9 ]] ||
+  fail "request count did not match the eligible current-build assets"
+[[ "$(sort -u "$aws_log" | wc -l)" -eq 9 ]] ||
+  fail "an asset was requested more than once"
 
 assert_put 'okou-app/assets/app-AbCd1234.js' 'application/javascript'
 assert_put 'okou-app/assets/style-EfGh5678.css' 'text/css; charset=utf-8'
@@ -137,13 +138,12 @@ assert_put 'okou-app/assets/data-IjKl9012.json' 'application/json'
 assert_put 'okou-app/assets/font-MnOp3456.woff2' 'font/woff2'
 assert_put 'okou-app/assets/app-AbCd1234.js.map' 'application/json'
 assert_put 'okou-app/assets/nested/logo-Qrst7890.svg' 'image/svg+xml'
+assert_put 'okou-app/assets/nested/space name-Zyxw9876.js' 'application/javascript'
+assert_put 'okou-app/assets/existing-UvWx1234.js' 'application/javascript'
 assert_put 'okou-app/assets/race-Yzab5678.js' 'application/javascript'
 
 if grep -Fq 'runtime.js.map' "$aws_log"; then
   fail "unhashed source map reached R2"
-fi
-if grep -Fq 'put-object|https://test.r2.example|test-bucket|okou-app/assets/existing-UvWx1234.js' "$aws_log"; then
-  fail "existing object was uploaded again"
 fi
 grep -Fqx 'retained existing bytes' \
   "${object_store}/okou-app/assets/existing-UvWx1234.js" ||
@@ -155,5 +155,49 @@ cmp -s \
   "${assets_directory}/app-AbCd1234.js.map" \
   "${object_store}/okou-app/assets/app-AbCd1234.js.map" ||
   fail "hashed source map was not published"
+
+printf 'partial publication\n' > "${assets_directory}/partial-Cdef3456.js"
+printf 'recover publication\n' > "${assets_directory}/recover-Ghij7890.js"
+for diagnostic in \
+  'aws: [ERROR]: An error occurred (AccessDenied) when calling the PutObject operation: request 412 was denied' \
+  'aws: [ERROR]: An error occurred (ServiceUnavailable) when calling the PutObject operation: An error occurred (PreconditionFailed) when calling the PutObject operation: check unavailable' \
+  'Could not connect to the endpoint URL: "https://test.r2.example/412"'; do
+  if output="$(MOCK_FAIL_KEY='okou-app/assets/recover-Ghij7890.js' \
+    MOCK_FAILURE="$diagnostic" publish_assets 2>&1)"; then
+    fail "non-precondition upload failure was swallowed: $diagnostic"
+  fi
+  grep -Fq "$diagnostic" <<< "$output" ||
+    fail "upload failure diagnostic was lost"
+  if grep -Fq 'App asset publication complete' <<< "$output"; then
+    fail "failed publication was reported as complete"
+  fi
+done
+cmp -s "${assets_directory}/partial-Cdef3456.js" \
+  "${object_store}/okou-app/assets/partial-Cdef3456.js" ||
+  fail "successful asset was not published before the partial failure returned"
+[[ ! -f "${object_store}/okou-app/assets/recover-Ghij7890.js" ]] ||
+  fail "failed asset unexpectedly exists"
+
+# An artifact may already be ready when static publication fails. A later
+# invocation must repair missing assets, then remain safe to repeat.
+for publication in repair repeat; do
+  : > "$aws_log"
+  output="$(publish_assets 2>&1)"
+  grep -Fq 'App asset publication complete: 11 assets' <<< "$output" ||
+    fail "$publication did not finish"
+  [[ "$(wc -l < "$aws_log")" -eq 11 ]] ||
+    fail "$publication request volume exceeded the current asset set"
+  for name in partial-Cdef3456 recover-Ghij7890; do
+    cmp -s "${assets_directory}/${name}.js" \
+      "${object_store}/okou-app/assets/${name}.js" ||
+      fail "$publication did not preserve published bytes for $name"
+  done
+  grep -Fqx 'retained existing bytes' \
+    "${object_store}/okou-app/assets/existing-UvWx1234.js" ||
+    fail "$publication modified the preexisting object"
+  grep -Fqx 'concurrent writer bytes' \
+    "${object_store}/okou-app/assets/race-Yzab5678.js" ||
+    fail "$publication modified the concurrent writer's object"
+done
 
 echo "publish okou app assets tests passed"
