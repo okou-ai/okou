@@ -1320,7 +1320,7 @@ const publishGoogleMeetAutomationProjection$ = command(
     const selectionSql = workflowAutomationConnectorSelectionSql({
       orgId: args.orgId,
       userId: args.userId,
-      workflowId: automation.workflowId,
+      workflowId: sql`${automation.workflowId}`,
       connectorSlug: "google-meet",
       chatAccountAccess: await set(
         loadWorkflowAutomationAccountMode$,

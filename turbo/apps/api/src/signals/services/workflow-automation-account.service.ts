@@ -48,7 +48,11 @@ export const readWorkflowAutomationConnectorAccount$ = command(
     const [selection] = parseRawRows(
       object({ connectorId: uuid().nullable() }),
       await db.execute(
-        workflowAutomationConnectorSelectionSql({ ...args, chatAccountAccess }),
+        workflowAutomationConnectorSelectionSql({
+          ...args,
+          workflowId: sql`${args.workflowId}`,
+          chatAccountAccess,
+        }),
       ),
     );
     signal?.throwIfAborted();
@@ -103,7 +107,7 @@ export function workflowAutomationDefaultAccountReadPlan(
 export function workflowAutomationConnectorSelectionSql(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly workflowId: string | SQL;
+  readonly workflowId: SQL;
   readonly connectorSlug: string;
   readonly chatAccountAccess?: boolean;
 }) {

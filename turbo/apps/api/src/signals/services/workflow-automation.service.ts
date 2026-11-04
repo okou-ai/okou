@@ -1883,7 +1883,11 @@ const readEventAutomationConnectorId$ = command(
     const [selected] = parseRawRows(
       object({ connectorId: string().nullable() }),
       await db.execute(
-        workflowAutomationConnectorSelectionSql({ ...args, chatAccountAccess }),
+        workflowAutomationConnectorSelectionSql({
+          ...args,
+          workflowId: sql`${args.workflowId}`,
+          chatAccountAccess,
+        }),
       ),
     );
     signal.throwIfAborted();
