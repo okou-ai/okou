@@ -1,4 +1,4 @@
-import { Button, Card, Input } from "@okouai/ui";
+import { Button, Input } from "@okouai/ui";
 import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2 } from "lucide-react";
@@ -44,8 +44,11 @@ export function SignupFriendReferral() {
           : "";
 
   return (
-    <Card className="space-y-2 px-[var(--okou-auth-card-padding-inline)] py-4">
-      <label htmlFor="signup-referral-code" className="text-sm font-medium">
+    <div className="space-y-2">
+      <label
+        htmlFor="signup-referral-code"
+        className="block text-sm font-medium"
+      >
         {t(($) => {
           return $.friendReferrals.signupLabel;
         })}
@@ -90,6 +93,6 @@ export function SignupFriendReferral() {
           })}
         </Button>
       )}
-    </Card>
+    </div>
   );
 }

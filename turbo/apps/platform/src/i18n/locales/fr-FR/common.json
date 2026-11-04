@@ -969,6 +969,27 @@
     },
     "homeLink": "Accéder à l'accueil de {{brandName}}",
     "loading": "Chargement de l'authentification",
+    "signup": {
+      "alreadyHaveAccount": "Vous avez déjà un compte ?",
+      "apple": "Apple",
+      "continue": "Continuer",
+      "email": "Adresse e-mail",
+      "emailPlaceholder": "Adresse e-mail",
+      "failed": "La requête a échoué",
+      "google": "Google",
+      "hidePassword": "Masquer le mot de passe",
+      "legalAnd": "et la",
+      "legalPrefix": "J’accepte les",
+      "or": "ou",
+      "password": "Mot de passe",
+      "passwordPlaceholder": "Mot de passe",
+      "privacy": "Politique de confidentialité",
+      "showPassword": "Afficher le mot de passe",
+      "signIn": "Se connecter",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "terms": "Conditions d’utilisation",
+      "title": "Créez votre compte"
+    },
     "theme": {
       "darkEnabled": "Thème sombre activé",
       "lightEnabled": "Thème clair activé"

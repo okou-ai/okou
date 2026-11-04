@@ -952,6 +952,27 @@
     },
     "homeLink": "Go to {{brandName}} home",
     "loading": "Loading authentication",
+    "signup": {
+      "alreadyHaveAccount": "Already have an account?",
+      "apple": "Apple",
+      "continue": "Continue",
+      "email": "Email address",
+      "emailPlaceholder": "Enter your email address",
+      "failed": "Request failed",
+      "google": "Google",
+      "hidePassword": "Hide password",
+      "legalAnd": "and",
+      "legalPrefix": "I agree to the",
+      "or": "or",
+      "password": "Password",
+      "passwordPlaceholder": "Create a password",
+      "privacy": "Privacy Policy",
+      "showPassword": "Show password",
+      "signIn": "Sign in",
+      "subtitle": "Welcome! Please fill in the details to get started.",
+      "terms": "Terms of Service",
+      "title": "Create your account"
+    },
     "theme": {
       "darkEnabled": "Dark theme enabled",
       "lightEnabled": "Light theme enabled"

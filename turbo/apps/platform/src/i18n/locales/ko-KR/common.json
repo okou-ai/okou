@@ -951,6 +951,27 @@
     },
     "homeLink": "{{brandName}} 홈으로 이동",
     "loading": "인증 중",
+    "signup": {
+      "alreadyHaveAccount": "계정이 있으신가요?",
+      "apple": "Apple",
+      "continue": "계속",
+      "email": "이메일 주소",
+      "emailPlaceholder": "이메일 주소를 입력하세요",
+      "failed": "요청 실패",
+      "google": "Google",
+      "hidePassword": "비밀번호 숨기기",
+      "legalAnd": "및",
+      "legalPrefix": "다음 내용에 동의합니다:",
+      "or": "또는",
+      "password": "비밀번호",
+      "passwordPlaceholder": "비밀번호를 입력하세요",
+      "privacy": "개인정보 처리방침",
+      "showPassword": "비밀번호 표시",
+      "signIn": "로그인하기",
+      "subtitle": "환영해요! 아래 정보를 입력해 주세요.",
+      "terms": "서비스 약관",
+      "title": "계정 만들기"
+    },
     "theme": {
       "darkEnabled": "어두운 테마가 켜졌습니다",
       "lightEnabled": "밝은 테마가 켜졌습니다"

@@ -952,6 +952,27 @@
     },
     "homeLink": "{{brandName}} होम पर जाएं",
     "loading": "प्रमाणीकरण लोड हो रहा है",
+    "signup": {
+      "alreadyHaveAccount": "पहले से ही खाता है?",
+      "apple": "Apple",
+      "continue": "जारी रखें",
+      "email": "ईमेल पता",
+      "emailPlaceholder": "अपना ईमेल पता दर्ज करें",
+      "failed": "अनुरोध विफल रहा",
+      "google": "Google",
+      "hidePassword": "पासवर्ड छिपाएँ",
+      "legalAnd": "और",
+      "legalPrefix": "मैं स्वीकार करता हूँ",
+      "or": "या",
+      "password": "पासवर्ड",
+      "passwordPlaceholder": "अपना पासवर्ड दर्ज करें",
+      "privacy": "गोपनीयता नीति",
+      "showPassword": "पासवर्ड दिखाएँ",
+      "signIn": "साइन इन करें",
+      "subtitle": "स्वागत है! आरंभ करने के लिए कृपया विवरण भरें।",
+      "terms": "सेवा की शर्तें",
+      "title": "अपना खाता बनाएं"
+    },
     "theme": {
       "darkEnabled": "डार्क थीम चालू है",
       "lightEnabled": "लाइट थीम चालू है"

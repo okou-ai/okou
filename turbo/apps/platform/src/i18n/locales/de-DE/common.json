@@ -952,6 +952,27 @@
     },
     "homeLink": "Zur {{brandName}}-Startseite",
     "loading": "Authentifizierung wird geladen",
+    "signup": {
+      "alreadyHaveAccount": "Haben Sie ein Konto?",
+      "apple": "Apple",
+      "continue": "Fortsetzen",
+      "email": "E-Mail-Adresse",
+      "emailPlaceholder": "E-Mail-Adresse eingeben",
+      "failed": "Die Anfrage ist fehlgeschlagen",
+      "google": "Google",
+      "hidePassword": "Passwort verbergen",
+      "legalAnd": "und die",
+      "legalPrefix": "Ich akzeptiere die",
+      "or": "oder",
+      "password": "Passwort",
+      "passwordPlaceholder": "Passwort eingeben",
+      "privacy": "Datenschutzerklärung",
+      "showPassword": "Passwort anzeigen",
+      "signIn": "Einloggen",
+      "subtitle": "weiter zu {{applicationName}}",
+      "terms": "Nutzungsbedingungen",
+      "title": "Erstellen Sie Ihr Konto"
+    },
     "theme": {
       "darkEnabled": "Dunkles Design aktiviert",
       "lightEnabled": "Helles Design aktiviert"

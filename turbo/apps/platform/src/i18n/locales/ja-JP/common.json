@@ -951,6 +951,27 @@
     },
     "homeLink": "{{brandName}} のホームに移動",
     "loading": "認証を読み込み中",
+    "signup": {
+      "alreadyHaveAccount": "アカウントをお持ちですか？",
+      "apple": "Apple",
+      "continue": "続ける",
+      "email": "メールアドレス",
+      "emailPlaceholder": "メールアドレスを入力",
+      "failed": "リクエストが失敗しました",
+      "google": "Google",
+      "hidePassword": "パスワードを非表示",
+      "legalAnd": "および",
+      "legalPrefix": "次の内容に同意します：",
+      "or": "または",
+      "password": "パスワード",
+      "passwordPlaceholder": "パスワードを入力",
+      "privacy": "プライバシーポリシー",
+      "showPassword": "パスワードを表示",
+      "signIn": "サインイン",
+      "subtitle": "ようこそ！始めるには詳細を入力してください",
+      "terms": "利用規約",
+      "title": "アカウントを作成"
+    },
     "theme": {
       "darkEnabled": "ダークテーマを有効にしました",
       "lightEnabled": "ライトテーマを有効にしました"

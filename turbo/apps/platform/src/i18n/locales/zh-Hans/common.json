@@ -951,6 +951,27 @@
     },
     "homeLink": "前往 {{brandName}} 首页",
     "loading": "正在加载身份验证",
+    "signup": {
+      "alreadyHaveAccount": "已经有账户了？",
+      "apple": "Apple",
+      "continue": "继续",
+      "email": "电子邮件地址",
+      "emailPlaceholder": "请输入您的电子邮件地址",
+      "failed": "请求失败",
+      "google": "Google",
+      "hidePassword": "隐藏密码",
+      "legalAnd": "和",
+      "legalPrefix": "我同意",
+      "or": "或者",
+      "password": "密码",
+      "passwordPlaceholder": "创建密码",
+      "privacy": "隐私政策",
+      "showPassword": "显示密码",
+      "signIn": "登录",
+      "subtitle": "继续使用 {{applicationName}}",
+      "terms": "服务条款",
+      "title": "创建您的账户"
+    },
     "theme": {
       "darkEnabled": "已开启深色主题",
       "lightEnabled": "已开启浅色主题"

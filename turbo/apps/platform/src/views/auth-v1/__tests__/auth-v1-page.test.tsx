@@ -15,6 +15,7 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
+import { signupControl, signupOAuthRedirect } from "./signup-test-helpers.ts";
 
 const context = testContext();
 const signedInContext = createTestRuntime(context);
@@ -26,7 +27,9 @@ test("An unavailable referral link still opens the normal signup form", async ()
     });
   });
   await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
-  expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Create your account" }),
+  ).toBeInTheDocument();
   const code = screen.getByLabelText("Invitation code (optional)");
   expect(code).toHaveValue("a7k2p9");
   expect(code).toHaveAttribute("aria-invalid", "true");
@@ -155,7 +158,9 @@ test("The edited signup code reaches our registration API after authentication",
     path: "/sign-up",
   });
   expect(registeredToken).toBe("signed-visit:b8m3q0");
-  expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue("");
+  expect(
+    screen.queryByLabelText("Invitation code (optional)"),
+  ).not.toBeInTheDocument();
 });
 
 function setupSignedOutPage(path: string): Promise<void> {
@@ -288,27 +293,22 @@ test("Clerk cross-origin navigation stays browser-owned", async () => {
   expect(window.location.pathname).toBe("/sign-in");
 });
 
-test("The hosted sign-up form renders with an allowed redirect URL", async () => {
+test("The signup form preserves an allowed redirect URL", async () => {
   const redirectUrl = PRESENTATION_ONBOARDING_URL;
   await setupSignedOutPage(
     `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
-  const signUp = screen.getByTestId("clerk-sign-up");
-  expect(signUp).toHaveAttribute("data-clerk-routing", "path");
-  expect(signUp).toHaveTextContent("/sign-up");
+  expect(
+    screen.getByRole("heading", { name: "Create your account" }),
+  ).toBeInTheDocument();
   const signInUrl = new URL(
-    signUp.dataset.clerkSignInUrl ?? "",
+    signupControl("link", "Sign in").getAttribute("href") ?? "",
     location.origin,
   );
   expect(signInUrl.pathname).toBe("/sign-in");
   expect(signInUrl.searchParams.get("redirect_url")).toBe(redirectUrl);
-  expect(signUp).not.toHaveAttribute("data-clerk-sign-up-url");
-  expect(signUp).toHaveAttribute(
-    "data-clerk-fallback-redirect-url",
-    redirectUrl,
-  );
-  expect(signUp).toHaveAttribute("data-clerk-force-redirect-url", redirectUrl);
+  await expect(signupOAuthRedirect()).resolves.toBe(redirectUrl);
   expect(screen.queryByTestId("clerk-google-one-tap")).not.toBeInTheDocument();
   expect(document.title).toBe("Sign up | Okou");
   expect(clerkProviderConfig()).toHaveAttribute(
@@ -354,9 +354,8 @@ test("Okou auth intent survives Clerk moving the redirect into the hash", async 
     `/sign-up#/?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
-  const signUp = screen.getByTestId("clerk-sign-up");
-  expect(signUp).toHaveAttribute("data-clerk-force-redirect-url", redirectUrl);
-  expect(signUp.dataset.clerkSignInUrl).toContain(
+  await expect(signupOAuthRedirect()).resolves.toBe(redirectUrl);
+  expect(signupControl("link", "Sign in").getAttribute("href")).toContain(
     `redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
   expect(document.title).toBe("Sign up | Okou");
@@ -381,9 +380,7 @@ test("Default sign-up redirects do not propagate acquisition parameters", async 
     "/sign-up?gclid=click-123&utm_campaign=summer#/verify?step=code",
   );
 
-  const redirectUrl = new URL(
-    screen.getByTestId("clerk-sign-up").dataset.clerkForceRedirectUrl ?? "",
-  );
+  const redirectUrl = new URL(await signupOAuthRedirect());
   expect(redirectUrl.toString()).toBe("https://app.okou.ai/onboarding");
 });
 
@@ -393,9 +390,7 @@ test("Sign-up redirects to sibling origins of the current host are kept", async 
     `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
-  expect(
-    screen.getByTestId("clerk-sign-up").dataset.clerkForceRedirectUrl,
-  ).toBe(redirectUrl);
+  await expect(signupOAuthRedirect()).resolves.toBe(redirectUrl);
 });
 
 test("Sign-up redirects to other environments fall back to onboarding", async () => {
@@ -403,9 +398,9 @@ test("Sign-up redirects to other environments fall back to onboarding", async ()
     "/sign-up?redirect_url=https%3A%2F%2Fstaging-www.omby.ai%2Fconnector%2Fsuccess",
   );
 
-  expect(
-    screen.getByTestId("clerk-sign-up").dataset.clerkForceRedirectUrl,
-  ).toBe("https://app.okou.ai/onboarding");
+  await expect(signupOAuthRedirect()).resolves.toBe(
+    "https://app.okou.ai/onboarding",
+  );
 });
 
 test("Hosted auth reaches the brand home and the theme toggle", async () => {

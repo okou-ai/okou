@@ -951,6 +951,27 @@
     },
     "homeLink": "Buka beranda {{brandName}}",
     "loading": "Memuat autentikasi",
+    "signup": {
+      "alreadyHaveAccount": "Sudah punya akun?",
+      "apple": "Apple",
+      "continue": "Lanjutkan",
+      "email": "Alamat email",
+      "emailPlaceholder": "Masukkan alamat email Anda",
+      "failed": "Permintaan gagal",
+      "google": "Google",
+      "hidePassword": "Sembunyikan kata sandi",
+      "legalAnd": "dan",
+      "legalPrefix": "Saya menyetujui",
+      "or": "atau",
+      "password": "Kata sandi",
+      "passwordPlaceholder": "Buat kata sandi",
+      "privacy": "Kebijakan Privasi",
+      "showPassword": "Tampilkan kata sandi",
+      "signIn": "Masuk",
+      "subtitle": "Selamat datang! Silakan isi detail untuk memulai.",
+      "terms": "Ketentuan Layanan",
+      "title": "Buat akun Anda"
+    },
     "theme": {
       "darkEnabled": "Tema gelap diaktifkan",
       "lightEnabled": "Tema terang diaktifkan"
