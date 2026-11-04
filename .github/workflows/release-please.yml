@@ -1501,6 +1501,7 @@ jobs:
 
       - name: Start GitHub Deployment
         id: deployment
+        continue-on-error: true
         uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: start
@@ -1557,6 +1558,8 @@ jobs:
 
       - name: Finish GitHub Deployment
         if: ${{ always() && steps.deployment.outputs.deployment_id }}
+        # Status reporting must not block the remaining production release.
+        continue-on-error: true
         uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: finish
@@ -1781,6 +1784,7 @@ jobs:
 
       - name: Start GitHub Deployment
         id: deployment
+        continue-on-error: true
         uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: start
@@ -1991,7 +1995,8 @@ jobs:
           fi
 
       - name: Finish GitHub Deployment
-        if: always()
+        if: ${{ always() && steps.deployment.outputs.deployment_id }}
+        continue-on-error: true
         uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: finish
