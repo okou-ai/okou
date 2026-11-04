@@ -11,7 +11,6 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { waitForMailLayout } from "../utils.ts";
 import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
@@ -163,7 +162,11 @@ export const openThreadCatalogArtifact$ = command(
   },
 );
 
-const changeThreadMailLocation$ = command(
+/**
+ * Mail list/detail navigation only moves the URL; the destination renders from
+ * it and reads its own data.
+ */
+export const navigateThreadMail$ = command(
   (
     { get, set },
     thread: ChatPanelSignals,
@@ -198,7 +201,7 @@ const changeThreadMailLocation$ = command(
 
 export const openThreadMailList$ = command(
   ({ get, set }, thread: ChatPanelSignals) => {
-    set(changeThreadMailLocation$, thread, { view: "list" }, get(pageSignal$));
+    set(navigateThreadMail$, thread, { view: "list" }, get(pageSignal$));
   },
 );
 
@@ -212,38 +215,12 @@ export const openThreadMailDraft$ = command(
     );
     if (thread) {
       set(
-        changeThreadMailLocation$,
+        navigateThreadMail$,
         thread,
         { view: "detail", mailDraftId: signals.mailDraftId },
         get(pageSignal$),
       );
     }
-  },
-);
-
-/** Navigation commits before the destination reads its data. */
-export const navigateThreadMail$ = command(
-  async (
-    { set },
-    thread: ChatPanelSignals,
-    destination: ThreadMailDestination,
-    signal: AbortSignal,
-  ) => {
-    if (
-      !("startViewTransition" in document) ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      set(changeThreadMailLocation$, thread, destination, signal);
-      return;
-    }
-    await document.startViewTransition({
-      types: ["thread-mail"],
-      update: async () => {
-        set(changeThreadMailLocation$, thread, destination, signal);
-        await waitForMailLayout(signal);
-      },
-    }).finished;
-    signal.throwIfAborted();
   },
 );
 

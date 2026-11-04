@@ -83,7 +83,7 @@ export function ThreadMailLink({
           // Only plain activation updates this page; modified links retain
           // their native destination and browsing context.
           event.preventDefault();
-          detach(navigate(thread, destination, signal), Reason.DomCallback);
+          navigate(thread, destination, signal);
         }
       }}
     />
@@ -170,11 +170,7 @@ function ThreadMailButtonInner({
               ? false
               : undefined
           }
-          className={cn(
-            "flex max-h-[min(600px,var(--available-height))] w-[min(440px,calc(100vw-2rem))] flex-col overflow-hidden p-0",
-            open && "[view-transition-name:thread-email-panel]",
-            "[html:active-view-transition-type(thread-mail)_&]:transition-none [html:active-view-transition-type(thread-mail)_&]:data-starting-style:opacity-100 [html:active-view-transition-type(thread-mail)_&]:data-starting-style:[transform:none] [html:active-view-transition-type(thread-mail)_&]:data-ending-style:opacity-100 [html:active-view-transition-type(thread-mail)_&]:data-ending-style:[transform:none]",
-          )}
+          className="flex max-h-[min(600px,var(--available-height))] w-[min(440px,calc(100vw-2rem))] flex-col overflow-hidden p-0"
         >
           <ThreadMailList thread={thread} />
         </PopoverContent>

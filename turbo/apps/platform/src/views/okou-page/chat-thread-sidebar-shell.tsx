@@ -47,7 +47,7 @@ function chatThreadSidebarLayout(
     transition:
       resizing || !animateEntry
         ? ""
-        : "transition-[flex-basis,width] duration-[240ms] motion-reduce:transition-none [html:active-view-transition-type(thread-mail)_&]:transition-none",
+        : "transition-[flex-basis,width] duration-[240ms] motion-reduce:transition-none",
   };
 }
 
