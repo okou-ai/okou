@@ -1,10 +1,18 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { Check, Loader2, Pencil, Share2 } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Loader2,
+  PanelTop,
+  Pencil,
+  Share2,
+} from "lucide-react";
 import {
   Button,
   Input,
+  MENU_ROW_HEIGHT_CLASS,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -12,9 +20,11 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   getHostedSiteShareScope,
   type HostedSiteShareSession,
@@ -44,6 +54,7 @@ function HostedSiteBannerSetting({
   const current = useLastResolved(session.banner$);
   const [operation, change] = useLoadableSet(session.changeBanner$);
   const signal = useGet(session.signal$);
+  const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
   if (
     !signal ||
     owner.state !== "hasData" ||
@@ -55,9 +66,23 @@ function HostedSiteBannerSetting({
   const saving = operation.state === "loading";
   const failed = banner.state === "hasError";
   return (
-    <div className="mt-4 border-t border-border pt-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm">
+    <div
+      className={
+        rows
+          ? "mt-1.5 border-t border-border pt-1.5"
+          : "mt-4 border-t border-border pt-3"
+      }
+    >
+      <div
+        className={cn(
+          "flex items-center justify-between",
+          rows ? cn("gap-2", MENU_ROW_HEIGHT_CLASS) : "gap-3",
+        )}
+      >
+        {rows && (
+          <PanelTop size={16} className="shrink-0 text-muted-foreground" />
+        )}
+        <span className={cn("text-sm", rows && "min-w-0 flex-1 truncate")}>
           {t(($) => {
             return $.artifacts.siteBanner.label;
           })}
@@ -348,14 +373,54 @@ function WebsiteUrlEditor({
   );
 }
 
+function CustomizeUrlRow({
+  address,
+  autoFocus,
+  onEdit,
+}: {
+  readonly address: string | null;
+  readonly autoFocus: boolean;
+  readonly onEdit: () => void;
+}) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return $.artifacts.siteUrl.customize;
+  });
+  // A menu row, like the access options above it: the chevron says the row
+  // opens the address editor, and the current address is its value.
+  return (
+    <div className="-mx-2">
+      <button
+        type="button"
+        autoFocus={autoFocus}
+        aria-label={label}
+        className={cn(
+          "flex w-full select-none items-center gap-2 rounded-lg px-2 text-left outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover",
+          MENU_ROW_HEIGHT_CLASS,
+        )}
+        onClick={onEdit}
+      >
+        <Pencil size={16} className="shrink-0 text-muted-foreground" />
+        <span className="shrink-0">{label}</span>
+        <span className="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground">
+          {address}
+        </span>
+        <ChevronRight size={16} className="shrink-0" />
+      </button>
+    </div>
+  );
+}
+
 function HostedSiteShareActions({
   session,
   link,
+  address,
   customizable,
   loadFailed,
 }: {
   readonly session: HostedSiteShareSession;
   readonly link: string | null;
+  readonly address: string | null;
   readonly customizable: boolean;
   readonly loadFailed: boolean;
 }) {
@@ -365,20 +430,46 @@ function HostedSiteShareActions({
   const copiedUrl = useGet(session.copiedUrl$);
   const edit = useSet(session.edit$);
   const copy = useSet(session.copy$);
+  const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
   if (!signal) {
     return null;
   }
+  const loadFailedStatus = loadFailed && (
+    <div className="mt-3 flex items-center justify-between gap-2">
+      <span role="status" className="text-xs text-muted-foreground">
+        {t(($) => {
+          return $.artifacts.siteUrl.loadFailed;
+        })}
+      </span>
+    </div>
+  );
+  if (rows) {
+    return (
+      <>
+        {customizable && (
+          <CustomizeUrlRow
+            address={address}
+            autoFocus={returnFocus}
+            onEdit={() => {
+              detach(edit(signal), Reason.DomCallback);
+            }}
+          />
+        )}
+        {loadFailedStatus}
+        <ShareCopyButton
+          className="mt-1.5 w-full"
+          copied={link !== null && copiedUrl === link}
+          disabled={link === null}
+          onCopy={() => {
+            detach(copy(signal), Reason.DomCallback);
+          }}
+        />
+      </>
+    );
+  }
   return (
     <>
-      {loadFailed && (
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span role="status" className="text-xs text-muted-foreground">
-            {t(($) => {
-              return $.artifacts.siteUrl.loadFailed;
-            })}
-          </span>
-        </div>
-      )}
+      {loadFailedStatus}
       <div className="mt-4 flex items-center gap-2">
         {customizable && (
           // `-ml-2` pulls the quiet button's padding into the gutter so its
@@ -427,6 +518,7 @@ function HostedSiteShareUrl({
   // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
   const editing = useGet(session.editing$);
+  const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
   return (
     <>
       {editing ? (
@@ -439,13 +531,23 @@ function HostedSiteShareUrl({
       ) : link.state === "loading" ? (
         // Nothing can be copied or customized until the current address is
         // known, so the footer holds its place without offering either.
-        <div aria-busy="true" className="mt-4 flex justify-end">
-          <Skeleton className="h-8 w-28 rounded-lg" />
+        <div
+          aria-busy="true"
+          className={rows ? "mt-1.5 flex" : "mt-4 flex justify-end"}
+        >
+          <Skeleton
+            className={cn("h-8 rounded-lg", rows ? "w-full" : "w-28")}
+          />
         </div>
       ) : (
         <HostedSiteShareActions
           session={session}
           link={link.state === "hasData" ? link.data : null}
+          address={
+            details.state === "hasData" && details.data
+              ? new URL(details.data.url).hostname
+              : null
+          }
           customizable={
             details.state === "hasData" &&
             details.data?.isActive === true &&
