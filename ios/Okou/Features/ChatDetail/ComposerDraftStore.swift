@@ -269,7 +269,7 @@ final class ComposerDraftStore {
       : storage.map {
         ComposerVoiceInputStore(
           client: commands.voiceInput, storage: $0.voiceDraft(for: target),
-          capture: voiceCapture ?? NativeVoiceAudioCapture())
+          capture: voiceCapture ?? NativeVoiceAudioCapture(), didRequireUpgrade: didFail)
       }
     attachments = AttachmentDraftStore(commands: commands, didFail: didFail)
     do {

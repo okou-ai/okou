@@ -17,6 +17,7 @@ final class ComposerVoiceInputStore {
   private let client: VoiceInputClient
   private let storage: VoiceDraftStorage
   private let capture: any VoiceAudioCapture
+  private let didRequireUpgrade: @MainActor (Error) -> Void
   private var session: VoiceDraftSession?
   private var recordingID: UUID?
   private var insertion: ComposerEditor.VoiceInsertion?
@@ -29,12 +30,19 @@ final class ComposerVoiceInputStore {
 
   init(
     client: VoiceInputClient, storage: VoiceDraftStorage,
-    capture: any VoiceAudioCapture = NativeVoiceAudioCapture()
+    capture: any VoiceAudioCapture = NativeVoiceAudioCapture(),
+    didRequireUpgrade: @escaping @MainActor (Error) -> Void
   ) {
     self.client = client
     self.storage = storage
     self.capture = capture
+    self.didRequireUpgrade = didRequireUpgrade
     restore()
+  }
+
+  private func report(_ failure: Error) {
+    error = failure.localizedDescription
+    if (failure as? APIClientError)?.statusCode == 426 { didRequireUpgrade(failure) }
   }
 
   private func restore() {
@@ -130,7 +138,7 @@ final class ComposerVoiceInputStore {
       guard generation == owner else { return }
       capture.stop()
       phase = storage.hasRecording ? .saved : .idle
-      self.error = error.localizedDescription
+      report(error)
       if case NativeVoiceAudioCapture.CaptureError.permissionDenied = error {
         microphoneDenied = true
       }
@@ -143,6 +151,11 @@ final class ComposerVoiceInputStore {
       defer { self?.transcriptionTask = nil }
       do { try await session.transcribeAvailable(recordingID: id) } catch {
         guard let self, generation == owner, !(error is CancellationError) else { return }
+        if (error as? APIClientError)?.statusCode == 426 {
+          suspend()
+          report(error)
+          return
+        }
         transcriptionFailed = true
         self.error = "Transcription delayed. Your recording is being saved."
       }
@@ -201,7 +214,7 @@ final class ComposerVoiceInputStore {
       guard generation == owner else { return }
       captureTask = nil
       phase = .saved
-      self.error = error.localizedDescription
+      report(error)
     }
   }
 

@@ -198,6 +198,34 @@ final class ComposerVoiceInputTests: XCTestCase {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   }
 
+  func testVoiceQuotaUpgradeResponseBlocksTheOwningWorkspace() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    fixture.state.value.withLock {
+      $0.quotaFailure = ChatHTTPResponse(
+        status: 426,
+        body:
+          #"{"error":{"code":"IOS_UPDATE_REQUIRED","message":"Update Okou"},"minimumSupportedVersion":"99.0.0"}"#
+      )
+    }
+    let client = fixture.http.client
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.http.baseURL, userID: "voice-user", workspaceID: "voice-org"),
+      directory: root)
+    let workspace = WorkspaceStore(
+      client: client, webURL: fixture.http.baseURL, draftStorage: storage)
+    defer { workspace.close() }
+    workspace.selectedAgentID = "voice-agent"
+    workspace.newComposer.setForeground(true)
+    let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    await workspace.newComposer.voice?.start()
+    XCTAssertTrue(workspace.needsUpgrade)
+  }
+
   func testRemoteDraftConflictKeepsReadyVoiceTextRecoverableUntilTheUserChooses() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
@@ -311,6 +339,7 @@ private final class VoiceCaptureFixture: VoiceAudioCapture {
 private final class VoiceComposerState: Sendable {
   struct State: Sendable {
     var remote = ComposerDraft()
+    var quotaFailure: ChatHTTPResponse?
     var audioUploads = 0
     var sentMessages = 0
     var failPolish = false
@@ -336,6 +365,7 @@ private final class VoiceComposerFixture: Sendable {
         let data = try JSONEncoder().encode(state.value.withLock { $0.remote })
         return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
       case "/api/voice-io/quota":
+        if let failure = state.value.withLock({ $0.quotaFailure }) { return failure }
         return ChatHTTPResponse(body: #"{"allowed":true,"count":0,"limit":60}"#)
       case "/api/voice-io/transcribe/segment":
         state.value.withLock { $0.audioUploads += 1 }

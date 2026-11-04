@@ -55,12 +55,18 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
           guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
             AVAudioSession.InterruptionType(rawValue: raw) == .began
           else { return }
-          Task { @MainActor [weak self] in self?.stop() }
+          Task { @MainActor [weak self] in
+            guard self?.sessionOwner == owner else { return }
+            self?.stop()
+          }
         },
         NotificationCenter.default.addObserver(
           forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
-          Task { @MainActor [weak self] in self?.stop() }
+          Task { @MainActor [weak self] in
+            guard self?.sessionOwner == owner else { return }
+            self?.stop()
+          }
         },
       ]
       return stream
