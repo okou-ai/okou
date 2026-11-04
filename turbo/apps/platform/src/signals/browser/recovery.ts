@@ -54,7 +54,7 @@ export interface RecoveryView {
 interface RecoveryPorts {
   readonly view$: Computed<RecoveryView>;
   readonly reset$: ReturnType<typeof resetSignal>;
-  readonly notification$: State<DeferredPromise<void> | null>;
+  readonly notification$: State<(() => void) | null>;
   readonly notify$: Command<void, []>;
   readonly restoration$: State<RecoveryTarget | null>;
   readonly reconnect$: Command<Promise<void>, [AbortSignal]>;
@@ -424,40 +424,14 @@ function createManualRecovery(
   };
 }
 
-function createRecoveryWatch(
+function createRecoveryObservation(
   ports: RecoveryPorts,
   graph: RecoveryState,
   start$: ReturnType<typeof createRecoveryStart>,
 ) {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const lifetime = {};
-    set(graph.lifetime$, lifetime);
-    signal.addEventListener(
-      "abort",
-      () => {
-        if (get(graph.lifetime$) === lifetime) {
-          set(graph.lifetime$, null);
-          set(ports.reset$, AbortSignal.abort(cancelled()));
-          set(ports.restoration$, null);
-        }
-      },
-      { once: true },
-    );
-    let paused = get(ports.view$).paused;
-    while (!signal.aborted) {
-      const notification = createDeferredPromise<void>(
-        { rejection: "owner" },
-        signal,
-      );
-      set(ports.notification$, notification);
-      using _notification = {
-        [Symbol.dispose]: () => {
-          if (get(ports.notification$) === notification) {
-            set(ports.notification$, null);
-          }
-        },
-      };
+  return command(
+    ({ get, set }, paused: boolean, signal: AbortSignal): boolean => {
+      signal.throwIfAborted();
       const view = get(ports.view$);
       const active = get(graph.active$);
       if (
@@ -473,7 +447,6 @@ function createRecoveryWatch(
       if (paused && !view.paused) {
         set(graph.stopped$, null);
       }
-      paused = view.paused;
       const current = failure(view);
       if (!active && view.usable && get(graph.stopped$)) {
         set(graph.stopped$, null);
@@ -496,6 +469,60 @@ function createRecoveryWatch(
           );
         }
       }
+      return view.paused;
+    },
+  );
+}
+
+function createRecoveryWatch(
+  ports: RecoveryPorts,
+  graph: RecoveryState,
+  start$: ReturnType<typeof createRecoveryStart>,
+) {
+  const observe$ = createRecoveryObservation(ports, graph, start$);
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const lifetime = {};
+    set(graph.lifetime$, lifetime);
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(graph.lifetime$) === lifetime) {
+          set(graph.lifetime$, null);
+          set(ports.reset$, AbortSignal.abort(cancelled()));
+          set(ports.restoration$, null);
+        }
+      },
+      { once: true },
+    );
+    let paused = get(ports.view$).paused;
+    while (!signal.aborted) {
+      const notification = createDeferredPromise<void>(
+        { rejection: "owner" },
+        signal,
+      );
+      const changed = () => {
+        if (signal.aborted) {
+          return;
+        }
+        // Publish the operation in the failure's own event, before React can
+        // show a final error. The existing watch still owns cancellation.
+        paused = set(observe$, paused, signal);
+        if (!notification.settled()) {
+          notification.resolve();
+        }
+      };
+      set(ports.notification$, () => {
+        return changed;
+      });
+      using _notification = {
+        [Symbol.dispose]: () => {
+          if (get(ports.notification$) === changed) {
+            set(ports.notification$, null);
+          }
+        },
+      };
+      paused = set(observe$, paused, signal);
       await notification.promise;
       signal.throwIfAborted();
     }

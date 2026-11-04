@@ -61,6 +61,10 @@ interface BrowserIdentity {
   readonly nodes: BrowserNodes;
   readonly generation: number;
 }
+interface PresentedFrame {
+  readonly identity: BrowserIdentity;
+  readonly targetId: string;
+}
 type Controller = ReturnType<typeof createBrowserController>;
 interface NativeLease {
   readonly identity: BrowserIdentity;
@@ -155,13 +159,11 @@ function createRuntimeState(
   connection$: Computed<Promise<BrowserConnection | null>>,
 ) {
   const installed$ = state<NativeLease | null>(null);
+  const presentedFrame$ = state<PresentedFrame | null>(null);
   const retiring$ = state<ReadonlySet<NativeLease>>(new Set());
-  const recoveryNotification$ = state<DeferredPromise<void> | null>(null);
+  const recoveryNotification$ = state<(() => void) | null>(null);
   const recoveryChanged$ = command(({ get }) => {
-    const notification = get(recoveryNotification$);
-    if (notification && !notification.settled()) {
-      notification.resolve();
-    }
+    get(recoveryNotification$)?.();
   });
   const resetAutomatic$ = resetSignal();
   const recoveryTarget$ = state<RecoveryTarget | null>(null);
@@ -245,6 +247,7 @@ function createRuntimeState(
     recoveryIntent$,
     cancelAutomatic$,
     installed$,
+    presentedFrame$,
     retiring$,
     inViewport$,
     documentHidden$,
@@ -258,6 +261,36 @@ function createRuntimeState(
   };
 }
 type RuntimeState = ReturnType<typeof createRuntimeState>;
+
+/** Observes accepted pixels, independently of live input or request lifecycle. */
+function createFrameObservations(
+  context: RuntimeState,
+  identity: BrowserIdentity,
+) {
+  const presentedTarget$ = computed((get) => {
+    const frame = get(context.presentedFrame$);
+    return frame &&
+      frame.identity.nodes.canvas === identity.nodes.canvas &&
+      sameRecoveryBinding(frame.identity.connection, identity.connection)
+      ? frame.targetId
+      : null;
+  });
+  const framePresented$ = command(({ get, set }, targetId: string) => {
+    if (get(context.installed$)?.identity !== identity) {
+      return;
+    }
+    // Frames of the same selected scope do not invalidate React on each paint.
+    if (get(presentedTarget$) !== targetId) {
+      set(context.presentedFrame$, { identity, targetId });
+    }
+  });
+  const frameCleared$ = command(({ get, set }) => {
+    if (get(context.installed$)?.identity === identity) {
+      set(context.presentedFrame$, null);
+    }
+  });
+  return { presentedTarget$, framePresented$, frameCleared$ };
+}
 
 function createMountedNodeGraph(
   released$: Command<void, [object]>,
@@ -322,12 +355,51 @@ function createMountedNodeGraph(
 }
 
 /** DOM incarnation and immutable connection identity determine the child graph. */
+function createControllerGraph(
+  context: RuntimeState,
+  identity$: Computed<BrowserIdentity | null>,
+  native: ReturnType<typeof createNativeInput>,
+) {
+  const { model, installed$, authority$ } = context;
+  return computed((get): NativeLease | null => {
+    const identity = get(identity$);
+    const installed = get(installed$);
+    if (installed && sameIdentity(installed.identity, identity)) {
+      return installed;
+    }
+    // An ended lease is not a reusable controller, even if its connection and
+    // DOM identity are unchanged. The current native owner is canonical.
+    const restoration = get(context.recoveryTarget$);
+    return identity
+      ? {
+          identity,
+          resetRetirement$: resetSignal(),
+          controller: createBrowserController(
+            model,
+            identity.connection,
+            identity.nodes.canvas.node,
+            {
+              authority$,
+              nativeHost: native,
+              selectionChanged$: context.cancelAutomatic$,
+              ...createFrameObservations(context, identity),
+              preferredTargetId:
+                restoration &&
+                sameRecoveryBinding(restoration.binding, identity.connection)
+                  ? restoration.targetId
+                  : null,
+            },
+          ),
+        }
+      : null;
+  });
+}
+
 function createDOMGraph(
   context: RuntimeState,
   onPageInput$?: Command<void, []>,
 ) {
   const {
-    model,
     installed$,
     resetNativeOwner$,
     liveConnection$,
@@ -342,6 +414,17 @@ function createDOMGraph(
     }
   });
   const released$ = command(({ get, set }, mounted: object) => {
+    const frame = get(context.presentedFrame$);
+    if (
+      frame &&
+      Object.values(frame.identity.nodes).some((node) => {
+        return node === mounted;
+      })
+    ) {
+      const canvas = frame.identity.nodes.canvas.node;
+      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+      set(context.presentedFrame$, null);
+    }
     const lease = get(installed$);
     if (!lease) {
       return;
@@ -372,6 +455,11 @@ function createDOMGraph(
     nodes$,
     toolbarNodes$,
   } = createMountedNodeGraph(released$, context.connectionChanged$);
+  const clearFrame$ = command(({ get, set }) => {
+    const node = get(canvas.mounted$)?.node;
+    node?.getContext("2d")?.clearRect(0, 0, node.width, node.height);
+    set(context.presentedFrame$, null);
+  });
   const focus = createToolbarFocus(toolbarNodes$);
   const identity$ = computed((get): BrowserIdentity | null => {
     const connection = get(liveConnection$);
@@ -389,37 +477,7 @@ function createDOMGraph(
     focus.release$,
     onPageInput$,
   );
-  const controllerGraph$ = computed((get): NativeLease | null => {
-    const identity = get(identity$);
-    const installed = get(installed$);
-    if (installed && sameIdentity(installed.identity, identity)) {
-      return installed;
-    }
-    // An ended lease is not a reusable controller, even if its connection and
-    // DOM identity are unchanged. The current native owner is canonical.
-    const restoration = get(context.recoveryTarget$);
-    return identity
-      ? {
-          identity,
-          resetRetirement$: resetSignal(),
-          controller: createBrowserController(
-            model,
-            identity.connection,
-            identity.nodes.canvas.node,
-            {
-              authority$,
-              nativeHost: native,
-              selectionChanged$: context.cancelAutomatic$,
-              preferredTargetId:
-                restoration &&
-                sameRecoveryBinding(restoration.binding, identity.connection)
-                  ? restoration.targetId
-                  : null,
-            },
-          ),
-        }
-      : null;
-  });
+  const controllerGraph$ = createControllerGraph(context, identity$, native);
   const requireController$ = command(
     ({ get }, signal: AbortSignal): NativeLease => {
       signal.throwIfAborted();
@@ -436,6 +494,7 @@ function createDOMGraph(
   );
   return {
     retireLease$,
+    clearFrame$,
     surface,
     canvas,
     inputNode,
@@ -580,6 +639,9 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
       owner.throwIfAborted();
       if (setup.status === "rejected") {
         if (!isAbortError(setup.reason)) {
+          if (!diagnostic(setup.reason).transient) {
+            set(graph.clearFrame$);
+          }
           set(model.transition$, {
             type: "failed",
             error: diagnostic(setup.reason),
@@ -593,6 +655,12 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
       ]);
       owner.throwIfAborted();
       if (started.status === "rejected") {
+        if (
+          !isAbortError(started.reason) &&
+          !diagnostic(started.reason).transient
+        ) {
+          set(graph.clearFrame$);
+        }
         // The descriptor observer may already be suspended or replaced. Native
         // failure must still retire this lease through its own mount owner.
         set(retireLease$, lease);
@@ -724,6 +792,7 @@ function createConnectionPublication(
     ) => {
       signal.throwIfAborted();
       if (!connection) {
+        set(graph.clearFrame$);
         const old = get(installed$);
         if (old) {
           set(retireLease$, old);
@@ -734,6 +803,13 @@ function createConnectionPublication(
         return;
       }
       if (!sameConnection(get(liveConnection$), connection)) {
+        const frame = get(context.presentedFrame$);
+        if (
+          frame &&
+          !sameRecoveryBinding(frame.identity.connection, connection)
+        ) {
+          set(graph.clearFrame$);
+        }
         const old = get(installed$);
         if (old) {
           set(retireLease$, old);
@@ -815,6 +891,9 @@ function createConnectionObservers(
       }
       if (resolved.status === "rejected") {
         const error: unknown = resolved.reason;
+        if (!isAbortError(error) && !diagnostic(error).transient) {
+          set(graph.clearFrame$);
+        }
         const old = get(installed$);
         if (old) {
           set(retireLease$, old);
@@ -1350,6 +1429,28 @@ function createConfigurationActions(
 
 function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   const { installed$, authority$, pending$, model } = context;
+  const retainedFrame$ = computed((get) => {
+    const frame = get(context.presentedFrame$);
+    if (
+      !get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner] ||
+      !frame ||
+      get(context.paused$) ||
+      frame.identity.nodes.canvas !== get(graph.canvas.mounted$)
+    ) {
+      return false;
+    }
+    const connection = get(context.liveConnection$);
+    const restoration = get(context.recoveryTarget$);
+    const targetId =
+      get(model.snapshot$).selectedTargetId ?? restoration?.targetId;
+    return (
+      frame.targetId === targetId &&
+      (connection
+        ? sameRecoveryBinding(frame.identity.connection, connection)
+        : restoration !== null &&
+          sameRecoveryBinding(frame.identity.connection, restoration.binding))
+    );
+  });
   const display$ = computed((get) => {
     const lease = get(installed$);
     const display = lease
@@ -1386,6 +1487,7 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
         status: "paused" as const,
         error: null,
         loadingPreview: false,
+        retainedFrame: false,
         blank: false,
       };
     }
@@ -1394,6 +1496,7 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
         status: "connecting" as const,
         error: null,
         loadingPreview: false,
+        retainedFrame: get(retainedFrame$),
         blank: false,
       };
     }
@@ -1401,6 +1504,7 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
     const lease = get(installed$);
     return {
       ...presentation,
+      retainedFrame: get(retainedFrame$),
       blank:
         get(authority$) &&
         lease !== null &&
