@@ -57,13 +57,16 @@ async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_reco
     monkeypatch.setattr(logging_utils, "_encode_jsonl_entry", count_encoding)
 
     with usage_webhook_api() as webhook:
-        for batch in range(100):
-            for _ in range(100):
+        # Five errors cross the four-warning boundary. Repeated drained batches
+        # distinguish a lifetime quota from the writer's bounded queue.
+        for batch in range(3):
+            for _ in range(5):
                 feed_websocket_server_message(flow, _INTEGER_LIMIT_FRAME)
             # A writer that keeps pace must not turn a queue bound into a
             # misleading lifetime-output bound. Also release deferred history.
             run_deferred_websocket_trims(deferred_websocket_trims)
             assert logging_utils.flush_log_path(str(proxy_log))
+            assert encoded_warnings == 4
             if batch == 0:
                 initial_warning_bytes = (await asyncio.to_thread(proxy_log.stat)).st_size
 
@@ -72,7 +75,8 @@ async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_reco
 
         # Exhaustion must not skip inspection or the independent correlation
         # transition when a different error kind arrives later.
-        for _ in range(100):
+        # Repeat the full work-limit frame after that first transition.
+        for _ in range(2):
             completion = feed_websocket_server_message(flow, _WORK_LIMIT_FRAME)
             assert completion is not None
             await completion
