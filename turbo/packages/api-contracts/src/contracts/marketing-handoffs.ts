@@ -182,7 +182,10 @@ export const marketingHandoffsContract = c.router({
       hashes: array(marketingContentHashSchema).min(1).max(500),
     }).strict(),
     responses: {
-      200: object({ missing: array(marketingContentHashSchema) }),
+      200: object({
+        missing: array(marketingContentHashSchema),
+        shortAddressesVerified: literal(true),
+      }),
       ...errors,
     },
   },
@@ -195,6 +198,7 @@ export const marketingHandoffsContract = c.router({
     }).strict(),
     responses: {
       200: object({ hashes: array(marketingContentHashSchema) }),
+      409: apiErrorSchema,
       ...errors,
     },
   },
