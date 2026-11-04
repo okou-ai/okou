@@ -35,8 +35,13 @@ import {
 
 const context = testContext();
 
-test("Repair the enabled default after disable, first-enable and account deletion", async () => {
-  const user = userEvent.setup({ delay: null });
+async function openRepairableDefaultAccountManager({
+  defaultAccount,
+  enabledAccounts,
+}: {
+  readonly defaultAccount: "Work" | "Personal";
+  readonly enabledAccounts: readonly ("Work" | "Personal")[];
+}) {
   const [connector] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "work" },
   ]);
@@ -47,20 +52,26 @@ test("Repair the enabled default after disable, first-enable and account deletio
     builtinAccount({
       id: connector.id,
       displayName: "Work",
-      isDefault: true,
+      isDefault: defaultAccount === "Work",
       externalUsername: "work",
     }),
     builtinAccount({
       id: crypto.randomUUID(),
       displayName: "Personal",
-      isDefault: false,
+      isDefault: defaultAccount === "Personal",
       externalUsername: "personal",
     }),
   ];
   const enabled = new Set(
-    accounts.map((account) => {
-      return account.id;
-    }),
+    accounts
+      .filter((account) => {
+        return enabledAccounts.some((name) => {
+          return account.displayName === name;
+        });
+      })
+      .map((account) => {
+        return account.id;
+      }),
   );
   const readDefault = (connectionId: string) => {
     const account = accounts.find((candidate) => {
@@ -153,27 +164,59 @@ test("Repair the enabled default after disable, first-enable and account deletio
     name: "Manage GitHub accounts",
   });
   const toggle = (name: string) => {
-    return within(manager).findByRole("switch", {
-      name: `Enable ${name} by default`,
+    return waitFor(() => {
+      const control = within(manager).getByRole("switch", {
+        name: `Enable ${name} by default`,
+      });
+      expect(control).toBeEnabled();
+      return control;
     });
   };
+  return { manager, toggle };
+}
+
+test("Disabling the default promotes an enabled sibling", async () => {
+  const { manager, toggle } = await openRepairableDefaultAccountManager({
+    defaultAccount: "Work",
+    enabledAccounts: ["Work", "Personal"],
+  });
   await waitFor(() => {
     expect(accountRadio(manager, "Work")).toBeChecked();
   });
-  await user.click(await toggle("Work"));
+  click(await toggle("Work"));
   await waitFor(() => {
     expect(accountRadio(manager, "Personal")).toBeChecked();
   });
-  await user.click(await toggle("Personal"));
+});
+
+test("Enabling the first account after disabling the last restores a default", async () => {
+  const { manager, toggle } = await openRepairableDefaultAccountManager({
+    defaultAccount: "Personal",
+    enabledAccounts: ["Personal"],
+  });
+  await waitFor(() => {
+    expect(accountRadio(manager, "Personal")).toBeChecked();
+  });
+  click(await toggle("Personal"));
   await waitFor(() => {
     expect(accountRadio(manager, "Personal")).not.toBeChecked();
     expect(accountRadio(manager, "Work")).not.toBeChecked();
   });
-  await user.click(await toggle("Work"));
+  click(await toggle("Work"));
   await waitFor(() => {
     expect(accountRadio(manager, "Work")).toBeChecked();
   });
-  await user.click(await toggle("Personal"));
+});
+
+test("Deleting the default promotes a sibling enabled in the open manager", async () => {
+  const { manager, toggle } = await openRepairableDefaultAccountManager({
+    defaultAccount: "Work",
+    enabledAccounts: ["Work"],
+  });
+  await waitFor(() => {
+    expect(accountRadio(manager, "Work")).toBeChecked();
+  });
+  click(await toggle("Personal"));
   const workRow = within(manager).getByRole("group", { name: "Work" });
   click(getConnectorAction("button", "Account actions", workRow));
   click(
