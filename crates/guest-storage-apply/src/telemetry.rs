@@ -158,8 +158,12 @@ impl DownloadTaskTelemetry {
         }
     }
 
+    pub(crate) fn is_remote(self) -> bool {
+        matches!(self.url_kind, DownloadUrlKind::Remote)
+    }
+
     pub(crate) fn remote_metrics(self) -> Option<RemoteArchiveTaskMetrics> {
-        matches!(self.url_kind, DownloadUrlKind::Remote).then(RemoteArchiveTaskMetrics::default)
+        self.is_remote().then(RemoteArchiveTaskMetrics::default)
     }
 
     pub(crate) fn local_metrics(self) -> Option<LocalArchiveTaskMetrics> {

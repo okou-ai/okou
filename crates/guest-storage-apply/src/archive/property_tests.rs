@@ -298,7 +298,7 @@ proptest! {
         let mut members = vec![Member::file(CONTROL, CONTROL_CONTENT)];
         members.extend(entries.iter().map(|entry| materialize(entry, &root)));
         let archive = tar_gz(&members);
-        let result = extract_tar_gz(ArchiveSource::local(Cursor::new(archive), None), &target);
+        let result = extract_tar_gz(ArchiveSource::local(Cursor::new(archive), None), &target, 1);
 
         prop_assert_eq!(
             snapshot_outside(&root, &target), before,
@@ -329,6 +329,7 @@ fn outside_tree_is_unchanged_after_late_unpack_error() {
     let result = extract_tar_gz(
         ArchiveSource::local(Cursor::new(tar_gz(&members)), None),
         &target,
+        1,
     );
 
     assert!(result.is_err());
@@ -357,7 +358,7 @@ fn valid_mixed_entries_are_extracted() {
     ];
     let archive = tar_gz(&members);
 
-    extract_tar_gz(ArchiveSource::local(Cursor::new(archive), None), &target)
+    extract_tar_gz(ArchiveSource::local(Cursor::new(archive), None), &target, 1)
         .unwrap_or_else(|error| panic!("accepted archive failed: {error}"));
     assert_eq!(fs::read(target.join("source.txt")).unwrap(), b"source");
     assert!(fs::metadata(target.join("folder")).unwrap().is_dir());

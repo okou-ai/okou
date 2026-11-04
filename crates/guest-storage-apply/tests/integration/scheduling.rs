@@ -1,6 +1,6 @@
 //! Integration coverage for the guest-storage-apply slot scheduler.
 //!
-//! The scheduler may run up to four downloads at once, but archives whose
+//! The scheduler may run up to sixteen remote downloads at once, but archives whose
 //! mount paths are equal or have an ancestor/descendant relationship must not
 //! extract concurrently. These tests also cover slot refill behavior: when an
 //! active download blocks a conflicting queued task, a later independent task
@@ -29,6 +29,8 @@ const NEGATIVE_START_TIMEOUT: Duration = Duration::from_millis(300);
 const COMPLETION_TIMEOUT: Duration = Duration::from_secs(5);
 const RESPONDER_CLEANUP_TIMEOUT: Duration = Duration::from_secs(1);
 const CHILD_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(1);
+const REMOTE_CONCURRENCY: usize = 16;
+const PRESSURE_TASKS: usize = REMOTE_CONCURRENCY + 1;
 
 fn gzip_response(body: Vec<u8>) -> HttpMockResponse {
     HttpMockResponse::builder()
@@ -395,7 +397,7 @@ fn create_numbered_storages(
     let mut servers = Vec::new();
     let mut storages = Vec::new();
 
-    for i in 0..5 {
+    for i in 0..PRESSURE_TASKS {
         let server = MockServer::start();
         let filename = format!("file_{i}.txt");
         let content = format!("content_{i}");
@@ -635,7 +637,7 @@ fn queued_independent_download_starts_when_slot_frees() {
     let queued_started = wait_for_event(
         &event_rx,
         &mut seen_events,
-        "start-4",
+        &format!("start-{REMOTE_CONCURRENCY}"),
         REQUEST_START_TIMEOUT,
     );
     slow_release.release_one();
@@ -650,11 +652,11 @@ fn queued_independent_download_starts_when_slot_frees() {
     queued_started.unwrap();
     completion.unwrap();
     assert!(
-        observations.max_active() <= 4,
-        "observed more than 4 active downloads"
+        observations.max_active() <= REMOTE_CONCURRENCY,
+        "observed more than {REMOTE_CONCURRENCY} active downloads"
     );
 
-    for i in 0..5 {
+    for i in 0..PRESSURE_TASKS {
         let mount = dir.path().join(format!("mount_{i}"));
         let content = std::fs::read_to_string(mount.join(format!("file_{i}.txt"))).unwrap();
         assert_eq!(content, format!("content_{i}"));
@@ -683,9 +685,10 @@ fn termination_with_active_and_pending_downloads_reaps_the_helper() {
         )
         .unwrap();
         let child_id = execution.id().unwrap();
-        let started = wait_for_events(&event_rx, 4, REQUEST_START_TIMEOUT).unwrap();
-        assert_eq!(started.len(), 4);
-        assert_eq!(observations.active(), 4);
+        let started =
+            wait_for_events(&event_rx, REMOTE_CONCURRENCY, REQUEST_START_TIMEOUT).unwrap();
+        assert_eq!(started.len(), REMOTE_CONCURRENCY);
+        assert_eq!(observations.active(), REMOTE_CONCURRENCY);
 
         if cancel_by_drop {
             drop(execution);
@@ -708,9 +711,9 @@ fn termination_with_active_and_pending_downloads_reaps_the_helper() {
 
         process::verify_child_reaped(child_id).unwrap();
         assert_eq!(observations.active(), 0);
-        assert_eq!(observations.max_active(), 4);
+        assert_eq!(observations.max_active(), REMOTE_CONCURRENCY);
         assert!(event_rx.try_iter().next().is_none());
-        for index in 0..5 {
+        for index in 0..PRESSURE_TASKS {
             assert!(
                 !dir.path()
                     .join(format!("mount_{index}/file_{index}.txt"))
@@ -740,9 +743,9 @@ fn download_concurrency_cap_limits_initial_starts() {
     )
     .unwrap();
 
-    let initial_starts = wait_for_events(&event_rx, 4, REQUEST_START_TIMEOUT);
-    let fifth_before_release = event_rx.recv_timeout(NEGATIVE_START_TIMEOUT);
-    release.release_many(5);
+    let initial_starts = wait_for_events(&event_rx, REMOTE_CONCURRENCY, REQUEST_START_TIMEOUT);
+    let pending_before_release = event_rx.recv_timeout(NEGATIVE_START_TIMEOUT);
+    release.release_many(PRESSURE_TASKS);
     let completion = execution.wait_for_completion(
         stringify!(download_concurrency_cap_limits_initial_starts),
         COMPLETION_TIMEOUT,
@@ -750,9 +753,9 @@ fn download_concurrency_cap_limits_initial_starts() {
         &observations,
     );
 
-    assert_eq!(initial_starts.unwrap().len(), 4);
+    assert_eq!(initial_starts.unwrap().len(), REMOTE_CONCURRENCY);
     assert!(matches!(
-        fifth_before_release,
+        pending_before_release,
         Err(mpsc::RecvTimeoutError::Timeout)
     ));
     completion.unwrap();
