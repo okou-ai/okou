@@ -39,6 +39,8 @@ case "${1:-}" in
       else
         [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "046a7bac03cc5f5a94cc67394756f69be2eaf111" ]; then
+      [ "${MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
       [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc" ]; then
@@ -580,6 +582,15 @@ assert_failure "Rollback target predates immutable default Agent identity" \
 [ ! -s "${tmp_dir}/immutable-default-agent.output" ] || fail "mutable default Agent API must not publish outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "mutable default Agent API must fail before provider or host access"
+fi
+
+# App assets no longer accept a full-hash-only creation response.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates Marketing handoff short-address responses" \
+  run_resolver "${tmp_dir}/marketing-short-address.output" MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID=0
+[ ! -s "${tmp_dir}/marketing-short-address.output" ] || fail "full-hash-only API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "full-hash-only API must fail before provider or host access"
 fi
 
 # The prepared API reader is required even when the rollback selects an older
