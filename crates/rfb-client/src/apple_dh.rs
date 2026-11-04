@@ -20,7 +20,7 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{
     AppleDhCredentials, AppleDhParameterCheck, Authenticated, AuthenticatedStream,
     AuthenticationStage, Error,
-    authentication::{discard_reason, phase, read_security_result},
+    authentication::{phase, read_security_result, select_security_type},
     version::{ServerVersion, exchange_version},
 };
 
@@ -49,7 +49,7 @@ where
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,
-        select_apple_dh(&mut stream),
+        select_security_type(&mut stream, APPLE_DH),
     )
     .await?;
     phase(
@@ -61,29 +61,6 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_dh_raw(stream),
     })
-}
-
-async fn select_apple_dh<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let count = stream.read_u8().await?;
-    if count == 0 {
-        discard_reason(stream).await?;
-        return Err(Error::ServerRejected);
-    }
-    let mut types = [0u8; u8::MAX as usize];
-    let offered = types
-        .get_mut(..usize::from(count))
-        .ok_or(Error::InvalidAppleDhParameters {
-            check: AppleDhParameterCheck::SecurityTypes,
-            generator: None,
-            key_bytes: None,
-        })?;
-    stream.read_exact(offered).await?;
-    if !offered.contains(&APPLE_DH) {
-        return Err(Error::UnsupportedSecurity);
-    }
-    stream.write_u8(APPLE_DH).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 async fn exchange_credentials<S: AsyncRead + AsyncWrite + Unpin>(

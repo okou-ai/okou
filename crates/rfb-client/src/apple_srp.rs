@@ -19,7 +19,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     AppleSrpCredentials, Authenticated, AuthenticatedStream, AuthenticationStage, Error,
-    authentication::{discard_reason, phase, read_security_result},
+    authentication::{phase, read_security_result, require_security_type},
     version::{ServerVersion, exchange_version},
 };
 
@@ -53,10 +53,13 @@ where
         exchange_version(&mut stream, ServerVersion::Apple),
     )
     .await?;
+    // Unlike ordinary RFB 3.8 security types, Apple's direct-SRP branch
+    // entry starts with the single selection byte. Sending a separate byte
+    // here makes macOS read the entry's length prefix as another auth type.
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,
-        verify_direct_srp_offer(&mut stream),
+        require_security_type(&mut stream, DIRECT_SRP),
     )
     .await?;
     phase(
@@ -68,26 +71,6 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_srp_raw(stream),
     })
-}
-
-async fn verify_direct_srp_offer<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let count = stream.read_u8().await?;
-    if count == 0 {
-        discard_reason(stream).await?;
-        return Err(Error::ServerRejected);
-    }
-    let mut offered = [0u8; u8::MAX as usize];
-    let offered = offered
-        .get_mut(..usize::from(count))
-        .ok_or(Error::InvalidAppleSrpParameters)?;
-    stream.read_exact(offered).await?;
-    if !offered.contains(&DIRECT_SRP) {
-        return Err(Error::UnsupportedSecurity);
-    }
-    // Unlike ordinary RFB 3.8 security types, Apple's direct-SRP branch
-    // entry starts with the single selection byte. Sending a separate byte
-    // here makes macOS read the entry's length prefix as another auth type.
-    Ok(())
 }
 
 pub(super) struct Challenge<'a> {
