@@ -103,8 +103,7 @@ export function SecurityDetailsLink({ className }: { className: string }) {
  * The five frameworks as status badges. Onboarding and the chat home show the
  * same list, so the claims cannot drift apart between the two surfaces.
  *
- * `quiet` renders compact, unboxed footer text with subdued icons and the
- * same tone for each framework and its status.
+ * `quiet` renders compact, unboxed footer text with subdued icons and statuses.
  */
 export function ComplianceBadges({
   className,
@@ -120,11 +119,11 @@ export function ComplianceBadges({
     <ul className={className}>
       {items.map((item) => {
         return (
-          <li key={item.name} className={quiet ? "flex" : undefined}>
+          <li key={item.name} className={quiet ? "flex @4xl:px-4" : undefined}>
             <Item
               className={
                 quiet
-                  ? "inline-flex items-center gap-1 whitespace-nowrap text-[11px] leading-4 text-gray-600"
+                  ? "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] leading-4 text-gray-700"
                   : "text-xs text-muted-foreground"
               }
             >
@@ -134,7 +133,9 @@ export function ComplianceBadges({
                 }
                 aria-hidden="true"
               />
-              <span>{item.name}</span>
+              <span className={quiet ? "font-medium text-gray-800" : undefined}>
+                {item.name}
+              </span>
               <span
                 className={quiet ? undefined : "font-medium text-foreground"}
               >
