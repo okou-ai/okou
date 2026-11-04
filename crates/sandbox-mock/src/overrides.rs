@@ -643,75 +643,35 @@ impl MockSandboxOverrides {
         expected: usize,
         timeout: Duration,
     ) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let notified = self.exec.guest_state_restore_call_notify.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self
-                .exec
-                .guest_state_restore_calls
-                .lock_ignoring_poison()
-                .len()
-                >= expected
-            {
-                return true;
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
-            if tokio::time::timeout(remaining, notified).await.is_err() {
-                return false;
-            }
-        }
+        wait_for_call_count_with_deadline(
+            &self.exec.guest_state_restore_call_notify,
+            timeout,
+            || {
+                self.exec
+                    .guest_state_restore_calls
+                    .lock_ignoring_poison()
+                    .len()
+                    >= expected
+            },
+        )
+        .await
     }
 
     /// Wait until at least `expected` exec calls have been recorded.
     pub async fn wait_exec_call_count(&self, expected: usize, timeout: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let notified = self.exec.call_notify.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self.exec.calls.lock_ignoring_poison().len() >= expected {
-                return true;
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
-            if tokio::time::timeout(remaining, notified).await.is_err() {
-                return false;
-            }
-        }
+        wait_for_call_count_with_deadline(&self.exec.call_notify, timeout, || {
+            self.exec.calls.lock_ignoring_poison().len() >= expected
+        })
+        .await
     }
 
     /// Wait until at least `expected` fixed home-drive mount calls have
     /// been recorded.
     pub async fn wait_home_drive_mount_call_count(&self, expected: u32, timeout: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let notified = self.exec.home_drive_mount_call_notify.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self.home_drive_mount_calls() >= expected {
-                return true;
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
-            if tokio::time::timeout(remaining, notified).await.is_err() {
-                return false;
-            }
-        }
+        wait_for_call_count_with_deadline(&self.exec.home_drive_mount_call_notify, timeout, || {
+            self.home_drive_mount_calls() >= expected
+        })
+        .await
     }
 
     /// Return recorded write-file calls across all sandboxes built from this
@@ -1135,44 +1095,26 @@ impl MockSandboxOverrides {
 
     /// Wait until at least `expected` process cancel calls have been recorded.
     pub async fn wait_for_process_cancel_calls(&self, expected: usize, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                let notified = self.process.process_cancel_notify.notified();
-                if self
-                    .process
-                    .process_cancel_calls
-                    .lock_ignoring_poison()
-                    .len()
-                    >= expected
-                {
-                    return;
-                }
-                notified.await;
-            }
+        wait_for_call_count_with_timeout(&self.process.process_cancel_notify, timeout, || {
+            self.process
+                .process_cancel_calls
+                .lock_ignoring_poison()
+                .len()
+                >= expected
         })
         .await
-        .is_ok()
     }
 
     /// Wait until at least `expected` process-control calls have been recorded.
     pub async fn wait_for_process_control_calls(&self, expected: usize, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                let notified = self.process.process_control_notify.notified();
-                if self
-                    .process
-                    .process_control_calls
-                    .lock_ignoring_poison()
-                    .len()
-                    >= expected
-                {
-                    return;
-                }
-                notified.await;
-            }
+        wait_for_call_count_with_timeout(&self.process.process_control_notify, timeout, || {
+            self.process
+                .process_control_calls
+                .lock_ignoring_poison()
+                .len()
+                >= expected
         })
         .await
-        .is_ok()
     }
 
     /// Queue a process cancel send error consumed by the next cancel handle.
@@ -1251,4 +1193,49 @@ impl Default for MockSandboxOverrides {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// Keep the explicit deadline and pre-check registration policy of exec-family waits.
+async fn wait_for_call_count_with_deadline(
+    notify: &tokio::sync::Notify,
+    timeout: Duration,
+    ready: impl Fn() -> bool,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let notified = notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+
+        if ready() {
+            return true;
+        }
+
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        if tokio::time::timeout(remaining, notified).await.is_err() {
+            return false;
+        }
+    }
+}
+
+// Process-call waits retain their whole-future timeout and notification policy.
+async fn wait_for_call_count_with_timeout(
+    notify: &tokio::sync::Notify,
+    timeout: Duration,
+    ready: impl Fn() -> bool,
+) -> bool {
+    tokio::time::timeout(timeout, async {
+        loop {
+            let notified = notify.notified();
+            if ready() {
+                return;
+            }
+            notified.await;
+        }
+    })
+    .await
+    .is_ok()
 }
