@@ -14,7 +14,7 @@ use guest_control_proto::{
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_output::truncate_utf8;
-use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
+use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
     WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
@@ -316,20 +316,8 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
         drain_deadline,
     );
 
-    let (termination, diagnostic) = match outcome {
-        WaitOutcome::Exited(status) => (
-            ExecTermination::Exited {
-                exit_code: extract_exit_code(status),
-            },
-            String::new(),
-        ),
-        WaitOutcome::TimedOut => (ExecTermination::TimedOut, String::new()),
-        WaitOutcome::Cancelled => (ExecTermination::Cancelled, String::new()),
-        WaitOutcome::WaitFailed(message) => (
-            ExecTermination::WaitFailed,
-            format!("Failed to wait for home mount helper: {message}"),
-        ),
-    };
+    let (termination, diagnostic) =
+        outcome.into_exec_result("Failed to wait for home mount helper");
     HomeDriveMountOutput {
         termination,
         duration_ms: elapsed_ms(started),
