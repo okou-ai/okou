@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  LayoutCommit,
   SheetClose,
   SheetContent,
   ShortcutTooltipGroup,
@@ -81,6 +82,7 @@ import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { suggestionFeedEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { syncActiveSidebarLayout$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
@@ -1005,6 +1007,7 @@ function ChatListColumn() {
 
 function ThreeColumnNav() {
   const hidden = useGet(sidebarOff$);
+  const syncLayout = useSet(syncActiveSidebarLayout$);
   const unified = useGet(unifiedChatWorkspace$);
   const width = useGet(chatListWidth$);
   const resizing = useGet(chatListResizing$);
@@ -1016,6 +1019,22 @@ function ThreeColumnNav() {
         className="relative hidden shrink-0 md:flex"
       >
         <Collapsible.Panel
+          render={(props, state) => {
+            return (
+              <LayoutCommit
+                onLayoutCommit={syncLayout}
+                layoutKey={`${String(state.open)}:${state.transitionStatus ?? "settled"}:${String(width)}:${String(resizing)}`}
+              >
+                <div
+                  {...props}
+                  data-sidebar-layout-owner="chat-list"
+                  data-sidebar-layout-starting={
+                    state.transitionStatus === "starting" ? "" : undefined
+                  }
+                />
+              </LayoutCommit>
+            );
+          }}
           inert={hidden}
           className={cn(
             "flex overflow-hidden w-[var(--chat-list-width)] data-[starting-style]:w-0 data-[ending-style]:w-0",

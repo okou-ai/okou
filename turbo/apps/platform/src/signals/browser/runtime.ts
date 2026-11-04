@@ -18,14 +18,14 @@ import { CdpFault } from "./cdp/errors.ts";
 import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
-import { createToolbarFocus } from "./focus.ts";
+import { createToolbarFocus, type ToolbarNodes } from "./focus.ts";
 import { navigationAddress } from "./input/address.ts";
 import { createNativeInput } from "./input/native.ts";
 import {
   NavigationFault,
   type BrowserNavigationAction,
 } from "./navigation/action.ts";
-import { observeTabStrip } from "./tab-strip.ts";
+import { createTabStripLayout, type TabStripMotion } from "./tab-strip.ts";
 import { createBrowserController } from "./viewer/controller.ts";
 import { diagnostic } from "./viewer/diagnostic.ts";
 import { createViewerSignals } from "./viewer/model.ts";
@@ -35,7 +35,6 @@ import {
   type RecoveryTarget,
   type RecoveryView,
 } from "./recovery.ts";
-import type { TabSpace } from "./viewer/tab-layout.ts";
 import type {
   NavigationReceipt,
   ViewerCaptureOptions,
@@ -130,29 +129,27 @@ function createNodeRef<E extends HTMLElement>(
   const mounted$ = computed((get) => {
     return get(mountedState$);
   });
-  const ref$ = onRef(
-    command(({ get, set }, node: E, signal: AbortSignal) => {
-      const previous = get(mountedState$);
-      if (previous) {
-        set(released$, previous);
-      }
-      const mounted = { node };
-      set(mountedState$, mounted);
-      set(connectionChanged$);
-      signal.addEventListener(
-        "abort",
-        () => {
-          if (get(mountedState$) === mounted) {
-            set(mountedState$, null);
-          }
-          set(released$, mounted);
-          set(connectionChanged$);
-        },
-        { once: true },
-      );
-    }),
-  );
-  return { mounted$, ref$ };
+  const mount$ = command(({ get, set }, node: E, signal: AbortSignal) => {
+    const previous = get(mountedState$);
+    if (previous) {
+      set(released$, previous);
+    }
+    const mounted = { node };
+    set(mountedState$, mounted);
+    set(connectionChanged$);
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(mountedState$) === mounted) {
+          set(mountedState$, null);
+        }
+        set(released$, mounted);
+        set(connectionChanged$);
+      },
+      { once: true },
+    );
+  });
+  return { mounted$, mount$, ref$: onRef(mount$) };
 }
 
 function createRuntimeState(
@@ -395,6 +392,25 @@ function createControllerGraph(
   });
 }
 
+function createDOMFocus(
+  context: RuntimeState,
+  nodes$: Computed<ToolbarNodes | null>,
+) {
+  const authority$ = computed((get): object | null => {
+    return get(context.authority$) ? get(context.installed$) : null;
+  });
+  const selection$ = computed((get) => {
+    return get(context.model.intent$).selection;
+  });
+  return createToolbarFocus(nodes$, {
+    authority$,
+    selection$,
+    tabs$: context.model.tabs$,
+    selectedTabId$: context.model.selectedTabId$,
+    tabLayout$: context.model.tabLayout$,
+  });
+}
+
 function createDOMGraph(
   context: RuntimeState,
   onPageInput$?: Command<void, []>,
@@ -460,7 +476,13 @@ function createDOMGraph(
     node?.getContext("2d")?.clearRect(0, 0, node.width, node.height);
     set(context.presentedFrame$, null);
   });
-  const focus = createToolbarFocus(toolbarNodes$);
+  const focus = createDOMFocus(context, toolbarNodes$);
+  const toolbarRef$ = onRef(
+    command(({ set }, node: HTMLDivElement, signal: AbortSignal) => {
+      set(toolbar.mount$, node, signal);
+      set(focus.listen$, node, signal);
+    }),
+  );
   const identity$ = computed((get): BrowserIdentity | null => {
     const connection = get(liveConnection$);
     const nodes = get(nodes$);
@@ -498,7 +520,7 @@ function createDOMGraph(
     surface,
     canvas,
     inputNode,
-    toolbar,
+    toolbar: { ...toolbar, ref$: toolbarRef$ },
     tabs,
     address,
     nodes$,
@@ -514,7 +536,7 @@ type RuntimeGraph = ReturnType<typeof createDOMGraph>;
 
 /** Native event boundaries pass their original owner explicitly to commands. */
 function createNativeObservations(context: RuntimeState, graph: RuntimeGraph) {
-  const { model, installed$, retiring$ } = context;
+  const { installed$, retiring$ } = context;
   const { native, focus } = graph;
   const finishRetirement$ = command(
     async ({ get, set }, lease: NativeLease, signal: AbortSignal) => {
@@ -546,7 +568,7 @@ function createNativeObservations(context: RuntimeState, graph: RuntimeGraph) {
       return;
     }
     set(native.dispose$);
-    set(focus.reset$);
+    set(focus.revoke$, lease);
     set(installed$, null);
   });
   const measure$ = command(
@@ -556,20 +578,13 @@ function createNativeObservations(context: RuntimeState, graph: RuntimeGraph) {
       }
     },
   );
-  const resizeTabs$ = command(
-    ({ get, set }, lease: NativeLease, space: TabSpace) => {
-      if (get(installed$) === lease) {
-        set(model.resizeTabs$, space);
-      }
-    },
-  );
-  return { releaseNative$, measure$, resizeTabs$ };
+  return { releaseNative$, measure$ };
 }
 
 /** Native startup keeps its DOM owner even if a request observer is replaced. */
 function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
-  const { model, installed$, paused$ } = context;
-  const { retireLease$, native, focus } = graph;
+  const { model, paused$ } = context;
+  const { retireLease$, native } = graph;
   const observations = createNativeObservations(context, graph);
   return command(
     async (
@@ -579,13 +594,9 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
     ): Promise<void> => {
       owner.throwIfAborted();
       const nodes = lease.identity.nodes;
-      const cleanups: (() => void)[] = [];
       owner.addEventListener(
         "abort",
         () => {
-          for (const cleanup of cleanups.splice(0)) {
-            cleanup();
-          }
           set(observations.releaseNative$, lease);
         },
         { once: true },
@@ -601,7 +612,6 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
             nodes.input.node,
             owner,
           );
-          set(focus.listen$, owner);
           observeDisplay(
             nodes.canvas.node,
             (size) => {
@@ -609,30 +619,6 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
             },
             owner,
           );
-          const strip = observeTabStrip(
-            nodes.toolbar.node,
-            nodes.tabs.node,
-            (space) => {
-              set(observations.resizeTabs$, lease, space);
-            },
-          );
-          cleanups.push(strip.close);
-          const mutation = new MutationObserver(() => {
-            if (get(installed$) !== lease) {
-              return;
-            }
-            set(focus.restoreAfterClose$);
-            set(focus.restoreLayout$);
-          });
-          mutation.observe(nodes.tabs.node, {
-            subtree: true,
-            childList: true,
-            attributes: true,
-            attributeFilter: ["aria-selected"],
-          });
-          cleanups.push(() => {
-            mutation.disconnect();
-          });
           await set(lease.controller.pause$, get(paused$), owner);
         })(),
       ]);
@@ -1218,27 +1204,50 @@ function createRootObservation(
 
 function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
   const { requireController$, focus } = graph;
+  const confirmLease$ = command(
+    ({ set }, lease: NativeLease, signal: AbortSignal) => {
+      if (set(requireController$, signal) !== lease) {
+        throw cancelled();
+      }
+    },
+  );
   const selectTab$ = command(
     async ({ set }, targetId: string, signal: AbortSignal) => {
       const lease = set(requireController$, signal);
       set(context.cancelAutomatic$);
-      await set(lease.controller.selectTab$, targetId, signal);
+      const token = set(focus.beginSelect$, targetId, lease, signal);
+      const [selected] = await Promise.allSettled([
+        (async () => {
+          await set(lease.controller.selectTab$, targetId, signal);
+          set(confirmLease$, lease, signal);
+        })(),
+      ]);
+      signal.throwIfAborted();
+      if (selected.status === "rejected") {
+        set(focus.cancel$, token);
+        throw selected.reason;
+      }
+      set(focus.selected$, token);
     },
   );
   const createTab$ = command(
     async ({ set }, signal: AbortSignal): Promise<string> => {
       const lease = set(requireController$, signal);
       set(context.cancelAutomatic$);
-      set(focus.beginCreate$);
+      const token = set(focus.beginCreate$, lease, signal);
       const [created] = await Promise.allSettled([
-        set(lease.controller.createTab$, signal),
+        (async () => {
+          const targetId = await set(lease.controller.createTab$, signal);
+          set(confirmLease$, lease, signal);
+          return targetId;
+        })(),
       ]);
       signal.throwIfAborted();
       if (created.status === "rejected") {
-        set(focus.cancelCreate$);
+        set(focus.cancel$, token);
         throw created.reason;
       }
-      await set(focus.created$, signal);
+      set(focus.created$, token, created.value);
       return created.value;
     },
   );
@@ -1246,11 +1255,20 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
     async ({ set }, targetId: string, signal: AbortSignal) => {
       const lease = set(requireController$, signal);
       set(context.cancelAutomatic$);
-      set(focus.beginClose$, targetId);
-      await set(lease.controller.closeTab$, targetId, signal);
-      // Positive close/inventory receipt does not depend on successor image.
-      set(focus.closed$, targetId);
-      set(focus.restoreAfterClose$);
+      const token = set(focus.beginClose$, targetId, lease, signal);
+      const [closed] = await Promise.allSettled([
+        (async () => {
+          await set(lease.controller.closeTab$, targetId, signal);
+          set(confirmLease$, lease, signal);
+        })(),
+      ]);
+      signal.throwIfAborted();
+      if (closed.status === "rejected") {
+        set(focus.cancel$, token);
+        throw closed.reason;
+      }
+      // Positive close/inventory receipt never waits for successor pixels.
+      set(focus.closed$, token);
     },
   );
   return { selectTab$, createTab$, closeTab$ };
@@ -1548,9 +1566,13 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
 }
 
 /** Application layout commits name their change; no observer infers it later. */
-function createLayoutSync(context: RuntimeState) {
+function createLayoutSync(
+  context: RuntimeState,
+  syncTabs$: Command<void, [motion?: TabStripMotion | null]>,
+) {
   const { installed$ } = context;
-  return command(({ get, set }) => {
+  return command(({ get, set }, motion?: TabStripMotion | null) => {
+    set(syncTabs$, motion);
     const lease = get(installed$);
     if (lease) {
       set(
@@ -1610,7 +1632,21 @@ export function createBrowserRuntime(
   const context = createRuntimeState(connection$);
   const graph = createDOMGraph(context, onPageInput$);
   const lifecycle = createNativeLifecycle(context, graph);
-  const surface$ = graph.surface.ref$;
+  const tabStripNodes$ = computed((get) => {
+    const toolbar = get(graph.toolbar.mounted$)?.node;
+    const tabs = get(graph.tabs.mounted$)?.node;
+    return toolbar && tabs ? { toolbar, tabs } : null;
+  });
+  const tabStrip = createTabStripLayout(
+    tabStripNodes$,
+    context.model.resizeTabs$,
+  );
+  const surface$ = onRef(
+    command(({ set }, node: HTMLDivElement, signal: AbortSignal) => {
+      set(graph.surface.mount$, node, signal);
+      set(tabStrip.mount$, signal);
+    }),
+  );
   const tabActions = createTabActions(context, graph);
   const navigationActions = createNavigationActions(context, graph);
   const configurationActions = createConfigurationActions(
@@ -1650,6 +1686,8 @@ export function createBrowserRuntime(
     clipboardRecovery$: graph.native.recovery$,
     proxyType$: graph.native.proxyType$,
     tabLayout$: model.tabLayout$,
+    focusHandoff$: graph.focus.handoff$,
+    acknowledgeFocusCommit$: graph.focus.acknowledge$,
     rejectFavicon$: model.rejectFavicon$,
     editAddress$: model.editAddress$,
     resetAddress$: model.resetAddress$,
@@ -1664,7 +1702,7 @@ export function createBrowserRuntime(
     recoveryOperation$: recovery.operation$,
     ...presentation,
     connectionChanged$: context.connectionChanged$,
-    syncLayout$: createLayoutSync(context),
+    syncLayout$: createLayoutSync(context, tabStrip.sync$),
     measureInitialDisplay$,
     refs: {
       root$: observers.root$,

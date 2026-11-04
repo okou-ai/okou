@@ -17,10 +17,11 @@ import {
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
 import {
   chatListWidth$,
-  storedChatListHidden$,
+  chatListResizing$,
   unifiedChatWorkspace$,
 } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { ResizeSeam } from "./resize-seam.tsx";
+import { sidebarOff$ } from "../../signals/okou-page/nav.ts";
 
 function sidebarWidthValue(width: number | null, unified: boolean): string {
   if (!unified) {
@@ -171,6 +172,7 @@ export function ChatThreadSidebarShell({
   layout,
   animateEntry,
   onSidebarLayoutCommit,
+  ownerKey = "",
   open,
   sidebar,
   widthKey = "default",
@@ -180,6 +182,7 @@ export function ChatThreadSidebarShell({
   readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
   readonly onSidebarLayoutCommit?: () => void;
+  readonly ownerKey?: string;
   readonly open: boolean;
   readonly sidebar: ReactNode;
   /** Which remembered width the unified workspace gives this panel. */
@@ -197,7 +200,8 @@ export function ChatThreadSidebarShell({
   const resizing = useGet(chatThreadSidebarResizing$);
   // The chat list shares the workspace row, so its geometry sizes this panel.
   const chatListWidth = useGet(chatListWidth$);
-  const chatListHidden = useGet(storedChatListHidden$);
+  const chatListHidden = useGet(sidebarOff$);
+  const chatListResizing = useGet(chatListResizing$);
   const { style, transition } = chatThreadSidebarLayout(
     width,
     unified,
@@ -206,12 +210,15 @@ export function ChatThreadSidebarShell({
   );
 
   const sidebarLayoutKey = [
+    ownerKey,
+    widthKey,
     width,
     unified,
     resizing,
     animateEntry,
     chatListWidth,
     chatListHidden,
+    chatListResizing,
     workspace?.beside,
     workspace?.pwaNavigation,
     workspace?.fullscreen,
@@ -243,6 +250,7 @@ export function ChatThreadSidebarShell({
         layoutKey={sidebarLayoutKey}
         onLayoutCommit={onSidebarLayoutCommit}
         data-testid="chat-thread-sidebar-pane"
+        data-sidebar-layout-owner="panel"
         className={sidebarPanelClassName({
           open,
           unified,

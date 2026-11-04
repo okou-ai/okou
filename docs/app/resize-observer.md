@@ -120,6 +120,39 @@ the locator must not measure the transcript on every streaming update. Keeping
 the chat pinned to the tail and deriving the locator are separate concerns with
 different inputs.
 
+### Cloud Browser tab admission during width motion
+
+The Cloud Browser toolbar keeps a stable pre-picker budget around its tab list
+and All tabs picker. Explicit toolbar, host-layout, and native viewport commits
+sample that budget. The data projection admits a prefix of the inventory,
+substituting the selected target when necessary; CSS flex layout distributes
+width among those admitted tabs. The picker is reserved exactly once. An
+unmeasured or zero-width toolbar admits no tabs rather than assuming infinity.
+
+Keep the sidebar's existing width transitions. Before a moving layout is
+painted, lower the admission budget to a conservative host floor. Never increase
+that lock during a transaction, even when a transition is interrupted or another
+layout owner starts moving. An established desktop split has a 400px floor;
+entry from zero and the responsive full-row layout use zero when no tighter
+bound is proved. A brief conservative set, including picker-only entry, is
+intentional. Target creation, removal, and selection still update normally.
+
+The app shell coordinates both the utility panel and its chat-list sibling.
+Semantic layout commits and Base UI's staged opening commit prepare the budget;
+width/flex-basis run, end, and cancel events reconcile all current CSS
+transitions. One property's terminal event cannot finish another property's or
+sibling's transition. Only the fully settled host explicitly unlocks admission.
+No duration timer, observer, or frame-by-frame DOM measurement is involved.
+
+Toolbar focus has a separate mount lifetime from CDP. User actions and focused
+controls issue tokenized intent; narrowly keyed destination commit
+acknowledgements consume it once. Use the shared UI `LayoutCommit` and
+`RequestCommit` boundaries with stable callbacks and semantic keys, never a
+render counter or a fresh request object on each render. A remote create/close receipt is not a DOM
+commit. Validate mount, native authority, selection, actual enabled destination,
+and retained user intent before focusing. A close receipt must not wait for the
+successor's live image, and later user input must supersede any pending handoff.
+
 ## Preserve ccstate Ownership
 
 - Define commands and scheduling wrappers in the owning signal graph, outside

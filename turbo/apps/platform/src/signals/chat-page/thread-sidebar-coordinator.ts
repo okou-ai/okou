@@ -11,6 +11,10 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import { onRef } from "../utils.ts";
+import { shellDocumentAttributesRef$ } from "../theme.ts";
+import type { TabStripMotion } from "../browser/tab-strip.ts";
+import { createThreadSidebarLayoutMotion } from "./thread-sidebar-layout-motion.ts";
 import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
@@ -68,15 +72,34 @@ export const activeThreadSidebarFullscreen$ = computed((get) => {
   return active ? get(active.thread.sidebar.fullscreen$) : false;
 });
 
-/** The sidebar shell acknowledges its committed panel layout to embedded viewports. */
-export const syncActiveSidebarLayout$ = command(({ get, set }) => {
-  const active = get(activeThreadSidebar$);
-  if (active?.target.type === "artifact") {
-    set(active.thread.sidebar.imageCanvas.syncLayout$);
-  } else if (active?.target.type === "browser") {
-    set(active.thread.browserSessionSignals.browser.syncLayout$);
-  }
-});
+/** Geometry is acknowledged by its hosts, independently of remote connections. */
+const syncSidebarViewport$ = command(
+  ({ get, set }, motion: TabStripMotion | null): void => {
+    const active = get(activeThreadSidebar$);
+    if (active?.target.type === "artifact") {
+      set(active.thread.sidebar.imageCanvas.syncLayout$);
+    } else if (active?.target.type === "browser") {
+      set(active.thread.browserSessionSignals.browser.syncLayout$, motion);
+    }
+  },
+);
+const sidebarMotion = createThreadSidebarLayoutMotion(syncSidebarViewport$);
+export const syncActiveSidebarLayout$ = sidebarMotion.commit$;
+
+/** The shared shell owns the sibling list and utility-panel transition listeners. */
+export const threadSidebarLayoutRootRef$ = onRef(
+  command(({ set }, root: HTMLDivElement, signal: AbortSignal): void => {
+    const releaseAttributes = set(shellDocumentAttributesRef$, root);
+    signal.addEventListener(
+      "abort",
+      () => {
+        releaseAttributes?.();
+      },
+      { once: true },
+    );
+    set(sidebarMotion.mount$, root, signal);
+  }),
+);
 
 const closeOtherThreadSidebars$ = command(
   ({ get, set }, thread: ChatPanelSignals): void => {

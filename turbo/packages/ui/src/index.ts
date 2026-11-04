@@ -183,4 +183,8 @@ export { PreserveScrollAnchor } from "./components/ui/preserve-scroll-anchor";
 
 export { ZoomableImageViewport } from "./components/ui/zoomable-image-viewport";
 
-export { LayoutPanel } from "./components/ui/layout-panel";
+export {
+  LayoutPanel,
+  LayoutCommit,
+  RequestCommit,
+} from "./components/ui/layout-panel";
