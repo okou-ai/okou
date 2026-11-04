@@ -106,7 +106,7 @@ function mockViewer() {
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
-        featureSwitches: { [FeatureSwitchKey.BrowserViewerRecovery]: enabled },
+        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: enabled },
       });
     },
     advance(ms: number) {
@@ -318,7 +318,7 @@ test.each([403, 409] as const)(
   },
 );
 
-test("A disabled recovery switch retains manual recovery", async () => {
+test("A disabled shared Browser switch retains manual recovery", async () => {
   const viewer = mockViewer();
   await viewer.start(false);
   await ready();

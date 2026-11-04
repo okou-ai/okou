@@ -1469,7 +1469,7 @@ function createRuntimeRecovery(
     const intent = get(context.model.intent$);
     const authorized = get(context.authority$) && lease !== null;
     return {
-      enabled: get(featureSwitch$)[FeatureSwitchKey.BrowserViewerRecovery],
+      enabled: get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner],
       paused: get(context.paused$),
       pending: get(context.pending$),
       nodes: get(graph.nodes$),
