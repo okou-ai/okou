@@ -21,6 +21,7 @@ import {
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ComponentProps } from "react";
+import { flushSync } from "react-dom";
 import {
   ChevronRight,
   Loader2,
@@ -83,7 +84,25 @@ export function ThreadMailLink({
           // Only plain activation updates this page; modified links retain
           // their native destination and browsing context.
           event.preventDefault();
-          detach(navigate(thread, destination, signal), Reason.DomCallback);
+          if (
+            !("startViewTransition" in document) ||
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ) {
+            navigate(thread, destination, signal);
+            return;
+          }
+          detach(
+            document.startViewTransition({
+              types: ["thread-mail"],
+              update: () => {
+                // Commit React's destination before the browser captures it.
+                flushSync(() => {
+                  navigate(thread, destination, signal);
+                });
+              },
+            }).finished,
+            Reason.DomCallback,
+          );
         }
       }}
     />

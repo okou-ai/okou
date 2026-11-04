@@ -616,6 +616,7 @@ describe("thread email manager", () => {
 
   it("returns to the list while its read is pending and displays its failure", async () => {
     const fixture = installMails(2);
+    context.mocks.browser.viewTransition();
     await openChat();
     const list = await openList();
     click(await link("Open email: Proposal 2", list));
