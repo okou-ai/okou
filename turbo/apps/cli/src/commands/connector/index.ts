@@ -73,7 +73,9 @@ Account selection:
   Inspect the account used by this Run with connector status <slug> --json, and
   list alternatives with connector account list <slug> --json. Use only an
   exact returned connectionId; never invent one or reuse it for another connector.
-  ${chatConnectorAccountsEnabled() ? "Use account switch for an already allowed account in this Run. Use switch-request for exact owner approval of a denied account. Both retain this Chat's current choice for later Runs; global defaults and listener accounts are unchanged." : "Account switches affect future runs in the current chat, not this Run or a global default."}
+  ${chatConnectorAccountsEnabled() ? "Use account switch for an already allowed account in this Run. Use switch-request for exact owner approval of a denied account. Both retain this Chat's current choice for later Runs; global defaults and other Chats' current choices are unchanged." : "Account switches affect future runs in the current chat, not this Run or a global default."}
+  Account-backed listeners associated with this Chat follow its current account
+  through the existing provider lifecycle.
 
 Permission recovery:
   Diagnose the exact failed URL and method with connector check before trying
