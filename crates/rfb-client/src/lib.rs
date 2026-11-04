@@ -468,19 +468,13 @@ pub async fn authenticate_apple_dh<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RfbVersion,
-        });
-    }
+    let deadline = authentication::start_handshake(deadline)?;
     let authenticated = apple_dh::authenticate(stream, credentials, deadline).await?;
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::AppleDhAuthentication,
-        });
-    }
-    Ok(authenticated)
+    authentication::finish_handshake(
+        authenticated,
+        deadline,
+        AuthenticationStage::AppleDhAuthentication,
+    )
 }
 
 /// Authenticate exactly the optional classic VNC password (RFB security type 2)
@@ -497,19 +491,13 @@ pub async fn authenticate_apple_vnc_password<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RfbVersion,
-        });
-    }
+    let deadline = authentication::start_handshake(deadline)?;
     let authenticated = apple_vnc_password::authenticate(stream, password, deadline).await?;
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::VncAuthentication,
-        });
-    }
-    Ok(authenticated)
+    authentication::finish_handshake(
+        authenticated,
+        deadline,
+        AuthenticationStage::VncAuthentication,
+    )
 }
 
 /// Authenticate exactly Apple Direct SRP (RFB security type 36) on a caller-owned
@@ -526,19 +514,13 @@ pub async fn authenticate_apple_srp<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RfbVersion,
-        });
-    }
+    let deadline = authentication::start_handshake(deadline)?;
     let authenticated = apple_srp::authenticate(stream, credentials, deadline).await?;
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::AppleSrpAuthentication,
-        });
-    }
-    Ok(authenticated)
+    authentication::finish_handshake(
+        authenticated,
+        deadline,
+        AuthenticationStage::AppleSrpAuthentication,
+    )
 }
 
 /// Authenticate exactly Apple RSA/SRP security type 33 on a caller-owned stream.
@@ -554,19 +536,13 @@ pub async fn authenticate_apple_rsa_srp<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RfbVersion,
-        });
-    }
+    let deadline = authentication::start_handshake(deadline)?;
     let authenticated = apple_rsa_srp::authenticate(stream, credentials, deadline).await?;
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::AppleRsaSrpAuthentication,
-        });
-    }
-    Ok(authenticated)
+    authentication::finish_handshake(
+        authenticated,
+        deadline,
+        AuthenticationStage::AppleRsaSrpAuthentication,
+    )
 }
 
 /// Authenticate an owned RFB 3.8 stream using one exact RSA-AES profile.
@@ -589,19 +565,13 @@ pub async fn authenticate_rsa_aes<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RfbVersion,
-        });
-    }
+    let deadline = authentication::start_handshake(deadline)?;
     let authenticated = rsa_aes::authenticate(stream, security, credentials, pin, deadline).await?;
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RsaAesAuthentication,
-        });
-    }
-    Ok(authenticated)
+    authentication::finish_handshake(
+        authenticated,
+        deadline,
+        AuthenticationStage::RsaAesAuthentication,
+    )
 }
 
 /// Authenticate an owned stream using one exact certificate-TLS VeNCrypt profile.
@@ -626,22 +596,13 @@ pub async fn authenticate<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    // Check before polling any I/O: timeout_at may first poll a ready inner future.
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RfbVersion,
-        });
-    }
+    let deadline = authentication::start_handshake(deadline)?;
     let final_stage = authentication.stage();
     let authenticated =
         authentication::authenticate(stream, server_name, authentication, roots, deadline).await?;
     // Keep this API-boundary check even though each phase checks after success.
     // Never transfer a connection whose authentication deadline already passed.
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded { stage: final_stage });
-    }
-    Ok(authenticated)
+    authentication::finish_handshake(authenticated, deadline, final_stage)
 }
 
 /// Authenticate a caller-owned stream with required client-certificate TLS.
@@ -667,12 +628,7 @@ pub async fn authenticate_with_client_certificate<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::RfbVersion,
-        });
-    }
+    let deadline = authentication::start_handshake(deadline)?;
     let final_stage = authentication.stage();
     let authenticated = authentication::authenticate_with_client_certificate(
         stream,
@@ -683,10 +639,7 @@ where
         deadline,
     )
     .await?;
-    if deadline <= Instant::now() {
-        return Err(Error::AuthenticationDeadlineExceeded { stage: final_stage });
-    }
-    Ok(authenticated)
+    authentication::finish_handshake(authenticated, deadline, final_stage)
 }
 
 /// Bounded local error categories. Server-provided error text is never retained
