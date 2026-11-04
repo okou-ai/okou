@@ -919,7 +919,39 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   }
 
   func testAPIPreservesANativeClaimTimeout() async {
+    await assertNativeTimeoutAtDeadline(authenticated: false, expired: false)
+  }
+
+  func testAPIDeadlineExplainsANativeClaimTimeout() async {
+    await assertNativeTimeoutAtDeadline(authenticated: false, expired: true)
+  }
+
+  func testAuthenticationPreservesANativeTimeoutAfterRefresh() async {
+    await assertNativeTimeoutAtDeadline(authenticated: true, expired: false)
+  }
+
+  func testAuthenticationDeadlineExplainsANativeTimeoutAfterRefresh() async {
+    await assertNativeTimeoutAtDeadline(authenticated: true, expired: true)
+  }
+
+  private func assertNativeTimeoutAtDeadline(authenticated: Bool, expired: Bool) async {
+    let started = ContinuousClock.now
+    let timedOut = CompletionFlag()
+    let requests = RequestCount()
+    let tokens = RequestCount()
     URLProtocolFixture.boundary.set { connection in
+      let attempt = requests.next()
+      if authenticated {
+        XCTAssertEqual(
+          connection.request.value(forHTTPHeaderField: "Authorization"),
+          attempt == 1 ? "Bearer cached-session" : "Bearer fresh-session")
+        if attempt == 1 {
+          connection.reply(.object([:]), status: 401)
+          return
+        }
+      }
+      // Model an elapsed budget before its sleeper resumes, without delaying HTTP.
+      timedOut.finish()
       connection.client?.urlProtocol(connection, didFailWithError: URLError(.timedOut))
     }
     let configuration = URLSessionConfiguration.ephemeral
@@ -927,17 +959,46 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let session = URLSession(configuration: configuration)
     defer { session.invalidateAndCancel() }
     let api = APIClient(
-      baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session)
+      baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session,
+      now: { started.advanced(by: .seconds(expired && timedOut.value ? 30 : 0)) })
+    let trace = APIRequestTrace()
+    let route = ApiRoutes.computerUseHostCommandNext(hostId: "host")
     do {
-      _ = try await api.request(
-        ApiRoutes.computerUseHostCommandNext(hostId: "host"), token: "host-token",
-        body: .object([:]))
+      if authenticated {
+        _ = try await api.authenticatedRequest(
+          route, body: .object([:]), timeout: 30, trace: trace,
+          tokenProvider: { force in
+            XCTAssertEqual(force, tokens.next() == 2)
+            return force ? "fresh-session" : "cached-session"
+          })
+      } else {
+        _ = try await api.request(
+          route, token: "host-token", body: .object([:]), trace: trace)
+      }
       XCTFail("A native timeout must fail the claim")
+    } catch let error as DesktopFailure {
+      XCTAssertTrue(expired, "An early native timeout must retain its original error")
+      XCTAssertEqual(error.code, "network_error")
+      XCTAssertEqual(
+        error.message,
+        authenticated ? "Desktop authentication request timed out" : "Desktop API request timed out")
     } catch let error as URLError {
+      XCTAssertFalse(expired, "An exhausted total budget must explain the native timeout")
       XCTAssertEqual(error.code, .timedOut)
     } catch {
-      XCTFail("Expected the native timeout, received \(error)")
+      XCTFail("Expected the owning deadline or native timeout, received \(error)")
     }
+    let operation = await trace.snapshot()
+    XCTAssertEqual(operation.phase, .httpRequest)
+    XCTAssertEqual(
+      operation.deadline, expired ? (authenticated ? .authenticatedRequest : .httpRequest) : nil)
+    XCTAssertEqual(requests.value, authenticated ? 2 : 1)
+    XCTAssertEqual(tokens.value, authenticated ? 2 : 0)
+    XCTAssertEqual(operation.requests.count, authenticated ? 2 : 1)
+    XCTAssertEqual(operation.requests.last?.urlErrorCode, URLError.timedOut.rawValue)
+    XCTAssertEqual(
+      operation.authentication.map(\.phase), authenticated ? [.tokenLookup, .tokenRefresh] : [])
+    if authenticated { XCTAssertEqual(operation.requests.first?.status, 401) }
   }
 
   func testAPIExpiresAnExhaustedClaimBudget() async {
