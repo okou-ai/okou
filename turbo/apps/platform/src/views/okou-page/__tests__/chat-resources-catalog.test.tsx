@@ -92,7 +92,7 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
   await user.hover(entry);
   expect(clip).toHaveAttribute("data-title-revealing", "");
   expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
-    "2000ms",
+    "925ms",
   );
   await user.unhover(entry);
   expect(clip).not.toHaveAttribute("data-title-revealing");

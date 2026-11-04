@@ -239,7 +239,7 @@ test("Update relationship titles immediately and synchronize the saved browser t
   await user.hover(link);
   expect(clip).toHaveAttribute("data-title-revealing", "");
   expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
-    "2000ms",
+    "925ms",
   );
   await user.unhover(link);
   expect(clip).not.toHaveAttribute("data-title-revealing");

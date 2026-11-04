@@ -33,7 +33,7 @@ export function HoverScrollTitle({
         // CSS reversals shorten the full-distance duration to the remaining
         // fraction. Both directions stop immediately for reduced motion.
         "motion-safe:[transition:--okou-nav-title-progress_660ms_cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none",
-        "motion-safe:data-title-revealing:[transition:--okou-nav-title-progress_var(--okou-nav-title-duration)_linear_750ms]",
+        "motion-safe:data-title-revealing:[transition:--okou-nav-title-progress_var(--okou-nav-title-duration)_cubic-bezier(0.4,0,0.2,1)_750ms]",
         "motion-safe:data-title-revealing:[--okou-nav-title-progress:1]",
         className,
       )}

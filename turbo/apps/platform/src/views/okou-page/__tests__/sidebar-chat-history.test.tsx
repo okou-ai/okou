@@ -259,7 +259,7 @@ test("Reveal chat titles from whole-link pointer and keyboard intent", async () 
       title: "Quarterly launch narrative",
       textWidth: 234,
       clipWidth: 160,
-      duration: "2000ms",
+      duration: "925ms",
     },
     {
       id: AUTOMATION_THREAD_ID,
@@ -273,7 +273,14 @@ test("Reveal chat titles from whole-link pointer and keyboard intent", async () 
       title: "Customer feedback synthesis",
       textWidth: 530,
       clipWidth: 160,
-      duration: "10000ms",
+      duration: "3000ms",
+    },
+    {
+      id: RESEARCH_THREAD_ID,
+      title: "Weekly decisions",
+      textWidth: 170,
+      clipWidth: 160,
+      duration: "780ms",
     },
   ];
   mockSidebarTitleLayout(
@@ -324,7 +331,7 @@ test("Reveal chat titles from whole-link pointer and keyboard intent", async () 
   expect(clippedLink).toHaveFocus();
   expect(clipped).toHaveAttribute("data-title-revealing", "");
   expect(clipped.style.getPropertyValue("--okou-nav-title-duration")).toBe(
-    "2000ms",
+    "925ms",
   );
 
   act(() => {

@@ -382,7 +382,7 @@ test("Show the first source and created chats with their status", async () => {
   await user.hover(childLink);
   expect(clip).toHaveAttribute("data-title-revealing", "");
   expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
-    "2000ms",
+    "925ms",
   );
   await user.unhover(childLink);
   expect(clip).not.toHaveAttribute("data-title-revealing");
@@ -462,7 +462,7 @@ test("Link the first-run agent source directly to its parent run", async () => {
   await user.hover(row);
   expect(clip).toHaveAttribute("data-title-revealing", "");
   expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
-    "2000ms",
+    "925ms",
   );
   await user.unhover(row);
   expect(clip).not.toHaveAttribute("data-title-revealing");
