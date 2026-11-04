@@ -12,6 +12,7 @@ final class ComposerDraftStore {
     var baseline: ComposerDraft?
     var dirty: Bool
     var cleared: Bool
+    var consumedVoiceID: UUID? = nil
   }
 
   var text: String {
@@ -168,6 +169,23 @@ final class ComposerDraftStore {
   private(set) var document = ChatDraftDocument()
   let attachments: AttachmentDraftStore
   let editor = ComposerEditor()
+  let voice: ComposerVoiceInputStore?
+  private var consumedVoiceID: UUID?
+  var canEditVoice: Bool {
+    !closed && isForeground && document.isSupported && !localReadFailed && conflictingRemote == nil
+  }
+
+  func insertVoiceText(_ text: String, id: UUID, at target: ComposerEditor.VoiceInsertion) -> Bool {
+    guard canEditVoice else { return false }
+    if consumedVoiceID == id { return true }
+    let previous = consumedVoiceID
+    consumedVoiceID = id
+    guard editor.insertVoiceText(text, at: target) else {
+      consumedVoiceID = previous
+      return false
+    }
+    return true
+  }
   var error: String? { localError ?? syncError }
   var hasLocalFailure: Bool { localError != nil }
   var canRetryLocalSave: Bool { !localReadFailed }
@@ -183,6 +201,7 @@ final class ComposerDraftStore {
     let ids = Set(
       document.parts.compactMap { $0["type"]?.string == "file" ? $0["fileId"]?.string : nil })
     return document.isSupported && !localReadFailed && conflictingRemote == nil
+      && (voice == nil || voice?.phase == .idle)
       && ids.isSubset(of: Set(attachments.uploaded.map(\.id)))
   }
   var hasContent: Bool {
@@ -206,6 +225,7 @@ final class ComposerDraftStore {
       // Resume pending writes, including clears owned by a different cached composer.
       if dirty { requestSync() }
     } else {
+      voice?.suspend()
       persist()
       debounceTask?.cancel()
       // A cancelled task can finish after the next foreground sync has started.
@@ -233,6 +253,7 @@ final class ComposerDraftStore {
   init(
     target: ChatDraftTarget, commands: ChatCommands, repository: ChatDraftRepository? = nil,
     storage: ChatDraftStorage? = nil, didFail: @escaping @MainActor (Error) -> Void,
+    voiceCapture: (any VoiceAudioCapture)? = nil,
     syncSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     }
@@ -242,6 +263,14 @@ final class ComposerDraftStore {
     self.repository = repository
     self.storage = storage
     self.didFail = didFail
+    voice =
+      target == .unassigned
+      ? nil
+      : storage.map {
+        ComposerVoiceInputStore(
+          client: commands.voiceInput, storage: $0.voiceDraft(for: target),
+          capture: voiceCapture ?? NativeVoiceAudioCapture())
+      }
     attachments = AttachmentDraftStore(commands: commands, didFail: didFail)
     do {
       if let saved = try storage?.load(target.key, as: LocalRecord.self) {
@@ -250,6 +279,7 @@ final class ComposerDraftStore {
         baseline = saved.baseline
         dirty = saved.dirty
         cleared = saved.cleared
+        consumedVoiceID = saved.consumedVoiceID
         attachments.restore(saved.files)
       }
     } catch {
@@ -260,6 +290,7 @@ final class ComposerDraftStore {
       didFail(error)
     }
     resetEditors()
+    voice?.composer = self
     attachments.didChange = { [weak self] in self?.changed() }
     attachments.didRemove = { [weak self] fileID in
       guard let self, let fileID else { return }
@@ -312,7 +343,8 @@ final class ComposerDraftStore {
       try storage?.save(
         LocalRecord(
           value: value, files: attachments.savedItems,
-          baseline: baseline, dirty: dirty, cleared: cleared), key: target.key)
+          baseline: baseline, dirty: dirty, cleared: cleared,
+          consumedVoiceID: consumedVoiceID), key: target.key)
       localError = nil
     } catch {
       localError = "Cannot save this draft on the device. " + error.localizedDescription
@@ -447,6 +479,10 @@ final class ComposerDraftStore {
 
   func clear() {
     guard !closed else { return }
+    if let voice, voice.phase != .idle {
+      voice.suspend()
+      Task { await voice.discard() }
+    }
     // Native focus callbacks must finish while their editor generation is still current.
     editor.dismissKeyboard()
     localReadFailed = false
@@ -475,6 +511,7 @@ final class ComposerDraftStore {
 
   func close() {
     guard !closed else { return }
+    voice?.suspend()
     persist()
     editor.dismissKeyboard()
     editor.mentionSource = nil

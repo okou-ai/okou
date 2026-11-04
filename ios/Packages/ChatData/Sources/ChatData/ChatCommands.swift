@@ -4,6 +4,7 @@ import Foundation
 /// Workspace-scoped mutations. Read synchronization belongs to ChatSync.
 public actor ChatCommands {
   public nonisolated let artifacts: ChatArtifacts
+  public nonisolated let voiceInput: VoiceInputClient
   public nonisolated let permissions: ChatPermissions
   public nonisolated let batchPermissions: ChatBatchPermissions
   let client: APIClient
@@ -14,6 +15,7 @@ public actor ChatCommands {
   private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
   public init(client: APIClient, sync: ChatSync) {
+    voiceInput = VoiceInputClient(client: client)
     artifacts = ChatArtifacts(client: client)
     permissions = ChatPermissions(client: client)
     batchPermissions = ChatBatchPermissions(client: client)
