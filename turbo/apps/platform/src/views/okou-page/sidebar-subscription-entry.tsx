@@ -7,13 +7,12 @@ import {
   PopoverTrigger,
   cn,
 } from "@okouai/ui";
-import { Gauge } from "lucide-react";
+import { SubscriptionUsageRing } from "./subscription-usage-ring.tsx";
 import { sidebarSubscriptionUsage$ } from "../../signals/okou-page/account-menu-subscriptions.ts";
 import {
   sidebarSubscriptionOpen$,
   setSidebarSubscriptionEntry$,
   previewSidebarSubscriptionUsage$,
-  focusSidebarSubscriptionEntry$,
   openSidebarSubscriptionUsageDialog$,
   openSidebarSubscriptionResetDialog$,
 } from "../../signals/okou-page/sidebar-subscription-entry.ts";
@@ -31,7 +30,6 @@ export function SidebarSubscriptionUsage({
   const open = useGet(sidebarSubscriptionOpen$);
   const setEntry = useSet(setSidebarSubscriptionEntry$);
   const previewUsage = useSet(previewSidebarSubscriptionUsage$);
-  const focusEntry = useSet(focusSidebarSubscriptionEntry$);
   const openUsageDialog = useSet(openSidebarSubscriptionUsageDialog$);
   const openResetDialog = useSet(openSidebarSubscriptionResetDialog$);
   const pageSignal = useGet(pageSignal$);
@@ -46,21 +44,13 @@ export function SidebarSubscriptionUsage({
   });
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next, details) => {
-        // Clicking opens Settings; only hover/focus controls this preview.
-        if (details.reason === "trigger-press") {
-          return;
-        }
-        previewUsage(next);
-      }}
-    >
+    <Popover open={open} onOpenChange={previewUsage}>
       <PopoverTrigger
         ref={setEntry}
         openOnHover
         delay={200}
         closeDelay={250}
+        aria-describedby="sidebar-subscription-ring-summary"
         aria-label={
           usage.lowUsage
             ? t(($) => {
@@ -68,11 +58,6 @@ export function SidebarSubscriptionUsage({
               })
             : label
         }
-        onFocus={focusEntry}
-        onClick={(event) => {
-          event.preventBaseUIHandler();
-          handleOpenUsage();
-        }}
         render={
           <Button
             variant="quiet"
@@ -84,13 +69,7 @@ export function SidebarSubscriptionUsage({
           />
         }
       >
-        <Gauge aria-hidden="true" strokeWidth={1.5} className="size-4.5!" />
-        {usage.lowUsage && (
-          <span
-            aria-hidden="true"
-            className="absolute right-2 top-2 size-1.25 rounded-full bg-destructive"
-          />
-        )}
+        <SubscriptionUsageRing rows={usage.rows} />
       </PopoverTrigger>
       <PopoverContent
         initialFocus={false}
@@ -101,6 +80,7 @@ export function SidebarSubscriptionUsage({
         aria-label={label}
       >
         <AccountMenuSubscriptionsPanel
+          showRingPosition={usage.rows.length === 2}
           loading={false}
           rows={usage.rows}
           resetControl="button"

@@ -5466,8 +5466,10 @@
         "credits": "Crediti",
         "fiveHourLimit": "Limite di 5 ore",
         "label": "Utilizzo degli abbonamenti",
+        "leftSide": "Sinistra",
         "lowUsage": "Utilizzo degli abbonamenti: meno del 20% rimanente",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
+        "rightSide": "Destra",
         "usage": "{{provider}} utilizzo",
         "usageRemaining": "{{provider}} {{window}} rimanente",
         "weeklyLimit": "Limite settimanale"
