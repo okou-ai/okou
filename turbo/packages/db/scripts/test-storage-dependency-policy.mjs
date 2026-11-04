@@ -9,11 +9,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
+import process from "node:process";
 import { test } from "node:test";
 
 const checker = fileURLToPath(
-  new URL("./check-storage-dependencies.mjs", import.meta.url),
+  new URL("../../../scripts/check-storage-dependencies.mjs", import.meta.url),
 );
 const checkerPath = "turbo/scripts/check-storage-dependencies.mjs";
 const baselinePath = "turbo/storage-dependency-baseline.json";
