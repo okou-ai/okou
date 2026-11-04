@@ -1,4 +1,5 @@
 import type { FriendReferralStatus } from "@okouai/api-contracts/contracts/friend-referrals";
+import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -123,11 +124,13 @@ function FriendReferralDetails({
 }
 
 export function FriendReferralDialog({
+  trigger,
   data,
   loading,
   failed,
   onRetry,
 }: {
+  readonly trigger: ReactNode;
   readonly data: FriendReferralStatus | null;
   readonly loading: boolean;
   readonly failed: boolean;
@@ -138,6 +141,7 @@ export function FriendReferralDialog({
   const setOpen = useSet(setFriendReferralOpen$);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {trigger}
       <DialogContent smMaxWidth="md">
         <DialogHeader>
           <span className="mb-2 flex size-10 items-center justify-center rounded-lg bg-nested-fill">
