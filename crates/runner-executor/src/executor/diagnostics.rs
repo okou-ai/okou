@@ -39,7 +39,8 @@ pub(super) use environment::{
 pub(super) use exit::{
     AgentBootstrapAbnormalExitLogContext, explicit_enospc_evidence,
     log_agent_abnormal_exit_env_diagnostics, log_agent_bootstrap_abnormal_exit_diagnostics,
-    log_agent_process_exit_summary, should_collect_agent_abnormal_exit_diagnostics,
+    log_agent_process_exit_summary, process_exit_code,
+    should_collect_agent_abnormal_exit_diagnostics,
     should_collect_unattributed_sigkill_resource_diagnostics,
     should_log_agent_bootstrap_abnormal_exit_diagnostics,
 };
