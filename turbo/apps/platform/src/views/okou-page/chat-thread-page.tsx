@@ -579,7 +579,6 @@ function ChatThreadHeaderIconButton({
   onClick,
   disabled = false,
   busy = false,
-  largeTarget = false,
 }: {
   icon: ReactNode;
   label: string;
@@ -588,7 +587,6 @@ function ChatThreadHeaderIconButton({
   onClick: () => void;
   disabled?: boolean;
   busy?: boolean;
-  largeTarget?: boolean;
 }) {
   return (
     <TooltipProvider delay={300}>
@@ -605,7 +603,6 @@ function ChatThreadHeaderIconButton({
               iconSize="md"
               className={cn(
                 "shrink-0 duration-150",
-                largeTarget && "size-11",
                 open &&
                   "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
               )}
@@ -668,13 +665,7 @@ export function AutomationMenuButton({
   );
 }
 
-export function BrowserMenuButton({
-  thread,
-  largeTarget = false,
-}: {
-  thread: ChatPanelSignals;
-  largeTarget?: boolean;
-}) {
+function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const sidebarTarget = useGet(thread.sidebar.target$);
   const openBrowserSidebar = useSet(openThreadBrowserSession$);
@@ -687,7 +678,6 @@ export function BrowserMenuButton({
       })}
       open={sidebarTarget?.type === "browser"}
       disabled={transitioning}
-      largeTarget={largeTarget}
       onClick={() => {
         openBrowserSidebar(thread.threadId);
       }}

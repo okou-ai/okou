@@ -514,17 +514,27 @@ test.each([
     await openConversation(completedConversationEvents(), true, pwaNavigation);
     await expectConversationReady();
 
-    const opener = buttonByName("Open browser");
-    await waitFor(() => {
-      expect(opener).toHaveAttribute("aria-disabled", "false");
+    click(buttonByName("More actions"));
+    const menu = await screen.findByRole("menu");
+    const opener = await waitFor(() => {
+      const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+        return candidate.textContent?.trim() === "Open browser";
+      });
+      if (!item) {
+        throw new Error("Browser menu item is missing");
+      }
+      expect(item).not.toHaveAttribute("aria-disabled", "true");
+      return item;
     });
-    expect(opener).toHaveAttribute("aria-pressed", "false");
     click(opener);
 
     const sidebar = await screen.findByRole("complementary", {
       name: "Cloud browser",
     });
-    expect(opener).toHaveAttribute("aria-pressed", "true");
+    expect(buttonByName("More actions")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
     if (!active) {
       const start = await waitFor(() => {
         return buttonByName("Start browser", sidebar);
@@ -539,7 +549,6 @@ test.each([
     await waitFor(() => {
       expect(sidebar).not.toBeInTheDocument();
     });
-    expect(opener).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
   },
 );

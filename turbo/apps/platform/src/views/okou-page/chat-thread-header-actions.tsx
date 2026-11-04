@@ -8,6 +8,7 @@ import {
   BellOff,
   Clock,
   Ellipsis,
+  Globe,
   Pencil,
   Pin,
   PinOff,
@@ -23,7 +24,11 @@ import {
 } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { openThreadAutomations$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import {
+  openThreadAutomations$,
+  openThreadBrowserSession$,
+} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { useChatHeaderActions } from "./chat-header-actions.ts";
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { setChatThreadMutedWithFeedback$ } from "../../signals/chat-page/chat-thread-mute.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -104,6 +109,30 @@ function MobileMuteMenuItem({ thread }: { readonly thread: ChatPanelSignals }) {
   );
 }
 
+function MobileBrowserMenuItem({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const openBrowser = useSet(openThreadBrowserSession$);
+  const { transitioning } = useChatHeaderActions(thread);
+  return (
+    <DropdownMenuItem
+      className="min-h-11"
+      disabled={transitioning}
+      onClick={() => {
+        openBrowser(thread.threadId);
+      }}
+    >
+      <Globe size={16} />
+      {t(($) => {
+        return $.chat.thread.openBrowser;
+      })}
+    </DropdownMenuItem>
+  );
+}
+
 export function MobileChatThreadMoreMenu({
   thread,
 }: {
@@ -146,6 +175,8 @@ export function MobileChatThreadMoreMenu({
         <Ellipsis size={18} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-48">
+        <MobileBrowserMenuItem thread={thread} />
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           className="min-h-11"
           onClick={() => {
