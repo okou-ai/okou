@@ -15,8 +15,9 @@ from pathlib import Path
 def native_tool():
     directory = Path(os.environ["OKOU_DMG_LOG_DIR"])
     record = Path(tempfile.mkdtemp(prefix=sys.argv[1] + "-", dir=directory))
-    command = ["/usr/bin/hdiutil", sys.argv[1], "-debug", *sys.argv[2:]]
+    command = ["/usr/bin/hdiutil", *sys.argv[1:]]
     start = time.time()
+    (record / "started.json").write_text(json.dumps({"command": command, "started": start}))
     with (record / "stdout.txt").open("wb") as stdout, (record / "stderr.txt").open("wb") as stderr:
         result = subprocess.run(command, stdout=stdout, stderr=stderr)
     (record / "operation.json").write_text(json.dumps({
@@ -24,10 +25,12 @@ def native_tool():
         "returncode": result.returncode,
     }, indent=2))
     if result.returncode:
+        target = next((arg for arg in sys.argv[2:] if arg.endswith(".dmg")), sys.argv[2])
         for name, arguments in (
             ("images.plist", ["/usr/bin/hdiutil", "info", "-plist"]),
             ("processes.txt", ["/bin/ps", "-axo", "pid,ppid,stat,comm"]),
-            ("image-handles.txt", ["/usr/sbin/lsof", sys.argv[2]]),
+            ("image-handles.txt", ["/usr/sbin/lsof", target]),
+            ("imageinfo.plist", ["/usr/bin/hdiutil", "imageinfo", "-plist", target]),
         ):
             try:
                 observed = subprocess.run(arguments, capture_output=True, timeout=15)
@@ -47,7 +50,7 @@ def investigate():
     (wrapper / "hdiutil").symlink_to(Path(__file__).resolve())
     environment = dict(os.environ, PATH=f"{wrapper}:{os.environ['PATH']}")
     failures = []
-    for index in range(1, 13):
+    for index in range(1, 25):
         directory = output / f"suite-{index:02d}"
         directory.mkdir()
         environment["OKOU_DMG_LOG_DIR"] = str(directory)
@@ -73,7 +76,7 @@ def investigate():
         (directory / "result.json").write_text(json.dumps(summary, indent=2))
         images = subprocess.check_output(["/usr/bin/hdiutil", "info", "-plist"])
         (directory / "after-images.plist").write_bytes(images)
-        print("remaining-images:", json.dumps([image.get("image-path") for image in plistlib.loads(images).get("images", [])]), flush=True)
+        print("remaining-test-images:", json.dumps([image.get("image-path") for image in plistlib.loads(images).get("images", []) if "okou-" in image.get("image-path", "")]), flush=True)
         for operation in directory.glob("*/operation.json"):
             data = json.loads(operation.read_text())
             print(json.dumps(data), flush=True)
