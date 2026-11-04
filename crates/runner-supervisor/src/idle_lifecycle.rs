@@ -83,15 +83,9 @@ pub struct IdleDestroyTracker {
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     #[cfg(any(test, feature = "test-support"))]
     pressure_pool_waits: tokio::sync::watch::Sender<u64>,
-    pub(crate) optional_blank_owners:
-        Arc<std::sync::Mutex<Vec<crate::blank_pool::OptionalBlankResult>>>,
 }
 
 impl IdleDestroyTracker {
-    pub(crate) fn joined(&self) -> bool {
-        self.tasks.is_closed() && self.tasks.is_empty()
-    }
-
     pub fn new(reuse_state_notify: Arc<Notify>) -> Self {
         Self {
             tasks: TaskTracker::new(),
@@ -101,7 +95,6 @@ impl IdleDestroyTracker {
             pressure_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             #[cfg(any(test, feature = "test-support"))]
             pressure_pool_waits: tokio::sync::watch::channel(0).0,
-            optional_blank_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 

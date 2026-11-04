@@ -1154,6 +1154,11 @@ including at P2 shutdown; cleanup is not numerical memory credit. The existing
 original immutable snapshot/home, exact backing exit, durable 64 MiB tail,
 restored original data and all provider/factory/runtime joins remain required.
 
+The fixture directly calls `SandboxFactory::create_with_custody` inside owned
+Fresh work. The factory capability retains the operation and full lease through
+physical rollback; borrowed join observation cannot cancel that work. It does
+not install an optional blank replenishment policy.
+
 Set `OKOU_TEST_OPTIONAL_MEMORY_POLICY` to a JSON file containing the original
 `snapshot_path` and `snapshot_memory_mb` inputs.
 Supply exact raw metadata fields
@@ -1170,27 +1175,30 @@ The report checks actual superblock bytes/hash, distinct new workspace identity,
 original source/input identity, fresh sustained observations, cancellation and
 cleanup clocks, original full resources, pending observers and preserved Fresh
 uncertainty. Real-file/CLI refusal tests run in default CI; actual KVM/NBD remains
-opt-in. This completes only #40786. Returned actual Guest/late results (#40787)
-and post-merge reconciliation (#40788), production activation, numerical relief,
-full residency, calibrated envelopes, unknown bootstrap provenance and OOM
-protection remain open under #40760 and the delivery parents.
+opt-in. The current direct-custody report format is
+`native-create-cancellation-report-v2`. Historical v1 packets describe the
+retired optional composition and remain evidence only for their recorded source
+revision. Neither format establishes production memory-policy activation,
+numerical relief, calibrated envelopes or OOM protection.
 
 ## Actual returned Guest cancellation and late cleanup
 
 `native_returned_guest_cancellation_retains_actual_stages_and_late_cleanup`
 selects actual successful start, home-mount RPC and reusable park, each in fresh
-and matching-snapshot factories. Before these six cases accept creation, a real
-pool acquisition must poll Pending, cancel under foreground CPU preemption and
-join while the pool remains held, without entering the provider or P2.
+and matching-snapshot factories. These six cases directly exercise
+`BlankPreparationResource` and `IdleDestroyTracker::retire_activation_owner`;
+there is no optional pool admission or publication state machine.
 
 The feature-only, invocation-owned checkpoint holds a separate Unix read after
 the actual stage succeeds. It retains the exact returned Guest, ext4 home UUID
-and backing generation. Draining cancellation, dropped and replacement Pending
+and backing generation. Stage cancellation, dropped and replacement Pending
 observers, foreground CPU, acknowledged heartbeat and independent host observation
 must preserve both full leases and original Fresh growth. Releasing the stage
-must join a late cancelled success without preparing or publishing inventory.
+must join the same concrete resource. An actually completed park records
+`prepared: true`; start/mount cases record `false`. All cases then enter required
+cleanup rather than publishing inventory.
 
-Invalid publication enters the existing required cleanup engine. Actual factory
+The returned resource enters the existing required cleanup engine. Actual factory
 destruction, exact backing wait and workspace absence precede a second owned IO
 checkpoint. Heartbeat and observation progress while required tail accounting,
 uncertain Fresh growth and both full leases remain held. Only positive cleanup
@@ -1201,7 +1209,7 @@ row and its complete growth; no numerical credit is inferred.
 
 Supply `native_returned_guest_policy_json`, `native_returned_guest_inputs_json`,
 `native_returned_guest_snapshot_bytes` and the original terminal artifact metadata.
-The nine ordered phases per case are checked with the inherited physical proof:
+The eight ordered phases per case are checked with the inherited physical proof:
 
 ```sh
 python3 crates/runner/tests/guarded_idle_native/returned_guest_report.py <p1-directory>
@@ -1209,10 +1217,11 @@ python3 crates/runner/tests/guarded_idle_native/returned_guest_report.py <p1-dir
 
 Default Cargo executes the real-file/CLI refusal contract. KVM/NBD execution
 remains opt-in. Checkpoints establish late result custody, not stalled storage or
-Guest transport. This completes only #40787; #40788 still requires both merges
-before final ancestor reconciliation. Production Reactor/P2 activation, full/cold
-residency, calibrated envelopes, unknown original bootstrap provenance, numerical
-relief and OOM protection remain unverified.
+Guest transport. The current report format is `native-returned-guest-report-v2`.
+Historical v1 packets include the retired optional composition's pool-wait and
+publication assertions; read them with the validator at their recorded source
+revision. Production all-growth policy activation, full/cold residency,
+calibrated envelopes, numerical relief and OOM protection remain unverified.
 
 ## Two required histories in one physical cache entry
 

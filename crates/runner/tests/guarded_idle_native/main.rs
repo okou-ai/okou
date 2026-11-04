@@ -256,7 +256,7 @@ enum NativeScope {
     Replacement,
     Restore,
     Aged,
-    OptionalOrdinary,
+    Preparation,
     CallerOwned,
     SpeculativeGuestFailure,
     FinalizingParked,
@@ -269,7 +269,7 @@ fn native_budget(scope: NativeScope) -> Arc<ResourceBudget> {
     let (vcpu, memory) = match scope {
         NativeScope::Pressure => (6, 12288),
         NativeScope::Replacement | NativeScope::Restore | NativeScope::LaterParking => (6, 12288),
-        NativeScope::Aged | NativeScope::OptionalOrdinary => (12, 24576),
+        NativeScope::Aged | NativeScope::Preparation => (12, 24576),
         _ => (2, 4096),
     };
     Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0))
@@ -679,7 +679,7 @@ async fn native_observer_loss_keeps_required_saving_and_independent_progress() -
 #[ignore = "requires owned KVM/NBD inputs and exact-source actual create cancellation proof"]
 async fn native_create_cancellation_retains_actual_transaction_through_rollback() -> TestResult<()>
 {
-    measured_selected_corpus(&[NativeScope::OptionalOrdinary], Corpus::CreateCancellation).await
+    measured_selected_corpus(&[NativeScope::Preparation], Corpus::CreateCancellation).await
 }
 
 #[test]
@@ -704,7 +704,7 @@ async fn native_returned_guest_cancellation_retains_actual_stages_and_late_clean
 -> TestResult<()> {
     use sandbox_firecracker::GuestPreparationStage::{Mount, Park, Start};
     measured_selected_corpora(
-        &[NativeScope::OptionalOrdinary],
+        &[NativeScope::Preparation],
         &[
             Corpus::ReturnedGuest(Start),
             Corpus::ReturnedGuest(Mount),
@@ -1349,7 +1349,7 @@ async fn exercise_retirement(
     };
     let mut pool = IdlePool::new(IdlePoolConfig {
         max_idle: match scope {
-            NativeScope::OptionalOrdinary => 2,
+            NativeScope::Preparation => 2,
             _ => 1,
         },
     });
@@ -1491,7 +1491,7 @@ async fn exercise_retirement(
                     paths.base_dir(), backing.clone(), blank).await?;
                 Ok(None)
             }
-            NativeScope::OptionalOrdinary => {
+            NativeScope::Preparation => {
                 if matches!(corpus, Corpus::ReturnedGuest(_)) {
                     let PreparationProbe::Returned(probe) = preparation_probe else {
                         return Err(io::Error::other("returned Guest probe absent").into());
