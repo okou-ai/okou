@@ -649,9 +649,6 @@ impl IdleDestroyPayload {
         // Waiting reclamation jobs must remain parked. The export-only gate is
         // too late to bound resumed guests and their memory recovery work.
         let mut reclamation_permit = None;
-        let preparation_required =
-            matches!(self.home_promotion_policy, HomePromotionPolicy::Promote)
-                && home_promotion.is_some();
         let prepared_promotion = match (self.home_promotion_policy, home_promotion) {
             (HomePromotionPolicy::Promote, Some(promotion)) => {
                 match promotion.acquire_idle_home_reclamation_permit().await {
@@ -677,13 +674,11 @@ impl IdleDestroyPayload {
                 None
             }
         };
-        let preparation_completed = !preparation_required || prepared_promotion.is_some();
         PreparedIdleDestroy {
             sandbox,
             factory,
             prepared_promotion,
             reclamation_permit,
-            preparation_completed,
         }
     }
 }
@@ -694,7 +689,6 @@ pub(super) struct PreparedIdleDestroy {
     factory: Arc<Box<dyn SandboxFactory>>,
     prepared_promotion: Option<PreparedHomeImagePromotion>,
     reclamation_permit: Option<tokio::sync::OwnedSemaphorePermit>,
-    preparation_completed: bool,
 }
 
 pub(super) struct IdleTerminationOutcome {
@@ -702,25 +696,7 @@ pub(super) struct IdleTerminationOutcome {
     uncertain: bool,
 }
 
-impl IdleTerminationOutcome {
-    pub(super) fn terminated(&self) -> bool {
-        self.terminated
-    }
-
-    pub(super) fn require_backing_exit(mut self, confirmed: bool) -> Self {
-        if !confirmed {
-            self.terminated = false;
-            self.uncertain = true;
-        }
-        self
-    }
-}
-
 impl PreparedIdleDestroy {
-    pub(super) fn preparation_completed(&self) -> bool {
-        self.preparation_completed
-    }
-
     pub(super) fn take_reclamation_permit(&mut self) -> Option<tokio::sync::OwnedSemaphorePermit> {
         self.reclamation_permit.take()
     }

@@ -238,47 +238,59 @@ async fn failed_or_lost_exit_keeps_frozen_home_and_never_publishes_or_destroys()
 }
 
 #[tokio::test]
-async fn receiver_loss_keeps_required_saving_and_exact_exit_tail_joined() {
-    let env = Env::new(64).await;
-    let (exit, backing) = sandbox_mock::MockBackingProcess::channel();
-    let mut fixture = JobFixture::new("thread:caller-receiver-loss", Some(backing)).await;
-    let mut owner = failed(&mut fixture).await;
-    let destroy = MockLifecycleGate::new();
-    fixture
-        .overrides
-        .set_destroy_lifecycle_gate(destroy.clone());
-    owner
-        .grant_cleanup(&env.operations, envelope())
-        .await
-        .unwrap();
-    let (task, retained) =
-        IdleActivationOwner::start_cleanup(&mut Some(owner), "caller_receiver_loss")
-            .unwrap()
-            .into_parts();
-    drop(task);
-    exit.confirm_exit();
-    destroy.wait_entered(1, WAIT).await.unwrap();
-    assert_eq!(fixture.budget.allocated(), (2, 8, 1));
-    assert_eq!(env.operations.snapshot().unwrap().cleanup_growth_bytes, MIB);
-    let mut shutdown = Box::pin(env.operations.close_and_wait());
-    assert!(futures_util::poll!(shutdown.as_mut()).is_pending());
-    destroy.release_one();
-    assert_eq!(
-        tokio::time::timeout(WAIT, shutdown)
+async fn receiver_loss_and_outer_panic_keep_required_saving_and_exact_exit_tail_joined() {
+    for panic in [false, true] {
+        let env = Env::new(64).await;
+        let (exit, backing) = sandbox_mock::MockBackingProcess::channel();
+        let mut fixture = JobFixture::new("thread:caller-receiver-loss", Some(backing)).await;
+        let mut owner = failed(&mut fixture).await;
+        let destroy = MockLifecycleGate::new();
+        fixture
+            .overrides
+            .set_destroy_lifecycle_gate(destroy.clone());
+        owner
+            .grant_cleanup(&env.operations, envelope())
             .await
-            .unwrap()
-            .unwrap()
-            .registered_operations,
-        0
-    );
-    assert!(retained.needs_retention());
-    assert_eq!(fixture.budget.allocated(), (2, 8, 1));
-    let lease = retained.take_completed_lease().unwrap();
-    assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 8));
-    drop(lease);
-    assert!(!retained.needs_retention());
-    assert_eq!(fixture.budget.allocated(), (0, 0, 0));
-    fixture.saved().await;
+            .unwrap();
+        let (task, retained) =
+            IdleActivationOwner::start_cleanup(&mut Some(owner), "caller_receiver_loss")
+                .unwrap()
+                .into_parts();
+        let observer = tokio::spawn(async move {
+            let _receiver = task;
+            if panic {
+                panic!("outer cleanup observer panic");
+            }
+        });
+        if panic {
+            assert!(observer.await.unwrap_err().is_panic());
+        } else {
+            observer.await.unwrap();
+        }
+        exit.confirm_exit();
+        destroy.wait_entered(1, WAIT).await.unwrap();
+        assert_eq!(fixture.budget.allocated(), (2, 8, 1));
+        assert_eq!(env.operations.snapshot().unwrap().cleanup_growth_bytes, MIB);
+        let mut shutdown = Box::pin(env.operations.close_and_wait());
+        assert!(futures_util::poll!(shutdown.as_mut()).is_pending());
+        destroy.release_one();
+        assert_eq!(
+            tokio::time::timeout(WAIT, shutdown)
+                .await
+                .unwrap()
+                .unwrap()
+                .registered_operations,
+            0
+        );
+        assert!(retained.needs_retention());
+        assert_eq!(fixture.budget.allocated(), (2, 8, 1));
+        let lease = retained.take_completed_lease().unwrap();
+        assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 8));
+        drop(lease);
+        assert!(!retained.needs_retention());
+        assert_eq!(fixture.budget.allocated(), (0, 0, 0));
+        fixture.saved().await;
+    }
 }
 
 #[tokio::test]

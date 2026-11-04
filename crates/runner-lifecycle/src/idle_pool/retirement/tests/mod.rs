@@ -1,5 +1,4 @@
 mod activation;
-mod admission;
 mod finalizing;
 mod inventory;
 mod phases;
@@ -13,18 +12,20 @@ use std::time::Duration;
 
 use futures_util::future::BoxFuture;
 use runner_host::host_memory::HostMemoryObservation;
-use sandbox::{SandboxBackingProcess, SandboxFactory};
+use sandbox::{BackingProcessIdentity, SandboxBackingProcess, SandboxFactory};
 use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 use tokio::sync::oneshot;
 
-use super::*;
+use super::IdleRetirementEnvelope;
 use crate::home_promotion::test_support::{
     HomePromotionFixture, add_healthy_cache_preparation_matcher, test_home_image,
 };
 use crate::host_memory_operations::{
-    MemoryObservationSource, MemoryOperationPolicy, MemoryOperationSnapshot,
+    HostMemoryOperations, MemoryObservationSource, MemoryOperationError, MemoryOperationPlan,
+    MemoryOperationPolicy, MemoryOperationSnapshot,
 };
 use crate::host_memory_policy::HostMemoryBounds;
+use crate::idle_pool::IdleDestroyJob;
 use crate::idle_pool::entry::{HomePromotionPolicy, IdleDestroyPayload, IdleSandboxResources};
 use crate::resource_budget::ResourceBudget;
 
@@ -180,10 +181,6 @@ impl JobFixture {
         }
     }
 
-    fn pending(&mut self, env: &Env) -> GuardedIdleRetirement {
-        GuardedIdleRetirement::new(self.job.take().unwrap(), &env.operations, envelope()).unwrap()
-    }
-
     fn candidate(&mut self) -> crate::idle_pool::ParkedIdleCandidate {
         use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
         let job = self.job.take().unwrap();
@@ -248,12 +245,6 @@ impl JobFixture {
         };
         assert_eq!(tokio::fs::read(source).await.unwrap(), test_home_image());
     }
-}
-
-async fn admitted(fixture: &mut JobFixture, env: &Env) -> GuardedIdleRetirement {
-    let mut pending = fixture.pending(env);
-    pending.try_grant().await.unwrap();
-    pending
 }
 
 async fn wait_snapshot(

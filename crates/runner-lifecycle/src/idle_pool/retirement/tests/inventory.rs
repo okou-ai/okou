@@ -7,14 +7,18 @@ use crate::idle_pool::{
     IdlePoolRetirement, IdleSandboxIdentity, ParkResult, RestoreReservedIdleResult,
 };
 
-fn park(fixture: &mut JobFixture, pool: &mut IdlePool) -> IdleSandboxIdentity {
+pub(super) fn park(fixture: &mut JobFixture, pool: &mut IdlePool) -> IdleSandboxIdentity {
     let mut candidate = fixture.candidate();
     candidate.capture_retirement_backing().unwrap();
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     IdleSandboxIdentity::Exact(fixture.reuse_key.clone())
 }
 
-fn pending(pool: &IdlePool, identity: &IdleSandboxIdentity, env: &Env) -> IdlePoolRetirement {
+pub(super) fn pending(
+    pool: &IdlePool,
+    identity: &IdleSandboxIdentity,
+    env: &Env,
+) -> IdlePoolRetirement {
     IdlePoolRetirement::new(
         pool.retirement_candidate(identity).unwrap(),
         &env.operations,
