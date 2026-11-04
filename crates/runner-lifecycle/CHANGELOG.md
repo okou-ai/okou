@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.63](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.62...runner-lifecycle-v0.17.63) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** reject expired home publication admission ([#45231](https://github.com/okou-ai/okou/issues/45231)) ([3c0b9d6](https://github.com/okou-ai/okou/commit/3c0b9d6d7374879061b91676c5b03e2cf19aab5c))
+
+
+### Refactoring
+
+* **runner:** retire standalone guarded idle retirement ([#45218](https://github.com/okou-ai/okou/issues/45218)) ([cddb246](https://github.com/okou-ai/okou/commit/cddb246515bb61986958c13a1877820a53515bbe))
+
 ## [0.17.62](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.61...runner-lifecycle-v0.17.62) (2026-11-04)
 
 ## [0.17.61](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.60...runner-lifecycle-v0.17.61) (2026-11-04)

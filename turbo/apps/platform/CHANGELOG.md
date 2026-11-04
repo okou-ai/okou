@@ -13,6 +13,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1095.0](https://github.com/okou-ai/okou/compare/app-v0.1094.0...app-v0.1095.0) (2026-11-04)
+
+
+### Features
+
+* **app:** show unread indicators on collapsed projects ([#45208](https://github.com/okou-ai/okou/issues/45208)) ([edec2af](https://github.com/okou-ai/okou/commit/edec2af2a840a4f326fca982f139f34c3c8b6819))
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#45244](https://github.com/okou-ai/okou/issues/45244)) ([a1933e5](https://github.com/okou-ai/okou/commit/a1933e593f4c66bce81c0ac201cd40c5826a07f9))
+
+
+### Refactoring
+
+* **app:** replace presentation viewport observer with css scaling ([#45240](https://github.com/okou-ai/okou/issues/45240)) ([1f8c8ef](https://github.com/okou-ai/okou/commit/1f8c8ef72e12872d61a8fceaa89d1fd0dd380419))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.0
+    * @okouai/core bumped to 8.818.0
+
 ## [0.1094.0](https://github.com/okou-ai/okou/compare/app-v0.1093.0...app-v0.1094.0) (2026-11-04)
 
 

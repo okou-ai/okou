@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.48.0](https://github.com/okou-ai/okou/compare/api-v2.47.0...api-v2.48.0) (2026-11-04)
+
+
+### Features
+
+* **teams:** prepare account-scoped canonical uploads ([#45181](https://github.com/okou-ai/okou/issues/45181)) ([03f0c3e](https://github.com/okou-ai/okou/commit/03f0c3e07a46fc9ba300255498cd7af707d7020c))
+
+
+### Bug Fixes
+
+* **api:** preserve immutable bundle uploads and cancellation ([#45217](https://github.com/okou-ai/okou/issues/45217)) ([e5de08f](https://github.com/okou-ai/okou/commit/e5de08f80346912dc3f86aa4aa271bd6f1120f04))
+* **api:** recover concurrent agent identity conflicts ([#45233](https://github.com/okou-ai/okou/issues/45233)) ([3f1c80a](https://github.com/okou-ai/okou/commit/3f1c80afd6b11681ce107faf4cb86c6e9c6fd4b0))
+* refresh runner platform api and cli release markers ([#45244](https://github.com/okou-ai/okou/issues/45244)) ([a1933e5](https://github.com/okou-ai/okou/commit/a1933e593f4c66bce81c0ac201cd40c5826a07f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.0
+    * @okouai/core bumped to 8.818.0
+    * @okouai/db bumped to 2.22.0
+    * @okouai/pi-agent-runtime bumped to 1.51.64
+
 ## [2.47.0](https://github.com/okou-ai/okou/compare/api-v2.46.3...api-v2.47.0) (2026-11-04)
 
 

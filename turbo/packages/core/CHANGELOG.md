@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.818.0](https://github.com/okou-ai/okou/compare/core-v8.817.0...core-v8.818.0) (2026-11-04)
+
+
+### Features
+
+* **browser:** enable shared ownership for staff ([#45189](https://github.com/okou-ai/okou/issues/45189)) ([ef6f544](https://github.com/okou-ai/okou/commit/ef6f5443e4385c56286e374813904f6526b83896))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.0
+
 ## [8.817.0](https://github.com/okou-ai/okou/compare/core-v8.816.0...core-v8.817.0) (2026-11-04)
 
 
