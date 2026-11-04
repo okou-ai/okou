@@ -18,19 +18,18 @@ import report
 
 class FixedRestoreReportTests(unittest.TestCase):
     def setUp(self):
-        fixture.ClaimProducerReportTests.setUp(self)
+        def prepare_home(seed):
+            self.thread=str(uuid.uuid4())
+            self.original=b'{"type":"session_meta","payload":{"id":"'+self.thread.encode()+b'"}}\n'
+            self.session_path=f"/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-{self.thread}.jsonl"
+            target=seed/self.session_path.removeprefix("/home/user/")
+            target.parent.mkdir(parents=True)
+            target.write_bytes(self.original)
+
+        fixture.ClaimProducerReportTests.setUp(self, prepare_home=prepare_home)
         raw=self.collector["metadata"].pop("native_claim_producer_policy_json")
         self.collector["metadata"]["native_fixed_restore_policy_json"]=raw
-        self.thread=str(uuid.uuid4())
-        self.original=b'{"type":"session_meta","payload":{"id":"'+self.thread.encode()+b'"}}\n'
-        self.session_path=f"/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-{self.thread}.jsonl"
-        target=self.root/"seed"/self.session_path.removeprefix("/home/user/")
-        target.parent.mkdir(parents=True)
-        target.write_bytes(self.original)
         self.image=self.root/"retained-home.ext4"
-        self.image.unlink()
-        with self.image.open("wb") as stream:stream.truncate(report.NATIVE_HOME_BYTES)
-        subprocess.run(["/usr/sbin/mke2fs","-q","-F","-t","ext4","-O","^has_journal","-d",str(self.root/"seed"),str(self.image)],check=True,capture_output=True)
         with self.image.open("rb") as stream:stream.seek(1024);block=stream.read(1024)
         home={"path":f"/var/tmp/native-case/workspaces/{self.ident}/home.ext4","bytes":report.NATIVE_HOME_BYTES,
               "filesystem_uuid":block[104:120].hex(),"superblock_sha256":hashlib.sha256(block).hexdigest()}
