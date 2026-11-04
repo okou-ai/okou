@@ -20,7 +20,7 @@ locked `.venv/bin/python` directly, including status/log-only control and fake
 mitmdump processes. They fail if it is unavailable; they do not download
 dependencies, contact APIs, or silently skip the integration. Crates coverage
 prepares the same environment before running tests. All fixtures that import
-addon source use its pinned Python 3.14.0 interpreter.
+addon source use its pinned Python 3.15.1 interpreter.
 
 Ordinary Supervisor reactor fixtures retain a loopback startup API in the test's
 Tokio runtime so paused time cannot outrun a separate server thread. The peer

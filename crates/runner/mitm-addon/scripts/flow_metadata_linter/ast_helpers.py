@@ -795,7 +795,10 @@ class _ScopeBoundNameVisitor(ast.NodeVisitor):
         self._visit_comprehension_expressions(node.generators, [node.elt])
 
     def visit_DictComp(self, node: ast.DictComp) -> None:
-        self._visit_comprehension_expressions(node.generators, [node.key, node.value])
+        self._visit_comprehension_expressions(
+            node.generators,
+            [expression for expression in (node.key, node.value) if expression is not None],
+        )
 
     def _visit_function_definition_expressions(
         self, node: ast.FunctionDef | ast.AsyncFunctionDef

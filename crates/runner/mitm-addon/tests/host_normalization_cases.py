@@ -10,6 +10,8 @@ OVERRANGE_IPV4_HOSTNAME_CASES = (
 )
 
 INVALID_IDNA_HOSTNAME_CASES = (
+    pytest.param("\u088f.example", id="unicode-17-assignment"),
+    pytest.param("xn--7xb.example", id="unicode-17-assignment-alabel"),
     pytest.param("\uff21.example", id="fullwidth-latin"),
     pytest.param(ONLY_DOTS_HOSTNAME, id="dots"),
     pytest.param("api.github.com..", id="multiple-trailing-dots"),

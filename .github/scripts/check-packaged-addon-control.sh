@@ -3,7 +3,7 @@
 # Run from a repository checkout with Bash, coreutils, curl, tar and locked uv.
 # --cache-key prints archive identity without downloading or running pytest.
 # MITMPROXY_CONTROL_TEST_ARCHIVE optionally reuses an archive; its parent must exist.
-# Archive and binary validation failures stop before pytest, including on cache hits.
+# Artifact and upstream dependency-reference validation fail before pytest, including on cache hits.
 set -euo pipefail
 
 if (($# > 0)); then
@@ -39,6 +39,7 @@ archive_sha=$(constant "MITMPROXY_ARCHIVE_SHA256_${arch^^}")
 archive_size=$(constant "MITMPROXY_ARCHIVE_SIZE_${arch^^}")
 binary_sha=$(constant "MITMDUMP_SHA256_${arch^^}")
 binary_size=$(constant "MITMDUMP_SIZE_${arch^^}")
+upstream_lock_sha=$(<"$repo_root/crates/runner/mitm-addon/tests/mitmproxy-uv.lock.sha256")
 
 if (($# == 1)); then
   printf 'mitmproxy-archive-v1-%s-%s-%s\n' "$version" "$arch" "$archive_sha"
@@ -60,6 +61,15 @@ tar -xzf "$archive" -C "$test_dir" mitmdump
 test "$(stat -c %s "$test_dir/mitmdump")" = "$binary_size"
 printf '%s  %s\n' "$binary_sha" "$test_dir/mitmdump" | sha256sum --check
 
+upstream_lock="$archive.uv.lock"
+if [[ ! -f "$upstream_lock" ]]; then
+  bash "$repo_root/.github/scripts/download-verified.sh" \
+    "https://raw.githubusercontent.com/mitmproxy/mitmproxy/v$version/uv.lock" \
+    "$upstream_lock_sha" "$upstream_lock"
+fi
+printf '%s  %s\n' "$upstream_lock_sha" "$upstream_lock" | sha256sum --check
+
 cd "$repo_root/crates/runner/mitm-addon"
 MITMDUMP_CONTROL_TEST_BINARY="$test_dir/mitmdump" \
+  MITMPROXY_CONTROL_TEST_UPSTREAM_LOCK="$upstream_lock" \
   uv run --no-sync python -m pytest tests/packaged_control.py -v
