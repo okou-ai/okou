@@ -3,6 +3,7 @@ import {
   readContentBundle,
 } from "@okouai/core/content-bundle";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import {
   agentInstructionsContract,
@@ -14,6 +15,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { agentsRoutes } from "../agents";
 import { createRouteMocks } from "./helpers/route-test";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -59,22 +61,59 @@ async function instructionFixture(visibility: "public" | "private" = "public") {
 }
 
 describe("Agent database instructions", () => {
-  it("preserves the accepted body when package publication fails", async () => {
-    const fixture = await instructionFixture();
-    const raw = "\uFEFF  First line\r\n中文\n\n  ";
-    await fixture.update(raw);
-    context.mocks.s3.send.mockRejectedValue(
-      new Error("Object storage is unavailable"),
-    );
-    await expect(
-      fixture.instructions.update({
-        headers,
-        params: fixture.params,
-        body: { content: "Unpublished edit" },
-      }),
-    ).rejects.toThrow("500");
-    await expect(fixture.content()).resolves.toBe(raw);
-  });
+  it.each([
+    { operation: "lookup", command: HeadObjectCommand },
+    { operation: "upload", command: PutObjectCommand },
+  ])(
+    "preserves public state when package $operation fails",
+    async ({ command }) => {
+      installWorkflowVolumeS3Fixture(context);
+      const send = context.mocks.s3.send.getMockImplementation();
+      if (!send) {
+        throw new Error("Expected the S3 fixture");
+      }
+      let unavailable = true;
+      context.mocks.s3.send.mockImplementation((request: unknown, ...args) => {
+        if (unavailable && request instanceof command) {
+          return Promise.reject(
+            Object.assign(
+              new Error(
+                "Reduce your concurrent request rate for the same object.",
+              ),
+              {
+                name: "ServiceUnavailable",
+                $metadata: { httpStatusCode: 429 },
+              },
+            ),
+          );
+        }
+        return send(request, ...args);
+      });
+      await expect(instructionFixture()).rejects.toThrow("500");
+      const collection = setupApp({ context, routes: agentsRoutes })(
+        agentsMainContract,
+      );
+      const failedCreation = await accept(collection.list({ headers }), [200]);
+      expect(failedCreation.body).toStrictEqual([]);
+
+      unavailable = false;
+      const fixture = await instructionFixture();
+      const raw = "\uFEFF  First line\r\n中文\n\n  ";
+      await fixture.update(raw);
+      unavailable = true;
+      await expect(
+        fixture.instructions.update({
+          headers,
+          params: fixture.params,
+          body: { content: "Unpublished edit" },
+        }),
+      ).rejects.toThrow("500");
+      await expect(fixture.content()).resolves.toBe(raw);
+      unavailable = false;
+      await fixture.update("Recovered edit");
+      await expect(fixture.content()).resolves.toBe("Recovered edit");
+    },
+  );
 
   it("publishes exact text and explicit empty overwrite", async () => {
     const fixture = await instructionFixture();
@@ -112,11 +151,40 @@ describe("Agent database instructions", () => {
 
   it("publishes owner-independent immutable packages containing the exact accepted text", async () => {
     const objects = new Map<string, Buffer>();
-    installWorkflowVolumeS3Fixture(context, objects);
+    const storage = installWorkflowVolumeS3Fixture(context, objects);
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!send) {
+      throw new Error("Expected the S3 fixture");
+    }
+    // R2 rejects repeated writes to the same hot object. Even conditional PUTs
+    // must be avoided on the already-published path.
+    context.mocks.s3.send.mockImplementation((request: unknown, ...args) => {
+      if (
+        request instanceof PutObjectCommand &&
+        objects.has(request.input.Key ?? "")
+      ) {
+        return Promise.reject(
+          Object.assign(
+            new Error(
+              "Reduce your concurrent request rate for the same object.",
+            ),
+            {
+              name: "ServiceUnavailable",
+              $metadata: { httpStatusCode: 429 },
+            },
+          ),
+        );
+      }
+      return send(request, ...args);
+    });
     const first = await instructionFixture();
     const body = "\uFEFF raw instructions\r\n中文  ";
     await first.update(body);
     const second = await instructionFixture();
+    await second.update(body);
+    await second.update(body);
+    await second.update("");
+    await expect(second.content()).resolves.toBe("");
     await second.update(body);
     const packages = [...objects].filter(([key]) => {
       return key.startsWith("bundles/v1/");
@@ -138,7 +206,44 @@ describe("Agent database instructions", () => {
         return file.path;
       }),
     ).toStrictEqual(["instructions.md"]);
+    expect(storage.writes).toHaveLength(2);
+    for (const [request] of context.mocks.s3.send.mock.calls) {
+      if (request instanceof PutObjectCommand) {
+        expect(request.input).toMatchObject({
+          IfNoneMatch: "*",
+          CacheControl: "private, no-store",
+        });
+      }
+    }
     await expect(second.content()).resolves.toBe(body);
+  });
+
+  it("reuses the winning bundle when independent Agent creations race", async () => {
+    const storage = installWorkflowVolumeS3Fixture(context);
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    storage.beforeNextBundleWrite(async () => {
+      started.resolve();
+      await release.promise;
+    });
+    const pending = settleIncludingAbort(instructionFixture());
+    await started.promise;
+    const secondResult = await settleIncludingAbort(instructionFixture());
+    release.resolve();
+    const first = await pending;
+    if (!first.ok) {
+      throw first.error;
+    }
+    if (!secondResult.ok) {
+      throw secondResult.error;
+    }
+    const second = secondResult.value;
+    expect(first.value.params.id).not.toBe(second.params.id);
+    mocks.clerk.session(first.value.userId, first.value.orgId, "org:admin");
+    await expect(first.value.content()).resolves.toBe("");
+    mocks.clerk.session(second.userId, second.orgId, "org:admin");
+    await expect(second.content()).resolves.toBe("");
+    expect(storage.writes).toHaveLength(1);
   });
 
   it("rejects NUL text and preserves the current body", async () => {
