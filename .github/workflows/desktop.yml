@@ -170,7 +170,6 @@ jobs:
             desktop/out/Okou-darwin-arm64/dSYMs
             desktop/out/Okou Dev-darwin-arm64/dSYMs
           if-no-files-found: error
-          compression-level: 0
           retention-days: 1
 
   build-macos:
