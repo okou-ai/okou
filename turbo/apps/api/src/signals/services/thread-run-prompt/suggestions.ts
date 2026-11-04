@@ -3,10 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
-import {
-  PROACTIVE_LEARNING_DEFINITION_NAME,
-  PROACTIVE_PLANNING_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { db$ } from "../../external/db";
@@ -54,16 +51,13 @@ export function createSuggestionsPrompt(
       return empty;
     }
     if (
+      event?.contextType === "automation" &&
       definitions.some((item) => {
-        return item.name === PROACTIVE_PLANNING_DEFINITION_NAME;
-      }) ||
-      (event?.contextType === "automation" &&
-        definitions.some((item) => {
-          return (
-            item.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
-            isMorningBriefDefinitionName(item.name)
-          );
-        }))
+        return (
+          item.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
+          isMorningBriefDefinitionName(item.name)
+        );
+      })
     ) {
       const [member] = await get(db$)
         .select({ enabled: orgMembersMetadata.proactiveSuggestionsEnabled })

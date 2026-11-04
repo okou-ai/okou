@@ -6,13 +6,17 @@ import { withMockNowForTest } from "../../../lib/time";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { expect, test } from "vitest";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { proactiveSuggestionsRoutes } from "../proactive-preferences";
+import {
+  proactiveSuggestionsRoutes,
+  proactiveLearningRoutes,
+} from "../proactive-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -44,9 +48,23 @@ test("requires authentication to publish the Official Workflow catalog", async (
   expect(unauthorized.status).toBe(401);
 });
 
-test.each([false, true])(
-  "publishes idempotently and delivers the Official bundle (upload failure: %s)",
-  async (failUpload) => {
+test.each([
+  { kind: "suggestions", failUpload: false },
+  { kind: "suggestions", failUpload: true },
+  { kind: "learning", failUpload: false },
+])(
+  "publishes idempotently and runs $kind on schedule (upload failure: $failUpload)",
+  async ({ kind, failUpload }) => {
+    const learning = kind === "learning";
+    const definitionName = learning
+      ? "proactive-learning"
+      : "agent-suggestions";
+    const heading = learning
+      ? "# Proactive Learning"
+      : "# Proactive Suggestions";
+    const preferenceContract = learning
+      ? proactiveLearningContract
+      : proactiveSuggestionsContract;
     mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
     const app = await setupApp({
       context,
@@ -55,6 +73,7 @@ test.each([false, true])(
         ...cronOfficialWorkflowCatalogRoutes,
         ...cronExecuteWorkflowAutomationsRoutes,
         ...proactiveSuggestionsRoutes,
+        ...proactiveLearningRoutes,
         ...workflowAutomationsRoutes,
         ...workflowsRoutes,
       ],
@@ -114,9 +133,19 @@ test.each([false, true])(
       return updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.AgentSuggestion]: true },
+        {
+          [FeatureSwitchKey.AgentSuggestion]: !learning,
+          [FeatureSwitchKey.ProactiveLearning]: learning,
+        },
       );
     });
+    if (learning) {
+      await owned.run(() => {
+        return fixture.bdd.completeOnboarding(actor, {
+          timezone: "Asia/Shanghai",
+        });
+      });
+    }
     createRouteMocks(context).clerk.session(
       actor.userId,
       actor.orgId,
@@ -125,7 +154,7 @@ test.each([false, true])(
     const headers = { authorization: "Bearer clerk-session" };
     const enabled = await owned.run(() => {
       return accept(
-        app(proactiveSuggestionsContract).update({
+        app(preferenceContract).update({
           headers,
           body: { enabled: true },
         }),
@@ -140,10 +169,10 @@ test.each([false, true])(
       );
     });
     const workflow = workflows.body.find((item) => {
-      return item.official?.definitionName === "agent-suggestions";
+      return item.official?.definitionName === definitionName;
     });
     if (!workflow) {
-      throw new Error("Expected the Official Suggestions installation");
+      throw new Error("Expected the Official workflow installation");
     }
     const detail = await owned.run(() => {
       return accept(
@@ -154,7 +183,7 @@ test.each([false, true])(
         [200],
       );
     });
-    expect(detail.body.instruction).toContain("# Proactive Suggestions");
+    expect(detail.body.instruction).toContain(heading);
     expect(detail.body.fileContents).toStrictEqual(expect.any(Array));
     const automations = await owned.run(() => {
       return accept(
@@ -167,10 +196,20 @@ test.each([false, true])(
     });
     const automation = automations.body[0];
     if (!automation) {
-      throw new Error("Expected the Suggestions automation");
+      throw new Error("Expected the Official workflow automation");
     }
     if (!automation.nextRunAt) {
-      throw new Error("Expected the next Suggestions schedule");
+      throw new Error("Expected the next Official workflow schedule");
+    }
+    if (learning) {
+      if (
+        automation.kind !== "schedule" ||
+        automation.schedule.type !== "cron"
+      ) {
+        throw new Error("Expected the Learning cron schedule");
+      }
+      expect(automation.schedule.cronExpression.split(" ")[1]).toBe("2");
+      expect(automation.schedule.timezone).toBe("Asia/Shanghai");
     }
     await withMockNowForTest(
       new Date(automation.nextRunAt).getTime(),
@@ -197,7 +236,7 @@ test.each([false, true])(
     });
     const chatThreadId = current.body.chatThreadId;
     if (!chatThreadId) {
-      throw new Error("Expected the Suggestions execution thread");
+      throw new Error("Expected the Official workflow execution thread");
     }
     const events = await owned.run(() => {
       return createChatFilesBddApi(context).listThreadEventRows(
@@ -216,20 +255,22 @@ test.each([false, true])(
       owned.runnerGroup,
       runId,
     );
-    expect(claim.appendSystemPrompt).toContain(
-      "# Suggestions feedback context",
-    );
-    expect(claim.appendSystemPrompt).toContain('"complete":true,"records":[]');
+    if (!learning) {
+      expect(claim.appendSystemPrompt).toContain(
+        "# Suggestions feedback context",
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        '"complete":true,"records":[]',
+      );
+    }
     const bundle = claim.contentBundles.skills.find((skill) => {
-      return skill.mountPath.endsWith("/agent-suggestions");
+      return skill.mountPath.endsWith(`/${definitionName}`);
     });
     if (!bundle) {
       throw new Error("Expected an Official Workflow bundle in the claim");
     }
     const files = readClaimedContentBundle(s3.objects, bundle);
-    expect(files.get("SKILL.md")?.toString()).toContain(
-      "# Proactive Suggestions",
-    );
+    expect(files.get("SKILL.md")?.toString()).toContain(heading);
     await owned.run(() => {
       return fixture.failChatRun(
         runId,

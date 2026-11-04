@@ -9,7 +9,6 @@ import {
   projectAgentDraftRoutes,
 } from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
-import { jobsRoutes } from "./routes/jobs";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -170,7 +169,6 @@ import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import {
   proactiveSuggestionsRoutes,
-  proactiveJobsRoutes,
   proactiveLearningRoutes,
 } from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
@@ -321,7 +319,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
   ...suggestionsRoutes,
-  ...jobsRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,
@@ -430,7 +427,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
-  ...proactiveJobsRoutes,
   ...proactiveLearningRoutes,
   ...emailSubscriptionRoutes,
   ...halloweenRoutes,

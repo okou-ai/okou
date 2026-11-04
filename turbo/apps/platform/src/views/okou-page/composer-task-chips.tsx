@@ -1,9 +1,7 @@
-import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Image, MessageSquare } from "lucide-react";
-import { Button, Tabs, TabsContent } from "@okouai/ui";
-import { EntrustedJobs } from "./entrusted-jobs.tsx";
-import { entrustedJobsEnabled$ } from "../../signals/okou-page/entrusted-jobs.ts";
+import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import {
@@ -614,9 +612,6 @@ function ComposerTaskPanel({
   readonly signals: ComposerSignals;
   readonly selected: ComposerTask;
 }) {
-  if (selected === "jobs") {
-    return <EntrustedJobs />;
-  }
   return (
     <div
       key={selected}
@@ -653,61 +648,15 @@ function ComposerTaskPanel({
   );
 }
 
-function ComposerTaskTabs({
-  signals,
-  selected,
-  tasks,
-}: {
-  readonly signals: ComposerSignals;
-  readonly selected: ComposerTask | null;
-  readonly tasks: readonly ComposerTask[];
-}) {
-  const { t } = useTranslation();
-  const browseTask = useSet(signals.taskChips.browseTask$);
-  const selectTask = useSet(signals.taskChips.selectTask$);
-  return (
-    <Tabs
-      value={selected}
-      onValueChange={(value) => {
-        const task = tasks.find((candidate) => {
-          return candidate === value;
-        });
-        if (task === "jobs") {
-          browseTask(task);
-        } else if (task) {
-          selectTask(task);
-        }
-      }}
-      className="flex min-w-0 flex-col gap-5"
-      aria-label={t(($) => {
-        return $.chat.taskChips.label;
-      })}
-    >
-      <ComposerTaskChipRow signals={signals} tasks={tasks} tabs />
-      {tasks.map((task) => {
-        return (
-          <TabsContent key={task} value={task}>
-            <ComposerTaskPanel signals={signals} selected={task} />
-          </TabsContent>
-        );
-      })}
-    </Tabs>
-  );
-}
-
 export function ComposerTaskChips({
   signals,
 }: {
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const jobs = useLoadable(entrustedJobsEnabled$);
-  const jobsEnabled = jobs.state === "hasData" && jobs.data;
-  const current = useGet(signals.taskChips.task$);
-  const selected = current === "jobs" && !jobsEnabled ? null : current;
+  const selected = useGet(signals.taskChips.task$);
   const tasks = (
     [
-      "jobs",
       "workflow",
       "presentation",
       "document",
@@ -716,9 +665,6 @@ export function ComposerTaskChips({
       "visualization",
     ] as const
   ).filter((task) => {
-    if (task === "jobs") {
-      return jobsEnabled;
-    }
     return (
       task === "workflow" ||
       task === "website" ||
@@ -726,13 +672,6 @@ export function ComposerTaskChips({
       signals.create.modes.includes(task)
     );
   });
-  // Tasks is browsed beside the row; selecting another task moves its chip
-  // into the composer and hides the choices.
-  if (jobsEnabled && (selected === null || selected === "jobs")) {
-    return (
-      <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
-    );
-  }
   return (
     <section
       className="flex min-w-0 flex-col gap-5"

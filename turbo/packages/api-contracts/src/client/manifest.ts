@@ -478,10 +478,6 @@ export const clientDescriptorManifest = [
     contracts: ["iosPushRegistrationsContract"],
   },
   {
-    module: "jobs",
-    contracts: ["jobsContract"],
-  },
-  {
     module: "link-approval-workflow",
     contracts: ["linkApprovalWorkflowContract"],
   },
@@ -574,10 +570,6 @@ export const clientDescriptorManifest = [
   {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
-  },
-  {
-    module: "proactive-jobs",
-    contracts: ["proactiveJobsContract"],
   },
   {
     module: "proactive-nightly",

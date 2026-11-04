@@ -155,11 +155,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ProactiveAgent]: {
+  [FeatureSwitchKey.ProactiveLearning]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Proactive",
-    description:
-      "Review activity, learn, plan next steps and advance entrusted Tasks.",
+    displayName: "Proactive learning",
+    description: "Review activity overnight and improve personal memory.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

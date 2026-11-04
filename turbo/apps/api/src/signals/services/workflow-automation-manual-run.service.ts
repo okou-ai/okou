@@ -71,7 +71,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
     }
     if (automation.officialBlueprintKey !== null) {
       const kind = proactiveWorkflowKind(target.workflowName);
-      if (kind !== "learning" && kind !== "planning") {
+      if (kind !== "learning") {
         return {
           kind: "conflict",
           message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
@@ -91,7 +91,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
       ) {
         return {
           kind: "forbidden",
-          message: "Proactive Agent is not available.",
+          message: "Proactive Learning is not available.",
         };
       }
     }

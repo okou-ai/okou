@@ -15,14 +15,8 @@ import {
   proactiveSuggestionsPreference$,
   updateProactiveSuggestionsPreference$,
 } from "../../../../signals/okou-page/settings/proactive-suggestions.ts";
-import {
-  proactiveJobsPreference$,
-  updateProactiveJobsPreference$,
-} from "../../../../signals/okou-page/settings/proactive-jobs.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 import { proactiveLearningSignals } from "../../../../signals/okou-page/settings/proactive-nightly.ts";
-
-type ProactivePreferenceKind = Exclude<ProactiveWorkflowKind, "planning">;
 
 function preferenceStatusKey(
   value: ProactivePreferenceValue | undefined,
@@ -42,10 +36,6 @@ function preferenceStatusKey(
 }
 
 const PREFERENCE_SIGNALS = {
-  jobs: {
-    preference$: proactiveJobsPreference$,
-    update$: updateProactiveJobsPreference$,
-  },
   suggestions: {
     preference$: proactiveSuggestionsPreference$,
     update$: updateProactiveSuggestionsPreference$,
@@ -54,12 +44,11 @@ const PREFERENCE_SIGNALS = {
 } as const;
 
 const PREFERENCE_KEYS = {
-  jobs: "proactivePlanningAction",
   suggestions: "proactiveSuggestions",
   learning: "proactiveLearning",
 } as const;
 
-function ProactivePreference({ kind }: { kind: ProactivePreferenceKind }) {
+function ProactivePreference({ kind }: { kind: ProactiveWorkflowKind }) {
   const { t } = useTranslation();
   const key = PREFERENCE_KEYS[kind];
   const { preference$, update$ } = PREFERENCE_SIGNALS[kind];
@@ -121,18 +110,10 @@ export function ProactiveSuggestionsSettings() {
   ) : null;
 }
 
-export function ProactivePlanningActionSettings() {
-  const flags = useLoadable(featureSwitch$);
-  return flags.state === "hasData" &&
-    flags.data[FeatureSwitchKey.ProactiveAgent] ? (
-    <ProactivePreference kind="jobs" />
-  ) : null;
-}
-
 export function ProactiveLearningSettings() {
   const flags = useLoadable(featureSwitch$);
   return flags.state === "hasData" &&
-    flags.data[FeatureSwitchKey.ProactiveAgent] ? (
+    flags.data[FeatureSwitchKey.ProactiveLearning] ? (
     <ProactivePreference kind="learning" />
   ) : null;
 }

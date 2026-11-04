@@ -22,8 +22,6 @@ export function orgMembersMetadataColumns() {
     timezone: text("timezone"),
     /** User intent; execution availability never overwrites this preference. */
     proactiveSuggestionsEnabled: boolean("proactive_suggestions_enabled"),
-    // Shared opt-in for Planning and action; keep its physical column.
-    proactiveJobsEnabled: boolean("proactive_action_enabled"),
     proactiveLearningEnabled: boolean("proactive_learning_enabled"),
     locale: text("locale"),
     onboardingRole: text("onboarding_role"),

@@ -1988,47 +1988,6 @@
       "useDefault": "기본값 사용"
     },
     "documentTitle": "채팅",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "출처 업데이트",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "이 실행을 완료하지 못했습니다",
       "loadMessages": "메시지 로드 실패",
@@ -2638,7 +2597,6 @@
       "tasks": {
         "document": "문서",
         "image": "이미지",
-        "jobs": "Tasks",
         "presentation": "슬라이드",
         "visualization": "시각화",
         "website": "웹사이트",
@@ -5449,7 +5407,7 @@
           "description": "앱의 외관과 동작 방식을 개인화하세요.",
           "title": "환경설정"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Okou가 능동적으로 일하는 방식을 선택하세요.",
           "title": "Proactive"
         },
@@ -5833,15 +5791,6 @@
         "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
         "preparing": "워크플로를 준비하고 있습니다.",
         "title": "학습"
-      },
-      "proactivePlanningAction": {
-        "description": "위임한 업무를 계획하고 실행하며, 입력이 필요할 때 알려드립니다.",
-        "errorMessage": "이 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
-        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
-        "preparing": "워크플로를 준비하고 있습니다.",
-        "title": "계획 및 실행"
       },
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",

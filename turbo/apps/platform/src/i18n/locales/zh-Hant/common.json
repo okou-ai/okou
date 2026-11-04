@@ -1988,47 +1988,6 @@
       "useDefault": "使用預設"
     },
     "documentTitle": "聊天",
-    "entrustedJobs": {
-      "archive": "封存任務",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "任務詳情",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "這裡還沒有任務。把任務交給 Okou，它會持續推進，並在需要你協助或有結果時通知你。",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "正在載入任務",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "來源更新",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "這次執行沒能完成",
       "loadMessages": "訊息載入失敗",
@@ -2638,7 +2597,6 @@
       "tasks": {
         "document": "文件",
         "image": "圖片",
-        "jobs": "任務",
         "presentation": "簡報",
         "visualization": "視覺化",
         "website": "網站",
@@ -5449,7 +5407,7 @@
           "description": "個性化應用的外觀和使用方式。",
           "title": "偏好設定"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "選擇 Okou 主動工作的方式。",
           "title": "Proactive"
         },
@@ -5833,15 +5791,6 @@
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
         "title": "主動學習"
-      },
-      "proactivePlanningAction": {
-        "description": "在你交辦的範圍內規劃並推進任務，需要你處理時提醒你。",
-        "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
-        "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "此工作流程暫不可用。",
-        "preparing": "正在準備此工作流程。",
-        "title": "規劃與執行"
       },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",

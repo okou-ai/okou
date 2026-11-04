@@ -717,9 +717,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
     ),
     ...EVENT_POLICY[eventType],
     ...(eventType === "manual" &&
-    ["learning", "planning"].includes(
-      proactiveWorkflowKind(args.workflowName) ?? "",
-    )
+    proactiveWorkflowKind(args.workflowName) === "learning"
       ? { recordLastRunId: false, recordLastRunAt: false }
       : {}),
     allowClaimedOnceScheduleAutomation: args.automation.scheduleType === "once",
@@ -1056,8 +1054,7 @@ function buildWorkflowAutomationCallbacks(
   // Debug adds one delivery and never settles the daily schedule occurrence.
   const nightlyManual =
     eventType === "manual" &&
-    (automation.officialBlueprintKey === "nightly-learning" ||
-      automation.officialBlueprintKey === "nightly-planning");
+    automation.officialBlueprintKey === "nightly-learning";
   if (
     automation.kind === "schedule" &&
     eventType !== "morning-brief-debug" &&
@@ -2275,9 +2272,7 @@ export function createThreadClaimRunObjects(
         loadedTarget.workflow.officialDefinitionName !== null &&
         event.eventType === "manual" &&
         proactiveWorkflowKind(loadedTarget.workflow.officialDefinitionName) !==
-          "learning" &&
-        proactiveWorkflowKind(loadedTarget.workflow.officialDefinitionName) !==
-          "planning"
+          "learning"
       ) {
         return rejectedAutomationLaunch(
           unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),

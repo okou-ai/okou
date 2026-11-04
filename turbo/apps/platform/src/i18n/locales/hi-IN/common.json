@@ -1995,47 +1995,6 @@
       "useDefault": "डिफ़ॉल्ट उपयोग करें"
     },
     "documentTitle": "चैट",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "स्रोत अपडेट",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "यह रन पूरा नहीं हो सका",
       "loadMessages": "संदेश लोड करने में विफल",
@@ -2649,7 +2608,6 @@
       "tasks": {
         "document": "दस्तावेज़",
         "image": "चित्र",
-        "jobs": "Tasks",
         "presentation": "स्लाइड",
         "visualization": "विज़ुअलाइज़ेशन",
         "website": "वेबसाइट",
@@ -5466,7 +5424,7 @@
           "description": "ऐप कैसा दिखता है और कैसे व्यवहार करता है, इसे वैयक्तिकृत करें।",
           "title": "वरीयता"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "चुनें कि Okou कैसे सक्रिय रूप से काम करे।",
           "title": "Proactive"
         },
@@ -5851,15 +5809,6 @@
         "preparationFailed": "यह कार्यप्रवाह अस्थायी रूप से उपलब्ध नहीं है।",
         "preparing": "यह कार्यप्रवाह तैयार हो रहा है।",
         "title": "सीखना"
-      },
-      "proactivePlanningAction": {
-        "description": "आपके सौंपे गए काम की योजना बनाए और उसे पूरा करे, और जब आपकी ज़रूरत हो तो आपको सूचित करे।",
-        "errorMessage": "यह सेटिंग लोड या अपडेट नहीं हो सकी।",
-        "missingDefaultAgent": "इस वर्कस्पेस में Okou उपलब्ध नहीं है। वर्कस्पेस एडमिन से संपर्क करें।",
-        "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
-        "preparationFailed": "यह कार्यप्रवाह अस्थायी रूप से उपलब्ध नहीं है।",
-        "preparing": "यह कार्यप्रवाह तैयार हो रहा है।",
-        "title": "योजना और कार्रवाई"
       },
       "proactiveSuggestions": {
         "description": "Okou हर घंटे आपके जुड़े स्रोतों की जाँच करता है और होम पेज पर उपयोगी अगले कदम सुझाता है।",

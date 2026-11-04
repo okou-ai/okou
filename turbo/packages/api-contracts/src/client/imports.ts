@@ -1116,11 +1116,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "jobs",
-    contracts: ["jobsContract"],
-    bindings: [],
-  },
-  {
     module: "link-approval-workflow",
     contracts: ["linkApprovalWorkflowContract"],
     bindings: [],
@@ -1328,11 +1323,6 @@ export const clientContractImportManifest = [
   {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
-    bindings: [],
-  },
-  {
-    module: "proactive-jobs",
-    contracts: ["proactiveJobsContract"],
     bindings: [],
   },
   {

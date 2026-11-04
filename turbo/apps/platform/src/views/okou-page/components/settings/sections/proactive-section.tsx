@@ -2,7 +2,6 @@ import { surfaceVariants } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { MorningBriefSettings } from "../morning-brief-settings.tsx";
 import {
-  ProactivePlanningActionSettings,
   ProactiveSuggestionsSettings,
   ProactiveLearningSettings,
 } from "../proactive-settings.tsx";
@@ -11,7 +10,7 @@ import { SettingsSectionHeading } from "../settings-section-heading.tsx";
 export function ProactiveSection() {
   const { t } = useTranslation();
   const title = t(($) => {
-    return $.settings.dialog.sections.proactiveAgent.title;
+    return $.settings.dialog.sections.proactiveLearning.title;
   });
 
   return (
@@ -19,14 +18,13 @@ export function ProactiveSection() {
       <SettingsSectionHeading
         title={title}
         description={t(($) => {
-          return $.settings.dialog.sections.proactiveAgent.description;
+          return $.settings.dialog.sections.proactiveLearning.description;
         })}
       />
       <div className={surfaceVariants({ className: "overflow-hidden" })}>
         <MorningBriefSettings />
         <ProactiveSuggestionsSettings />
         <ProactiveLearningSettings />
-        <ProactivePlanningActionSettings />
       </div>
     </section>
   );

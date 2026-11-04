@@ -1,7 +1,6 @@
 import { command } from "ccstate";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import type {
   ProactivePreference,
@@ -26,15 +25,11 @@ import { PROACTIVE_WORKFLOW_DEFINITIONS } from "../services/proactive-workflow-d
 import { settle } from "../utils";
 
 const PREFERENCE_CONTRACTS = {
-  jobs: proactiveJobsContract,
   suggestions: proactiveSuggestionsContract,
   learning: proactiveLearningContract,
 } as const;
 
-type ProactivePreferenceKind = Exclude<ProactiveWorkflowKind, "planning">;
-
 const PREFERENCE_FIELDS = {
-  jobs: "proactiveJobsEnabled",
   suggestions: "proactiveSuggestionsEnabled",
   learning: "proactiveLearningEnabled",
 } as const;
@@ -43,16 +38,10 @@ const readProactivePreference$ = command(
   async (
     { get, set },
     owner: ProactiveWorkflowOwner,
-    kind: ProactivePreferenceKind,
+    kind: ProactiveWorkflowKind,
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {
-    const definitions =
-      kind === "jobs"
-        ? [
-            PROACTIVE_WORKFLOW_DEFINITIONS.planning,
-            PROACTIVE_WORKFLOW_DEFINITIONS.jobs,
-          ]
-        : [PROACTIVE_WORKFLOW_DEFINITIONS[kind]];
+    const definition = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
     const eligibility = await set(
       loadProactiveWorkflowsEligibility$,
       owner,
@@ -70,17 +59,8 @@ const readProactivePreference$ = command(
         and(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
-          or(
-            ...definitions.map((definition) => {
-              return and(
-                eq(workflows.officialDefinitionName, definition.name),
-                eq(
-                  workflowAutomations.officialBlueprintKey,
-                  definition.blueprintKey,
-                ),
-              );
-            }),
-          ),
+          eq(workflows.officialDefinitionName, definition.name),
+          eq(workflowAutomations.officialBlueprintKey, definition.blueprintKey),
           eligibility.agentId === null
             ? undefined
             : eq(workflows.agentId, eligibility.agentId),
@@ -90,8 +70,7 @@ const readProactivePreference$ = command(
     const unavailableReason =
       eligibility.agentId === null
         ? "missing-default-agent"
-        : (kind === "learning" || kind === "jobs") &&
-            eligibility.timezone === null
+        : kind === "learning" && eligibility.timezone === null
           ? "missing-timezone"
           : null;
     return {
@@ -103,7 +82,7 @@ const readProactivePreference$ = command(
             })
           ? "error"
           : unavailableReason === null &&
-              automations.length === definitions.length &&
+              automations.length === 1 &&
               automations.every((automation) => {
                 return automation.enabled && automation.status === "current";
               })
@@ -115,7 +94,7 @@ const readProactivePreference$ = command(
 );
 
 function createProactivePreferenceRoutes(
-  kind: ProactivePreferenceKind,
+  kind: ProactiveWorkflowKind,
 ): readonly RouteEntry[] {
   const contract = PREFERENCE_CONTRACTS[kind];
   const preferenceRoute$ = command(
@@ -190,6 +169,5 @@ function createProactivePreferenceRoutes(
 
 export const proactiveSuggestionsRoutes =
   createProactivePreferenceRoutes("suggestions");
-export const proactiveJobsRoutes = createProactivePreferenceRoutes("jobs");
 export const proactiveLearningRoutes =
   createProactivePreferenceRoutes("learning");

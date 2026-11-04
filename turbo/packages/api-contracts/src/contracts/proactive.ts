@@ -1,7 +1,6 @@
 import { boolean, object, enum as zEnum, type infer as zInfer } from "zod";
 
-export type ProactiveWorkflowKind =
-  "suggestions" | "jobs" | "learning" | "planning";
+export type ProactiveWorkflowKind = "suggestions" | "learning";
 
 export const proactivePreferenceSchema = object({
   enabled: boolean(),

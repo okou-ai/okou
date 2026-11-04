@@ -52,10 +52,7 @@ import {
   hasValidSuggestionConsumeToken,
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
-import {
-  PROACTIVE_LEARNING_DEFINITION_NAME,
-  PROACTIVE_PLANNING_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
 
 interface Owner {
   readonly userId: string;
@@ -156,17 +153,14 @@ export const suggestionAccess$ = command(
         );
       }
       if (
-        run.provenance?.definitions.some((definition) => {
-          return definition.name === PROACTIVE_PLANNING_DEFINITION_NAME;
-        }) ||
-        ((run.triggerSource === "automation-schedule" ||
+        (run.triggerSource === "automation-schedule" ||
           run.triggerSource === "automation-event") &&
-          run.provenance?.definitions.some((definition) => {
-            return (
-              definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
-              isMorningBriefDefinitionName(definition.name)
-            );
-          }))
+        run.provenance?.definitions.some((definition) => {
+          return (
+            definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
+            isMorningBriefDefinitionName(definition.name)
+          );
+        })
       ) {
         const preference = await set(
           loadProactiveWorkflowsEligibility$,

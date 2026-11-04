@@ -3,7 +3,6 @@ import {
   inFlightScheduleAdvanceValues,
   type InFlightScheduleAdvance,
 } from "./workflow-schedule-settlement";
-import { settleProactiveJobsRun$ } from "./proactive-jobs-settlement.service";
 import { command } from "ccstate";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -311,16 +310,6 @@ export const handleWorkflowAutomationInternalCallback$ = command(
     }
     if (input.callback.status === "progress") {
       return { success: true, skipped: true };
-    }
-    if (
-      await set(
-        settleProactiveJobsRun$,
-        payload.data.automationId,
-        input.callback,
-        signal,
-      )
-    ) {
-      return { success: true };
     }
     const settled = await set(
       settleMorningBriefScheduleForRun$,
