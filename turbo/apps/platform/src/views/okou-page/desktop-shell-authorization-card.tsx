@@ -1,26 +1,20 @@
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, Clock, Terminal, Loader2 } from "lucide-react";
+import { Check, Terminal, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Badge, Button, cn } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { i18n } from "../../i18n/index.ts";
-import { resolvedAppLocale } from "../../i18n/format.ts";
 import type { DesktopShellAuthorizationSignals } from "../../signals/chat-page/desktop-shell-authorization-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
+import { ChatCardDetails } from "./components/chat-card-details.tsx";
 
-function authorizationStatus(data: DesktopShellAuthorization): string {
+function authorizationStatus(data: DesktopShellAuthorization): string | null {
   switch (data.status) {
     case "pending": {
-      return data.approvalBlockedReason === null
-        ? i18n.t(($) => {
-            return $.desktopShellAuthorization.pending;
-          })
-        : i18n.t(($) => {
-            return $.desktopShellAuthorization.unavailable;
-          });
+      return null;
     }
     case "approved": {
       return i18n.t(($) => {
@@ -38,9 +32,49 @@ function authorizationStatus(data: DesktopShellAuthorization): string {
       });
     }
     case "expired": {
+      return data.approvedAt === null
+        ? i18n.t(($) => {
+            return $.desktopShellAuthorization.requestExpired;
+          })
+        : i18n.t(($) => {
+            return $.desktopShellAuthorization.expired;
+          });
+    }
+  }
+}
+
+function approvalBlocker(
+  data: DesktopShellAuthorization | null,
+): string | null {
+  if (data?.status !== "pending") {
+    return null;
+  }
+  switch (data.approvalBlockedReason) {
+    case null: {
+      return null;
+    }
+    case "run_active": {
       return i18n.t(($) => {
-        return $.desktopShellAuthorization.expired;
+        return $.desktopShellAuthorization.blocked.runActive;
       });
+    }
+    case "run_unavailable": {
+      return i18n.t(($) => {
+        return $.desktopShellAuthorization.blocked.runUnavailable;
+      });
+    }
+    case "chat_busy": {
+      return i18n.t(($) => {
+        return $.desktopShellAuthorization.blocked.chatBusy;
+      });
+    }
+    case "computer_changed": {
+      return i18n.t(
+        ($) => {
+          return $.desktopShellAuthorization.blocked.computerChanged;
+        },
+        { computer: data.computerName },
+      );
     }
   }
 }
@@ -63,64 +97,30 @@ function AuthorizationStatus({
           return $.desktopShellAuthorization.unavailable;
         });
   return (
-    <Badge
-      className="max-w-[45%] shrink-0 text-[11px] font-medium text-muted-foreground"
+    <span
+      className={cn(
+        "inline-flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground",
+        data?.status === "approved" && "text-emerald-700 dark:text-emerald-400",
+      )}
       aria-live="polite"
     >
-      {loading ? <Loader2 className="animate-spin" /> : null}
-      {data?.status === "approved" ? <Check /> : null}
-      <span className="min-w-0 break-words">{status}</span>
-    </Badge>
-  );
-}
-
-function AuthorizationMetadata({
-  data,
-}: {
-  data: DesktopShellAuthorization | null;
-}) {
-  const { t } = useTranslation();
-  const deadline =
-    data?.status === "approved"
-      ? data.grantExpiresAt
-      : data?.status === "pending"
-        ? data.requestExpiresAt
-        : null;
-  return (
-    <div className="min-w-0 text-xs leading-5 text-muted-foreground">
-      {deadline && (
-        <p className="flex items-start gap-1.5">
-          <Clock size={12} className="mt-1 shrink-0" aria-hidden />
-          <span>
-            {t(
-              ($) => {
-                return $.desktopShellAuthorization.deadline;
-              },
-              {
-                date: new Date(deadline).toLocaleString(resolvedAppLocale(), {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                }),
-              },
-            )}
-          </span>
-        </p>
-      )}
-      <p>
-        {t(($) => {
-          return $.desktopShellAuthorization.scope;
-        })}
-      </p>
-    </div>
+      {loading ? <Loader2 size={14} className="shrink-0 animate-spin" /> : null}
+      {data?.status === "approved" ? (
+        <Check size={14} className="shrink-0" aria-hidden />
+      ) : null}
+      {status}
+    </span>
   );
 }
 
 function AuthorizationActions({
   signals,
   data,
+  loading,
 }: {
   signals: DesktopShellAuthorizationSignals;
   data: DesktopShellAuthorization | null;
+  loading: boolean;
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
@@ -130,7 +130,8 @@ function AuthorizationActions({
     data?.status === "pending" && data.approvalBlockedReason !== null;
   const failed = action.state === "hasError";
   return (
-    <div className="ml-auto flex min-h-8 flex-wrap items-center justify-end gap-2">
+    <div className="col-span-2 row-start-3 ml-auto flex min-h-8 max-w-full flex-wrap items-center justify-end gap-2 @[640px]:col-span-1 @[640px]:col-start-3 @[640px]:row-start-1">
+      <AuthorizationStatus data={data} loading={loading} />
       {data?.status === "pending" && (
         <>
           <Button
@@ -195,73 +196,82 @@ export function DesktopShellAuthorizationCard({
   const request = useLoadable(signals.request$);
   const data = request.state === "hasData" ? request.data : null;
   const loading = request.state === "loading";
+  const blocker = approvalBlocker(data);
+  const reason =
+    data?.reason ??
+    t(($) => {
+      return $.desktopShellAuthorization.description;
+    });
+  const viewReason = t(($) => {
+    return $.desktopShellAuthorization.viewReason;
+  });
   return (
     <ChatCard
       data-testid="desktop-shell-authorization-card"
       className={cn(
-        "flex w-full flex-col gap-3 p-4",
-        !standalone &&
-          "h-[272px] @[320px]:h-60 @[480px]:h-[212px] @[640px]:h-50",
+        "grid w-full grid-cols-[40px_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-x-3 gap-y-2 p-3 @[640px]:grid-cols-[40px_minmax(0,1fr)_auto] @[640px]:grid-rows-[auto_minmax(0,1fr)] @[640px]:p-4",
+        !standalone && "h-48 @[640px]:h-32",
       )}
     >
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
-          <Terminal size={22} aria-hidden />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[0.9375rem] font-medium leading-5">
-            {t(($) => {
-              return $.desktopShellAuthorization.title;
-            })}
-          </div>
-          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
-            {data?.computerName ??
-              t(($) => {
-                return $.desktopShellAuthorization.scope;
-              })}
-          </div>
-        </div>
-        <AuthorizationStatus data={data} loading={loading} />
+      <div className="col-start-1 row-start-1 flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-gray-50">
+        <Terminal size={22} aria-hidden />
       </div>
-      <div
-        className={cn(
-          "min-h-0 overflow-y-auto",
-          !standalone && "flex-1 @[640px]:pl-13",
-        )}
-      >
-        <p className="break-words text-sm leading-5">
-          {data?.reason ??
-            t(($) => {
-              return $.desktopShellAuthorization.description;
-            })}
-        </p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+      <div className="col-start-2 row-start-1 min-w-0 self-center">
+        <div className="truncate text-[0.9375rem] font-medium leading-5">
           {t(($) => {
-            return $.desktopShellAuthorization.terminalNotice;
+            return $.desktopShellAuthorization.title;
           })}
-        </p>
-        {data?.status === "pending" &&
-          data.approvalBlockedReason !== null &&
-          data.approvalBlockedReason !== "run_unavailable" && (
-            <p
-              className="mt-1 text-xs leading-5 text-muted-foreground"
-              aria-live="polite"
-            >
-              {t(($) => {
-                return $.desktopShellAuthorization.waiting;
-              })}
-            </p>
-          )}
-      </div>
-      <div
-        className={cn(
-          "mt-auto flex flex-wrap items-end justify-between gap-3",
-          !standalone && "@[640px]:pl-13",
+        </div>
+        {data && (
+          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
+            {data.computerName}
+          </div>
         )}
-      >
-        <AuthorizationMetadata data={data} />
-        <AuthorizationActions signals={signals} data={data} />
       </div>
+      <div className="col-span-2 row-start-2 min-h-0 min-w-0 overflow-y-auto @[640px]:col-start-2">
+        {standalone || !data ? (
+          <p className="text-sm leading-5 break-words whitespace-pre-wrap">
+            {reason}
+          </p>
+        ) : (
+          <ChatCardDetails
+            title={t(($) => {
+              return $.desktopShellAuthorization.reasonTitle;
+            })}
+            triggerLabel={viewReason}
+            trigger={
+              <Button
+                variant="quiet"
+                className="h-auto w-full min-w-0 justify-start px-0 py-0 text-left font-normal whitespace-normal text-foreground"
+                aria-label={viewReason}
+                showTooltip
+              >
+                <span
+                  className={cn(
+                    "text-sm leading-5 break-words whitespace-pre-wrap",
+                    blocker
+                      ? "line-clamp-1"
+                      : "line-clamp-3 @[640px]:line-clamp-2",
+                  )}
+                >
+                  {reason}
+                </span>
+              </Button>
+            }
+          >
+            <p className="text-foreground whitespace-pre-wrap">{reason}</p>
+          </ChatCardDetails>
+        )}
+        {blocker && (
+          <p
+            className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-400"
+            aria-live="polite"
+          >
+            {blocker}
+          </p>
+        )}
+      </div>
+      <AuthorizationActions signals={signals} data={data} loading={loading} />
     </ChatCard>
   );
 }
