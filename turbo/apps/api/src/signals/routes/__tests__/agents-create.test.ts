@@ -9,6 +9,7 @@ import {
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { randomUUID } from "node:crypto";
 import { parseAvatarComposerUrl } from "@okouai/core/agent-avatar";
+import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -18,6 +19,7 @@ import {
 } from "./helpers/api-bdd-auth-org";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const authOrgApi = createAuthOrgAgentsBddApi(context);
@@ -65,6 +67,95 @@ const trackCreatedAgent = createFixtureTracker(
 );
 
 describe("POST /api/agents", () => {
+  it("reuses the published instruction bundle when concurrent creation cannot rewrite it", async () => {
+    const fixture = agentsFixture("shared-instruction-bundle");
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const storage = installWorkflowVolumeS3Fixture(context);
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!send) {
+      throw new Error("Expected the object store boundary mock");
+    }
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (
+        command instanceof PutObjectCommand &&
+        command.input.Key?.startsWith("bundles/v1/") &&
+        storage.objects.has(command.input.Key)
+      ) {
+        throw Object.assign(
+          new Error("Reduce your concurrent request rate for the same object."),
+          { name: "ServiceUnavailable", $metadata: { httpStatusCode: 429 } },
+        );
+      }
+      return await send(command);
+    });
+
+    const first = await accept(
+      agentsClient().create({ headers: authHeaders(), body: {} }),
+      [201],
+    );
+    await trackCreatedAgent(
+      Promise.resolve({ ...fixture, agentId: first.body.agentId }),
+    );
+    const created = await Promise.all(
+      [1, 2, 3].map(async (index) => {
+        const result = await accept(
+          agentsClient().create({
+            headers: authHeaders(),
+            body: { displayName: `Concurrent Agent ${index}` },
+          }),
+          [201],
+        );
+        await trackCreatedAgent(
+          Promise.resolve({ ...fixture, agentId: result.body.agentId }),
+        );
+        return result;
+      }),
+    );
+
+    const instructions = setupApp({
+      context,
+      routes: agentInstructionsRoutes,
+    })(agentInstructionsContract);
+    for (const agent of [first, ...created]) {
+      const read = await accept(
+        instructions.get({
+          headers: authHeaders(),
+          params: { id: agent.body.agentId },
+        }),
+        [200],
+      );
+      expect(read.body.content).toBe("");
+    }
+  });
+
+  it("preserves a bundle lookup failure without creating the Agent", async () => {
+    const fixture = agentsFixture("unavailable-instruction-bundle");
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    installWorkflowVolumeS3Fixture(context);
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!send) {
+      throw new Error("Expected the object store boundary mock");
+    }
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof HeadObjectCommand) {
+        throw Object.assign(new Error("Object store unavailable"), {
+          name: "ServiceUnavailable",
+          $metadata: { httpStatusCode: 503 },
+        });
+      }
+      return await send(command);
+    });
+
+    await expect(
+      agentsClient().create({ headers: authHeaders(), body: {} }),
+    ).rejects.toThrow("Unknown response status 500 for POST /api/agents");
+    const listed = await accept(
+      agentsClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listed.body).toStrictEqual([]);
+  });
+
   it.each(["private", "public"] as const)(
     "recovers concurrent %s creation and preserves later edits on replay",
     async (visibility) => {
