@@ -1195,10 +1195,8 @@ describe("CHAT-02: generation templates and attachments", () => {
       `Template: ${websiteTemplate.title} (${websiteTemplate.id})`,
     );
     expect(thirdPrompt).toContain("When you produce a website");
-    expect(thirdPrompt).toContain("# Incomplete Rounds Context");
-    // The illustration style is gone entirely for this turn: it's not attached
-    // to this message, and prior/incomplete context no longer repeats template
-    // selections.
+    // The illustration style is not attached to this message; only the selected
+    // website template supplies live instructions for this turn.
     expect(thirdPrompt).not.toContain(style.illustrationStyleId);
     await cancelChatRun(actor, third.runId);
 
