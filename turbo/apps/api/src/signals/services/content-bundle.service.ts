@@ -5,7 +5,6 @@ import {
   type ContentBundleFile,
 } from "@okouai/core/content-bundle";
 import { env } from "../../lib/env";
-import { PRIVATE_NO_STORE_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
 import { putImmutableS3Object, s3ObjectExists } from "../external/s3";
 
 /** Shared immutable bytes are retained; an unsuccessful publisher must never delete them. */
@@ -26,10 +25,7 @@ export const publishContentBundle$ = command(
           key,
           prepared.archive,
           "application/gzip",
-          {
-            signal,
-            cacheControl: PRIVATE_NO_STORE_CACHE_CONTROL,
-          },
+          signal,
         ),
       );
     }

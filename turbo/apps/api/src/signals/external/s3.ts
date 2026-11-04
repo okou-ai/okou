@@ -1466,7 +1466,6 @@ export function putImmutableS3Object(
         readonly signal?: AbortSignal;
         readonly metadata?: Readonly<Record<string, string>>;
         readonly contentEncoding?: string;
-        readonly cacheControl?: string;
       },
 ): Computed<Promise<void>> {
   const writeOptions = isAbortSignal(options) ? { signal: options } : options;
@@ -1478,7 +1477,7 @@ export function putImmutableS3Object(
       contentType,
       metadata: writeOptions?.metadata,
       contentEncoding: writeOptions?.contentEncoding,
-      cacheControl: writeOptions?.cacheControl ?? IMMUTABLE_CACHE_CONTROL,
+      cacheControl: IMMUTABLE_CACHE_CONTROL,
     },
     writeOptions?.signal,
   );

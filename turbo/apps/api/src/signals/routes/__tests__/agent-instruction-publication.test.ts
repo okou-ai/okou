@@ -211,7 +211,7 @@ describe("Agent database instructions", () => {
       if (request instanceof PutObjectCommand) {
         expect(request.input).toMatchObject({
           IfNoneMatch: "*",
-          CacheControl: "private, no-store",
+          CacheControl: "public, max-age=31536000, immutable",
         });
       }
     }
