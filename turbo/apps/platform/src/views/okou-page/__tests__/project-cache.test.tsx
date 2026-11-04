@@ -3,10 +3,14 @@ import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
-import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadDraftContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
+  mockChatThreadSnapshotResponse,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -106,6 +110,45 @@ test("Project folders load and catch up on a browser without Symbol.dispose", as
   const projects = screen.getByRole("region", { name: "Projects" });
   expect(within(projects).getByText("Launch ready")).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+});
+
+test("An empty cached chat list discovers a newly published snapshot", async () => {
+  const options = installWorkspace();
+  installMetadata();
+  const thread = continuityThread(121, 1, "Planning conversation");
+  let published = false;
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: published ? [thread] : [],
+        latestEventId: published
+          ? "30000000-0000-4000-8000-000000000005"
+          : null,
+        latestSeqId: published ? 5 : null,
+      }),
+    );
+  });
+  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
+    return respond(200, { events: [], hasMore: false });
+  });
+  await setupPage({
+    context,
+    ...options,
+    path: `/agents/${thread.agentId}/chat`,
+    cachedChatThreadEvents: {
+      snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
+      events: [],
+    },
+  });
+  expect(screen.getByText("Launch")).toBeInTheDocument();
+
+  published = true;
+  context.mocks.ably.trigger("threadListChanged");
+
+  await expect(
+    screen.findByText("Planning conversation"),
+  ).resolves.toBeInTheDocument();
 });
 
 test.each(["open", "read", "write"] as const)(

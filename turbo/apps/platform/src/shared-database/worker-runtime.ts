@@ -848,7 +848,11 @@ export class SharedDatabaseWorkerRuntime {
       cursorFromServerSnapshot: false,
       newEvents: [],
     };
-    if (cached.result.snapshot === null || cached.degraded) {
+    if (
+      cached.result.snapshot === null ||
+      metadataEventCursor(cached.result) === null ||
+      cached.degraded
+    ) {
       state = {
         result: { snapshot: await source.snapshot(signal), events: [] },
         replacement: true,
@@ -868,7 +872,7 @@ export class SharedDatabaseWorkerRuntime {
     }
     const snapshot = state.result.snapshot;
     if (!snapshot) {
-      throw new Error(`${source.name} synchronization requires a snapshot`);
+      throw new Error(`${source.dataset} synchronization requires a snapshot`);
     }
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const written = await settle(

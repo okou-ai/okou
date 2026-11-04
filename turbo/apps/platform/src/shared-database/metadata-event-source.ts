@@ -24,7 +24,7 @@ export interface MetadataEventSource<
   TSnapshot extends MetadataSnapshot,
   TEvent extends MetadataEvent,
 > {
-  readonly name: string;
+  readonly dataset: "project-event" | "chat-thread-event";
   readonly rebaseThreshold: number | null;
   readonly createStores: (
     getDb: () => Promise<IDBPDatabase>,
@@ -56,7 +56,7 @@ export interface MetadataEventRemoteState<
 export function createProjectEventSource(createClient: ApiClientFactory) {
   const client = createClient(projectsContract);
   return {
-    name: "Project",
+    dataset: "project-event" as const,
     // Project rename reconciliation consumes the returned event IDs. Do not
     // compact those confirmations out of the result before the page sees them.
     rebaseThreshold: null,
@@ -101,7 +101,7 @@ export function createProjectEventSource(createClient: ApiClientFactory) {
 export function createChatThreadEventSource(createClient: ApiClientFactory) {
   const client = createClient(chatThreadsContract);
   return {
-    name: "ChatThreadEvent",
+    dataset: "chat-thread-event" as const,
     rebaseThreshold: CHAT_THREAD_EVENT_LOG_SNAPSHOT_REBASE_THRESHOLD,
     createStores: createStrictIdbChatThreadEventStores,
     async snapshot(signal: AbortSignal) {
@@ -161,7 +161,7 @@ export async function loadMetadataEventTail<
     if (page.expired) {
       if (state.cursorFromServerSnapshot) {
         throw new Error(
-          `${source.name} cursor expired immediately after a server snapshot`,
+          `${source.dataset} cursor expired immediately after a server snapshot`,
         );
       }
       state = {
@@ -176,7 +176,7 @@ export async function loadMetadataEventTail<
       return cursor === null || event.seqId > cursor;
     });
     if (page.hasMore && events.length === 0) {
-      throw new Error(`${source.name} event cursor did not advance`);
+      throw new Error(`${source.dataset} event cursor did not advance`);
     }
     if (events.length > 0) {
       state = {
