@@ -188,6 +188,7 @@ function MobileShareButtonInner({
       showTooltip
       type="button"
       disabled={transitioning}
+      focusableWhenDisabled
       onClick={() => {
         detach(
           start(pageSignal),

@@ -88,15 +88,13 @@ function ChatResourcesButtonInner({
   const settled = useLastResolved(resources.settled$) ?? null;
   // Only a current request waits for resources. A narrower layout releases the
   // button while the underlying sources keep loading into their caches.
-  const loading =
-    !current ||
-    transitioning ||
-    (requested && settled === null) ||
-    preference.state === "loading";
+  const resourceLoading =
+    (requested && settled === null) || preference.state === "loading";
+  const loading = !current || transitioning || resourceLoading;
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown = settled !== null && requested && (settled || chosen !== null);
-  const pressed = shown || (loading && chosen === true);
+  const pressed = shown || (resourceLoading && chosen === true);
   const wide = useGet(resources.wide$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
@@ -236,11 +234,6 @@ function ChatResourcesTrigger({
                     largeTarget && "size-11",
                     pressed &&
                       "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-                    // A loading button does not answer the pointer either.
-                    loading &&
-                      (pressed
-                        ? "cursor-default hover:bg-primary/10 active:bg-primary/10"
-                        : "cursor-default hover:bg-transparent hover:text-muted-foreground active:bg-transparent"),
                   )}
                   aria-label={label}
                   aria-busy={loading}
@@ -252,17 +245,9 @@ function ChatResourcesTrigger({
             />
           }
         >
-          <Package
-            size={18}
-            className={cn(
-              loading &&
-                "motion-safe:animate-pulse [animation-delay:250ms] motion-reduce:opacity-50",
-            )}
-          />
+          <Package size={18} />
         </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {loading ? loadingLabel : label}
-        </TooltipContent>
+        <TooltipContent side="bottom">{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
