@@ -422,7 +422,8 @@ wait_for_sign_in_email_code_ready() {
 accept_legal_consent() {
   local legal_consent_selector='input[name="legalAccepted"]:not(:checked)'
   if [[ "$(agent_browser_on_page get count "$legal_consent_selector")" -gt 0 ]]; then
-    agent_browser_on_page find role checkbox check
+    agent_browser_on_page find label \
+      "I agree to the Terms of Service and Privacy Policy" check --exact
   fi
 }
 

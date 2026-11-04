@@ -255,9 +255,9 @@ CONSENT_CALL_LOG="$consent_call_log" bash -c '
   BROWSER_PAGE_INDEX=0
   accept_legal_consent
 ' _ "$browser_helper"
-expected_consent_calls=$'tab 0\nget count input[name="legalAccepted"]:not(:checked)\ntab 0\nfind role checkbox check'
+expected_consent_calls=$'tab 0\nget count input[name="legalAccepted"]:not(:checked)\ntab 0\nfind label I agree to the Terms of Service and Privacy Policy check --exact'
 if [[ "$(<"$consent_call_log")" != "$expected_consent_calls" ]]; then
-  echo "browser helper must accept legal consent using the visible checkbox" >&2
+  echo "browser helper must accept legal consent through its label" >&2
   exit 1
 fi
 
