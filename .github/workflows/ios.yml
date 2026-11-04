@@ -190,25 +190,10 @@ jobs:
         run: |
           echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
           echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
-      - name: Restore native build caches
-        id: build-cache
-        uses: ./.github/actions/setup-ios-build-cache
-      - name: Receive locked source repositories
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ios-package-sources-${{ github.sha }}
-          path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
-      - name: Configure locked package sources
-        run: |
-          mkdir -p "$RUNNER_TEMP/okou-ios-ci"
-          python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
-          # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
-          printf '\n' >> "$HOME/.gitconfig"
-          cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
       - name: Capture promotion inputs
         run: |
           mkdir "$IOS_ARCHIVE_DIR"
-          cp "${{ steps.build-cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
       - name: Classify the whole merge group
         id: release-only
@@ -237,6 +222,26 @@ jobs:
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
         run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
+      - name: Restore native build caches
+        id: build-cache
+        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          toolchain-file: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
+      - name: Receive locked source repositories
+        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-package-sources-${{ github.sha }}
+          path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
+      - name: Configure locked package sources
+        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/okou-ios-ci"
+          python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
+          # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
+          printf '\n' >> "$HOME/.gitconfig"
+          cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
       - name: Check Swift formatting and property lists
         run: |
           xcodebuild -version

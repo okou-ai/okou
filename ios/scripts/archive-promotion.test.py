@@ -41,10 +41,23 @@ print('{}')
 """
 
 GH = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, subprocess, sys, urllib.parse
 assert sys.argv[1] == 'api'
 route = sys.argv[2]
 records = json.load(open(os.environ['GITHUB_RECORDS']))
+if '/commits?' in route:
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(route).query)
+    shas = subprocess.check_output(['git', 'rev-list', '--max-count=' + query['per_page'][0],
+        query['sha'][0], '--', query['path'][0]], text=True,
+        cwd=os.environ.get('GITHUB_HISTORY_REPO')).splitlines()
+    print(json.dumps([{'sha': sha} for sha in shas]))
+    sys.exit(0)
+if '/actions/workflows/ios.yml/runs?' in route:
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(route).query)
+    print(json.dumps({'workflow_runs': [r['run'] for r in records.values()
+        if r['run']['head_sha'] == query['head_sha'][0]
+        and r['run'].get('conclusion') == 'success']}))
+    sys.exit(0)
 run_id = route.split('/runs/')[1].split('/')[0]
 record = records[run_id]
 if 'attempts' in record:
@@ -163,6 +176,10 @@ class PromotionTest(unittest.TestCase):
     def record(self):
         self.records[self.env["GITHUB_RUN_ID"]] = {
             "run": {
+                "id": int(self.env["GITHUB_RUN_ID"]),
+                "run_attempt": int(self.env["GITHUB_RUN_ATTEMPT"]),
+                "conclusion": "success",
+                "html_url": f"https://github.com/okou-ai/okou/actions/runs/{self.env['GITHUB_RUN_ID']}",
                 "head_sha": self.git("rev-parse", "HEAD"),
                 "event": "merge_group",
                 "path": ".github/workflows/ios.yml",
@@ -397,6 +414,132 @@ class PromotionTest(unittest.TestCase):
     def test_missing_test_evidence_runs_tests(self):
         self.release()
         self.capture()
+        self.cli("resolve-tests", self.work)
+        self.assertIn("run_tests=true", Path(self.env["GITHUB_OUTPUT"]).read_text())
+
+    def test_release_pr_reuses_actual_main_tests_without_a_toolchain_process(self):
+        self.release()
+        decision = json.loads(self.cli("release-pr-tests", "--base", self.base))
+        self.assertTrue(decision["reuse"])
+        self.assertEqual(decision["commitSha"], self.base)
+        self.assertEqual(
+            decision["runUrl"], self.records["123"]["run"]["html_url"] + "/attempts/1"
+        )
+
+    def test_release_pr_requires_actual_app_and_package_success(self):
+        self.release()
+        self.records["123"]["jobs"][1]["conclusion"] = "failure"
+        self.records["123"]["jobs"][2]["conclusion"] = "cancelled"
+        self.save_records()
+        self.cli("release-pr-tests", "--base", self.base, error="Builder did not pass")
+
+    def test_release_pr_does_not_treat_skipped_tests_as_execution(self):
+        self.release()
+        self.records["123"]["jobs"][0]["steps"][0]["conclusion"] = "skipped"
+        self.save_records()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_missing_main_tests_keeps_native_validation(self):
+        self.release()
+        self.records.clear()
+        self.save_records()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_skipped_native_job_is_not_test_evidence(self):
+        self.release()
+        self.records["123"]["jobs"][0] = {"name": "build-test", "conclusion": "skipped"}
+        self.save_records()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_does_not_reuse_an_unmerged_queue_commit(self):
+        self.file("unrelated.txt", "a different queue entry\n")
+        self.commit()
+        self.env["GITHUB_RUN_ID"] = "124"
+        self.record()
+        del self.records["123"]
+        self.save_records()
+        self.git("checkout", "-q", "--detach", self.base)
+        self.release()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_shallow_release_pr_finds_tests_before_unrelated_main_commits(self):
+        for index in range(65):
+            self.git("commit", "--allow-empty", "-qm", f"unrelated main {index}")
+        base = self.git("rev-parse", "HEAD")
+        self.release()
+        source = self.repo
+        clone = self.root / "shallow-release"
+        subprocess.run(
+            ["git", "clone", "-q", "--depth=8", source.as_uri(), str(clone)], check=True
+        )
+        self.env["GITHUB_HISTORY_REPO"] = str(source)
+        self.repo = clone
+        self.assertEqual(self.git("rev-parse", "--is-shallow-repository"), "true")
+        decision = json.loads(self.cli("release-pr-tests", "--base", base))
+        self.assertTrue(decision["reuse"])
+        self.assertEqual(decision["commitSha"], self.base)
+
+    def test_release_pr_mixed_changes_cannot_reuse_even_unchanged_native_sources(self):
+        self.release()
+        self.file("turbo/source.ts", "export const value = 2;\n")
+        self.commit()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_source_changes_cannot_use_passing_main_tests(self):
+        self.release()
+        self.file("ios/App.swift", "let application = 2\n")
+        self.commit()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_configured_json_allows_only_its_version_to_change(self):
+        config = json.loads((self.repo / "release-please-config.json").read_text())
+        config["packages"]["turbo/apps/cli"]["extra-files"] = [
+            {"type": "json", "path": "manifest.json", "jsonpath": "$.version"}
+        ]
+        self.file("release-please-config.json", json.dumps(config))
+        self.file(
+            "turbo/apps/cli/manifest.json",
+            '{"version":"1.0.0","permissions":["tabs"]}\n',
+        )
+        self.commit()
+        base = self.git("rev-parse", "HEAD")
+        self.env["GITHUB_RUN_ID"] = "124"
+        self.env["MERGE_GROUP_BASE_SHA"] = base
+        self.record()
+        self.capture()
+        self.cli("publish", self.work)
+        self.file(
+            "turbo/apps/cli/manifest.json",
+            '{"version":"1.0.1","permissions":["tabs"]}\n',
+        )
+        self.commit()
+        self.assertEqual(self.cli("release-only", "--base", base), "true")
+        self.assertTrue(
+            json.loads(self.cli("release-pr-tests", "--base", base))["reuse"]
+        )
+        self.capture()
+        self.cli("resolve-tests", self.work)
+        self.assertIn("run_tests=false", Path(self.env["GITHUB_OUTPUT"]).read_text())
+        self.file(
+            "turbo/apps/cli/manifest.json",
+            '{"version":"1.0.1","permissions":["tabs","storage"]}\n',
+        )
+        self.commit()
+        self.assertEqual(self.cli("release-only", "--base", base), "false")
+        self.capture()
+        Path(self.env["GITHUB_OUTPUT"]).write_text("")
         self.cli("resolve-tests", self.work)
         self.assertIn("run_tests=true", Path(self.env["GITHUB_OUTPUT"]).read_text())
 

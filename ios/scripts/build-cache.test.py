@@ -152,6 +152,17 @@ class BuildCacheTests(unittest.TestCase):
             self.assertNotEqual(simulator[key], archive[key])
         self.assertEqual(simulator["toolchain-file"], archive["toolchain-file"])
 
+    def test_previously_captured_job_toolchain_avoids_another_native_probe(self):
+        initial = self.identity()
+        self.env["IOS_CACHE_TOOLCHAIN_FILE"] = initial["toolchain-file"]
+        mock = Path(self.env["PATH"].split(os.pathsep)[0])
+        (mock / "xcodebuild").unlink()
+        (mock / "xcrun").unlink()
+        self.assertEqual(self.identity(), initial)
+        self.env["IOS_CACHE_TOOLCHAIN_FILE"] = str(self.root / "missing.json")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.identity()
+
     def test_release_cache_reuses_version_changes_but_tracks_compiler_inputs(self):
         self.env["IOS_CACHE_TARGET"] = "archive"
         before = self.identity()
