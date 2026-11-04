@@ -186,22 +186,43 @@ pub(crate) async fn phase<T>(
     Ok(value)
 }
 
-async fn negotiate_security<S>(stream: &mut S, subtype: u32) -> Result<(), Error>
+/// Requires the exact outer type, consuming a bounded reason for an empty offer.
+/// Does not write a selection: Apple SRP carries it in its first entry instead.
+pub(crate) async fn require_security_type<S>(stream: &mut S, expected: u8) -> Result<(), Error>
 where
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + Unpin,
 {
     let count = stream.read_u8().await?;
     if count == 0 {
         discard_reason(stream).await?;
         return Err(Error::ServerRejected);
     }
-    let mut types = vec![0; usize::from(count)];
-    stream.read_exact(&mut types).await?;
-    if !types.contains(&VENCRYPT) {
+    let mut types = [0u8; u8::MAX as usize];
+    // Every possible wire count fits this buffer because the count is a u8.
+    let (offered, _) = types.split_at_mut(usize::from(count));
+    stream.read_exact(offered).await?;
+    if !offered.contains(&expected) {
         return Err(Error::UnsupportedSecurity);
     }
-    stream.write_u8(VENCRYPT).await?;
+    Ok(())
+}
+
+/// Selects an offered outer type with a standalone byte and flush.
+pub(crate) async fn select_security_type<S>(stream: &mut S, expected: u8) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    require_security_type(stream, expected).await?;
+    stream.write_u8(expected).await?;
     stream.flush().await?;
+    Ok(())
+}
+
+async fn negotiate_security<S>(stream: &mut S, subtype: u32) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    select_security_type(stream, VENCRYPT).await?;
 
     let mut version = [0; 2];
     stream.read_exact(&mut version).await?;
