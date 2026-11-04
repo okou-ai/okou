@@ -1,8 +1,12 @@
 [package]
 name = "runner-types"
-version = "0.12.2"
+version = "0.12.3"
 edition.workspace = true
 description = "Shared Runner identifiers, API payloads, and validation types"
+
+[features]
+# Synthetic context construction is available only to explicit test consumers.
+test-support = []
 
 [dependencies]
 api-contracts.workspace = true

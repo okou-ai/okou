@@ -15,6 +15,7 @@ use crate::error::RunnerResult;
 use runner_host::host_file;
 use runner_host::lock;
 use runner_host::paths::HomePaths;
+use runner_host::service::cleanup_unit_active_state;
 
 use super::GC_MIN_AGE;
 use super::filesystem::{GcDirEntryReader, GcDirStatus, gc_path_dir_status, read_dir_or_missing};
@@ -148,7 +149,8 @@ enum VersionRetentionReason {
     InvalidServiceSuffix(String),
     ServiceLockHeld,
     ServiceLockProbeError(String),
-    Active,
+    ServiceStateProbeError(String),
+    ActiveLike,
 }
 
 impl VersionRetentionReason {
@@ -178,14 +180,17 @@ impl VersionRetentionReason {
             Self::ServiceLockProbeError(error) => {
                 warn!("version {name}: cannot probe service lock ({error}), skipping");
             }
-            Self::Active if dry_run => {
-                info!("version {name}: active, skipping");
+            Self::ServiceStateProbeError(error) => {
+                warn!("version {name}: cannot check service shutdown state ({error}), skipping");
+            }
+            Self::ActiveLike if dry_run => {
+                info!("version {name}: active-like, skipping");
             }
             Self::ProtectVersion
             | Self::KeepLatest
             | Self::Recent(_)
             | Self::ServiceLockHeld
-            | Self::Active => {}
+            | Self::ActiveLike => {}
         }
     }
 }
@@ -468,13 +473,12 @@ async fn version_retention_reason(
         }
     }
 
-    match service::is_unit_active(&unit).await {
-        Ok(true) => Some(VersionRetentionReason::Active),
-        Ok(false) => None,
-        Err(e) => {
-            warn!("version {name}: cannot check unit status ({e}), assuming inactive");
-            None
-        }
+    match cleanup_unit_active_state(&unit).await {
+        Ok(state) if state.is_active_like() => Some(VersionRetentionReason::ActiveLike),
+        Ok(_) => None,
+        Err(e) => Some(VersionRetentionReason::ServiceStateProbeError(
+            e.to_string(),
+        )),
     }
 }
 
@@ -593,7 +597,8 @@ async fn gc_versions(
 ///   safely delete.
 /// - The corresponding service lifecycle lock is held by another install,
 ///   uninstall, or GC pass.
-/// - The corresponding systemd unit is active.
+/// - The corresponding systemd unit is active-like (including deactivating), or
+///   its shutdown state cannot be established.
 pub(super) async fn gc_versions_with_analysis(
     home: &HomePaths,
     dry_run: bool,
@@ -713,19 +718,17 @@ async fn gc_versions_with_analysis_and_operations(
 
         // Check while holding the service lifecycle lock so install cannot
         // race between the active probe and the remove path.
-        match service::is_unit_active(&unit).await {
-            Ok(true) => {
+        match cleanup_unit_active_state(&unit).await {
+            Ok(state) if state.is_active_like() => {
                 if dry_run {
-                    info!("version {name}: active, skipping");
+                    info!("version {name}: active-like, skipping");
                 }
                 continue;
             }
-            Ok(false) => {}
+            Ok(_) => {}
             Err(e) => {
-                // systemctl may be unavailable on non-systemd hosts. Continue
-                // to the uninstall step; it will refuse deletion if it cannot
-                // prove the service is stopped.
-                warn!("version {name}: cannot check unit status ({e}), assuming inactive");
+                warn!("version {name}: cannot check service shutdown state ({e}), skipping");
+                continue;
             }
         }
 

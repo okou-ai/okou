@@ -1,7 +1,7 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { escapeHtml } from "markdown-it/lib/common/utils.mjs";
+import { escapeUTF8 as escapeHtml } from "entities";
 import { renderEmailLayout } from "../signals/services/email-layout";
-import { markdownRenderer, plainTextFromHtml } from "./email-markdown";
+import { renderEmailMarkdown, plainTextFromHtml } from "./email-markdown";
 import { renderMorningBriefEmail } from "./morning-brief-email-renderer";
 
 export function renderAgentNotificationEmail(
@@ -24,7 +24,7 @@ export function renderAgentNotificationEmail(
       footerLinks: [{ label: "Unsubscribe", url: unsubscribeUrl }],
     });
   };
-  let html = layout(markdownRenderer.render(props.text));
+  let html = layout(renderEmailMarkdown(props.text));
   if (Buffer.byteLength(html, "utf8") > 96 * 1024) {
     html = layout(
       `<pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit">${escapeHtml(props.text)}</pre>`,

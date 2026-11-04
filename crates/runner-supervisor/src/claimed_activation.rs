@@ -180,6 +180,20 @@ impl ClaimedActivationGuard {
             .await
     }
 
+    /// Finish setup-panic recovery before the caller resumes its original panic.
+    ///
+    /// Error reporting and unwinding stay at the catch boundary.
+    pub(crate) async fn recover_setup_panic(self) -> Result<(), ClaimedActivationError> {
+        self.recover(
+            "activation_setup_panicked",
+            "claimed activation setup panicked".to_owned(),
+        )
+        .await?
+        .finish()
+        .await;
+        Ok(())
+    }
+
     /// Settle cancellation before executor ownership without relabeling it a failure.
     pub async fn recover_cancelled(
         self,

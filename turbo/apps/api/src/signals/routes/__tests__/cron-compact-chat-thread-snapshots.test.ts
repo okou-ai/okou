@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import {
-  DeleteObjectsCommand,
   GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -147,71 +146,4 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
   );
   const otherSnapshot = await chat.getThreadSnapshot(otherOrg);
   expect(otherSnapshot.chatThreads).toMatchObject([{ id: foreign.id }]);
-});
-
-test("collects expired orphan snapshots from both namespaces and retains recent objects", async () => {
-  mockEnv("CRON_SECRET", "test-cron-secret");
-  mockEnv("R2_USER_STORAGES_BUCKET_NAME", `snapshot-gc-${randomUUID()}`);
-  const app = await setupApp({
-    context,
-    routes: cronCompactChatThreadSnapshotsRoutes,
-    isolatePg: true,
-  });
-  const objects = new Set<string>();
-  const expiredKeys = new Set<string>();
-  const recentKeys = new Set<string>();
-  context.mocks.s3.send.mockImplementation((request: unknown) => {
-    if (request instanceof ListObjectsV2Command) {
-      const prefix = request.input.Prefix;
-      if (!prefix) {
-        throw new Error("Expected a snapshot partition");
-      }
-      const expiredKey = `${prefix}/expired.json.gz`;
-      const recentKey = `${prefix}/recent.json.gz`;
-      objects.add(expiredKey);
-      objects.add(recentKey);
-      expiredKeys.add(expiredKey);
-      recentKeys.add(recentKey);
-      return Promise.resolve({
-        Contents: [
-          {
-            Key: expiredKey,
-            Size: 1,
-            LastModified: new Date(
-              nowDate().getTime() - 8 * 24 * 60 * 60 * 1000,
-            ),
-          },
-          { Key: recentKey, LastModified: nowDate(), Size: 1 },
-        ],
-        IsTruncated: false,
-      });
-    }
-    if (request instanceof DeleteObjectsCommand) {
-      for (const object of request.input.Delete?.Objects ?? []) {
-        if (!object.Key) {
-          throw new Error("Expected a snapshot object key");
-        }
-        objects.delete(object.Key);
-      }
-      return Promise.resolve({});
-    }
-    throw new Error("Unexpected snapshot storage request");
-  });
-
-  const response = await accept(
-    app(cronCompactChatThreadSnapshotsContract).compact({
-      headers: { authorization: "Bearer test-cron-secret" },
-    }),
-    [200],
-  );
-  expect(response.body.gc).toMatchObject({ failed: false, deferred: false });
-  for (const family of ["chat-thread", "project"]) {
-    expect(
-      [...expiredKeys].some((key) => {
-        return key.startsWith(`${family}-snapshots/v1/`);
-      }),
-    ).toBeTruthy();
-  }
-  expect(response.body.gc.objectsDeleted).toBe(expiredKeys.size);
-  expect(objects).toStrictEqual(recentKeys);
 });

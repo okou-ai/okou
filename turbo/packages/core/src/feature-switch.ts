@@ -464,6 +464,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",

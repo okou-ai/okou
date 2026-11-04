@@ -1,10 +1,12 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
-import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
+import {
+  loadWorkflowAutomationAccountMode$,
+  workflowAutomationConnectorSelectionSql,
+} from "./workflow-automation-account.service";
 import { and, asc, eq, getTableColumns, inArray, ne, sql } from "drizzle-orm";
 import {
   array,
@@ -702,6 +704,11 @@ export const repairGmailAutomationProjections$ = command(
     args: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ) => {
+    const chatAccountAccess = await set(
+      loadWorkflowAutomationAccountMode$,
+      args,
+      signal,
+    );
     const db = set(writeDb$);
     // One conditional UPDATE computes each target from the current
     // selection and default-account rows; no rows are locked up front. An
@@ -710,19 +717,8 @@ export const repairGmailAutomationProjections$ = command(
     await db.execute(sql`
       WITH candidates AS (
         SELECT ${workflowAutomations.id} AS id,
-          CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
-            THEN ${chatThreadConnectorSelections.connectorId} ELSE ${connectors.id} END AS desired_connector_id
+          (${workflowAutomationConnectorSelectionSql({ ...args, chatAccountAccess, workflowId: sql`${workflowAutomations.workflowId}`, connectorSlug: "gmail" })}) AS desired_connector_id
         FROM ${workflowAutomations}
-        LEFT JOIN ${workflowUserAutomationThreads}
-          ON ${workflowUserAutomationThreads.orgId} = ${workflowAutomations.orgId}
-          AND ${workflowUserAutomationThreads.userId} = ${workflowAutomations.ownerUserId}
-          AND ${workflowUserAutomationThreads.workflowId} = ${workflowAutomations.workflowId}
-        LEFT JOIN ${chatThreadConnectorSelections}
-          ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
-          AND ${chatThreadConnectorSelections.connectorSlug} = 'gmail'
-        LEFT JOIN ${connectors}
-          ON ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
-          AND ${connectors.connectorSlug} = 'gmail' AND ${connectors.isDefault}
         WHERE ${workflowAutomations.orgId} = ${args.orgId} AND ${workflowAutomations.ownerUserId} = ${args.userId}
           AND ${workflowAutomations.kind} = 'event' AND ${workflowAutomations.eventType} IN ('gmail-new-message', 'gmail-label-applied')
       )

@@ -1445,7 +1445,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "5cacef0ce10a7514862772fa0b51cc81",
+    bodyHash: "91c7e4000e63fc2b8c901635c53304bd",
   },
   {
     schemaName: "public",
@@ -3133,6 +3133,14 @@ async function main(): Promise<void> {
     console.log(
       execCommand(
         "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
+    console.log("=== Registry resource backfill CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
         { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
       ),
     );

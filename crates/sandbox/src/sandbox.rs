@@ -10,9 +10,9 @@ use tokio::sync::Notify;
 use crate::StorageManifestTiming;
 use crate::error::{Result, SandboxError, SandboxIdleTransition};
 use crate::types::{
-    CopyFileOptions, CopyFileResult, ExecRequest, ExecResult, GuestAgentProcessHandle,
-    GuestProcessHandle, GuestStateRestoreRequest, ProcessExit, StartAgentProcessRequest,
-    StartProcessRequest, StorageManifestRequest, WriteFileEntry,
+    AgentInstructionsRequest, CopyFileOptions, CopyFileResult, ExecRequest, ExecResult,
+    GuestAgentProcessHandle, GuestProcessHandle, GuestStateRestoreRequest, ProcessExit,
+    StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
 };
 
 /// Requested terminal disposition for one completed guest staging file.
@@ -937,6 +937,15 @@ pub trait Sandbox: Send + Sync + Any {
     async fn apply_storage_manifest(
         &self,
         request: &StorageManifestRequest<'_>,
+    ) -> Result<ExecResult>;
+
+    /// Execute a bounded fixed instruction helper as the sandbox user.
+    ///
+    /// Providers retain workload containment, cancellation/cleanup, bounded
+    /// capture and backend-crash classification. No shell fallback is allowed.
+    async fn run_agent_instructions(
+        &self,
+        request: &AgentInstructionsRequest<'_>,
     ) -> Result<ExecResult>;
 
     /// Apply storage with fixed Host phases and optional content-free Guest

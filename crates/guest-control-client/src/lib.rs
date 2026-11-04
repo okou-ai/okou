@@ -106,6 +106,7 @@ use connection::{
     normal_operation_transition_error, normal_request_on_shared_with_timing_frame_builder,
     normal_request_on_shared_with_write_observer_frame_builder,
     request_on_shared_with_composite_operation_and_observer_frame_builder,
+    validate_fixed_helper_response,
 };
 #[cfg(test)]
 use connection::{request_on_shared, write_request_frame_with_builder};

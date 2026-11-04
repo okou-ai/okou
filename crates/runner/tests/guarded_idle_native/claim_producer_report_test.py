@@ -16,7 +16,7 @@ import report
 
 
 class ClaimProducerReportTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, prepare_home=None):
         c7_test.ClaimLossReportTests.setUp(self)
         raw = self.collector["metadata"].pop("native_claim_loss_policy_json")
         self.collector["metadata"]["native_claim_producer_policy_json"] = raw
@@ -35,6 +35,8 @@ class ClaimProducerReportTests(unittest.TestCase):
         (private/"fixture-private").write_bytes(b"fixture private bytes")
         (seed/"guarded-idle-ordinary").write_bytes(b"native ordinary home bytes")
         (seed/"guarded-idle-payload").write_bytes(self.payload)
+        if prepare_home is not None:
+            prepare_home(seed)
         image = self.root/"retained-home.ext4"
         with image.open("wb") as stream:
             stream.truncate(report.NATIVE_HOME_BYTES)

@@ -8,7 +8,7 @@ use guest_control_proto::{
 
 use crate::{
     FrameWriteObserver, GuestControlClient,
-    normal_request_on_shared_with_write_observer_frame_builder,
+    normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
 };
 
 const TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_GUEST_DNS_READINESS_RESULT];
@@ -69,20 +69,11 @@ impl GuestControlClient {
         )
         .await?;
 
-        if response.msg_type == MSG_ERROR {
-            let message = guest_control_proto::decode_error(&response.payload)
-                .map_err(protocol_invalid_data)?;
-            return Err(io::Error::other(message.to_owned()));
-        }
-        if response.msg_type != MSG_GUEST_DNS_READINESS_RESULT {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "unexpected guest DNS readiness response type: 0x{:02X}",
-                    response.msg_type
-                ),
-            ));
-        }
+        validate_fixed_helper_response(
+            &response,
+            MSG_GUEST_DNS_READINESS_RESULT,
+            "guest DNS readiness",
+        )?;
 
         let decoded =
             decode_guest_dns_readiness_result(&response.payload).map_err(protocol_invalid_data)?;

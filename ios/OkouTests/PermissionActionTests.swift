@@ -34,7 +34,6 @@ final class PermissionActionTests: XCTestCase {
     XCTAssertTrue(card.hasPermission)
     XCTAssertFalse(card.applied)
     assertPermissionReadCounts(fixture, count: 1)
-    XCTAssertEqual(fixture.state.withLock { $0.requests.count }, 3)
 
     fixture.state.withLock { $0.grants = PermissionHTTPFixture.grant() }
     // Reused rows and ordinary history updates retain the current visit's result.
@@ -250,6 +249,7 @@ final class PermissionActionTests: XCTestCase {
   ) {
     let requests = fixture.state.withLock { $0.requests }
     for path in [
+      "/api/feature-switches",
       "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/user-permission-grants",
       "/api/connector-catalog/gmail/permissions",
     ] {

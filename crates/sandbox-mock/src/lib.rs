@@ -32,10 +32,10 @@ mod support;
 
 pub use backing_process::{MockBackingProcess, MockBackingProcessCompletion};
 pub use call_records::{
-    CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall, GuestStateRestoreCall,
-    GuestStateRestoreTimezoneCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
-    RemoteExecCall, StagedFileDispositionCall, StartAgentProcessCall, StartProcessCall,
-    StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
+    AgentInstructionsCall, CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall,
+    GuestStateRestoreCall, GuestStateRestoreTimezoneCall, ProcessCancelCall, ProcessControlCall,
+    ReadFileCall, RemoteExecCall, StagedFileDispositionCall, StartAgentProcessCall,
+    StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
 };
 pub use control::MockSandboxControl;
 pub use factory_runtime::{MockRuntimeProvider, MockSandboxFactory, MockSandboxRuntime};

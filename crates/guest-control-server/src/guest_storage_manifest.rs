@@ -1,3 +1,4 @@
+use guest_contracts::agent_instructions::InstructionOperation;
 use guest_contracts::storage_resources::StorageResourceUsage;
 use serde::{Serialize, Serializer};
 use std::io;
@@ -17,6 +18,7 @@ use crate::contained_command::{
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_input::FixedInputWriter;
+use crate::helper_output::truncate_utf8;
 use crate::log::log;
 use crate::process::{extract_exit_code, kill_and_reap_child};
 use crate::process_containment::{
@@ -101,6 +103,7 @@ impl GuestStorageManifestProgram {
         seq: u32,
         mode: ProcessContainmentMode,
         run_id: &str,
+        collect_resources: bool,
     ) -> Result<ExecProcessContainment, ProcessContainmentError> {
         if let Self::TestResources { resource_path, .. }
         | Self::TestTimeout {
@@ -115,11 +118,18 @@ impl GuestStorageManifestProgram {
             ));
         }
         ExecProcessContainment::create(seq, mode, guest_control_proto::ExecProcessRole::Workload)
-            .map(|containment| containment.with_storage_resources(run_id, seq))
+            .map(|containment| {
+                if collect_resources {
+                    containment.with_storage_resources(run_id, seq)
+                } else {
+                    containment
+                }
+            })
     }
 }
 
 struct GuestStorageManifestRequest {
+    instruction_operation: Option<InstructionOperation>,
     seq: u32,
     timeout_ms: u32,
     run_id: String,
@@ -179,6 +189,7 @@ impl GuestStorageManifestWorker {
         let ownership_started = Instant::now();
         self.inner.try_submit_with(move || {
             let mut request = GuestStorageManifestRequest {
+                instruction_operation: submission.instruction_operation,
                 seq: submission.seq,
                 timeout_ms: submission.timeout_ms,
                 run_id: submission.run_id.to_owned(),
@@ -201,6 +212,7 @@ impl GuestStorageManifestWorker {
 }
 
 pub(crate) struct GuestStorageManifestSubmission<'a> {
+    pub(crate) instruction_operation: Option<InstructionOperation>,
     pub(crate) seq: u32,
     pub(crate) timeout_ms: u32,
     pub(crate) run_id: &'a str,
@@ -242,6 +254,7 @@ fn handle_request(
 ) -> io::Result<()> {
     let worker_wait_us = microseconds(request.enqueue_ready.elapsed());
     let GuestStorageManifestRequest {
+        instruction_operation,
         seq,
         timeout_ms,
         run_id,
@@ -254,6 +267,7 @@ fn handle_request(
     } = request;
     let mut resources = None;
     let output = run_manifest(RunManifestInput {
+        instruction_operation,
         seq,
         program,
         timeout_ms,
@@ -268,31 +282,44 @@ fn handle_request(
     let response_prepare_started = Instant::now();
     let stdout = captured_output(&output.stdout);
     let stderr = captured_output(&output.stderr);
-    let resource_summary = serde_json::to_vec(&TerminalEvidence {
-        resources: resources.as_ref(),
-        storage_resource_available: resources.is_some(),
-        storage_control_timing: ResponseTiming {
-            request_ownership_us,
-            worker_wait_us,
-            response_prepare_us: PreparationElapsed(response_prepare_started),
-        },
-    })
-    .ok()
-    .filter(|value| value.len() <= guest_control_proto::GUEST_STORAGE_RESOURCE_SUMMARY_LIMIT_BYTES)
-    .unwrap_or_default();
+    let resource_summary = if instruction_operation.is_none() {
+        serde_json::to_vec(&TerminalEvidence {
+            resources: resources.as_ref(),
+            storage_resource_available: resources.is_some(),
+            storage_control_timing: ResponseTiming {
+                request_ownership_us,
+                worker_wait_us,
+                response_prepare_us: PreparationElapsed(response_prepare_started),
+            },
+        })
+        .ok()
+        .filter(|value| {
+            value.len() <= guest_control_proto::GUEST_STORAGE_RESOURCE_SUMMARY_LIMIT_BYTES
+        })
+        .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let mut frame = Vec::new();
-    guest_control_proto::encode_guest_storage_manifest_result_frame_into(
-        &mut frame,
-        seq,
-        guest_control_proto::DecodedExecResult {
-            termination: output.termination,
-            duration_ms: output.duration_ms,
-            stdout,
-            stderr,
-            diagnostic: &output.diagnostic,
-        },
-        &resource_summary,
-    )
+    let result = guest_control_proto::DecodedExecResult {
+        termination: output.termination,
+        duration_ms: output.duration_ms,
+        stdout,
+        stderr,
+        diagnostic: &output.diagnostic,
+    };
+    if instruction_operation.is_some() {
+        guest_control_proto::encode_guest_agent_instructions_result_frame_into(
+            &mut frame, seq, result,
+        )
+    } else {
+        guest_control_proto::encode_guest_storage_manifest_result_frame_into(
+            &mut frame,
+            seq,
+            result,
+            &resource_summary,
+        )
+    }
     .map_err(to_io_error)?;
 
     writer
@@ -336,6 +363,7 @@ fn microseconds(duration: Duration) -> Option<u64> {
 }
 
 struct RunManifestInput<'a> {
+    instruction_operation: Option<InstructionOperation>,
     resources: &'a mut Option<StorageResourceUsage>,
     seq: u32,
     program: &'a GuestStorageManifestProgram,
@@ -350,6 +378,7 @@ struct RunManifestInput<'a> {
 
 fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     let RunManifestInput {
+        instruction_operation,
         seq,
         program,
         timeout_ms,
@@ -372,26 +401,36 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             );
         }
     };
-    let process_containment =
-        match program.create_containment(seq, process_containment_mode, run_id) {
-            Ok(process_containment) => process_containment,
-            Err(error) => {
-                return failed_output(
-                    ExecTermination::StartFailed,
-                    started,
-                    format!("Failed to initialize storage helper process containment: {error}"),
-                );
-            }
-        };
+    let process_containment = match program.create_containment(
+        seq,
+        process_containment_mode,
+        run_id,
+        instruction_operation.is_none(),
+    ) {
+        Ok(process_containment) => process_containment,
+        Err(error) => {
+            return failed_output(
+                ExecTermination::StartFailed,
+                started,
+                format!("Failed to initialize storage helper process containment: {error}"),
+            );
+        }
+    };
     let mut command = Command::new(program.path());
+    let argument = match instruction_operation {
+        Some(operation) => operation.helper_argument(),
+        None if manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC) => {
+            "--storage-files-stdin"
+        }
+        None => "--manifest-stdin",
+    };
+    let output_limit = if instruction_operation.is_some() {
+        guest_control_proto::GUEST_AGENT_INSTRUCTIONS_OUTPUT_LIMIT_BYTES
+    } else {
+        GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES
+    };
     command
-        .arg(
-            if manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC) {
-                "--storage-files-stdin"
-            } else {
-                "--manifest-stdin"
-            },
-        )
+        .arg(argument)
         .env(guest_contracts::env::RUN_ID_ENV, run_id)
         .env(
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
@@ -447,7 +486,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     let (drain_done_tx, drain_done_rx) = mpsc::channel();
     let stdout_drain = match BoundedDrainHandle::spawn(
         stdout,
-        GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES,
+        output_limit,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
         THREAD_STDOUT,
@@ -471,7 +510,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     };
     let stderr_drain = match BoundedDrainHandle::spawn(
         stderr,
-        GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES,
+        output_limit,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
         THREAD_STDERR,
@@ -641,13 +680,4 @@ fn captured_output(result: &BoundedDrainResult) -> ExecCapturedOutput<'_> {
 
 fn elapsed_ms(started: Instant) -> u32 {
     u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX)
-}
-
-fn truncate_utf8(mut value: String, limit: usize) -> String {
-    if value.len() <= limit {
-        return value;
-    }
-    let end = value.floor_char_boundary(limit);
-    value.truncate(end);
-    value
 }

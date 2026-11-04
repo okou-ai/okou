@@ -18,7 +18,10 @@ import {
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-runtime.service";
-import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import {
+  loadWorkflowAutomationAccountMode$,
+  workflowAutomationConnectorSelectionSql,
+} from "./workflow-automation-account.service";
 import { createConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 
 const googleMeetRuntimeAuthSelection$ = createConnectorRuntimeAuthSelection({
@@ -1317,8 +1320,13 @@ const publishGoogleMeetAutomationProjection$ = command(
     const selectionSql = workflowAutomationConnectorSelectionSql({
       orgId: args.orgId,
       userId: args.userId,
-      workflowId: automation.workflowId,
+      workflowId: sql`${automation.workflowId}`,
       connectorSlug: "google-meet",
+      chatAccountAccess: await set(
+        loadWorkflowAutomationAccountMode$,
+        args,
+        signal,
+      ),
     });
     const [selected] = parseRawRows(
       object({ connectorId: string().nullable() }),

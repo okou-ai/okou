@@ -8,6 +8,8 @@ import type {
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
+import type { PendingChatConnectorAccess } from "../okou-page/chat-connector-access.ts";
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserModelPreferenceResponse } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -100,6 +102,7 @@ interface SendNewThreadMessageRequest {
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
+  initialConnectorAccess?: PendingChatConnectorAccess;
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
 
@@ -391,6 +394,7 @@ async function createChatThread(
     readonly catalog: ModelCatalog;
     readonly codexExecution: boolean;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
+    readonly initialConnectorAccess?: PendingChatConnectorAccess;
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
   signal: AbortSignal,
@@ -439,6 +443,36 @@ async function createChatThread(
     { expectedErrors: { 400: ["CONNECTOR_ACCOUNT_UNAVAILABLE"] } },
   );
   signal.throwIfAborted();
+  // The Chat must exist before its scoped preferences can be saved, and all
+  // preferences must be accepted before its first event starts a Run.
+  if (args.initialConnectorAccess) {
+    const accessClient = args.createClient(chatConnectorAccessContract);
+    for (const override of args.initialConnectorAccess.overrides) {
+      await accept(
+        accessClient.setThreadOverride({
+          params: {
+            threadId: args.clientThreadId,
+            connectionId: override.connectionId,
+          },
+          body: { target: override.target, enabled: override.enabled },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+    }
+    for (const selection of args.initialConnectorAccess.selections) {
+      await accept(
+        accessClient.setThreadCurrent({
+          params: { threadId: args.clientThreadId },
+          body: selection,
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+    }
+  }
 }
 
 const startNewChatThreadCreate$ = command(
@@ -659,6 +693,7 @@ const reserveNewThreadSubmissionIdentity$ = command(
             computerUseHostId: request.computerUseHostId,
             cloudBrowserEnabled: request.cloudBrowserEnabled,
             connectorSelections: request.connectorSelections,
+            initialConnectorAccess: request.initialConnectorAccess,
             initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
           }),
         );
@@ -722,6 +757,7 @@ function newThreadRecordOptions(args: {
     catalog: resolved.catalog,
     codexExecution,
     connectorSelections: request.connectorSelections,
+    initialConnectorAccess: request.initialConnectorAccess,
     initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
   };
 }
@@ -788,7 +824,9 @@ const sendNewThreadMessage$ = command(
       codexExecution: features[FeatureSwitchKey.CodexExecution],
     });
     const createResult =
-      request.connectorSelections?.length || customDirection
+      request.connectorSelections?.length ||
+      request.initialConnectorAccess ||
+      customDirection
         ? createNewThreadRecord(creation, signal)
         : null;
     // An explicit account choice must be accepted before publishing an

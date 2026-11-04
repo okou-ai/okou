@@ -417,3 +417,15 @@ export function createDeferredPromise<T>(
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Shared timing helpers
+// ---------------------------------------------------------------------------
+
+export async function waitForMailLayout(signal: AbortSignal): Promise<void> {
+  // View Transitions pause animation frames while React and Floating UI commit.
+  await delay(0, { signal });
+  signal.throwIfAborted();
+  await delay(0, { signal });
+  signal.throwIfAborted();
+}

@@ -46,6 +46,7 @@ import { hash$, pathname$, searchParams$ } from "../../signals/route.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
+import type { ChatHeaderActionsState } from "./chat-header-actions.ts";
 
 export function ThreadMailLink({
   thread,
@@ -91,32 +92,32 @@ export function ThreadMailLink({
 
 export function ThreadMailButton({
   thread,
+  header,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly header: ChatHeaderActionsState;
 }) {
   const exists = useGet(thread.threadExists$);
-  return exists ? <ThreadMailButtonInner thread={thread} /> : null;
+  return exists ? (
+    <ThreadMailButtonInner thread={thread} header={header} />
+  ) : null;
 }
 
 function ThreadMailButtonInner({
   thread,
+  header,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly header: ChatHeaderActionsState;
 }) {
   const { t } = useTranslation();
-  const mails = useLastLoadable(thread.mail.mails$);
   const open = useGet(thread.mail.open$);
   const openList = useSet(openThreadMailList$);
   const close = useSet(thread.mail.close$);
   const target = useGet(thread.sidebar.target$);
   const pending = useGet(thread.mail.pending$);
   // Keep an already-open empty list usable after its last draft is deleted.
-  if (
-    !open &&
-    pending === null &&
-    mails.state === "hasData" &&
-    mails.data.length === 0
-  ) {
+  if (!open && pending === null && !header.mail) {
     return null;
   }
   return (
@@ -124,6 +125,10 @@ function ThreadMailButtonInner({
       <Popover
         open={open}
         onOpenChange={(next, details) => {
+          if (next && header.pending) {
+            details.cancel();
+            return;
+          }
           if (!next && pending !== null) {
             details.cancel();
             return;
@@ -140,6 +145,8 @@ function ThreadMailButtonInner({
             <Button
               showTooltip
               type="button"
+              aria-disabled={(header.pending && !open) || undefined}
+              aria-busy={header.pending}
               variant="quiet"
               size="icon-sm"
               iconSize="md"

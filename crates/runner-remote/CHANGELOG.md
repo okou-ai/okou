@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.31.6](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.5...runner-remote-v0.31.6) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+
+## [0.31.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.4...runner-remote-v0.31.5) (2026-11-03)
+
 ## [0.31.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.3...runner-remote-v0.31.4) (2026-11-03)
 
 ## [0.31.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.2...runner-remote-v0.31.3) (2026-11-03)

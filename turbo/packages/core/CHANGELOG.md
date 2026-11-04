@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.815.0](https://github.com/okou-ai/okou/compare/core-v8.814.0...core-v8.815.0) (2026-11-04)
+
+
+### Features
+
+* **core:** enable projects for staff ([#45012](https://github.com/okou-ai/okou/issues/45012)) ([1c4dff2](https://github.com/okou-ai/okou/commit/1c4dff2cbb485abfce7e587bf91e411b79a7336a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.0
+
+## [8.814.0](https://github.com/okou-ai/okou/compare/core-v8.813.1...core-v8.814.0) (2026-11-03)
+
+
+### Features
+
+* add friend referrals with expiring credit rewards ([#44961](https://github.com/okou-ai/okou/issues/44961)) ([beaff0e](https://github.com/okou-ai/okou/commit/beaff0e0ddf72f5d2fcd835314f14d6661e721af))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.39.0
+
 ## [8.813.1](https://github.com/okou-ai/okou/compare/core-v8.813.0...core-v8.813.1) (2026-11-03)
 
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.24.0](https://github.com/okou-ai/okou/compare/ios-v0.23.5...ios-v0.24.0) (2026-11-04)
+
+
+### Features
+
+* **ios:** add native batch permission approvals ([#45039](https://github.com/okou-ai/okou/issues/45039)) ([74b6c4d](https://github.com/okou-ai/okou/commit/74b6c4dde9d1851dc819dacc7157a2457e380750))
+* **ios:** adopt chat connector account access ([#45032](https://github.com/okou-ai/okou/issues/45032)) ([046f3c4](https://github.com/okou-ai/okou/commit/046f3c4a2d530844dc7a06da9179d30ebbd3310a))
+
+
+### Bug Fixes
+
+* **ios:** keep connector loading in the services list ([#45034](https://github.com/okou-ai/okou/issues/45034)) ([0243414](https://github.com/okou-ai/okou/commit/02434140b4095d3feb434265fc285cd50d1da0fc))
+
+## [0.23.5](https://github.com/okou-ai/okou/compare/ios-v0.23.4...ios-v0.23.5) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** suspend sidebar gestures while the account menu is open ([#44987](https://github.com/okou-ai/okou/issues/44987)) ([086ce99](https://github.com/okou-ai/okou/commit/086ce99e20d4057c356bc869f31125eb954c307f))
+
+
+### CI
+
+* **ios:** skip simulator job when release test evidence matches ([#44998](https://github.com/okou-ai/okou/issues/44998)) ([fefb76e](https://github.com/okou-ai/okou/commit/fefb76e40cdcf255ecc2aa057edbb7ad8f67514b))
+
 ## [0.23.4](https://github.com/okou-ai/okou/compare/ios-v0.23.3...ios-v0.23.4) (2026-11-03)
 
 

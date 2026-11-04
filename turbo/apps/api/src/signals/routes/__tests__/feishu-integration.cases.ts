@@ -6398,8 +6398,8 @@ export function registerFeishuIntegrationTests(
             [400],
           );
         });
-        expect(genericCreate.body.error.message).toBe(
-          "Connector account is unavailable for thread selection",
+        expect(genericCreate.body.error.code).toBe(
+          "CONNECTOR_ACCOUNT_UNAVAILABLE",
         );
         expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
           `chatThreadDetailChanged:${created.chatThreadId}`,

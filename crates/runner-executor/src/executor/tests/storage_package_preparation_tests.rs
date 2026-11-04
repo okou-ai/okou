@@ -85,9 +85,10 @@ async fn cached_packages_install_on_fresh_and_reused_sandboxes() {
     );
     assert!(
         overrides
-            .exec_calls()
+            .agent_instructions_calls()
             .iter()
-            .any(|call| call.cmd.ends_with(" --instructions-stdin"))
+            .any(|call| call.operation
+                == guest_contracts::agent_instructions::InstructionOperation::Apply)
     );
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
     assert!(

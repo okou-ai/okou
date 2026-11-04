@@ -1,4 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   createDeferredPromise,
   detach,
@@ -6,12 +7,15 @@ import {
   onRef,
   Reason,
   resetSignal,
+  setLoop,
   type DeferredPromise,
 } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { logger } from "../log.ts";
 import type { BrowserConnection, BrowserSignals } from "./browser.ts";
 import { CdpFault } from "./cdp/errors.ts";
+import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus } from "./focus.ts";
@@ -25,6 +29,12 @@ import { observeTabStrip } from "./tab-strip.ts";
 import { createBrowserController } from "./viewer/controller.ts";
 import { diagnostic } from "./viewer/diagnostic.ts";
 import { createViewerSignals } from "./viewer/model.ts";
+import {
+  createViewerRecovery,
+  sameRecoveryBinding,
+  type RecoveryTarget,
+  type RecoveryView,
+} from "./recovery.ts";
 import type { TabSpace } from "./viewer/tab-layout.ts";
 import type {
   NavigationReceipt,
@@ -56,6 +66,12 @@ interface NativeLease {
   readonly identity: BrowserIdentity;
   readonly controller: Controller;
   readonly resetRetirement$: ReturnType<typeof resetSignal>;
+}
+interface RecoveryAttempt {
+  readonly request: Promise<BrowserConnection | null>;
+  readonly generation: number;
+  readonly nodes: BrowserNodes;
+  readonly completion: DeferredPromise<void>;
 }
 type ConnectionObservation = Command<
   Promise<void>,
@@ -140,6 +156,22 @@ function createRuntimeState(
 ) {
   const installed$ = state<NativeLease | null>(null);
   const retiring$ = state<ReadonlySet<NativeLease>>(new Set());
+  const recoveryNotification$ = state<DeferredPromise<void> | null>(null);
+  const recoveryChanged$ = command(({ get }) => {
+    const notification = get(recoveryNotification$);
+    if (notification && !notification.settled()) {
+      notification.resolve();
+    }
+  });
+  const resetAutomatic$ = resetSignal();
+  const recoveryTarget$ = state<RecoveryTarget | null>(null);
+  // Bootstrap's own selections must not renew a spent recovery episode.
+  const recoveryIntent$ = state<object>({});
+  const cancelAutomatic$ = command(({ set }) => {
+    set(resetAutomatic$, AbortSignal.abort(cancelled()));
+    set(recoveryTarget$, null);
+    set(recoveryIntent$, {});
+  });
   const remoteNavigation$ = computed((get) => {
     const lease = get(installed$);
     return lease ? get(lease.controller.navigation$) : null;
@@ -161,6 +193,7 @@ function createRuntimeState(
     remoteNavigationScope$,
     creationReadySource$,
     connectedSource$,
+    recoveryChanged$,
   );
   const confirmedRequest$ = state<
     Promise<BrowserConnection | null> | undefined
@@ -168,6 +201,8 @@ function createRuntimeState(
   const liveConnection$ = state<BrowserConnection | null>(null);
   const generation$ = state(0);
   const observer$ = state<object | null>(null);
+  const recovery$ = state<RecoveryAttempt | null>(null);
+  const resetRecovery$ = resetSignal();
   const inViewport$ = state(true);
   const documentHidden$ = state(document.hidden);
   const resetNativeOwner$ = resetSignal();
@@ -179,6 +214,7 @@ function createRuntimeState(
     if (notification && !notification.settled()) {
       notification.resolve();
     }
+    set(recoveryChanged$);
   });
   // Pending parent authority is revoked synchronously, before React ref commit.
   const authority$ = computed((get) => {
@@ -200,6 +236,14 @@ function createRuntimeState(
     liveConnection$,
     generation$,
     observer$,
+    recovery$,
+    resetRecovery$,
+    recoveryNotification$,
+    recoveryChanged$,
+    resetAutomatic$,
+    recoveryTarget$,
+    recoveryIntent$,
+    cancelAutomatic$,
     installed$,
     retiring$,
     inViewport$,
@@ -345,8 +389,15 @@ function createDOMGraph(
     focus.release$,
     onPageInput$,
   );
-  const controllerGraph$ = computed((get) => {
+  const controllerGraph$ = computed((get): NativeLease | null => {
     const identity = get(identity$);
+    const installed = get(installed$);
+    if (installed && sameIdentity(installed.identity, identity)) {
+      return installed;
+    }
+    // An ended lease is not a reusable controller, even if its connection and
+    // DOM identity are unchanged. The current native owner is canonical.
+    const restoration = get(context.recoveryTarget$);
     return identity
       ? {
           identity,
@@ -355,8 +406,16 @@ function createDOMGraph(
             model,
             identity.connection,
             identity.nodes.canvas.node,
-            authority$,
-            native,
+            {
+              authority$,
+              nativeHost: native,
+              selectionChanged$: context.cancelAutomatic$,
+              preferredTargetId:
+                restoration &&
+                sameRecoveryBinding(restoration.binding, identity.connection)
+                  ? restoration.targetId
+                  : null,
+            },
           ),
         }
       : null;
@@ -396,14 +455,7 @@ type RuntimeGraph = ReturnType<typeof createDOMGraph>;
 
 /** Native event boundaries pass their original owner explicitly to commands. */
 function createNativeObservations(context: RuntimeState, graph: RuntimeGraph) {
-  const {
-    model,
-    installed$,
-    retiring$,
-    documentHidden$,
-    inViewport$,
-    paused$,
-  } = context;
+  const { model, installed$, retiring$ } = context;
   const { native, focus } = graph;
   const finishRetirement$ = command(
     async ({ get, set }, lease: NativeLease, signal: AbortSignal) => {
@@ -452,40 +504,12 @@ function createNativeObservations(context: RuntimeState, graph: RuntimeGraph) {
       }
     },
   );
-  const visibility$ = command(
-    async (
-      { get, set },
-      lease: NativeLease,
-      hidden: boolean,
-      signal: AbortSignal,
-    ) => {
-      if (get(installed$) !== lease) {
-        throw cancelled();
-      }
-      set(documentHidden$, hidden);
-      await set(lease.controller.pause$, get(paused$), signal);
-    },
-  );
-  const intersection$ = command(
-    async (
-      { get, set },
-      lease: NativeLease,
-      visible: boolean,
-      signal: AbortSignal,
-    ) => {
-      if (get(installed$) !== lease) {
-        throw cancelled();
-      }
-      set(inViewport$, visible);
-      await set(lease.controller.pause$, get(paused$), signal);
-    },
-  );
-  return { releaseNative$, measure$, resizeTabs$, visibility$, intersection$ };
+  return { releaseNative$, measure$, resizeTabs$ };
 }
 
 /** Native startup keeps its DOM owner even if a request observer is replaced. */
 function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
-  const { model, installed$, inViewport$, documentHidden$, paused$ } = context;
+  const { model, installed$, paused$ } = context;
   const { retireLease$, native, focus } = graph;
   const observations = createNativeObservations(context, graph);
   return command(
@@ -511,8 +535,6 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
         (async () => {
           set(model.transition$, { type: "reset" });
           set(model.configure$, lease.identity.connection.windowId !== null);
-          set(inViewport$, true);
-          set(documentHidden$, document.hidden);
           set(
             native.bind$,
             nodes.surface.node,
@@ -521,36 +543,6 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
             owner,
           );
           set(focus.listen$, owner);
-          document.addEventListener(
-            "visibilitychange",
-            () => {
-              detach(
-                set(observations.visibility$, lease, document.hidden, owner),
-                Reason.DomCallback,
-                "browser visibility",
-              );
-            },
-            { signal: owner },
-          );
-          const viewport = new IntersectionObserver((entries) => {
-            const entry = entries.at(-1);
-            if (entry) {
-              detach(
-                set(
-                  observations.intersection$,
-                  lease,
-                  entry.isIntersecting,
-                  owner,
-                ),
-                Reason.DomCallback,
-                "browser viewport",
-              );
-            }
-          });
-          viewport.observe(nodes.canvas.node);
-          cleanups.push(() => {
-            viewport.disconnect();
-          });
           observeDisplay(
             nodes.canvas.node,
             (size) => {
@@ -587,11 +579,25 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
       ]);
       owner.throwIfAborted();
       if (setup.status === "rejected") {
+        if (!isAbortError(setup.reason)) {
+          set(model.transition$, {
+            type: "failed",
+            error: diagnostic(setup.reason),
+          });
+        }
         set(retireLease$, lease);
         throw setup.reason;
       }
-      await set(lease.controller.start$, owner);
+      const [started] = await Promise.allSettled([
+        set(lease.controller.start$, owner),
+      ]);
       owner.throwIfAborted();
+      if (started.status === "rejected") {
+        // The descriptor observer may already be suspended or replaced. Native
+        // failure must still retire this lease through its own mount owner.
+        set(retireLease$, lease);
+        throw started.reason;
+      }
     },
   );
 }
@@ -651,7 +657,6 @@ function createNativeLifecycle(context: RuntimeState, graph: RuntimeGraph) {
         interrupted.resolve();
       }
       if (mounted.status === "rejected") {
-        set(retireLease$, lease);
         await set(lease.controller.waitForClosed$, signal);
         throw mounted.reason;
       }
@@ -746,6 +751,12 @@ function createConnectionPublication(
         await set(lifecycle.install$, signal);
       }
       signal.throwIfAborted();
+      const lease = get(installed$);
+      if (!lease || !sameIdentity(lease.identity, get(identity$))) {
+        throw cancelled();
+      }
+      await set(lease.controller.waitForReady$, signal);
+      signal.throwIfAborted();
     },
   );
 }
@@ -755,6 +766,7 @@ function createConnectionObservers(
   context: RuntimeState,
   graph: RuntimeGraph,
   lifecycle: NativeLifecycle,
+  watchRecovery$: Command<Promise<void>, [AbortSignal]>,
 ) {
   const {
     connection$,
@@ -822,7 +834,183 @@ function createConnectionObservers(
       }
     },
   );
-  return { root$: createRootObservation(context, graph, observeConnection$) };
+  const attempt$ = createConnectionAttempt(context, graph, observeConnection$);
+  return {
+    root$: createRootObservation(context, graph, attempt$, watchRecovery$),
+  };
+}
+
+/** A receipt observes the root's work; Reconnect never becomes a bootstrap owner. */
+function createConnectionAttempt(
+  context: RuntimeState,
+  graph: RuntimeGraph,
+  observe$: ConnectionObservation,
+): ConnectionObservation {
+  return command(
+    async (
+      { get, set },
+      request: Promise<BrowserConnection | null>,
+      nodes: BrowserNodes | null,
+      signal: AbortSignal,
+    ) => {
+      const recovery = get(context.recovery$);
+      const generation = get(context.generation$);
+      const expired = createDeferredPromise<{
+        readonly kind: "expired";
+        readonly error: CdpFault;
+      }>({ rejection: "owner" }, signal);
+      const deadline = monotonicNow() + 60_000;
+      using _deadline = {
+        [Symbol.dispose]() {
+          if (!expired.settled()) {
+            expired.reject(cancelled());
+          }
+        },
+      };
+      setLoop(
+        () => {
+          if (expired.settled()) {
+            return true;
+          }
+          if (monotonicNow() >= deadline) {
+            expired.resolve({
+              kind: "expired",
+              error: new CdpFault(
+                "connection",
+                "The browser did not become ready in time. Reconnect the browser.",
+              ),
+            });
+            return true;
+          }
+          return false;
+        },
+        1000,
+        signal,
+        { testIntervalMs: 10 },
+      );
+      const outcome = await Promise.race([
+        (async () => {
+          const [result] = await Promise.allSettled([
+            set(observe$, request, nodes, signal),
+          ]);
+          return { kind: "observed", result } as const;
+        })(),
+        expired.promise,
+      ]);
+      signal.throwIfAborted();
+      if (
+        get(context.connection$) !== request ||
+        get(graph.nodes$) !== nodes ||
+        get(context.generation$) !== generation
+      ) {
+        throw cancelled();
+      }
+      const result: PromiseSettledResult<void> =
+        outcome.kind === "expired"
+          ? {
+              status: "rejected",
+              reason: outcome.error,
+            }
+          : outcome.result;
+      if (outcome.kind === "expired") {
+        // Cancel the parked observer before retiring its resources. Its late API
+        // response or paint cannot publish into this or a successor attempt.
+        set(context.resetObservation$, AbortSignal.abort(cancelled()));
+        const lease = get(context.installed$);
+        if (lease) {
+          set(graph.retireLease$, lease);
+        }
+        set(context.liveConnection$, null);
+        set(context.confirmedRequest$, request);
+        set(context.model.transition$, {
+          type: "failed",
+          error: diagnostic(outcome.error),
+        });
+      }
+      if (
+        recovery &&
+        get(context.recovery$) === recovery &&
+        !recovery.completion.settled()
+      ) {
+        if (result.status === "rejected") {
+          recovery.completion.reject(result.reason);
+        } else {
+          recovery.completion.resolve();
+        }
+      }
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    },
+  );
+}
+
+/** Visibility belongs to the mounted surface, independently of native leases. */
+function createPauseObservation(
+  context: Pick<
+    RuntimeState,
+    | "paused$"
+    | "documentHidden$"
+    | "inViewport$"
+    | "connectionChanged$"
+    | "installed$"
+    | "cancelAutomatic$"
+  >,
+) {
+  return command(
+    async (
+      { get, set },
+      source: "document" | "viewport",
+      visible: boolean,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      const previous = get(context.paused$);
+      if (source === "document") {
+        set(context.documentHidden$, !visible);
+      } else {
+        set(context.inViewport$, visible);
+      }
+      const paused = get(context.paused$);
+      if (paused === previous) {
+        return;
+      }
+      if (paused) {
+        set(context.cancelAutomatic$);
+      }
+      // Suspend the request observation, not the native owner or the caller's
+      // recovery receipt. Resume rejoins that same root's readiness work.
+      set(context.connectionChanged$);
+      const lease = get(context.installed$);
+      if (lease) {
+        await set(lease.controller.pause$, paused, signal);
+      }
+    },
+  );
+}
+
+/** Supersession ends receipts even when visibility suspends native work. */
+function createRecoverySupersession(
+  context: Pick<RuntimeState, "recovery$" | "generation$">,
+) {
+  return command(
+    (
+      { get },
+      request: Promise<BrowserConnection | null>,
+      nodes: BrowserNodes | null,
+    ) => {
+      const recovery = get(context.recovery$);
+      if (
+        recovery &&
+        !recovery.completion.settled() &&
+        (recovery.request !== request ||
+          recovery.nodes !== nodes ||
+          recovery.generation !== get(context.generation$))
+      ) {
+        recovery.completion.reject(cancelled());
+      }
+    },
+  );
 }
 
 /** The stable real DOM owner and page lifetime settle every parked receipt. */
@@ -830,17 +1018,61 @@ function createRootObservation(
   context: RuntimeState,
   graph: RuntimeGraph,
   observeConnection$: ConnectionObservation,
+  watchRecovery$: Command<Promise<void>, [AbortSignal]>,
 ) {
   const { installed$, observer$, connection$ } = context;
   const { nodes$, retireLease$ } = graph;
+  const updatePause$ = createPauseObservation(context);
+  const supersedeRecovery$ = createRecoverySupersession(context);
   return onRef(
     command(
       async ({ get, set }, root: HTMLDivElement, mountSignal: AbortSignal) => {
         const signal = AbortSignal.any([mountSignal, get(pageSignal$)]);
         signal.throwIfAborted();
+        set(context.documentHidden$, document.hidden);
+        set(context.inViewport$, true);
+        document.addEventListener(
+          "visibilitychange",
+          () => {
+            detach(
+              set(updatePause$, "document", !document.hidden, signal),
+              Reason.DomCallback,
+              "browser visibility",
+            );
+          },
+          { signal },
+        );
+        let observedCanvas: HTMLCanvasElement | null = null;
+        const viewport = new IntersectionObserver((entries) => {
+          const entry = entries
+            .filter((entry) => {
+              return entry.target === observedCanvas;
+            })
+            .at(-1);
+          if (entry) {
+            detach(
+              set(updatePause$, "viewport", entry.isIntersecting, signal),
+              Reason.DomCallback,
+              "browser viewport",
+            );
+          }
+        });
+        using _viewport = {
+          [Symbol.dispose]() {
+            viewport.disconnect();
+          },
+        };
         signal.addEventListener(
           "abort",
           () => {
+            const recovery = get(context.recovery$);
+            if (
+              recovery &&
+              root.contains(recovery.nodes.surface.node) &&
+              !recovery.completion.settled()
+            ) {
+              recovery.completion.reject(cancelled());
+            }
             set(context.resetObservation$, AbortSignal.abort(cancelled()));
             set(context.changeNotification$, null);
             const lease = get(installed$);
@@ -849,6 +1081,11 @@ function createRootObservation(
             }
           },
           { once: true },
+        );
+        detach(
+          set(watchRecovery$, signal),
+          Reason.Daemon,
+          "browser recovery owner",
         );
         // Only actual mount and semantic publishers wake reconciliation. Registration
         // precedes the snapshot so notifications cannot fall between read and wait.
@@ -864,20 +1101,30 @@ function createRootObservation(
             })
               ? nodes
               : null;
-          const [result] = await Promise.allSettled([
-            set(
-              observeConnection$,
-              get(connection$),
-              mountedNodes,
-              observation,
-            ),
-          ]);
-          signal.throwIfAborted();
-          if (result.status === "rejected" && !isAbortError(result.reason)) {
-            // Reconciliation already published its current failure. A future actual
-            // notification, not an automatic retry, owns the next attempt.
-            L.error("Browser viewer startup failed", result.reason);
-            set(observer$, null);
+          const canvas = mountedNodes?.canvas.node ?? null;
+          if (canvas !== observedCanvas) {
+            if (observedCanvas) {
+              viewport.unobserve(observedCanvas);
+            }
+            observedCanvas = canvas;
+            if (canvas) {
+              set(context.inViewport$, true);
+              viewport.observe(canvas);
+            }
+          }
+          const request = get(connection$);
+          set(supersedeRecovery$, request, mountedNodes);
+          if (!get(context.paused$)) {
+            const [result] = await Promise.allSettled([
+              set(observeConnection$, request, mountedNodes, observation),
+            ]);
+            signal.throwIfAborted();
+            if (result.status === "rejected" && !isAbortError(result.reason)) {
+              // Reconciliation already published its current failure. A future actual
+              // notification, not an automatic retry, owns the next attempt.
+              L.error("Browser viewer startup failed", result.reason);
+              set(observer$, null);
+            }
           }
           await notification.promise;
           signal.throwIfAborted();
@@ -890,17 +1137,19 @@ function createRootObservation(
   );
 }
 
-function createTabActions(graph: RuntimeGraph) {
+function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
   const { requireController$, focus } = graph;
   const selectTab$ = command(
     async ({ set }, targetId: string, signal: AbortSignal) => {
       const lease = set(requireController$, signal);
+      set(context.cancelAutomatic$);
       await set(lease.controller.selectTab$, targetId, signal);
     },
   );
   const createTab$ = command(
     async ({ set }, signal: AbortSignal): Promise<string> => {
       const lease = set(requireController$, signal);
+      set(context.cancelAutomatic$);
       set(focus.beginCreate$);
       const [created] = await Promise.allSettled([
         set(lease.controller.createTab$, signal),
@@ -917,6 +1166,7 @@ function createTabActions(graph: RuntimeGraph) {
   const closeTab$ = command(
     async ({ set }, targetId: string, signal: AbortSignal) => {
       const lease = set(requireController$, signal);
+      set(context.cancelAutomatic$);
       set(focus.beginClose$, targetId);
       await set(lease.controller.closeTab$, targetId, signal);
       // Positive close/inventory receipt does not depend on successor image.
@@ -981,11 +1231,52 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
 function createConfigurationActions(
   context: RuntimeState,
   graph: RuntimeGraph,
-  lifecycle: NativeLifecycle,
   reloadConnection$: Command<void, []>,
 ) {
-  const { model, connection$, generation$, installed$, authority$ } = context;
+  const {
+    model,
+    connection$,
+    generation$,
+    installed$,
+    authority$,
+    recovery$,
+    resetRecovery$,
+  } = context;
   const { requireController$, nodes$, native } = graph;
+  const waitForRecovery$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      const nodes = get(nodes$);
+      if (!nodes) {
+        throw cancelled();
+      }
+      const operation = set(resetRecovery$, signal);
+      const recovery: RecoveryAttempt = {
+        request: get(connection$),
+        generation: get(generation$),
+        nodes,
+        completion: createDeferredPromise<void>(
+          { rejection: "owner" },
+          operation,
+        ),
+      };
+      set(recovery$, recovery);
+      using _recovery = {
+        [Symbol.dispose]: () => {
+          if (get(recovery$) === recovery) {
+            set(recovery$, null);
+          }
+          if (!recovery.completion.settled()) {
+            recovery.completion.reject(cancelled());
+          }
+        },
+      };
+      set(context.connectionChanged$);
+      await recovery.completion.promise;
+      signal.throwIfAborted();
+      operation.throwIfAborted();
+    },
+  );
   const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (!get(nodes$)) {
@@ -1002,21 +1293,7 @@ function createConfigurationActions(
       });
     }
     set(reloadConnection$);
-    const interrupted = createDeferredPromise<void>(signal);
-    using _interruption = {
-      [Symbol.dispose]() {
-        if (!interrupted.settled()) {
-          interrupted.resolve();
-        }
-      },
-    };
-    // The root observer owns bootstrap and its error report. Refreshing the
-    // descriptor must not start or report a second native attempt here.
-    await Promise.race([
-      Promise.allSettled([get(connection$)]),
-      interrupted.promise,
-    ]);
-    signal.throwIfAborted();
+    await set(waitForRecovery$, signal);
   });
   const retryImage$ = command(async ({ set }, signal: AbortSignal) => {
     const lease = set(requireController$, signal);
@@ -1037,11 +1314,12 @@ function createConfigurationActions(
       if (transport === get(model.transport$)) {
         return;
       }
+      set(context.cancelAutomatic$);
       set(model.setTransport$, transport);
       set(generation$, (value) => {
         return value + 1;
       });
-      await set(lifecycle.install$, signal);
+      await set(waitForRecovery$, signal);
     },
   );
   const changeWindowSizeSync$ = command(
@@ -1088,8 +1366,9 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
     return {
       ...controls,
       streaming: authorized && !creating && inputReady && controls.streaming,
-      recovery: !get(pending$) && controls.recovery,
-      showRecovery: !get(pending$) && controls.showRecovery,
+      recovery: !get(context.paused$) && !get(pending$) && controls.recovery,
+      showRecovery:
+        !get(context.paused$) && !get(pending$) && controls.showRecovery,
       showEmptyCreate: authorized && controls.showEmptyCreate,
       canMutateTabs: authorized && controls.canMutateTabs,
       canCreate: authorized && controls.canCreate,
@@ -1102,6 +1381,14 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
     };
   });
   const presentation$ = computed((get) => {
+    if (get(context.paused$)) {
+      return {
+        status: "paused" as const,
+        error: null,
+        loadingPreview: false,
+        blank: false,
+      };
+    }
     if (get(pending$)) {
       return {
         status: "connecting" as const,
@@ -1170,6 +1457,46 @@ function createLayoutSync(context: RuntimeState) {
   });
 }
 
+function createRuntimeRecovery(
+  context: RuntimeState,
+  graph: RuntimeGraph,
+  actions: ReturnType<typeof createConfigurationActions>,
+) {
+  const view$ = computed((get): RecoveryView => {
+    const lease = get(context.installed$);
+    const controls = get(context.model.controls$);
+    const snapshot = get(context.model.snapshot$);
+    const intent = get(context.model.intent$);
+    const authorized = get(context.authority$) && lease !== null;
+    return {
+      enabled: get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner],
+      paused: get(context.paused$),
+      pending: get(context.pending$),
+      nodes: get(graph.nodes$),
+      binding: get(context.liveConnection$),
+      intent: get(context.recoveryIntent$),
+      targetId: intent.targetId,
+      authorized,
+      connected: lease !== null && get(lease.controller.connected$),
+      usable:
+        authorized &&
+        ((controls.streaming && get(graph.selectedInput$) !== null) ||
+          (snapshot.targets.length === 0 && get(lease.controller.canCreate$))),
+      snapshot,
+      image: get(context.model.imageRecovery$),
+    };
+  });
+  return createViewerRecovery({
+    view$,
+    reset$: context.resetAutomatic$,
+    notification$: context.recoveryNotification$,
+    notify$: context.recoveryChanged$,
+    restoration$: context.recoveryTarget$,
+    reconnect$: actions.reconnect$,
+    retryImage$: actions.retryImage$,
+  });
+}
+
 /** Compose private graphs in the existing App Store; expose only the public API. */
 export function createBrowserRuntime(
   connection$: Computed<Promise<BrowserConnection | null>>,
@@ -1179,15 +1506,20 @@ export function createBrowserRuntime(
   const context = createRuntimeState(connection$);
   const graph = createDOMGraph(context, onPageInput$);
   const lifecycle = createNativeLifecycle(context, graph);
-  const observers = createConnectionObservers(context, graph, lifecycle);
   const surface$ = graph.surface.ref$;
-  const tabActions = createTabActions(graph);
+  const tabActions = createTabActions(context, graph);
   const navigationActions = createNavigationActions(context, graph);
   const configurationActions = createConfigurationActions(
     context,
     graph,
-    lifecycle,
     reloadConnection$,
+  );
+  const recovery = createRuntimeRecovery(context, graph, configurationActions);
+  const observers = createConnectionObservers(
+    context,
+    graph,
+    lifecycle,
+    recovery.watch$,
   );
   const presentation = createPresentation(context, graph);
   const { model } = context;
@@ -1223,6 +1555,9 @@ export function createBrowserRuntime(
     ...tabActions,
     ...navigationActions,
     ...configurationActions,
+    reconnect$: recovery.reconnect$,
+    retryImage$: recovery.retryImage$,
+    recoveryOperation$: recovery.operation$,
     ...presentation,
     connectionChanged$: context.connectionChanged$,
     syncLayout$: createLayoutSync(context),

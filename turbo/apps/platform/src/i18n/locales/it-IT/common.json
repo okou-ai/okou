@@ -3230,6 +3230,18 @@
     "usedBy_many": "Usata da {{count}} dei tuoi host:",
     "usedBy_other": "Usata da {{count}} dei tuoi host:"
   },
+  "connectorChatAccess": {
+    "accountAccess": "Accesso di {{account}}",
+    "enableByDefault": "Attiva {{account}} per impostazione predefinita",
+    "enabledAccounts": "{{value}} attivi",
+    "manageAccounts": "Gestisci account",
+    "noAccount": "Nessun account selezionato",
+    "noEnabledAccount": "Nessun account attivo per questa chat",
+    "permissions": "Autorizzazioni",
+    "permissionsDescription": "Queste regole si applicano a questo connettore in tutte le tue chat e account.",
+    "settingsDescription": "Scegli gli account attivi per impostazione predefinita e l'account predefinito per le nuove chat.",
+    "thisChat": "Questa chat"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{action}} l'accesso a {{connector}} per {{agent}}",

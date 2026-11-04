@@ -120,7 +120,13 @@ pub const MSG_FILE_WRITE_STATUS: u8 = 0x20;
 pub const MSG_FILE_WRITE_STATUS_RESULT: u8 = 0x21;
 
 // 0x22..=0x25 are retired compressed file-stream assignments. Never reuse them;
-// allocate the next non-error message at 0x26.
+// subsequent non-error assignments follow the active instruction operation below.
+
+/// Host-to-guest fixed instruction check/application request.
+pub const MSG_GUEST_AGENT_INSTRUCTIONS: u8 = 0x26;
+
+/// Guest-to-host bounded instruction-helper terminal result.
+pub const MSG_GUEST_AGENT_INSTRUCTIONS_RESULT: u8 = 0x27;
 
 /// Guest-to-host protocol error response.
 pub const MSG_ERROR: u8 = 0xFF;

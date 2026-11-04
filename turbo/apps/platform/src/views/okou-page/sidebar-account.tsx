@@ -259,14 +259,14 @@ function CurrentAccountHeader({
 
 function AccountUsageGroup({
   onOpenCreditBalance,
-  onOpenUsage,
+  onOpenModel,
   onResetCodexUsage,
   resetPending,
   subscriptionRowsCacheKey,
   subscriptionsEnabled,
 }: {
   onOpenCreditBalance: () => void;
-  onOpenUsage: () => void;
+  onOpenModel: () => void;
   onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
@@ -280,8 +280,8 @@ function AccountUsageGroup({
     return (
       <AccountUsageGroupWithSubscriptions
         combinedCredit={isAdmin}
-        onOpenUsage={onOpenUsage}
         onOpenCreditBalance={onOpenCreditBalance}
+        onOpenModel={onOpenModel}
         onResetCodexUsage={onResetCodexUsage}
         resetPending={resetPending}
         subscriptionRowsCacheKey={subscriptionRowsCacheKey}
@@ -334,14 +334,14 @@ export function useCreditBalance(combined: boolean): {
 function AccountUsageGroupWithSubscriptions({
   combinedCredit,
   onOpenCreditBalance,
-  onOpenUsage,
+  onOpenModel,
   onResetCodexUsage,
   resetPending,
   subscriptionRowsCacheKey,
 }: {
   combinedCredit: boolean;
   onOpenCreditBalance: () => void;
-  onOpenUsage: () => void;
+  onOpenModel: () => void;
   onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
@@ -371,8 +371,8 @@ function AccountUsageGroupWithSubscriptions({
       {showCredit && showSubscriptions ? <DropdownMenuSeparator /> : null}
       {showSubscriptions ? (
         <AccountMenuSubscriptionsPanel
-          onOpenUsage={onOpenUsage}
           loading={subscriptionsLoading}
+          onOpenUsage={onOpenModel}
           onResetCodexUsage={onResetCodexUsage}
           resetPending={resetPending}
           rows={rows}
@@ -694,12 +694,12 @@ export function useAccountActions(
     openSettingsSection("preference");
   };
 
-  const handleOpenUsage = () => {
-    openSettingsSection("usage-records");
-  };
-
   const handleOpenCreditBalance = () => {
     openSettingsSection("usage");
+  };
+
+  const handleOpenModel = () => {
+    openSettingsSection("model");
   };
 
   return {
@@ -708,7 +708,7 @@ export function useAccountActions(
     handleAddAccount,
     handleOpenSettings,
     handleOpenCreditBalance,
-    handleOpenUsage,
+    handleOpenModel,
   };
 }
 
@@ -811,7 +811,7 @@ export function AccountDropdown({
     handleAddAccount,
     handleOpenSettings,
     handleOpenCreditBalance,
-    handleOpenUsage,
+    handleOpenModel,
   } = useAccountActions(profile, onAccountAction);
   // Keep the single action owner outside popup presence so closing a menu or
   // dialog cannot reset its busy/error state while the operation is in flight.
@@ -881,8 +881,8 @@ export function AccountDropdown({
           />
           {!hidePreferences && (
             <AccountUsageGroup
-              onOpenUsage={handleOpenUsage}
               onOpenCreditBalance={handleOpenCreditBalance}
+              onOpenModel={handleOpenModel}
               onResetCodexUsage={handleOpenCodexReset}
               resetPending={resetAction.actionPending}
               subscriptionRowsCacheKey={subscriptionRowsCacheKey}

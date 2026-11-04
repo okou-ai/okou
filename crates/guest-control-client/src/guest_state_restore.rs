@@ -9,7 +9,7 @@ use guest_control_proto::{
 
 use crate::{
     FrameWriteObserver, GuestControlClient,
-    normal_request_on_shared_with_write_observer_frame_builder,
+    normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
 };
 
 const TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_GUEST_STATE_RESTORE_RESULT];
@@ -66,20 +66,11 @@ impl GuestControlClient {
         )
         .await?;
 
-        if response.msg_type == MSG_ERROR {
-            let message = guest_control_proto::decode_error(&response.payload)
-                .map_err(protocol_invalid_data)?;
-            return Err(io::Error::other(message.to_owned()));
-        }
-        if response.msg_type != MSG_GUEST_STATE_RESTORE_RESULT {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "unexpected guest state restore response type: 0x{:02X}",
-                    response.msg_type
-                ),
-            ));
-        }
+        validate_fixed_helper_response(
+            &response,
+            MSG_GUEST_STATE_RESTORE_RESULT,
+            "guest state restore",
+        )?;
 
         let decoded =
             decode_guest_state_restore_result(&response.payload).map_err(protocol_invalid_data)?;

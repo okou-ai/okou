@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.244.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.7...runner-rs-v0.244.8) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** call local response owner directly ([#45038](https://github.com/okou-ai/okou/issues/45038)) ([3e34c50](https://github.com/okou-ai/okou/commit/3e34c508243c3f11181a4bfd243ad37fdcca2965))
+* **runner:** consolidate greedy firewall traversal branches ([#45016](https://github.com/okou-ai/okou/issues/45016)) ([247dd21](https://github.com/okou-ai/okou/commit/247dd2199e43eeb015e9a2b49c7bb731bad824a2))
+* **runner:** remove retired state marker publisher ([#45063](https://github.com/okou-ai/okou/issues/45063)) ([8c524b7](https://github.com/okou-ai/okou/commit/8c524b77ce06fec3703449208a4afcd75fba7cf4))
+* **runner:** retire the unused sigv4 boolean facade ([#45079](https://github.com/okou-ai/okou/issues/45079)) ([a3f0250](https://github.com/okou-ai/okou/commit/a3f025018da820d0e5285f9b5046b6ecf8744542))
+* **runner:** share http json inspection steps ([#45050](https://github.com/okou-ai/okou/issues/45050)) ([21cc0fa](https://github.com/okou-ai/okou/commit/21cc0fa2813b1f93fb844a8728241df2f2bdb399))
+* **runner:** share mixed firewall segment acceptance ([#45026](https://github.com/okou-ai/okou/issues/45026)) ([3691f83](https://github.com/okou-ai/okou/commit/3691f83183d6cca0cbb9dad3feed36da59701af9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.6...runner-rs-v0.244.7) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** retain service artifacts until shutdown is confirmed ([#44990](https://github.com/okou-ai/okou/issues/44990)) ([73f9c29](https://github.com/okou-ai/okou/commit/73f9c29a1b9378daad63d5b4c425240051afd7c4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.5...runner-rs-v0.244.6) (2026-11-03)
 
 

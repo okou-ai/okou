@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.109.37](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.36...guest-agent-v0.109.37) (2026-11-04)
+
+## [0.109.36](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.35...guest-agent-v0.109.36) (2026-11-03)
+
+
+### Performance Improvements
+
+* **guest-agent:** wake event retry backoff on close ([#44991](https://github.com/okou-ai/okou/issues/44991)) ([223ec53](https://github.com/okou-ai/okou/commit/223ec5304cb8bb2b52abaf48611876d35487ca42))
+
 ## [0.109.35](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.34...guest-agent-v0.109.35) (2026-11-03)
 
 

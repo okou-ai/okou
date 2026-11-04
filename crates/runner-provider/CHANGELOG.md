@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.16.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.5...runner-provider-v0.16.6) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+
+## [0.16.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.4...runner-provider-v0.16.5) (2026-11-03)
+
 ## [0.16.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.3...runner-provider-v0.16.4) (2026-11-03)
 
 ## [0.16.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.2...runner-provider-v0.16.3) (2026-11-03)

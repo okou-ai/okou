@@ -97,6 +97,27 @@ pub struct StorageManifestRequest<'a> {
     pub timeout: Duration,
 }
 
+/// Execute one fixed instruction action with bounded opaque metadata.
+pub struct AgentInstructionsRequest<'a> {
+    /// Check or publish; no arbitrary executable, arguments or identity.
+    pub operation: guest_contracts::agent_instructions::InstructionOperation,
+    /// Canonical bounded instruction metadata, passed unchanged on stdin.
+    pub metadata: &'a [u8],
+    /// Current run identity exposed only through the fixed helper environment.
+    pub run_id: &'a str,
+    /// Absolute current run runtime directory.
+    pub runtime_dir: &'a str,
+    /// Guest-side helper timeout.
+    pub timeout: Duration,
+}
+
+impl AgentInstructionsRequest<'_> {
+    /// Convert the bounded timeout to milliseconds, rounding nonzero values up.
+    pub fn timeout_ms(&self) -> u32 {
+        duration_ms(self.timeout)
+    }
+}
+
 /// Timezone behavior for a fixed guest-state restore operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GuestStateRestoreTimezone<'a> {

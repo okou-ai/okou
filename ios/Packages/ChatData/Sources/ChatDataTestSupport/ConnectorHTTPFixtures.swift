@@ -12,7 +12,7 @@ public enum ConnectorHTTPFixtures {
     """
   public static func account(
     id: String = accountID, custom: Bool = false, connected: Bool = true,
-    reconnectReason: String? = nil, isDefault: Bool = true
+    reconnectReason: String? = nil, isDefault: Bool = true, label: String = "Work account"
   ) -> String {
     let target =
       custom
@@ -20,7 +20,7 @@ public enum ConnectorHTTPFixtures {
       : "{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}"
     let reason = reconnectReason.map { "\"\($0)\"" } ?? "null"
     return """
-      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"Work account","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":\(reason),"tokenExpiresAt":null,"missingRequiredFields":[],"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"}
+      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"\(label)","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":\(reason),"tokenExpiresAt":null,"missingRequiredFields":[],"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"}
       """
   }
   public static func catalog(grantKind: String = "none") -> String {
@@ -38,6 +38,10 @@ public enum ConnectorHTTPFixtures {
     grantKind: String = "none", customMode: String = "none"
   ) -> ChatHTTPResponse? {
     let path = request.url?.path ?? ""
+    if path == "/api/feature-switches" {
+      return ChatHTTPResponse(
+        body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
+    }
     if path.hasSuffix("/metadata") { return ChatHTTPResponse(body: metadata) }
     if path == "/api/connector-catalog/slack" {
       return ChatHTTPResponse(body: catalog(grantKind: grantKind))

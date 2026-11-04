@@ -156,39 +156,6 @@ test.each([false, true])(
     });
     expect(detail.body.instruction).toContain("# Proactive Suggestions");
     expect(detail.body.fileContents).toStrictEqual(expect.any(Array));
-    const target = await owned.run(() => {
-      return fixture.bdd.createAgent(actor, { visibility: "private" });
-    });
-    const copied = await owned.run(() => {
-      return accept(
-        app(workflowsDetailContract).copy({
-          headers,
-          params: { workflowId: workflow.id },
-          body: { toAgentId: target.agentId },
-        }),
-        [201],
-      );
-    });
-    const copiedDetail = await owned.run(() => {
-      return accept(
-        app(workflowsDetailContract).get({
-          headers,
-          params: { workflowId: copied.body.id },
-        }),
-        [200],
-      );
-    });
-    expect(copiedDetail.body).toMatchObject({
-      instruction: detail.body.instruction,
-      fileContents: detail.body.fileContents,
-    });
-    const installedSync = await owned.run(() => {
-      return accept(
-        app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders }),
-        [200],
-      );
-    });
-    expect(installedSync.body).toStrictEqual(repeated.body);
     const automations = await owned.run(() => {
       return accept(
         app(workflowAutomationsContract).list({

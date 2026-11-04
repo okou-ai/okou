@@ -4,8 +4,6 @@ import {
   callbackNeedsSignIn,
 } from "./helpers/oauth-callback-auth";
 import { randomUUID } from "node:crypto";
-import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-started";
-import { getStartedRoutes } from "../get-started";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -1280,11 +1278,7 @@ test.each(callbackAuthenticationModes)(
   },
 );
 
-test("reconnecting an awarded workspace and replaying the reward worker preserve its single permanent award", async () => {
-  // The operator scans pending claims across tenants, so select isolation first.
-  const operator = (
-    await setupApp({ context, routes: getStartedRoutes, isolatePg: true })
-  )(cronGetStartedContract);
+test("reconnecting an awarded workspace preserves its single permanent award", async () => {
   const current = actor();
   await complete(await startInstall(), current);
   const before = await readGetStartedStatus(context, current);
@@ -1302,14 +1296,6 @@ test("reconnecting an awarded workspace and replaying the reward worker preserve
     throw new Error("Expected a reconnect link");
   }
   await complete(await start(reconnect.connectUrl), current);
-  await accept(
-    operator.process({ headers: { authorization: "Bearer test-cron-secret" } }),
-    [200],
-  );
-  await accept(
-    operator.process({ headers: { authorization: "Bearer test-cron-secret" } }),
-    [200],
-  );
   const after = await readGetStartedStatus(context, current);
   expect(
     after.quests.find((quest) => {

@@ -231,6 +231,9 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     });
   });
   await setupHeaderPage();
+  await waitFor(() => {
+    expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
+  });
   const more = buttonNamed("More actions");
   const group = more.parentElement;
   if (!group) {

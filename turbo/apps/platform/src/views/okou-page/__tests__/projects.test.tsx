@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   screen,
@@ -22,6 +23,7 @@ import {
   click,
   fill,
   setupPage,
+  startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import {
@@ -133,6 +135,196 @@ function releasePageDom() {
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
 }
+
+test("Cached Project folders appear before chat setup and remote synchronization finish", async () => {
+  const thread = continuityThread(112, 1, "Cached conversation");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 112,
+    threads: [thread],
+  });
+  metadata();
+  const resetPage$ = resetSignal();
+  const signal = context.store.set(resetPage$, context.signal);
+  const options = {
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    sharedWorkerTestTransport: "message-port" as const,
+  };
+  await setupPage({ context: { ...context, signal }, ...options });
+  expect(button("Launch", folder())).toBeInTheDocument();
+
+  context.store.set(resetPage$);
+  releasePageDom();
+  const chatSetupStarted = context.mocks.deferred<void>();
+  const chatSetup = context.mocks.deferred<void>();
+  const remote = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadDraftContract.get, async ({ respond }) => {
+    if (!chatSetupStarted.settled()) {
+      chatSetupStarted.resolve();
+    }
+    await chatSetup.promise;
+    return respond(200, { draftUserMessage: null, draftAttachments: null });
+  });
+  context.mocks.api(projectsContract.events, async ({ respond }) => {
+    await remote.promise;
+    return respond(200, {
+      events: [
+        {
+          id: "30000000-0000-4000-8000-000000000073",
+          seqId: 2,
+          projectId: id,
+          kind: "renamed",
+          name: "Launch updated",
+          createdAt: at,
+        },
+      ],
+      hasMore: false,
+    });
+  });
+
+  const page = await startPage({ context: reloadedContext, ...options });
+  try {
+    await page.content;
+    await chatSetupStarted.promise;
+    const projects = screen.getByRole("region", { name: "Projects" });
+    await within(projects).findByText("Launch");
+    expect(threadLink(thread.id)).toBeInTheDocument();
+    expect(chatSetup.settled()).toBeFalsy();
+    expect(remote.settled()).toBeFalsy();
+
+    remote.resolve();
+    await within(projects).findByText("Launch updated");
+    expect(chatSetup.settled()).toBeFalsy();
+  } finally {
+    if (!remote.settled()) {
+      remote.resolve();
+    }
+    chatSetup.resolve();
+    await page.ready;
+  }
+});
+
+test("Project folders stay visible when returning from a chat to its pinned Agent", async () => {
+  const ordinary = continuityThread(111, 1, "Ordinary chat");
+  const member = {
+    ...continuityThread(111, 2, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 111,
+    threads: [ordinary, member],
+  });
+  context.mocks.data.userPreferences({ pinnedAgentIds: [ordinary.agentId] });
+  metadata();
+  const refreshStarted = context.mocks.deferred<void>();
+  const releaseRefresh = context.mocks.deferred<void>();
+  let refreshing = false;
+  context.mocks.api(projectsContract.events, async ({ respond }) => {
+    if (!refreshing) {
+      return respond(200, { events: [], hasMore: false });
+    }
+    if (!refreshStarted.settled()) {
+      refreshStarted.resolve();
+    }
+    await releaseRefresh.promise;
+    return respond(200, {
+      events: [
+        {
+          id: "30000000-0000-4000-8000-000000000073",
+          seqId: 2,
+          projectId: id,
+          kind: "renamed",
+          name: "Launch updated",
+          createdAt: at,
+        },
+      ],
+      hasMore: false,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    sharedWorkerTestTransport: "message-port",
+  });
+  click(button("Launch", folder()));
+  expect(namedLink(folder(), "Launch planning")).toBeInTheDocument();
+  const agent = await waitFor(() => {
+    const link = document.querySelector(
+      `[data-testid="pinned-agent-card"][href="/agents/${ordinary.agentId}/chat"]`,
+    );
+    if (!link) {
+      throw new Error("Pinned Agent not found");
+    }
+    return link;
+  });
+  const projects = screen.getByRole("region", { name: "Projects" });
+  let foldersDisappeared = false;
+  const observer = new MutationObserver(() => {
+    if (!projects.querySelector(`[data-project-folder-id="${id}"]`)) {
+      foldersDisappeared = true;
+    }
+  });
+  observer.observe(projects, { childList: true, subtree: true });
+  try {
+    refreshing = true;
+    click(agent);
+    await refreshStarted.promise;
+    expect(location.pathname).toBe(`/agents/${ordinary.agentId}/chat`);
+    expect(namedLink(folder(), "Launch planning")).toBeInTheDocument();
+    expect(foldersDisappeared).toBeFalsy();
+
+    releaseRefresh.resolve();
+    await within(projects).findByText("Launch updated");
+    expect(namedLink(folder(), "Launch planning")).toBeInTheDocument();
+    expect(foldersDisappeared).toBeFalsy();
+  } finally {
+    if (!releaseRefresh.settled()) {
+      releaseRefresh.resolve();
+    }
+    observer.disconnect();
+  }
+});
+
+test.each(["account", "workspace"] as const)(
+  "Project folders are cleared when the authenticated %s changes",
+  async (scope) => {
+    const ordinary = continuityThread(112, 1, "Ordinary chat");
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 112,
+      threads: [ordinary],
+    });
+    metadata();
+    await setupPage({
+      context,
+      path: `/chats/${ordinary.id}`,
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    });
+    expect(button("Launch", folder())).toBeInTheDocument();
+
+    const clerk = context.mocks.clerk();
+    act(() => {
+      if (scope === "account") {
+        clerk.user(
+          { id: "other-project-user", fullName: "Other User" },
+          { id: "other-project-session", token: "other-token" },
+        );
+      } else {
+        clerk.organization({
+          activeOrg: { id: "other-project-org", name: "Other Workspace" },
+          memberships: [{ id: "other-project-org" }],
+        });
+      }
+      clerk.stateChanged();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Launch")).not.toBeInTheDocument();
+    });
+  },
+);
 
 test("Project folders remember open and collapsed states after a page reload", async () => {
   const otherId = "30000000-0000-4000-8000-000000000072";

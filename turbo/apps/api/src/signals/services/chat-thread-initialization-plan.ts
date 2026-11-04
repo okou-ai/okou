@@ -46,7 +46,6 @@ export function chatThreadInitializationCtes(args: {
   readonly eventId: string | undefined;
   readonly thread: ReturnType<typeof createdChatThreadFromRow>;
   readonly selections: readonly PreparedChatThreadConnectorSelection[];
-  readonly required: boolean;
   readonly remoteOverrides: readonly InitialRemoteAccessOverride[];
   readonly assistantMessage: string | undefined;
 }) {
@@ -64,7 +63,6 @@ export function chatThreadInitializationCtes(args: {
     {
       chatThreadId: args.thread.id,
       selections: args.selections,
-      required: args.required,
     },
     selectionGates,
   );

@@ -10,6 +10,33 @@ pub const MAX_CHECK_METADATA_BYTES: usize = 64 * 1024;
 /// Canonical instruction package member, independent of the target framework.
 pub const SOURCE_FILENAME: &str = "instructions.md";
 
+/// Fixed instruction-helper actions; callers cannot select a program or identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InstructionOperation {
+    /// Inspect whether the final instruction file can be retained.
+    Check,
+    /// Publish the instruction file already delivered to staging.
+    Apply,
+}
+
+impl InstructionOperation {
+    /// Maximum opaque metadata bytes for this action.
+    pub const fn metadata_limit(self) -> usize {
+        match self {
+            Self::Check => MAX_CHECK_METADATA_BYTES,
+            Self::Apply => MAX_METADATA_BYTES,
+        }
+    }
+
+    /// Fixed argument selected by the Guest, never caller command text.
+    pub const fn helper_argument(self) -> &'static str {
+        match self {
+            Self::Check => "--instructions-check-stdin",
+            Self::Apply => "--instructions-stdin",
+        }
+    }
+}
+
 /// Stable delivery and final-file paths for one framework.
 pub struct InstructionPaths {
     /// Ordinary Storage staging; removed after successful application.

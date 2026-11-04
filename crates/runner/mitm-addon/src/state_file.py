@@ -1,12 +1,8 @@
-"""Shared state-file reads and atomic JSON publication."""
+"""Shared safe state-file reads."""
 
-import json
 import os
 import stat
-import threading
-import uuid
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple, Self
@@ -14,35 +10,6 @@ from typing import NamedTuple, Self
 _READ_CHUNK_BYTES = 1024 * 1024
 
 type StatValidator = Callable[[Path, os.stat_result], None]
-
-
-class AtomicJsonPublisher:
-    """Publish compact JSON with atomic visibility for one state-file owner.
-
-    Each instance serializes its own writes so independent state protocols do
-    not block one another. Publication is not crash durable: callers own any
-    durability, retry, and diagnostic policy beyond same-directory replacement.
-    """
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-
-    def publish(self, path: Path, state: dict[str, object]) -> None:
-        """Replace ``path`` with compact JSON, cleaning failed attempts.
-
-        Filesystem failures are re-raised after best-effort temporary-file
-        cleanup so the protocol owner can apply its own failure policy.
-        """
-        tmp_path = path.with_name(f"{path.name}.{uuid.uuid4()}.tmp")
-        with self._lock:
-            try:
-                with tmp_path.open("w") as output:
-                    json.dump(state, output, separators=(",", ":"))
-                tmp_path.replace(path)
-            except OSError:
-                with suppress(OSError):
-                    tmp_path.unlink()
-                raise
 
 
 class StateFileIdentity(NamedTuple):

@@ -1,10 +1,11 @@
 [package]
 name = "sandbox"
-version = "0.28.8"
+version = "0.28.9"
 edition.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 thiserror = { workspace = true, features = ["std"] }

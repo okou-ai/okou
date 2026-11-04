@@ -73,6 +73,7 @@ import {
   resetMockPersonalModelProviders,
 } from "./api-personal-model-providers.ts";
 import { apiPresentationTemplatesHandlers } from "./api-presentation-templates.ts";
+import { apiProjectsHandlers } from "./api-projects.ts";
 import { apiRealtimeHandlers } from "./api-realtime.ts";
 import {
   apiAvailableRunModelsHandlers,
@@ -131,6 +132,7 @@ export const handlers = [
   ...apiAvailableRunModelsHandlers,
   ...apiPersonalModelProvidersHandlers,
   ...apiPresentationTemplatesHandlers,
+  ...apiProjectsHandlers,
   ...apiUserTemplatesHandlers,
   ...appLogsHandlers,
   ...apiIntegrationsSlackOrgHandlers,

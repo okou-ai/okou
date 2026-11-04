@@ -1,4 +1,5 @@
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import {
   catalogFixture,
   connectorFixtureAccount,
@@ -379,7 +380,7 @@ interface HttpConnectorOptions {
   readonly slug: string;
   readonly displayName: string;
   readonly hasAccount: boolean;
-  readonly authMode?: "manual" | "oauth";
+  readonly authMode?: "manual" | "oauth" | "none";
   readonly permissionBundleRef?: `builtin:${string}@1` | null;
   readonly providerAdapter?: "standard" | "feishu";
 }
@@ -877,6 +878,26 @@ export function createComposerConnectorHelpers(context: TestContext) {
             }) ?? null,
           nextCursor: null,
         });
+      },
+    );
+    context.mocks.api(
+      chatConnectorAccessContract.accountDefaults,
+      ({ query, respond }) => {
+        return respond(
+          200,
+          accounts
+            .filter((account) => {
+              return targetMatches(account.target, query);
+            })
+            .map((account) => {
+              return {
+                connectionId: account.id,
+                displayName: account.displayName,
+                isDefault: account.isDefault,
+                defaultEnabled: true,
+              };
+            }),
+        );
       },
     );
     context.mocks.api(

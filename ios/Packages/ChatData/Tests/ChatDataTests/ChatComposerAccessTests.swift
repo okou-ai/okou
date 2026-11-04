@@ -131,7 +131,8 @@ final class ChatComposerAccessTests: XCTestCase {
         XCTAssertEqual(body.agentId, F.agentID)
         XCTAssertTrue(body.authorizeAgent)
         return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
-      case "/api/connector-catalog/slack", "/api/agents/\(F.agentID)/user-connectors":
+      case "/api/feature-switches", "/api/connector-catalog/slack",
+        "/api/agents/\(F.agentID)/user-connectors":
         return try XCTUnwrap(F.response(request))
       default: throw URLError(.unsupportedURL)
       }

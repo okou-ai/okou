@@ -34,6 +34,7 @@ import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { emptyArtifactImg } from "./platform-assets.ts";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { useChatHeaderActions } from "./chat-header-actions.ts";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -56,23 +57,27 @@ export function ChatResourcesButton({
   const current =
     mainThreadId !== null &&
     (thread.threadId === mainThreadId || thread.threadId === secondaryThreadId);
-  return current ? (
+  return (
     <ChatResourcesButtonInner
       key={thread.threadId}
       thread={thread}
       largeTarget={largeTarget}
+      current={current}
     />
-  ) : null;
+  );
 }
 
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
+  current,
 }: {
   readonly thread: ChatPanelSignals;
   readonly largeTarget: boolean;
+  readonly current: boolean;
 }) {
   const { t } = useTranslation();
+  const { transitioning } = useChatHeaderActions(thread);
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
@@ -83,12 +88,13 @@ function ChatResourcesButtonInner({
   const settled = useLastResolved(resources.settled$) ?? null;
   // Only a current request waits for resources. A narrower layout releases the
   // button while the underlying sources keep loading into their caches.
-  const loading =
+  const resourceLoading =
     (requested && settled === null) || preference.state === "loading";
+  const loading = !current || transitioning || resourceLoading;
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown = settled !== null && requested && (settled || chosen !== null);
-  const pressed = shown || (loading && chosen === true);
+  const pressed = shown || (resourceLoading && chosen === true);
   const wide = useGet(resources.wide$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
@@ -96,7 +102,7 @@ function ChatResourcesButtonInner({
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
   const rootSignal = useGet(rootSignal$);
-  const visible = shown && boundary !== null;
+  const visible = current && !transitioning && shown && boundary !== null;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
   });
@@ -228,11 +234,6 @@ function ChatResourcesTrigger({
                     largeTarget && "size-11",
                     pressed &&
                       "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-                    // A loading button does not answer the pointer either.
-                    loading &&
-                      (pressed
-                        ? "cursor-default hover:bg-primary/10 active:bg-primary/10"
-                        : "cursor-default hover:bg-transparent hover:text-muted-foreground active:bg-transparent"),
                   )}
                   aria-label={label}
                   aria-busy={loading}
@@ -244,17 +245,9 @@ function ChatResourcesTrigger({
             />
           }
         >
-          <Package
-            size={18}
-            className={cn(
-              loading &&
-                "motion-safe:animate-pulse [animation-delay:250ms] motion-reduce:opacity-50",
-            )}
-          />
+          <Package size={18} />
         </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {loading ? loadingLabel : label}
-        </TooltipContent>
+        <TooltipContent side="bottom">{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

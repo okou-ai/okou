@@ -96,6 +96,36 @@ async fn guest_dns_readiness_surfaces_guest_error_and_completes_operation() {
 }
 
 #[tokio::test]
+async fn guest_dns_readiness_unexpected_response_abandons_terminal_proof() {
+    let (host_stream, guest_stream) = make_pair();
+    let (release_tx, release_rx) = oneshot::channel();
+    let guest = tokio::spawn(async move {
+        let mut guest = MockGuest::new(guest_stream);
+        guest.complete_handshake().await;
+        let request = guest.expect_message(MSG_GUEST_DNS_READINESS).await;
+        guest
+            .send_response(guest_control_proto::MSG_PONG, request.seq, &[])
+            .await;
+        release_rx.await.unwrap();
+    });
+    let host = host_from_stream(host_stream).await.unwrap();
+
+    let error = host
+        .guest_dns_readiness("example.invalid", 1, Duration::from_secs(1))
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(pending_request_count(&host), 0);
+    assert_eq!(
+        normal_operation_readiness(&host),
+        NormalOperationReadiness::NotParkable
+    );
+    release_tx.send(()).unwrap();
+    guest.await.unwrap();
+}
+
+#[tokio::test]
 async fn guest_dns_readiness_rejects_malformed_terminal_payload_after_completion() {
     let (host_stream, guest_stream) = make_pair();
     let (release_tx, release_rx) = oneshot::channel();

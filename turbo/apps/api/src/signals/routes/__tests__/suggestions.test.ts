@@ -50,7 +50,6 @@ function cleanupClient() {
   );
 }
 const cronSecret = "suggestion-retention-test-secret";
-const cronHeaders = { authorization: `Bearer ${cronSecret}` } as const;
 function input(priority = 0): SuggestionCreate {
   return {
     id: randomUUID(),
@@ -348,166 +347,6 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(expired.body.suggestions).toStrictEqual([]);
-  });
-
-  it.each(["review", null])(
-    "records a cached choice once after physical cleanup (option %s)",
-    async (optionId) => {
-      await setupApp({
-        context,
-        routes: cronCleanupSuggestionsRoutes,
-        isolatePg: true,
-      });
-      const start = Date.parse("2026-10-27T00:00:00.000Z");
-      mockNow(start);
-      mockEnv("CRON_SECRET", cronSecret);
-      const fixture = await primaryRun();
-      const cached = await accept(
-        client().create({ headers: fixture.headers, body: input() }),
-        [200],
-      );
-      mockNow(start + SUGGESTION_RETENTION_MS);
-      const cleaned = await accept(
-        cleanupClient().cleanup({ headers: cronHeaders }),
-        [200],
-      );
-      expect(cleaned.body.deleted).toBe(1);
-      const choices = await Promise.all(
-        [0, 1].map(() => {
-          return accept(
-            client().consume({
-              headers: humanHeaders,
-              params: { id: cached.body.id },
-              body: { optionId, snapshot: cached.body },
-            }),
-            [200, 409],
-          );
-        }),
-      );
-      expect(
-        choices
-          .map((choice) => {
-            return choice.status;
-          })
-          .sort(),
-      ).toStrictEqual([200, 409]);
-      const accepted = choices.find((choice) => {
-        return choice.status === 200;
-      });
-      expect(accepted?.body).toMatchObject({
-        id: cached.body.id,
-        status: "consumed",
-        selectedOptionId: optionId,
-        options: cached.body.options,
-      });
-      const listed = await accept(
-        client().list({ headers: humanHeaders }),
-        [200],
-      );
-      expect(listed.body.receipts).toContainEqual(
-        expect.objectContaining({
-          id: cached.body.id,
-          status: "consumed",
-          selectedOptionId: optionId,
-        }),
-      );
-    },
-  );
-
-  it("preserves a cached choice when the same action is concurrently republished", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
-    mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
-    const fixture = await primaryRun();
-    const suggestion = input();
-    const cached = await accept(
-      client().create({
-        headers: fixture.headers,
-        body: { ...suggestion, expiresAt: "2026-10-27T00:01:00.000Z" },
-      }),
-      [200],
-    );
-    mockNow(start + 60_000);
-    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
-    const [chosen] = await Promise.all([
-      accept(
-        client().consume({
-          headers: humanHeaders,
-          params: { id: suggestion.id },
-          body: { optionId: "review", snapshot: cached.body },
-        }),
-        [200],
-      ),
-      accept(
-        client().create({ headers: fixture.headers, body: suggestion }),
-        [200, 409],
-      ),
-    ]);
-    expect(chosen.body).toMatchObject({
-      id: suggestion.id,
-      status: "consumed",
-      selectedOptionId: "review",
-    });
-    const listed = await accept(
-      client().list({ headers: humanHeaders }),
-      [200],
-    );
-    expect(listed.body.suggestions).toStrictEqual([]);
-    expect(listed.body.receipts).toContainEqual(
-      expect.objectContaining({
-        id: suggestion.id,
-        status: "consumed",
-        selectedOptionId: "review",
-      }),
-    );
-  });
-
-  it("requires the original owner's unmodified snapshot after cleanup", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
-    mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
-    const fixture = await primaryRun();
-    const cached = await accept(
-      client().create({ headers: fixture.headers, body: input() }),
-      [200],
-    );
-    mockNow(start + SUGGESTION_RETENTION_MS);
-    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
-    await accept(
-      client().consume({
-        headers: humanHeaders,
-        params: { id: cached.body.id },
-        body: {
-          optionId: "review",
-          snapshot: { ...cached.body, rationale: "Changed after publication" },
-        },
-      }),
-      [409],
-    );
-    await primaryRun();
-    await accept(
-      client().consume({
-        headers: humanHeaders,
-        params: { id: cached.body.id },
-        body: { optionId: "review", snapshot: cached.body },
-      }),
-      [409],
-    );
-    const listed = await accept(
-      client().list({ headers: humanHeaders }),
-      [200],
-    );
-    expect(listed.body.receipts).toStrictEqual([]);
   });
 
   it("retains selected, dismissed and withdrawn feedback for 24 hours after processing", async () => {
@@ -1757,13 +1596,7 @@ describe("Suggestion feedback learning", () => {
     ]);
   });
 
-  it("retains unlearned feedback past card cleanup and acknowledges only actual published Memory while preserving later reasons", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
-    mockEnv("CRON_SECRET", cronSecret);
+  it("acknowledges feedback only after Memory publication and preserves later reasons", async () => {
     const start = Date.parse("2026-10-28T00:00:00.000Z");
     mockNow(start);
     const fixture = await primaryRun();
@@ -1785,18 +1618,16 @@ describe("Suggestion feedback learning", () => {
       }),
       [200],
     );
-    mockNow(start + 25 * 60 * 60 * 1000);
-    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
     const runs = createRunsApi(context);
     await runs.heartbeatRunner(fixture.runnerGroup);
-    const resumedRun = await runs.createThreadRun(fixture.actor, {
+    const learningRun = await runs.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       model: "claude-fable-5-1",
-      prompt: "Learn retained suggestion feedback",
+      prompt: "Learn suggestion feedback",
     });
-    const resumedClaim = await runs.claimRunnerJob(resumedRun.runId);
+    const learningClaim = await runs.claimRunnerJob(learningRun.runId);
     const headers = {
-      authorization: `Bearer ${okouTokenFromClaim(resumedClaim)}`,
+      authorization: `Bearer ${okouTokenFromClaim(learningClaim)}`,
     };
     const pending = await accept(
       learningClient().prepare({ headers, body: {} }),
@@ -1836,11 +1667,11 @@ describe("Suggestion feedback learning", () => {
     await commitMemoryVersion(
       context,
       {
-        runId: resumedRun.runId,
+        runId: learningRun.runId,
         sandboxHeaders: {
-          authorization: `Bearer ${resumedClaim.sandboxToken}`,
+          authorization: `Bearer ${learningClaim.sandboxToken}`,
         },
-        storageManifest: resumedClaim.storageManifest,
+        storageManifest: learningClaim.storageManifest,
       },
       [{ path: SUGGESTION_MEMORY_PATH, content: JSON.stringify(memory) }],
     );

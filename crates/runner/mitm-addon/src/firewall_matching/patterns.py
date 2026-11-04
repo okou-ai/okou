@@ -152,11 +152,7 @@ def _match_segment_literal(runtime: str, prefix: str, suffix: str) -> str | None
     Returns the captured middle on success, None if either the prefix/suffix
     don't match or the middle would be empty.
     """
-    if not runtime.startswith(prefix):
-        return None
-    if not runtime.endswith(suffix):
-        return None
-    if len(runtime) <= len(prefix) + len(suffix):
+    if not _segment_literal_matches(runtime, prefix, suffix):
         return None
     return runtime[len(prefix) : len(runtime) - len(suffix)]
 
@@ -362,7 +358,7 @@ def _match_compiled_path_traversal(
         if isinstance(parsed, SegmentError):
             return None
 
-        if parsed.greedy == "+":
+        if parsed.greedy in ("+", "*"):
             if _is_invalid_greedy_param(
                 pattern_index,
                 last_pattern_index,
@@ -370,17 +366,8 @@ def _match_compiled_path_traversal(
                 parsed.suffix,
             ):
                 return None
-            if pi >= len(path_segs) or not _has_non_empty_segment(path_segs, pi):
-                return None
-            if params is not None:
-                params[parsed.name] = "/".join(path_segs[pi:])
-            return params, len(path_segs)
-        if parsed.greedy == "*":
-            if _is_invalid_greedy_param(
-                pattern_index,
-                last_pattern_index,
-                parsed.prefix,
-                parsed.suffix,
+            if parsed.greedy == "+" and (
+                pi >= len(path_segs) or not _has_non_empty_segment(path_segs, pi)
             ):
                 return None
             if params is not None:
@@ -483,7 +470,7 @@ def _match_compiled_host(
         if isinstance(parsed, SegmentError):
             return None
 
-        if parsed.greedy == "+":
+        if parsed.greedy in ("+", "*"):
             if _is_invalid_greedy_param(
                 pattern_index,
                 last_pattern_index,
@@ -491,18 +478,7 @@ def _match_compiled_host(
                 parsed.suffix,
             ):
                 return None
-            if hi >= len(host_segs_orig):
-                return None
-            remaining = list(reversed(host_segs_orig[hi:]))
-            params[parsed.name] = ".".join(remaining)
-            return params
-        if parsed.greedy == "*":
-            if _is_invalid_greedy_param(
-                pattern_index,
-                last_pattern_index,
-                parsed.prefix,
-                parsed.suffix,
-            ):
+            if parsed.greedy == "+" and hi >= len(host_segs_orig):
                 return None
             remaining = list(reversed(host_segs_orig[hi:]))
             params[parsed.name] = ".".join(remaining)

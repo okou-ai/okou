@@ -67,38 +67,7 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
   ).not.toBeInTheDocument();
 });
 
-test("Open credit usage from the subscription row in the mobile account menu", async () => {
-  mockAdminAccountSidebar();
-  context.mocks.browser.matchMedia(() => {
-    return false;
-  });
-  context.mocks.data.personalModelProviders([connectedPersonalCodexProvider()]);
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-      },
-    },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
-  });
-  click(screen.getByLabelText("Open menu"));
-  const menu = await openAccountMenu();
-  const usage = await within(menu).findByLabelText("ChatGPT usage", {
-    selector: '[role="menuitem"]',
-  });
-  click(usage);
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  expect(
-    within(settings).getByRole("heading", { name: "Credit usage" }),
-  ).toBeInTheDocument();
-  expect(screen.queryByRole("menu")).toBeNull();
-});
-
-test("Preview subscriptions from the rail and open usage in Settings", async () => {
+test("Preview subscriptions from the rail and open Models in Settings", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
@@ -162,16 +131,19 @@ test("Preview subscriptions from the rail and open usage in Settings", async () 
   });
   click(within(claude).getByLabelText("Claude usage"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
-  expect(
-    within(settings).getByRole("heading", { name: "Credit usage" }),
-  ).toBeInTheDocument();
+  await expect(
+    within(settings).findByRole("heading", { name: "Use more models" }),
+  ).resolves.toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(entry).toHaveFocus();
   });
   await user.keyboard("{Enter}");
+  const reopenedSettings = await screen.findByRole("dialog", {
+    name: "Settings",
+  });
   await expect(
-    screen.findByRole("dialog", { name: "Settings" }),
+    within(reopenedSettings).findByRole("heading", { name: "Use more models" }),
   ).resolves.toBeInTheDocument();
 });
 
@@ -556,9 +528,9 @@ test.each([
     expect(within(panel).getByText("12% left")).toBeInTheDocument();
     click(entry);
     const settings = await screen.findByRole("dialog", { name: "Settings" });
-    expect(
-      within(settings).getByRole("heading", { name: "Credit usage" }),
-    ).toBeInTheDocument();
+    await expect(
+      within(settings).findByRole("heading", { name: "Use more models" }),
+    ).resolves.toBeInTheDocument();
   },
 );
 

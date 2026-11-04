@@ -138,7 +138,7 @@ impl Manifest {
         cleanup_paths: Vec<String>,
         instruction_cleanups: Vec<InstructionCleanupEntry>,
     ) -> Result<Self, String> {
-        validate_unique_mount_paths(&storage_mounts)?;
+        validate_unique_mount_paths(storage_mounts.iter().map(|mount| mount.mount_path.as_str()))?;
 
         let mut storages = Vec::new();
         let mut artifacts = Vec::new();
@@ -182,13 +182,18 @@ impl Manifest {
     }
 }
 
-fn validate_unique_mount_paths(storage_mounts: &[StorageMountEntry]) -> Result<(), String> {
-    let mut mount_paths = HashSet::with_capacity(storage_mounts.len());
-    for mount in storage_mounts {
-        if !mount_paths.insert(mount.mount_path.as_str()) {
+/// Validate exact raw mount-path uniqueness in canonical input order.
+///
+/// Paths are borrowed without normalization or filesystem lookup. The first
+/// duplicate returns the canonical storage-manifest diagnostic.
+pub fn validate_unique_mount_paths<'a>(
+    paths: impl ExactSizeIterator<Item = &'a str>,
+) -> Result<(), String> {
+    let mut mount_paths = HashSet::with_capacity(paths.len());
+    for mount_path in paths {
+        if !mount_paths.insert(mount_path) {
             return Err(format!(
-                "storage manifest contains duplicate mountPath \"{}\"",
-                mount.mount_path
+                "storage manifest contains duplicate mountPath \"{mount_path}\""
             ));
         }
     }
