@@ -1,4 +1,4 @@
-use crate::binary_logging::BinaryLoggingFixture;
+use crate::binary_logging::{BinaryLoggingFixture, assert_cleanup_phase};
 use crate::process::CommandExecution;
 use crate::support::create_tar_gz;
 use serde_json::json;
@@ -70,6 +70,36 @@ fn instruction_cleanup_rejects_symlinked_pi_parent_before_later_work() {
             b"later instructions"
         );
         assert!(!download.exists());
+        let ops = fixture.ops_entries().unwrap();
+        assert_cleanup_phase(
+            &ops,
+            "guest_storage_apply_stale_cleanup",
+            instruction_only,
+            if instruction_only {
+                "requested_0"
+            } else {
+                "requested_1"
+            },
+        );
+        if instruction_only {
+            assert_cleanup_phase(
+                &ops,
+                "guest_storage_apply_instruction_cleanup",
+                false,
+                "requested_2",
+            );
+        } else {
+            assert!(!ops.iter().any(|op| {
+                op["action_type"].as_str().is_some_and(|action| {
+                    action.starts_with("guest_storage_apply_instruction_cleanup")
+                })
+            }));
+        }
+        let total = ops
+            .iter()
+            .find(|op| op["action_type"] == "guest_storage_apply_cleanup")
+            .unwrap();
+        assert_eq!(total["success"], false);
     }
 }
 
@@ -112,6 +142,19 @@ fn instruction_cleanup_preserves_pi_data_and_unlinks_only_selected_instruction_f
             .unwrap()
             .status
             .success()
+    );
+    let ops = fixture.ops_entries().unwrap();
+    assert_cleanup_phase(
+        &ops,
+        "guest_storage_apply_stale_cleanup",
+        true,
+        "requested_0",
+    );
+    assert_cleanup_phase(
+        &ops,
+        "guest_storage_apply_instruction_cleanup",
+        true,
+        "requested_3_4",
     );
     assert!(fs::symlink_metadata(home.join("CLAUDE.md")).is_err());
     assert!(
