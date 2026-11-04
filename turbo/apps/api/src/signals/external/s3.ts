@@ -1852,19 +1852,28 @@ function s3ObjectHeadWithClient(
 export function s3ObjectExists(
   bucket: string,
   key: string,
+  signal?: AbortSignal,
 ): Computed<Promise<boolean>> {
-  return s3ObjectExistsWithClient(s3ClientForBucket(bucket), bucket, key);
+  return s3ObjectExistsWithClient(
+    s3ClientForBucket(bucket),
+    bucket,
+    key,
+    signal,
+  );
 }
 
 function s3ObjectExistsWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   key: string,
+  signal?: AbortSignal,
 ): Computed<Promise<boolean>> {
   return computed(async (get): Promise<boolean> => {
     const client = get(client$);
     const result = await settle(
-      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key })),
+      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), {
+        abortSignal: signal,
+      }),
     );
     if (result.ok) {
       return true;

@@ -1,7 +1,8 @@
 //! Mandatory coverage for the pool-owned half of aged blank replenishment.
 //!
-//! Production/Fresh preparation assembly remains P4. Caller-owned failed
-//! preparation/repark recovery is separate; there is no unguarded cleanup retry.
+//! The accepting caller supplies Fresh preparation coverage. Ordinary production
+//! replenishment is separate, as is caller-owned preparation/repark recovery;
+//! there is no unguarded cleanup retry.
 
 use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 use runner_lifecycle::idle_pool::{
@@ -36,7 +37,6 @@ impl BlankPoolReplenisher {
     pub async fn maybe_start_guarded(&mut self, request: GuardedBlankPoolRequest<'_>) {
         if !self.attempt_requested
             || self.preparation.is_some()
-            || self.optional.is_some()
             || request.mode != RunnerMode::Running
         {
             return;

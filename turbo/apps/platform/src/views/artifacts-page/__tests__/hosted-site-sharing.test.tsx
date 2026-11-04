@@ -30,7 +30,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite({ sidebar = false } = {}) {
+async function openSite({ sidebar = false, shareRows = false } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -58,6 +58,7 @@ async function openSite({ sidebar = false } = {}) {
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
+      [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -304,6 +305,33 @@ test("a failed save retains the draft and the current address", async () => {
   expect(
     screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
   ).toHaveAttribute("src", site.url);
+});
+
+test("with share rows on, Customize URL is a row that shows the current address and opens the editor", async () => {
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await openSite({ shareRows: true });
+  await openShare();
+  await expect(
+    screen.findByRole("switch", { name: "Show Okou banner" }),
+  ).resolves.toBeChecked();
+  await waitFor(() => {
+    expect(queryButtonByName("Customize URL")).toBeDefined();
+  });
+  const row = getButtonByName("Customize URL");
+  expect(row).toHaveTextContent("weekly-report.okou.app");
+
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
+
+  click(row);
+  await expect(
+    screen.findByLabelText("Website URL"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("A settings failure disables copying an unknown address", async () => {

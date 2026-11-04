@@ -130,6 +130,7 @@ export const marketingHandoffsContract: ClientDescriptor<
       401: true,
       403: true,
       404: true,
+      409: true,
       429: true,
       500: true,
       503: true,

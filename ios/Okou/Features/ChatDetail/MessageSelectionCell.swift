@@ -3,15 +3,52 @@ import UIKit
 
 /// Extend the rendered text's native edit menu through its public responder chain.
 final class MessageSelectionCell: UICollectionViewCell {
+  private var prefetchedContent: UIView?
   var representedRowID: String?
   var message: ChatMessage?
   var quote: ((ChatFeedbackSelection) -> Void)?
 
+  isolated deinit {
+    prefetchedContent?.removeFromSuperview()
+  }
+
   override func prepareForReuse() {
     super.prepareForReuse()
+    prefetchedContent?.removeFromSuperview()
+    prefetchedContent = nil
     representedRowID = nil
     message = nil
     quote = nil
+  }
+
+  func setMessageConfiguration(_ configuration: some UIContentConfiguration) {
+    prefetchedContent?.removeFromSuperview()
+    prefetchedContent = nil
+    contentConfiguration = configuration
+  }
+
+  func showPrefetchedContent(_ view: UIView) {
+    contentConfiguration = nil
+    prefetchedContent?.removeFromSuperview()
+    prefetchedContent = view
+    attachPrefetchedContent()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    attachPrefetchedContent()
+  }
+
+  private func attachPrefetchedContent() {
+    guard window != nil, let view = prefetchedContent, view.superview !== contentView else {
+      return
+    }
+    // Keep the host in its current window until the cell can take it.
+    contentView.addSubview(view)
+    view.frame = contentView.bounds
+    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.isUserInteractionEnabled = true
+    view.accessibilityElementsHidden = false
   }
 
   override func buildMenu(with builder: any UIMenuBuilder) {

@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1093.0](https://github.com/okou-ai/okou/compare/app-v0.1092.0...app-v0.1093.0) (2026-11-04)
+
+
+### Features
+
+* enable cjk markdown emphasis for all users ([#45132](https://github.com/okou-ai/okou/issues/45132)) ([f8fbf51](https://github.com/okou-ai/okou/commit/f8fbf5178c22f72686b37549bb5d1a87293d07c0))
+
+
+### Bug Fixes
+
+* **app:** preserve connector popover layout with chat accounts ([#45137](https://github.com/okou-ai/okou/issues/45137)) ([fa06464](https://github.com/okou-ai/okou/commit/fa064641cc49710b17a66a7019cb766bcd4c0baa))
+* **app:** refine chat home compliance footer hierarchy ([#44151](https://github.com/okou-ai/okou/issues/44151)) ([1d1d273](https://github.com/okou-ai/okou/commit/1d1d273e38cedf2df6f05b163d4020a4e1f30f4e))
+* **browser:** avoid unavailable flashes during capture resizing ([#45153](https://github.com/okou-ai/okou/issues/45153)) ([b0c822a](https://github.com/okou-ai/okou/commit/b0c822a8a9488bf80a1a282274c98916f836a7b2))
+
+
+### Refactoring
+
+* **app:** remove homepage task discovery ([#45136](https://github.com/okou-ai/okou/issues/45136)) ([221db9b](https://github.com/okou-ai/okou/commit/221db9bb5b9739e0d9bd295afe7cf232ce5b97aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.1
+    * @okouai/core bumped to 8.816.0
+
 ## [0.1092.0](https://github.com/okou-ai/okou/compare/app-v0.1091.0...app-v0.1092.0) (2026-11-04)
 
 

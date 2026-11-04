@@ -46,6 +46,14 @@ import { ChatThreadItem } from "../okou-page/sidebar-threads.tsx";
 import { projectThreadDragEventsRef$ } from "../../signals/projects/project-thread-drag.ts";
 import { ProjectThreadDropZone } from "./project-thread-drop-zone.tsx";
 import { ProjectThreadDragHint } from "./project-thread-drag-hint.tsx";
+import {
+  cancelProjectInlineRename$,
+  commitProjectInlineRename$,
+  projectInlineRename$,
+  projectInlineRenameInputRef$,
+  startProjectInlineRename$,
+  type ProjectInlineRename,
+} from "../../signals/projects/project-inline-rename.ts";
 
 function ProjectFolderMenu({
   project,
@@ -162,6 +170,144 @@ interface ProjectFolderProps {
   readonly layout: ProjectSidebarLayout;
 }
 
+function ProjectFolderRenameForm({
+  project,
+  touch,
+  layout,
+  expanded,
+  edit,
+}: ProjectFolderProps & {
+  readonly expanded: boolean;
+  readonly edit: ProjectInlineRename;
+}) {
+  const { t } = useTranslation();
+  const commit = useSet(commitProjectInlineRename$);
+  const cancel = useSet(cancelProjectInlineRename$);
+  const inputRef = useSet(projectInlineRenameInputRef$);
+  // Clicking another chat can end the route before the blur's save is sent.
+  const signal = useGet(rootSignal$);
+  const Icon = expanded ? FolderOpen : Folder;
+
+  function returnFocusToFolder(form: HTMLFormElement) {
+    form.parentElement
+      ?.querySelector<HTMLElement>("[data-project-folder-trigger]")
+      ?.focus();
+  }
+
+  return (
+    <form
+      className={cn(
+        "col-start-1 row-start-1 flex min-w-0 items-center gap-2 rounded-lg px-2 text-sm text-nav-copy ring-2 ring-inset ring-ring",
+        touch ? "min-h-12" : "h-8",
+        layout === "list" && "h-14 px-3 text-base leading-5",
+      )}
+      onSubmit={(event) => {
+        event.preventDefault();
+        returnFocusToFolder(event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        // Safari can end composition before its confirming Enter keydown.
+        if (
+          event.nativeEvent.isComposing ||
+          event.nativeEvent.keyCode === 229
+        ) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+          }
+          return;
+        }
+        if (event.key === "Escape") {
+          cancel(edit);
+          returnFocusToFolder(event.currentTarget);
+        }
+      }}
+    >
+      <Icon size={16} className="shrink-0 opacity-70" />
+      <input
+        ref={inputRef}
+        name="name"
+        type="text"
+        aria-label={t(($) => {
+          return $.projects.name;
+        })}
+        defaultValue={project.name}
+        maxLength={120}
+        autoComplete="off"
+        className="min-w-0 flex-1 bg-transparent p-0 outline-none"
+        onBlur={(event) => {
+          detach(
+            commit(edit, event.currentTarget.value, signal),
+            Reason.DomCallback,
+          );
+        }}
+      />
+    </form>
+  );
+}
+
+function ProjectFolderTrigger({
+  project,
+  touch,
+  layout,
+  expanded,
+  contentsId,
+}: ProjectFolderProps & {
+  readonly expanded: boolean;
+  readonly contentsId: string;
+}) {
+  const toggle = useSet(toggleProject$);
+  const edit = useGet(projectInlineRename$);
+  const renaming = edit?.folderId === contentsId;
+  const startRename = useSet(startProjectInlineRename$);
+  const Icon = expanded ? FolderOpen : Folder;
+  return (
+    <div className="grid min-w-0 flex-1">
+      <button
+        type="button"
+        data-project-folder-trigger=""
+        aria-expanded={expanded}
+        aria-controls={contentsId}
+        onClick={() => {
+          return toggle(project.id);
+        }}
+        onDoubleClick={(event) => {
+          if (
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          ) {
+            return;
+          }
+          startRename(project.id, contentsId);
+        }}
+        className={cn(
+          "col-start-1 row-start-1 flex min-w-0 items-center gap-2 rounded-lg px-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          touch ? "min-h-12" : "h-8",
+          layout === "list" && "h-14 px-3 text-base leading-5",
+        )}
+      >
+        <Icon
+          size={16}
+          className={cn("shrink-0 opacity-70", renaming && "invisible")}
+        />
+        <span className={cn("truncate", renaming && "invisible")}>
+          {project.name}
+        </span>
+      </button>
+      {renaming && (
+        <ProjectFolderRenameForm
+          project={project}
+          touch={touch}
+          layout={layout}
+          expanded={expanded}
+          edit={edit}
+        />
+      )}
+    </div>
+  );
+}
+
 function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const { t } = useTranslation();
   const agent = useLastResolved(projectCreationAgentId$);
@@ -171,11 +317,9 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   const items = useGet(projectThreadItems$).filter(({ thread }) => {
     return thread.projectId === project.id && thread.archived === archived;
   });
-  const toggle = useSet(toggleProject$);
   const showMore = useSet(showMoreProjectThreads$);
   const [creation, create] = useLoadableSet(newProjectThread$);
   const signal = useGet(rootSignal$);
-  const Icon = expanded ? FolderOpen : Folder;
   const contentsId = `project-threads-${touch ? "touch" : "sidebar"}-${project.id}`;
   function newChat() {
     detach(create(project.id, signal), Reason.DomCallback);
@@ -183,22 +327,13 @@ function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
   return (
     <ProjectThreadDropZone project={project} touch={touch}>
       <div className="group/project flex min-w-0 items-center rounded-lg hover:bg-state-hover">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={contentsId}
-          onClick={() => {
-            return toggle(project.id);
-          }}
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            touch ? "min-h-12" : "h-8",
-            layout === "list" && "h-14 px-3 text-base leading-5",
-          )}
-        >
-          <Icon size={16} className="shrink-0 opacity-70" />
-          <span className="truncate">{project.name}</span>
-        </button>
+        <ProjectFolderTrigger
+          project={project}
+          touch={touch}
+          layout={layout}
+          expanded={expanded}
+          contentsId={contentsId}
+        />
         <div
           className={cn(
             "flex shrink-0 items-center md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100",

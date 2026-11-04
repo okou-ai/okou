@@ -91,9 +91,7 @@ impl Probe {
             .lock()
             .map_err(|_| io::Error::other("returned Guest probe poisoned"))?;
         if state.created.is_some() {
-            return Err(io::Error::other(
-                "optional actual Guest created more than once",
-            ));
+            return Err(io::Error::other("actual Guest created more than once"));
         }
         state.created =
             Some(json!({"sandbox_id":id,"returned_ns":evidence::clocks()?.0,"home":home}));

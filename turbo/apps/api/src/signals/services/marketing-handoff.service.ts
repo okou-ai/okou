@@ -254,6 +254,71 @@ export const claimMarketingManifest$ = command(
   },
 );
 
+const reserveMarketingManifestAddress$ = command(
+  async (
+    { get, set },
+    args: { bucket: string; hash: string; body: string },
+    signal: AbortSignal,
+  ) => {
+    const shortHash = args.hash.slice(0, 12);
+    await get(
+      putImmutableS3Object(
+        args.bucket,
+        `manifest/${shortHash}.json`,
+        args.body,
+        "application/json",
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    const stored = await set(
+      readMarketingManifest$,
+      { bucket: args.bucket, hash: shortHash },
+      signal,
+    );
+    return stored?.hash === args.hash;
+  },
+);
+
+/** A full-digest receipt alone does not establish its short-address binding. */
+export const publicMarketingManifestHashes$ = command(
+  async (
+    { set },
+    args: { bucket: string; hashes: readonly string[] },
+    signal: AbortSignal,
+  ) => {
+    const published = await set(
+      publicMarketingContentHashes$,
+      { resourceType: "manifest", hashes: args.hashes },
+      signal,
+    );
+    const hashes = [...published];
+    const verified = new Set<string>();
+    for (let offset = 0; offset < hashes.length; offset += 4) {
+      const results = await Promise.allSettled(
+        hashes.slice(offset, offset + 4).map(async (hash) => {
+          const stored = await set(
+            readMarketingManifest$,
+            { bucket: args.bucket, hash: hash.slice(0, 12) },
+            signal,
+          );
+          if (stored?.hash === hash) {
+            verified.add(hash);
+          }
+        }),
+      );
+      signal.throwIfAborted();
+      const failure = results.find((result) => {
+        return result.status === "rejected";
+      });
+      if (failure) {
+        throw failure.reason;
+      }
+    }
+    return verified;
+  },
+);
+
 export const storeMarketingManifest$ = command(
   async (
     { get, set },
@@ -267,23 +332,13 @@ export const storeMarketingManifest$ = command(
     const body = serializeMarketingHandoff(args.manifest);
     const hash = marketingContentHash(body);
     const shortHash = hash.slice(0, 12);
-    await get(
-      putImmutableS3Object(
-        args.bucket,
-        `manifest/${shortHash}.json`,
-        body,
-        "application/json",
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
     // Conditional writes reserve the short address; compare full digests before granting access.
-    const stored = await set(
-      readMarketingManifest$,
-      { bucket: args.bucket, hash: shortHash },
+    const reserved = await set(
+      reserveMarketingManifestAddress$,
+      { bucket: args.bucket, hash, body },
       signal,
     );
-    if (!stored || stored.hash !== hash) {
+    if (!reserved) {
       return conflict(
         "This handoff address is already in use. Edit your request and try again.",
       );
@@ -321,8 +376,8 @@ export const publishMarketingManifests$ = command(
     );
     const hashes = [...publications.keys()];
     const published = await set(
-      publicMarketingContentHashes$,
-      { resourceType: "manifest", hashes },
+      publicMarketingManifestHashes$,
+      { bucket: args.bucket, hashes },
       signal,
     );
     const missing = [...publications].filter(([hash]) => {
@@ -358,6 +413,14 @@ export const publishMarketingManifests$ = command(
       signal.throwIfAborted();
       const results = await Promise.allSettled(
         missing.slice(offset, offset + 4).map(async ([hash, { body }]) => {
+          const reserved = await set(
+            reserveMarketingManifestAddress$,
+            { bucket: args.bucket, hash, body },
+            signal,
+          );
+          if (!reserved) {
+            return false;
+          }
           await get(
             putImmutableS3Object(
               args.bucket,
@@ -368,6 +431,7 @@ export const publishMarketingManifests$ = command(
             ),
           );
           signal.throwIfAborted();
+          return true;
         }),
       );
       signal.throwIfAborted();
@@ -376,6 +440,15 @@ export const publishMarketingManifests$ = command(
       });
       if (failure) {
         throw failure.reason;
+      }
+      if (
+        results.some((result) => {
+          return result.status === "fulfilled" && !result.value;
+        })
+      ) {
+        return conflict(
+          "This handoff address is already in use. Edit your request and try again.",
+        );
       }
     }
     await set(writeDb$)

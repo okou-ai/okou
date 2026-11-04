@@ -36,6 +36,10 @@ describe("Marketing content handoff", () => {
   let actor = { userId: "", orgId: "" };
   let taskId = "";
   let intentId = "";
+  let objects = new Map<
+    string,
+    { bytes: Buffer; type: string; metadata: Record<string, string> }
+  >();
 
   async function enableActor() {
     actor = { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
@@ -93,10 +97,7 @@ describe("Marketing content handoff", () => {
       "MARKETING_HANDOFF_PUBLISH_TOKEN",
       "publisher-credential-".repeat(3),
     );
-    const objects = new Map<
-      string,
-      { bytes: Buffer; type: string; metadata: Record<string, string> }
-    >();
+    objects = new Map();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command instanceof PutObjectCommand) {
         const key = `${command.input.Bucket}/${command.input.Key}`;
@@ -398,7 +399,7 @@ describe("Marketing content handoff", () => {
       .update(serializeMarketingHandoff(added))
       .digest("hex");
     expect(batch.body.hashes).toStrictEqual([first.body.hash, newHash]);
-    expect(puts() - before).toBe(1);
+    expect(puts() - before).toBe(2);
     await accept(
       api().publishBatch({
         headers: publisher,
@@ -406,7 +407,7 @@ describe("Marketing content handoff", () => {
       }),
       [200],
     );
-    expect(puts() - before).toBe(1);
+    expect(puts() - before).toBe(2);
     const status = await accept(
       api().publishStatus({
         headers: publisher,
@@ -426,6 +427,92 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(resolved.body).toStrictEqual(added);
+    const short = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: newHash.slice(0, 12) },
+        body: {},
+      }),
+      [200],
+    );
+    expect(short.body).toStrictEqual(added);
+  });
+
+  it("repairs a full-only public receipt before inventory accepts its short address", async () => {
+    const body = manifest(`Legacy public preset ${taskId}`);
+    const published = await accept(
+      api().publish({ headers: publisher, body }),
+      [200],
+    );
+    objects.delete(
+      `test-marketing-handoffs/manifest/${published.body.shortHash}.json`,
+    );
+    const inventory = () => {
+      return accept(
+        api().publishStatus({
+          headers: publisher,
+          body: { hashes: [published.body.hash] },
+        }),
+        [200],
+      );
+    };
+    expect((await inventory()).body).toStrictEqual({
+      missing: [published.body.hash],
+      shortAddressesVerified: true,
+    });
+    await accept(
+      api().publishBatch({ headers: publisher, body: { manifests: [body] } }),
+      [200],
+    );
+    expect((await inventory()).body.missing).toStrictEqual([]);
+    await enableActor();
+    const resolved = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: published.body.shortHash! },
+        body: {},
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(body);
+  });
+
+  it("rejects a colliding batch without granting access to any unpublished manifest", async () => {
+    const bodies = [
+      manifest("Short handoff collision 12975700"),
+      manifest("Short handoff collision 15460718"),
+      manifest(`Unrelated preset ${taskId}`),
+    ];
+    const hashes = bodies.map((body) => {
+      return createHash("sha256")
+        .update(serializeMarketingHandoff(body))
+        .digest("hex");
+    });
+    const failed = await api().publishBatch({
+      headers: publisher,
+      body: { manifests: bodies },
+    });
+    expect(failed.status).toBe(409);
+    const inventory = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(inventory.body.missing).toStrictEqual(hashes);
+    await enableActor();
+    for (const hash of [...hashes, hashes[0]!.slice(0, 12)]) {
+      expect(
+        (
+          await api().resolve({
+            headers: auth,
+            extraHeaders: { origin },
+            params: { hash },
+            body: {},
+          })
+        ).status,
+      ).toBe(404);
+    }
   });
 
   it("does not make private files public through batch publication", async () => {

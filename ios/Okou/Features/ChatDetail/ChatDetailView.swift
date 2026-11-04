@@ -80,7 +80,8 @@ struct ChatDetailView: View {
   var body: some View {
     let displayedMessages = conversation.visibleMessages
     ConversationCollectionView(
-      rows: rows, markdown: conversation.messageMarkdown, measurements: conversation.measurements,
+      rows: rows, markdown: conversation.messageMarkdown, renderContext: renderContext,
+      measurements: conversation.measurements,
       contentInsets: EdgeInsets(
         top: topContentInset, leading: 0, bottom: composerHeight, trailing: 0),
       anchor: scrolling.anchor,
@@ -247,6 +248,14 @@ struct ChatDetailView: View {
       }
     }
     .task(id: thread.id) { await conversation.refresh() }
+  }
+
+  private func renderContext(_ message: ChatMessage) -> MessageRenderPlan.Context {
+    let assistant = message.role == .assistant
+    return .init(
+      webURL: conversation.webURL,
+      action: assistant ? .init(agentID: thread.agentID, threadID: thread.id) : nil,
+      permissionsEnabled: true, artifacts: assistant ? conversation.artifacts : nil)
   }
 
   @ViewBuilder

@@ -133,6 +133,53 @@ preview_prepare_step = find_step(
     preview_job, "Prepare standalone app Worker preview"
 )
 build_step = find_step(preview_job, "Build canonical app artifact")
+preview_publish_step = find_step(preview_job, "Publish immutable app assets to R2")
+preview_deploy_step = find_step(preview_job, "Deploy standalone app Worker preview")
+# Canonical ready.json precedes static publication, so an existing artifact
+# must not suppress repair of an earlier partial static publication.
+if "if" in preview_publish_step or preview_publish_step.get("continue-on-error"):
+    raise RuntimeError("static publication must run on artifact reuse and fail closed")
+if preview_publish_step.get("env", {}).get("CANONICAL_ASSETS") != (
+    "${{ steps.worker-preview.outputs.canonical-dist }}/assets"
+):
+    raise RuntimeError("static publication must consume the prepared canonical assets")
+preview_steps = preview_job["steps"]
+if not (
+    preview_steps.index(find_step(preview_job, "Upload canonical app artifact"))
+    < preview_steps.index(preview_prepare_step)
+    < preview_steps.index(preview_publish_step)
+    < preview_steps.index(preview_deploy_step)
+):
+    raise RuntimeError("canonical readiness and static publication must precede Worker deployment")
+
+# Run the actual workflow command and publisher with only AWS controlled.
+# A provider failure must stop the step instead of deploying an incomplete build.
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    assets = root / "canonical assets"
+    assets.mkdir()
+    (assets / "app-AbCd1234.js").write_text("javascript\n")
+    fake_bin = root / "bin"
+    fake_bin.mkdir()
+    aws = fake_bin / "aws"
+    aws.write_text("#!/bin/sh\necho 'storage publication failed' >&2\nexit 23\n")
+    aws.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", preview_publish_step["run"]],
+        cwd=Path(sys.argv[1]).resolve().parents[2],
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "R2_ACCOUNT_ID": "test-account",
+            "R2_BUCKET_NAME": "test-bucket",
+            "CANONICAL_ASSETS": str(assets),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, result.stdout
+    assert "storage publication failed" in result.stderr, result.stderr
+
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     (root / "turbo").mkdir()

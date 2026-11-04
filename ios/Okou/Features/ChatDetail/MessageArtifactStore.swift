@@ -38,6 +38,7 @@ final class MessageArtifactStore {
   private let threadID: String
   private let markdown: MessageMarkdownCache
   let webURL: URL
+  var apiURL: URL { service.apiURL }
   private let didFail: @MainActor (Error) -> Void
   private var catalog: [ChatArtifact]?
   private var catalogTask: Task<[ChatArtifact], Error>?
@@ -112,7 +113,8 @@ final class MessageArtifactStore {
           for source in imageSources {
             let content = await markdown.content(for: source)
             guard !Task.isCancelled, preview?.id == previewID else { return }
-            for image in MessageArtifactBody.resources(content, viewer: self).map(metadata)
+            for image in MessageArtifactBody.resources(content, resolve: self.resource).map(
+              metadata)
             where image.kind == .image && seen.insert(image.id).inserted { group.append(image) }
           }
           preview?.images = group

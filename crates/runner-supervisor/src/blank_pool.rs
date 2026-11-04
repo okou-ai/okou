@@ -31,8 +31,6 @@ use runner_lifecycle::status::StatusTracker;
 
 mod guarded;
 pub use guarded::GuardedBlankPoolRequest;
-mod optional;
-pub use optional::{OptionalBlankPoolRequest, OptionalBlankResult, OptionalBlankSnapshot};
 
 const TARGET_PERCENT: usize = 10;
 const EXACT_IDLE_CAPACITY_YIELD_AGE: Duration = Duration::from_secs(30 * 60);
@@ -177,14 +175,10 @@ impl BlankPoolDiagnostics {
 }
 
 pub struct BlankPoolReplenisher {
-    #[cfg(feature = "test-support")]
-    optional_pool_wait: Option<tokio::sync::watch::Sender<bool>>,
     plan: Option<BlankPoolPlan>,
     diagnostics: BlankPoolDiagnostics,
     preparation: Option<BlankPreparation>,
     attempt_requested: bool,
-    optional: Option<OptionalBlankResult>,
-    budget: std::sync::Weak<ResourceBudget>,
 }
 
 struct BlankPrepareInput {
@@ -301,14 +295,10 @@ impl BlankPoolReplenisher {
         }
         let diagnostics = BlankPoolDiagnostics::new(plan.as_ref());
         Self {
-            #[cfg(feature = "test-support")]
-            optional_pool_wait: None,
             plan,
             diagnostics,
             preparation: None,
             attempt_requested: true,
-            optional: None,
-            budget: Arc::downgrade(budget),
         }
     }
 
@@ -332,9 +322,6 @@ impl BlankPoolReplenisher {
         if let Some(preparation) = self.preparation.as_ref() {
             self.diagnostics.unknown();
             preparation.cancel();
-        } else if let Some(optional) = self.optional.as_ref() {
-            self.diagnostics.unknown();
-            optional.cancel();
         }
     }
 
@@ -347,11 +334,7 @@ impl BlankPoolReplenisher {
         status: &Arc<StatusTracker>,
         idle_destroy_tracker: &IdleDestroyTracker,
     ) {
-        if !self.attempt_requested
-            || self.preparation.is_some()
-            || self.optional.is_some()
-            || mode != RunnerMode::Running
-        {
+        if !self.attempt_requested || self.preparation.is_some() || mode != RunnerMode::Running {
             return;
         }
         self.attempt_requested = false;
@@ -524,10 +507,6 @@ impl BlankPoolReplenisher {
 
     pub fn is_preparing(&self) -> bool {
         self.preparation.is_some()
-            || self
-                .optional
-                .as_ref()
-                .is_some_and(|result| !result.snapshot().finished)
     }
 
     pub async fn wait_for_preparation(&mut self) -> Option<BlankPrepareResult> {
@@ -653,12 +632,6 @@ impl BlankPoolReplenisher {
     }
 
     pub async fn shutdown(mut self, idle_destroy_tracker: &IdleDestroyTracker) {
-        if self.optional.is_some() {
-            if let Err(error) = self.shutdown_optional(idle_destroy_tracker).await {
-                warn!(%error, "optional blank shutdown retains unresolved resource custody");
-            }
-            return;
-        }
         if let Some(preparation) = self.preparation.take() {
             preparation.shutdown(idle_destroy_tracker).await;
         }

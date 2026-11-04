@@ -708,10 +708,6 @@ export const clientDescriptorManifest = [
     contracts: ["sshCredentialsContract"],
   },
   {
-    module: "suggestion-learning",
-    contracts: ["suggestionLearningContract"],
-  },
-  {
     module: "suggestions",
     contracts: ["suggestionsContract"],
   },

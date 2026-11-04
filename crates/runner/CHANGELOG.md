@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.9...runner-rs-v0.244.10) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** preserve system sbin directories in agent path ([#45143](https://github.com/okou-ai/okou/issues/45143)) ([42e1307](https://github.com/okou-ai/okou/commit/42e1307f32e3518faa32019c65356b8476216a8a))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.8...runner-rs-v0.244.9) (2026-11-04)
 
 

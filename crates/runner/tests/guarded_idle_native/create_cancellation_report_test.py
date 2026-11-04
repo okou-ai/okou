@@ -54,9 +54,9 @@ class CreateCancellationTests(unittest.TestCase):
                  "observer":{"started_ns":clock(570),"completed_ns":clock(580),"available_bytes":32*1024**3,"age_ns":2,"read_duration_ns":1,"joined":True}},
                 {"completion":{"workspace":str(pathlib.PurePosixPath(path).parent),"workspace_absent":True,
                     "cleanup_ns":clock(650),"allocated":[4,8192,2],"accounting":copy.deepcopy(held)},
-                 "release_ns":clock(610),"joined_ns":clock(690),"finished":True,"prepared":False,"published":False,
-                 "retained_resource":False,"error":create.ERROR,"allocated":[2,4096,1],"accounting":uncertain},
-                {"blank_shutdown_joined":True,"pressure_stopped":True,"heartbeat_joined":True,"provider_joined":True,
+                 "release_ns":clock(610),"joined_ns":clock(690),"transaction_joined":True,"cancelled":True,
+                 "allocated":[2,4096,1],"accounting":uncertain},
+                {"creation_joined":True,"pressure_stopped":True,"heartbeat_joined":True,"provider_joined":True,
                  "peer_joined":True,"snapshot_reverified":True,"allocated":[2,4096,1],"accounting":copy.deepcopy(uncertain)},
                 dict(uncertain,closed=True,allocated=[0,0,0]),
             ]
@@ -80,7 +80,7 @@ class CreateCancellationTests(unittest.TestCase):
 
     def test_cli_accepts_complete_and_rejects_missing_physical_join(self):
         self.write(); command=[sys.executable,str(pathlib.Path(__file__).with_name("create_cancellation_report.py")),str(self.root)]
-        self.assertEqual(json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)["format"],"native-create-cancellation-report-v1")
+        self.assertEqual(json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)["format"],"native-create-cancellation-report-v2")
         self.witnesses.pop(); self.write()
         self.assertNotEqual(subprocess.run(command,capture_output=True).returncode,0)
 

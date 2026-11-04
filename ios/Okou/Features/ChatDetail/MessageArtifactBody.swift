@@ -3,25 +3,25 @@ import Foundation
 import Textual
 
 /// Markdown links keep their label and location. Image nodes reserve native preview/card slots.
-@MainActor
 enum MessageArtifactBody {
   enum Block: Equatable {
     case markdown(AttributedString)
     case artifact(ChatArtifact, label: String, destination: URL?)
   }
 
-  static func resources(_ content: AttributedString, viewer: MessageArtifactStore) -> [ChatArtifact]
+  static func resources(_ content: AttributedString, resolve: (String) -> ChatArtifact?)
+    -> [ChatArtifact]
   {
     var seen = Set<ChatArtifact.Source>()
     return content.runs.compactMap { run in
       guard !isCode(run), let url = run.imageURL ?? run.link,
-        let resource = viewer.resource(url.absoluteString), seen.insert(resource.id).inserted
+        let resource = resolve(url.absoluteString), seen.insert(resource.id).inserted
       else { return nil }
       return resource
     }
   }
 
-  static func blocks(_ content: AttributedString, viewer: MessageArtifactStore) -> [Block] {
+  static func blocks(_ content: AttributedString, resolve: (String) -> ChatArtifact?) -> [Block] {
     var blocks: [Block] = []
     var cursor = content.startIndex
     var previousImageEnd: AttributedString.Index?
@@ -33,7 +33,7 @@ enum MessageArtifactBody {
           default: false
           }
         }) != true,
-        let url = run.imageURL, let resource = viewer.resource(url.absoluteString)
+        let url = run.imageURL, let resource = resolve(url.absoluteString)
       else { continue }
       if cursor < run.range.lowerBound {
         blocks.append(.markdown(AttributedString(content[cursor..<run.range.lowerBound])))

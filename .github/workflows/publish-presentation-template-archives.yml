@@ -148,6 +148,9 @@ jobs:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_USER_STORAGES_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      R2_PRIVATE_ARTIFACTS_BUCKET_NAME: ${{ vars.R2_PRIVATE_ARTIFACTS_BUCKET_NAME }}
+      R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID }}
+      R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY }}
     steps:
       - name: Check out dispatched vm0 commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -198,6 +201,9 @@ jobs:
           : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
           : "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}"
           : "${R2_USER_STORAGES_BUCKET_NAME:?R2_USER_STORAGES_BUCKET_NAME is required}"
+          : "${R2_PRIVATE_ARTIFACTS_BUCKET_NAME:?R2_PRIVATE_ARTIFACTS_BUCKET_NAME is required}"
+          : "${R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID:?R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID is required}"
+          : "${R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY:?R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY is required}"
 
           branches=$(curl -fsS \
             "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
@@ -228,5 +234,5 @@ jobs:
         env:
           SOURCE_COMMIT: ${{ needs.build.outputs.source_commit }}
         run: |
-          printf '### Production publication complete\n\n- Source commit: %s\n- Immutable R2 objects and production storage heads verified.\n' \
+          printf '### Production publication complete\n\n- Source commit: %s\n- Both immutable archive locations, Storage versions and independent Registry heads verified.\n' \
             "$SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
