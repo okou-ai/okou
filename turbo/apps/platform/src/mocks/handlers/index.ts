@@ -53,6 +53,7 @@ import {
 } from "./api-integrations-telegram.ts";
 import { appLogsHandlers } from "./api-logs.ts";
 import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
+import { apiMarketingHandoffsHandlers } from "./api-marketing-handoffs.ts";
 import { apiModelCatalogHandlers } from "./api-model-catalog.ts";
 import {
   apiMorningBriefPreferenceHandlers,
@@ -119,6 +120,7 @@ import { apiJobsHandlers, resetMockJobs } from "./api-jobs.ts";
 export const handlers = [
   ...apiHostHandlers,
   ...apiMarketingEventsHandlers,
+  ...apiMarketingHandoffsHandlers,
   ...clerkLocalizationHandlers,
   ...localeResourceHandlers,
   ...chatThreadEmojiHandlers,
