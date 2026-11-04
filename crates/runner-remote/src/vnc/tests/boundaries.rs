@@ -166,15 +166,13 @@ async fn timed_out_dns_retains_session_capacity_until_resolution_completes() {
     let _check = h.check("valid", 200).await;
     let gate = Arc::new(Semaphore::new(0));
     *h.network.resolve_gate.lock().unwrap() = Some(Arc::clone(&gate));
-    for _ in 0..2 {
-        let reply = h
-            .run
-            .raw(
-                json!({"version":1,"method":"vnc.session.start","remaining_ms":2000,
+    for query_count in 1..=2 {
+        let request = h.run.raw(
+            json!({"version":1,"method":"vnc.session.start","remaining_ms":2000,
             "params":{"connectionId":CONNECTION,"mode":"shared"}})
-                .to_string(),
-            )
-            .await;
+            .to_string(),
+        );
+        let reply = h.finish_dns_timeout(query_count, request).await;
         assert_eq!(
             reply.result(),
             &json!({"outcome":"failed","reason":"timed_out"})
