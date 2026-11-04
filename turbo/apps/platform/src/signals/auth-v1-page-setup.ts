@@ -20,6 +20,7 @@ import { logger } from "./log.ts";
 import { settle } from "./utils.ts";
 import { createAuthV1ClerkSignals } from "./auth-v1-clerk.ts";
 import { resetSignupStart$ } from "./signup-start.ts";
+import { signupFriendReferralEnabled$ } from "./friend-referrals.ts";
 
 const L = logger("AuthV1");
 
@@ -79,6 +80,7 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     signal.throwIfAborted();
     const showSignupStart =
       mode === "sign-up" &&
+      get(signupFriendReferralEnabled$) &&
       location.pathname === "/sign-up" &&
       !user &&
       !clerk.client?.signUp.status &&

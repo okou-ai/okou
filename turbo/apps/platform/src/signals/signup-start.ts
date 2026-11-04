@@ -74,6 +74,7 @@ export const startSignup$ = command(
       await clerk.setActive({
         session: attempt.createdSessionId,
         navigate: ({ session, decorateUrl }) => {
+          signal.throwIfAborted();
           const destination = session.currentTask
             ? signupStepUrl(`tasks/${session.currentTask.key}`, redirectUrl)
                 .href

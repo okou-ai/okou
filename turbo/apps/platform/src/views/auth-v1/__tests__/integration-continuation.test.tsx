@@ -4,7 +4,6 @@ import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/int
 
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { signupOAuthRedirect } from "./signup-test-helpers.ts";
 
 const context = testContext();
 const ENTRIES = [
@@ -154,8 +153,8 @@ test.each(ENTRIES)(
         window.location.assign(to);
       },
     });
-    await screen.findByRole("heading", { name: "Create your account" });
-    expectContinuation(await signupOAuthRedirect(), target);
+    const signUp = await screen.findByTestId("clerk-sign-up");
+    expectContinuation(signUp.dataset.clerkForceRedirectUrl, target);
   },
 );
 

@@ -52,12 +52,20 @@ export function SignupStart({ signInUrl }: { readonly signInUrl: string }) {
           onSubmit={(event) => {
             event.preventDefault();
             const fields = new FormData(event.currentTarget);
+            const emailAddress = fields.get("emailAddress");
+            const password = fields.get("password");
+            if (
+              typeof emailAddress !== "string" ||
+              typeof password !== "string"
+            ) {
+              throw new Error("Signup form is missing its email or password");
+            }
             detach(
               start(
                 {
                   kind: "email",
-                  emailAddress: String(fields.get("emailAddress") ?? ""),
-                  password: String(fields.get("password") ?? ""),
+                  emailAddress,
+                  password,
                   legalAccepted: fields.get("legalAccepted") === "on",
                 },
                 signal,

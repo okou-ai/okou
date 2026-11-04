@@ -15,7 +15,6 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
-import { signupControl, signupOAuthRedirect } from "./signup-test-helpers.ts";
 
 const context = testContext();
 const signedInContext = createTestRuntime(context);
@@ -27,22 +26,10 @@ test("An unavailable referral link still opens the normal signup form", async ()
     });
   });
   await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
+  expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
   expect(
-    screen.getByRole("heading", { name: "Create your account" }),
-  ).toBeInTheDocument();
-  const code = screen.getByLabelText("Invitation code (optional)");
-  expect(code).toHaveValue("a7k2p9");
-  expect(code).toHaveAttribute("aria-invalid", "true");
-  expect(
-    screen.getByText(
-      "This invitation code is unavailable. Check it or leave blank to continue.",
-    ),
-  ).toBeInTheDocument();
-  fireEvent.change(code, { target: { value: "" } });
-  await waitFor(() => {
-    expect(code).toHaveValue("");
-    expect(code).toHaveAttribute("aria-invalid", "false");
-  });
+    screen.queryByLabelText("Invitation code (optional)"),
+  ).not.toBeInTheDocument();
   expect(document.title).toBe("Sign up | Okou");
 });
 
@@ -84,8 +71,9 @@ test("A friend can enter, correct, or remove an optional invitation code", async
           error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
         });
   });
-  await setupSignedOutPage("/sign-up");
+  await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
   const code = screen.getByLabelText("Invitation code (optional)");
+  await fill(code, "");
   expect(code).toHaveValue("");
   const user = userEvent.setup({ delay: null });
   await user.type(code, "wrong!");
@@ -110,6 +98,9 @@ test("Changing a code while it is being checked does not apply the previous code
   context.mocks.api(
     friendReferralsContract.visit,
     async ({ body, respond }) => {
+      if (body.code === "c9n4r1") {
+        return respond(200, { token: "beta-referral-visit" });
+      }
       if (body.code === "a7k2p9") {
         await oldVisit.promise;
         return respond(200, { token: "old-referral-visit" });
@@ -120,7 +111,7 @@ test("Changing a code while it is being checked does not apply the previous code
       });
     },
   );
-  await setupSignedOutPage("/sign-up");
+  await setupSignedOutPage("/sign-up?friend_referral=c9n4r1");
   const code = screen.getByLabelText("Invitation code (optional)");
   fireEvent.change(code, { target: { value: "a7k2p9" } });
   await screen.findByText("Checking invitation code…");
@@ -293,22 +284,27 @@ test("Clerk cross-origin navigation stays browser-owned", async () => {
   expect(window.location.pathname).toBe("/sign-in");
 });
 
-test("The signup form preserves an allowed redirect URL", async () => {
+test("The hosted sign-up form renders with an allowed redirect URL", async () => {
   const redirectUrl = PRESENTATION_ONBOARDING_URL;
   await setupSignedOutPage(
     `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
-  expect(
-    screen.getByRole("heading", { name: "Create your account" }),
-  ).toBeInTheDocument();
+  const signUp = screen.getByTestId("clerk-sign-up");
+  expect(signUp).toHaveAttribute("data-clerk-routing", "path");
+  expect(signUp).toHaveTextContent("/sign-up");
   const signInUrl = new URL(
-    signupControl("link", "Sign in").getAttribute("href") ?? "",
+    signUp.dataset.clerkSignInUrl ?? "",
     location.origin,
   );
   expect(signInUrl.pathname).toBe("/sign-in");
   expect(signInUrl.searchParams.get("redirect_url")).toBe(redirectUrl);
-  await expect(signupOAuthRedirect()).resolves.toBe(redirectUrl);
+  expect(signUp).not.toHaveAttribute("data-clerk-sign-up-url");
+  expect(signUp).toHaveAttribute(
+    "data-clerk-fallback-redirect-url",
+    redirectUrl,
+  );
+  expect(signUp).toHaveAttribute("data-clerk-force-redirect-url", redirectUrl);
   expect(screen.queryByTestId("clerk-google-one-tap")).not.toBeInTheDocument();
   expect(document.title).toBe("Sign up | Okou");
   expect(clerkProviderConfig()).toHaveAttribute(
@@ -354,8 +350,9 @@ test("Okou auth intent survives Clerk moving the redirect into the hash", async 
     `/sign-up#/?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
-  await expect(signupOAuthRedirect()).resolves.toBe(redirectUrl);
-  expect(signupControl("link", "Sign in").getAttribute("href")).toContain(
+  const signUp = screen.getByTestId("clerk-sign-up");
+  expect(signUp).toHaveAttribute("data-clerk-force-redirect-url", redirectUrl);
+  expect(signUp.dataset.clerkSignInUrl).toContain(
     `redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
   expect(document.title).toBe("Sign up | Okou");
@@ -380,7 +377,9 @@ test("Default sign-up redirects do not propagate acquisition parameters", async 
     "/sign-up?gclid=click-123&utm_campaign=summer#/verify?step=code",
   );
 
-  const redirectUrl = new URL(await signupOAuthRedirect());
+  const redirectUrl = new URL(
+    screen.getByTestId("clerk-sign-up").dataset.clerkForceRedirectUrl ?? "",
+  );
   expect(redirectUrl.toString()).toBe("https://app.okou.ai/onboarding");
 });
 
@@ -390,7 +389,9 @@ test("Sign-up redirects to sibling origins of the current host are kept", async 
     `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
-  await expect(signupOAuthRedirect()).resolves.toBe(redirectUrl);
+  expect(
+    screen.getByTestId("clerk-sign-up").dataset.clerkForceRedirectUrl,
+  ).toBe(redirectUrl);
 });
 
 test("Sign-up redirects to other environments fall back to onboarding", async () => {
@@ -398,9 +399,9 @@ test("Sign-up redirects to other environments fall back to onboarding", async ()
     "/sign-up?redirect_url=https%3A%2F%2Fstaging-www.omby.ai%2Fconnector%2Fsuccess",
   );
 
-  await expect(signupOAuthRedirect()).resolves.toBe(
-    "https://app.okou.ai/onboarding",
-  );
+  expect(
+    screen.getByTestId("clerk-sign-up").dataset.clerkForceRedirectUrl,
+  ).toBe("https://app.okou.ai/onboarding");
 });
 
 test("Hosted auth reaches the brand home and the theme toggle", async () => {
