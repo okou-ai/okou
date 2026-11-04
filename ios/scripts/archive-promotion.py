@@ -2,6 +2,7 @@
 """Exact-input iOS test evidence and immutable archive promotion protocol."""
 
 import argparse
+from functools import cache
 import hashlib
 import io
 import json
@@ -12,7 +13,6 @@ import subprocess
 import tarfile
 import time
 import tomllib
-from functools import cache
 from pathlib import Path, PurePosixPath
 
 INPUT_PATHS = (
@@ -203,17 +203,7 @@ def release_only(base):
                     SEMVER, after.decode().strip()
                 ):
                     break
-            elif (
-                config["release-type"] == "node"
-                and path == f"{package}/package.json"
-                or any(
-                    isinstance(extra, dict)
-                    and extra.get("type") == "json"
-                    and extra.get("jsonpath") == "$.version"
-                    and path == f"{package}/{extra['path']}"
-                    for extra in config.get("extra-files", [])
-                )
-            ):
+            elif config["release-type"] == "node" and path == f"{package}/package.json":
                 if version_only(json.loads(before), json.loads(after)):
                     break
             elif config["release-type"] == "rust" and path == f"{package}/Cargo.toml":

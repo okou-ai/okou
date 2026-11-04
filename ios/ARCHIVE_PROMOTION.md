@@ -26,31 +26,21 @@ The simulator job resolves locked dependencies while waiting for `simctl bootsta
 then compiles after system boot readiness. Cold system-service startup must finish
 before asset compilation; requesting a boot alone does not establish readiness.
 
-Package tests and the device archive must succeed before the Ubuntu publisher
-writes canonical objects. Simulator validation must either succeed in this run
-or be explicitly skipped after exact-input historical evidence is verified. The
-publisher compares their independently captured **complete input
+All three native jobs must succeed before the Ubuntu publisher writes canonical
+objects. The publisher compares their independently captured **complete input
 fingerprints and toolchains**, rejecting a missing or mismatched package/simulator
 record. It verifies the tar checksum produced on macOS before transfer and
 checks archive provenance against `build-archive` and test provenance against
 `build-test` and `test-packages`, using each producer's exact run attempt. The
-required `ci-gate-ios` includes the evidence decision, all three native jobs, and
-publication; failed evidence resolution never permits a skipped simulator job.
+required `ci-gate-ios` includes all three native jobs and publication.
 
 A release-only merge group can omit simulator tests only when an existing test
-record matches its complete test input fingerprint. A separate macOS
-`resolve-test-evidence` job captures the actual toolchain and verifies historical
-provenance before selecting simulator work. A match skips both
-`prepare-package-sources` and the entire `build-test` job, and transfers the
-verified evidence and current inputs to the publisher. A missing record selects
-the full simulator build/tests; mixed groups start those jobs directly. Device
-archive builds remain independent and parallel. Standalone package tests still
-run on every selected merge group. The classifier examines the
+record matches its complete test input fingerprint. Standalone package tests
+still run on every selected merge group. The classifier examines the
 **whole group's diff**, not its branch name or last commit. Its conservative
 allowlist accepts release manifest versions, configured package changelogs,
-simple version files, package.json top-level versions, configured JSON extra-files
-whose `$.version` is the only changed value, Cargo package versions and local
-Cargo.lock package versions, and the exact release-please version line in
+simple version files, package.json top-level versions, Cargo package versions and
+local Cargo.lock package versions, and the exact release-please version line in
 `ios/Config/Shared.xcconfig`. Other changes, including mixed code changes outside
 iOS, run tests normally. Unrecognized metadata changes also run tests.
 
