@@ -1166,7 +1166,9 @@ export function Browser({
             aria-label={t(($) => {
               return $.browserViewer.liveView;
             })}
-            aria-hidden={!controls.streaming && !presentation.retainedFrame}
+            aria-hidden={
+              presentation.status !== "streaming" && !presentation.retainedFrame
+            }
             className="block h-full w-full object-contain"
           />
           <BrowserInput signals={signals} />
@@ -1176,7 +1178,7 @@ export function Browser({
             signals={signals}
             creating={createOperation.state === "loading"}
             contentVisible={
-              controls.streaming ||
+              presentation.status === "streaming" ||
               presentation.loadingPreview ||
               presentation.blank
             }
