@@ -1224,6 +1224,7 @@ async fn other_channel_attach_outcomes_during_reconnect_attach_are_ignored() {
     let (other_channel_frames_sent_tx, other_channel_frames_sent_rx) =
         tokio::sync::oneshot::channel::<()>();
     let (noise_checked_tx, noise_checked_rx) = tokio::sync::oneshot::channel::<()>();
+    let (reconnected_seen_tx, reconnected_seen_rx) = tokio::sync::oneshot::channel::<()>();
     let (message_seen_tx, message_seen_rx) = tokio::sync::oneshot::channel::<()>();
     let server_task = tokio::spawn(async move {
         let conn = ws.accept_and_handshake("ch", "conn-1").await.unwrap();
@@ -1291,6 +1292,45 @@ async fn other_channel_attach_outcomes_during_reconnect_attach_are_ignored() {
         other_channel_frames_sent_tx.send(()).unwrap();
         wait_for_test_observation(noise_checked_rx, "other-channel noise check").await;
 
+        // A replacement serial here would hide resume state lost to the unrelated DETACHED.
+        let attached_without_serial = ProtocolMessage {
+            action: action::ATTACHED,
+            channel: Some("ch".into()),
+            ..Default::default()
+        };
+        conn2
+            .send(tungstenite::Message::Binary(
+                encode_msg(&attached_without_serial).unwrap().into(),
+            ))
+            .await
+            .unwrap();
+        wait_for_test_observation(reconnected_seen_rx, "reconnect Connected event").await;
+
+        let detached = ProtocolMessage {
+            action: action::DETACHED,
+            channel: Some("ch".into()),
+            error: Some(ErrorInfo {
+                code: 80003,
+                status_code: Some(500),
+                message: "channel detached".into(),
+            }),
+            ..Default::default()
+        };
+        conn2
+            .send(tungstenite::Message::Binary(
+                encode_msg(&detached).unwrap().into(),
+            ))
+            .await
+            .unwrap();
+
+        let msg = expect_protocol_msg(&mut conn2, "reattach after other-channel attach outcomes")
+            .await
+            .unwrap();
+        assert_eq!(msg.action, action::ATTACH);
+        assert_eq!(msg.channel.as_deref(), Some("ch"));
+        assert_eq!(msg.channel_serial.as_deref(), Some("serial-0"));
+        assert_attach_resume(&msg, true);
+
         let attached = ProtocolMessage {
             action: action::ATTACHED,
             channel: Some("ch".into()),
@@ -1345,6 +1385,7 @@ async fn other_channel_attach_outcomes_during_reconnect_attach_are_ignored() {
 
     let event = expect_event(&mut sub, "Connected").await.unwrap();
     assert!(matches!(event, Event::Connected));
+    reconnected_seen_tx.send(()).unwrap();
 
     let event = expect_event(&mut sub, "message after other-channel attach outcomes")
         .await
