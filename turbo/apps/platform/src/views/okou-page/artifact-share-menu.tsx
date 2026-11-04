@@ -1,7 +1,7 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
-import { useId, type ReactNode } from "react";
+import type { ReactNode } from "react";
 // The shared `Radio` is the 16px circle meant to sit beside a label. Here the
 // whole row is the control and the trailing check marks it, the way
 // `DropdownMenu` and `Select` mark theirs, so the row composes `Radio.Root`
@@ -95,7 +95,6 @@ export function SharePermissionChoices({
       }),
     },
   ] as const;
-  const idPrefix = useId();
   // No pending choice is confirmed yet. Keeping every option unchecked also
   // lets native pointer and arrow selection reaffirm the server baseline.
   return (
@@ -112,8 +111,6 @@ export function SharePermissionChoices({
     >
       {options.map(({ audience, Icon, label, description }) => {
         const isSelected = !saving && selected === audience;
-        const labelId = `${idPrefix}-${audience}-label`;
-        const descriptionId = `${idPrefix}-${audience}-description`;
         // The row names its audience by the label alone; the line beneath it
         // says what that audience can do, so it describes rather than names.
         return (
@@ -123,8 +120,8 @@ export function SharePermissionChoices({
             nativeButton
             render={<button type="button" />}
             aria-busy={saving}
-            aria-labelledby={labelId}
-            aria-describedby={descriptionId}
+            aria-label={label}
+            aria-description={description}
             className={cn(
               "flex w-full select-none items-start gap-2 rounded-lg px-2 text-left outline-none transition-colors",
               MENU_ROW_HEIGHT_CLASS,
@@ -140,16 +137,10 @@ export function SharePermissionChoices({
           >
             <Icon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
             <span className="flex min-w-0 flex-1 flex-col">
-              <span
-                id={labelId}
-                className={cn("truncate", isSelected && "font-medium")}
-              >
+              <span className={cn("truncate", isSelected && "font-medium")}>
                 {label}
               </span>
-              <span
-                id={descriptionId}
-                className="truncate text-xs text-muted-foreground"
-              >
+              <span className="truncate text-xs text-muted-foreground">
                 {description}
               </span>
             </span>

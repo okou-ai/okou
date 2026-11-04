@@ -90,13 +90,7 @@ function requiredButtonNamed(name: string): HTMLElement {
 function requiredRadioNamed(name: string): HTMLElement {
   const group = screen.getByRole("radiogroup", { name: "Who can access" });
   const radio = queryAllByRoleFast("radio", group).find((candidate) => {
-    // Rows name their audience through `aria-labelledby`; the description
-    // line beneath it is not part of that name.
-    const labelId = candidate.getAttribute("aria-labelledby");
     return (
-      (labelId
-        ? document.getElementById(labelId)?.textContent?.trim()
-        : undefined) === name ||
       candidate.getAttribute("aria-label") === name ||
       candidate.textContent?.trim() === name
     );
