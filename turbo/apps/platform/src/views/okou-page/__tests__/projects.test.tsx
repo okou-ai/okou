@@ -23,6 +23,7 @@ import {
   click,
   fill,
   setupPage,
+  startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import {
@@ -134,6 +135,75 @@ function releasePageDom() {
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
 }
+
+test("Cached Project folders appear before chat setup and remote synchronization finish", async () => {
+  const thread = continuityThread(112, 1, "Cached conversation");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 112,
+    threads: [thread],
+  });
+  metadata();
+  const resetPage$ = resetSignal();
+  const signal = context.store.set(resetPage$, context.signal);
+  const options = {
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    sharedWorkerTestTransport: "message-port" as const,
+  };
+  await setupPage({ context: { ...context, signal }, ...options });
+  expect(button("Launch", folder())).toBeInTheDocument();
+
+  context.store.set(resetPage$);
+  releasePageDom();
+  const chatSetupStarted = context.mocks.deferred<void>();
+  const chatSetup = context.mocks.deferred<void>();
+  const remote = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadDraftContract.get, async ({ respond }) => {
+    if (!chatSetupStarted.settled()) {
+      chatSetupStarted.resolve();
+    }
+    await chatSetup.promise;
+    return respond(200, { draftUserMessage: null, draftAttachments: null });
+  });
+  context.mocks.api(projectsContract.events, async ({ respond }) => {
+    await remote.promise;
+    return respond(200, {
+      events: [
+        {
+          id: "30000000-0000-4000-8000-000000000073",
+          seqId: 2,
+          projectId: id,
+          kind: "renamed",
+          name: "Launch updated",
+          createdAt: at,
+        },
+      ],
+      hasMore: false,
+    });
+  });
+
+  const page = await startPage({ context: reloadedContext, ...options });
+  try {
+    await page.content;
+    await chatSetupStarted.promise;
+    const projects = screen.getByRole("region", { name: "Projects" });
+    await within(projects).findByText("Launch");
+    expect(threadLink(thread.id)).toBeInTheDocument();
+    expect(chatSetup.settled()).toBeFalsy();
+    expect(remote.settled()).toBeFalsy();
+
+    remote.resolve();
+    await within(projects).findByText("Launch updated");
+    expect(chatSetup.settled()).toBeFalsy();
+  } finally {
+    if (!remote.settled()) {
+      remote.resolve();
+    }
+    chatSetup.resolve();
+    await page.ready;
+  }
+});
 
 test("Project folders stay visible when returning from a chat to its pinned Agent", async () => {
   const ordinary = continuityThread(111, 1, "Ordinary chat");

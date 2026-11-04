@@ -13,6 +13,7 @@ import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-li
 import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
+import { hydrateProjects$ } from "./projects/projects.ts";
 import { setSharedWorkerRealtimeBridge$, setupRealtime$ } from "./realtime.ts";
 import {
   bridgeConnected$,
@@ -118,7 +119,10 @@ export const setupAuthenticatedBootstrapData$ = command(
     }
     await get(bridgeConnected$);
     signal.throwIfAborted();
-    await set(initializeChatThreadEventSource$, signal);
+    await Promise.all([
+      set(initializeChatThreadEventSource$, signal),
+      set(hydrateProjects$, signal),
+    ]);
     signal.throwIfAborted();
   },
 );
