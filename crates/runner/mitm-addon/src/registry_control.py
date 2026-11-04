@@ -6,7 +6,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 
 import addon_process_logging
-import builtin_firewall_cache
+import builtin_connector_diagnostics
 import registry
 import registry_observation
 
@@ -25,7 +25,7 @@ class RegistryControl:
     def warm_catalog(self) -> Future[dict[str, object] | None] | None:
         return self._submit(
             lambda: registry_observation.catalog_snapshot(
-                builtin_firewall_cache.load_configured_catalog_snapshot()
+                builtin_connector_diagnostics.prepare_configured_catalog_snapshot()
             )
         )
 

@@ -319,6 +319,11 @@ def valid_utf8_graph(graph: PathGraph) -> PathGraph:
     return result
 
 
+def is_literal_path_language(symbols: tuple[int, ...]) -> bool:
+    """Whether decoding and data escaping leave exactly the original sequence."""
+    return _PERCENT not in symbols and not _ESCAPED_DATA.intersection(symbols)
+
+
 def path_language(symbols: tuple[int, ...], budget: WorkBudget) -> PathGraph:
     graph = decoding_graph(symbols, budget)
     if _PERCENT not in symbols:
