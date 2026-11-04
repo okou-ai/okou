@@ -251,7 +251,7 @@ export function ShareCopyButton({
  */
 function ShareCopyFooter({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="-mx-1.5 mt-1.5 border-t border-border px-1.5 pt-1.5">
+    <div className="-mx-1.5 mt-1.5 border-t border-t-gray-400 px-1.5 pt-1.5">
       {children}
     </div>
   );
