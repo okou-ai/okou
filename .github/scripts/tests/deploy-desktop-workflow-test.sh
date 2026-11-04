@@ -25,7 +25,7 @@ evaluate = lambda do |condition, event_name, head_ref, changed, detection_result
   default_success && eval(expression, binding)
 end
 detect_condition = desktop.fetch("detect-desktop-version").fetch("if")
-{"pull_request" => true, "push" => false, "workflow_dispatch" => false, "merge_group" => true}.each do |event_name, expected|
+{"pull_request" => false, "push" => false, "workflow_dispatch" => false, "merge_group" => true}.each do |event_name, expected|
   raise "unexpected Desktop version detection for #{event_name}" unless evaluate.call(detect_condition, event_name, "", "", "success", false) == expected
 end
 [
