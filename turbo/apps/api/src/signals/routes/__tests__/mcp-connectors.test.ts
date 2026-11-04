@@ -492,26 +492,36 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       registration: "cimd",
       offlineAccessRegistered: false,
       dcrTokenEndpointAuthMethod: "none",
+      advertisedMethods: ["none"],
+      requestedMethod: "none",
     },
     {
       registration: "dcr",
       offlineAccessRegistered: true,
       dcrTokenEndpointAuthMethod: "client_secret_basic",
+      advertisedMethods: ["none", "client_secret_basic"],
+      requestedMethod: "client_secret_basic",
     },
     {
       registration: "dcr",
       offlineAccessRegistered: true,
       dcrTokenEndpointAuthMethod: "client_secret_post",
+      advertisedMethods: ["none", "client_secret_post"],
+      requestedMethod: "client_secret_post",
     },
     {
       registration: "dcr",
       offlineAccessRegistered: true,
       dcrTokenEndpointAuthMethod: "none",
+      advertisedMethods: ["client_secret_basic", "client_secret_post"],
+      requestedMethod: "client_secret_basic",
     },
     {
       registration: "dcr",
       offlineAccessRegistered: false,
       dcrTokenEndpointAuthMethod: "client_secret_basic",
+      advertisedMethods: ["none", "client_secret_basic"],
+      requestedMethod: "client_secret_basic",
     },
   ] as const)(
     "reauthorizes the parent-resource $registration account with $dcrTokenEndpointAuthMethod and offline access registered=$offlineAccessRegistered",
@@ -519,6 +529,8 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       registration,
       offlineAccessRegistered,
       dcrTokenEndpointAuthMethod,
+      advertisedMethods,
+      requestedMethod,
     }) => {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
@@ -534,10 +546,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         registration,
         dcrClientId: initialDcrClientId,
         dcrTokenEndpointAuthMethod,
-        tokenEndpointAuthMethodsSupported:
-          dcrTokenEndpointAuthMethod === "none"
-            ? ["none"]
-            : ["none", dcrTokenEndpointAuthMethod],
+        tokenEndpointAuthMethodsSupported: advertisedMethods,
         dcrDefaultTokenEndpointAuthMethod: "none",
         resource,
         initialExpiresIn: 3600,
@@ -657,7 +666,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const registrationCount = provider.registrationBodies.length;
       if (registration === "dcr") {
         expect(provider.registrationBodies[0]?.token_endpoint_auth_method).toBe(
-          dcrTokenEndpointAuthMethod,
+          requestedMethod,
         );
       }
       provider.advertiseAuthorizationServers([
