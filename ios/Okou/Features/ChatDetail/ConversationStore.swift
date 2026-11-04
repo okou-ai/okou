@@ -206,7 +206,8 @@ final class ConversationStore {
   }
 
   var canRelease: Bool {
-    (!composer.hasContent || composer.isDurable) && pending.isEmpty
+    (!composer.hasContent || composer.isDurable) && composer.voice?.isWorking != true
+      && pending.isEmpty
       && modelSelection?.isBusy != true
       && !isLoading && !isSending && !isStopping && !isLoadingEarlier
       && !isRecoveringFailure && !permissionActions.isBusy
@@ -597,6 +598,7 @@ final class ConversationStore {
   }
 
   func reconcileVisibility() {
+    if !isVisible() { composer.voice?.suspend() }
     reconcileActivitySummary()
     if detailOwner != nil && isVisible() { requestFailureAccounts() }
     reconcileRunUsage()
