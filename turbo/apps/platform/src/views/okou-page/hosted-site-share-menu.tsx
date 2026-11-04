@@ -390,14 +390,11 @@ function CustomizeUrlRow({
   // opens the address editor, and the current address is its value.
   return (
     <div className="-mx-2">
-      <button
-        type="button"
+      <Button
         autoFocus={autoFocus}
+        variant="quiet"
         aria-label={label}
-        className={cn(
-          "flex w-full select-none items-center gap-2 rounded-lg px-2 text-left outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover",
-          MENU_ROW_HEIGHT_CLASS,
-        )}
+        className="w-full justify-start px-2 font-normal text-foreground"
         onClick={onEdit}
       >
         <Pencil size={16} className="shrink-0 text-muted-foreground" />
@@ -406,7 +403,7 @@ function CustomizeUrlRow({
           {address}
         </span>
         <ChevronRight size={16} className="shrink-0" />
-      </button>
+      </Button>
     </div>
   );
 }
