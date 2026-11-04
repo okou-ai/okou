@@ -4,6 +4,7 @@ export type ProjectDialog =
       readonly kind: "editor";
       readonly projectId?: string;
       readonly fromThreadId?: string;
+      readonly open: boolean;
     }
   | {
       readonly kind: "membership";
@@ -15,7 +16,7 @@ export type ProjectDialog =
 const internalDialog$ = state<ProjectDialog | null>(null);
 export const projectDialog$ = computed((get) => {
   const dialog = get(internalDialog$);
-  return dialog?.kind === "membership" && !dialog.open ? null : dialog;
+  return dialog && dialog.kind !== "delete" && !dialog.open ? null : dialog;
 });
 // Let Base UI finish closing and restore focus after a moved row mounts.
 export const projectDialogSession$ = computed((get) => {
@@ -87,7 +88,7 @@ export const openProjectEditor$ = command(
     name = "",
   ) => {
     set(internalName$, name);
-    set(internalDialog$, { kind: "editor", ...options });
+    set(internalDialog$, { kind: "editor", ...options, open: true });
   },
 );
 export const closeProjectDialog$ = command(
@@ -95,14 +96,14 @@ export const closeProjectDialog$ = command(
     if (get(projectDialog$) === expected) {
       set(
         internalDialog$,
-        expected.kind === "membership" ? { ...expected, open: false } : null,
+        expected.kind === "delete" ? null : { ...expected, open: false },
       );
       set(activeThreadMenu$, null);
     }
   },
 );
-export const completeProjectMembershipClose$ = command(
-  ({ get, set }, expected: Extract<ProjectDialog, { kind: "membership" }>) => {
+export const completeProjectDialogClose$ = command(
+  ({ get, set }, expected: Exclude<ProjectDialog, { kind: "delete" }>) => {
     if (get(internalDialog$) === expected && !expected.open) {
       set(internalDialog$, null);
     }

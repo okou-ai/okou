@@ -4,6 +4,7 @@ import { now, nowDate } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
 import { projectsContract } from "@okouai/api-contracts/client/projects";
 import type {
+  Project,
   ProjectEvent,
   projectEventQueryResultSchema,
 } from "@okouai/api-contracts/validators/projects";
@@ -31,6 +32,13 @@ const projectState$ = computed((get) => {
   get(rootVersion$);
   return {
     events$: state<zInfer<typeof projectEventQueryResultSchema> | null>(null),
+    optimisticCreates$: state<
+      readonly {
+        readonly eventId: string;
+        readonly project: Project;
+        readonly confirmation: Promise<unknown>;
+      }[]
+    >([]),
     optimisticRenames$: state<
       readonly (Pick<ProjectEvent, "id" | "projectId" | "createdAt"> & {
         readonly name: string;
@@ -44,14 +52,18 @@ export const projects$ = computed((get) => {
   }
   const owner = get(projectState$);
   const value = get(owner.events$);
-  if (!value) {
-    return [];
-  }
   const persistedIds = new Set(
-    value.events.map((event) => {
+    value?.events.map((event) => {
       return event.id;
     }),
   );
+  const creations = get(owner.optimisticCreates$)
+    .filter((event) => {
+      return !persistedIds.has(event.eventId);
+    })
+    .map((event) => {
+      return event.project;
+    });
   const pending = new Map(
     get(owner.optimisticRenames$)
       .filter((event) => {
@@ -61,14 +73,15 @@ export const projects$ = computed((get) => {
         return [event.projectId, event];
       }),
   );
-  return replayProjectEvents(value.snapshot?.projects ?? [], value.events).map(
-    (project) => {
-      const rename = pending.get(project.id);
-      return rename
-        ? { ...project, name: rename.name, updatedAt: rename.createdAt }
-        : project;
-    },
-  );
+  return replayProjectEvents(
+    [...creations, ...(value?.snapshot?.projects ?? [])],
+    value?.events ?? [],
+  ).map((project) => {
+    const rename = pending.get(project.id);
+    return rename
+      ? { ...project, name: rename.name, updatedAt: rename.createdAt }
+      : project;
+  });
 });
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -92,6 +105,11 @@ export const syncProjects$ = command(
         return event.id;
       }),
     );
+    set(owner.optimisticCreates$, (events) => {
+      return events.filter((event) => {
+        return !persistedIds.has(event.eventId);
+      });
+    });
     set(owner.optimisticRenames$, (events) => {
       return events.filter((event) => {
         return !persistedIds.has(event.id);
@@ -140,6 +158,19 @@ export const hydrateProjects$ = command(
 function operation() {
   return createProjectOperationId(now(), crypto.randomUUID());
 }
+export const waitForProjectCreation$ = command(
+  async ({ get }, id: string, signal: AbortSignal) => {
+    const creation = get(get(projectState$).optimisticCreates$).find(
+      (event) => {
+        return event.project.id === id;
+      },
+    );
+    if (creation) {
+      await creation.confirmation;
+    }
+    signal.throwIfAborted();
+  },
+);
 export const createProject$ = command(
   async (
     { get, set },
@@ -147,8 +178,11 @@ export const createProject$ = command(
     fromThreadId: string | undefined,
     signal: AbortSignal,
   ) => {
+    signal.throwIfAborted();
+    const owner = get(projectState$);
     const eventId = operation();
-    const result = await accept(
+    const createdAt = nowDate().toISOString();
+    const confirmation = accept(
       get(apiClient$)(projectsContract).create({
         body: { id: eventId, eventId, name, fromThreadId },
         fetchOptions: { signal },
@@ -156,9 +190,39 @@ export const createProject$ = command(
       [201],
       signal,
     );
+    set(owner.optimisticCreates$, (events) => {
+      return [
+        ...events,
+        {
+          eventId,
+          project: {
+            id: eventId,
+            name: name.trim(),
+            createdAt,
+            updatedAt: createdAt,
+          },
+          confirmation,
+        },
+      ];
+    });
+    set(expandProject$, eventId);
+    const thread = get(eventDrivenChatThreads$).find((item) => {
+      return item.id === fromThreadId;
+    });
+    if (thread) {
+      set(registerOptimisticChatThreadEvent$, {
+        id: eventId,
+        kind: "project_updated",
+        chatThreadId: thread.id,
+        agentId: thread.agentId,
+        projectId: eventId,
+        createdAt: thread.sortAt,
+      });
+    }
+    const result = await confirmation;
+    signal.throwIfAborted();
     await set(syncProjects$, signal);
     await set(catchUpChatThreadEventSource$, signal);
-    set(expandProject$, result.body.id);
     return result.body;
   },
 );
@@ -178,6 +242,7 @@ export const renameProject$ = command(
         },
       ];
     });
+    await set(waitForProjectCreation$, id, signal);
     await accept(
       get(apiClient$)(projectsContract).update({
         params: { id },
@@ -192,6 +257,7 @@ export const renameProject$ = command(
 );
 export const deleteProject$ = command(
   async ({ get, set }, id: string, signal: AbortSignal) => {
+    await set(waitForProjectCreation$, id, signal);
     await accept(
       get(apiClient$)(projectsContract).delete({
         params: { id },
@@ -229,6 +295,10 @@ export const moveProjectThread$ = command(
     }
     if (projectId) {
       set(expandProject$, projectId);
+      await set(waitForProjectCreation$, projectId, signal);
+    }
+    if (thread?.projectId && thread.projectId !== projectId) {
+      await set(waitForProjectCreation$, thread.projectId, signal);
     }
     await accept(
       get(apiClient$)(projectsContract).membership({
