@@ -1,4 +1,4 @@
-"""Platform API URL parsing and normalization contract."""
+"""Configured platform HTTP URL parsing and normalization."""
 
 import urllib.parse
 from dataclasses import dataclass
@@ -18,25 +18,31 @@ class PlatformApiUrl:
     port: int
 
 
-def _parsed_port(parsed_url: urllib.parse.SplitResult) -> int | None:
+def parse_explicit_port(parsed_url: urllib.parse.SplitResult, *, subject: str) -> int | None:
+    """Read an explicit configured-URL port with a caller-owned diagnostic label."""
     if authority_has_empty_port(parsed_url.netloc):
-        raise ValueError("Platform API URL has an invalid port")
+        raise ValueError(f"{subject} has an invalid port")
     try:
         return parsed_url.port
     except ValueError as exc:
-        raise ValueError("Platform API URL has an invalid port") from exc
+        raise ValueError(f"{subject} has an invalid port") from exc
 
 
-def _split_url_without_value_diagnostics(value: str) -> urllib.parse.SplitResult:
+def split_url_without_value_diagnostics(
+    value: str,
+    *,
+    subject: str,
+) -> urllib.parse.SplitResult:
+    """Split a configured URL with a caller-owned diagnostic label."""
     try:
         return urllib.parse.urlsplit(value)
     except ValueError:
-        raise ValueError("Platform API URL is invalid") from None
+        raise ValueError(f"{subject} is invalid") from None
 
 
 def parse_platform_api_url(url: str) -> PlatformApiUrl:
     """Parse one platform API URL into its canonical URL and effective origin."""
-    parsed_url = _split_url_without_value_diagnostics(url)
+    parsed_url = split_url_without_value_diagnostics(url, subject="Platform API URL")
     scheme = parsed_url.scheme.lower()
     if scheme == "http":
         default_port = 80
@@ -49,7 +55,7 @@ def parse_platform_api_url(url: str) -> PlatformApiUrl:
     if parsed_url.username is not None or parsed_url.password is not None:
         raise ValueError("Platform API URL must not contain user information")
 
-    explicit_port = _parsed_port(parsed_url)
+    explicit_port = parse_explicit_port(parsed_url, subject="Platform API URL")
     host = normalize_hostname(parsed_url.hostname)
     authority = format_url_host(host)
     if explicit_port is not None:
