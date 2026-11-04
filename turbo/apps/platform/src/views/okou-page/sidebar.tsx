@@ -954,10 +954,11 @@ function ChatListResizeSeam() {
       valueMax={CHAT_LIST_MAX_WIDTH}
       valueNow={hidden ? 0 : width}
       resizing={resizing}
-      // The target stays before the sheet edge. When folded it overlaps the
-      // rail, which precedes it in paint order, so it remains draggable.
-      line="end"
-      className="absolute inset-y-2 right-0"
+      // This shell-owned 12px target straddles the list/workspace boundary.
+      // Its local paint priority keeps the later workspace from covering the
+      // right half; shared modal/menu portals still paint above the shell.
+      line="center"
+      className="absolute inset-y-2 right-0 z-1 translate-x-1/2"
     />
   );
 }

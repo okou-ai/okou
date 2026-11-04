@@ -8,9 +8,9 @@ import { cn } from "@okouai/ui";
  * over the edge does not flash it; drag and keyboard focus
  * use the same brand-colour feedback.
  *
- * The target never takes a z-index. Each caller places it later in tree order
- * than the panes it overlaps, or wholly inside one of them, so ordinary paint
- * order puts it on top without ranking it against the shell.
+ * The primitive does not assign a z-index. The owning layout places it after
+ * overlapping panes where possible and owns any shell-level paint priority
+ * needed to keep both halves of the target reachable.
  */
 export function ResizeSeam({
   ref,
