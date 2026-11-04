@@ -9,7 +9,6 @@ import { useTranslation } from "react-i18next";
 import {
   ChevronLeft,
   ChevronRight,
-  Plus,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
@@ -29,7 +28,6 @@ import type {
 } from "../../signals/okou-page/chat-connector-access.ts";
 import { connectorAccountTargetKey } from "../../signals/okou-page/connector-accounts.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { chatThreadMetaMap$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { AccessChoiceSelect } from "./remote-access-controls.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
@@ -37,6 +35,7 @@ import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { Link } from "../router/link.tsx";
+import { ComposerConnectorMenuShell } from "./composer-connector-menu-shell.tsx";
 
 function ChatAccountChoiceRow({
   account,
@@ -155,7 +154,7 @@ function ChatAccountChoices({
         onValueChange={(connectionId: string) => {
           detach(select(connectionId, signal), Reason.DomCallback);
         }}
-        className="min-h-0 overflow-y-auto px-1"
+        className="px-1"
       >
         {displayed.map((account) => {
           const access = entry.access.accounts.find((candidate) => {
@@ -278,83 +277,38 @@ function ConnectorOverviewRow({
 
 function ChatConnectorOverviewList({
   signals,
+  entries,
 }: {
   readonly signals: ComposerSignals;
+  readonly entries: readonly ChatConnectorOverview[];
 }) {
-  const { t } = useTranslation();
-  const accounts = signals.connector.chatAccess;
-  const overview = useLoadable(accounts.overview$);
-  const previous = useLastResolved(accounts.overview$);
   const connected = useLoadable(signals.connector.resources.connected$);
-  const ui = useGet(signals.connector.connectorUiState$);
-  const updateUi = useSet(signals.connector.updateConnectorUiState$);
-  const open = useSet(accounts.openTarget$);
+  const open = useSet(signals.connector.chatAccess.openTarget$);
   const signal = useGet(pageSignal$);
-  const entries =
-    overview.state === "hasData"
-      ? overview.data
-      : overview.state === "loading"
-        ? (previous ?? [])
-        : [];
-  const filtered = entries.filter((entry) => {
-    return entry.label.toLowerCase().includes(ui.popoverSearch.toLowerCase());
-  });
   return (
-    <>
-      {entries.length > 20 && (
-        <div className="px-3 pb-2">
-          <Input
-            value={ui.popoverSearch}
-            aria-label={t(($) => {
-              return $.chat.connectors.find;
-            })}
-            placeholder={t(($) => {
-              return $.chat.connectors.find;
-            })}
-            onChange={(event) => {
-              updateUi({ popoverSearch: event.currentTarget.value });
+    <div className="p-1">
+      {entries.map((entry) => {
+        const icon =
+          connected.state === "hasData"
+            ? connected.data.builtinConnectors.find((connector) => {
+                return (
+                  entry.target.kind === "builtin" &&
+                  connector.slug === entry.target.connectorSlug
+                );
+              })?.icon
+            : undefined;
+        return (
+          <ConnectorOverviewRow
+            key={connectorAccountTargetKey(entry.target)}
+            entry={entry}
+            icon={icon}
+            onOpen={() => {
+              open(entry, signal);
             }}
           />
-        </div>
-      )}
-      <div className="min-h-0 overflow-y-auto p-1">
-        {filtered.map((entry) => {
-          const icon =
-            connected.state === "hasData"
-              ? connected.data.builtinConnectors.find((connector) => {
-                  return (
-                    entry.target.kind === "builtin" &&
-                    connector.slug === entry.target.connectorSlug
-                  );
-                })?.icon
-              : undefined;
-          return (
-            <ConnectorOverviewRow
-              key={connectorAccountTargetKey(entry.target)}
-              entry={entry}
-              icon={icon}
-              onOpen={() => {
-                open(entry, signal);
-              }}
-            />
-          );
-        })}
-        {overview.state === "loading" && !previous && (
-          <p className="px-2 py-2 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.connectors.accounts.loading;
-            })}
-          </p>
-        )}
-        {overview.state === "hasError" && (
-          <p className="px-2 py-2 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.connectors.accounts.accountsUnavailable;
-            })}
-          </p>
-        )}
-      </div>
-    </>
+        );
+      })}
+    </div>
   );
 }
 
@@ -435,18 +389,23 @@ export function ChatConnectorMenu({
   const previous = useLastResolved(accounts.overview$);
   const target = useGet(accounts.target$);
   const back = useSet(accounts.closeTarget$);
-  const threads = useGet(chatThreadMetaMap$);
-  const title =
-    (signals.threadId ? threads.get(signals.threadId)?.title : null) ||
-    t(($) => {
-      return $.connectorChatAccess.thisChat;
-    });
+  const ui = useGet(signals.connector.connectorUiState$);
+  const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
     overview.state === "hasData"
       ? overview.data
       : overview.state === "loading"
         ? (previous ?? [])
         : [];
+  const showSearch = entries.length > 20;
+  const filtered =
+    showSearch && ui.popoverSearch.trim()
+      ? entries.filter((entry) => {
+          return entry.label
+            .toLowerCase()
+            .includes(ui.popoverSearch.toLowerCase());
+        })
+      : entries;
   const active = target
     ? entries.find((entry) => {
         return (
@@ -456,33 +415,42 @@ export function ChatConnectorMenu({
       })
     : null;
   return (
-    <div className="flex min-h-0 max-h-[min(32rem,70vh)] w-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
-        {target && (
-          <IconTooltipButton
-            aria-label={t(($) => {
-              return $.chat.connectors.back;
-            })}
-            className="rounded-md p-1 text-muted-foreground hover:bg-state-hover"
-            onClick={() => {
-              back();
-            }}
-          >
-            <ChevronLeft size={16} />
-          </IconTooltipButton>
-        )}
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">
-            {target?.label ??
-              t(($) => {
-                return $.chat.connectors.title;
-              })}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">{title}</p>
-        </div>
-      </div>
+    <ComposerConnectorMenuShell
+      loading={overview.state === "loading" && !previous}
+      hasContent={entries.length > 0 || target !== null}
+      error={
+        overview.state === "hasError" && !target
+          ? t(($) => {
+              return $.connectors.accounts.accountsUnavailable;
+            })
+          : undefined
+      }
+      showSearch={showSearch}
+      search={ui.popoverSearch}
+      onSearchChange={searchConnectors}
+      onOpenAddDialog={onOpenAddDialog}
+      footer={footer}
+      contentRole={target ? "group" : "list"}
+      contentLabel={target?.label}
+    >
       {target ? (
         <>
+          <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
+            <IconTooltipButton
+              aria-label={t(($) => {
+                return $.chat.connectors.back;
+              })}
+              className="rounded-md p-1 text-muted-foreground hover:bg-state-hover"
+              onClick={() => {
+                back();
+              }}
+            >
+              <ChevronLeft size={16} />
+            </IconTooltipButton>
+            <span className="min-w-0 truncate text-sm font-medium">
+              {target.label}
+            </span>
+          </div>
           {active ? (
             <ChatAccountChoices signals={signals} entry={active} />
           ) : (
@@ -503,31 +471,8 @@ export function ChatConnectorMenu({
           />
         </>
       ) : (
-        <>
-          <ChatConnectorOverviewList signals={signals} />
-          <div className="shrink-0 border-t border-border/50 p-1">
-            <PopoverClose
-              render={
-                <Button
-                  variant="quiet"
-                  className="w-full justify-start px-2 text-foreground"
-                  onClick={() => {
-                    onOpenAddDialog();
-                  }}
-                >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
-                    <Plus size={13} />
-                  </span>
-                  {t(($) => {
-                    return $.chat.connectors.addConnectors;
-                  })}
-                </Button>
-              }
-            />
-          </div>
-          {footer}
-        </>
+        <ChatConnectorOverviewList signals={signals} entries={filtered} />
       )}
-    </div>
+    </ComposerConnectorMenuShell>
   );
 }

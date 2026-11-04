@@ -117,6 +117,7 @@ export interface ComposerConnectorSignals {
   readonly openConnectorPermissions$: Command<void, [BuiltinConnectorBrief]>;
   readonly directoryFinalFocus$: Command<HTMLElement | boolean, []>;
   readonly setPopoverOpen$: Command<void, [boolean]>;
+  readonly searchConnectors$: Command<void, [string]>;
   readonly openRemoteAccessDialog$: Command<void, []>;
   readonly closeRemoteAccessDialog$: Command<void, []>;
   readonly triggerElement$: Computed<HTMLElement | null>;
@@ -292,7 +293,7 @@ function createConnectorAuthorizationCommand(
   );
 }
 
-function createConnectorDialogNavigation(
+function createConnectorNavigation(
   chatAccess: ReturnType<typeof createChatConnectorAccessSignals>,
   ui: Pick<
     ComposerConnectorSignals,
@@ -328,7 +329,16 @@ function createConnectorDialogNavigation(
     }
     return get(ui.triggerElement$) ?? true;
   });
-  return { openConnectorPermissions$, directoryFinalFocus$ };
+  return {
+    openConnectorPermissions$,
+    directoryFinalFocus$,
+    searchConnectors$: command(({ get, set }, search: string) => {
+      if (get(chatAccess.target$)) {
+        set(chatAccess.closeTarget$);
+      }
+      set(ui.updateConnectorUiState$, { popoverSearch: search });
+    }),
+  };
 }
 
 function createConnectorUiSignals(
@@ -343,6 +353,7 @@ function createConnectorUiSignals(
   | "openConnectorPermissions$"
   | "directoryFinalFocus$"
   | "setPopoverOpen$"
+  | "searchConnectors$"
   | "openRemoteAccessDialog$"
   | "closeRemoteAccessDialog$"
   | "triggerElement$"
@@ -442,7 +453,7 @@ function createConnectorUiSignals(
     connectorUiState$,
     updateConnectorUiState$,
     openAddConnectorsDialog$,
-    ...createConnectorDialogNavigation(chatAccess, {
+    ...createConnectorNavigation(chatAccess, {
       connectorUiState$,
       updateConnectorUiState$,
       triggerElement$,

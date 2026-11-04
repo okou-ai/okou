@@ -11,6 +11,8 @@ import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/cus
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   click,
   fill,
@@ -313,6 +315,64 @@ test("Directory permissions use the same connector rules without enabling accoun
     ).toBeNull();
     expect(trigger).toHaveFocus();
   });
+});
+
+test("Account navigation retains computer controls, Remote access and Add connectors", async () => {
+  const user = userEvent.setup({ delay: null });
+  installAccess();
+  const host = {
+    connectionId: "f0000000-0000-4000-a000-000000000093",
+    displayName: "Build host",
+    defaultEnabled: true,
+  };
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      computerUseHosts: [],
+      sshHosts: [host],
+      vncHosts: [],
+    });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            ...host,
+            overrideEnabled: null,
+            enabled: true,
+            source: "default",
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  await setup();
+  const trigger = await findFastControl("button", "Connectors");
+  click(await openMenu());
+  const popup = await screen.findByRole("dialog", { name: "Connectors" });
+  await within(popup).findByRole("combobox", { name: "Work access" });
+  expect(
+    within(popup).getByRole("switch", { name: "Cloud browser" }),
+  ).toBeEnabled();
+  expect(within(popup).getByText("Your computer")).toBeInTheDocument();
+  await findFastControl("button", "Connect my computer", popup);
+  click(await within(popup).findByText("Remote access"));
+  const remote = await screen.findByRole("dialog", { name: "Remote access" });
+  await within(remote).findByRole("combobox", { name: "SSH Build host" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+  click(await openMenu());
+  const reopened = await screen.findByRole("dialog", { name: "Connectors" });
+  await within(reopened).findByRole("combobox", { name: "Work access" });
+  click(await findFastControl("button", "Add connectors", reopened));
+  await screen.findByRole("heading", { name: "Connectors" });
+  await screen.findByPlaceholderText("Find connectors...");
 });
 
 test("Directory details omit unavailable permission configuration", async () => {
