@@ -142,6 +142,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
     enabled: false,
   },
+  [FeatureSwitchKey.ShareAudienceDescriptions]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Share audience descriptions",
+    description:
+      "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
+    enabled: false,
+  },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",
     displayName: "Website share rows",
