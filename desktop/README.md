@@ -80,7 +80,11 @@ phase, and each wire request report `durationMs`, `awakeElapsedMs`, and
 `systemSuspendedMs` from continuous and suspending clocks. Operation timing starts
 when the API call begins, excluding heartbeat interval/backoff waits, and ends
 on success or failure before its snapshot is read. An inner cancellation after a
-total deadline is not evidence of a user cancellation. Opt-in HTTP task metrics retain bounded
+total deadline is not evidence of a user cancellation. A native HTTP timeout observed
+with the total budget exhausted records the owning budget scope even if the total
+timer has not resumed; its transport diagnostic still retains the native error.
+Native timeouts before that deadline and caller cancellation remain unchanged.
+Opt-in HTTP task metrics retain bounded
 DNS, connection, TLS, response timing, connection reuse/proxy flags, and protocol
 information. HTTP status and allowlisted headers survive a response-body failure
 when URLSession's task metrics retain them. Missing metrics remain unavailable.
