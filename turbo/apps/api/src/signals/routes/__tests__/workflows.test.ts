@@ -2606,9 +2606,11 @@ describe("workflows", () => {
     const originalBundle = [...s3.writes].reverse().find((write) => {
       return write.key.startsWith("bundles/v1/");
     });
-    expect(originalBundle).toBeDefined();
+    if (!originalBundle) {
+      throw new Error("Expected the published Workflow bundle");
+    }
     s3.clearWrites();
-    const previousRequests = context.mocks.s3.send.mock.calls.length;
+    context.mocks.s3.send.mockClear();
     const previous = process.umask(0o077);
     onTestFinished(() => {
       process.umask(previous);
@@ -2617,16 +2619,17 @@ describe("workflows", () => {
       files: [...files].reverse(),
     });
     process.umask(previous);
-    const repeatedBundle = [...s3.writes].reverse().find((write) => {
-      return write.key.startsWith("bundles/v1/");
+    const reusedKeys = context.mocks.s3.send.mock.calls.flatMap(([request]) => {
+      return request instanceof HeadObjectCommand &&
+        request.input.Key?.startsWith("bundles/v1/")
+        ? [request.input.Key]
+        : [];
     });
-    const checkedKeys = context.mocks.s3.send.mock.calls
-      .slice(previousRequests)
-      .flatMap(([command]) => {
-        return command instanceof HeadObjectCommand ? [command.input.Key] : [];
-      });
-    expect(checkedKeys).toContain(originalBundle?.key);
-    expect(repeatedBundle).toBeUndefined();
+    expect(reusedKeys).toStrictEqual([originalBundle.key]);
+    expect(s3.objects.get(originalBundle.key)).toStrictEqual(
+      originalBundle.body,
+    );
+    expect(s3.writes).toHaveLength(0);
     const second = await accept(
       detailClient().get({
         headers: authHeaders(actor),
