@@ -27,8 +27,8 @@ use super::diagnostics::{
     check_host_oom, collect_agent_abnormal_exit_diagnostics, drain_stdout_to_file,
     enrich_codex_workspace_reconnect, explicit_enospc_evidence, host_oom_evidence_since_now,
     log_agent_abnormal_exit_env_diagnostics, log_agent_bootstrap_abnormal_exit_diagnostics,
-    log_agent_process_exit_summary, read_guest_error_file, read_guest_failure_diagnostic_file,
-    should_collect_agent_abnormal_exit_diagnostics,
+    log_agent_process_exit_summary, process_exit_code, read_guest_error_file,
+    read_guest_failure_diagnostic_file, should_collect_agent_abnormal_exit_diagnostics,
     should_collect_unattributed_sigkill_resource_diagnostics,
     should_log_agent_bootstrap_abnormal_exit_diagnostics,
 };
@@ -612,16 +612,6 @@ fn wait_process_timed_out(error: &sandbox::SandboxError) -> bool {
         error,
         sandbox::SandboxError::Io(error) if error.kind() == std::io::ErrorKind::TimedOut
     )
-}
-
-fn process_exit_code(exit: &sandbox::ProcessExit) -> Option<i32> {
-    match exit.termination {
-        ExecTermination::Exited { exit_code } => Some(exit_code),
-        ExecTermination::TimedOut
-        | ExecTermination::Cancelled
-        | ExecTermination::StartFailed
-        | ExecTermination::WaitFailed => None,
-    }
 }
 
 fn process_failed(exit: &sandbox::ProcessExit) -> bool {
@@ -2438,7 +2428,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     info!(
         run_id = %context.run_id,
         termination = ?exit.termination,
-        exit_code = ?process_exit_code(&exit),
+        exit_code = ?process_exit_code(exit.termination),
         "agent exited"
     );
     log_agent_process_exit_summary(

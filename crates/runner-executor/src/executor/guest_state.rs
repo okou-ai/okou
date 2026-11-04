@@ -1,10 +1,11 @@
 //! Guest state repair helpers used before agent execution.
 
 use sandbox::{
-    EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, GuestStateRestoreRequest,
-    GuestStateRestoreTimezone, Sandbox,
+    EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, GuestStateRestoreRequest, GuestStateRestoreTimezone,
+    Sandbox,
 };
 
+use super::diagnostics::process_exit_code;
 use super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult};
 use crate::guest_timezone::{GuestTimezoneIntent, is_shell_safe_name};
 use crate::helper_exec::{
@@ -31,16 +32,6 @@ pub enum GuestTimezoneSyncOutcome {
     Unavailable,
     Failed,
     NotRequested,
-}
-
-fn helper_exec_exit_code(result: &sandbox::ExecResult) -> Option<i32> {
-    match result.termination {
-        ExecTermination::Exited { exit_code } => Some(exit_code),
-        ExecTermination::TimedOut
-        | ExecTermination::Cancelled
-        | ExecTermination::StartFailed
-        | ExecTermination::WaitFailed => None,
-    }
 }
 
 fn host_unix_timestamp() -> std::time::Duration {
@@ -107,7 +98,7 @@ fn log_timezone_sync_failure(
     let exit_code = if helper_exec_succeeded(result) {
         None
     } else {
-        helper_exec_exit_code(result)
+        process_exit_code(result.termination)
     };
     if let Some(exit_code) = exit_code {
         tracing::warn!(

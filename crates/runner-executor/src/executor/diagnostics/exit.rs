@@ -111,8 +111,9 @@ fn process_exited_nonzero(exit: &sandbox::ProcessExit) -> bool {
     matches!(exit.termination, ExecTermination::Exited { exit_code } if exit_code != 0)
 }
 
-fn process_exit_code(exit: &sandbox::ProcessExit) -> Option<i32> {
-    match exit.termination {
+/// Projects an actual process exit code for executor diagnostics.
+pub(in crate::executor) fn process_exit_code(termination: ExecTermination) -> Option<i32> {
+    match termination {
         ExecTermination::Exited { exit_code } => Some(exit_code),
         ExecTermination::TimedOut
         | ExecTermination::Cancelled
@@ -134,7 +135,7 @@ pub(in crate::executor) fn log_agent_process_exit_summary(
         sandbox_id = %sandbox_id,
         sandbox_reuse_result = reuse_result.as_wire(),
         termination = ?exit.termination,
-        exit_code = ?process_exit_code(exit),
+        exit_code = ?process_exit_code(exit.termination),
         stdout_len = exit.stdout.len(),
         stderr_len = exit.stderr.len(),
         stdout_truncated = exit.stdout_truncated,
@@ -168,7 +169,7 @@ pub(in crate::executor) fn log_agent_abnormal_exit_env_diagnostics(
                 sandbox_id = %sandbox_id,
                 sandbox_reuse_result = reuse_result.as_wire(),
                 termination = ?exit.termination,
-                exit_code = ?process_exit_code(exit),
+                exit_code = ?process_exit_code(exit.termination),
                 env_count = env_diagnostics.env_count,
                 env_bytes = env_diagnostics.env_bytes,
                 runner_owned_env_count = env_diagnostics.runner_owned_count,
@@ -211,7 +212,7 @@ pub(in crate::executor) fn log_agent_bootstrap_abnormal_exit_diagnostics(
                 sandbox_id = %context.sandbox_id,
                 sandbox_reuse_result = context.reuse_result.as_wire(),
                 termination = ?context.exit.termination,
-                exit_code = ?process_exit_code(context.exit),
+                exit_code = ?process_exit_code(context.exit.termination),
                 stdout_len = context.exit.stdout.len(),
                 stderr_len = context.exit.stderr.len(),
                 stdout_truncated = context.exit.stdout_truncated,
