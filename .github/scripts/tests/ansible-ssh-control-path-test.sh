@@ -80,8 +80,13 @@ run_ansible() {
   local scenario=$1
   local invocation_log=$2
   local ssh_marker=$3
+  local output="$tmp/ansible-$scenario-output"
+  local started_ns
+  local status=0
   shift 3
 
+  started_ns=$(date +%s%N)
+  printf 'Ansible SSH scenario %s: started\n' "$scenario" >&2
   HOME="$test_home" \
     ANSIBLE_CONFIG="$ansible_config" \
     ANSIBLE_NOCOLOR=1 \
@@ -95,7 +100,13 @@ run_ansible() {
     -i "ansible-test.invalid," \
     -e "ansible_ssh_executable=$fake_ssh" \
     "$@" \
-    "$playbook"
+    "$playbook" >"$output" 2>&1 || status=$?
+  printf 'Ansible SSH scenario %s: %s ms, exit %s\n' \
+    "$scenario" "$((($(date +%s%N) - started_ns) / 1000000))" "$status" >&2
+  if ((status != 0)); then
+    cat "$output" >&2
+  fi
+  return "$status"
 }
 
 assert_invocation_count() {
@@ -113,7 +124,7 @@ assert_invocation_count() {
 success_invocations="$tmp/success-invocations"
 success_marker="$tmp/success-ran"
 : > "$success_invocations"
-run_ansible success "$success_invocations" "$success_marker" >/dev/null
+run_ansible success "$success_invocations" "$success_marker"
 
 if [ ! -f "$success_marker" ]; then
   echo "expected Ansible to complete an SSH-backed task" >&2
@@ -125,7 +136,7 @@ transient_invocations="$tmp/transient-invocations"
 transient_marker="$tmp/transient-ran"
 : > "$transient_invocations"
 run_ansible transient "$transient_invocations" "$transient_marker" \
-  -e "ansible_ssh_retries=1" >/dev/null
+  -e "ansible_ssh_retries=1"
 
 if [ ! -f "$transient_marker" ]; then
   echo "expected Ansible to recover from one transient SSH failure" >&2
@@ -136,7 +147,7 @@ assert_invocation_count "$transient_invocations" 2
 remote_failure_invocations="$tmp/remote-failure-invocations"
 : > "$remote_failure_invocations"
 if run_ansible remote-failure "$remote_failure_invocations" "$tmp/remote-failure-ran" \
-  -e "ansible_ssh_retries=1" >"$tmp/remote-failure-output" 2>&1; then
+  -e "ansible_ssh_retries=1"; then
   echo "expected a normal remote failure to fail the play" >&2
   exit 1
 fi
