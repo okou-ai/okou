@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from enum import Enum, auto
 from pathlib import Path
 
@@ -35,6 +36,12 @@ def _registered_key_name(node: ast.AST) -> str | None:
     if value is None:
         return None
     return _REGISTERED_METADATA_KEYS.get(value)
+
+
+def _contains_registered_key(nodes: Iterable[ast.AST]) -> bool:
+    return any(
+        _registered_key_name(child) is not None for node in nodes for child in ast.walk(node)
+    )
 
 
 def _static_string_value(node: ast.AST) -> str | None:
