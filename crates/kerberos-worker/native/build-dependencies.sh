@@ -35,10 +35,10 @@ fetch() {
     rm -- "$file"
   fi
   if [[ ! -f "$file" ]]; then
-    # The retry clock includes the first attempt; leave room after a full timeout
-    # for one more attempt without spending the whole build job on one archive.
+    # The retry clock includes the first attempt; leave room for a full-timeout
+    # retry while keeping repeated downloads bounded.
     curl --fail --silent --show-error --location --proto '=https' --max-time 180 \
-      --retry 1 --retry-all-errors --retry-delay 2 --retry-max-time 240 "$url" -o "$file.part"
+      --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 240 "$url" -o "$file.part"
     printf '%s  %s\n' "$sha" "$file.part" | sha256sum --check --status
     mv -- "$file.part" "$file"
   fi
