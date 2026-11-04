@@ -221,6 +221,29 @@ test("Update relationship titles immediately and synchronize the saved browser t
     delayRelationshipResponses,
   } = await setupRelationships();
   const user = userEvent.setup({ delay: null });
+  const link = within(chats).getByText(ORIGINAL_TITLE).closest("a");
+  const clip = link?.querySelector<HTMLElement>("[data-title-reveal]");
+  const text = clip?.firstElementChild;
+  if (!link || !clip || !text) {
+    throw new Error("Expected the relationship link, title clip and text");
+  }
+  // Deliberate docs/testing.md#external-behavior exception: HappyDOM
+  // cannot lay out or paint CSS, so check the control's DOM-to-CSS handoff.
+  clip.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 160, 20);
+  };
+  text.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 234, 20);
+  };
+
+  await user.hover(link);
+  expect(clip).toHaveAttribute("data-title-revealing", "");
+  expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
+    "925ms",
+  );
+  await user.unhover(link);
+  expect(clip).not.toHaveAttribute("data-title-revealing");
+
   await user.dblClick(
     within(parentPane).getByTestId("chat-thread-header-title"),
   );

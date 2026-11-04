@@ -87,6 +87,7 @@ import type {
   SidebarChatThreadItemSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { useTitleReveal } from "./use-title-reveal.ts";
 import {
   currentChatAgentScope$,
   currentChatAgentId$,
@@ -636,9 +637,11 @@ function ChatThreadItemLink({
   const startDrag = useSet(startProjectThreadDrag$);
   const endDrag = useSet(endProjectThreadDrag$);
   const draggable = projectsEnabled && !touch && !renaming;
+  const titleReveal = useTitleReveal();
 
   return (
     <Link
+      {...titleReveal}
       pathname="/chats/:threadId"
       options={{
         pathParams: { threadId: signals.threadId },

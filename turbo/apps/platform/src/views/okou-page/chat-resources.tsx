@@ -34,6 +34,7 @@ import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { emptyArtifactImg } from "./platform-assets.ts";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { useTitleReveal } from "./use-title-reveal.ts";
 import { useChatHeaderActions } from "./chat-header-actions.ts";
 import {
   ChatResourceSectionHeading,
@@ -266,9 +267,11 @@ function ResourceOutputRow({
   readonly copyLabel: string;
   readonly copyGlyph: ReactNode;
 }) {
+  const titleReveal = useTitleReveal();
   return (
     <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
+        {...titleReveal}
         variant="quiet"
         className={cn(
           RESOURCE_ROW_CLASS,

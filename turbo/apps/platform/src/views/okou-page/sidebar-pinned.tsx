@@ -36,6 +36,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { equalArrays } from "../../lib/equality.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { useTitleReveal } from "./use-title-reveal.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { PinAgentDialog } from "./sidebar-dialogs.tsx";
@@ -203,9 +204,11 @@ function PinnedAgentGridCard({ signals }: PinnedAgentProps) {
   const endDrag = useSet(endPinnedAgentDrag$);
   const [, moveAgent] = useLoadableSet(signals.moveHere$);
   const refreshLayoutRef = useSet(refreshSidebarChatThreadLayoutOnRef$);
+  const titleReveal = useTitleReveal();
 
   return (
     <Link
+      {...titleReveal}
       ref={refreshLayoutRef}
       pathname="/agents/:agentId/chat"
       options={{ pathParams: { agentId } }}
