@@ -1390,8 +1390,8 @@
       "takeOver": "接管",
       "takeOverMessage": "我先接管瀏覽器，在我交還之前請不要操作它。"
     },
-    "reclaimHint_one": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
-    "reclaimHint_other": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
+    "reclaimHint_one": "面板開啟時保留，閒置 {{formattedCount}} 分鐘後回收。",
+    "reclaimHint_other": "面板開啟時保留，閒置 {{formattedCount}} 分鐘後回收。",
     "status": {
       "live": "執行中",
       "starting": "啟動中",
@@ -1429,6 +1429,7 @@
     "paused": "畫面已暫停",
     "quality": "影像品質",
     "reconnect": "重新連線",
+    "reconnecting": "正在重新連線…",
     "reload": "重新整理",
     "remoteInput": "遠端瀏覽器輸入",
     "resolution": "解析度",

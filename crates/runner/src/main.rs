@@ -23,8 +23,6 @@ use runner_lifecycle::status;
 mod status_file;
 #[cfg(test)]
 use runner_executor::test_fixtures;
-#[cfg(test)]
-mod test_fixtures_http_body;
 use runner_lifecycle::home_image_cache;
 use runner_lifecycle::home_mount;
 

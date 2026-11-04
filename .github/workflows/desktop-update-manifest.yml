@@ -7,6 +7,10 @@ on:
         description: "Release workflow run with successful Desktop and API promotions"
         type: string
         required: true
+      release_target:
+        description: "Exact release commit promoted by the source workflow"
+        type: string
+        required: true
     secrets:
       R2_STATIC_ACCESS_KEY_ID:
         required: true
@@ -16,6 +20,10 @@ on:
     inputs:
       release_run_id:
         description: "Release workflow run with successful Desktop and API promotions"
+        type: string
+        required: true
+      release_target:
+        description: "Exact release commit promoted by the source workflow"
         type: string
         required: true
 
@@ -41,14 +49,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          RELEASE_TARGET: ${{ inputs.release_target }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 2
+          [[ "$RELEASE_TARGET" =~ ^[0-9a-f]{40}$ ]] || exit 2
           release_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID")"
+          # An unrelated job or this publication itself may have failed; the
+          # required release and promotion jobs below must still all succeed.
           jq -e '
             .path == ".github/workflows/release-please.yml" and
             .event == "push" and .head_branch == "main" and
-            (.conclusion == null or .conclusion == "success") and
+            (.conclusion == null or .conclusion == "success" or .conclusion == "failure") and
             (.head_sha | test("^[0-9a-f]{40}$"))
           ' <<<"$release_run" >/dev/null
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID/jobs?per_page=100" \
@@ -60,7 +72,16 @@ jobs:
                 [$jobs[] | select(.name == $name)] |
                 length == 1 and .[0].conclusion == "success")
             ' >/dev/null
-          printf 'sha=%s\n' "$(jq -r '.head_sha' <<<"$release_run")" >> "$GITHUB_OUTPUT"
+          # A push can contain commits after the release. Bind the requested
+          # target to that push and its release-please Desktop tag, not its HEAD.
+          head_sha="$(jq -r '.head_sha' <<<"$release_run")"
+          merge_base="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_TARGET...$head_sha" --jq '.merge_base_commit.sha')"
+          [[ "$merge_base" == "$RELEASE_TARGET" ]] || { echo "::error::Release target is outside the source push history"; exit 1; }
+          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/desktop/version.txt?ref=$head_sha" --jq '.content' | base64 --decode)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/desktop-v$version" |
+            jq -e --arg sha "$RELEASE_TARGET" '.object.type == "commit" and .object.sha == $sha' >/dev/null
+          printf 'sha=%s\nversion=%s\n' "$RELEASE_TARGET" "$version" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -71,10 +92,13 @@ jobs:
           node-version: 22.23.4
 
       - name: Resolve Desktop release identity
+        env:
+          EXPECTED_VERSION: ${{ steps.source.outputs.version }}
         run: |
           set -euo pipefail
           version="$(<desktop/version.txt)"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
+          [[ "$version" == "$EXPECTED_VERSION" ]] || { echo "::error::Desktop version differs from the source release workflow"; exit 1; }
           printf 'DESKTOP_VERSION=%s\nOKOU_RELEASE_TAG=okou-desktop-v%s\n' "$version" "$version" >> "$GITHUB_ENV"
 
       - name: Verify Desktop release assets

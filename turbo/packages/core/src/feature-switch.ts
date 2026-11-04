@@ -178,8 +178,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "CJK Markdown emphasis",
     description:
       "Render paired bold and italic markers next to Chinese, Japanese, and Korean punctuation without showing literal asterisks.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.MarkdownTableExport]: {
     maintainer: "bingjie@okou.ai",

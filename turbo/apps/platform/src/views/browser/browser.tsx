@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  cn,
   IconButton,
   Input,
   Textarea,
@@ -51,20 +52,23 @@ import { detach, Reason } from "../../signals/utils.ts";
 
 function BrowserOperationError({
   failed,
+  duplicateMessage,
   className = "border-b border-divider px-3 py-2 text-sm text-muted-foreground",
 }: {
   readonly failed: boolean;
+  readonly duplicateMessage?: string;
   readonly className?: string;
 }) {
   const { t } = useTranslation();
-  if (!failed) {
+  const message = t(($) => {
+    return $.browserViewer.operationFailed;
+  });
+  if (!failed || message === duplicateMessage) {
     return null;
   }
   return (
     <p role="alert" className={className}>
-      {t(($) => {
-        return $.browserViewer.operationFailed;
-      })}
+      {message}
     </p>
   );
 }
@@ -755,6 +759,7 @@ function useBrowserRecovery(signals: BrowserSignals) {
   const [retryOperation, retryImage] = useLoadableSet(signals.retryImage$);
   const [reconnectOperation, reconnect] = useLoadableSet(signals.reconnect$);
   const [reloadOperation, navigate] = useLoadableSet(signals.navigate$);
+  const recovering = recoveryOperation.state === "loading";
   const pending =
     recoveryOperation.state === "loading" ||
     retryOperation.state === "loading" ||
@@ -764,69 +769,72 @@ function useBrowserRecovery(signals: BrowserSignals) {
   // only local command feedback; an old Reconnect must not become current again.
   const failed =
     displayRecovery !== null ||
-    (retryOperation.state === "hasError" &&
+    (!recovering &&
+      retryOperation.state === "hasError" &&
       isBrowserOperationFailure(retryOperation.error)) ||
     (reloadOperation.state === "hasError" &&
       isBrowserOperationFailure(reloadOperation.error) &&
       (!(reloadOperation.error instanceof NavigationFault) ||
         reloadOperation.error.scope === navigationScope));
-  return { pending, failed, retryImage, reconnect, navigate };
+  const recoveryError =
+    recoveryOperation.state === "hasData" &&
+    recoveryOperation.data &&
+    recoveryOperation.data.status !== "restored"
+      ? recoveryOperation.data.error
+      : null;
+  return {
+    pending,
+    failed,
+    recovering,
+    recoveryError,
+    retryImage,
+    reconnect,
+    navigate,
+  };
 }
 
-function BrowserStatus({
+export function BrowserRecoveryStatus({
   signals,
+  className,
+}: {
+  readonly signals: BrowserSignals;
+  readonly className?: string;
+}) {
+  const recovery = useLoadable(signals.recoveryOperation$);
+  const { t } = useTranslation();
+  return recovery.state === "loading" ? (
+    <span
+      role="status"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap",
+        className,
+      )}
+    >
+      <Loader2 size={12} aria-hidden className="animate-spin" />
+      {t(($) => {
+        return $.browserViewer.reconnecting;
+      })}
+    </span>
+  ) : null;
+}
+
+function BrowserRecoveryActions({
+  signals,
+  recovery,
   creating,
-  contentVisible,
   onCreate,
 }: {
   readonly signals: BrowserSignals;
+  readonly recovery: ReturnType<typeof useBrowserRecovery>;
   readonly creating: boolean;
-  readonly contentVisible: boolean;
   readonly onCreate: () => Promise<string>;
 }) {
   const { t } = useTranslation();
   const controls = useGet(signals.controls$);
-  const presentation = useGet(signals.presentation$);
   const pageSignal = useGet(pageSignal$);
-  const { pending, failed, retryImage, reconnect, navigate } =
-    useBrowserRecovery(signals);
-  if (contentVisible) {
-    return (
-      <BrowserOperationError
-        failed={failed}
-        className="absolute inset-x-3 top-3 z-10 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
-      />
-    );
-  }
-  const text =
-    presentation.status === "connecting"
-      ? t(($) => {
-          return $.browserViewer.connecting;
-        })
-      : presentation.status === "paused"
-        ? t(($) => {
-            return $.browserViewer.paused;
-          })
-        : controls.emptyScoped || controls.emptyUnscoped
-          ? t(($) => {
-              return $.browserViewer.noTabs;
-            })
-          : presentation.status === "disconnected"
-            ? t(($) => {
-                return $.browserViewer.disconnected;
-              })
-            : t(($) => {
-                return $.browserViewer.unavailable;
-              });
+  const { pending, retryImage, reconnect, navigate } = recovery;
   return (
-    <div
-      role="status"
-      className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-5 text-center text-sm text-muted-foreground"
-    >
-      {presentation.status === "connecting" && (
-        <Loader2 size={20} className="animate-spin" />
-      )}
-      <p>{text}</p>
+    <>
       {controls.canReload && (
         <Button
           type="button"
@@ -887,7 +895,82 @@ function BrowserStatus({
           })}
         </Button>
       )}
-      <BrowserOperationError failed={failed} className="text-sm" />
+    </>
+  );
+}
+
+function BrowserStatus({
+  signals,
+  creating,
+  contentVisible,
+  onCreate,
+}: {
+  readonly signals: BrowserSignals;
+  readonly creating: boolean;
+  readonly contentVisible: boolean;
+  readonly onCreate: () => Promise<string>;
+}) {
+  const { t } = useTranslation();
+  const controls = useGet(signals.controls$);
+  const presentation = useGet(signals.presentation$);
+  const recovery = useBrowserRecovery(signals);
+  const { failed, recovering, recoveryError } = recovery;
+  const error = presentation.error
+    ? (recoveryError ?? presentation.error)
+    : null;
+  if (contentVisible || (recovering && presentation.retainedFrame)) {
+    return (
+      <BrowserOperationError
+        failed={failed}
+        className="absolute inset-x-3 top-3 z-10 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+      />
+    );
+  }
+  const text =
+    recovering || presentation.status === "connecting"
+      ? t(($) => {
+          return $.browserViewer.connecting;
+        })
+      : presentation.status === "paused"
+        ? t(($) => {
+            return $.browserViewer.paused;
+          })
+        : controls.emptyScoped || controls.emptyUnscoped
+          ? t(($) => {
+              return $.browserViewer.noTabs;
+            })
+          : presentation.status === "disconnected"
+            ? t(($) => {
+                return $.browserViewer.disconnected;
+              })
+            : t(($) => {
+                return $.browserViewer.unavailable;
+              });
+  return (
+    <div
+      role="status"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-5 text-center text-sm text-muted-foreground"
+    >
+      {(recovering || presentation.status === "connecting") && (
+        <Loader2 size={20} className="animate-spin" />
+      )}
+      <p>{text}</p>
+      {!recovering && error && error.message !== text && (
+        <p role="alert" className="max-w-md break-words">
+          {error.message}
+        </p>
+      )}
+      <BrowserRecoveryActions
+        signals={signals}
+        recovery={recovery}
+        creating={creating}
+        onCreate={onCreate}
+      />
+      <BrowserOperationError
+        failed={failed}
+        duplicateMessage={error?.message}
+        className="text-sm"
+      />
     </div>
   );
 }
@@ -1083,7 +1166,7 @@ export function Browser({
             aria-label={t(($) => {
               return $.browserViewer.liveView;
             })}
-            aria-hidden={!controls.streaming}
+            aria-hidden={!controls.streaming && !presentation.retainedFrame}
             className="block h-full w-full object-contain"
           />
           <BrowserInput signals={signals} />

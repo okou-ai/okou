@@ -9,7 +9,7 @@ use super::super::{
 };
 use aws_smithy_mocks::{Rule, RuleMode, mock, mock_client};
 
-use crate::test_fixtures::http_body::byte_stream_with_error_after;
+use crate::test_fixtures::byte_stream_with_error_after;
 
 pub(super) fn mock_cache(bucket: &str, rules: &[&Rule]) -> R2ImageCache {
     let client = mock_client!(aws_sdk_s3, RuleMode::MatchAny, rules);

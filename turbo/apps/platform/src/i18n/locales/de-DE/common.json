@@ -1392,8 +1392,8 @@
       "takeOver": "Übernehmen",
       "takeOverMessage": "Ich habe den Browser übernommen. Bitte nutze ihn nicht, bis ich ihn zurückgebe."
     },
-    "reclaimHint_one": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minute Inaktivität zurück.",
-    "reclaimHint_other": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minuten Inaktivität zurück.",
+    "reclaimHint_one": "Bleibt bei offenem Panel; Freigabe nach {{formattedCount}} Minute Inaktivität.",
+    "reclaimHint_other": "Bleibt bei offenem Panel; Freigabe nach {{formattedCount}} Minuten Inaktivität.",
     "status": {
       "live": "Live",
       "starting": "Beginnt",
@@ -1431,6 +1431,7 @@
     "paused": "Ansicht pausiert",
     "quality": "Bildqualität",
     "reconnect": "Erneut verbinden",
+    "reconnecting": "Verbindung wird wiederhergestellt…",
     "reload": "Neu laden",
     "remoteInput": "Remote-Browsereingabe",
     "resolution": "Auflösung",

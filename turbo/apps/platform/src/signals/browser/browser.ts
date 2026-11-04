@@ -61,6 +61,8 @@ export interface BrowserPresentation {
   readonly status: ViewerStatus;
   readonly error: ViewerError | null;
   readonly loadingPreview: boolean;
+  /** A same-scope presented frame can remain visible without input authority. */
+  readonly retainedFrame: boolean;
   /** Empty content can be shown before the selected tab accepts remote input. */
   readonly blank: boolean;
 }

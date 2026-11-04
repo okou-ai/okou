@@ -203,6 +203,28 @@ test("The workspace remembers the chat list and the panel width after a reload",
   await expect(chatListSeam()).resolves.toHaveAttribute("aria-valuenow", "316");
 });
 
+test("A folded chat list can be dragged open from its persistent divider", async () => {
+  await openUnifiedWorkspace();
+  click(buttonNamed("Hide chat list"));
+  await waitFor(() => {
+    expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  });
+  const seam = await chatListSeam();
+  expect(seam).toHaveAttribute("aria-valuenow", "0");
+
+  fireEvent.pointerDown(seam, { ...POINTER, clientX: 80 });
+  fireEvent.pointerMove(seam, { ...POINTER, clientX: 90 });
+  expect(seam).toHaveAttribute("aria-valuenow", "0");
+  fireEvent.pointerMove(seam, { ...POINTER, clientX: 160 });
+  await screen.findByTestId("chat-list-column");
+  fireEvent.pointerMove(seam, { ...POINTER, clientX: 180 });
+  expect(seam).toHaveAttribute("aria-valuenow", "240");
+  fireEvent.pointerMove(seam, { ...POINTER, clientX: 400 });
+  fireEvent.pointerUp(seam, { ...POINTER, buttons: 0, clientX: 400 });
+  expect(seam).toHaveAttribute("aria-valuenow", "320");
+  expect(document.querySelector("[data-chat-list-resize-mask]")).toBeNull();
+});
+
 test("Without the switch the chat list keeps its fixed width", async () => {
   const { shell } = await openUnifiedWorkspace({ unified: false });
   expect(

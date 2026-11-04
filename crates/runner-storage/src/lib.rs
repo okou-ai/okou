@@ -28,5 +28,5 @@ pub use telemetry::{SandboxOpRecord, SandboxOpReporter, StorageTelemetry};
 #[cfg(any(test, feature = "test-support"))]
 pub mod operation_test_support;
 
-#[cfg(test)]
-mod test_fixtures;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_fixtures;

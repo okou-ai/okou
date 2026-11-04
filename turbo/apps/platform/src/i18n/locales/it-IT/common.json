@@ -1414,9 +1414,9 @@
       "takeOver": "Prendi il controllo",
       "takeOverMessage": "Ho preso il controllo del browser. Non usarlo finché non te lo restituisco."
     },
-    "reclaimHint_one": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuto di inattività.",
-    "reclaimHint_many": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
-    "reclaimHint_other": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
+    "reclaimHint_one": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuto di inattività.",
+    "reclaimHint_many": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuti di inattività.",
+    "reclaimHint_other": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuti di inattività.",
     "status": {
       "live": "Attivo",
       "starting": "Avvio",
@@ -1454,6 +1454,7 @@
     "paused": "Vista in pausa",
     "quality": "Qualità immagine",
     "reconnect": "Riconnetti",
+    "reconnecting": "Riconnessione…",
     "reload": "Ricarica",
     "remoteInput": "Input del browser remoto",
     "resolution": "Risoluzione",

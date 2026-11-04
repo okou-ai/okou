@@ -8,7 +8,7 @@ import uuid
 from mitmproxy import ctx, http
 
 import platform_api_url
-from authority_utils import authority_has_empty_port, format_url_host
+from authority_utils import format_url_host
 from host_normalization import normalize_hostname
 
 # Vercel bypass secret (still from environment as it's a secret)
@@ -37,38 +37,18 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _parsed_port(parsed_url: urllib.parse.SplitResult, *, subject: str) -> int | None:
-    if authority_has_empty_port(parsed_url.netloc):
-        raise ValueError(f"{subject} has an invalid port")
-    try:
-        return parsed_url.port
-    except ValueError as exc:
-        raise ValueError(f"{subject} has an invalid port") from exc
-
-
-def _split_url_without_value_diagnostics(
-    value: str,
-    *,
-    subject: str,
-) -> urllib.parse.SplitResult:
-    try:
-        return urllib.parse.urlsplit(value)
-    except ValueError:
-        raise ValueError(f"{subject} is invalid") from None
-
-
 def normalize_proxy_url(proxy_url: str) -> str:
     """Canonicalize the hostname in a URL or authority-form proxy setting."""
     has_scheme = "://" in proxy_url
     has_authority_prefix = proxy_url.startswith("//")
-    parsed_url = _split_url_without_value_diagnostics(
+    parsed_url = platform_api_url.split_url_without_value_diagnostics(
         proxy_url if has_scheme or has_authority_prefix else f"//{proxy_url}",
         subject="Proxy URL",
     )
     if not parsed_url.netloc or parsed_url.hostname is None:
         raise ValueError("Proxy URL must include a host")
 
-    port = _parsed_port(parsed_url, subject="Proxy URL")
+    port = platform_api_url.parse_explicit_port(parsed_url, subject="Proxy URL")
     authority = format_url_host(normalize_hostname(parsed_url.hostname))
     if port is not None:
         authority = f"{authority}:{port}"

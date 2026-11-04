@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.25](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.24...runner-storage-v0.8.25) (2026-11-04)
+
+
+### Refactoring
+
+* **test:** share the s3 partial-body error fixture ([#45118](https://github.com/okou-ai/okou/issues/45118)) ([413a9a3](https://github.com/okou-ai/okou/commit/413a9a3f1b856a77ffd86ddbe6a728913285a46f))
+
 ## [0.8.24](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.23...runner-storage-v0.8.24) (2026-11-04)
 
 

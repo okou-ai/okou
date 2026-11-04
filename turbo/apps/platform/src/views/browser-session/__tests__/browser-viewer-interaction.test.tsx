@@ -524,7 +524,9 @@ test("A created tab with a failed first image retries the image without creating
   await waitFor(() => {
     expect(retry).toBeEnabled();
   });
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "The browser frame could not be decoded.",
+  );
   expect(newTab).toBeDisabled();
   click(retry);
   await waitFor(() => {

@@ -13,6 +13,24 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1092.0](https://github.com/okou-ai/okou/compare/app-v0.1091.0...app-v0.1092.0) (2026-11-04)
+
+
+### Features
+
+* **browser:** recover viewer resources with bounded retries ([#45051](https://github.com/okou-ai/okou/issues/45051)) ([12d04ed](https://github.com/okou-ai/okou/commit/12d04edfec0737589b7e8a666128980e185ec008))
+* **browser:** retain viewer frames during recovery ([#45109](https://github.com/okou-ai/okou/issues/45109)) ([93c1920](https://github.com/okou-ai/okou/commit/93c1920310bd4caeecea736a33322cdb475a67c9))
+
+
+### Bug Fixes
+
+* **app:** create projects optimistically ([#45134](https://github.com/okou-ai/okou/issues/45134)) ([4c4da6f](https://github.com/okou-ai/okou/commit/4c4da6fadb3c73950b94bfe865c110018e757159))
+* **app:** hydrate project cache alongside chat list ([#45090](https://github.com/okou-ai/okou/issues/45090)) ([84b58ab](https://github.com/okou-ai/okou/commit/84b58ab4d52cba0c8aca2164afd160ff00cf4c0e))
+* **app:** open models from sidebar subscription usage ([#45086](https://github.com/okou-ai/okou/issues/45086)) ([db178ee](https://github.com/okou-ai/okou/commit/db178eee3e803f70b76dac5242e6d9e4eae4095b))
+* **app:** preserve header appearance while loading ([#45099](https://github.com/okou-ai/okou/issues/45099)) ([6c30252](https://github.com/okou-ai/okou/commit/6c302526da25835c64aa844eb1a4d79797746e5a))
+* **app:** smooth chat list collapse and center divider hit targets ([#45008](https://github.com/okou-ai/okou/issues/45008)) ([7b08927](https://github.com/okou-ai/okou/commit/7b0892753efdcda688f539dae0ac2178b257063d))
+* **platform:** unify project and chat thread indexeddb caching ([#45102](https://github.com/okou-ai/okou/issues/45102)) ([02679d7](https://github.com/okou-ai/okou/commit/02679d7fe2fea27283b57bc38681532c7c42fd02))
+
 ## [0.1091.0](https://github.com/okou-ai/okou/compare/app-v0.1090.0...app-v0.1091.0) (2026-11-04)
 
 
