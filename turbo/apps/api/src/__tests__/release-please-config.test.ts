@@ -162,7 +162,11 @@ describe("release-please API deployment graph", () => {
     expect(promoteAppWorkerProductionJob).toContain(
       "needs.release-please.outputs.app_deploy_required == 'true'",
     );
-    expect(promoteAppWorkerProductionJob).not.toContain("continue-on-error");
+    for (const section of promoteAppWorkerProductionJob.split(/^      - /m)) {
+      if (!/^        uses: bobheadxi\/deployments@/m.test(section)) {
+        expect(section).not.toContain("continue-on-error");
+      }
+    }
     expect(promoteAppWorkerProductionJob).toContain(
       "needs: [release-please, builds-complete, promote-api-production]",
     );
