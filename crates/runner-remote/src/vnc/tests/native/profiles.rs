@@ -1,6 +1,7 @@
 //! The private authority HTTP boundary admits every existing native RFB family.
 //! Algorithm interoperability remains in the independent rfb-client peer suites.
 
+use super::super::harness::TestRun;
 use super::{CONNECTION, Harness};
 use base64::Engine;
 use serde_json::{Value, json};
@@ -15,8 +16,14 @@ async fn both_native_carriers_admit_all_eighteen_current_authentication_profiles
     let encoded = base64::engine::general_purpose::STANDARD;
     let identity = json!({"certificateChainDer":[encoded.encode(certificate.der())],"privateKeyPkcs8Der":encoded.encode(key.serialize_der())});
     for carrier in ["cloudflare_access", "tailscale"] {
-        for (outcome, authentication, security) in profiles(&identity) {
-            let mut h = Harness::new().await;
+        let mut h = Harness::new().await;
+        for (index, (outcome, authentication, security)) in
+            profiles(&identity).into_iter().enumerate()
+        {
+            // Share the idle external peer, but keep each profile's Run independent.
+            if index != 0 {
+                h.run = TestRun::new(&h.runtime);
+            }
             let transport = if carrier == "cloudflare_access" {
                 super::route(Some(
                     json!({"serverName":"mac.example.test","trust":{"mode":"custom_ca","caBundle":h.peer.ca}}),
@@ -46,6 +53,7 @@ async fn both_native_carriers_admit_all_eighteen_current_authentication_profiles
             assert!(credential.unwrap().native.is_some());
             assert!(h.network.attempts.lock().unwrap().is_empty());
             resolve.assert_calls_async(1).await;
+            resolve.delete_async().await;
             h.run.shutdown().await;
         }
     }
