@@ -51,7 +51,8 @@ defaults:
 
 jobs:
   detect-desktop-version:
-    if: github.event_name == 'merge_group'
+    # Temporary PR transport probe; restore merge-group-only detection before merge.
+    if: github.event_name == 'merge_group' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -69,7 +70,7 @@ jobs:
       - name: Detect Desktop version change
         id: version
         env:
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
 
@@ -86,6 +87,28 @@ jobs:
             echo "changed=$(jq -r .changed <<<"$result")"
             echo "version=$(jq -r .version <<<"$result")"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Verify temporary PR transport probe
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CHANGED: ${{ steps.version.outputs.changed }}
+          VERSION: ${{ steps.version.outputs.version }}
+          HISTORICAL_BASE_SHA: 6b22dfa6e2b9ddb7046f62e7b30fa7040a2e411b
+          HISTORICAL_BASE_VERSION: 0.55.5
+        run: |
+          set -euo pipefail
+          printf 'event-base=%s\nhead=%s\nchanged=%s\nversion=%s\n' "$BASE_SHA" "$GITHUB_SHA" "$CHANGED" "$VERSION"
+          [[ "$CHANGED" == false ]]
+          [[ "$(git rev-list --count "$BASE_SHA" "$GITHUB_SHA")" == 2 ]]
+          git sparse-checkout list
+
+          git fetch --no-tags --depth=1 --filter=blob:none origin "$HISTORICAL_BASE_SHA"
+          result="$(bash .github/scripts/release/resolve-desktop-version-change.sh "$HISTORICAL_BASE_SHA" "$GITHUB_SHA")"
+          jq -e --arg previous "$HISTORICAL_BASE_VERSION" --arg version "$VERSION" \
+            '.changed == true and .previousVersion == $previous and .version == $version' <<< "$result"
+          printf '%s\n' "$result"
+          [[ "$(git rev-list --count "$BASE_SHA" "$HISTORICAL_BASE_SHA" "$GITHUB_SHA")" == 3 ]]
 
   test-native:
     name: test-native-macos-arm64
