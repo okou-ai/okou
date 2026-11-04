@@ -204,9 +204,7 @@ test.each([true, false])(
     );
     await setupDiscordPage();
     await expect(
-      screen.findByText(
-        "Mention Okou in servers or DMs",
-      ),
+      screen.findByText("Mention Okou in servers or DMs"),
     ).resolves.toBeInTheDocument();
     const card = getIntegrationCard("Discord");
     click(getAction("button", "Connect", card));
@@ -313,9 +311,7 @@ test.each([
       path: "/works",
     });
     await expect(
-      screen.findByText(
-        "Mention Okou in servers or DMs",
-      ),
+      screen.findByText("Mention Okou in servers or DMs"),
     ).resolves.toBeInTheDocument();
     click(getAction("button", "Connect", getIntegrationCard("Discord")));
     await waitFor(() => {
@@ -363,9 +359,7 @@ test("A failed authorization start closes its tab, reports the error, without cl
   });
   await setupDiscordPage();
   await expect(
-    screen.findByText(
-      "Mention Okou in servers or DMs",
-    ),
+    screen.findByText("Mention Okou in servers or DMs"),
   ).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
   click(getAction("button", "Connect", card));
@@ -389,9 +383,7 @@ test.each([false, true])(
     });
     await setupDiscordPage();
     await expect(
-      screen.findByText(
-        "Mention Okou in servers or DMs",
-      ),
+      screen.findByText("Mention Okou in servers or DMs"),
     ).resolves.toBeInTheDocument();
     click(getAction("button", "Connect", getIntegrationCard("Discord")));
     await expect(
@@ -420,9 +412,7 @@ test("Leaving Works after consent opens cancels the retained opener proof withou
   });
   await setupDiscordPage();
   await expect(
-    screen.findByText(
-      "Mention Okou in servers or DMs",
-    ),
+    screen.findByText("Mention Okou in servers or DMs"),
   ).resolves.toBeInTheDocument();
   click(getAction("button", "Connect", getIntegrationCard("Discord")));
   await waitFor(() => {
@@ -442,9 +432,7 @@ test("Leaving Works after consent opens cancels the retained opener proof withou
   });
   click(getAction("link", "Where Okou works"));
   await expect(
-    screen.findByText(
-      "Mention Okou in servers or DMs",
-    ),
+    screen.findByText("Mention Okou in servers or DMs"),
   ).resolves.toBeInTheDocument();
   expect(
     getAction("button", "Connect", getIntegrationCard("Discord")),
@@ -468,9 +456,7 @@ test("Leaving Works aborts an in-flight authenticated completion request", async
   });
   await setupDiscordPage();
   await expect(
-    screen.findByText(
-      "Mention Okou in servers or DMs",
-    ),
+    screen.findByText("Mention Okou in servers or DMs"),
   ).resolves.toBeInTheDocument();
   click(getAction("button", "Connect", getIntegrationCard("Discord")));
   await waitFor(() => {
@@ -506,9 +492,7 @@ test("Leaving Works cancels a pending authorization request and closes its blank
   });
   await setupDiscordPage();
   await expect(
-    screen.findByText(
-      "Mention Okou in servers or DMs",
-    ),
+    screen.findByText("Mention Okou in servers or DMs"),
   ).resolves.toBeInTheDocument();
   click(getAction("button", "Connect", getIntegrationCard("Discord")));
   await started.promise;
@@ -708,9 +692,7 @@ test("Leaving the consent route cancels automatic verification and destroys its 
     expect(approvalSignal?.aborted).toBeTruthy();
   });
   await expect(
-    screen.findByText(
-      "Mention Okou in servers or DMs",
-    ),
+    screen.findByText("Mention Okou in servers or DMs"),
   ).resolves.toBeInTheDocument();
   await act(() => {
     context.mocks.browser.message(
@@ -751,9 +733,7 @@ test("Unapproved popup closure shows cancellation without failure capture", asyn
   });
   await setupDiscordPage();
   await expect(
-    screen.findByText(
-      "Mention Okou in servers or DMs",
-    ),
+    screen.findByText("Mention Okou in servers or DMs"),
   ).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
   click(getAction("button", "Connect", card));
@@ -1052,8 +1032,7 @@ test.each([false, true])(
       },
     );
     await setupDiscordPage();
-    const description =
-      "Mention Okou in servers or DMs";
+    const description = "Mention Okou in servers or DMs";
     await expect(screen.findByText(description)).resolves.toBeInTheDocument();
 
     click(
@@ -1108,9 +1087,7 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
   ).resolves.toBeInTheDocument();
   const discordCard = getIntegrationCard("Discord");
   expect(
-    within(discordCard).getByText(
-      "Mention Okou in servers or DMs",
-    ),
+    within(discordCard).getByText("Mention Okou in servers or DMs"),
   ).toBeInTheDocument();
   expect(queryAllByRoleFast("button", discordCard)).toHaveLength(0);
   const skeleton = bootstrapSkeleton();
@@ -1146,9 +1123,7 @@ test("A status error hides stale controls and recovers when returning to Works",
     expect(queryAllByRoleFast("button", card)).toHaveLength(0);
   });
   expect(
-    within(card).getByText(
-      "Mention Okou in servers or DMs",
-    ),
+    within(card).getByText("Mention Okou in servers or DMs"),
   ).toBeInTheDocument();
   expect(
     within(card).queryByText(/^Connected(?: \(.+\))?$/u),
