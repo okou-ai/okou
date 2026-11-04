@@ -364,6 +364,7 @@ def _is_valid_catalog_digest(value: str) -> bool:
 
 
 def _validate_firewall_map(firewalls: dict[str, dict]) -> None:
+    validated_rules: set[str] = set()
     for name, firewall in firewalls.items():
         if not isinstance(name, str) or name == "":
             raise BuiltinFirewallCatalogCacheError("catalog cache firewall keys must be non-empty")
@@ -385,10 +386,10 @@ def _validate_firewall_map(firewalls: dict[str, dict]) -> None:
                 raise BuiltinFirewallCatalogCacheError(
                     f'catalog cache firewall "{name}" api entries must be objects'
                 )
-            _validate_api_entry(name, api)
+            _validate_api_entry(name, api, validated_rules)
 
 
-def _validate_api_entry(firewall_name: str, api: dict) -> None:
+def _validate_api_entry(firewall_name: str, api: dict, validated_rules: set[str]) -> None:
     raw_base = api.get("base")
     if not isinstance(raw_base, str) or raw_base == "":
         raise BuiltinFirewallCatalogCacheError(
@@ -470,10 +471,12 @@ def _validate_api_entry(firewall_name: str, api: dict) -> None:
                 raise BuiltinFirewallCatalogCacheError(
                     f'catalog cache firewall "{firewall_name}" permission rules must be strings'
                 )
-            if not matching.firewall_rule_is_valid(rule):
-                raise BuiltinFirewallCatalogCacheError(
-                    f'catalog cache firewall "{firewall_name}" permission rule is invalid'
-                )
+            if rule not in validated_rules:
+                if not matching.firewall_rule_is_valid(rule):
+                    raise BuiltinFirewallCatalogCacheError(
+                        f'catalog cache firewall "{firewall_name}" permission rule is invalid'
+                    )
+                validated_rules.add(rule)
 
 
 def _base_url_template_syntax_target(firewall_name: str, raw_base: str) -> str | None:

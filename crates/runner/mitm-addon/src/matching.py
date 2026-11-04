@@ -899,7 +899,9 @@ def _indexed_rule_candidates(
     return tuple(sorted(candidates, key=lambda entry: entry.order))
 
 
-def _compile_rule(rule_str: str) -> _CompiledRule | None:
+def _parse_rule(
+    rule_str: str,
+) -> tuple[str, str, tuple[tuple[str, str | None], ...], Mapping[str, str] | None] | None:
     parts = rule_str.split(" ", 1)
     if len(parts) != _RULE_TOKEN_COUNT:
         return None
@@ -919,6 +921,14 @@ def _compile_rule(rule_str: str) -> _CompiledRule | None:
         or has_raw_whitespace(path)
     ):
         return None
+    return method, path, query_requirements, aws_predicates
+
+
+def _compile_rule(rule_str: str) -> _CompiledRule | None:
+    parsed = _parse_rule(rule_str)
+    if parsed is None:
+        return None
+    method, path, query_requirements, aws_predicates = parsed
     pattern = compile_path_pattern(path)
     if pattern is None:
         return None
@@ -1089,7 +1099,14 @@ def _attach_aws_query_selector_keys(
 
 def firewall_rule_is_valid(rule_str: str) -> bool:
     """Return whether a firewall permission rule matches the runtime grammar."""
-    return _compile_rule(rule_str) is not None
+    parsed = _parse_rule(rule_str)
+    if parsed is None:
+        return False
+    path = parsed[1]
+    if "{" not in path and "}" not in path:
+        return True
+    pattern = compile_path_pattern(path)
+    return pattern is not None and _compiled_rule_path_is_valid(pattern)
 
 
 DeclaredFirewallPermissionNameInvalidReason = Literal["empty", "reserved"]

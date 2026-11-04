@@ -51,7 +51,7 @@ import auth_base_forwarder
 import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
 import body_capture
-import builtin_firewall_cache
+import builtin_connector_diagnostics
 import builtin_host_policy
 import codex_model_catalog_cache
 import connector_diagnostics
@@ -271,7 +271,7 @@ def configure(updated: set[str]) -> None:
     if "okou_builtin_firewall_catalog_cache_path" in updated:
         # Runner disables its listener until running() below. Script loading
         # itself is asynchronous and does not precede native listener setup.
-        builtin_firewall_cache.load_configured_catalog_snapshot()
+        builtin_connector_diagnostics.prepare_configured_catalog_snapshot()
     platform_api.configure_client_headers(
         client_session_id=ctx.options.okou_client_session_id,
         client_version=ctx.options.okou_client_version,

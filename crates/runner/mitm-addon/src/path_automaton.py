@@ -21,6 +21,7 @@ from path_language import (
     Edge,
     PathGraph,
     WorkBudget,
+    is_literal_path_language,
     path_language,
     validate_literal_decoding,
 )
@@ -293,6 +294,19 @@ def pattern_tokens(pattern: str) -> tuple[int, ...]:
 
 def concrete_forms(tokens: tuple[int, ...], budget: WorkBudget) -> tuple[tuple[int, ...], ...]:
     """Enumerate distinct catalog forms after subset sharing, never request views."""
+    # An unescaped language is a single chain: construction charges 3*n and
+    # enumeration charges 5*n+1. Preserve that work and every chain bound without
+    # allocating graphs/subsets. Insufficient budgets retain the original failure path.
+    work = 8 * len(tokens) + 1
+    if (
+        len(tokens) < MAX_GRAPH_STATES
+        and len(tokens) <= MAX_GRAPH_EDGES
+        and (len(tokens) + 1) * 8 <= MAX_LABEL_BYTES
+        and work <= budget.limit - budget.used
+        and is_literal_path_language(tokens)
+    ):
+        budget.charge(work)
+        return (tokens,)
     graph = path_language(tokens, budget)
     initial = epsilon_closure(graph, {graph.start})
     moves: dict[frozenset[int], tuple[tuple[int, frozenset[int]], ...]] = {}

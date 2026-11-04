@@ -330,9 +330,9 @@ reply followed by EOF, then the existing TCP listener probe and one completed
 inode alone is not readiness. Only observational startup probes retry, with at
 most one second per control attempt; an uncertain warmup is not replayed.
 
-`catalog.warm` takes empty object parameters and runs the existing configured
-catalog loader on the bounded registry owner, not the control I/O thread. It
-returns the credential-free catalog projection used by registry observations:
+`catalog.warm` takes empty object parameters and prepares raw catalog validation
+and the matching diagnostic index on the bounded registry owner, not the control
+I/O thread. It returns the credential-free catalog projection used by registry observations:
 `available` with file identity and digest, or `unavailable` with file identity
 when known and its explicit reason. It does not apply a registry or change
 authorization. Missing and invalid sources retain existing fail-closed builtin
@@ -341,8 +341,8 @@ observational and does not establish catalog warmth.
 
 Runner starts mitmdump with `server=false` because the pinned runtime loads
 scripts asynchronously and can otherwise listen before the addon is configured.
-The addon's configure hook preloads an existing configured catalog; its managed
-running hook then starts control and enables the listener. Standalone addon use
+The addon's configure hook prepares an existing configured catalog and its
+diagnostic index; its managed running hook then starts control and enables the listener. Standalone addon use
 without Runner control does not override the server option. This covers
 sandboxes reconnecting during proxy replacement before Runner can send its
 readiness request. Managed `proxy.status` returns `not_ready` until its own
@@ -353,9 +353,13 @@ therefore completes another catalog warmup after provider startup readiness and
 before factories, Running status, or discovery. A failed control exchange stops
 startup; lifecycle cancellation retains startup rollback ownership. Replacement
 mitmdump launches complete their catalog load before process readiness returns.
-The loader reuses the warmed file identity on initial requests; changed identities
-still invalidate it. Periodic catalog replacement after admission retains its
-existing synchronous validation cost. Warmup outcome and elapsed time are logged
+The loader and diagnostic index reuse the warmed file identity on initial
+requests; changed identities still invalidate them. Rule validation shares runtime
+syntax parsing without constructing unused matcher objects. Source paths with one
+literal interpretation avoid graph enumeration while preserving the original
+charged work and resource bounds; encoded/escaped paths retain the bounded graph
+analysis. Periodic catalog replacement after admission retains synchronous
+validation and diagnostic preparation. Warmup outcome and elapsed time are logged
 without policy or credential content; unavailable is not reported as an available
 catalog.
 
