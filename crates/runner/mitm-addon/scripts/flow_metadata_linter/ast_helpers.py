@@ -124,6 +124,19 @@ def _deduplicate_ordered_outcomes(
     return result
 
 
+def _continue_ordered_outcomes(
+    outcomes: list[ast.AST | None], replacements: tuple[ast.AST | None, ...]
+) -> list[ast.AST | None]:
+    """Fill missing first-position outcomes while retaining known node identities."""
+    next_outcomes: list[ast.AST | None] = []
+    for outcome in outcomes:
+        if outcome is None:
+            next_outcomes.extend(replacements)
+        else:
+            next_outcomes.append(outcome)
+    return _deduplicate_ordered_outcomes(next_outcomes)
+
+
 def _static_outcomes(
     nodes: list[ast.AST] | tuple[ast.AST, ...], *, may_be_empty: bool
 ) -> _StaticIterableOutcomes:
@@ -305,13 +318,7 @@ def _static_ordered_sequence_first_outcomes(
             ).ordered
         else:
             element_outcomes = (element,)
-        next_outcomes: list[ast.AST | None] = []
-        for outcome in outcomes:
-            if outcome is None:
-                next_outcomes.extend(element_outcomes)
-            else:
-                next_outcomes.append(outcome)
-        outcomes = _deduplicate_ordered_outcomes(next_outcomes)
+        outcomes = _continue_ordered_outcomes(outcomes, element_outcomes)
     return _StaticIterableOutcomes(tuple(outcomes))
 
 
@@ -399,13 +406,7 @@ def _static_mapping_first_key_outcomes(
                 key_outcomes = _static_mapping_first_key_outcomes(value).ordered
             else:
                 key_outcomes = (key,)
-            next_outcomes: list[ast.AST | None] = []
-            for outcome in outcomes:
-                if outcome is None:
-                    next_outcomes.extend(key_outcomes)
-                else:
-                    next_outcomes.append(outcome)
-            outcomes = _deduplicate_ordered_outcomes(next_outcomes)
+            outcomes = _continue_ordered_outcomes(outcomes, key_outcomes)
         return _StaticIterableOutcomes(tuple(outcomes))
     if isinstance(node, ast.DictComp):
         return _static_outcomes((node.key,), may_be_empty=True)
