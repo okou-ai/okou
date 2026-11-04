@@ -217,6 +217,13 @@ test("Deleting the default promotes a sibling enabled in the open manager", asyn
     expect(accountRadio(manager, "Work")).toBeChecked();
   });
   click(await toggle("Personal"));
+  await waitFor(() => {
+    expect(
+      within(manager).getByRole("switch", {
+        name: "Enable Personal by default",
+      }),
+    ).toBeChecked();
+  });
   const workRow = within(manager).getByRole("group", { name: "Work" });
   click(getConnectorAction("button", "Account actions", workRow));
   click(
