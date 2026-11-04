@@ -175,8 +175,6 @@ export function MobileChatThreadMoreMenu({
         <Ellipsis size={18} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-48">
-        <MobileBrowserMenuItem thread={thread} />
-        <DropdownMenuSeparator />
         <DropdownMenuItem
           className="min-h-11"
           onClick={() => {
@@ -233,7 +231,7 @@ export function MobileChatThreadMoreMenu({
                 })}
           </DropdownMenuItem>
         )}
-        {automations && automations.length > 0 && <DropdownMenuSeparator />}
+        <DropdownMenuSeparator />
         {automations && automations.length > 0 && (
           <DropdownMenuItem
             className="min-h-11"
@@ -248,6 +246,7 @@ export function MobileChatThreadMoreMenu({
             })}
           </DropdownMenuItem>
         )}
+        <MobileBrowserMenuItem thread={thread} />
       </DropdownMenuContent>
     </DropdownMenu>
   );

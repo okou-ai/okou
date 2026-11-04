@@ -254,10 +254,10 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   click(more);
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
-    "Open browser",
     "Pin chat",
     "Rename chat",
     "Archive chat",
+    "Open browser",
   ]);
   click(menuItemNamed("Rename chat"));
   const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
@@ -386,11 +386,11 @@ test("Mute from the mobile header and unmute from the desktop header", async () 
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
-    "Open browser",
     "Pin chat",
     "Rename chat",
     "Mute chat",
     "Archive chat",
+    "Open browser",
   ]);
   click(menuItemNamed("Mute chat"));
   await expect(
@@ -439,9 +439,9 @@ test("Hide header archiving when the archive switch is off", async () => {
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
-    "Open browser",
     "Pin chat",
     "Rename chat",
+    "Open browser",
   ]);
 });
 
@@ -469,10 +469,10 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
-    "Open browser",
     "Pin chat",
     "Rename chat",
     "Unarchive chat",
+    "Open browser",
   ]);
   click(menuItemNamed("Unarchive chat"));
   click(buttonNamed("More actions"));
@@ -544,11 +544,11 @@ test("Open linked automations from the mobile menu", async () => {
   click(buttonNamed("More actions"));
   await waitFor(() => {
     expect(menuItemNames()).toStrictEqual([
-      "Open browser",
       "Pin chat",
       "Rename chat",
       "Archive chat",
       "Automations",
+      "Open browser",
     ]);
   });
   click(menuItemNamed("Automations"));
