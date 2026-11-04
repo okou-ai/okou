@@ -26,6 +26,21 @@ interface ShellOptions {
   json?: boolean;
 }
 
+const SHELL_CAPABILITY_REQUIRED_MESSAGE =
+  "Shell authorization required: run `okou connector permission-request computer-use --permission computer-use:write`, share the authorization link, and ask the user to select an Okou Desktop host for this chat or Slack thread. Enable Desktop Shell for the workspace and Shell Access in Desktop Developer Tools, then start a new run. Existing run tokens cannot gain computer-use:shell:write in place.";
+
+function throwShellAuthorizationGuidanceError(error: unknown): never {
+  if (
+    error instanceof ApiRequestError &&
+    error.status === 403 &&
+    error.code === "FORBIDDEN" &&
+    error.message === "Missing required capability: computer-use:shell:write"
+  ) {
+    throw new Error(SHELL_CAPABILITY_REQUIRED_MESSAGE);
+  }
+  throw error;
+}
+
 function integer(value: string | undefined, label: string): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number(value);
@@ -41,9 +56,7 @@ async function run(
 ): Promise<void> {
   const token = decodeSandboxTokenPayload();
   if (token && !token.capabilities.includes("computer-use:shell:write")) {
-    throw new Error(
-      "Shell authorization required: enable Desktop Shell for your workspace, select this computer before starting a new run, and enable Shell Access in Desktop Developer Tools. Existing tokens cannot gain computer-use:shell:write in place.",
-    );
+    throw new Error(SHELL_CAPABILITY_REQUIRED_MESSAGE);
   }
   const parsed = desktopShellRequestSchema.safeParse({
     kind,
@@ -76,7 +89,7 @@ async function run(
         !mutation ||
         (cause instanceof ApiRequestError && cause.status < 500)
       ) {
-        throw cause;
+        throwShellAuthorizationGuidanceError(cause);
       }
       throw new Error(
         "Shell submission outcome is unknown; input may have been delivered. Use shell list and observe the existing session before deciding what to do. Do not replay input.",
@@ -199,7 +212,9 @@ Examples:
         .action(
           withErrorHandler(
             async (options: { reason: string; json?: boolean }) => {
-              const result = await requestDesktopShellAccess(options.reason);
+              const result = await requestDesktopShellAccess(
+                options.reason,
+              ).catch(throwShellAuthorizationGuidanceError);
               if (options.json) {
                 console.log(JSON.stringify(result));
                 return;
