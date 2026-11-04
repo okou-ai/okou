@@ -205,14 +205,22 @@ Dir.mktmpdir("desktop-manifest-source") do |dir|
       *"--json targetCommitish"*) printf '%s\n' "$MOCK_DESKTOP_TARGET" ;;
       *"--json assets"*) printf '%s\n' "$MOCK_DESKTOP_ASSETS" ;;
       *"/jobs?"*) cat "$MOCK_SOURCE_JOBS" ;;
-      *) cat "$MOCK_SOURCE_RUN" ;;
+      *"/compare/"*) printf '%s\n' "$MOCK_MERGE_BASE" ;;
+      *"/contents/desktop/version.txt?"*) printf '%s\n' '0.54.6' | base64 ;;
+      *"/git/ref/tags/desktop-v"*) printf '{"object":{"type":"commit","sha":"%s"}}\n' "$MOCK_COMPONENT_TARGET" ;;
+      *"/actions/runs/123") cat "$MOCK_SOURCE_RUN" ;;
+      *) echo 'Unexpected GitHub operation' >&2; exit 99 ;;
     esac
   SH
   File.chmod(0755, "#{bin}/gh")
   target = "a" * 40
   run = {"path" => ".github/workflows/release-please.yml", "event" => "push", "head_branch" => "main", "head_sha" => target, "conclusion" => "success"}
   jobs = %w[release-please promote-desktop-release promote-api-production].map { |name| {"name" => name, "conclusion" => "success"} }
+  # A release commit can be followed by another merge in the same push. A
+  # failed overall run can still have successfully promoted Desktop and API.
   cases = [[run, jobs, true], [run.merge("conclusion" => nil), jobs, true],
+    [run.merge("head_sha" => "b" * 40), jobs, true],
+    [run.merge("head_sha" => "b" * 40, "conclusion" => "failure"), jobs, true],
     [run.merge("path" => ".github/workflows/desktop.yml"), jobs, false],
     [run.merge("head_branch" => "feature"), jobs, false],
     [run.merge("event" => "pull_request"), jobs, false],
@@ -221,7 +229,7 @@ Dir.mktmpdir("desktop-manifest-source") do |dir|
     [run, jobs[0..1], false]]
   %w[failure cancelled skipped].each do |result|
     [1, 2].each do |index|
-      cases << [run, jobs.each_with_index.map { |job, i| i == index ? job.merge("conclusion" => result) : job }, false]
+      cases << [run.merge("conclusion" => "failure"), jobs.each_with_index.map { |job, i| i == index ? job.merge("conclusion" => result) : job }, false]
     end
   end
   cases.each do |source_run, source_jobs, expected|
@@ -230,11 +238,35 @@ Dir.mktmpdir("desktop-manifest-source") do |dir|
     output_file = "#{dir}/outputs"
     File.write(output_file, "")
     env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "GITHUB_REPOSITORY" => "okou-ai/okou", "RELEASE_RUN_ID" => "123",
+      "RELEASE_TARGET" => target, "MOCK_MERGE_BASE" => target, "MOCK_COMPONENT_TARGET" => target,
       "GITHUB_OUTPUT" => output_file, "MOCK_SOURCE_RUN" => "#{dir}/run.json", "MOCK_SOURCE_JOBS" => "#{dir}/jobs.jsonl"}
     output, status = Open3.capture2e(env, "bash", "-c", source)
     raise "unexpected source release acceptance: #{output}" unless status.success? == expected
-    expected_output = expected ? "sha=#{target}\n" : ""
+    expected_output = expected ? "sha=#{target}\nversion=0.54.6\n" : ""
     raise "unverified source SHA escaped" unless File.read(output_file) == expected_output
+  end
+  File.write("#{dir}/run.json", JSON.generate(run.merge("head_sha" => "b" * 40, "conclusion" => "failure")))
+  File.write("#{dir}/jobs.jsonl", jobs.map { |job| JSON.generate(job) }.join("\n"))
+  [{"MOCK_MERGE_BASE" => "c" * 40}, {"MOCK_COMPONENT_TARGET" => "b" * 40}].each do |mismatch|
+    output_file = "#{dir}/outputs"
+    File.write(output_file, "")
+    env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "GITHUB_REPOSITORY" => "okou-ai/okou", "RELEASE_RUN_ID" => "123",
+      "RELEASE_TARGET" => target, "MOCK_MERGE_BASE" => target, "MOCK_COMPONENT_TARGET" => target,
+      "GITHUB_OUTPUT" => output_file, "MOCK_SOURCE_RUN" => "#{dir}/run.json", "MOCK_SOURCE_JOBS" => "#{dir}/jobs.jsonl"}.merge(mismatch)
+    output, status = Open3.capture2e(env, "bash", "-c", source)
+    raise "Unrelated release target must not be published: #{output}" if status.success? || !File.read(output_file).empty?
+  end
+  identity = publish.fetch("steps").find { |step| step["name"] == "Resolve Desktop release identity" }.fetch("run")
+  Dir.mkdir("#{dir}/desktop")
+  ["0.54.6", "0.54.5"].each do |version|
+    File.write("#{dir}/desktop/version.txt", "#{version}\n")
+    env_file = "#{dir}/env"
+    File.write(env_file, "")
+    output, status = Open3.capture2e({"EXPECTED_VERSION" => "0.54.6", "GITHUB_ENV" => env_file}, "bash", "-c", identity, chdir: dir)
+    expected = version == "0.54.6"
+    raise "unexpected checked-out release identity: #{output}" unless status.success? == expected
+    expected_env = expected ? "DESKTOP_VERSION=0.54.6\nOKOU_RELEASE_TAG=okou-desktop-v0.54.6\n" : ""
+    raise "wrong Desktop version escaped" unless File.read(env_file) == expected_env
   end
   assets = publish.fetch("steps").find { |step| step["name"] == "Verify Desktop release assets" }.fetch("run")
     .gsub('${{ github.repository }}', 'okou-ai/okou')

@@ -1390,8 +1390,8 @@
       "takeOver": "操作を代わる",
       "takeOverMessage": "ブラウザの操作を引き継ぎました。お返しするまで使わないでください。"
     },
-    "reclaimHint_one": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
-    "reclaimHint_other": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
+    "reclaimHint_one": "パネル表示中は保持し、{{formattedCount}} 分間操作がないと解放します。",
+    "reclaimHint_other": "パネル表示中は保持し、{{formattedCount}} 分間操作がないと解放します。",
     "status": {
       "live": "ライブ",
       "starting": "開始",
@@ -1429,6 +1429,7 @@
     "paused": "表示を一時停止中",
     "quality": "画質",
     "reconnect": "再接続",
+    "reconnecting": "再接続中…",
     "reload": "再読み込み",
     "remoteInput": "リモートブラウザー入力",
     "resolution": "解像度",
@@ -2099,78 +2100,6 @@
       "sent": "転送しました",
       "threads": "チャット",
       "title": "転送先"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "ドキュメント",
-        "image": "画像",
-        "presentation": "Presentation",
-        "visualization": "グラフ",
-        "website": "ウェブサイト"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "対応が必要なメールを朝にまとめて受け取れるように設定したい。まず対象の受信トレイと配信時刻を確認して",
-            "second": "競合企業の情報を週次でまとめて受け取れるように設定したい。まず対象企業、情報源、配信スケジュールを確認して",
-            "third": "売上の日次サマリーを受け取れるように設定したい。まずデータソース、指標、配信時刻を確認して"
-          },
-          "label": "定期サマリー",
-          "placeholder": "受け取りたい情報と配信頻度を入力…",
-          "title": "どのようなサマリーを受け取りたいですか？"
-        },
-        "general": {
-          "examples": {
-            "first": "立ち上げ初期のチームに合うブランドデザイン会社を探して",
-            "second": "顧客管理ツールを機能と価格で比較して",
-            "third": "ある業界の最近の動向と主要企業を調べて"
-          },
-          "label": "総合",
-          "placeholder": "質問や知りたいことを入力…",
-          "title": "何を知りたいですか？"
-        },
-        "information": {
-          "examples": {
-            "first": "小規模企業のAI導入に関する最近の調査を、一次情報とあわせて探して",
-            "second": "公開されている製品ローンチの成功事例を集めて、成功の要因を説明して",
-            "third": "プレゼンに使える信頼性の高い業界データを、日付と出典リンク付きで探して"
-          },
-          "label": "情報",
-          "placeholder": "テーマ、対象期間、情報の用途などを入力…",
-          "title": "どのような情報を調べたいですか？"
-        },
-        "monitor": {
-          "examples": {
-            "first": "競合企業の価格変更を追えるようにしたい。まず対象企業、情報源、通知のタイミングを確認して",
-            "second": "顧客に送ったメールへの返信を確認できるようにしたい。まず対象のメールと通知方法を確認して",
-            "third": "業界の重要な動きを追えるようにしたい。まず情報源、確認頻度、重視する内容を相談して決めたい"
-          },
-          "label": "モニタリング",
-          "placeholder": "継続して追いたい対象と、注目する変化を入力…",
-          "title": "どのような変化を追いたいですか？"
-        },
-        "people": {
-          "examples": {
-            "first": "AIマーケティングのイベントに合う登壇者を5人、選定理由と公開情報の出典付きで探して",
-            "second": "経営者にリーチできるクリエイターを探して、視聴者層が適している理由を説明して",
-            "third": "私のコンサルティングサービスの見込み顧客を、関連する公開情報とあわせて探して"
-          },
-          "label": "人物",
-          "placeholder": "役職、専門分野、企業、地域などを入力…",
-          "title": "どのような人をお探しですか？"
-        }
-      },
-      "groups": {
-        "automate": "自動化",
-        "create": "作成",
-        "search": "検索"
-      },
-      "label": "Okouでできることを見つける",
-      "placeholder": "やりたいことを入力…",
-      "sources": {
-        "trigger": "ツール"
-      },
-      "workflows": "ワークフロー"
     },
     "mail": {
       "bcc": "BCC",
@@ -3178,8 +3107,7 @@
     "noEnabledAccount": "このチャットで有効なアカウントはありません",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
-    "settingsDescription": "既定で有効にするアカウントと、新しいチャットの既定のアカウントを選択します。",
-    "thisChat": "このチャット"
+    "settingsDescription": "既定で有効にするアカウントと、新しいチャットの既定のアカウントを選択します。"
   },
   "connectors": {
     "access": {
@@ -5434,8 +5362,10 @@
         "credits": "クレジット",
         "fiveHourLimit": "5時間の上限",
         "label": "サブスクリプションの使用状況",
+        "leftSide": "左側",
         "lowUsage": "サブスクリプションの使用状況：残り20%未満",
         "resetTimeUnavailable": "リセット時間は利用不可",
+        "rightSide": "右側",
         "usage": "{{provider}}の使用量",
         "usageRemaining": "{{provider}} {{window}} 残り",
         "weeklyLimit": "週間上限"

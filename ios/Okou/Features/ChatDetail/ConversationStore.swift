@@ -53,7 +53,8 @@ final class ConversationStore {
   @ObservationIgnored lazy var connectorActions = ConnectorActionStore(
     service: commands.connectorActions, commands: commands, thread: thread,
     didContinue: { [weak self] in
-      guard let self else { return }
+      guard let self, !closed else { return }
+      await modelSelection?.connectors.refresh()
       didSend()
       await refresh()
     }, didFail: didFail)

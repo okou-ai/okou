@@ -1,6 +1,6 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { convert } from "html-to-text";
-import { escapeHtml } from "markdown-it/lib/common/utils.mjs";
+import { escapeUTF8 as escapeHtml } from "entities";
 
 // Brand artwork used by the published Okou Welcome and paid onboarding
 // templates in Resend (day-0-welcome / okou-paid-onboarding-session-1).

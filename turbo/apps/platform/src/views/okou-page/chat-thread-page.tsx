@@ -596,6 +596,7 @@ function ChatThreadHeaderIconButton({
             <Button
               type="button"
               disabled={disabled}
+              focusableWhenDisabled
               aria-busy={busy}
               variant="quiet"
               size="icon-sm"
@@ -818,6 +819,7 @@ function DesktopChatThreadHeader({
                   <Button
                     type="button"
                     disabled={transitioning}
+                    focusableWhenDisabled
                     onClick={() => {
                       detach(
                         startSharing(pageSignal),

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.29.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.11...guest-storage-apply-v0.29.0) (2026-11-04)
+
+
+### Features
+
+* **guest-storage:** attribute cleanup cpu and wall time ([#45149](https://github.com/okou-ai/okou/issues/45149)) ([ef04777](https://github.com/okou-ai/okou/commit/ef04777e92ae1ab6718a8ac1b15c05c8f2291ff4))
+
+## [0.28.11](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.10...guest-storage-apply-v0.28.11) (2026-11-04)
+
+## [0.28.10](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.9...guest-storage-apply-v0.28.10) (2026-11-04)
+
+
+### Performance Improvements
+
+* **guest-storage:** buffer large archive file copies ([#45070](https://github.com/okou-ai/okou/issues/45070)) ([e1a05bb](https://github.com/okou-ai/okou/commit/e1a05bbfbcf40173b10a56bd171b11e61b177afb))
+
 ## [0.28.9](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.8...guest-storage-apply-v0.28.9) (2026-11-03)
 
 ## [0.28.8](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.7...guest-storage-apply-v0.28.8) (2026-11-03)

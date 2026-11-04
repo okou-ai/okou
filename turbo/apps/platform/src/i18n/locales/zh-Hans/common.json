@@ -1390,8 +1390,8 @@
       "takeOver": "接管",
       "takeOverMessage": "我先接管浏览器，在我交还之前请不要操作它。"
     },
-    "reclaimHint_one": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
-    "reclaimHint_other": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
+    "reclaimHint_one": "面板打开时保留，闲置 {{formattedCount}} 分钟后回收。",
+    "reclaimHint_other": "面板打开时保留，闲置 {{formattedCount}} 分钟后回收。",
     "status": {
       "live": "运行中",
       "starting": "启动中",
@@ -1429,6 +1429,7 @@
     "paused": "画面已暂停",
     "quality": "图像质量",
     "reconnect": "重新连接",
+    "reconnecting": "正在重连…",
     "reload": "刷新",
     "remoteInput": "远程浏览器输入",
     "resolution": "分辨率",
@@ -2099,78 +2100,6 @@
       "sent": "转发成功",
       "threads": "聊天",
       "title": "转发到"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Document",
-        "image": "Image",
-        "presentation": "Presentation",
-        "visualization": "Chart",
-        "website": "Website"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "帮我设置晨间邮件简报，汇总需要我处理的邮件；先确认收件箱和发送时间",
-            "second": "帮我设置每周竞品简报；先确认关注的公司、信息来源和发送安排",
-            "third": "帮我设置每日销售摘要；先确认数据来源、指标和发送时间"
-          },
-          "label": "Briefs",
-          "placeholder": "描述简报要包含的内容，以及接收频率…",
-          "title": "希望定期收到什么简报？"
-        },
-        "general": {
-          "examples": {
-            "first": "寻找适合初创团队的品牌设计机构",
-            "second": "按功能和价格对比客户管理工具",
-            "third": "调研某个行业的近期趋势和领先企业"
-          },
-          "label": "综合",
-          "placeholder": "描述你的问题，或想了解的内容…",
-          "title": "想查些什么？"
-        },
-        "information": {
-          "examples": {
-            "first": "寻找近期关于小企业采用 AI 的研究，并附上原始来源",
-            "second": "收集成功发布产品的公开案例，并说明哪些做法起了作用",
-            "third": "寻找可用于演示文稿的可靠行业数据，附上日期和来源链接"
-          },
-          "label": "信息",
-          "placeholder": "描述主题、时间范围，或资料的用途…",
-          "title": "想找哪方面的资料？"
-        },
-        "monitor": {
-          "examples": {
-            "first": "帮我关注竞争对手的价格变化；先确认公司、信息来源和通知时间",
-            "second": "帮我关注发给客户的邮件是否收到回复；先确认具体邮件和通知方式",
-            "third": "帮我关注某个行业的重要动态；先商定信息来源、检查频率和关注重点"
-          },
-          "label": "Monitor",
-          "placeholder": "描述想持续关注的对象，以及哪些变化值得留意…",
-          "title": "想持续关注什么变化？"
-        },
-        "people": {
-          "examples": {
-            "first": "为一场 AI 营销活动寻找 5 位演讲嘉宾，说明适合的理由并附上公开来源",
-            "second": "寻找能触达企业主的内容创作者，并说明其受众为什么合适",
-            "third": "为我的咨询服务寻找潜在客户，并附上相关的公开背景信息"
-          },
-          "label": "人物",
-          "placeholder": "描述职位、领域、公司或地区…",
-          "title": "找什么样的人？"
-        }
-      },
-      "groups": {
-        "automate": "Automate",
-        "create": "Create",
-        "search": "Search"
-      },
-      "label": "探索 Okou 能做什么",
-      "placeholder": "描述你想完成的事…",
-      "sources": {
-        "trigger": "工具"
-      },
-      "workflows": "Workflows"
     },
     "mail": {
       "bcc": "密送",
@@ -3178,8 +3107,7 @@
     "noEnabledAccount": "当前聊天未启用任何账号",
     "permissions": "权限",
     "permissionsDescription": "这些规则适用于你所有聊天和账号中的此连接器。",
-    "settingsDescription": "选择默认启用的账号，以及新聊天的默认账号。",
-    "thisChat": "当前聊天"
+    "settingsDescription": "选择默认启用的账号，以及新聊天的默认账号。"
   },
   "connectors": {
     "access": {
@@ -5434,8 +5362,10 @@
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
         "label": "订阅用量",
+        "leftSide": "左侧",
         "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
+        "rightSide": "右侧",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩余用量",
         "weeklyLimit": "每周额度"

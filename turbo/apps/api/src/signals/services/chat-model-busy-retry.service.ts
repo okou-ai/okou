@@ -62,7 +62,8 @@ export const scheduleModelBusyRetry$ = command(
   async ({ get, set }, event: ChatRunFinishedEvent, signal: AbortSignal) => {
     if (
       event.runStatus !== "failed" ||
-      event.failureReason !== "provider_overloaded"
+      (event.failureReason !== "provider_overloaded" &&
+        event.failureReason !== "provider_rate_limited")
     ) {
       return;
     }
@@ -92,7 +93,7 @@ export const scheduleModelBusyRetry$ = command(
           eq(chatEvents.runId, agentRuns.id),
           eq(chatEvents.chatThreadId, chatThreads.id),
           eq(chatEvents.eventType, "run.failed"),
-          eq(chatEvents.failureReason, "provider_overloaded"),
+          eq(chatEvents.failureReason, event.failureReason),
         ),
       )
       .where(

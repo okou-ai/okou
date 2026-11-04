@@ -29,7 +29,7 @@ import addon_process_logging
 # --- Sub-module imports ---
 #
 # auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/content_length/
-# http_header_syntax/matching/model_websocket_usage/registry/
+# http_header_syntax/matching/model_websocket_usage/
 # response_encoding_negotiation/
 # response_streaming/
 # runner_flush_lifecycle/terminal_usage/upstream_admission/usage/websocket_framing/
@@ -39,7 +39,7 @@ import addon_process_logging
 #      ``body_capture.X(...)`` / ``connector_diagnostics.X(...)`` /
 #      ``connector_intent.X(...)`` /
 #      ``content_length.X(...)`` /
-#      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` / ``registry.X(...)`` /
+#      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` /
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
 #      ``terminal_usage.X(...)`` /
 #      ``upstream_admission.X(...)`` / ``usage.X(...)`` /
@@ -51,7 +51,7 @@ import auth_base_forwarder
 import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
 import body_capture
-import builtin_firewall_cache
+import builtin_connector_diagnostics
 import builtin_host_policy
 import codex_model_catalog_cache
 import connector_diagnostics
@@ -73,7 +73,6 @@ import mitmproxy_compat
 import model_websocket_usage
 import platform_api
 import public_destination_body_admission
-import registry
 import registry_control
 import request_body_admission
 import request_classification
@@ -272,7 +271,7 @@ def configure(updated: set[str]) -> None:
     if "okou_builtin_firewall_catalog_cache_path" in updated:
         # Runner disables its listener until running() below. Script loading
         # itself is asynchronous and does not precede native listener setup.
-        builtin_firewall_cache.load_configured_catalog_snapshot()
+        builtin_connector_diagnostics.prepare_configured_catalog_snapshot()
     platform_api.configure_client_headers(
         client_session_id=ctx.options.okou_client_session_id,
         client_version=ctx.options.okou_client_version,
@@ -750,43 +749,6 @@ def _http_network_log_entry(
     return entry, url
 
 
-def _block_authority_validation_error(flow: http.HTTPFlow, error: AuthorityValidationError) -> None:
-    http_local_responses.block_authority_validation_error(flow, error)
-
-
-def _block_registry_unavailable(
-    flow: http.HTTPFlow,
-    unavailable: registry.RegistryUnavailable,
-) -> None:
-    http_local_responses.block_registry_unavailable(flow, unavailable)
-
-
-def _block_invalid_registry_sandbox(
-    flow: http.HTTPFlow,
-    invalid_sandbox: registry.InvalidSandboxEntry,
-) -> None:
-    http_local_responses.block_invalid_registry_sandbox(flow, invalid_sandbox)
-
-
-def _block_stale_tls_admission(flow: http.HTTPFlow, *, reason: str) -> None:
-    http_local_responses.block_stale_tls_admission(flow, reason=reason)
-
-
-def _block_platform_path_denied(flow: http.HTTPFlow) -> None:
-    http_local_responses.block_platform_path_denied(flow)
-
-
-def _block_firewall_authorization_changed(
-    flow: http.HTTPFlow,
-    *,
-    current_decision: str,
-) -> None:
-    http_local_responses.block_firewall_authorization_changed(
-        flow,
-        current_decision=current_decision,
-    )
-
-
 def _block_upstream_destination_unbound(
     flow: http.HTTPFlow,
     *,
@@ -946,7 +908,7 @@ def _reject_custom_http_requestheaders(
 ) -> None:
     # Preserve early error framing rather than forwarding an unadmitted body.
     _classify_request_for_flow(flow)
-    _block_authority_validation_error(flow, error)
+    http_local_responses.block_authority_validation_error(flow, error)
     flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
     header_auth_response.mark(flow)
 
@@ -1613,17 +1575,6 @@ async def _try_firewall_request_stream_from_headers(
         raise
 
 
-def _set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBlock) -> None:
-    http_local_responses.set_firewall_block_response(flow, result)
-
-
-def _set_firewall_ambiguous_response(
-    flow: http.HTTPFlow,
-    result: matching.FirewallAmbiguous,
-) -> None:
-    http_local_responses.set_firewall_ambiguous_response(flow, result)
-
-
 def _block_public_destination_denied(
     flow: http.HTTPFlow,
     denial: request_classification.PublicDestinationDenial,
@@ -1775,19 +1726,19 @@ def _block_request_classification(
     classification: request_classification.BlockingRequestClassification,
 ) -> None:
     if classification.kind == "registry_unavailable":
-        _block_registry_unavailable(flow, classification.registry_unavailable)
+        http_local_responses.block_registry_unavailable(flow, classification.registry_unavailable)
         return
     if classification.kind == "stale_tls_admission":
-        _block_stale_tls_admission(flow, reason=classification.stale_tls_reason)
+        http_local_responses.block_stale_tls_admission(flow, reason=classification.stale_tls_reason)
         return
     if classification.kind == "invalid_registry_sandbox":
-        _block_invalid_registry_sandbox(flow, classification.invalid_sandbox)
+        http_local_responses.block_invalid_registry_sandbox(flow, classification.invalid_sandbox)
         return
     if classification.kind == "authority_denied":
-        _block_authority_validation_error(flow, classification.authority_error)
+        http_local_responses.block_authority_validation_error(flow, classification.authority_error)
         return
     if classification.kind == "platform_path_denied":
-        _block_platform_path_denied(flow)
+        http_local_responses.block_platform_path_denied(flow)
         return
     if classification.kind == "outlook_send_blocked":
         http_local_responses.block_outlook_send(flow)
@@ -1796,7 +1747,9 @@ def _block_request_classification(
         http_local_responses.block_gmail_send(flow)
         return
     if classification.kind == "firewall_ambiguous":
-        _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
+        http_local_responses.set_firewall_ambiguous_response(
+            flow, classification.firewall_ambiguous
+        )
         return
     if classification.kind == "firewall_invalid_input":
         http_local_responses.set_firewall_invalid_input_response(
@@ -1804,7 +1757,7 @@ def _block_request_classification(
         )
         return
     if classification.kind == "firewall_block":
-        _set_firewall_block_response(flow, classification.firewall_block)
+        http_local_responses.set_firewall_block_response(flow, classification.firewall_block)
         return
     if classification.kind == "public_destination_denied":
         _block_public_destination_denied(flow, classification.public_destination_denial)
@@ -1822,7 +1775,7 @@ def _block_current_firewall_authorization(
         if isinstance(classification, request_classification.BlockingRequestClassification):
             _block_request_classification(flow, classification)
             return
-        _block_firewall_authorization_changed(
+        http_local_responses.block_firewall_authorization_changed(
             flow,
             current_decision=classification.kind,
         )
@@ -1921,7 +1874,7 @@ async def request(flow: http.HTTPFlow) -> None:
             return
         except AuthorityValidationError as error:
             _classify_request_for_flow(flow)
-            _block_authority_validation_error(flow, error)
+            http_local_responses.block_authority_validation_error(flow, error)
             return
         classification = _request_classification_for_flow(flow)
         if classification.kind != "firewall_allow" or not _firewall_allow_auth_base(

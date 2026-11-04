@@ -1,4 +1,4 @@
-use super::{BinaryLoggingFixture, assert_action_types_present};
+use super::{BinaryLoggingFixture, assert_action_types_present, assert_cleanup_phase};
 use crate::support::{TcpTestServer, create_tar_gz, read_http_request_path, write_manifest};
 use httpmock::prelude::*;
 use serde_json::Value;
@@ -107,6 +107,18 @@ fn binary_records_download_scheduler_attribution() {
 
     let actions = fixture.action_types().unwrap();
     let ops = fixture.ops_entries().unwrap();
+    assert_cleanup_phase(
+        &ops,
+        "guest_storage_apply_stale_cleanup",
+        true,
+        "requested_0",
+    );
+    assert_cleanup_phase(
+        &ops,
+        "guest_storage_apply_instruction_cleanup",
+        true,
+        "requested_0",
+    );
     assert_action_types_present(
         &actions,
         &[

@@ -228,6 +228,11 @@ async fn home_operations_buffer_while_the_existing_api_transport_is_held() {
 
 #[tokio::test]
 async fn host_operations_resume_after_a_full_buffer_and_completed_api_sends() {
+    use std::{
+        future::{Future, poll_fn},
+        pin::Pin,
+    };
+
     use runner_host::home_observation::{
         HomeObservationKind as Kind, HomeObservationOutcome as Outcome,
     };
@@ -260,19 +265,42 @@ async fn host_operations_resume_after_a_full_buffer_and_completed_api_sends() {
     for _ in 0..HOST_PENDING_LIMIT + 2 {
         reporter.record(record());
     }
-    // Await the actual outstanding sends without closing the collector, so
-    // the next callback exercises recovery from a full bounded buffer.
-    let in_flight = {
-        let mut collector = telemetry.collector.lock().unwrap();
-        std::mem::take(&mut collector.as_mut().unwrap().in_flight_flushes)
-    };
+    {
+        let collector = telemetry.collector.lock().unwrap();
+        let collector = collector.as_ref().unwrap();
+        assert_eq!(collector.pending.len(), HOST_PENDING_LIMIT);
+        assert_eq!(collector.in_flight_flushes.len(), HOST_IN_FLIGHT_LIMIT);
+    }
     release_tx.send(()).unwrap();
-    drain_in_flight_flushes(None, in_flight).await;
+    // Await actual client completion while leaving every handle in the live
+    // collector. Scope the synchronous guard to each poll, never across await.
+    for index in 0..HOST_IN_FLIGHT_LIMIT {
+        poll_fn(|cx| {
+            let mut collector = telemetry.collector.lock().unwrap();
+            Pin::new(&mut collector.as_mut().unwrap().in_flight_flushes[index]).poll(cx)
+        })
+        .await
+        .unwrap();
+    }
+    {
+        let collector = telemetry.collector.lock().unwrap();
+        let handles = &collector.as_ref().unwrap().in_flight_flushes;
+        assert_eq!(handles.len(), HOST_IN_FLIGHT_LIMIT);
+        assert!(handles.iter().all(JoinHandle::is_finished));
+    }
+    let mut requests = vec![first];
+    for _ in 1..HOST_IN_FLIGHT_LIMIT {
+        requests.push(server.next_request("completed host batch").await);
+    }
     let mut resumed = record();
     resumed.home.as_mut().unwrap().reason = Some("resumed_after_backpressure".into());
     reporter.record(resumed);
+    requests.push(
+        server
+            .next_request("automatic host batch after backpressure")
+            .await,
+    );
     telemetry.flush().await;
-    let mut requests = vec![first];
     requests.extend(server.assert_finished_with_requests().await);
     let operations: Vec<serde_json::Value> = requests
         .iter()

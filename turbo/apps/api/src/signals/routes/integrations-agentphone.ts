@@ -1005,6 +1005,51 @@ function extractAgentPhoneMessageFields(
   };
 }
 
+function agentPhoneWebhookFieldType(value: unknown) {
+  if (value === null) {
+    return "null";
+  }
+  return Array.isArray(value) ? "array" : typeof value;
+}
+
+function agentPhoneContentRejectionReason(
+  data: Record<string, unknown>,
+): "empty_content" | "unsupported_content_shape" | "unsupported_media_urls" {
+  if (
+    [data.message, data.mediaUrl].some((value) => {
+      return value !== undefined && value !== null && typeof value !== "string";
+    }) ||
+    (data.mediaUrls !== undefined &&
+      data.mediaUrls !== null &&
+      !Array.isArray(data.mediaUrls))
+  ) {
+    return "unsupported_content_shape";
+  }
+  if (Array.isArray(data.mediaUrls) && data.mediaUrls.length > 0) {
+    return "unsupported_media_urls";
+  }
+  return "empty_content";
+}
+
+function agentPhoneEventRejectionReason(
+  fields: ReturnType<typeof extractAgentPhoneMessageFields>,
+  data: Record<string, unknown>,
+) {
+  if (!fields.messageId) {
+    return "missing_message_id";
+  }
+  if (!fields.agentphoneAgentId) {
+    return "missing_agent_id";
+  }
+  if (!fields.fromNumber) {
+    return "missing_sender_identity";
+  }
+  if (!fields.toNumber) {
+    return "missing_recipient";
+  }
+  return agentPhoneContentRejectionReason(data);
+}
+
 function extractAgentPhoneEvent(
   body: Record<string, unknown>,
   webhookId: string | null,
@@ -1036,14 +1081,28 @@ function extractAgentPhoneEvent(
     !toNumber ||
     (!messageBody.trim() && !mediaUrl)
   ) {
-    log.warn("Missing required fields in AgentPhone webhook", {
+    log.warn("Rejected AgentPhone webhook", {
       webhookId,
+      channel,
+      isGroup: fields.isGroup,
+      reason: agentPhoneEventRejectionReason(fields, data),
       hasMessageId: Boolean(messageId),
       hasAgentId: Boolean(agentphoneAgentId),
       hasFromNumber: Boolean(fromNumber),
       hasToNumber: Boolean(toNumber),
-      bodyKeys: Object.keys(body),
-      dataKeys: Object.keys(data),
+      hasMessageText: Boolean(messageBody.trim()),
+      hasMediaUrl: Boolean(mediaUrl),
+      messageType: agentPhoneWebhookFieldType(data.message),
+      mediaUrlType: agentPhoneWebhookFieldType(data.mediaUrl),
+      mediaUrlsType: agentPhoneWebhookFieldType(data.mediaUrls),
+      mediaUrlsCount: Array.isArray(data.mediaUrls)
+        ? data.mediaUrls.length
+        : null,
+      mediaUrlsNonemptyStringCount: Array.isArray(data.mediaUrls)
+        ? data.mediaUrls.filter((value) => {
+            return typeof value === "string" && Boolean(value.trim());
+          }).length
+        : null,
     });
     return null;
   }
@@ -1111,6 +1170,13 @@ function missingAgentPhoneRequiredFieldResponse(
     channel === "imessage" && fields.isGroup
       ? "iMessage group"
       : "AgentPhone message";
+  if (missingField === "message content") {
+    const reason = agentPhoneContentRejectionReason(valueObject(body.data));
+    return textResponse(
+      `${eventKind} webhook has no supported message content (${reason})`,
+      500,
+    );
+  }
   return textResponse(`${eventKind} webhook is missing ${missingField}`, 500);
 }
 

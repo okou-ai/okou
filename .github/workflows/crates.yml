@@ -530,6 +530,9 @@ jobs:
             --exact
           HOME=/root USER=root LOGNAME=root \
             cargo test -p guest-control-server --release --no-default-features \
+              --lib agent_command::tests::direct_agent_receives_system_path -- --exact
+          HOME=/root USER=root LOGNAME=root \
+            cargo test -p guest-control-server --release --no-default-features \
               --test production_identity -- \
               --ignored --exact production_write_file_identity_matches_sudo_policy
           HOME=/root USER=root LOGNAME=root \

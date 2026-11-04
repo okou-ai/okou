@@ -109,7 +109,7 @@ Preserve the same UUID and exact creation file after an uncertain result. A cons
 
 const PROACTIVE_SUGGESTIONS_INSTRUCTION = `# Proactive Suggestions
 
-Check whether the user's homepage suggestions need maintenance. This is an hourly background check, not a request to execute work or deliver a briefing. At startup run \`okou suggestion learning --memory-root '<selected personal Memory root>' --json\` once, without --read-only, to consolidate explicit feedback before curation. Reuse that returned context during this Run.
+Check whether the user's homepage suggestions need maintenance. This is an hourly background check, not a request to execute work or deliver a briefing. Use the Suggestions feedback context injected into this Run before curation. The server prepares this read-only context directly from saved feedback; no feedback learning command or Memory write is needed.
 
 Fix the upper time bound at the start of this check. Review the preceding hour with a 15-minute overlap. For the first check, or after a known interruption, review at most the preceding 24 hours. State coverage gaps rather than claiming complete history recovery. Also inspect commitments and meetings approaching in the next 24 hours. The review window bounds discovery of new work only; re-verify every active suggestion against its source's current state as described below.
 
@@ -117,7 +117,7 @@ Use ordinary connected skills and CLI commands for Gmail, GitHub, and Google Cal
 
 ${SUGGESTION_CURATION_INSTRUCTION}
 
-Only read context, consolidate the bounded Suggestions feedback memory, and maintain suggestions. Never send email, notification mail, connector messages, or provider-side updates; never execute the suggested work or change the user's composer. Zero changes is a normal successful outcome. Leave only a concise diagnostic outcome in this background Chat. Do not read application database tables or internal APIs, signed input/output URLs, or callback endpoints.`;
+Only read context and maintain suggestions. Never send email, notification mail, connector messages, or provider-side updates; never execute the suggested work or change the user's composer. Zero changes is a normal successful outcome. Leave only a concise diagnostic outcome in this background Chat. Do not read application database tables or internal APIs, signed input/output URLs, or callback endpoints.`;
 
 const MORNING_BRIEF_INSTRUCTION =
   MORNING_BRIEF_CONTEXT_INSTRUCTION + MORNING_BRIEF_DELIVERY_INSTRUCTION;

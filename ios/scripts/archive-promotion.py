@@ -2,6 +2,7 @@
 """Exact-input iOS test evidence and immutable archive promotion protocol."""
 
 import argparse
+from functools import cache
 import hashlib
 import io
 import json
@@ -12,7 +13,7 @@ import subprocess
 import tarfile
 import time
 import tomllib
-from functools import cache
+import urllib.parse
 from pathlib import Path, PurePosixPath
 
 INPUT_PATHS = (
@@ -233,6 +234,111 @@ def release_only(base):
                     continue
             return False
     return True
+
+
+def main_input_commits(base):
+    seen = set()
+    for path in INPUT_PATHS:
+        query = urllib.parse.urlencode(
+            {"sha": base, "path": path, "per_page": 32 if path == "ios" else 1}
+        )
+        commits = json.loads(
+            command(
+                "gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits?{query}"
+            )
+        )
+        for commit in commits:
+            sha = commit["sha"]
+            if sha not in seen:
+                seen.add(sha)
+                ensure_commit(sha)
+                yield sha
+
+
+def release_pr_tests(base):
+    """Verify prior main tests for release metadata without claiming a new SDK run.
+
+    The merge group still validates its actual toolchain before reusing tests.
+    Search bounded input-changing ancestors, not unrelated main commits.
+    """
+    base = command("git", "merge-base", base, "HEAD")
+    if not release_only(base):
+        return {"reuse": False}
+    target = inputs("HEAD", {})["testInputSha256"]
+    repository = os.environ["GITHUB_REPOSITORY"]
+    for sha in main_input_commits(base):
+        if not git_bytes("ls-tree", sha, "--", "ios/version.txt"):
+            continue
+        unchanged = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--quiet",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                sha,
+                "HEAD",
+                "--",
+                *INPUT_PATHS,
+                ":(exclude)ios/CHANGELOG.md",
+                ":(exclude)ios/version.txt",
+                ":(exclude)ios/Config/Shared.xcconfig",
+            ],
+            check=False,
+        )
+        if unchanged.returncode == 1:
+            continue
+        unchanged.check_returncode()
+        if inputs(sha, {})["testInputSha256"] != target:
+            continue
+        runs = json.loads(
+            command(
+                "gh",
+                "api",
+                f"repos/{repository}/actions/workflows/ios.yml/runs"
+                f"?head_sha={sha}&event=merge_group&status=success&per_page=100",
+            )
+        )["workflow_runs"]
+        for run in runs:
+            if (
+                run["head_sha"] != sha
+                or run["event"] != "merge_group"
+                or run["path"] != ".github/workflows/ios.yml"
+                or not run["head_branch"].startswith("gh-readonly-queue/main/")
+                or run["conclusion"] != "success"
+            ):
+                continue
+            record = {
+                "repository": repository,
+                "commitSha": sha,
+                "runId": run["id"],
+                "runAttempt": run["run_attempt"],
+            }
+            route = (
+                f"repos/{repository}/actions/runs/{run['id']}"
+                f"/attempts/{run['run_attempt']}"
+            )
+            # A successful release-only builder can itself have reused App tests.
+            # Keep searching for an ancestor that actually executed both suites.
+            jobs = github_jobs(route, NATIVE_JOBS[TEST_STEP])
+            if any(
+                job["conclusion"] == "skipped"
+                or any(
+                    step["name"] == TEST_STEP and step["conclusion"] == "skipped"
+                    for step in job.get("steps", [])
+                )
+                for job in jobs
+            ):
+                continue
+            github_record(record, TEST_STEP)
+            github_record(record, PACKAGE_STEP)
+            return {
+                "reuse": True,
+                "commitSha": sha,
+                "runUrl": f"{run['html_url']}/attempts/{run['run_attempt']}",
+            }
+    return {"reuse": False}
 
 
 class Store:
@@ -598,6 +704,8 @@ def main():
     capture.add_argument("--output", required=True, type=Path)
     release = sub.add_parser("release-only")
     release.add_argument("--base", required=True)
+    release_pr = sub.add_parser("release-pr-tests")
+    release_pr.add_argument("--base", required=True)
     for operation in ("resolve-tests", "publish", "consume"):
         part = sub.add_parser(operation)
         part.add_argument("work", type=Path)
@@ -615,6 +723,8 @@ def main():
         write_json(args.output, inputs("HEAD", read_json(args.toolchain)))
     elif args.operation == "release-only":
         print(str(release_only(args.base)).lower())
+    elif args.operation == "release-pr-tests":
+        print(json.dumps(release_pr_tests(args.base)))
     elif args.operation == "resolve-tests":
         resolve_tests(args.work)
     elif args.operation == "publish":

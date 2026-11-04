@@ -8,6 +8,7 @@ import type { BrowserNavigationAction } from "./navigation/action.ts";
 import type { DisplayModeResult, DisplayState } from "./display/sync.ts";
 import type { DisplaySize } from "./display/geometry.ts";
 import type { ImageRecovery } from "./viewer/image-recovery.ts";
+import type { BrowserRecoveryResult } from "./recovery.ts";
 import type { layoutTabs } from "./viewer/tab-layout.ts";
 import type {
   NavigationReceipt,
@@ -60,6 +61,8 @@ export interface BrowserPresentation {
   readonly status: ViewerStatus;
   readonly error: ViewerError | null;
   readonly loadingPreview: boolean;
+  /** A same-scope presented frame can remain visible without input authority. */
+  readonly retainedFrame: boolean;
   /** Empty content can be shown before the selected tab accepts remote input. */
   readonly blank: boolean;
 }
@@ -85,6 +88,7 @@ type Ref<E extends HTMLElement> = Command<(() => void) | undefined, [E | null]>;
 
 /** Read-only observations and finite domain actions; resource plumbing is private. */
 export interface BrowserSignals {
+  readonly recoveryOperation$: Computed<Promise<BrowserRecoveryResult> | null>;
   readonly tabs$: Computed<readonly BrowserTab[]>;
   readonly selectedTabId$: Computed<string | null>;
   readonly navigation$: Computed<ViewerNavigation | null>;

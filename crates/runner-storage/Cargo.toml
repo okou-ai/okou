@@ -1,12 +1,12 @@
 [package]
 name = "runner-storage"
-version = "0.8.23"
+version = "0.8.26"
 edition.workspace = true
 description = "Runner storage planning, archive delivery, and host/R2 caches"
 
 [features]
 # Exposes deterministic seams for Runner's existing cross-crate tests.
-test-support = []
+test-support = ["dep:http-body"]
 
 [dependencies]
 api-contracts.workspace = true
@@ -21,6 +21,7 @@ chrono = { workspace = true, features = ["now", "serde"] }
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
 hex = { workspace = true, features = ["std"] }
+http-body = { workspace = true, optional = true }
 hyper.workspace = true
 libc = { workspace = true, features = ["std"] }
 nix = { workspace = true, features = ["fs", "process", "signal", "user"] }

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.109.39](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.38...guest-agent-v0.109.39) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** preserve system sbin directories in agent path ([#45143](https://github.com/okou-ai/okou/issues/45143)) ([42e1307](https://github.com/okou-ai/okou/commit/42e1307f32e3518faa32019c65356b8476216a8a))
+
+
+### Refactoring
+
+* **guest-agent:** share pi rpc message acknowledgements ([#45159](https://github.com/okou-ai/okou/issues/45159)) ([41b635c](https://github.com/okou-ai/okou/commit/41b635ca97d9177c72e613dda9de87fb6e938a8b))
+
+## [0.109.38](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.37...guest-agent-v0.109.38) (2026-11-04)
+
+## [0.109.37](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.36...guest-agent-v0.109.37) (2026-11-04)
+
 ## [0.109.36](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.35...guest-agent-v0.109.36) (2026-11-03)
 
 

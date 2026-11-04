@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.2...guest-contracts-v0.30.3) (2026-11-04)
+
+
+### Refactoring
+
+* **storage:** share canonical mount-path uniqueness validation ([#45042](https://github.com/okou-ai/okou/issues/45042)) ([893d967](https://github.com/okou-ai/okou/commit/893d967b6c850f220a45e8f011822a1fdf0340a1))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
 ## [0.30.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.1...guest-contracts-v0.30.2) (2026-11-03)
 
 

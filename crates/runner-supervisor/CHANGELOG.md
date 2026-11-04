@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.31](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.30...runner-supervisor-v0.21.31) (2026-11-04)
+
+## [0.21.30](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.29...runner-supervisor-v0.21.30) (2026-11-04)
+
+## [0.21.29](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.28...runner-supervisor-v0.21.29) (2026-11-04)
+
+
+### Refactoring
+
+* **runner-supervisor:** centralize claimed setup panic settlement ([#45025](https://github.com/okou-ai/okou/issues/45025)) ([cd8d7a3](https://github.com/okou-ai/okou/commit/cd8d7a3f1ebe8ea3fbb63f3c07b53f557f5408ce))
+
 ## [0.21.28](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.27...runner-supervisor-v0.21.28) (2026-11-03)
 
 ## [0.21.27](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.26...runner-supervisor-v0.21.27) (2026-11-03)

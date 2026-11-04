@@ -13,6 +13,72 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1093.0](https://github.com/okou-ai/okou/compare/app-v0.1092.0...app-v0.1093.0) (2026-11-04)
+
+
+### Features
+
+* enable cjk markdown emphasis for all users ([#45132](https://github.com/okou-ai/okou/issues/45132)) ([f8fbf51](https://github.com/okou-ai/okou/commit/f8fbf5178c22f72686b37549bb5d1a87293d07c0))
+
+
+### Bug Fixes
+
+* **app:** preserve connector popover layout with chat accounts ([#45137](https://github.com/okou-ai/okou/issues/45137)) ([fa06464](https://github.com/okou-ai/okou/commit/fa064641cc49710b17a66a7019cb766bcd4c0baa))
+* **app:** refine chat home compliance footer hierarchy ([#44151](https://github.com/okou-ai/okou/issues/44151)) ([1d1d273](https://github.com/okou-ai/okou/commit/1d1d273e38cedf2df6f05b163d4020a4e1f30f4e))
+* **browser:** avoid unavailable flashes during capture resizing ([#45153](https://github.com/okou-ai/okou/issues/45153)) ([b0c822a](https://github.com/okou-ai/okou/commit/b0c822a8a9488bf80a1a282274c98916f836a7b2))
+
+
+### Refactoring
+
+* **app:** remove homepage task discovery ([#45136](https://github.com/okou-ai/okou/issues/45136)) ([221db9b](https://github.com/okou-ai/okou/commit/221db9bb5b9739e0d9bd295afe7cf232ce5b97aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.1
+    * @okouai/core bumped to 8.816.0
+
+## [0.1092.0](https://github.com/okou-ai/okou/compare/app-v0.1091.0...app-v0.1092.0) (2026-11-04)
+
+
+### Features
+
+* **browser:** recover viewer resources with bounded retries ([#45051](https://github.com/okou-ai/okou/issues/45051)) ([12d04ed](https://github.com/okou-ai/okou/commit/12d04edfec0737589b7e8a666128980e185ec008))
+* **browser:** retain viewer frames during recovery ([#45109](https://github.com/okou-ai/okou/issues/45109)) ([93c1920](https://github.com/okou-ai/okou/commit/93c1920310bd4caeecea736a33322cdb475a67c9))
+
+
+### Bug Fixes
+
+* **app:** create projects optimistically ([#45134](https://github.com/okou-ai/okou/issues/45134)) ([4c4da6f](https://github.com/okou-ai/okou/commit/4c4da6fadb3c73950b94bfe865c110018e757159))
+* **app:** hydrate project cache alongside chat list ([#45090](https://github.com/okou-ai/okou/issues/45090)) ([84b58ab](https://github.com/okou-ai/okou/commit/84b58ab4d52cba0c8aca2164afd160ff00cf4c0e))
+* **app:** open models from sidebar subscription usage ([#45086](https://github.com/okou-ai/okou/issues/45086)) ([db178ee](https://github.com/okou-ai/okou/commit/db178eee3e803f70b76dac5242e6d9e4eae4095b))
+* **app:** preserve header appearance while loading ([#45099](https://github.com/okou-ai/okou/issues/45099)) ([6c30252](https://github.com/okou-ai/okou/commit/6c302526da25835c64aa844eb1a4d79797746e5a))
+* **app:** smooth chat list collapse and center divider hit targets ([#45008](https://github.com/okou-ai/okou/issues/45008)) ([7b08927](https://github.com/okou-ai/okou/commit/7b0892753efdcda688f539dae0ac2178b257063d))
+* **platform:** unify project and chat thread indexeddb caching ([#45102](https://github.com/okou-ai/okou/issues/45102)) ([02679d7](https://github.com/okou-ai/okou/commit/02679d7fe2fea27283b57bc38681532c7c42fd02))
+
+## [0.1091.0](https://github.com/okou-ai/okou/compare/app-v0.1090.0...app-v0.1091.0) (2026-11-04)
+
+
+### Features
+
+* **core:** enable projects for staff ([#45012](https://github.com/okou-ai/okou/issues/45012)) ([1c4dff2](https://github.com/okou-ai/okou/commit/1c4dff2cbb485abfce7e587bf91e411b79a7336a))
+
+
+### Bug Fixes
+
+* **app:** preserve header actions while switching chats ([#45030](https://github.com/okou-ai/okou/issues/45030)) ([b2cab5b](https://github.com/okou-ai/okou/commit/b2cab5b32b2e23a86754f2096de4c53fd62d9f0b))
+* **browser:** unify recovery ownership and usable readiness ([#44959](https://github.com/okou-ai/okou/issues/44959)) ([3aa45d9](https://github.com/okou-ai/okou/commit/3aa45d97a28c68749580a0a3e5d24ce8dfade705))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.0
+    * @okouai/core bumped to 8.815.0
+
 ## [0.1090.0](https://github.com/okou-ai/okou/compare/app-v0.1089.0...app-v0.1090.0) (2026-11-03)
 
 

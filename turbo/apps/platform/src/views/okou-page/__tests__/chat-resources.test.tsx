@@ -59,7 +59,7 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
   });
   await screen.findByTestId("chat-thread-header-title");
-  // The saved default asks for the panel; the button breathes until it answers.
+  // The saved default asks for the panel; its trigger waits without changing appearance.
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
@@ -70,6 +70,10 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   );
   // Taken, this press would be an explicit open that shows the empty hint.
   click(resourceButton());
+  const user = userEvent.setup({ delay: null });
+  resourceButton().focus();
+  await user.keyboard("{Enter} ");
+  expect(resourceButton()).toHaveFocus();
   response.resolve();
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "false");

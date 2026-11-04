@@ -1,4 +1,3 @@
-import { Gauge } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@okouai/ui";
 import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
@@ -76,7 +75,7 @@ export function SubscriptionUsageRing({
         {single ? (
           <ProviderIcon type={single.type} size={14} />
         ) : (
-          <Gauge strokeWidth={1.5} className="size-3.5!" />
+          <span className="size-1.75 rotate-45 rounded-xs bg-muted-foreground/25" />
         )}
       </span>
       <span id="sidebar-subscription-ring-summary" className="sr-only">
@@ -119,7 +118,9 @@ function UsageArc({
       <path
         d={path}
         className={
-          remaining === 0 ? "stroke-destructive/30" : "stroke-segment-track"
+          remaining === 0
+            ? "stroke-destructive/40"
+            : "stroke-muted-foreground/25"
         }
       />
       {remaining !== null && remaining > 0 && (
@@ -135,26 +136,21 @@ function UsageArc({
   );
 }
 
-/** A fixed position key, not a second usage meter. */
-export function SubscriptionUsageRingKey({
+export function SubscriptionUsageRingPosition({
   type,
 }: {
   readonly type: AccountMenuSubscriptionUsageRow["type"];
 }) {
+  const { t } = useTranslation();
   return (
-    <svg
-      viewBox="0 0 32 32"
-      fill="none"
-      aria-hidden="true"
-      className="ml-auto size-4! shrink-0"
-      strokeWidth={3}
-      strokeLinecap="round"
-    >
-      <circle cx={16} cy={16} r={12} className="stroke-segment-track" />
-      <path
-        d={type === "codex-oauth-token" ? LEFT_ARC : RIGHT_ARC}
-        className="stroke-foreground"
-      />
-    </svg>
+    <span className="shrink-0 text-xs font-normal text-muted-foreground">
+      {type === "codex-oauth-token"
+        ? t(($) => {
+            return $.settings.accountMenu.subscriptions.leftSide;
+          })
+        : t(($) => {
+            return $.settings.accountMenu.subscriptions.rightSide;
+          })}
+    </span>
   );
 }

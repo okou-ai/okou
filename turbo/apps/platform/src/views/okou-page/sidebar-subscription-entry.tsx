@@ -80,7 +80,7 @@ export function SidebarSubscriptionUsage({
         aria-label={label}
       >
         <AccountMenuSubscriptionsPanel
-          showRingKey={usage.rows.length === 2}
+          showRingPosition={usage.rows.length === 2}
           loading={false}
           rows={usage.rows}
           resetControl="button"

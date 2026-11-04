@@ -1,12 +1,9 @@
+import { escapeUTF8 as escapeHtml } from "entities";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { renderEmailLayout } from "../signals/services/email-layout";
 import { safeSync } from "../signals/utils";
-import {
-  escapeHtml,
-  markdownRenderer,
-  plainTextFromHtml,
-} from "./email-markdown";
+import { renderEmailMarkdown, plainTextFromHtml } from "./email-markdown";
 
 const MORNING_BRIEF_EMAIL_HTML_MAX_BYTES = 96 * 1024;
 const MORNING_BRIEF_HERO_URL = "https://a.okou.io/vfv041yxil.png";
@@ -55,7 +52,7 @@ export function renderMorningBriefEmail(
   const renderAttempt = safeSync(() => {
     const html = morningBriefEmailHtml(
       props,
-      markdownRenderer.render(props.resultText),
+      renderEmailMarkdown(props.resultText),
       unsubscribeUrl,
     );
     const htmlBytes = Buffer.byteLength(html, "utf8");

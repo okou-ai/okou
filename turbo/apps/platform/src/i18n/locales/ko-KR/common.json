@@ -1390,8 +1390,8 @@
       "takeOver": "직접 조작",
       "takeOverMessage": "브라우저를 직접 조작할게요. 다시 넘겨드릴 때까지 사용하지 말아 주세요."
     },
-    "reclaimHint_one": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
-    "reclaimHint_other": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
+    "reclaimHint_one": "패널이 열려 있으면 유지되며, {{formattedCount}}분간 사용하지 않으면 회수됩니다.",
+    "reclaimHint_other": "패널이 열려 있으면 유지되며, {{formattedCount}}분간 사용하지 않으면 회수됩니다.",
     "status": {
       "live": "라이브",
       "starting": "시작 중",
@@ -1429,6 +1429,7 @@
     "paused": "화면 일시 중지됨",
     "quality": "이미지 품질",
     "reconnect": "다시 연결",
+    "reconnecting": "다시 연결 중…",
     "reload": "새로고침",
     "remoteInput": "원격 브라우저 입력",
     "resolution": "해상도",
@@ -2099,78 +2100,6 @@
       "sent": "전달했습니다",
       "threads": "채팅",
       "title": "전달 대상"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "문서",
-        "image": "이미지",
-        "presentation": "Presentation",
-        "visualization": "차트",
-        "website": "웹사이트"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "확인이 필요한 이메일을 매일 아침 요약해서 받을 수 있게 설정해 줘. 먼저 받은편지함과 전달 시간을 확인해 줘",
-            "second": "경쟁사 주간 브리핑을 받을 수 있게 설정해 줘. 먼저 대상 기업, 정보 출처, 일정을 확인해 줘",
-            "third": "일일 매출 요약을 받을 수 있게 설정해 줘. 먼저 데이터 출처, 지표, 전달 시간을 확인해 줘"
-          },
-          "label": "브리핑",
-          "placeholder": "브리핑에 담을 내용과 받을 주기를 입력하세요…",
-          "title": "어떤 브리핑을 받고 싶으세요?"
-        },
-        "general": {
-          "examples": {
-            "first": "초기 단계의 팀에 적합한 브랜드 디자인 에이전시를 찾아줘",
-            "second": "고객 관리 도구를 기능과 가격별로 비교해 줘",
-            "third": "특정 업계의 최근 동향과 선도 기업을 조사해 줘"
-          },
-          "label": "종합",
-          "placeholder": "질문이나 알고 싶은 내용을 입력하세요…",
-          "title": "무엇이 궁금하세요?"
-        },
-        "information": {
-          "examples": {
-            "first": "소규모 기업의 AI 도입에 관한 최신 연구를 원문 출처와 함께 찾아줘",
-            "second": "공개된 제품 출시 성공 사례를 모아서 어떤 점이 효과적이었는지 설명해 줘",
-            "third": "발표에 사용할 신뢰할 수 있는 업계 데이터를 날짜와 출처 링크를 포함해 찾아줘"
-          },
-          "label": "정보",
-          "placeholder": "주제, 기간 또는 정보가 필요한 목적을 입력하세요…",
-          "title": "어떤 정보를 조사하고 싶으세요?"
-        },
-        "monitor": {
-          "examples": {
-            "first": "경쟁사의 가격 변동을 확인할 수 있게 도와줘. 먼저 대상 기업, 정보 출처, 알림 시점을 확인해 줘",
-            "second": "고객에게 보낸 이메일에 답장이 오는지 확인할 수 있게 도와줘. 먼저 해당 이메일과 알림 방식을 확인해 줘",
-            "third": "업계의 주요 소식을 꾸준히 확인할 수 있게 도와줘. 먼저 정보 출처, 확인 주기, 중요한 내용을 함께 정해 줘"
-          },
-          "label": "모니터링",
-          "placeholder": "지켜보고 싶은 대상과 중요한 변화를 입력하세요…",
-          "title": "어떤 변화를 지켜보고 싶으세요?"
-        },
-        "people": {
-          "examples": {
-            "first": "AI 마케팅 행사에 적합한 연사 5명을 선정 이유와 공개 출처를 포함해 찾아줘",
-            "second": "사업주에게 영향력이 있는 크리에이터를 찾고, 이들의 구독자층이 적합한 이유를 설명해 줘",
-            "third": "내 컨설팅 서비스의 잠재 고객을 관련 공개 정보와 함께 찾아줘"
-          },
-          "label": "인물",
-          "placeholder": "직무, 분야, 회사 또는 지역을 입력하세요…",
-          "title": "어떤 사람을 찾고 계세요?"
-        }
-      },
-      "groups": {
-        "automate": "자동화",
-        "create": "만들기",
-        "search": "검색"
-      },
-      "label": "Okou로 할 수 있는 일 살펴보기",
-      "placeholder": "하고 싶은 일을 입력하세요…",
-      "sources": {
-        "trigger": "도구"
-      },
-      "workflows": "워크플로"
     },
     "mail": {
       "bcc": "숨은 참조",
@@ -3178,8 +3107,7 @@
     "noEnabledAccount": "이 채팅에서 활성화된 계정이 없습니다",
     "permissions": "권한",
     "permissionsDescription": "이 규칙은 모든 채팅과 계정에서 이 커넥터에 적용됩니다.",
-    "settingsDescription": "기본으로 활성화할 계정과 새 채팅의 기본 계정을 선택하세요.",
-    "thisChat": "현재 채팅"
+    "settingsDescription": "기본으로 활성화할 계정과 새 채팅의 기본 계정을 선택하세요."
   },
   "connectors": {
     "access": {
@@ -5434,8 +5362,10 @@
         "credits": "크레딧",
         "fiveHourLimit": "5시간 한도",
         "label": "구독 사용량",
+        "leftSide": "왼쪽",
         "lowUsage": "구독 사용량: 남은 한도 20% 미만",
         "resetTimeUnavailable": "재설정 시간 사용 불가",
+        "rightSide": "오른쪽",
         "usage": "{{provider}} 사용량",
         "usageRemaining": "{{provider}} {{window}} 남음",
         "weeklyLimit": "주간 한도"

@@ -24,32 +24,23 @@ class FirewallEntryResolutionError(ValueError):
     """Execution firewall entries could not be expanded into runtime configs."""
 
 
-def _custom_connector_id(entry: dict) -> str | None:
-    custom_connector_id = entry.get("customConnectorId")
-    if custom_connector_id is None:
-        return None
-    if not isinstance(custom_connector_id, str):
-        raise FirewallEntryResolutionError("inline firewall customConnectorId must be a UUID")
+def _validated_uuid_string(value: object, *, message: str) -> str:
+    """Validate a registry UUID string without changing its original spelling."""
+    if not isinstance(value, str):
+        raise FirewallEntryResolutionError(message)
     try:
-        uuid.UUID(custom_connector_id)
+        uuid.UUID(value)
     except ValueError as error:
-        raise FirewallEntryResolutionError(
-            "inline firewall customConnectorId must be a UUID"
-        ) from error
-    return custom_connector_id
+        raise FirewallEntryResolutionError(message) from error
+    return value
 
 
-def _source_id(entry: dict) -> str | None:
-    source_id = entry.get("sourceId")
-    if source_id is None:
+def _optional_uuid_field(entry: dict, field: str, *, message: str) -> str | None:
+    """Read an optional registry identity; missing and null fields stay absent."""
+    value = entry.get(field)
+    if value is None:
         return None
-    if not isinstance(source_id, str):
-        raise FirewallEntryResolutionError("firewall sourceId must be a UUID")
-    try:
-        uuid.UUID(source_id)
-    except ValueError as error:
-        raise FirewallEntryResolutionError("firewall sourceId must be a UUID") from error
-    return source_id
+    return _validated_uuid_string(value, message=message)
 
 
 def _apply_source_id(firewall: dict, source_id: str | None) -> None:
@@ -87,17 +78,10 @@ def _connector_runtime_target_ids(sandbox: dict) -> tuple[set[str], set[str]]:
             builtin_slugs.add(connector_slug)
             continue
         if kind == "custom":
-            custom_connector_id = target.get("customConnectorId")
-            if not isinstance(custom_connector_id, str):
-                raise FirewallEntryResolutionError(
-                    "custom connector runtime target must have a UUID"
-                )
-            try:
-                uuid.UUID(custom_connector_id)
-            except ValueError as error:
-                raise FirewallEntryResolutionError(
-                    "custom connector runtime target must have a UUID"
-                ) from error
+            custom_connector_id = _validated_uuid_string(
+                target.get("customConnectorId"),
+                message="custom connector runtime target must have a UUID",
+            )
             if custom_connector_id in custom_connector_ids:
                 raise FirewallEntryResolutionError(
                     "custom connector runtime targets must be unique"
@@ -390,7 +374,9 @@ def resolve_firewall_entries(
                 )
             if raw_name in explicit_omitted_builtin_names:
                 continue
-            source_id = _source_id(entry)
+            source_id = _optional_uuid_field(
+                entry, "sourceId", message="firewall sourceId must be a UUID"
+            )
             if builtin_firewall_catalog_snapshot is None:
                 builtin_firewall_catalog_snapshot = load_catalog_snapshot(
                     builtin_firewall_catalog_cache_path
@@ -423,8 +409,15 @@ def resolve_firewall_entries(
             if not isinstance(raw_apis, list):
                 raise FirewallEntryResolutionError("inline firewall apis must be a list")
             connector_runtime_metadata.clear_connector_runtime_kind(resolved_firewall)
-            _apply_source_id(resolved_firewall, _source_id(entry))
-            custom_connector_id = _custom_connector_id(entry)
+            _apply_source_id(
+                resolved_firewall,
+                _optional_uuid_field(entry, "sourceId", message="firewall sourceId must be a UUID"),
+            )
+            custom_connector_id = _optional_uuid_field(
+                entry,
+                "customConnectorId",
+                message="inline firewall customConnectorId must be a UUID",
+            )
             if custom_connector_id is not None:
                 resolved_firewall["customConnectorId"] = custom_connector_id
                 if custom_connector_id in custom_target_ids:

@@ -123,7 +123,8 @@ const startChatListResize$ = command(
     ownerSignal: AbortSignal,
   ): void => {
     ownerSignal.throwIfAborted();
-    const startWidth = get(chatListWidth$);
+    const startedHidden = get(storedChatListHidden$);
+    const startWidth = startedHidden ? 0 : get(chatListWidth$);
     const dragSignal = set(resetChatListResize$, ownerSignal);
     handle.setPointerCapture(pointerId);
     const mask = createResizeMask("data-chat-list-resize-mask", "col-resize");
@@ -146,13 +147,19 @@ const startChatListResize$ = command(
           return;
         }
         const desired = startWidth + event.clientX - startX;
-        if (desired < CHAT_LIST_MIN_WIDTH - CHAT_LIST_FOLD_DISTANCE) {
-          // Folding unmounts this handle, which aborts the gesture.
-          set(setLiveChatListWidth$, null);
-          set(setStoredChatListHidden$, true);
-          set(resetChatListResize$);
+        const foldThreshold = startedHidden
+          ? CHAT_LIST_FOLD_DISTANCE
+          : CHAT_LIST_MIN_WIDTH - CHAT_LIST_FOLD_DISTANCE;
+        if (desired < foldThreshold) {
+          if (!get(storedChatListHidden$)) {
+            // End the gesture before the list animates closed.
+            set(setLiveChatListWidth$, null);
+            set(setStoredChatListHidden$, true);
+            set(resetChatListResize$);
+          }
           return;
         }
+        set(setStoredChatListHidden$, false);
         mask.style.cursor =
           desired >= CHAT_LIST_MAX_WIDTH ? "w-resize" : "col-resize";
         set(setLiveChatListWidth$, desired);
@@ -218,6 +225,7 @@ export const chatListResizeHandleRef$ = onRef(
       "dblclick",
       () => {
         set(resetChatListWidth$);
+        set(setStoredChatListHidden$, false);
       },
       { signal: mountSignal },
     );
@@ -240,6 +248,7 @@ export const chatListResizeHandleRef$ = onRef(
           // The focused separator owns Enter as "restore the default width".
           event.preventDefault();
           set(resetChatListWidth$);
+          set(setStoredChatListHidden$, false);
           return;
         }
         if (next === null) {
@@ -247,6 +256,7 @@ export const chatListResizeHandleRef$ = onRef(
         }
         // Arrow, Home and End keys resize instead of scrolling the list.
         event.preventDefault();
+        set(setStoredChatListHidden$, false);
         set(setChatListWidth$, next);
       },
       { signal: mountSignal },

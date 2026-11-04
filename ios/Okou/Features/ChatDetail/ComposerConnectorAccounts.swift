@@ -4,6 +4,18 @@ import SwiftUI
 struct ComposerConnectorAccounts: View {
   let store: ComposerConnectorStore
   let connector: ChatComposerConnector
+  var body: some View {
+    if store.chatAccountAccess {
+      ComposerChatConnectorAccounts(store: store, connector: connector)
+    } else {
+      LegacyComposerConnectorAccounts(store: store, connector: connector)
+    }
+  }
+}
+
+private struct LegacyComposerConnectorAccounts: View {
+  let store: ComposerConnectorStore
+  let connector: ChatComposerConnector
   @State private var accounts: [ChatConnectorAccount] = []
   @State private var defaultAccount: ChatConnectorAccount?
   @State private var selection: String?

@@ -448,6 +448,31 @@ impl Harness {
         Self::with_authority(Peer::plain().await, None).await
     }
 
+    pub(super) async fn finish_dns_timeout<T>(
+        &self,
+        query_count: usize,
+        request: impl Future<Output = T>,
+    ) -> T {
+        let started = tokio::time::Instant::now();
+        let (reply, ()) = tokio::join!(request, async {
+            bounded(async {
+                while self.network.queries.lock().unwrap().len() < query_count {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await;
+            // On this current-thread runtime, DNS runs after HTTP and the
+            // parent's armed wait. Keep its gate closed and resume before IO.
+            // These 2000ms requests reserve 1000ms for their terminal response;
+            // account for setup rather than advancing through that reserve.
+            raw_http_test_support::clock::advance_timer_phase(
+                Duration::from_secs(1).saturating_sub(started.elapsed()),
+            )
+            .await;
+        });
+        reply
+    }
+
     pub(crate) async fn with_authority(peer: Peer, api_url: Option<String>) -> Self {
         let api = MockServer::start_async().await;
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 27).unwrap();

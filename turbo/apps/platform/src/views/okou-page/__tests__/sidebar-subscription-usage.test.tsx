@@ -67,7 +67,7 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
   ).not.toBeInTheDocument();
 });
 
-test("Preview subscriptions from the rail and open usage in Settings", async () => {
+test("Preview subscriptions from the rail and open Models in Settings", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
@@ -98,10 +98,10 @@ test("Preview subscriptions from the rail and open usage in Settings", async () 
   const codex = within(panel).getByRole("region", { name: "ChatGPT usage" });
   const claude = within(panel).getByRole("region", { name: "Claude usage" });
   expect(
-    within(codex).getByRole("heading", { name: "ChatGPT" }),
+    within(codex).getByRole("heading", { name: "ChatGPT Left side" }),
   ).toBeInTheDocument();
   expect(
-    within(claude).getByRole("heading", { name: "Claude" }),
+    within(claude).getByRole("heading", { name: "Claude Right side" }),
   ).toBeInTheDocument();
   expect(within(codex).getAllByRole("meter")).toHaveLength(1);
   expect(within(claude).getAllByRole("meter")).toHaveLength(2);
@@ -126,7 +126,9 @@ test("Preview subscriptions from the rail and open usage in Settings", async () 
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
+  await user.hover(
+    within(claude).getByRole("heading", { name: "Claude Right side" }),
+  );
   await waitFor(() => {
     expectVisibleText(
       formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
@@ -134,9 +136,9 @@ test("Preview subscriptions from the rail and open usage in Settings", async () 
   });
   click(within(claude).getByLabelText("Claude usage"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
-  expect(
-    within(settings).getByRole("heading", { name: "Credit usage" }),
-  ).toBeInTheDocument();
+  await expect(
+    within(settings).findByRole("heading", { name: "Use more models" }),
+  ).resolves.toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(entry).toHaveFocus();
@@ -161,8 +163,11 @@ test("Preview subscriptions from the rail and open usage in Settings", async () 
   chatGpt.focus();
   expect(chatGpt).toHaveFocus();
   await user.keyboard("{Enter}");
+  const reopenedSettings = await screen.findByRole("dialog", {
+    name: "Settings",
+  });
   await expect(
-    screen.findByRole("dialog", { name: "Settings" }),
+    within(reopenedSettings).findByRole("heading", { name: "Use more models" }),
   ).resolves.toBeInTheDocument();
 });
 
@@ -576,9 +581,9 @@ test.each([
       ).getByLabelText(providerLabel),
     );
     const settings = await screen.findByRole("dialog", { name: "Settings" });
-    expect(
-      within(settings).getByRole("heading", { name: "Credit usage" }),
-    ).toBeInTheDocument();
+    await expect(
+      within(settings).findByRole("heading", { name: "Use more models" }),
+    ).resolves.toBeInTheDocument();
   },
 );
 

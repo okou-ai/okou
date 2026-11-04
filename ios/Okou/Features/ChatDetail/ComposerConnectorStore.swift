@@ -11,6 +11,7 @@ final class ComposerConnectorStore {
   let threadID: String?
   private(set) var agentID: String?
   private(set) var connectors: [ChatComposerConnector] = []
+  private(set) var chatAccountAccess = false
   private(set) var remotes: ChatRemotesOverview?
   private(set) var threadAccess: ChatThreadRemoteAccess?
   private(set) var currentComputerAccess: ChatComputerAccess?
@@ -60,6 +61,13 @@ final class ComposerConnectorStore {
 
   var canSend: Bool { !isSaving && !uncertain }
 
+  func canConfigurePermissions(slug: String?) -> Bool {
+    guard let slug, let connector = connectors.first(where: { $0.target == .builtin(slug) }),
+      connector.hasPermissions
+    else { return false }
+    return !chatAccountAccess || connector.access?.accounts.isEmpty == false
+  }
+
   func configure(agentID: String?) {
     guard !closed, self.agentID != agentID else { return }
     if threadID == nil, let previous = self.agentID { pendingByAgent[previous] = pendingOptions }
@@ -70,6 +78,7 @@ final class ComposerConnectorStore {
     self.agentID = agentID
     pendingOptions = agentID.flatMap { pendingByAgent[$0] } ?? ChatComposerOptions()
     connectors = []
+    chatAccountAccess = false
     remotes = nil
     threadAccess = nil
     currentComputerAccess = nil
@@ -110,12 +119,25 @@ final class ComposerConnectorStore {
 
   private func loadConnectors(agentID: String, request: UUID) async -> Bool {
     do {
-      let values = try await read(request: request) {
+      let (enabled, values) = try await read(request: request) {
         try await service.validate(agentID: agentID, threadID: threadID)
-        return try await service.connectors(agentID: agentID)
+        let enabled = try await service.chatAccountAccessEnabled()
+        let values = try await service.connectors(
+          agentID: agentID, chatAccountAccess: enabled, threadID: threadID, options: pendingOptions)
+        return (enabled, values)
       }
       guard !closed, !Task.isCancelled, request == generation else { return false }
       connectors = values
+      chatAccountAccess = enabled
+      pendingOptions.chatAccountAccess = enabled
+      if enabled, threadID == nil {
+        let touched = Set(
+          pendingOptions.connectorSelections.map { $0.target.key }
+            + pendingOptions.initialConnectorAccessOverrides.map { $0.target.key })
+        for connector in values where touched.contains(connector.target.key) {
+          updatePendingAccess(target: connector.target)
+        }
+      }
       connectorError = nil
       return true
     } catch {
@@ -215,7 +237,7 @@ final class ComposerConnectorStore {
   }
 
   func setAuthorized(_ connector: ChatComposerConnector, enabled: Bool) async {
-    guard let agentID else { return }
+    guard !chatAccountAccess, let agentID else { return }
     await perform { try await service.setAuthorized(connector, agentID: agentID, enabled: enabled) }
   }
 
@@ -273,9 +295,17 @@ final class ComposerConnectorStore {
   func selectAccount(target: ChatConnectorTarget, connectionID: String?) async {
     guard !closed, !isSaving else { return }
     if let threadID {
-      await perform {
-        try await service.selectAccount(
-          target: target, connectionID: connectionID, threadID: threadID)
+      if chatAccountAccess {
+        guard let connectionID else { return }
+        await perform {
+          try await service.setCurrentAccount(
+            target: target, connectionID: connectionID, threadID: threadID)
+        }
+      } else {
+        await perform {
+          try await service.selectAccount(
+            target: target, connectionID: connectionID, threadID: threadID)
+        }
       }
     } else {
       pendingOptions.connectorSelections.removeAll { $0.target == target }
@@ -283,6 +313,56 @@ final class ComposerConnectorStore {
         pendingOptions.connectorSelections.append(
           ChatConnectorSelection(target: target, connectionId: connectionID))
       }
+      if chatAccountAccess {
+        updatePendingAccess(target: target)
+        await refresh()
+      }
+    }
+  }
+
+  func setAccountAccess(
+    target: ChatConnectorTarget, connectionID: String, enabled: Bool?
+  ) async {
+    guard chatAccountAccess, !closed, !isSaving else { return }
+    if let threadID {
+      await perform {
+        try await service.setConnectorAccess(
+          target: target, connectionID: connectionID, threadID: threadID, enabled: enabled)
+      }
+      return
+    }
+    if !pendingOptions.connectorSelections.contains(where: { $0.target == target }),
+      let current = connectors.first(where: { $0.target == target })?.access?.currentConnectionId
+    {
+      pendingOptions.connectorSelections.append(
+        ChatConnectorSelection(target: target, connectionId: current))
+    }
+    pendingOptions.initialConnectorAccessOverrides.removeAll {
+      $0.target == target && $0.connectionId == connectionID
+    }
+    if let enabled {
+      pendingOptions.initialConnectorAccessOverrides.append(
+        ChatConnectorAccessOverride(target: target, connectionId: connectionID, enabled: enabled))
+    }
+    updatePendingAccess(target: target)
+    await refresh()
+  }
+
+  private func updatePendingAccess(target: ChatConnectorTarget) {
+    guard let index = connectors.firstIndex(where: { $0.target == target }),
+      let previous = connectors[index].access
+    else { return }
+    let next = previous.pending(
+      overrides: pendingOptions.initialConnectorAccessOverrides,
+      selections: pendingOptions.connectorSelections)
+    pendingOptions.connectorSelections.removeAll { $0.target == target }
+    if let id = next.currentConnectionId {
+      pendingOptions.connectorSelections.append(
+        ChatConnectorSelection(target: target, connectionId: id))
+    }
+    connectors[index].access = next
+    if connectors[index].currentAccount?.id != next.currentConnectionId {
+      connectors[index].currentAccount = nil
     }
   }
   func connect(target: ChatConnectorTarget, accountID: String? = nil) {

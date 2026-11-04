@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.26](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.25...runner-storage-v0.8.26) (2026-11-04)
+
+## [0.8.25](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.24...runner-storage-v0.8.25) (2026-11-04)
+
+
+### Refactoring
+
+* **test:** share the s3 partial-body error fixture ([#45118](https://github.com/okou-ai/okou/issues/45118)) ([413a9a3](https://github.com/okou-ai/okou/commit/413a9a3f1b856a77ffd86ddbe6a728913285a46f))
+
+## [0.8.24](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.23...runner-storage-v0.8.24) (2026-11-04)
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
 ## [0.8.23](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.22...runner-storage-v0.8.23) (2026-11-03)
 
 ## [0.8.22](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.21...runner-storage-v0.8.22) (2026-11-03)

@@ -361,6 +361,9 @@ jobs:
   # the pull request from scratch on every run, so a failed refresh self-heals on
   # the next push to main.
   refresh-release-pull-request:
+    concurrency:
+      group: release-please-pr-validation
+      cancel-in-progress: false
     permissions:
       actions: write
       contents: write
@@ -374,6 +377,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
+          filter: blob:none
 
       - uses: okou-ai/release-please-action@9d88edc37d41b22dcc46ab3fb56f19aec0e8b3d2 # v5.0.0-okou
         with:
@@ -1034,6 +1038,7 @@ jobs:
     uses: ./.github/workflows/desktop-update-manifest.yml
     with:
       release_run_id: ${{ github.run_id }}
+      release_target: ${{ needs.release-please.outputs.release_target }}
     secrets:
       R2_STATIC_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
       R2_STATIC_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}

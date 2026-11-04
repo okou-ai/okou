@@ -142,7 +142,9 @@ private struct ComposerConnectorDetail: View {
               query: [URLQueryItem(name: "agentId", value: agentID)])
           }
         }
-        if connector.permissionSummary.hasPermissions {
+        if connector.permissionSummary.hasPermissions
+          && (!store.chatAccountAccess || store.canConfigurePermissions(slug: connector.slug))
+        {
           NavigationLink("Configure permissions") {
             ComposerConnectorPermissions(store: store, slug: connector.slug, label: connector.label)
           }

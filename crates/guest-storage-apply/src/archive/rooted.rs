@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fs::{self, File, FileTimes, OpenOptions, Permissions};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -181,7 +181,12 @@ impl<'a> RootedWriter<'a> {
             return Ok(false);
         };
         let expected = entry.size();
-        if io::copy(entry, &mut file)? != expected {
+        let copied = if expected > 8 * 1024 {
+            copy_buffered(entry, &mut file)?
+        } else {
+            io::copy(entry, &mut file)?
+        };
+        if copied != expected {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "failed to write entire tar file",
@@ -195,6 +200,16 @@ impl<'a> RootedWriter<'a> {
         file.set_permissions(Permissions::from_mode(mode & 0o777))?;
         Ok(true)
     }
+}
+
+// Keep buffering code out of the generated small-file extraction path.
+#[inline(never)]
+fn copy_buffered<R: Read>(entry: &mut tar::Entry<'_, R>, file: &mut File) -> io::Result<u64> {
+    let mut output = io::BufWriter::with_capacity(64 * 1024, file);
+    let copied = io::copy(entry, &mut output)?;
+    // Drop cannot report final-write failures.
+    output.flush()?;
+    Ok(copied)
 }
 
 fn has_descriptor_budget() -> bool {

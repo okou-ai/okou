@@ -1392,8 +1392,8 @@
       "takeOver": "Take over",
       "takeOverMessage": "I've taken over the browser. Don't use it until I hand it back."
     },
-    "reclaimHint_one": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minute.",
-    "reclaimHint_other": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minutes.",
+    "reclaimHint_one": "Kept while open; reclaimed after {{formattedCount}} idle minute.",
+    "reclaimHint_other": "Kept while open; reclaimed after {{formattedCount}} idle minutes.",
     "status": {
       "live": "Live",
       "starting": "Starting",
@@ -1431,6 +1431,7 @@
     "paused": "Viewing paused",
     "quality": "Image quality",
     "reconnect": "Reconnect",
+    "reconnecting": "Reconnecting…",
     "reload": "Reload",
     "remoteInput": "Remote browser input",
     "resolution": "Resolution",
@@ -2106,78 +2107,6 @@
       "sent": "Forwarded successfully",
       "threads": "Chats",
       "title": "Forward to"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Document",
-        "image": "Image",
-        "presentation": "Presentation",
-        "visualization": "Chart",
-        "website": "Website"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "Help me set up a morning brief of emails that need my attention; first confirm the inbox and delivery time",
-            "second": "Help me set up a weekly competitor brief; first confirm the companies, sources, and schedule",
-            "third": "Help me set up a daily sales summary; first confirm the data source, metrics, and delivery time"
-          },
-          "label": "Briefs",
-          "placeholder": "Describe what you would like in your brief, and how often…",
-          "title": "What brief would you like to receive?"
-        },
-        "general": {
-          "examples": {
-            "first": "Find brand design agencies suited to an early-stage team",
-            "second": "Compare customer management tools by features and price",
-            "third": "Research recent trends and leading companies in an industry"
-          },
-          "label": "General",
-          "placeholder": "Describe your question or what you would like to learn…",
-          "title": "What would you like to find out?"
-        },
-        "information": {
-          "examples": {
-            "first": "Find recent research on AI adoption in small businesses, with original sources",
-            "second": "Collect public examples of successful product launches and explain what worked",
-            "third": "Find reliable industry data for a presentation, with dates and source links"
-          },
-          "label": "Information",
-          "placeholder": "Describe the topic, time range, or what you need the information for…",
-          "title": "What would you like to research?"
-        },
-        "monitor": {
-          "examples": {
-            "first": "Help me follow competitors' pricing changes; first confirm the companies, sources, and when to notify me",
-            "second": "Help me watch a client email for a reply; first confirm the email and how to notify me",
-            "third": "Help me follow important updates in an industry; first agree on the sources, frequency, and what matters"
-          },
-          "label": "Monitor",
-          "placeholder": "Describe what you want to follow and which changes matter…",
-          "title": "What changes would you like to follow?"
-        },
-        "people": {
-          "examples": {
-            "first": "Find 5 speakers for an AI marketing event, with reasons they fit and public sources",
-            "second": "Find creators who reach business owners and explain their audience fit",
-            "third": "Find potential customers for my consulting services, with relevant public background"
-          },
-          "label": "People",
-          "placeholder": "Describe the role, field, company, or location…",
-          "title": "Who are you looking for?"
-        }
-      },
-      "groups": {
-        "automate": "Automate",
-        "create": "Create",
-        "search": "Search"
-      },
-      "label": "Explore what Okou can do",
-      "placeholder": "Describe what you want to get done…",
-      "sources": {
-        "trigger": "Tools"
-      },
-      "workflows": "Workflows"
     },
     "mail": {
       "bcc": "bcc",
@@ -3185,14 +3114,13 @@
   "connectorChatAccess": {
     "accountAccess": "{{account}} access",
     "enableByDefault": "Enable {{account}} by default",
-    "enabledAccounts": "{{value}} on",
+    "enabledAccounts": "{{value}} enabled",
     "manageAccounts": "Manage accounts",
     "noAccount": "No account selected",
     "noEnabledAccount": "No account is on for this chat",
     "permissions": "Permissions",
     "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
-    "settingsDescription": "Choose which accounts are on by default and the default account for new chats.",
-    "thisChat": "This chat"
+    "settingsDescription": "Choose which accounts are on by default and the default account for new chats."
   },
   "connectors": {
     "access": {
@@ -5449,8 +5377,10 @@
         "credits": "Credits",
         "fiveHourLimit": "5-hour limit",
         "label": "Subscription usage",
+        "leftSide": "Left side",
         "lowUsage": "Subscription usage: less than 20% remaining",
         "resetTimeUnavailable": "Reset time unavailable",
+        "rightSide": "Right side",
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
         "weeklyLimit": "Weekly limit"

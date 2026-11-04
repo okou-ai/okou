@@ -31,7 +31,7 @@ import {
   projectEditorName$,
   openProjectEditor$,
   closeProjectDialog$,
-  completeProjectMembershipClose$,
+  completeProjectDialogClose$,
   projectSearch$,
   setProjectSearch$,
   projectDialogHasSuccessor$,
@@ -40,6 +40,7 @@ import {
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 // A rename keeps its folder trigger; deleting a folder returns to the section's
 // create control. Creating from a chat returns to that chat's surviving row.
@@ -69,29 +70,33 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const name = useGet(projectEditorName$);
   const setName = useSet(setProjectEditorName$);
   const close = useSet(closeProjectDialog$);
+  const completeClose = useSet(completeProjectDialogClose$);
   const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [creation, create] = useLoadableSet(createProject$);
   const [renaming, rename] = useLoadableSet(renameProject$);
   const signal = useGet(pageSignal$);
+  const creationSignal = useGet(rootSignal$);
   const pending = creation.state === "loading" || renaming.state === "loading";
   const error = creation.state === "hasError" || renaming.state === "hasError";
   async function submit() {
-    if (dialog.projectId) {
-      const completion = rename(dialog.projectId, name, signal);
-      close(dialog);
-      await completion;
-    } else {
-      await create(name, dialog.fromThreadId, signal);
-    }
-    signal.throwIfAborted();
+    // A newly visible folder can be used while its creation is still in flight.
+    const completion = dialog.projectId
+      ? rename(dialog.projectId, name, signal)
+      : create(name, dialog.fromThreadId, creationSignal);
     close(dialog);
+    await completion;
   }
   return (
     <Dialog
-      open
+      open={dialog.open}
       onOpenChange={(open) => {
         if (!open) {
           close(dialog);
+        }
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open) {
+          completeClose(dialog);
         }
       }}
     >
@@ -294,7 +299,7 @@ function ProjectMembershipPicker({
   })?.projectId;
   const mobile = useGet(mobileChatViewport$);
   const close = useSet(closeProjectDialog$);
-  const completeClose = useSet(completeProjectMembershipClose$);
+  const completeClose = useSet(completeProjectDialogClose$);
   const [moving, move] = useLoadableSet(moveProjectThread$);
   const signal = useGet(pageSignal$);
   const hasSuccessor = useSet(projectDialogHasSuccessor$);

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 
+import builtin_connector_diagnostics
 import logging_utils
 import mitm_addon
 import registry
@@ -165,26 +166,28 @@ async def test_catalog_warmup_reports_missing_invalid_and_recovered_source(
         assert recovered["digest"] == "b" * 64
 
 
+@pytest.mark.parametrize("phase", ["catalog_read", "diagnostic_compile"])
 async def test_stalled_catalog_warmup_owns_admission_and_keeps_status_observational(
-    tmp_path, control, mitm_ctx, monkeypatch
+    tmp_path, control, mitm_ctx, monkeypatch, phase
 ):
     cache = tmp_path / "catalog.json"
-    write_catalog_cache(
-        cache,
-        digest="sha256:" + "a" * 64,
-        version="a",
-        firewalls={"github": github_cache_firewall()},
-    )
     entered = threading.Event()
     release = threading.Event()
     real_read = os.read
-    inode = cache.stat().st_ino
+    real_compile = builtin_connector_diagnostics._compile_diagnostic_catalog
+
+    def pause():
+        entered.set()
+        assert release.wait(5), "test peer did not release catalog preparation"
 
     def blocked_read(fd, count):
         if os.fstat(fd).st_ino == inode:
-            entered.set()
-            assert release.wait(5), "test peer did not release catalog read"
+            pause()
         return real_read(fd, count)
+
+    def blocked_compile(firewalls):
+        pause()
+        return real_compile(firewalls)
 
     request = registry_status_request() | {"method": "catalog.warm"}
 
@@ -202,7 +205,21 @@ async def test_stalled_catalog_warmup_owns_admission_and_keeps_status_observatio
             release.set()
 
     with mitm_ctx(builtin_firewall_catalog_cache_path=str(cache)):
-        monkeypatch.setattr(os, "read", blocked_read)
+        # First startup configures the addon before the provider publishes its catalog.
+        mitm_addon.configure({"okou_builtin_firewall_catalog_cache_path"})
+        write_catalog_cache(
+            cache,
+            digest="sha256:" + "a" * 64,
+            version="a",
+            firewalls={"github": github_cache_firewall()},
+        )
+        inode = cache.stat().st_ino
+        if phase == "catalog_read":
+            monkeypatch.setattr(os, "read", blocked_read)
+        else:
+            monkeypatch.setattr(
+                builtin_connector_diagnostics, "_compile_diagnostic_catalog", blocked_compile
+            )
         await asyncio.to_thread(peer)
 
 

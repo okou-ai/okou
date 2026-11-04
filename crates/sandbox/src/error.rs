@@ -132,8 +132,6 @@ pub enum SandboxOperation {
     CopyFile,
     /// [`Sandbox::write_file`](crate::Sandbox::write_file).
     WriteFile,
-    /// [`Sandbox::finalize_staged_file`](crate::Sandbox::finalize_staged_file).
-    FinalizeStagedFile,
     /// [`Sandbox::start_process`](crate::Sandbox::start_process).
     StartProcess,
     /// [`Sandbox::start_agent_process`](crate::Sandbox::start_agent_process).
@@ -153,7 +151,6 @@ impl fmt::Display for SandboxOperation {
             Self::ReadFile => f.write_str("read file"),
             Self::CopyFile => f.write_str("copy file"),
             Self::WriteFile => f.write_str("write file"),
-            Self::FinalizeStagedFile => f.write_str("finalize staged file"),
             Self::StartProcess => f.write_str("start process"),
             Self::StartAgentProcess => f.write_str("start Agent process"),
             Self::MountHomeDrive => f.write_str("mount home drive"),

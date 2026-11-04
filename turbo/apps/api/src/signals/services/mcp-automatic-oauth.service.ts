@@ -583,21 +583,17 @@ function reusableDcrRegistration(args: {
   readonly registration: McpAutomaticOAuthDcrRegistration;
   readonly redirectUri: string;
   readonly scope: string | undefined;
-  readonly metadata: AuthorizationServerMetadata;
 }): boolean {
   const hasSecret = args.registration.hasClientSecret;
   const secretShapeMatches =
     args.registration.tokenEndpointAuthMethod === "none"
       ? !hasSecret
       : hasSecret;
-  const supportedMethods = supportedTokenAuthMethods(args.metadata);
   return (
     args.registration.redirectUri === args.redirectUri &&
     (args.registration.expiresAt === null ||
       args.registration.expiresAt > nowDate()) &&
     secretShapeMatches &&
-    (supportedMethods.length === 0 ||
-      supportedMethods.includes(args.registration.tokenEndpointAuthMethod)) &&
     registrationCoversScope(args.registration, args.scope)
   );
 }
@@ -715,11 +711,15 @@ function dcrTokenAuthMethod(args: {
   readonly metadata: AuthorizationServerMetadata;
 }): AutomaticOAuthClientSelection["tokenEndpointAuthMethod"] {
   const supportedMethods = supportedTokenAuthMethods(args.metadata);
+  // RFC 7591 permits the server to replace requested per-client metadata.
+  const registeredMethod = args.client.token_endpoint_auth_method;
   const selected =
-    args.client.token_endpoint_auth_method ??
+    registeredMethod ??
     selectClientAuthMethod(args.client, [...supportedMethods]);
   if (
-    (supportedMethods.length > 0 && !supportedMethods.includes(selected)) ||
+    (registeredMethod === undefined &&
+      supportedMethods.length > 0 &&
+      !supportedMethods.includes(selected)) ||
     (selected === "none") !== (args.client.client_secret === undefined)
   ) {
     throw new McpAutomaticOAuthError(
@@ -802,7 +802,6 @@ async function resolveAutomaticOAuthClient(
       registration: existing,
       redirectUri: args.redirectUri,
       scope: args.scope,
-      metadata: args.metadata,
     })
   ) {
     return dcrSelection(existing);

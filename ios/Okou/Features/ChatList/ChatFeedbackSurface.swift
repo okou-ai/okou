@@ -37,6 +37,7 @@ struct ChatFeedbackSurface: View {
     .padding(.vertical, 2)
     .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
+    .padding(.vertical, 8)
     .accessibilityElement(children: .contain)
   }
 
@@ -86,7 +87,7 @@ struct ChatFeedbackSurface: View {
   }
 }
 
-struct ChatFeedbackOverlay: View {
+struct ChatFeedbackBanner: View {
   let store: WorkspaceStore
 
   var body: some View {

@@ -22,8 +22,8 @@ export interface AttachedSelection {
   readonly settings: CaptureSettings;
 }
 
-/** Supersession is a selection result, not a classification of arbitrary errors. */
-export type SelectionOutcome = "ready" | "superseded";
+/** Operation completion is not usable-viewer proof; observers join waitForReady. */
+export type SelectionOutcome = "completed" | "superseded";
 
 interface SelectionIdentity {
   readonly targetId: string;

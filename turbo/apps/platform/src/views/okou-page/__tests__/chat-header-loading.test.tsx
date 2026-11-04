@@ -133,7 +133,10 @@ async function setupHeaders({
   );
   await setupPage({ context, path, ...workspace.pageOptions });
   await waitFor(() => {
-    expect(fastButton("Share messages")).toBeEnabled();
+    expect(fastButton("Share messages")).toHaveAttribute(
+      "aria-disabled",
+      "false",
+    );
   });
 }
 
@@ -149,12 +152,27 @@ test.each([true, false])(
     });
     expect(entry("Manage emails")).toBeInTheDocument();
     await navigate(destination.id, desktop);
+    const user = userEvent.setup({ delay: null });
+    for (const label of desktop
+      ? ["Share messages", "Open browser"]
+      : ["Share messages"]) {
+      const retainedAction = fastButton(label);
+      expect(retainedAction).toHaveAttribute("aria-disabled", "true");
+      expect(retainedAction).not.toBeDisabled();
+      click(retainedAction);
+      retainedAction.focus();
+      await user.keyboard("{Enter} ");
+      expect(retainedAction).toHaveFocus();
+    }
+    expect(screen.queryByText("0 selected")).toBeNull();
+    expect(
+      screen.queryByRole("complementary", { name: "Cloud browser" }),
+    ).toBeNull();
     const retainedMail = fastButton("Manage emails");
     expect(retainedMail).toHaveAttribute("aria-busy", "true");
     expect(retainedMail).toHaveAttribute("aria-disabled", "true");
     click(retainedMail);
     retainedMail.focus();
-    const user = userEvent.setup({ delay: null });
     await user.keyboard("{Enter} ");
     expect(screen.queryByRole("dialog", { name: "Emails" })).toBeNull();
     await act(async () => {
@@ -168,6 +186,10 @@ test.each([true, false])(
       expect(entry("Automations")).toBeUndefined();
     });
     expect(screen.queryByRole("dialog", { name: "Emails" })).toBeNull();
+    expect(screen.queryByText("0 selected")).toBeNull();
+    expect(
+      screen.queryByRole("complementary", { name: "Cloud browser" }),
+    ).toBeNull();
     expect(entry("Artifacts and chats")).toBeInTheDocument();
     await navigate(previous.id, desktop);
     await waitFor(() => {
@@ -204,16 +226,22 @@ test("Retain automation presence and suppress activation until both current sour
     mailGates: new Map([[destination.id, mail.promise]]),
     automationGates: new Map([[destination.id, automations.promise]]),
   });
-  expect(fastButton("Automations")).toBeEnabled();
+  expect(fastButton("Automations")).toHaveAttribute("aria-disabled", "false");
   await navigate(destination.id);
-  expect(fastButton("Automations")).toBeDisabled();
-  click(fastButton("Automations"));
+  const retained = fastButton("Automations");
+  expect(retained).toHaveAttribute("aria-disabled", "true");
+  expect(retained).not.toBeDisabled();
+  click(retained);
+  retained.focus();
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Enter} ");
+  expect(retained).toHaveFocus();
   expect(screen.queryByTestId("automation-sidebar")).toBeNull();
   await act(async () => {
     automations.resolve();
     await automations.promise;
   });
-  expect(fastButton("Automations")).toBeDisabled();
+  expect(fastButton("Automations")).toHaveAttribute("aria-disabled", "true");
   expect(entry("Manage emails")).toBeInTheDocument();
   mail.resolve();
   await waitFor(() => {
@@ -285,7 +313,10 @@ test.each([true, false])(
     expect(pane(destination.id)).toBeInTheDocument();
     mail.resolve();
     await waitFor(() => {
-      expect(fastButton("Share messages")).toBeEnabled();
+      expect(fastButton("Share messages")).toHaveAttribute(
+        "aria-disabled",
+        "false",
+      );
     });
   },
 );

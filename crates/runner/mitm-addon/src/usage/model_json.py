@@ -4,6 +4,8 @@ from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 from typing import Literal, NamedTuple, assert_never
 
+import response_inspection
+
 from . import anthropic_messages, openai_chat_completions, openai_responses
 from .json_selective import JsonExtractionResult, JsonSelectiveExtractor, ScalarField
 from .json_selective import Path as JsonPath
@@ -15,7 +17,6 @@ ModelUsageProtocol = Literal[
 ]
 
 ModelJsonUsageResult = tuple[dict | None, str | None]
-_JSON_INSPECTION_STEP_BYTES = 4096
 
 
 class _ModelJsonUsageRegistration(NamedTuple):
@@ -98,11 +99,7 @@ class ModelJsonResponseInspector:
         Exhaust the iterator before feeding another chunk or finishing the document.
         Each step consumes at most 4 KiB, including escaped or discarded text.
         """
-        for offset in range(0, len(chunk), _JSON_INSPECTION_STEP_BYTES):
-            if not self.accepts_more_input():
-                return
-            self.feed(chunk[offset : offset + _JSON_INSPECTION_STEP_BYTES])
-            yield
+        yield from response_inspection.json_steps(self, chunk)
 
     def accepts_more_input(self) -> bool:
         """Return whether the bounded parser can accept another response chunk.

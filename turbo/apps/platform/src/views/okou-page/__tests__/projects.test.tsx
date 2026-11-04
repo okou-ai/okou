@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { test, expect, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
 import {
   chatThreadsContract,
   type ChatThreadEvent,
@@ -23,6 +24,7 @@ import {
   click,
   fill,
   setupPage,
+  startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import {
@@ -134,6 +136,75 @@ function releasePageDom() {
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
 }
+
+test("Cached Project folders appear before chat setup and remote synchronization finish", async () => {
+  const thread = continuityThread(112, 1, "Cached conversation");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 112,
+    threads: [thread],
+  });
+  metadata();
+  const resetPage$ = resetSignal();
+  const signal = context.store.set(resetPage$, context.signal);
+  const options = {
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    sharedWorkerTestTransport: "message-port" as const,
+  };
+  await setupPage({ context: { ...context, signal }, ...options });
+  expect(button("Launch", folder())).toBeInTheDocument();
+
+  context.store.set(resetPage$);
+  releasePageDom();
+  const chatSetupStarted = context.mocks.deferred<void>();
+  const chatSetup = context.mocks.deferred<void>();
+  const remote = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadDraftContract.get, async ({ respond }) => {
+    if (!chatSetupStarted.settled()) {
+      chatSetupStarted.resolve();
+    }
+    await chatSetup.promise;
+    return respond(200, { draftUserMessage: null, draftAttachments: null });
+  });
+  context.mocks.api(projectsContract.events, async ({ respond }) => {
+    await remote.promise;
+    return respond(200, {
+      events: [
+        {
+          id: "30000000-0000-4000-8000-000000000073",
+          seqId: 2,
+          projectId: id,
+          kind: "renamed",
+          name: "Launch updated",
+          createdAt: at,
+        },
+      ],
+      hasMore: false,
+    });
+  });
+
+  const page = await startPage({ context: reloadedContext, ...options });
+  try {
+    await page.content;
+    await chatSetupStarted.promise;
+    const projects = screen.getByRole("region", { name: "Projects" });
+    await within(projects).findByText("Launch");
+    expect(threadLink(thread.id)).toBeInTheDocument();
+    expect(chatSetup.settled()).toBeFalsy();
+    expect(remote.settled()).toBeFalsy();
+
+    remote.resolve();
+    await within(projects).findByText("Launch updated");
+    expect(chatSetup.settled()).toBeFalsy();
+  } finally {
+    if (!remote.settled()) {
+      remote.resolve();
+    }
+    chatSetup.resolve();
+    await page.ready;
+  }
+});
 
 test("Project folders stay visible when returning from a chat to its pinned Agent", async () => {
   const ordinary = continuityThread(111, 1, "Ordinary chat");
@@ -476,6 +547,7 @@ test("ordinary lists hide assigned chats and @Project inserts captured identity 
 });
 
 test("creates, renames and deletes a Project through the shared dialogs", async () => {
+  const confirmation = context.mocks.deferred<void>();
   const ordinary = continuityThread(92, 1, "Ordinary chat");
   const workspace = installContinuityWorkspace(context, {
     caseId: 92,
@@ -498,7 +570,8 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
       hasMore: false,
     });
   });
-  context.mocks.api(projectsContract.create, ({ body, respond }) => {
+  context.mocks.api(projectsContract.create, async ({ body, respond }) => {
+    await confirmation.promise;
     events.push({
       id: body.eventId,
       projectId: body.id,
@@ -557,6 +630,9 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   await waitFor(() => {
     return expect(button("Campaign")).toHaveAttribute("aria-expanded", "true");
   });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(confirmation.settled()).toBeFalsy();
+  confirmation.resolve();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   await user.click(button("Options for Campaign"));
   await user.click(await findMenuItem("Rename"));
@@ -586,6 +662,258 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   await waitFor(() => {
     expect(button("Create Project")).toHaveFocus();
+  });
+});
+
+test("Creating a Project from a chat moves it immediately and survives navigation", async () => {
+  const confirmation = context.mocks.deferred<void>();
+  const ordinary = continuityThread(113, 1, "Campaign planning");
+  const other = continuityThread(113, 2, "Other conversation");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 113,
+    threads: [ordinary, other],
+  });
+  metadata();
+  const events: ProjectEvent[] = [];
+  const threadEvents: ChatThreadEvent[] = [];
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: threadEvents.filter((event) => {
+        return event.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(projectsContract.create, async ({ body, respond }) => {
+    await confirmation.promise;
+    events.push(
+      {
+        id: body.eventId,
+        projectId: body.id,
+        seqId: 2,
+        kind: "created",
+        name: body.name,
+        createdAt: at,
+      },
+      {
+        id: crypto.randomUUID(),
+        projectId: body.id,
+        seqId: 3,
+        kind: "renamed",
+        name: "Campaign confirmed",
+        createdAt: at,
+      },
+    );
+    threadEvents.push({
+      id: body.eventId,
+      seqId: 2,
+      kind: "project_updated",
+      chatThreadId: ordinary.id,
+      agentId: ordinary.agentId,
+      projectId: body.id,
+      title: ordinary.title,
+      selectedModel: ordinary.selectedModel,
+      serviceTier: null,
+      computerUseHostId: null,
+      createdAt: at,
+    });
+    return respond(201, {
+      id: body.id,
+      name: body.name,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  const row = threadLink(ordinary.id).closest<HTMLElement>(
+    "[data-sidebar-chat-thread-row-id]",
+  );
+  if (!row) {
+    throw new Error("Chat row missing");
+  }
+  await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
+  await user.click(await findMenuItem("Move to Project"));
+  await user.click(button("Create a Project from this chat"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Campaign",
+  );
+  await user.click(button("Save"));
+  const projectFolder = await waitFor(() => {
+    const parent = threadLink(ordinary.id).closest<HTMLElement>(
+      "[data-project-folder-id]",
+    );
+    if (!parent) {
+      throw new Error("Project folder not found");
+    }
+    return parent;
+  });
+  expect(button("Campaign", projectFolder)).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await waitFor(() => {
+    expect(threadLink(ordinary.id)).toHaveFocus();
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(confirmation.settled()).toBeFalsy();
+  const projectId = projectFolder.dataset.projectFolderId;
+  if (!projectId) {
+    throw new Error("Project identity missing");
+  }
+
+  await user.click(button("Campaign", projectFolder));
+  await user.click(threadLink(other.id));
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${other.id}`);
+  });
+  confirmation.resolve();
+  await waitFor(() => {
+    expect(button("Campaign confirmed", folder(projectId))).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+  await user.click(button("Campaign confirmed", folder(projectId)));
+  await waitFor(() => {
+    expect(
+      namedLink(folder(projectId), "Campaign planning"),
+    ).toBeInTheDocument();
+  });
+  expect(
+    folder(projectId).querySelectorAll(
+      `[data-sidebar-chat-thread-id="${ordinary.id}"]`,
+    ),
+  ).toHaveLength(1);
+});
+
+test("A new Project accepts a new chat after its pending creation is confirmed", async () => {
+  const confirmation = context.mocks.deferred<void>();
+  const ordinary = continuityThread(114, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 114,
+    threads: [ordinary],
+  });
+  metadata();
+  const events: ProjectEvent[] = [];
+  let projectId: string | undefined;
+  let createdThread: ChatThreadSnapshotProjection | undefined;
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(projectsContract.create, async ({ body, respond }) => {
+    await confirmation.promise;
+    projectId = body.id;
+    events.push({
+      id: body.eventId,
+      projectId: body.id,
+      seqId: 2,
+      kind: "created",
+      name: body.name,
+      createdAt: at,
+    });
+    return respond(201, {
+      id: body.id,
+      name: body.name,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    if (!projectId || body.projectId !== projectId) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Project not found" },
+      });
+    }
+    if (!body.clientThreadId) {
+      throw new Error("Client chat identity missing");
+    }
+    createdThread = {
+      ...continuityThread(114, 2, "New chat"),
+      id: body.clientThreadId,
+      projectId,
+    };
+    return respond(201, {
+      id: createdThread.id,
+      title: createdThread.title,
+      createdAt: at,
+      selectedModel: createdThread.selectedModel,
+      serviceTier: null,
+      projectId,
+    });
+  });
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    const thread = params.id === ordinary.id ? ordinary : createdThread;
+    if (!thread) {
+      throw new Error("Unknown chat");
+    }
+    return respond(200, {
+      ...thread,
+      modelSettings: thread.modelSettings ?? {},
+      muted: thread.muted ?? false,
+      cloudBrowserEnabled: false,
+    });
+  });
+  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(button("Create Project"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Campaign",
+  );
+  await user.click(button("Save"));
+  const projectFolder = await waitFor(() => {
+    const parent = button("Campaign").closest<HTMLElement>(
+      "[data-project-folder-id]",
+    );
+    if (!parent) {
+      throw new Error("Project folder not found");
+    }
+    return parent;
+  });
+  await user.click(button("New chat", projectFolder));
+  await waitFor(() => {
+    expect(button("New chat", projectFolder)).toBeDisabled();
+  });
+  expect(confirmation.settled()).toBeFalsy();
+  confirmation.resolve();
+  await waitFor(() => {
+    expect(createdThread).toBeDefined();
+    expect(location.pathname).toBe(`/chats/${createdThread?.id}`);
+    expect(namedLink(projectFolder, "New chat")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });
 

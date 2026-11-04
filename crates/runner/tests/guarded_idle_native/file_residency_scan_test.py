@@ -1,6 +1,7 @@
 """Real original-FD range acquisition and complete original/CLI replay."""
 
 import copy
+from functools import cache
 import hashlib
 import json
 import os
@@ -20,25 +21,32 @@ OWNER = Path(__file__).resolve().parent
 SIZE = MAX_EXTENT_BYTES + 8195
 
 
+@cache
+def original_payload_hash(size):
+    # Only the synthetic expected digest is shared, never an observed file hash.
+    hash_ = hashlib.sha256()
+    if size:
+        hash_.update(b"head")
+        remaining = size - 7
+        block = bytes(65536)
+        while remaining:
+            length = min(remaining, len(block))
+            hash_.update(block[:length])
+            remaining -= length
+        hash_.update(b"end")
+    return hash_.hexdigest()
+
+
 def original(root, size=SIZE):
     path = root / "input.bin"
     fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         os.ftruncate(fd, size)
-        hash_ = hashlib.sha256()
         if size:
             os.pwrite(fd, b"head", 0)
             os.pwrite(fd, b"end", size - 3)
-            hash_.update(b"head")
-            remaining = size - 7
-            block = bytes(65536)
-            while remaining:
-                length = min(remaining, len(block))
-                hash_.update(block[:length])
-                remaining -= length
-            hash_.update(b"end")
         os.fsync(fd)
-        return path, fd, hash_.hexdigest()
+        return path, fd, original_payload_hash(size)
     except BaseException:
         os.close(fd)
         raise

@@ -1,6 +1,6 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { convert } from "html-to-text";
-import { escapeHtml } from "markdown-it/lib/common/utils.mjs";
+import { escapeUTF8 as escapeHtml } from "entities";
 
 import { renderEmailLayout } from "./email-layout";
 

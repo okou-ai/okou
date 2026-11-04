@@ -22,7 +22,8 @@ import {
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { writeDb$ } from "../external/db";
-import { settleIncludingAbort } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import {
   publishChatThreadMessageCreatedSafely,
   publishChatThreadReadCursorUpdatedSafely,
@@ -157,23 +158,54 @@ export const insertRecommendedFollowupsEvent$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     signal.throwIfAborted();
-    const inserted =
-      parseRawRows(
-        chatEventCommandResultSchema,
-        await set(writeDb$).execute(
-          chatEventInsertSql(
-            {
-              id: followupsEventIdForRun(args.runId),
-              chatThreadId: args.threadId,
-              eventType: "output.followups",
-              content: serializeChatFollowupsContent(args.followups),
-              runId: args.runId,
-            },
-            "id",
-          ),
-        ),
-      )[0] ?? null;
+    const database = set(writeDb$);
+    const query = chatEventInsertSql(
+      {
+        id: followupsEventIdForRun(args.runId),
+        chatThreadId: args.threadId,
+        eventType: "output.followups",
+        content: serializeChatFollowupsContent(args.followups),
+        runId: args.runId,
+      },
+      "id",
+    );
+    const result = await settle(
+      (async () => {
+        return parseRawRows(
+          chatEventCommandResultSchema,
+          await database.execute(query),
+        );
+      })(),
+      signal,
+    );
+    if (!result.ok) {
+      if (
+        !isForeignKeyViolation(
+          result.error,
+          "chat_event_sequences_chat_thread_id_chat_threads_id_fk",
+        ) &&
+        !isForeignKeyViolation(
+          result.error,
+          "chat_events_chat_thread_id_chat_threads_id_fk",
+        )
+      ) {
+        throw result.error;
+      }
+      // Generation can outlive thread deletion. Let the FK arbitrate the race,
+      // then omit only follow-ups whose captured thread is actually gone.
+      const [thread] = await database
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(eq(chatThreads.id, args.threadId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (thread) {
+        throw result.error;
+      }
+      return false;
+    }
 
+    const inserted = result.value[0] ?? null;
     signal.throwIfAborted();
     if (!inserted) {
       return false;

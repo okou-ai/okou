@@ -14,7 +14,7 @@ import {
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Browser } from "../browser/browser.tsx";
+import { Browser, BrowserRecoveryStatus } from "../browser/browser.tsx";
 
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
@@ -167,55 +167,56 @@ function BrowserCdpViewer({
   readonly overlay: ReactNode;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
+  const controls = useGet(signals.browser.controls$);
   const syncLayout = useSet(signals.browser.syncLayout$);
   // Keep the DOM during same-identity revalidation. The graph revokes input
   // immediately while pending and owns endpoint changes without a React remount.
   // Conceal a known replacement while preserving the graph until its actual
   // endpoint/window identity is confirmed. A provider URL alone is not that identity.
   const connecting =
+    !controls.recovery &&
     connection.state === "hasData" &&
     connection.data !== null &&
     (connection.data.requestedSession.liveUrl !== liveUrl ||
       connection.data.requestedSession.window?.instanceId !== instanceId ||
       connection.data.requestedSession.window?.primaryWindowId !== windowId);
-  if (connection.state === "loading") {
-    return (
-      <>
-        <PanelActions actions={actions} />
-        <LoadingBody />
-      </>
-    );
-  }
-  if (connection.state === "hasError" || !connection.data) {
-    return (
-      <>
-        <PanelActions actions={actions} />
-        <UnavailableBody quiet={refined} />
-      </>
-    );
-  }
+  // The mounted root owns descriptor deadlines and recovery, including initial
+  // loading and failed HTTP reads. Removing it would cancel its own receipt.
   return (
     <>
       {refined ? null : <PanelActions actions={actions} />}
-      {connecting && <LoadingBody />}
-      {/* Revealing the preserved viewer is a layout change this panel owns. */}
-      <LayoutPanel
-        active={!connecting}
-        layoutKey="browser-viewer"
-        onLayoutCommit={syncLayout}
-        hidden={connecting}
-        data-browser-session-cdp-viewer
-        className={cn(
-          "relative isolate min-h-0 flex-1",
-          connecting ? "hidden" : "flex",
+      <div className="relative flex min-h-0 flex-1">
+        {connecting && (
+          <div className="absolute inset-0 flex">
+            <LoadingBody />
+          </div>
         )}
-      >
-        <Browser
-          signals={signals.browser}
-          actions={refined ? actions : null}
-          presence={overlay}
-        />
-      </LayoutPanel>
+        {/* Preserve geometry so concealment cannot pause its own connection wait. */}
+        <LayoutPanel
+          active={!connecting}
+          layoutKey="browser-viewer"
+          onLayoutCommit={syncLayout}
+          aria-hidden={connecting}
+          inert={connecting}
+          data-browser-session-cdp-viewer
+          className={cn(
+            "relative isolate flex min-h-0 flex-1",
+            connecting && "invisible",
+          )}
+        >
+          <Browser
+            signals={signals.browser}
+            actions={refined ? actions : null}
+            presence={overlay}
+          />
+          {refined && (
+            <BrowserRecoveryStatus
+              signals={signals.browser}
+              className="pointer-events-none absolute bottom-2 right-3 rounded border border-divider bg-popover px-2 py-1 text-[11px] leading-4 text-muted-foreground shadow-sm"
+            />
+          )}
+        </LayoutPanel>
+      </div>
     </>
   );
 }
@@ -375,9 +376,12 @@ export function BrowserSessionPanel({
         overlay={overlay}
       />
       {refined ? null : (
-        <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
-          {browserSessionReclaimHint(session)}
-        </p>
+        <div className="flex shrink-0 items-center gap-3 whitespace-nowrap border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
+          <p className="min-w-0 flex-1 truncate">
+            {browserSessionReclaimHint(session)}
+          </p>
+          <BrowserRecoveryStatus signals={signals.browser} />
+        </div>
       )}
     </PanelFrame>
   );

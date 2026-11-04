@@ -202,15 +202,28 @@ fn run_manifest_with_files(
         .iter()
         .map(|entry| entry.mount_path.clone())
         .collect::<Vec<_>>();
-    let cleanup_success =
+    let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
         cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots)
-            && instructions::cleanup_instruction_files(&instruction_cleanups);
+    });
+    let instruction_cleanup = stale_cleanup.success().then(|| {
+        telemetry::CleanupPhase::Instructions.measure(instruction_cleanups.len(), || {
+            instructions::cleanup_instruction_files(&instruction_cleanups)
+        })
+    });
+    let cleanup_success = instruction_cleanup
+        .as_ref()
+        .is_some_and(|observation| observation.success());
     record_sandbox_op(
         "guest_storage_apply_cleanup",
         cleanup_start.elapsed(),
         cleanup_success,
         None,
     );
+    // Keep the new diagnostic writes outside the combined and phase timers.
+    stale_cleanup.record();
+    if let Some(observation) = instruction_cleanup {
+        observation.record();
+    }
     if !cleanup_success {
         log_error!(LOG_TAG, "Required storage cleanup failed");
         return false;

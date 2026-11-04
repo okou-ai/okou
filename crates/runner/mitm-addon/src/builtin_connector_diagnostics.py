@@ -12,6 +12,7 @@ _DYNAMIC_BASE_MARKERS: Final = ("{", "}")
 _DIAGNOSTIC_ANY_PERMISSION: Final = "__connector_diagnostic_any__"
 _DIAGNOSTIC_ANY_RULES: Final = ("ANY /", "ANY /{path+}")
 _DIAGNOSTIC_CANDIDATE_KEY: Final = "_diagnostic_candidate"
+_DIAGNOSTIC_BASE_KEY: Final = "_diagnostic_base_key"
 _MODEL_PROVIDER_PREFIX: Final = "model-provider:"
 # Keep this regular grammar aligned with parseBasicAuthTemplates() in the
 # TypeScript connector contract.
@@ -130,6 +131,13 @@ def load_diagnostic_snapshot(
     if raw_snapshot is None:
         raw_snapshot = builtin_firewall_cache.load_configured_catalog_snapshot()
     return _cached_diagnostic_snapshot(raw_snapshot)
+
+
+def prepare_configured_catalog_snapshot() -> builtin_firewall_cache.BuiltinFirewallCatalogSnapshot:
+    """Prepare raw validation and diagnostic matching before admitting traffic."""
+    raw_snapshot = builtin_firewall_cache.load_configured_catalog_snapshot()
+    _cached_diagnostic_snapshot(raw_snapshot)
+    return raw_snapshot
 
 
 def find_candidate(
@@ -513,29 +521,6 @@ def _diagnostic_static_base_key(raw_base: str) -> str | None:
     return matching.static_firewall_base_config_key(raw_base)
 
 
-def _shared_route_aware_base_keys(firewalls: dict[str, dict]) -> frozenset[str]:
-    connector_names_by_base: dict[str, set[str]] = {}
-    for name in sorted(firewalls):
-        if name.startswith(_MODEL_PROVIDER_PREFIX):
-            continue
-        _, raw_apis = _catalog_firewall_fields(firewalls[name])
-        for api in raw_apis:
-            raw_base = api.get("base")
-            auth = api.get("auth")
-            if not isinstance(raw_base, str) or not isinstance(auth, dict):
-                raise TypeError("validated catalog API base/auth shape changed")
-            base_key = _diagnostic_static_base_key(raw_base)
-            if base_key is None or not _diagnostic_reference_names(auth):
-                continue
-            connector_names = connector_names_by_base.setdefault(base_key, set())
-            connector_names.add(name)
-    return frozenset(
-        base_key
-        for base_key, connector_names in connector_names_by_base.items()
-        if len(connector_names) > 1
-    )
-
-
 def _firewall_base_authorities(firewall: dict) -> frozenset[str]:
     raw_apis = firewall.get("apis")
     if not isinstance(raw_apis, list):
@@ -564,9 +549,10 @@ def _catalog_firewall_fields(firewall: dict) -> tuple[str, list[dict]]:
 
 
 def project_diagnostic_catalog(firewalls: dict[str, dict]) -> DiagnosticCatalogProjection:
-    shared_base_keys = _shared_route_aware_base_keys(firewalls)
     connector_firewalls: list[dict] = []
     model_provider_exclusions: list[dict] = []
+    connector_names_by_base: dict[str, set[str]] = {}
+    projected_sources: list[tuple[dict, dict]] = []
     for name in sorted(firewalls):
         firewall = firewalls[name]
         raw_name, raw_apis = _catalog_firewall_fields(firewall)
@@ -584,12 +570,25 @@ def project_diagnostic_catalog(firewalls: dict[str, dict]) -> DiagnosticCatalogP
             projected_api = _project_connector_api(
                 api,
                 connector_slug=raw_name,
-                shared_base_keys=shared_base_keys,
             )
             if projected_api is not None:
                 projected_apis.append(projected_api)
+                base_key = projected_api[_DIAGNOSTIC_BASE_KEY]
+                connector_names_by_base.setdefault(base_key, set()).add(name)
+                projected_sources.append((api, projected_api))
         if projected_apis:
             connector_firewalls.append({"name": raw_name, "apis": projected_apis})
+
+    shared_base_keys = frozenset(
+        base_key
+        for base_key, connector_names in connector_names_by_base.items()
+        if len(connector_names) > 1
+    )
+    for source_api, projected_api in projected_sources:
+        if projected_api[_DIAGNOSTIC_BASE_KEY] in shared_base_keys:
+            permissions = _catalog_permissions(source_api.get("permissions"))
+            if permissions:
+                projected_api["permissions"] = permissions
 
     return DiagnosticCatalogProjection(
         connector_firewalls=tuple(connector_firewalls),
@@ -602,7 +601,6 @@ def _project_connector_api(
     api: dict,
     *,
     connector_slug: str,
-    shared_base_keys: frozenset[str],
 ) -> dict | None:
     raw_base = api.get("base")
     auth = api.get("auth")
@@ -624,12 +622,7 @@ def _project_connector_api(
         auth_header_names=_auth_mapping_names(auth, "headers"),
         auth_query_param_names=_auth_mapping_names(auth, "query"),
     )
-    projected: dict[str, object] = {_DIAGNOSTIC_CANDIDATE_KEY: candidate}
-    if base_key in shared_base_keys:
-        permissions = _catalog_permissions(api.get("permissions"))
-        if permissions:
-            projected["permissions"] = permissions
-    return projected
+    return {_DIAGNOSTIC_CANDIDATE_KEY: candidate, _DIAGNOSTIC_BASE_KEY: base_key}
 
 
 def _project_model_provider_api(api: dict) -> dict | None:
@@ -721,8 +714,7 @@ def _route_aware_diagnostic_api_from_projection(
     shared_base_keys: frozenset[str],
 ) -> dict | None:
     candidate = _projected_connector_candidate(api)
-    base_key = _diagnostic_static_base_key(candidate.base)
-    if base_key is None or base_key not in shared_base_keys:
+    if api[_DIAGNOSTIC_BASE_KEY] not in shared_base_keys:
         return None
 
     return _diagnostic_matcher_api(

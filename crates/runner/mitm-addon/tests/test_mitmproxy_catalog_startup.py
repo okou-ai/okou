@@ -23,6 +23,7 @@ import sys
 from mitmproxy import options
 from mitmproxy.tools.dump import DumpMaster
 import builtin_firewall_cache
+import builtin_connector_diagnostics
 
 async def main():
     directory = Path(sys.argv[1])
@@ -53,6 +54,12 @@ async def main():
         validated.set()
         return snapshot
     builtin_firewall_cache.load_configured_catalog_snapshot = load_catalog
+    original_compile = builtin_connector_diagnostics._compile_diagnostic_catalog
+    def compile_diagnostics(firewalls):
+        print('diagnostic-compiling', flush=True)
+        assert sys.stdin.buffer.read(1) == b'd'
+        return original_compile(firewalls)
+    builtin_connector_diagnostics._compile_diagnostic_catalog = compile_diagnostics
 
     opts = options.Options(confdir=str(directory / 'ca'), server=False,
                            listen_host='127.0.0.1', listen_port=int(sys.argv[2]))
@@ -139,6 +146,16 @@ async def test_listener_waits_for_catalog_and_preserves_standalone_options(
                 assert client.connect_ex(("127.0.0.1", port)) == errno.ECONNREFUSED
             process.stdin.write(b"!")
             await process.stdin.drain()
+            if valid:
+                assert (
+                    await asyncio.wait_for(process.stdout.readline(), 5)
+                    == b"diagnostic-compiling\n"
+                )
+                with socket.socket() as client:
+                    client.settimeout(1)
+                    assert client.connect_ex(("127.0.0.1", port)) == errno.ECONNREFUSED
+                process.stdin.write(b"d")
+                await process.stdin.drain()
             if managed:
                 assert await asyncio.wait_for(process.stdout.readline(), 5) == b"listener-binding\n"
                 # A different process listening on the selected port must not

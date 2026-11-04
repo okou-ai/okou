@@ -7,6 +7,7 @@ import {
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { record, string, unknown as zUnknown } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -592,6 +593,24 @@ describe("builtin MCP automatic authentication", () => {
       requested: "client_secret_basic",
     },
     {
+      name: "provider-selected public authentication omitted from discovery",
+      method: "none",
+      advertised: ["client_secret_basic", "client_secret_post"],
+      requested: "client_secret_basic",
+    },
+    {
+      name: "provider-selected confidential post omitted from discovery",
+      method: "client_secret_post",
+      advertised: ["client_secret_basic"],
+      requested: "client_secret_basic",
+    },
+    {
+      name: "provider-selected confidential basic omitted from discovery",
+      method: "client_secret_basic",
+      advertised: ["client_secret_post"],
+      requested: "client_secret_post",
+    },
+    {
       name: "unspecified authentication",
       method: "client_secret_basic",
       advertised: null,
@@ -651,6 +670,109 @@ describe("builtin MCP automatic authentication", () => {
     );
     expect(provider.registrationBodies).toHaveLength(1);
   });
+
+  it.each(["none", "client_secret_basic"] as const)(
+    "infers %s authentication when registration omits the method",
+    async (method) => {
+      const f = fixture();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        dcrTokenEndpointAuthMethod: method,
+      });
+      server.use(
+        http.post(`${provider.issuer}/register`, async ({ request }) => {
+          const metadata = record(string(), zUnknown()).parse(
+            await request.json(),
+          );
+          delete metadata.token_endpoint_auth_method;
+          return HttpResponse.json({
+            ...metadata,
+            client_id: "automatic-dcr-client",
+            ...(method === "none"
+              ? {}
+              : { client_secret: "automatic-dcr-secret" }),
+          });
+        }),
+      );
+
+      const started = await beginOAuth(f);
+      expect((await callback(started.state, provider.issuer)).body.status).toBe(
+        "success",
+      );
+      const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+      const account = await accept(
+        accounts().connection({
+          headers,
+          params: { connectionId: completed.body.connectionId },
+          query: f.target,
+        }),
+        [200],
+      );
+      expect(account.body.connectionStatus).toBe("connected");
+    },
+  );
+
+  it.each([
+    {
+      name: "unsupported authentication",
+      registration: { token_endpoint_auth_method: "private_key_jwt" },
+    },
+    {
+      name: "public authentication with a client secret",
+      registration: {
+        token_endpoint_auth_method: "none",
+        client_secret: "unexpected-secret",
+      },
+    },
+    {
+      name: "confidential authentication without a client secret",
+      registration: { token_endpoint_auth_method: "client_secret_basic" },
+    },
+    {
+      name: "no declared method or compatible credentials",
+      registration: {},
+    },
+  ])(
+    "rejects DCR $name without creating an account",
+    async ({ registration }) => {
+      const f = fixture();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        tokenEndpointAuthMethodsSupported: [
+          "client_secret_basic",
+          "client_secret_post",
+        ],
+      });
+      server.use(
+        http.post(`${provider.issuer}/register`, async ({ request }) => {
+          const metadata = record(string(), zUnknown()).parse(
+            await request.json(),
+          );
+          delete metadata.token_endpoint_auth_method;
+          return HttpResponse.json({
+            ...metadata,
+            client_id: "invalid-authentication-client",
+            ...registration,
+          });
+        }),
+      );
+
+      const rejected = await accept(
+        automatic().start({
+          headers,
+          params: { connectorSlug: f.slug },
+          body: { authMethod: f.methodId, account: { intent: "add" } },
+        }),
+        [409],
+      );
+      expect(rejected.body).toMatchObject({ error: { code: "CONFLICT" } });
+      const listed = await accept(
+        accounts().connections({ headers, query: f.target }),
+        [200],
+      );
+      expect(listed.body.connections).toStrictEqual([]);
+    },
+  );
 
   it("does not resurrect an account deleted during its reconnect token exchange", async () => {
     const f = fixture();

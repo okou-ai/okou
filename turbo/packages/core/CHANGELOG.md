@@ -1,5 +1,43 @@
 # Changelog
 
+## [8.816.0](https://github.com/okou-ai/okou/compare/core-v8.815.0...core-v8.816.0) (2026-11-04)
+
+
+### Features
+
+* enable cjk markdown emphasis for all users ([#45132](https://github.com/okou-ai/okou/issues/45132)) ([f8fbf51](https://github.com/okou-ai/okou/commit/f8fbf5178c22f72686b37549bb5d1a87293d07c0))
+
+
+### Bug Fixes
+
+* **api:** auto-continue rate-limited chats ([#45119](https://github.com/okou-ai/okou/issues/45119)) ([21424ad](https://github.com/okou-ai/okou/commit/21424ad05c8527e2017c2869d9f413098fcd9955))
+
+
+### Refactoring
+
+* **app:** remove homepage task discovery ([#45136](https://github.com/okou-ai/okou/issues/45136)) ([221db9b](https://github.com/okou-ai/okou/commit/221db9bb5b9739e0d9bd295afe7cf232ce5b97aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.1
+
+## [8.815.0](https://github.com/okou-ai/okou/compare/core-v8.814.0...core-v8.815.0) (2026-11-04)
+
+
+### Features
+
+* **core:** enable projects for staff ([#45012](https://github.com/okou-ai/okou/issues/45012)) ([1c4dff2](https://github.com/okou-ai/okou/commit/1c4dff2cbb485abfce7e587bf91e411b79a7336a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.0
+
 ## [8.814.0](https://github.com/okou-ai/okou/compare/core-v8.813.1...core-v8.814.0) (2026-11-03)
 
 

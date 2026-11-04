@@ -33,7 +33,7 @@ export function copiedAccountSelection(
   slug: WorkflowAutomationAccountConnectorSlug,
 ) {
   return {
-    source: sql`(${workflowAutomationConnectorSelectionSql({ ...args, workflowId: args.targetWorkflowId, connectorSlug: slug })}) AS copy_account_selection`,
+    source: sql`(${workflowAutomationConnectorSelectionSql({ ...args, workflowId: sql`${args.targetWorkflowId}`, connectorSlug: slug })}) AS copy_account_selection`,
     columns: {
       connectorId: sql`copy_account_selection."connectorId"`.mapWith(
         nullableDriverValueDecoder(connectors.id),

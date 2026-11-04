@@ -1414,9 +1414,9 @@
       "takeOver": "Assumir",
       "takeOverMessage": "Assumi o controle do navegador. Não use até eu devolver."
     },
-    "reclaimHint_one": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minuto de inatividade.",
-    "reclaimHint_many": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
-    "reclaimHint_other": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
+    "reclaimHint_one": "Mantido com o painel aberto; liberado após {{formattedCount}} minuto ocioso.",
+    "reclaimHint_many": "Mantido com o painel aberto; liberado após {{formattedCount}} minutos ociosos.",
+    "reclaimHint_other": "Mantido com o painel aberto; liberado após {{formattedCount}} minutos ociosos.",
     "status": {
       "live": "Ao vivo",
       "starting": "Iniciando",
@@ -1454,6 +1454,7 @@
     "paused": "Visualização pausada",
     "quality": "Qualidade da imagem",
     "reconnect": "Reconectar",
+    "reconnecting": "Reconectando…",
     "reload": "Recarregar",
     "remoteInput": "Entrada do navegador remoto",
     "resolution": "Resolução",
@@ -2140,78 +2141,6 @@
       "sent": "Encaminhado com sucesso",
       "threads": "Conversas",
       "title": "Encaminhar para"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Documento",
-        "image": "Imagem",
-        "presentation": "Presentation",
-        "visualization": "Gráfico",
-        "website": "Site"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "Me ajude a configurar um resumo matinal dos e-mails que precisam da minha atenção; primeiro confirme a caixa de entrada e o horário de envio",
-            "second": "Me ajude a configurar um resumo semanal sobre concorrentes; primeiro confirme as empresas, as fontes e a programação",
-            "third": "Me ajude a configurar um resumo diário de vendas; primeiro confirme a fonte de dados, as métricas e o horário de envio"
-          },
-          "label": "Resumos",
-          "placeholder": "Descreva o que gostaria de receber no resumo e com que frequência…",
-          "title": "Que resumo você gostaria de receber?"
-        },
-        "general": {
-          "examples": {
-            "first": "Encontre agências de design de marca adequadas para uma equipe em estágio inicial",
-            "second": "Compare ferramentas de gestão de clientes por recursos e preço",
-            "third": "Pesquise tendências recentes e empresas líderes de um setor"
-          },
-          "label": "Geral",
-          "placeholder": "Descreva sua pergunta ou o que gostaria de saber…",
-          "title": "O que você gostaria de descobrir?"
-        },
-        "information": {
-          "examples": {
-            "first": "Encontre pesquisas recentes sobre a adoção de IA em pequenas empresas, com as fontes originais",
-            "second": "Reúna exemplos públicos de lançamentos de produtos bem-sucedidos e explique o que deu certo",
-            "third": "Encontre dados confiáveis de um setor para uma apresentação, com datas e links das fontes"
-          },
-          "label": "Informações",
-          "placeholder": "Descreva o tema, o período ou para que precisa das informações…",
-          "title": "O que você gostaria de pesquisar?"
-        },
-        "monitor": {
-          "examples": {
-            "first": "Me ajude a acompanhar mudanças nos preços dos concorrentes; primeiro confirme as empresas, as fontes e quando me notificar",
-            "second": "Me ajude a acompanhar uma resposta a um e-mail enviado a um cliente; primeiro confirme o e-mail e como me notificar",
-            "third": "Me ajude a acompanhar atualizações importantes de um setor; primeiro vamos definir as fontes, a frequência e o que é relevante"
-          },
-          "label": "Monitorar",
-          "placeholder": "Descreva o que quer acompanhar e quais mudanças são importantes…",
-          "title": "Que mudanças você gostaria de acompanhar?"
-        },
-        "people": {
-          "examples": {
-            "first": "Encontre 5 palestrantes para um evento de marketing com IA, com os motivos da escolha e fontes públicas",
-            "second": "Encontre criadores de conteúdo que alcancem donos de empresas e explique por que o público deles é adequado",
-            "third": "Encontre potenciais clientes para meus serviços de consultoria, com informações públicas relevantes sobre eles"
-          },
-          "label": "Pessoas",
-          "placeholder": "Descreva o cargo, a área, a empresa ou a localização…",
-          "title": "Quem você está procurando?"
-        }
-      },
-      "groups": {
-        "automate": "Automatizar",
-        "create": "Criar",
-        "search": "Buscar"
-      },
-      "label": "Explore o que o Okou pode fazer",
-      "placeholder": "Descreva o que você quer fazer…",
-      "sources": {
-        "trigger": "Ferramentas"
-      },
-      "workflows": "Fluxos de trabalho"
     },
     "mail": {
       "bcc": "cco",
@@ -3239,8 +3168,7 @@
     "noEnabledAccount": "Nenhuma conta está ativa neste chat",
     "permissions": "Permissões",
     "permissionsDescription": "Estas regras se aplicam a este conector em todos os seus chats e contas.",
-    "settingsDescription": "Escolha as contas ativas por padrão e a conta padrão para novos chats.",
-    "thisChat": "Este chat"
+    "settingsDescription": "Escolha as contas ativas por padrão e a conta padrão para novos chats."
   },
   "connectors": {
     "access": {
@@ -5512,8 +5440,10 @@
         "credits": "Créditos",
         "fiveHourLimit": "Limite de 5 horas",
         "label": "Uso de assinaturas",
+        "leftSide": "Esquerda",
         "lowUsage": "Uso de assinaturas: menos de 20% restante",
         "resetTimeUnavailable": "Horário de redefinição indisponível",
+        "rightSide": "Direita",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{provider}}: {{window}} restante",
         "weeklyLimit": "Limite semanal"
