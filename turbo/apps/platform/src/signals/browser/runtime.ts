@@ -409,6 +409,7 @@ function createDOMGraph(
             {
               authority$,
               nativeHost: native,
+              selectionChanged$: context.cancelAutomatic$,
               preferredTargetId:
                 restoration &&
                 sameRecoveryBinding(restoration.binding, identity.connection)

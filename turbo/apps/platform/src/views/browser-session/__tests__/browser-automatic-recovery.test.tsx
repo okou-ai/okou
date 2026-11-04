@@ -927,3 +927,124 @@ test("Automatic recovery accepts an authoritative empty window without creating 
     screen.queryByLabelText("Sibling", { selector: '[role="tab"]' }),
   ).not.toBeInTheDocument();
 });
+
+test("Remote tab activation replaces the target restored by pending automatic recovery", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery("Retry live image");
+  const image = viewer.browser.holdTargetFrames("other");
+  act(() => {
+    viewer.browser.event("BrowserUse.activeTargetChanged", {
+      targetId: "other",
+    });
+  });
+  await act(async () => {
+    await image.received;
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+    image.release();
+  });
+  await pendingRecovery();
+  viewer.advance(1000);
+  await ready("https://other.example");
+  await insertText("remote selection survives recovery");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      sessionId: viewer.browser.pageSession("other"),
+      params: { text: "remote selection survives recovery" },
+    });
+  });
+});
+
+async function loseControlDuringImageRetry(
+  viewer: ReturnType<typeof mockViewer>,
+) {
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery("Retry live image");
+  const image = viewer.browser.holdTargetFrames("example-page");
+  viewer.advance(1000);
+  await act(async () => {
+    await image.received;
+  });
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false }, 0);
+    image.release();
+  });
+}
+
+test.each(["shared", "split"] as const)(
+  "Control loss during %s image retry continues the same recovery budget",
+  async (transport) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    if (transport === "split") {
+      await splitConnection();
+    }
+    await loseControlDuringImageRetry(viewer);
+    await pendingRecovery();
+    viewer.advance(2000);
+    await ready();
+    await insertText("after image and control loss");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)?.params).toMatchObject({
+        text: "after image and control loss",
+      });
+    });
+  },
+);
+
+test("Control loss after image retry leaves only two connection attempts before exhaustion", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  let reads = 0;
+  let unavailable = true;
+  const responses = Array.from({ length: 2 }, () => {
+    return context.mocks.deferred<void>();
+  });
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    responses[reads++]?.resolve();
+    return unavailable
+      ? respond(503, {
+          error: {
+            code: "BROWSER_USE_SHARED_OPERATION_FAILED",
+            message: "Temporarily unavailable",
+          },
+        })
+      : respond(200, {
+          browser: viewer.session(),
+          cdpUrl: endpoint,
+          extension: TEST_BROWSER_EXTENSION,
+        });
+  });
+  await loseControlDuringImageRetry(viewer);
+  await pendingRecovery();
+  for (const [index, interval] of [2000, 4000].entries()) {
+    viewer.advance(interval);
+    await act(async () => {
+      await responses[index]!.promise;
+    });
+  }
+  await waitFor(() => {
+    expect(reconnect()).toBeEnabled();
+  });
+  expect(reads).toBe(2);
+  unavailable = false;
+  viewer.advance(61_000);
+  click(reconnect());
+  await ready();
+  expect(reads).toBe(3);
+});

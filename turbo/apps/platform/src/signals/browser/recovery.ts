@@ -131,6 +131,19 @@ function failure(view: RecoveryView): Failure | null {
   };
 }
 
+function attemptError(error: unknown, view: RecoveryView): ViewerError {
+  if (!isAbortError(error)) {
+    return diagnostic(error);
+  }
+  // A retired wire can cancel its waiter without cancelling this episode.
+  // Only a current resource failure authorizes another recovery attempt.
+  const current = failure(view);
+  if (!current) {
+    throw error;
+  }
+  return current.error;
+}
+
 function sameFailureOwner(
   left: RecoveryFence | null,
   right: RecoveryView,
@@ -289,10 +302,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           });
           return;
         }
-        if (isAbortError(result.reason)) {
-          throw result.reason;
-        }
-        lastError = diagnostic(result.reason);
+        lastError = attemptError(result.reason, get(ports.view$));
         if (!lastError.transient || failure(get(ports.view$))?.mode === null) {
           completion.resolve({ status: "terminal", error: lastError });
           return;
