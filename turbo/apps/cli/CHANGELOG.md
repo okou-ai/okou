@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.17.6](https://github.com/okou-ai/okou/compare/cli-v10.17.5...cli-v10.17.6) (2026-11-04)
+
+
+### Refactoring
+
+* inject suggestions feedback into run context ([#45160](https://github.com/okou-ai/okou/issues/45160)) ([c1968cc](https://github.com/okou-ai/okou/commit/c1968ccdb16c1371d660e5fa7d54002400102e63))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.40.1
+    * @okouai/core bumped to 8.816.0
+    * @okouai/pi-agent-runtime bumped to 1.51.62
+
 ## [10.17.5](https://github.com/okou-ai/okou/compare/cli-v10.17.4...cli-v10.17.5) (2026-11-04)
 
 
