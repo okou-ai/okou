@@ -19,6 +19,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -1271,6 +1272,8 @@ test.each([false, true])(
     lifecycle.completeRun(
       `Use the personal account\n\n${otherSwitchUrl.toString()}`,
     );
+    // Duplicate realtime delivery can overlap reads of an already-applied tail.
+    createChatEvent(THREAD_ID);
     await expect(
       screen.findByText("Use the personal account"),
     ).resolves.toBeInTheDocument();
@@ -1291,6 +1294,7 @@ test.each([false, true])(
     });
     expect(selectionWrites).toBe(2);
     lifecycle.completeRun("Continued with Personal GitHub");
+    createChatEvent(THREAD_ID);
     await expect(
       screen.findByText("Continued with Personal GitHub"),
     ).resolves.toBeInTheDocument();
@@ -1316,6 +1320,7 @@ test.each([false, true])(
     expect(new Set(clientEventIds).size).toBe(3);
     expect(new Set(chatThreadSortEventIds).size).toBe(3);
     lifecycle.completeRun("Continued with Work GitHub again");
+    createChatEvent(THREAD_ID);
     await expect(
       screen.findByText("Continued with Work GitHub again"),
     ).resolves.toBeInTheDocument();
