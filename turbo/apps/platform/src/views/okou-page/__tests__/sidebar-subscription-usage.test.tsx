@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -137,7 +137,15 @@ test("Preview subscriptions from the rail and open Models in Settings", async ()
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(entry).toHaveFocus();
+    expect(entry).toHaveAttribute("aria-expanded", "false");
   });
+  expect(
+    screen.queryByTestId("account-menu-subscriptions"),
+  ).not.toBeInTheDocument();
+  await user.hover(entry);
+  await expect(
+    screen.findByTestId("account-menu-subscriptions"),
+  ).resolves.toBeInTheDocument();
   await user.keyboard("{Enter}");
   const reopenedSettings = await screen.findByRole("dialog", {
     name: "Settings",
@@ -146,6 +154,50 @@ test("Preview subscriptions from the rail and open Models in Settings", async ()
     within(reopenedSettings).findByRole("heading", { name: "Use more models" }),
   ).resolves.toBeInTheDocument();
 });
+
+test.each(["Escape", "Close"])(
+  "Keep the usage preview closed after dismissing Settings with %s",
+  async (dismiss) => {
+    const user = userEvent.setup();
+    mockAdminAccountSidebar();
+    context.mocks.data.personalModelProviders([
+      connectedPersonalCodexProvider(),
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+
+    const entry = await within(
+      screen.getByTestId("labeled-nav-rail"),
+    ).findByLabelText("Subscription usage");
+    await user.click(entry);
+    const settings = await screen.findByRole("dialog", { name: "Settings" });
+    if (dismiss === "Escape") {
+      await user.keyboard("{Escape}");
+    } else {
+      click(within(settings).getByLabelText("Close"));
+    }
+    await waitFor(() => {
+      expect(entry).toHaveFocus();
+      expect(entry).toHaveAttribute("aria-expanded", "false");
+    });
+    expect(
+      screen.queryByTestId("account-menu-subscriptions"),
+    ).not.toBeInTheDocument();
+
+    // A fresh focus visit still opens the preview.
+    act(() => {
+      entry.blur();
+      entry.focus();
+    });
+    await expect(
+      screen.findByTestId("account-menu-subscriptions"),
+    ).resolves.toBeInTheDocument();
+    expect(entry).toHaveFocus();
+  },
+);
 
 test.each<{
   name: string;
@@ -309,6 +361,65 @@ test("Show an exhausted week with its own reset time", async () => {
   });
 });
 
+test.each(["Escape", "Cancel"])(
+  "Keep the usage preview closed after dismissing reset confirmation with %s",
+  async (dismiss) => {
+    const user = userEvent.setup();
+    mockAdminAccountSidebar();
+    context.mocks.data.personalModelProviders([
+      connectedPersonalCodexProvider({
+        subscriptionUsage: {
+          fiveHour: null,
+          weekly: {
+            usedPercent: 100,
+            remainingPercent: 0,
+            resetAt: "2030-01-07T00:00:00.000Z",
+            windowSeconds: 604_800,
+          },
+        },
+      }),
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+
+    const panel = await openSubscriptionUsage();
+    const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      /^Subscription usage/,
+    );
+    click(within(panel).getByText("Reset usage"));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Reset Codex usage?",
+    });
+    if (dismiss === "Escape") {
+      await user.keyboard("{Escape}");
+    } else {
+      const cancel = queryAllByRoleFast("button", confirmation).find(
+        (button) => {
+          return button.textContent === "Cancel";
+        },
+      );
+      if (!cancel) {
+        throw new Error("Cancel button not found");
+      }
+      click(cancel);
+    }
+    await waitFor(() => {
+      expect(entry).toHaveFocus();
+      expect(entry).toHaveAttribute("aria-expanded", "false");
+    });
+    expect(
+      screen.queryByTestId("account-menu-subscriptions"),
+    ).not.toBeInTheDocument();
+    await user.hover(entry);
+    await expect(
+      screen.findByTestId("account-menu-subscriptions"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
 test("Keep Codex reset pending until refreshed sidebar usage is ready", async () => {
   mockAdminAccountSidebar();
   const refreshStarted = context.mocks.deferred<void>();
@@ -401,6 +512,13 @@ test("Keep Codex reset pending until refreshed sidebar usage is ready", async ()
     expect(
       screen.queryByRole("dialog", { name: "Reset Codex usage?" }),
     ).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      /^Subscription usage/,
+    );
+    expect(entry).toHaveFocus();
+    expect(entry).toHaveAttribute("aria-expanded", "false");
   });
 
   panel = await openSubscriptionUsage();
