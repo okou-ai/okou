@@ -306,8 +306,9 @@ private struct WorkspaceRootView: View {
         topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
       )
     }
-    .safeAreaBar(edge: .top, spacing: 0) {
+    .overlay(alignment: .top) {
       ChatFeedbackBanner(store: store)
+        .padding(.top, headerHeight)
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
