@@ -296,7 +296,7 @@ test("Directory permissions use the same connector rules without enabling accoun
     expect(trigger).toHaveFocus();
   });
   const row = await openMenu();
-  expect(row).toHaveTextContent("0 on");
+  expect(row).toHaveTextContent("0 enabled");
   await user.click(row);
   await user.click(await findFastControl("button", "Permissions"));
   const saved = await screen.findByRole("dialog", {
@@ -452,7 +452,7 @@ test.each([false, true])(
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    await expect(openMenu(label)).resolves.toHaveTextContent("1 on");
+    await expect(openMenu(label)).resolves.toHaveTextContent("1 enabled");
     expect(fixture.noAuthConnectionRequests).toStrictEqual(
       custom
         ? []
@@ -486,7 +486,7 @@ test("Persist current account and nullable Chat overrides across menu reopening"
   await setup();
   const row = await openMenu();
   expect(row).toHaveTextContent("Work");
-  expect(row).toHaveTextContent("2 on");
+  expect(row).toHaveTextContent("2 enabled");
   await user.click(row);
   await user.click(await findFastControl("radio", "Personal"));
   await waitFor(() => {
@@ -507,7 +507,7 @@ test("Persist current account and nullable Chat overrides across menu reopening"
   await user.keyboard("{Escape}");
   const reopened = await openMenu();
   expect(reopened).toHaveTextContent("Work");
-  expect(reopened).toHaveTextContent("1 on");
+  expect(reopened).toHaveTextContent("1 enabled");
   await user.click(reopened);
   await expect(
     screen.findByRole("combobox", { name: "Personal access" }),
@@ -531,7 +531,7 @@ test.each([{ label: "GitHub", custom: false }])(
     await setup();
     const row = await openMenu(label);
     expect(row).toHaveTextContent("No account selected");
-    expect(row).toHaveTextContent("0 on");
+    expect(row).toHaveTextContent("0 enabled");
     await user.click(row);
     await screen.findByText("No account is on for this chat");
     await user.click(await findFastControl("button", "Permissions"));
@@ -549,7 +549,7 @@ test.each([{ label: "GitHub", custom: false }])(
       ).toBeNull();
     });
     const reopened = await openMenu(label);
-    expect(reopened).toHaveTextContent("0 on");
+    expect(reopened).toHaveTextContent("0 enabled");
     await user.click(reopened);
     await user.click(await findFastControl("button", "Permissions"));
     const savedDialog = await screen.findByRole("dialog", {
@@ -685,6 +685,6 @@ test.each([false, true])(
     });
     const row = await openMenu();
     expect(row).toHaveTextContent("Personal");
-    expect(row).toHaveTextContent("2 on");
+    expect(row).toHaveTextContent("2 enabled");
   },
 );
