@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.48.1](https://github.com/okou-ai/okou/compare/api-v2.48.0...api-v2.48.1) (2026-11-04)
+
+
+### Refactoring
+
+* **api:** simplify incomplete chat context recovery ([#45237](https://github.com/okou-ai/okou/issues/45237)) ([d8673df](https://github.com/okou-ai/okou/commit/d8673df49047add4ddec8a44b0fd7e2639752107))
+
 ## [2.48.0](https://github.com/okou-ai/okou/compare/api-v2.47.0...api-v2.48.0) (2026-11-04)
 
 
