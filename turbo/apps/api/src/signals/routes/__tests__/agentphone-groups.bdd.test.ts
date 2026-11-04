@@ -50,6 +50,125 @@ function currentGroup(args: {
   };
 }
 
+describe("iMessage group webhook content admission", () => {
+  it.each([
+    {
+      name: "empty content",
+      content: { message: "", mediaUrl: null, mediaUrls: [] },
+      reason: "empty_content",
+    },
+    {
+      name: "whitespace content",
+      content: { message: " \n ", mediaUrl: " ", mediaUrls: null },
+      reason: "empty_content",
+    },
+    {
+      name: "a structured message",
+      content: { message: { text: "group message" } },
+      reason: "unsupported_content_shape",
+    },
+    {
+      name: "a structured mediaUrl",
+      content: { mediaUrl: { url: "https://media.agentphone.test/image.png" } },
+      reason: "unsupported_content_shape",
+    },
+    {
+      name: "a non-array mediaUrls field",
+      content: { mediaUrls: "https://media.agentphone.test/image.png" },
+      reason: "unsupported_content_shape",
+    },
+    {
+      name: "plural-only media",
+      content: { mediaUrls: ["https://media.agentphone.test/image.png"] },
+      reason: "unsupported_media_urls",
+    },
+  ])("returns a retryable rejection for $name", async ({ content, reason }) => {
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneWebhook();
+    const phone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const response = await ap.postRawAgentPhoneInboundWebhook(
+      JSON.stringify({
+        event: "agent.message",
+        channel: "imessage",
+        agentId: AGENTPHONE_BDD_AGENT_ID,
+        data: {
+          messageId: `ap-content-rejection-${randomUUID()}`,
+          from: phone,
+          senderIdentifier: phone,
+          to: AGENTPHONE_BDD_PHONE_NUMBER,
+          conversationId,
+          receivedAt: new Date(now()).toISOString(),
+          group: { isGroup: true, groupId: bddGroupId(conversationId) },
+          ...content,
+        },
+      }),
+      [500],
+    );
+    expect(response.body).toBe(
+      `iMessage group webhook has no supported message content (${reason})`,
+    );
+  });
+
+  it("stores a corrected retry once after rejecting empty group content", async () => {
+    const { integrations, ap, actor, phone } = await linkedGroupMember();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    const messageId = `ap-content-retry-${randomUUID()}`;
+    const webhookId = `evt-content-retry-${randomUUID()}`;
+    const emptyWebhook = JSON.stringify({
+      event: "agent.message",
+      channel: "imessage",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        messageId,
+        from: phone,
+        senderIdentifier: phone,
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        conversationId,
+        receivedAt: new Date(now()).toISOString(),
+        group: { isGroup: true, groupId },
+        message: "",
+        mediaUrl: null,
+        mediaUrls: [],
+      },
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const rejected = await ap.postRawAgentPhoneInboundWebhook(
+        emptyWebhook,
+        [500],
+        webhookId,
+      );
+      expect(rejected.body).toContain("(empty_content)");
+    }
+
+    const correctedMessage = {
+      channel: "imessage" as const,
+      from: phone,
+      body: "group message recovered after a provider retry",
+      messageId,
+      webhookId,
+      conversationId,
+      isGroup: true,
+    };
+    await ap.postAgentPhoneInboundMessage(correctedMessage);
+    await ap.postAgentPhoneInboundMessage(correctedMessage);
+
+    const history = await integrations.requestAgentPhoneGroupHistory(
+      actor,
+      { groupId, limit: 100 },
+      [200],
+    );
+    if (history.status !== 200) {
+      throw new Error("Expected corrected group message history");
+    }
+    expect(history.body.messages).toMatchObject([
+      { id: messageId, body: correctedMessage.body },
+    ]);
+  });
+});
+
 describe("iMessage group discovery", () => {
   it("discovers a group from messages received before the participant connected Okou", async () => {
     const { integrations, ap, phone, sends } = await linkedGroupMember();
