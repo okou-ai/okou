@@ -44,7 +44,6 @@ import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendat
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
-import { ComposerHomeDiscovery } from "./composer-home-discovery.tsx";
 
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
@@ -705,7 +704,6 @@ export function ComposerTaskChips({
   const jobs = useLoadable(entrustedJobsEnabled$);
   const jobsEnabled = jobs.state === "hasData" && jobs.data;
   const current = useGet(signals.taskChips.task$);
-  const homeDiscoveryEnabled = useGet(signals.homeDiscovery.enabled$);
   const selected = current === "jobs" && !jobsEnabled ? null : current;
   const tasks = (
     [
@@ -728,15 +726,6 @@ export function ComposerTaskChips({
       signals.create.modes.includes(task)
     );
   });
-  if (homeDiscoveryEnabled) {
-    return (
-      <ComposerHomeDiscovery signals={signals} tasks={tasks}>
-        {selected !== null && (
-          <ComposerTaskPanel signals={signals} selected={selected} />
-        )}
-      </ComposerHomeDiscovery>
-    );
-  }
   // Tasks is browsed beside the row; selecting another task moves its chip
   // into the composer and hides the choices.
   if (jobsEnabled && (selected === null || selected === "jobs")) {

@@ -300,7 +300,6 @@ import {
   TemplateDetailStageControls,
 } from "./template-detail-layout.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
-import { ComposerSearchSources } from "./composer-search-sources.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
 import {
@@ -7111,20 +7110,13 @@ function ComposerIdleControls({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const searchActive = useGet(signals.homeDiscovery.searchActive$);
   return (
     <>
-      <div
-        className={cn(
-          "flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5",
-          searchActive && "flex-wrap",
-        )}
-      >
+      <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
         <ComposerAddMenuSlot signals={signals} />
         <ComposerTemplatePickerSlot signals={signals} />
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
         <ComposerTaskControls signals={signals} />
-        {searchActive && <ComposerSearchSources />}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
         <ComposerModelPickerSlot signals={signals} />

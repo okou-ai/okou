@@ -53,7 +53,6 @@ export enum FeatureSwitchKey {
   WhatsappIntegration = "whatsappIntegration",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
-  HomeTaskDiscovery = "homeTaskDiscovery",
   AutoContinueBusyChats = "_autoContinueBusyChats",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",

@@ -210,13 +210,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.HomeTaskDiscovery]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Home task discovery",
-    description: "Discover tasks from the redesigned homepage.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatHomeCompliance]: {
     maintainer: "tongx@okou.ai",
     displayName: "Chat home compliance",
