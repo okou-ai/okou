@@ -14,25 +14,42 @@ deploy = desktop.fetch("deploy-desktop")
 # Evaluate the actual job conditions across event contexts, including release PRs.
 build_condition = desktop.fetch("build-macos").fetch("if")
 deploy_condition = deploy.fetch("if")
-evaluate = lambda do |condition, event_name, head_ref, changed|
+evaluate = lambda do |condition, event_name, head_ref, changed, detection_result, cancelled|
   expression = condition.strip.delete_prefix('${{').delete_suffix('}}')
     .gsub("startsWith(github.head_ref, 'release-please--branches--')", "head_ref.start_with?('release-please--branches--')")
     .gsub("github.event_name", "event_name")
     .gsub("needs.detect-desktop-version.outputs.changed", "changed")
-  eval(expression, binding)
+    .gsub("needs.detect-desktop-version.result", "detection_result")
+    .gsub("cancelled()", "cancelled")
+  # Actions adds success() unless the condition explicitly handles job status.
+  default_success = condition.match?(/\b(?:always|cancelled|success|failure)\(/) || (!cancelled && detection_result == "success")
+  default_success && eval(expression, binding)
+end
+detect_condition = desktop.fetch("detect-desktop-version").fetch("if")
+{"pull_request" => false, "push" => false, "workflow_dispatch" => false, "merge_group" => true}.each do |event_name, expected|
+  raise "unexpected Desktop version detection for #{event_name}" unless evaluate.call(detect_condition, event_name, "", "", "success", false) == expected
 end
 [
-  ["pull_request", "release-please--branches--main", "false", false, false],
-  ["pull_request", "fix/desktop", "false", true, false],
-  ["pull_request", "release-please-imitation", "false", true, false],
-  ["merge_group", "", "true", false, true],
-  ["merge_group", "", "false", true, false],
-  ["merge_group", "release-please--branches--main", "true", false, true],
-  ["push", "", "true", true, false],
-  ["workflow_dispatch", "", "false", true, false]
-].each do |event_name, head_ref, changed, build_expected, deploy_expected|
-  raise "unexpected Desktop build selection for #{event_name}/#{head_ref}" unless evaluate.call(build_condition, event_name, head_ref, changed) == build_expected
-  raise "unexpected Desktop artifact selection for #{event_name}/#{head_ref}" unless evaluate.call(deploy_condition, event_name, head_ref, changed) == deploy_expected
+  ["pull_request", "release-please--branches--main", "", "skipped", false, false, false],
+  ["pull_request", "fix/desktop", "", "skipped", false, true, false],
+  ["pull_request", "release-please-imitation", "", "skipped", false, true, false],
+  ["merge_group", "", "true", "success", false, false, true],
+  ["merge_group", "", "false", "success", false, true, false],
+  ["merge_group", "release-please--branches--main", "true", "success", false, false, true],
+  ["push", "", "", "skipped", false, true, false],
+  ["workflow_dispatch", "", "", "skipped", false, true, false],
+  ["merge_group", "", "", "failure", false, false, false],
+  ["merge_group", "", "false", "failure", false, false, false],
+  ["merge_group", "", "true", "failure", false, false, false],
+  ["merge_group", "", "false", "cancelled", false, false, false],
+  ["merge_group", "", "false", "skipped", false, false, false],
+  ["pull_request", "fix/desktop", "", "skipped", true, false, false],
+  ["push", "", "", "skipped", true, false, false],
+  ["workflow_dispatch", "", "", "skipped", true, false, false],
+  ["merge_group", "", "true", "success", true, false, false]
+].each do |event_name, head_ref, changed, detection_result, cancelled, build_expected, deploy_expected|
+  raise "unexpected Desktop build selection for #{event_name}/#{head_ref}/#{detection_result}/#{cancelled}" unless evaluate.call(build_condition, event_name, head_ref, changed, detection_result, cancelled) == build_expected
+  raise "unexpected Desktop artifact selection for #{event_name}/#{head_ref}/#{detection_result}/#{cancelled}" unless evaluate.call(deploy_condition, event_name, head_ref, changed, detection_result, cancelled) == deploy_expected
 end
 raise "canonical artifacts must remain merge-group only" unless deploy.fetch("if").include?("github.event_name == 'merge_group'")
 raise "canonical artifacts must follow version detection" unless deploy.fetch("needs") == "detect-desktop-version"
