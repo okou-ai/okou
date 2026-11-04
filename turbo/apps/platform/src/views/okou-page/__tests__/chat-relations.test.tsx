@@ -347,7 +347,13 @@ test("Show the first source and created chats with their status", async () => {
     within(panel).getByLabelText("Open original message in Slack"),
   ).toHaveAttribute("href", SLACK);
   const child = await within(panel).findByText("Research child");
-  expect(child.closest("a")).toHaveAttribute("href", `/chats/${CHILD}`);
+  const childLink = child.closest("a");
+  const clip = childLink?.querySelector<HTMLElement>("[data-title-reveal]");
+  const text = clip?.firstElementChild;
+  if (!childLink || !clip || !text) {
+    throw new Error("Expected the created chat link, title clip and text");
+  }
+  expect(childLink).toHaveAttribute("href", `/chats/${CHILD}`);
   await expect(
     within(panel).findByText("Older child"),
   ).resolves.toBeInTheDocument();
@@ -359,8 +365,27 @@ test("Show the first source and created chats with their status", async () => {
     "aria-expanded",
     "false",
   );
-  expect(child.closest("a")).not.toHaveTextContent("Running");
+  expect(childLink).not.toHaveTextContent("Running");
   expect(panel.querySelector("[title]")).toBeNull();
+
+  const user = userEvent.setup({ delay: null });
+  // Deliberate docs/testing.md#external-behavior exception: HappyDOM cannot
+  // lay out or paint CSS, so check the whole link's DOM-to-CSS handoff.
+  // Node-owned geometry avoids reusing the fixture's existing prototype spy.
+  clip.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 160, 20);
+  };
+  text.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 234, 20);
+  };
+
+  await user.hover(childLink);
+  expect(clip).toHaveAttribute("data-title-revealing", "");
+  expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
+    "2000ms",
+  );
+  await user.unhover(childLink);
+  expect(clip).not.toHaveAttribute("data-title-revealing");
 });
 
 test("Keep an unknown first-run origin when a later run has a Slack source", async () => {
@@ -407,6 +432,11 @@ test("Link the first-run agent source directly to its parent run", async () => {
   const row = (await within(panel).findByText("Parent planning chat")).closest(
     "a",
   );
+  const clip = row?.querySelector<HTMLElement>("[data-title-reveal]");
+  const text = clip?.firstElementChild;
+  if (!row || !clip || !text) {
+    throw new Error("Expected the unlisted origin link, title clip and text");
+  }
   expect(row).toHaveAttribute("href", `/chats/${PEER}#run-${OTHER_RUN}`);
   expect(row).toHaveTextContent("From");
   expect(
@@ -417,6 +447,25 @@ test("Link the first-run agent source directly to its parent run", async () => {
   expect(
     within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
+
+  const user = userEvent.setup({ delay: null });
+  // Deliberate docs/testing.md#external-behavior exception: HappyDOM cannot
+  // lay out or paint CSS, so check the whole link's DOM-to-CSS handoff.
+  // Node-owned geometry avoids reusing the fixture's existing prototype spy.
+  clip.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 160, 20);
+  };
+  text.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 234, 20);
+  };
+
+  await user.hover(row);
+  expect(clip).toHaveAttribute("data-title-revealing", "");
+  expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
+    "2000ms",
+  );
+  await user.unhover(row);
+  expect(clip).not.toHaveAttribute("data-title-revealing");
 });
 
 test("List an agent origin once when it is also a related chat", async () => {

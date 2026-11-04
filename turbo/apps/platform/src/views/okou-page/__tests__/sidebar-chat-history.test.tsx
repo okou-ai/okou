@@ -10,6 +10,7 @@ import {
   INCIDENT_THREAD_ID,
   menuItemByText,
   mobileSidebar,
+  mockSidebarTitleLayout,
   mockSidebarViewport,
   openChatListMenu,
   openThreadMenu,
@@ -22,7 +23,7 @@ import {
   type SidebarThread,
   SUPPORT_AGENT_ID,
   threadLinkByTitle,
-  titleFadeBox,
+  titleRevealClip,
   visibleThreadTitles,
 } from "./sidebar-test-helpers.tsx";
 
@@ -72,7 +73,6 @@ const {
   mockUnreadAgents,
   prepareAgents,
   prepareDefaultAgent,
-  stubSidebarTitleLayout,
 } = createSidebarHelpers(context);
 
 function pressArchiveShortcut(): void {
@@ -245,23 +245,50 @@ test("Delete a chat after reviewing the impact", async () => {
 });
 
 /**
- * Deliberate exception to `docs/testing.md#external-behavior`. The fade
- * and the hover travel are a mask and a transform derived from measured text
- * width, and happy-dom has no layout engine: it reports every box as
- * zero-width and paints nothing, so neither the state nor the result exists on
- * the page surface here. The measured distance is the only place the behavior
- * is observable, and it is worth pinning because both the fade and the travel
- * are derived from it — a wrong distance fades a title that fits, or stops the
- * scroll before the end.
+ * Deliberate exception to `docs/testing.md#external-behavior`: happy-dom has
+ * no layout or painting and cannot show CSS fades or animated title travel.
+ * Exercise the real page's link hover and keyboard focus with explicit pixel
+ * geometry, then assert only the intent's DOM-to-CSS reveal state and duration.
+ * Fade painting, CSS timing and pointer/focus overlap need real-browser checks.
  */
-test("Fade a clipped chat title and pace its scroll by the hidden distance", async () => {
-  stubSidebarTitleLayout();
+test("Reveal chat titles from whole-link pointer and keyboard intent", async () => {
+  const user = userEvent.setup({ delay: null });
+  const titles = [
+    {
+      id: EXISTING_THREAD_ID,
+      title: "Quarterly launch narrative",
+      textWidth: 234,
+      clipWidth: 160,
+      duration: "2000ms",
+    },
+    {
+      id: AUTOMATION_THREAD_ID,
+      title: "Release plan",
+      textWidth: 123,
+      clipWidth: 160,
+      duration: "0ms",
+    },
+    {
+      id: INCIDENT_THREAD_ID,
+      title: "Customer feedback synthesis",
+      textWidth: 530,
+      clipWidth: 160,
+      duration: "10000ms",
+    },
+  ];
+  mockSidebarTitleLayout(
+    Object.fromEntries(
+      titles.map((fixture) => {
+        return [fixture.title, fixture] as const;
+      }),
+    ),
+  );
   prepareDefaultAgent();
-  mockSidebarThreadStory([
-    // 26 characters, so 234px of text in a 160px box.
-    createThread(EXISTING_THREAD_ID, "Quarterly launch narrative"),
-    createThread(AUTOMATION_THREAD_ID, "Release plan"),
-  ]);
+  mockSidebarThreadStory(
+    titles.map(({ id, title }) => {
+      return createThread(id, title);
+    }),
+  );
 
   await setupSidebarPage({
     context,
@@ -269,24 +296,43 @@ test("Fade a clipped chat title and pace its scroll by the hidden distance", asy
   });
 
   await expect(
-    within(sidebar()).findByText("Release plan"),
+    within(sidebar()).findByText("Customer feedback synthesis"),
   ).resolves.toBeInTheDocument();
 
-  const clipped = titleFadeBox("Quarterly launch narrative");
-  expect(clipped.style.getPropertyValue("--okou-nav-title-overflow")).toBe(
-    "74px",
-  );
+  for (const { title, duration } of titles) {
+    const link = threadLinkByTitle(title);
+    const clip = titleRevealClip(link);
+
+    await user.hover(link);
+
+    expect(clip).toHaveAttribute("data-title-revealing", "");
+    expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
+      duration,
+    );
+
+    await user.unhover(link);
+
+    expect(clip).not.toHaveAttribute("data-title-revealing");
+  }
+
+  const clippedLink = threadLinkByTitle("Quarterly launch narrative");
+  const clipped = titleRevealClip(clippedLink);
+  act(() => {
+    clippedLink.focus();
+  });
+
+  expect(clippedLink).toHaveFocus();
+  expect(clipped).toHaveAttribute("data-title-revealing", "");
   expect(clipped.style.getPropertyValue("--okou-nav-title-duration")).toBe(
     "2000ms",
   );
 
-  const fitting = titleFadeBox("Release plan");
-  expect(fitting.style.getPropertyValue("--okou-nav-title-overflow")).toBe(
-    "0px",
-  );
-  expect(fitting.style.getPropertyValue("--okou-nav-title-duration")).toBe(
-    "780ms",
-  );
+  act(() => {
+    clippedLink.blur();
+  });
+
+  expect(clippedLink).not.toHaveFocus();
+  expect(clipped).not.toHaveAttribute("data-title-revealing");
 });
 
 test("Filter unread conversations using indicator timestamps", async () => {

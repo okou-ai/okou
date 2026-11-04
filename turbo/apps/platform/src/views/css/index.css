@@ -938,17 +938,13 @@ body {
   --okou-composer-focus-veil: none;
 }
 
-/* The travel a title is scrolled by while its control is hovered or
-   focused. `HoverScrollTitle` composes the mask and the travel as Tailwind
-   utilities and reads this property from both; it is registered here because a
-   registered property is what lets a transition interpolate a length, and
-   because `inherits: true` is what carries the animated value down to the text
-   span inside the clipping box. Registration is an at-rule, not a class
-   selector, so it stays with the other document-level declarations. */
-@property --okou-nav-title-shift {
-  syntax: "<length>";
+/* Reveal progress is inherited by the max-content text. Its Tailwind mask
+   and transform resolve the live width difference against the clipping
+   container, without publishing measured layout back into CSS. */
+@property --okou-nav-title-progress {
+  syntax: "<number>";
   inherits: true;
-  initial-value: 0px;
+  initial-value: 0;
 }
 
 @layer base {

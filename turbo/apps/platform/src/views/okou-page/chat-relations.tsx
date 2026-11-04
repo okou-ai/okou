@@ -37,6 +37,7 @@ import {
 } from "./chat-resource-section.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { useTitleReveal } from "./use-title-reveal.ts";
 
 type AgentSourcePart = Extract<
   UserMessagePart,
@@ -296,6 +297,7 @@ function ExchangedChatRow({
   const unavailable = chat.status === "unavailable";
   const expanded = selectedPeer === chat.threadId;
   const messagesId = `${thread.threadId}-messages-${chat.threadId}`;
+  const titleReveal = useTitleReveal();
   const rowContent = (
     <>
       {title}
@@ -317,6 +319,7 @@ function ExchangedChatRow({
           </span>
         ) : (
           <Link
+            {...titleReveal}
             pathname={ROUTES.chat}
             options={{ pathParams: { threadId: chat.threadId } }}
             className={cn(RESOURCE_ROW_CLASS, "pl-9")}
@@ -367,6 +370,7 @@ function ResourceChatRow({
 }) {
   const { t } = useTranslation();
   const meta = useGet(chatThreadMetaMap$).get(chat.threadId);
+  const titleReveal = useTitleReveal();
   const unavailable = chat.status === "unavailable";
   const glyph = (
     <span className={RESOURCE_GLYPH_CLASS}>
@@ -421,6 +425,7 @@ function ResourceChatRow({
   return (
     <li>
       <Link
+        {...titleReveal}
         pathname={ROUTES.chat}
         options={{ pathParams: { threadId: chat.threadId } }}
         className={RESOURCE_ROW_CLASS}
@@ -436,9 +441,11 @@ function ResourceChatRow({
 
 // The parent is not always among the chats this one exchanged messages with.
 function UnlistedOriginRow({ part }: { readonly part: AgentSourcePart }) {
+  const titleReveal = useTitleReveal();
   return (
     <li>
       <Link
+        {...titleReveal}
         pathname={ROUTES.chat}
         options={{
           pathParams: { threadId: part.threadId },

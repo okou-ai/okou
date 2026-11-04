@@ -35,6 +35,7 @@ function artifactEntryNamed(title: string, container: HTMLElement) {
 }
 
 test("Browse artifacts without source URLs in the popover and sidebar without showing message links", async () => {
+  const user = userEvent.setup({ delay: null });
   const report = artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf");
   await setupResources({
     sourceUrl: false,
@@ -73,7 +74,30 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
     name: "Artifacts and chats",
   });
   await within(resources).findByText("report.pdf");
-  click(artifactEntryNamed("report.pdf", resources));
+  const entry = artifactEntryNamed("report.pdf", resources);
+  const clip = entry.querySelector<HTMLElement>("[data-title-reveal]");
+  const text = clip?.firstElementChild;
+  if (!clip || !text) {
+    throw new Error("Expected the resource title clip and text");
+  }
+  // Deliberate docs/testing.md#external-behavior exception: HappyDOM
+  // cannot lay out or paint CSS, so check the control's DOM-to-CSS handoff.
+  clip.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 160, 20);
+  };
+  text.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 234, 20);
+  };
+
+  await user.hover(entry);
+  expect(clip).toHaveAttribute("data-title-revealing", "");
+  expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
+    "2000ms",
+  );
+  await user.unhover(entry);
+  expect(clip).not.toHaveAttribute("data-title-revealing");
+
+  click(entry);
   const sidebar = await screen.findByTestId("artifact-sidebar");
   await within(sidebar).findByText("download-report.pdf");
   expect(buttonNamed("Download artifact", sidebar)).toBeInTheDocument();

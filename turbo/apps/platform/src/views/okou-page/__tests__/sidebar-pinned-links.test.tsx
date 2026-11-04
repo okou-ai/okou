@@ -136,6 +136,32 @@ test.each(
   },
 );
 
+test("Reveal a pinned agent title from the whole tile", async () => {
+  const { user, other } = await preparePinnedNavigation("horizontal");
+  const link = other();
+  const clip = link.querySelector<HTMLElement>("[data-title-reveal]");
+  const text = clip?.firstElementChild;
+  if (!clip || !text) {
+    throw new Error("Expected the pinned agent title clip and text");
+  }
+  // Deliberate docs/testing.md#external-behavior exception: HappyDOM
+  // cannot lay out or paint CSS, so check the control's DOM-to-CSS handoff.
+  clip.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 160, 20);
+  };
+  text.getBoundingClientRect = () => {
+    return new DOMRect(0, 0, 234, 20);
+  };
+
+  await user.hover(link);
+  expect(clip).toHaveAttribute("data-title-revealing", "");
+  expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
+    "2000ms",
+  );
+  await user.unhover(link);
+  expect(clip).not.toHaveAttribute("data-title-revealing");
+});
+
 test.each(["horizontal", "vertical"] as const)(
   "%s pinned links preserve the current agent and unread filter for keyboard activation",
   async (layout) => {
