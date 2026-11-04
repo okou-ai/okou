@@ -385,11 +385,13 @@ function createConnectorUiSignals(
       const hasResourceConsumer =
         next.popoverOpen || next.remoteAccessDialogOpen;
       const wasOpen =
-        hadResourceConsumer ||
+        (!get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess] &&
+          hadResourceConsumer) ||
         current.showAddDialog ||
         current.selectedConnectorSlug !== null;
       const isOpen =
-        hasResourceConsumer ||
+        (!get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess] &&
+          hasResourceConsumer) ||
         next.showAddDialog ||
         next.selectedConnectorSlug !== null;
       if (isOpen && !wasOpen) {
@@ -401,7 +403,11 @@ function createConnectorUiSignals(
       // The remote dialog takes over the same resources without cancelling
       // their owner when the connector popover closes.
       if (hasResourceConsumer && !hadResourceConsumer) {
-        set(resources.open$, get(pageSignal$));
+        set(
+          resources.open$,
+          !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess],
+          get(pageSignal$),
+        );
       } else if (!hasResourceConsumer && hadResourceConsumer) {
         set(resources.close$);
       }
@@ -425,7 +431,9 @@ function createConnectorUiSignals(
   const setPopoverOpen$ = command(({ get, set }, open: boolean): void => {
     if (open) {
       set(updateConnectorUiState$, { popoverOpen: true });
-      set(chatAccess.open$, get(pageSignal$));
+      if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+        set(chatAccess.open$, get(pageSignal$));
+      }
     } else {
       set(accounts.closeMenu$);
       set(chatAccess.close$);
@@ -472,10 +480,7 @@ export function createComposerConnectorSignals(
 ): ComposerConnectorSignals {
   const resources = createConnectorResourceSignals();
   const accounts = createComposerConnectorAccountSignals(threadId);
-  const chatAccess = createChatConnectorAccessSignals(
-    resources.connected$,
-    threadId,
-  );
+  const chatAccess = createChatConnectorAccessSignals(threadId);
   const ui = createConnectorUiSignals(resources, accounts, chatAccess);
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {

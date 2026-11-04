@@ -30,6 +30,7 @@ import {
   noAuthMethod,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
+  chatConnectorOverviewFixture,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
   findComposer,
@@ -160,6 +161,32 @@ function installAccess(
       available: allowed.length > 0,
     };
   };
+  const overview = (threadId?: string) => {
+    return chatConnectorOverviewFixture({
+      target: accessTarget,
+      label: options.custom ? "Acme" : "GitHub",
+      accounts: [work, personal].map((account) => {
+        return {
+          ...account,
+          target: accessTarget,
+        };
+      }),
+      access: access(threadId ?? "draft"),
+      hasPermissions: !options.custom && !options.noPermissions,
+    });
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.overview,
+    ({ query, respond }) => {
+      return respond(200, [overview(query.threadId)]);
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ query, respond }) => {
+      return respond(200, { connector: overview(query.threadId) });
+    },
+  );
   context.mocks.api(
     chatConnectorAccessContract.accountDefaults,
     ({ respond }) => {

@@ -1,5 +1,9 @@
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
-import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import {
+  chatConnectorAccessContract,
+  type ChatConnectorAccess,
+  type ChatConnectorOverviewEntry,
+} from "@okouai/api-contracts/contracts/chat-connector-access";
 import {
   catalogFixture,
   connectorFixtureAccount,
@@ -531,6 +535,60 @@ export function connectorAccount(args: {
   };
 }
 
+export function chatConnectorOverviewFixture({
+  target,
+  label,
+  accounts,
+  access,
+  icon = null,
+  hasPermissions = false,
+}: {
+  readonly target: ConnectorAccountTarget;
+  readonly label: string;
+  readonly accounts: readonly ConnectorAccountConnection[];
+  readonly access?: ChatConnectorAccess;
+  readonly icon?: ChatConnectorOverviewEntry["icon"];
+  readonly hasPermissions?: boolean;
+}): ChatConnectorOverviewEntry {
+  const owned = accounts.filter((account) => {
+    return (
+      connectorAccountTargetKey(account.target) ===
+      connectorAccountTargetKey(target)
+    );
+  });
+  const projected = owned.map((account) => {
+    const preference = access?.accounts.find((candidate) => {
+      return candidate.connectionId === account.id;
+    });
+    return {
+      connectionId: account.id,
+      displayName: account.displayName,
+      authMethod: account.authMethod,
+      externalId: account.externalId,
+      externalUsername: account.externalUsername,
+      externalEmail: account.externalEmail,
+      isDefault: account.isDefault,
+      defaultEnabled: preference?.defaultEnabled ?? true,
+      overrideEnabled: preference?.overrideEnabled ?? null,
+      enabled: preference?.enabled ?? true,
+    };
+  });
+  return {
+    target,
+    label,
+    icon,
+    hasPermissions,
+    accounts: projected,
+    currentConnectionId: access
+      ? access.currentConnectionId
+      : ((
+          projected.find((account) => {
+            return account.isDefault;
+          }) ?? projected[0]
+        )?.connectionId ?? null),
+  };
+}
+
 export function createComposerConnectorHelpers(context: TestContext) {
   const { installMessageExperienceChat } =
     createMessageExperienceHelpers(context);
@@ -717,6 +775,61 @@ export function createComposerConnectorHelpers(context: TestContext) {
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: customConnectors });
     });
+    const overview = () => {
+      return [
+        ...catalog
+          .filter((connector) => {
+            return accounts.some((account) => {
+              return (
+                account.target.kind === "builtin" &&
+                account.target.connectorSlug === connector.slug
+              );
+            });
+          })
+          .map((connector) => {
+            return chatConnectorOverviewFixture({
+              target: { kind: "builtin", connectorSlug: connector.slug },
+              label: connector.label,
+              icon: connector.icon,
+              hasPermissions: connector.permissionSummary.hasPermissions,
+              accounts,
+            });
+          }),
+        ...customConnectors
+          .filter((connector) => {
+            return accounts.some((account) => {
+              return (
+                account.target.kind === "custom" &&
+                account.target.customConnectorId === connector.id
+              );
+            });
+          })
+          .map((connector) => {
+            return chatConnectorOverviewFixture({
+              target: { kind: "custom", customConnectorId: connector.id },
+              label: connector.displayName,
+              accounts,
+            });
+          }),
+      ];
+    };
+    context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+      return respond(200, overview());
+    });
+    context.mocks.api(
+      chatConnectorAccessContract.overviewTarget,
+      ({ query, respond }) => {
+        return respond(200, {
+          connector:
+            overview().find((entry) => {
+              return (
+                connectorAccountTargetKey(entry.target) ===
+                connectorAccountTargetKey(query)
+              );
+            }) ?? null,
+        });
+      },
+    );
     context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
       const savedTargets = new Set(
         accounts.map((account) => {
