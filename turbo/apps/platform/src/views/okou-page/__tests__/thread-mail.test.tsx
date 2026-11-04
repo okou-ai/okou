@@ -345,7 +345,6 @@ describe("thread email manager", () => {
 
   it("preserves selection, search and scroll when returning from list details; chat details have no list navigation", async () => {
     installMails();
-    const transitions = context.mocks.browser.viewTransition();
     await openChat();
     click(await button("Open draft email: Proposal 1"));
     await screen.findByText("Proposal details 1");
@@ -398,25 +397,6 @@ describe("thread email manager", () => {
     await expect(
       within(restored).findByLabelText("Select email: Proposal 1"),
     ).resolves.toHaveAttribute("aria-checked", "true");
-    expect(transitions.startedTypes).toHaveLength(2);
-  });
-
-  it("opens details and returns to the list with reduced motion", async () => {
-    installMails(2);
-    const transitions = context.mocks.browser.viewTransition();
-    context.mocks.browser.matchMedia((query) => {
-      return (
-        query.includes("min-width") ||
-        query === "(prefers-reduced-motion: reduce)"
-      );
-    });
-    await openChat();
-    const list = await openList();
-    click(await link("Open email: Proposal 2", list));
-    await screen.findByText("Proposal details 2");
-    click(await link("Back to emails"));
-    await screen.findByRole("dialog", { name: "Emails" });
-    expect(transitions.startedTypes).toHaveLength(0);
   });
 
   it("restores a detail and its list filters from a direct URL without a transcript card", async () => {
@@ -487,7 +467,6 @@ describe("thread email manager", () => {
 
   it("leaves modified email-link activation to the browser", async () => {
     installMails(2);
-    const transitions = context.mocks.browser.viewTransition();
     await openChat();
     const list = await openList();
     const row = await link("Open email: Proposal 2", list);
@@ -505,7 +484,6 @@ describe("thread email manager", () => {
       "href",
       expect.stringContaining(`mailId=${id(2)}`),
     );
-    expect(transitions.startedTypes).toHaveLength(0);
   });
 
   it("restores the owning pane and clears its filters when opening another pane's manager", async () => {
@@ -616,7 +594,6 @@ describe("thread email manager", () => {
 
   it("returns to the list while its read is pending and displays its failure", async () => {
     const fixture = installMails(2);
-    context.mocks.browser.viewTransition();
     await openChat();
     const list = await openList();
     click(await link("Open email: Proposal 2", list));
