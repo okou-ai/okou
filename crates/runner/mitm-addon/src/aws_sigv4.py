@@ -243,15 +243,6 @@ def hash_request_body(body: bytes | None) -> AwsSigV4BodyHash:
     return AwsSigV4BodyHash(hashlib.sha256(body or b"").hexdigest())
 
 
-def request_requires_body_for_signing(
-    *,
-    url: str,
-    headers: list[tuple[str, str]],
-) -> bool:
-    """Return whether re-signing must hash the request body bytes."""
-    return inspect_request(url=url, headers=headers).requires_body
-
-
 def _validate_signing_context(context: _SigningContext) -> None:
     if context.algorithm == _ASYMMETRIC_ALGORITHM:
         raise AwsSigV4SigningError("SigV4A is not supported by this runner")
