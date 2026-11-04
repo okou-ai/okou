@@ -1,13 +1,10 @@
-import {
-  BROWSER_IDLE_LEASE_MINUTES,
-  browserContract,
-  type BrowserSession,
+import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/validators/browser";
+import { browserContract } from "@okouai/api-contracts/client/browser";
+import type {
+  BrowserSession,
+  BrowserViewerConnection,
 } from "@okouai/api-contracts/contracts/browser";
-import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
-import {
-  createBrowserViewerSignals,
-  type BrowserViewerSignals,
-} from "../browser-viewer/browser-viewer.ts";
+import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import {
   command,
   computed,
@@ -20,9 +17,16 @@ import {
 import { formatAppNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { isNetworkRequestError } from "../../lib/network-error.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import {
+  createBrowserSignals,
+  type BrowserConnection,
+  type BrowserSignals,
+} from "../browser/browser.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
-import { onRef, setLoop, withCleanup } from "../utils.ts";
+import { logger } from "../log.ts";
+import { onRef, setLoop, throwIfAbort, withCleanup } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -32,26 +36,35 @@ import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 // One heartbeat per minute keeps an open browser panel comfortably inside its
 // ten-minute idle lease without making the lease itself stackable.
 const LEASE_HEARTBEAT_INTERVAL_MS = 60_000;
+const L = logger("BrowserHeartbeat");
 
 export interface BrowserSessionDescriptor {
   readonly threadId: string;
   readonly href: string;
 }
 
+export interface BrowserSessionPanelState {
+  readonly status: BrowserSession["status"];
+  readonly screenshotUrl: BrowserSession["screenshotUrl"];
+  readonly liveUrl: BrowserSession["liveUrl"];
+  readonly instanceId: string | undefined;
+  readonly windowId: number | undefined;
+}
+
 export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   /** Load state of the session's screenshot thumbnail. */
   readonly screenshotImageLoad: ImageLoadSignals;
   readonly session$: Computed<Promise<BrowserSession | null>>;
-  readonly panelSession$: Computed<Promise<BrowserSession | null>>;
+  readonly panelSession$: Computed<Promise<BrowserSessionPanelState | null>>;
   readonly viewerConnection$: Computed<
-    Promise<{
-      readonly liveUrl: string;
-      readonly instanceId: string | null;
-      readonly windowId: number | null;
-      readonly cdpUrl: string;
-    } | null>
+    Promise<
+      | (BrowserViewerConnection & {
+          readonly requestedSession: BrowserSession;
+        })
+      | null
+    >
   >;
-  readonly viewer: BrowserViewerSignals;
+  readonly browser: BrowserSignals;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -97,10 +110,34 @@ async function fetchBrowserSession(
   return response.status === 200 ? response.body.browser : null;
 }
 
-function activeBrowserLiveUrl(session: BrowserSession | null): string | null {
-  return session?.status === "active" && session.liveUrl
-    ? session.liveUrl
-    : null;
+async function requestBrowserSessionLease(
+  createClient: ApiClientFactory,
+  threadId: string,
+  signal: AbortSignal,
+) {
+  const [lease] = await Promise.allSettled([
+    accept(
+      createClient(browserContract).leaseByThread({
+        params: { threadId },
+        body: {},
+        fetchOptions: { signal },
+      }),
+      [200, 404, 409, 500, 502, 503, 504],
+      signal,
+    ),
+  ]);
+  signal.throwIfAborted();
+  if (lease.status === "fulfilled") {
+    return lease.value;
+  }
+  const error: unknown = lease.reason;
+  throwIfAbort(error);
+  if (!isNetworkRequestError(error)) {
+    throw error;
+  }
+  // No response confirms this idempotent renewal; its owner decides when to
+  // renew again. Unknown failures and cancellation must still stop the work.
+  return null;
 }
 
 function sameBrowserWindow(
@@ -117,20 +154,30 @@ interface BrowserMutationSignalContext {
   readonly descriptor: BrowserSessionDescriptor;
   readonly sessionOverride$: State<BrowserSession | null | undefined>;
   readonly reload$: Command<void, []>;
+  readonly connectionChanged$: BrowserSignals["connectionChanged$"];
 }
 
-function createStartBrowserSignals({
-  descriptor,
-  sessionOverride$,
-  reload$,
-}: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "start$"> {
+function createStartBrowserSignals(
+  {
+    descriptor,
+    sessionOverride$,
+    reload$,
+    connectionChanged$,
+  }: BrowserMutationSignalContext,
+  measureInitialDisplay$: BrowserSignals["measureInitialDisplay$"],
+  session$: Computed<Promise<BrowserSession | null>>,
+): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const current = await get(session$);
+    signal.throwIfAborted();
+    const initialDisplay =
+      current?.status === "active" ? null : set(measureInitialDisplay$);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const started = await withCleanup(
       accept(
         get(apiClient$)(browserContract).open({
           params: { threadId: descriptor.threadId },
-          body: {},
+          body: initialDisplay ? { initialDisplay } : {},
           fetchOptions: { signal },
         }),
         [200],
@@ -142,6 +189,7 @@ function createStartBrowserSignals({
     );
     signal.throwIfAborted();
     set(sessionOverride$, started.body.browser);
+    set(connectionChanged$);
   });
   return { start$: openBrowser$ };
 }
@@ -220,19 +268,34 @@ function createBrowserSessionKeepAliveSignals(
 ): Pick<BrowserSessionSignals, "keepAliveRef$"> {
   const keepAliveRef$ = onRef(
     command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+      let reportedFailure = false;
       setLoop(
         async () => {
           const mountedSession = await get(session$);
           signal.throwIfAborted();
-          const response = await accept(
-            get(apiClient$)(browserContract).leaseByThread({
-              params: { threadId: descriptor.threadId },
-              body: {},
-              fetchOptions: { signal },
-            }),
-            [200, 404, 409],
+          const response = await requestBrowserSessionLease(
+            get(apiClient$),
+            descriptor.threadId,
             signal,
           );
+          signal.throwIfAborted();
+          if (!response || response.status >= 500) {
+            // Only this idempotent renewal can continue at the normal interval.
+            // An outage must not replay input or invalidate the mounted viewer.
+            if (!reportedFailure) {
+              // Gateway failures need not have an application error body.
+              L.error(
+                "Browser heartbeat failed; scheduled renewal will continue",
+                {
+                  threadId: descriptor.threadId,
+                  status: response?.status ?? "network",
+                },
+              );
+              reportedFailure = true;
+            }
+            return false;
+          }
+          reportedFailure = false;
           const currentSession = await get(session$);
           signal.throwIfAborted();
           // A response from the previous lifetime cannot replace a reopened
@@ -268,7 +331,7 @@ function createBrowserSessionKeepAliveSignals(
           set(reload$);
           const reloadedSession = await get(session$);
           signal.throwIfAborted();
-          return activeBrowserLiveUrl(reloadedSession) === null;
+          return reloadedSession?.status !== "active";
         },
         LEASE_HEARTBEAT_INTERVAL_MS,
         signal,
@@ -280,6 +343,7 @@ function createBrowserSessionKeepAliveSignals(
 
 export function createBrowserSessionSignals(
   threadId: string,
+  onPageInput$?: Command<void, []>,
 ): BrowserSessionSignals {
   const descriptor: BrowserSessionDescriptor = {
     threadId,
@@ -301,56 +365,80 @@ export function createBrowserSessionSignals(
   const session$ = computed(async (get): Promise<BrowserSession | null> => {
     return get(leaseOverride$) ?? (await get(lifecycleSession$));
   });
-  const reload$ = command(({ set }) => {
-    set(leaseOverride$, undefined);
-    set(sessionOverride$, undefined);
-    set(reloadVersion$, (version) => {
-      return version + 1;
-    });
-  });
-
+  // Lease timestamps remain authoritative in session$, but do not change the
+  // panel's presentation or the mounted viewer's connection identity.
+  const panelSession$ = computed(
+    async (get): Promise<BrowserSessionPanelState | null> => {
+      const session = await get(session$);
+      return session
+        ? {
+            status: session.status,
+            screenshotUrl: session.screenshotUrl,
+            liveUrl: session.liveUrl,
+            instanceId: session.window?.instanceId,
+            windowId: session.window?.primaryWindowId,
+          }
+        : null;
+    },
+  );
   // Lifecycle reloads (including open/close) can replace the connection. Lease
   // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
     const lifecycleSession = await get(lifecycleSession$);
-    const liveUrl = activeBrowserLiveUrl(lifecycleSession);
-    if (!liveUrl) {
+    if (lifecycleSession?.status !== "active") {
       return null;
     }
     const response = await accept(
       get(apiClient$)(browserContract).viewerConnection({
         params: { threadId: descriptor.threadId },
       }),
-      [200, 409],
+      [200],
     );
-    return response.status === 200
-      ? {
-          cdpUrl: response.body.cdpUrl,
-          liveUrl,
-          instanceId: lifecycleSession?.window?.instanceId ?? null,
-          windowId: lifecycleSession?.window?.primaryWindowId ?? null,
-        }
-      : null;
+    return {
+      ...response.body,
+      // This snapshot identifies the request for retained-panel visibility;
+      // native admission uses only the authoritative response below.
+      requestedSession: lifecycleSession,
+    };
   });
 
-  const browserConnection$ = computed(async (get) => {
-    const connection = await get(viewerConnection$);
-    return connection
-      ? {
-          cdpUrl: connection.cdpUrl,
-          ...(connection.windowId === null
-            ? {}
-            : { windowId: connection.windowId }),
-        }
-      : null;
+  const browserConnection$ = computed(
+    async (get): Promise<BrowserConnection | null> => {
+      const connection = await get(viewerConnection$);
+      return connection
+        ? {
+            cdpUrl: connection.cdpUrl,
+            instanceId: connection.browser.window?.instanceId ?? null,
+            windowId: connection.browser.window?.primaryWindowId ?? null,
+            extension: connection.extension,
+          }
+        : null;
+    },
+  );
+  const reload$ = command(({ set }) => {
+    set(leaseOverride$, undefined);
+    set(sessionOverride$, undefined);
+    set(reloadVersion$, (version) => {
+      return version + 1;
+    });
+    set(browser.connectionChanged$);
   });
-  const viewer = createBrowserViewerSignals(browserConnection$);
+  const browser = createBrowserSignals(
+    browserConnection$,
+    reload$,
+    onPageInput$,
+  );
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
     reload$,
+    connectionChanged$: browser.connectionChanged$,
   };
-  const startSignals = createStartBrowserSignals(mutationContext);
+  const startSignals = createStartBrowserSignals(
+    mutationContext,
+    browser.measureInitialDisplay$,
+    lifecycleSession$,
+  );
   const closeSignals = createCloseBrowserSignals(mutationContext);
   const subscriptionSignals = createBrowserSessionSubscriptionSignals(
     descriptor,
@@ -369,9 +457,9 @@ export function createBrowserSessionSignals(
     ...descriptor,
     screenshotImageLoad,
     session$,
-    panelSession$: session$,
+    panelSession$,
     viewerConnection$,
-    viewer,
+    browser,
     ...startSignals,
     ...closeSignals,
     reload$,
@@ -382,7 +470,7 @@ export function createBrowserSessionSignals(
 }
 
 export function browserSessionReclaimHint(
-  session: BrowserSession,
+  session: Pick<BrowserSession, "status">,
 ): string | null {
   return session.status === "active"
     ? i18n.t(

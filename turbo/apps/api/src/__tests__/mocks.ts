@@ -1,3 +1,4 @@
+import type { S3ClientConfig } from "@aws-sdk/client-s3";
 import type {
   BatchPublishFailureResult,
   BatchPublishSpec,
@@ -20,6 +21,13 @@ import {
 } from "zod";
 
 import { mockStripeClient } from "../signals/external/stripe-client";
+import {
+  TEST_EXTENSION_TARGETS,
+  browserExtensionBootstrap,
+  browserExtensionBootstrapEvents,
+  browserExtensionRequest,
+  browserExtensionReply,
+} from "./browser-extension";
 
 type AsyncMock = Mock<(...args: unknown[]) => Promise<unknown>>;
 type AblyBatchPublish = (
@@ -186,6 +194,7 @@ export interface ApiTestMocks {
     readonly send: AsyncMock;
     readonly getSignedUrl: AsyncMock;
     readonly clientConfig: SyncMock;
+    readonly requestConfig: SyncMock;
   };
   readonly resend: {
     readonly send: AsyncMock;
@@ -607,6 +616,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       send: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getSignedUrl: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       clientConfig: vi.fn<(...args: unknown[]) => void>(),
+      requestConfig: vi.fn<(...args: unknown[]) => void>(),
     },
     resend: {
       send: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -660,6 +670,41 @@ const browserUseCdpCommandSchema = object({
 });
 
 function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
+  const bootstrap = browserExtensionBootstrap(command);
+  if (bootstrap !== undefined) {
+    return bootstrap;
+  }
+  const native = browserExtensionRequest(command);
+  if (native) {
+    const window = {
+      id: 7,
+      focused: true,
+      tabs: [
+        {
+          id: 1,
+          windowId: 7,
+          index: 0,
+          active: true,
+          pinned: false,
+          discarded: false,
+          url: "about:blank",
+        },
+      ],
+    };
+    if (native.method === "hello") {
+      return browserExtensionReply({
+        protocol: 1,
+        capabilities: ["windows", "tabs", "events", "identity-probe"],
+      });
+    }
+    if (native.method === "listWindows") {
+      return browserExtensionReply([window]);
+    }
+    if (native.method === "getWindow") {
+      return browserExtensionReply(native.windowId === 7 ? window : null);
+    }
+    throw new Error(`Unhandled native browser request: ${native.method}`);
+  }
   if (command.method === "Target.getTargets") {
     return {
       targetInfos: [
@@ -669,6 +714,17 @@ function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
   }
   if (command.method === "Browser.getWindowForTarget") {
     return { windowId: 7 };
+  }
+  if (command.method === "Browser.getWindowBounds") {
+    return {
+      bounds: {
+        left: 0,
+        top: 0,
+        width: 800,
+        height: 600,
+        windowState: "normal",
+      },
+    };
   }
   return {};
 }
@@ -690,17 +746,36 @@ export function browserUseCdpHandler(
       }
       const command = browserUseCdpCommandSchema.parse(JSON.parse(event.data));
       const mockedResult = apiTestMocks.browserUseCdp.command(command);
-      for (const beforeReply of eventsBeforeReply?.(command) ?? []) {
+      let result =
+        browserExtensionRequest(command) ||
+        browserExtensionBootstrap(command) !== undefined
+          ? defaultBrowserUseCdpResult(command)
+          : (mockedResult ?? defaultBrowserUseCdpResult(command));
+      if (
+        command.method === "Target.getTargets" &&
+        !(result instanceof Error)
+      ) {
+        const inventory = object({ targetInfos: array(zUnknown()) }).parse(
+          result,
+        );
+        result = {
+          targetInfos: [...inventory.targetInfos, ...TEST_EXTENSION_TARGETS],
+        };
+      }
+      for (const beforeReply of [
+        ...browserExtensionBootstrapEvents(command),
+        ...(eventsBeforeReply?.(command) ?? []),
+      ]) {
         client.send(JSON.stringify(beforeReply));
       }
       if (withholdReply?.(command)) {
         return;
       }
-      if (mockedResult instanceof Error) {
+      if (result instanceof Error) {
         client.send(
           JSON.stringify({
             id: command.id,
-            error: { message: mockedResult.message },
+            error: { message: result.message },
           }),
         );
         afterReply?.(command);
@@ -709,7 +784,7 @@ export function browserUseCdpHandler(
       client.send(
         JSON.stringify({
           id: command.id,
-          result: mockedResult ?? defaultBrowserUseCdpResult(command),
+          result,
         }),
       );
       afterReply?.(command);
@@ -808,13 +883,22 @@ vi.mock("@aws-sdk/client-s3", () => {
 
   class S3Client {
     readonly config: unknown;
+    readonly destroy = vi.fn<() => void>();
 
-    constructor(config: unknown) {
-      this.config = config;
+    constructor(config: S3ClientConfig) {
+      this.config = {
+        ...config,
+        requestHandler: config.requestHandler ?? {
+          handle: (...args: unknown[]) => {
+            return apiTestMocks.s3.send(...args);
+          },
+        },
+      };
       apiTestMocks.s3.clientConfig(config);
     }
 
     send(...args: unknown[]): Promise<unknown> {
+      apiTestMocks.s3.requestConfig(this.config);
       return apiTestMocks.s3.send(...args);
     }
   }

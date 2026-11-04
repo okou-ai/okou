@@ -5,10 +5,12 @@ import {
   BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH,
   BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH,
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
-  browserUserActionsContract,
-  type BrowserUserActionApplyRequest,
-  type BrowserUserActionPrepareFileUploadRequest,
-  type BrowserUserActionResponse,
+} from "@okouai/api-contracts/validators/browser-user-actions";
+import { browserUserActionsContract } from "@okouai/api-contracts/client/browser-user-actions";
+import type {
+  BrowserUserActionApplyRequest,
+  BrowserUserActionPrepareFileUploadRequest,
+  BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -341,11 +343,10 @@ async function readBrowserUserAction(
     { showErrorToast: false },
   );
   signal?.throwIfAborted();
-  const status: number = result.status;
-  if (status === 410) {
+  if (result.status === 410) {
     return { kind: "expired" };
   }
-  if (status !== 200 || !actionMatches(result.body, descriptor)) {
+  if (result.status !== 200 || !actionMatches(result.body, descriptor)) {
     return { kind: "unavailable" };
   }
   return { kind: "action", action: result.body };
@@ -1364,13 +1365,12 @@ function createSubmitSignal({
         signal,
       );
       signal.throwIfAborted();
-      const status: number = result.status;
       if (isInvalidBrowserInputValueResponse(result)) {
         set(rejectEntry$);
         return;
       }
       if (
-        status !== 200 ||
+        result.status !== 200 ||
         !actionMatches(result.body, descriptor) ||
         result.body.kind !== "input"
       ) {
@@ -1409,10 +1409,9 @@ function createCancelSignal({
     }
     const result = await set(write$, { kind: "cancel" }, signal);
     signal.throwIfAborted();
-    const status: number = result.status;
     set(clearDraft$);
     if (
-      status === 200 &&
+      result.status === 200 &&
       actionMatches(result.body, descriptor) &&
       result.body.kind === request.action.kind &&
       result.body.state === "cancelled"

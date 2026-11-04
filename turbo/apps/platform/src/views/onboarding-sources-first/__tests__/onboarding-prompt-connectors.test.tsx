@@ -81,7 +81,6 @@ test.each([
         getConnectorAction("button", `Connect ${tool.label}`, recommendations),
       ).toBeEnabled();
     }
-    expect(recommendations).toHaveTextContent("You can also connect later.");
     expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(PROMPT);
 
     const editedPrompt = `${PROMPT} for next month`;
@@ -89,7 +88,9 @@ test.each([
     click(getConnectorAction("button", action));
 
     await waitFor(() => {
-      expect(runPrompt).toBe(editedPrompt);
+      expect(runPrompt).toBe(
+        `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
+      );
       expect(pathname()).toMatch(/^\/chats\//u);
     });
   },

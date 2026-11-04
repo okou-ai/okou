@@ -1,8 +1,13 @@
 import {
+  contentBundleSchema,
+  claimedContentBundlesSchema,
+} from "./content-bundle";
+import {
   array,
   boolean,
   coerce,
   discriminatedUnion,
+  iso,
   literal,
   number,
   object,
@@ -18,11 +23,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import {
-  workflowDownloadSchema,
-  workflowSkillReferenceSchema,
-} from "./workflow-attachments";
-
+import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -42,6 +43,11 @@ import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
 } from "./runner-primitives";
+
+export {
+  MIN_EPOCH_MS_TIMESTAMP,
+  elapsedSinceApiStartMs,
+} from "./api-start-time";
 
 export { BUILTIN_FIREWALL_CATALOG_MAX_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 
@@ -65,7 +71,6 @@ export {
 
 const c = initContract();
 
-export const MIN_EPOCH_MS_TIMESTAMP = 1_000_000_000_000;
 const apiStartTimeSchema = number().int().min(MIN_EPOCH_MS_TIMESTAMP);
 
 export const CANONICAL_CLAUDE_CONFIG_DIR = `${CANONICAL_GUEST_HOME_DIR}/.claude`;
@@ -146,20 +151,6 @@ export const releaseVersionSchema = string().regex(
   /^\d+\.\d+\.\d+$/,
   "Release versions are MAJOR.MINOR.PATCH",
 );
-export function elapsedSinceApiStartMs(
-  apiStartTimeMs: number | undefined,
-  nowMs: number,
-): number | undefined {
-  if (
-    apiStartTimeMs === undefined ||
-    !Number.isInteger(apiStartTimeMs) ||
-    apiStartTimeMs < MIN_EPOCH_MS_TIMESTAMP
-  ) {
-    return undefined;
-  }
-
-  return Math.max(0, nowMs - apiStartTimeMs);
-}
 
 export const runnerClaimPollReasonSchema = zEnum([
   "immediate",
@@ -207,7 +198,7 @@ export const runnerPreferenceSchema = union([
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
     tier: zEnum(["exactSandbox", "finalizingPredecessor"]),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
     predecessorRunId: uuid(),
   }).strict(),
   object({
@@ -215,12 +206,12 @@ export const runnerPreferenceSchema = union([
     runnerIdentity: runnerProcessIdentitySchema,
     tier: literal("predecessorHome"),
     predecessorRunId: uuid(),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
     home: discriminatedUnion("evidence", [
       object({ evidence: literal("advertised") }).strict(),
       object({
         evidence: literal("expected"),
-        homeWaitUntil: string().datetime({ offset: true }),
+        homeWaitUntil: iso.datetime({ offset: true }),
       }).strict(),
       object({ evidence: literal("location") }).strict(),
     ]),
@@ -229,7 +220,7 @@ export const runnerPreferenceSchema = union([
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
     tier: zEnum(["reusableSandbox", "homeCache"]),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
   }).strict(),
   object({
     kind: literal("noPreference"),
@@ -271,7 +262,7 @@ const runnerSupportedProfileListSchema = runnerProfileListSchema.min(1);
 export const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX = 128;
 
 const networkPolicyRefreshSchema = object({
-  nextRefreshAt: string().datetime({ offset: true }),
+  nextRefreshAt: iso.datetime({ offset: true }),
 });
 
 const networkPolicyRefreshesSchema = record(
@@ -370,7 +361,13 @@ export const connectorRuntimeCustomAbsentReasonSchema = literal(
 );
 
 const connectorRuntimeResultBaseSchema = object({
-  nextSyncAt: string().datetime({ offset: true }).optional(),
+  nextSyncAt: iso.datetime({ offset: true }).optional(),
+});
+
+// Explicit account replacement; ordinary policy refreshes omit this binding.
+export const connectorRuntimeAccountBindingSchema = object({
+  connectionId: uuid(),
+  baseUrlVars: record(string(), string()),
 });
 
 export const connectorRuntimeBuiltinAvailableResultSchema =
@@ -378,6 +375,7 @@ export const connectorRuntimeBuiltinAvailableResultSchema =
     target: connectorRuntimeBuiltinTargetSchema,
     state: literal("available"),
     networkPolicy: networkPolicySchema,
+    accountBinding: connectorRuntimeAccountBindingSchema.optional(),
   });
 
 export const connectorRuntimeBuiltinUnresolvedResultSchema =
@@ -410,6 +408,7 @@ export const connectorRuntimeCustomAvailableResultSchema =
     }),
     networkPolicy: networkPolicySchema,
     baseUrlVars: record(string(), string()),
+    accountBinding: connectorRuntimeAccountBindingSchema.optional(),
   });
 
 export const connectorRuntimeCustomUnresolvedResultSchema =
@@ -482,7 +481,7 @@ export const jobSchema = object({
 
 export const heldSandboxStateSchema = object({
   reuseKey: string(),
-  lastCompletedAt: string().datetime({ offset: true }),
+  lastCompletedAt: iso.datetime({ offset: true }),
   reusableSandbox: object({
     profile: string(),
     sourceRunId: uuid(),
@@ -497,7 +496,7 @@ export const activeReuseProducerSchema = object({
 
 export const heldHomeStateSchema = object({
   reuseKey: string(),
-  lastCompletedAt: string().datetime({ offset: true }),
+  lastCompletedAt: iso.datetime({ offset: true }),
   homeCaches: array(
     object({
       profile: string(),
@@ -611,7 +610,6 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 
 /** Canonical Runner wire representation. */
 export const storageManifestSchema = object({
-  workflowSkills: array(workflowSkillReferenceSchema).optional(),
   storageMounts: array(storageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),
@@ -927,12 +925,24 @@ function requireCompletePiFields(
   }
 }
 
+const storedSkillBundleSchema = contentBundleSchema
+  .extend({
+    mountPath: string().regex(
+      /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
+    ),
+  })
+  .strict();
+
 /**
  * Stored execution context (subset stored in database for late routing)
  * Contains prepared context without runtime-generated fields
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = object({
+  // Exact Official content is selected at admission, never refreshed at claim.
+  officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
+  // Every supported admission writer captures the selected Seed references.
+  seedSkillBundles: array(storedSkillBundleSchema),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),
@@ -1048,8 +1058,8 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = object({
-  // Claim-only current Agent body; absent for jobs without an Agent.
-  agentInstructions: string().optional(),
+  // Selected immutable packages, including an empty set for agentless jobs.
+  contentBundles: claimedContentBundlesSchema,
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: boolean().optional(),
   runId: uuid(),
@@ -1195,22 +1205,6 @@ export const runnersJobClaimContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Claim a pending job for execution",
-  },
-});
-
-export const runnersWorkflowDownloadContract = c.router({
-  get: {
-    method: "GET",
-    path: "/api/runners/runs/:runId/workflows/:workflowId",
-    headers: authHeadersSchema,
-    pathParams: object({ runId: uuid(), workflowId: uuid() }),
-    responses: {
-      200: workflowDownloadSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Download current Workflow content for an authenticated Run",
   },
 });
 

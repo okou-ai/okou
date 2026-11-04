@@ -8,13 +8,15 @@ import {
 } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
-import { File, Image, Loader2, Video } from "lucide-react";
+import { File, Image, Loader2, Mail, Video } from "lucide-react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
 import { iso } from "zod";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { cn } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { Button, cn } from "@okouai/ui";
+import { quoteChatEmail$ } from "../../signals/chat-page/chat-thread-feedback.ts";
 
 import {
   escapeHtmlTags,
@@ -25,6 +27,8 @@ import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts"
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import type {
   ArtifactKind,
   ArtifactSignals,
@@ -52,6 +56,7 @@ import {
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
+import { MarkdownTable } from "./markdown-table.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
 import { MathFormulaView } from "./math-formula.tsx";
 import { MermaidDiagramView } from "./mermaid-diagram.tsx";
@@ -65,18 +70,6 @@ type MarkdownTimeProps = ComponentPropsWithoutRef<"time"> & MarkdownNodeProp;
 type MarkdownDivProps = ComponentPropsWithoutRef<"div"> & {
   node?: Element;
 };
-
-/**
- * Wraps a markdown table in an overflow-x-auto container so wide tables scroll
- * within their container instead of stretching the page on mobile.
- */
-function ResponsiveTable({ children }: ComponentPropsWithoutRef<"table">) {
-  return (
-    <div className="overflow-x-auto">
-      <table>{children}</table>
-    </div>
-  );
-}
 
 function omitMarkdownNodeProp<Props extends object>(
   props: Props,
@@ -321,6 +314,52 @@ function PlainLinkRenderer(
 ) {
   const { children, ...rest } = props;
   return <PlainLink {...rest}>{children}</PlainLink>;
+}
+
+function EmailQuoteLink({
+  address,
+  children,
+  ...props
+}: MarkdownAnchorProps & {
+  readonly address: string;
+}) {
+  const { t } = useTranslation();
+  const quote = useSet(quoteChatEmail$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <span>
+      <MediaLink {...props}>{children}</MediaLink>
+      <Button
+        type="button"
+        variant="quiet"
+        size="icon-xs"
+        className="ml-1 align-middle"
+        aria-label={t(
+          ($) => {
+            return $.chat.feedback.quoteEmail;
+          },
+          { email: address },
+        )}
+        onClick={(event) => {
+          const link = event.currentTarget.parentElement?.querySelector("a");
+          if (link instanceof HTMLAnchorElement) {
+            detach(quote(link, pageSignal), Reason.DomCallback);
+          }
+        }}
+      >
+        <Mail aria-hidden="true" />
+      </Button>
+    </span>
+  );
+}
+
+function EmailMediaLinkRenderer(props: MarkdownAnchorProps) {
+  const address = props.node?.data?.emailQuoteAddress;
+  return address !== undefined ? (
+    <EmailQuoteLink {...props} address={address} />
+  ) : (
+    <MediaLinkRenderer {...props} />
+  );
 }
 
 function MediaLinkRenderer(
@@ -765,7 +804,7 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
 }
 
 const PLAIN_MARKDOWN_COMPONENTS = {
-  table: ResponsiveTable,
+  table: MarkdownTable,
   a: PlainLinkRenderer,
   img: PlainImageRenderer,
   span: MarkdownSpanRenderer,
@@ -774,7 +813,7 @@ const PLAIN_MARKDOWN_COMPONENTS = {
 } as const;
 
 const MEDIA_MARKDOWN_COMPONENTS = {
-  table: ResponsiveTable,
+  table: MarkdownTable,
   p: MediaParagraphRenderer,
   a: MediaLinkRenderer,
   img: MediaImageRenderer,
@@ -782,6 +821,11 @@ const MEDIA_MARKDOWN_COMPONENTS = {
   span: MarkdownSpanRenderer,
   time: MarkdownTimeRenderer,
   div: MarkdownDivRenderer,
+} as const;
+
+const EMAIL_MEDIA_MARKDOWN_COMPONENTS = {
+  ...MEDIA_MARKDOWN_COMPONENTS,
+  a: EmailMediaLinkRenderer,
 } as const;
 
 const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
@@ -798,6 +842,7 @@ const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
 // block syntax that relies on a leading `>` — most importantly blockquotes,
 // which otherwise collapse into a literal `>` paragraph once escaped.
 interface MarkdownTreeFrameProps {
+  readonly emailQuote?: boolean;
   readonly className?: string;
   readonly style?: CSSProperties;
   readonly mediaPreview?: boolean | "link";
@@ -805,6 +850,7 @@ interface MarkdownTreeFrameProps {
 }
 
 function MarkdownTreeFrame({
+  emailQuote,
   className,
   style,
   mediaPreview = false,
@@ -818,7 +864,9 @@ function MarkdownTreeFrame({
           mediaPreview === "link"
             ? LINKED_MEDIA_MARKDOWN_COMPONENTS
             : mediaPreview
-              ? MEDIA_MARKDOWN_COMPONENTS
+              ? emailQuote
+                ? EMAIL_MEDIA_MARKDOWN_COMPONENTS
+                : MEDIA_MARKDOWN_COMPONENTS
               : PLAIN_MARKDOWN_COMPONENTS,
         ignoreInvalidStyle: true,
         jsx,
@@ -838,16 +886,19 @@ export function MarkdownEventBody({
   className,
   tree,
   mediaPreview,
+  emailQuote,
 }: {
   readonly className?: string;
   readonly tree: Root;
   readonly mediaPreview: boolean | "link";
+  readonly emailQuote?: boolean;
 }) {
   return (
     <MarkdownTreeFrame
       className={cn("text-[length:inherit]! leading-[inherit]!", className)}
       tree={tree}
       mediaPreview={mediaPreview}
+      emailQuote={emailQuote}
     />
   );
 }
@@ -869,10 +920,11 @@ export function Markdown({
   readonly mediaPreview?: boolean;
   readonly escapeHtml?: boolean;
 }) {
-  const tree = parseMarkdownTree(
-    escapeHtml ? escapeHtmlTags(source) : source,
-    {},
-  );
+  const cjkEmphasis =
+    useGet(featureSwitch$)[FeatureSwitchKey.MarkdownCjkEmphasis] === true;
+  const tree = parseMarkdownTree(escapeHtml ? escapeHtmlTags(source) : source, {
+    cjkEmphasis,
+  });
   return (
     <MarkdownTreeFrame
       className={className}

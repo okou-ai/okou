@@ -132,6 +132,62 @@ describe("okou chat list command", () => {
     vi.stubEnv("XDG_CACHE_HOME", cacheDirectory);
   });
 
+  it("preserves future membership events through HTTP validation and a reopened cache", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000071";
+    const threads = [
+      snapshotThread({
+        id: THREAD_ID,
+        agentId: AGENT_ID,
+        title: "Project planning",
+        sortAt: "2026-11-02T00:00:00.000Z",
+      }),
+    ];
+    server.use(
+      http.get(SNAPSHOT_URL, () => {
+        return HttpResponse.json(
+          mockR2Snapshot({
+            chatThreads: threads,
+            latestEventId: INITIAL_EVENT_ID,
+            latestSeqId: 1,
+          }),
+        );
+      }),
+      http.get(EVENTS_URL, ({ request }) => {
+        return HttpResponse.json({
+          events:
+            new URL(request.url).searchParams.get("sinceSeqId") === "1"
+              ? [
+                  {
+                    id: RENAME_EVENT_ID,
+                    seqId: 2,
+                    kind: "project_updated",
+                    projectId,
+                    chatThreadId: THREAD_ID,
+                    agentId: AGENT_ID,
+                    title: null,
+                    createdAt: "2026-11-02T01:00:00.000Z",
+                  },
+                ]
+              : [],
+          hasMore: false,
+        });
+      }),
+    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      mockConsoleLog.mockClear();
+      await chatCommand.parseAsync(["node", "okou", "list", "--json"]);
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(output).threads).toEqual([
+        expect.objectContaining({
+          id: THREAD_ID,
+          projectId,
+          agentId: AGENT_ID,
+          sortAt: "2026-11-02T00:00:00.000Z",
+        }),
+      ]);
+    }
+  });
+
   afterEach(async () => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
@@ -664,5 +720,113 @@ describe("okou chat list command", () => {
       "OKOU_TOKEN does not contain a valid chat cache scope",
     );
     expect(mockExit).toHaveBeenCalledWith(1);
+  });
+  it("enumerates every Project page across Agents, including archived history", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000071";
+    const all = Array.from({ length: 101 }, (_, index) => {
+      return {
+        ...snapshotThread({
+          id: `00000000-0000-4000-8000-${String(1000 + index).padStart(12, "0")}`,
+          agentId: index % 2 ? OTHER_AGENT_ID : AGENT_ID,
+          title: `Related ${index}`,
+          sortAt: "2026-11-02T00:00:00.000Z",
+          archived: index === 100,
+        }),
+        projectId,
+      };
+    });
+    server.use(
+      http.get(`http://localhost:3000/api/projects/${projectId}`, () => {
+        return HttpResponse.json({
+          id: projectId,
+          name: "Launch",
+          createdAt: "2026-11-02T00:00:00.000Z",
+          updatedAt: "2026-11-02T00:00:00.000Z",
+        });
+      }),
+      http.get(
+        `http://localhost:3000/api/projects/${projectId}/threads`,
+        ({ request }) => {
+          const after = new URL(request.url).searchParams.get("after");
+          return HttpResponse.json(
+            after
+              ? { threads: all.slice(100), nextAfter: null }
+              : { threads: all.slice(0, 100), nextAfter: all[99]!.id },
+          );
+        },
+      ),
+    );
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "list",
+      "--project-id",
+      projectId,
+      "--limit",
+      "all",
+      "--json",
+    ]);
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
+      { allAgents: true, total: 101, complete: true },
+    );
+    expect(
+      JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])).threads,
+    ).toHaveLength(101);
+  });
+  it("intersects an explicit Agent with Project discovery", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000071";
+    server.use(
+      http.get(`http://localhost:3000/api/projects/${projectId}`, () => {
+        return HttpResponse.json({
+          id: projectId,
+          name: "Launch",
+          createdAt: "2026-11-02T00:00:00.000Z",
+          updatedAt: "2026-11-02T00:00:00.000Z",
+        });
+      }),
+      http.get(
+        `http://localhost:3000/api/projects/${projectId}/threads`,
+        () => {
+          return HttpResponse.json({
+            threads: [
+              {
+                ...snapshotThread({
+                  id: THREAD_ID,
+                  agentId: AGENT_ID,
+                  title: "Planning",
+                  sortAt: "2026-11-02T00:00:00.000Z",
+                }),
+                projectId,
+              },
+              {
+                ...snapshotThread({
+                  id: OTHER_THREAD_ID,
+                  agentId: OTHER_AGENT_ID,
+                  title: "Research",
+                  sortAt: "2026-11-02T00:00:00.000Z",
+                }),
+                projectId,
+              },
+            ],
+            nextAfter: null,
+          });
+        },
+      ),
+    );
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "list",
+      "--project-id",
+      projectId,
+      "--agent",
+      AGENT_ID,
+      "--limit",
+      "all",
+      "--json",
+    ]);
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
+      { agentId: AGENT_ID, total: 1, threads: [{ id: THREAD_ID }] },
+    );
   });
 });

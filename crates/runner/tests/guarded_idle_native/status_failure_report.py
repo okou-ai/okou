@@ -52,12 +52,8 @@ def validate(directory):
         if not line.startswith(PREFIX):
             continue
         event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if (not isinstance(event, dict) or set(event) != {"version", "case", "phase", "monotonic_ns",
-                "unix_ns", "sandbox_id", "backing_generation", "evidence"}
-                or type(event["version"]) is not int or event["version"] != 1
-                or not isinstance(event["case"], str) or event["case"] not in CASES
-                or not report.positive_integer(event["monotonic_ns"])
-                or not report.positive_integer(event["unix_ns"]) or not isinstance(event["evidence"], dict)):
+        if not report.valid_witness_envelope(
+            event, lambda value: isinstance(value, str) and value in CASES):
             raise ValueError("invalid status-failure witness")
         witnesses[event["case"]].append(event)
     runners, paths = set(), set()

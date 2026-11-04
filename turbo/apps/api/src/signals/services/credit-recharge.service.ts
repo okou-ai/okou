@@ -25,6 +25,8 @@ import { settle } from "../utils";
 import { logger } from "../../lib/log";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
+import { AUTO_RECHARGE_FAILURE_LIMIT } from "./credit-recharge-policy";
+import { publishBillingChangedForOrg$ } from "./billing-realtime.service";
 
 const L = logger("CreditRecharge");
 
@@ -39,7 +41,7 @@ interface ClaimedRechargeState {
   readonly autoRechargeEnabled: boolean;
   readonly autoRechargeThreshold: number;
   readonly autoRechargeAmount: number;
-  readonly autoRechargePendingAt: Date | null;
+  readonly autoRechargePendingAt: Date;
 }
 
 function resolvePaymentMethodId(pm: StripeRef | undefined): string | null {
@@ -193,7 +195,8 @@ const claimAutoRecharge$ = command(
     if (
       !claimed.stripeCustomerId ||
       claimed.autoRechargeThreshold === null ||
-      claimed.autoRechargeAmount === null
+      claimed.autoRechargeAmount === null ||
+      claimed.autoRechargePendingAt === null
     ) {
       throw new Error(
         "Claimed auto-recharge is missing its billing configuration",
@@ -204,21 +207,43 @@ const claimAutoRecharge$ = command(
       stripeCustomerId: claimed.stripeCustomerId,
       autoRechargeThreshold: claimed.autoRechargeThreshold,
       autoRechargeAmount: claimed.autoRechargeAmount,
+      autoRechargePendingAt: claimed.autoRechargePendingAt,
     };
   },
 );
 
-/**
- * A failed or skipped recharge always clears its pending flag: settlement
- * debits rewrite the organization row in between, and a lingering flag would
- * block recharge for the whole stale window while the balance keeps falling.
- */
-const clearClaimedAutoRecharge$ = command(
-  async ({ set }, orgId: string): Promise<void> => {
-    await set(writeDb$)
+/** Record one owned attempt; only the paid-invoice webhook releases a paid claim. */
+const recordClaimedAutoRechargeResult$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly pendingAt: Date;
+      readonly paid: boolean;
+    },
+  ): Promise<boolean> => {
+    const failures = sql`${orgMetadata.autoRechargeFailureCount} + 1`;
+    const [updated] = await set(writeDb$)
       .update(orgMetadata)
-      .set({ autoRechargePendingAt: null, updatedAt: nowDate() })
-      .where(eq(orgMetadata.orgId, orgId));
+      .set({
+        ...(args.paid
+          ? { autoRechargeFailureCount: 0 }
+          : {
+              autoRechargePendingAt: null,
+              autoRechargeFailureCount: failures,
+              autoRechargeEnabled: sql`${failures} < ${AUTO_RECHARGE_FAILURE_LIMIT}`,
+            }),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(orgMetadata.orgId, args.orgId),
+          eq(orgMetadata.autoRechargeEnabled, true),
+          eq(orgMetadata.autoRechargePendingAt, args.pendingAt),
+        ),
+      )
+      .returning({ enabled: orgMetadata.autoRechargeEnabled });
+    return updated?.enabled === false;
   },
 );
 
@@ -286,8 +311,22 @@ export const triggerAutoRecharge$ = command(
             : String(result.error),
       });
     }
-    if (!result.ok || !result.value) {
-      await set(clearClaimedAutoRecharge$, orgId);
+    const disabled = await set(recordClaimedAutoRechargeResult$, {
+      orgId,
+      pendingAt: org.autoRechargePendingAt,
+      paid: result.ok && result.value,
+    });
+    signal.throwIfAborted();
+    if (disabled) {
+      const published = await settle(
+        set(publishBillingChangedForOrg$, orgId),
+        signal,
+      );
+      if (!published.ok) {
+        L.warn("Failed to publish automatic recharge being turned off", {
+          orgId,
+        });
+      }
     }
     signal.throwIfAborted();
   },

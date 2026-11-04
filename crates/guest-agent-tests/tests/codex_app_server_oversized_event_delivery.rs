@@ -7,7 +7,10 @@ use guest_agent_tests as common;
 use base64::Engine as _;
 use guest_agent::masker::SecretMasker;
 use serde_json::Value;
-use std::time::Duration;
+use std::{
+    io::{BufWriter, Write},
+    time::Duration,
+};
 
 const RUN_ID: &str = "codex-app-server-oversized-event-delivery-test";
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
@@ -149,7 +152,12 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     // Retain canonical bytes on disk, not a second large allocation throughout
     // execution. The mock receives its own file so mutations remain observable.
     let original_items_path = tmp.path().join("original-delivery-items.json");
-    std::fs::write(&original_items_path, serde_json::to_vec(&delivery_items)?)?;
+    // Batch escaped-string writes while retaining every canonical fixture byte.
+    {
+        let mut original_items = BufWriter::new(std::fs::File::create(&original_items_path)?);
+        serde_json::to_writer(&mut original_items, &delivery_items)?;
+        original_items.flush()?;
+    }
     let items_path = tmp.path().join("delivery-items.json");
     std::fs::copy(&original_items_path, &items_path)?;
     runtime.config.user_env.insert(
@@ -175,7 +183,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
 
     // Execution joined delivery, and the server records before responding.
     let requests = server
-        .requests()?
+        .into_requests()?
         .into_iter()
         .filter(|request| request.path == "/api/webhooks/agent/events")
         .collect::<Vec<_>>();

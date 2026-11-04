@@ -4,16 +4,6 @@ import { date, tuple, type output, type ZodType } from "zod";
 
 import { contextProjectionSchema } from "./context-rowset";
 
-export type UsagePackRetainedStep =
-  | { readonly kind: "read" | "write"; readonly sql: SQL }
-  | { readonly kind: "batch"; readonly statements: readonly SQL[] }
-  | { readonly kind: "timestamp" }
-  | { readonly kind: "abort-check" };
-export type UsagePackRetainedPlan<T> = Generator<
-  UsagePackRetainedStep,
-  T,
-  readonly unknown[]
->;
 export type UsagePackRetainedFinancialPlan<T> = Generator<
   | { readonly kind: "read" | "write"; readonly sql: SQL }
   | { readonly kind: "timestamp" },
@@ -46,9 +36,6 @@ export function* usagePackSqlClock(): Generator<
   readonly unknown[]
 > {
   return tuple([date()]).parse(yield { kind: "timestamp" })[0];
-}
-export function* usagePackSqlAbortCheck(): UsagePackRetainedPlan<void> {
-  yield { kind: "abort-check" };
 }
 export function usagePackSqlSelection(
   columns: Readonly<Record<string, Column>>,

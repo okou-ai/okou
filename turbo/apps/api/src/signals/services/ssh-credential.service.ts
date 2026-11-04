@@ -19,7 +19,11 @@ import {
   pgIntegerDecoder,
 } from "../../lib/db-structured-result";
 import { createSshCredentialUpdateReads } from "./ssh-credential-update-query";
-import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
+import {
+  isForeignKeyViolation,
+  isUniqueViolation,
+  safeSqlStateCode,
+} from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
@@ -364,9 +368,12 @@ const commitSshCredentialUpdate$ = command(
           generation: sql`${sshConnections.generation} + 1`,
           updatedAt: clocks.hostUpdatedAt,
         })
+        .from(reads.hosts)
         .where(
           and(
             ownerHostsUsingCredential(args.owner, args.credentialId),
+            eq(sshConnections.id, reads.hosts.id),
+            eq(sshConnections.generation, reads.hosts.generation),
             inArray(
               sshConnections.id,
               db.select({ id: reads.hosts.id }).from(reads.hosts),
@@ -405,39 +412,46 @@ const commitSshCredentialUpdate$ = command(
           and(
             ownedSshCredential(args.owner, args.credentialId),
             eq(sshCredentials.id, reads.current.id),
+            eq(sshCredentials.revision, args.body.expectedRevision),
             exists(db.select({ id: reads.eligible.id }).from(reads.eligible)),
             eq(complete, 1),
           ),
         )
         .returning({ ...sshCredentialMetadata }),
     );
-    const captures = await db
-      .with(...reads.ctes, rotated, changed)
-      .select({
-        current: { ...reads.current._.selectedFields },
-        changed: { ...changed._.selectedFields },
-        host: { ...reads.hosts._.selectedFields },
-        effective: reads.effective.mapWith(pgBooleanDecoder),
-        drift:
-          sql`${reads.current.version} <> (${db.select({ version: reads.observed.version }).from(reads.observed)})`.mapWith(
-            pgBooleanDecoder,
-          ),
-      })
-      .from(reads.current)
-      .leftJoin(changed, eq(changed.id, reads.current.id))
-      .leftJoin(reads.hosts, sql`true`)
-      .orderBy(asc(reads.hosts.id));
+    const committed = await settle(
+      db
+        .with(...reads.ctes, rotated, changed)
+        .select({
+          current: { ...reads.current._.selectedFields },
+          changed: { ...changed._.selectedFields },
+          host: { ...reads.hosts._.selectedFields },
+          effective: reads.effective.mapWith(pgBooleanDecoder),
+          complete:
+            sql`1 / CASE WHEN (${db.select({ count: count() }).from(changed)}) = (${db.select({ count: count() }).from(reads.eligible)}) THEN 1 ELSE 0 END`.mapWith(
+              pgIntegerDecoder,
+            ),
+        })
+        .from(reads.current)
+        .leftJoin(changed, eq(changed.id, reads.current.id))
+        .leftJoin(reads.hosts, sql`true`)
+        .orderBy(asc(reads.hosts.id)),
+    );
+    if (!committed.ok) {
+      if (
+        safeSqlStateCode(committed.error) === "22012" ||
+        safeSqlStateCode(committed.error) === "40P01"
+      ) {
+        return sshCredentialFailure("conflict");
+      }
+      throw committed.error;
+    }
+    const captures = committed.value;
     const [captured] = captures;
     if (!captured) {
       return sshCredentialFailure("notFound");
     }
     if (!captured.changed) {
-      if (captured.drift) {
-        return {
-          ...sshCredentialFailure("conflict"),
-          retryBindings: true as const,
-        };
-      }
       if (
         captured.current.revision === MAX_SSH_REVISION ||
         (captured.effective &&
@@ -447,7 +461,7 @@ const commitSshCredentialUpdate$ = command(
       ) {
         return sshCredentialFailure("exhausted");
       }
-      throw new Error("Locked SSH credential update returned no row");
+      return sshCredentialFailure("conflict");
     }
     const hosts = captures.flatMap(({ host }) => {
       return host === null
@@ -474,25 +488,13 @@ export const updateSshCredential$ = command(
     if (!prepared.ok) {
       return prepared;
     }
-    // Preserve low-frequency edit reconciliation: the initial revision is a
-    // preflight check, while publication uses the current locked credential.
     const clocks = { hostUpdatedAt: nowDate(), credentialUpdatedAt: nowDate() };
-    let updated = await set(
+    const updated = await set(
       commitSshCredentialUpdate$,
       args,
       prepared.value.encrypted,
       clocks,
     );
-    if (!updated.ok && "retryBindings" in updated && updated.retryBindings) {
-      // This outcome is proved unwritten by the statement's eligibility gate.
-      // No exception, uncertain commit or prepared encryption is replayed.
-      updated = await set(
-        commitSshCredentialUpdate$,
-        args,
-        prepared.value.encrypted,
-        clocks,
-      );
-    }
     if (!updated.ok) {
       return updated;
     }

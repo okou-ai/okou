@@ -1094,14 +1094,18 @@ describe("SSH connection observations", () => {
       }),
     ).resolves.toStrictEqual({ outcome: "ignored" });
     expect((await observations(f))[0]?.failureReason).toBeNull();
-    context.mocks.ably.publish.mockClear();
+    const healthyAt = new Date(now() + 1000).toISOString();
     await expect(
       observe(f, {
-        observedAt: new Date(now() + 1000).toISOString(),
+        observedAt: healthyAt,
         failureReason: null,
       }),
     ).resolves.toStrictEqual({ outcome: "recorded" });
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+    expect((await observations(f))[0]).toMatchObject({
+      observedAt: healthyAt,
+      failureReason: null,
+    });
+    await expect(list(f)).resolves.toStrictEqual(original);
   });
 
   it("fences configuration changes and uses the post-TOFU generation", async () => {

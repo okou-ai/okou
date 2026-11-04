@@ -1,11 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { object, string } from "zod";
+import { checkIosConsumption } from "./ios-consumption";
+import { iosResponseTransforms } from "../client-transforms/ios";
 import { desktopResponseTransforms } from "../client-transforms/desktop";
 import { compareRuntimeApiSchemas } from "./compat";
 import {
   DESKTOP_PUBLISHED_VERSION_ORACLE,
-  type DesktopFloorChange,
+  IOS_PUBLISHED_VERSION_ORACLE,
+  type NativeFloorChange,
   evaluateRuntimeApiGate,
   parseStableVersion,
   renderRuntimeApiGateReport,
@@ -30,6 +34,9 @@ const LINT_OPTIONS = {
   "desktop-floor": "single",
   "desktop-base-floor": "single",
   "desktop-published-version": "single",
+  "ios-floor": "single",
+  "ios-base-floor": "single",
+  "ios-published-version": "single",
 } as const;
 
 type OptionSpec = Readonly<Record<string, "single" | "repeatable">>;
@@ -37,11 +44,14 @@ type ParsedOptions = ReadonlyMap<string, readonly string[]>;
 
 const USAGE = `Usage:
   tsx src/runtime-api-schema/cli.ts build --out runtime-api-schema.json
+  tsx src/runtime-api-schema/cli.ts lint-ios-consumption [--root repository-root]
   tsx src/runtime-api-schema/cli.ts lint --against online-schema.json
     [--current current-schema.json] [--base-schema base-schema.json]
     [--report-out report.json] [--block-owner <owner>]...
     [--desktop-floor desktop-compatibility.json --desktop-base-floor base-desktop-compatibility.json]
     [--desktop-published-version x.y.z]
+    [--ios-floor ios-client-compatibility.json --ios-base-floor base-ios-client-compatibility.json]
+    [--ios-published-version x.y.z]
 
 Findings on --block-owner owners fail the lint unless proven; other owners only
 warn. Owners: ${runtimeApiRouteOwners.join(", ")}.
@@ -49,7 +59,7 @@ warn. Owners: ${runtimeApiRouteOwners.join(", ")}.
 
 class CliUsageError extends Error {}
 
-const desktopFloorFileSchema = object({
+const nativeFloorFileSchema = object({
   minimumSupportedVersion: string().nullable(),
 });
 
@@ -59,6 +69,26 @@ export async function runRuntimeApiSchemaCli(
 ): Promise<number> {
   const [command, ...rest] = argv;
   try {
+    if (command === "lint-ios-consumption") {
+      const options = parseOptions(rest, { root: "single" });
+      const root =
+        single(options, "root") ??
+        fileURLToPath(new URL("../../../../../", import.meta.url));
+      const findings = await checkIosConsumption(resolve(root));
+      for (const finding of findings) {
+        console.error(
+          "::error file=" +
+            finding.file +
+            ",line=" +
+            finding.line +
+            ",title=iOS API consumption::" +
+            finding.problem,
+        );
+      }
+      if (findings.length > 0) return 1;
+      console.log("iOS API consumption inventory covers all Swift API calls.");
+      return 0;
+    }
     if (command === "build") {
       await buildCommand(parseOptions(rest, BUILD_OPTIONS));
       return 0;
@@ -91,14 +121,8 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
     throw new CliUsageError("Missing required --against <path> option");
   }
   const blockingOwners = readBlockingOwners(options);
-  const floorPath = single(options, "desktop-floor");
-  const baseFloorPath = single(options, "desktop-base-floor");
-  if ((floorPath === undefined) !== (baseFloorPath === undefined)) {
-    throw new CliUsageError(
-      "--desktop-floor and --desktop-base-floor must be passed together",
-    );
-  }
-  const publishedVersion = readPublishedVersion(options);
+  const desktop = await readNativePolicy(options, "desktop");
+  const ios = await readNativePolicy(options, "ios");
 
   const currentPath = single(options, "current");
   const current = currentPath
@@ -111,26 +135,37 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
     : undefined;
   if (!online) {
     console.warn(
-      "Runtime API schema comparison skipped because no online schema is available yet; Desktop floor and transform checks still run.",
+      "Runtime API schema comparison skipped because no online schema is available yet; Native client floor and transform checks still run.",
     );
   }
 
-  const desktopFloor: DesktopFloorChange | undefined =
-    floorPath && baseFloorPath
-      ? {
-          floor: await readDesktopFloor(floorPath),
-          baseFloor: await readDesktopFloor(baseFloorPath),
-        }
-      : undefined;
+  if (
+    online &&
+    blockingOwners.has("ios") &&
+    !online.routes.some((route) => {
+      return route.owner === "ios";
+    })
+  ) {
+    console.warn(
+      "::warning::Production has no iOS contract baseline yet. The next API production promotion must publish the iOS route inventory before iOS schema changes can be compared.",
+    );
+  }
   const result = evaluateRuntimeApiGate({
     findings: online ? compareRuntimeApiSchemas(online, current) : [],
     ...(online && base
       ? { baseFindings: compareRuntimeApiSchemas(online, base) }
       : {}),
     blockingOwners,
-    ...(desktopFloor ? { desktopFloor } : {}),
-    ...(publishedVersion ? { desktopPublishedVersion: publishedVersion } : {}),
+    ...(desktop.floor ? { desktopFloor: desktop.floor } : {}),
+    ...(desktop.publishedVersion
+      ? { desktopPublishedVersion: desktop.publishedVersion }
+      : {}),
     desktopTransforms: desktopResponseTransforms,
+    ...(ios.floor ? { iosFloor: ios.floor } : {}),
+    ...(ios.publishedVersion
+      ? { iosPublishedVersion: ios.publishedVersion }
+      : {}),
+    iosTransforms: iosResponseTransforms,
   });
 
   console.log(renderRuntimeApiGateReport(result));
@@ -148,6 +183,32 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
   }
 
   return result.passed ? 0 : 1;
+}
+
+async function readNativePolicy(
+  options: ParsedOptions,
+  client: "desktop" | "ios",
+): Promise<{
+  readonly floor: NativeFloorChange | undefined;
+  readonly publishedVersion: string | undefined;
+}> {
+  const floorPath = single(options, `${client}-floor`);
+  const basePath = single(options, `${client}-base-floor`);
+  if ((floorPath === undefined) !== (basePath === undefined)) {
+    throw new CliUsageError(
+      `--${client}-floor and --${client}-base-floor must be passed together`,
+    );
+  }
+  return {
+    floor:
+      floorPath && basePath
+        ? {
+            floor: await readNativeFloor(floorPath),
+            baseFloor: await readNativeFloor(basePath),
+          }
+        : undefined,
+    publishedVersion: readPublishedVersion(options, client),
+  };
 }
 
 function parseOptions(
@@ -205,13 +266,16 @@ function readBlockingOwners(
   return owners;
 }
 
-function readPublishedVersion(options: ParsedOptions): string | undefined {
-  const value = single(options, "desktop-published-version");
+function readPublishedVersion(
+  options: ParsedOptions,
+  client: "desktop" | "ios" = "desktop",
+): string | undefined {
+  const value = single(options, `${client}-published-version`);
   if (value === undefined || parseStableVersion(value)) {
     return value;
   }
   console.warn(
-    `::warning::Ignoring --desktop-published-version ${JSON.stringify(value)}: not a stable x.y.z version. Oracle: ${DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
+    `::warning::Ignoring --${client}-published-version ${JSON.stringify(value)}: not a stable x.y.z version. Oracle: ${client === "ios" ? IOS_PUBLISHED_VERSION_ORACLE : DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
   );
   return undefined;
 }
@@ -230,7 +294,7 @@ async function readOptionalSchema(
   }
 }
 
-async function readDesktopFloor(path: string): Promise<string | null> {
+async function readNativeFloor(path: string): Promise<string | null> {
   const raw = await readFile(resolve(path), "utf8");
-  return desktopFloorFileSchema.parse(JSON.parse(raw)).minimumSupportedVersion;
+  return nativeFloorFileSchema.parse(JSON.parse(raw)).minimumSupportedVersion;
 }

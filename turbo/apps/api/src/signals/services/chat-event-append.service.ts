@@ -1,7 +1,7 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { sql, type SQL } from "drizzle-orm";
-import { number, object, string } from "zod";
+import { number, object, uuid } from "zod";
 import {
   pgInt8ToSafeIntegerSchema,
   pgTimestampWithoutTimezoneToDateSchema,
@@ -25,7 +25,7 @@ export type PreparedChatEventRow = Omit<
 };
 
 export const chatEventAppendResultSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
   seqId: pgInt8ToSafeIntegerSchema,
   sequenceNumber: number().int().nullable(),

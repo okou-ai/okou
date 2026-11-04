@@ -16,6 +16,46 @@ fn with_space(f: &Fixture, stats: FsStats) -> HomeImageCache {
     )
 }
 
+#[tokio::test]
+async fn large_filesystem_publication_retains_home_with_fixed_headroom() {
+    for capacity_gib in [1024, 2048] {
+        let mut f = Fixture::new().await;
+        f.cache = with_space(
+            &f,
+            FsStats {
+                total_bytes: capacity_gib * GIB,
+                available_bytes: 60 * GIB,
+                ..FsStats::default()
+            },
+        );
+        let context = f
+            .context(
+                "large-filesystem",
+                b"preserved home contents",
+                "2026-11-03T05:00:00Z",
+                HomeCacheTerminalStatus::Success,
+                StorageFingerprints::default(),
+            )
+            .await;
+        let source = f.paths.active_home_image(&context.sandbox_id());
+        let original = tokio::fs::read(&source).await.unwrap();
+
+        assert_eq!(
+            context.promote().await.unwrap(),
+            HomeImagePromotionOutcome::Promoted,
+            "60 GiB free must admit publication on a {capacity_gib} GiB filesystem"
+        );
+        drop(context);
+        let committed = f.metadata("large-filesystem").await;
+        assert_eq!(
+            tokio::fs::read(f.image("large-filesystem", &committed))
+                .await
+                .unwrap(),
+            original
+        );
+    }
+}
+
 fn scaled_healthy_cache(f: &Fixture) -> HomeImageCache {
     // Bounded real images with a scaled reserve exercise the same policy on a
     // small external-stat fixture, not native filesystem-pressure evidence.

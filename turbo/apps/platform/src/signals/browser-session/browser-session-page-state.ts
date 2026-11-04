@@ -1,4 +1,4 @@
-import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadByIdContract } from "@okouai/api-contracts/client/chat-threads";
 import { command, computed, state, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";

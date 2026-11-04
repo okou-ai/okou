@@ -9,6 +9,7 @@ export const apiTestEnvironment = {
   OFFICIAL_RUNNER_SECRET:
     "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
   OPENAI_API_KEY: "test-openai-key",
+  OKOU_BROWSER_USE_EXTENSION_ID: "11111111-1111-4111-8111-111111111111",
   FAL_KEY: "test-fal-key",
   CRON_SECRET: "test-cron-secret",
   R2_ACCESS_KEY_ID: "test-access-key",

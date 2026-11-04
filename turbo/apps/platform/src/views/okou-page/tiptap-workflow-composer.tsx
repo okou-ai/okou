@@ -141,8 +141,10 @@ function WorkflowComposerPlaceholder({
 }: {
   composer: ComposerSignals;
 }) {
-  useTranslation();
+  const { t } = useTranslation();
   const sending = useLastResolved(composer.submission.sending$);
+  const homeDiscoveryEnabled = useGet(composer.homeDiscovery.enabled$);
+  const homeView = useGet(composer.homeDiscovery.view$);
   const createMode = useGet(composer.create.mode$);
   const hasInput = useGet(composer.editor.hasInput$);
   const hasEditorContent = useEditorState({
@@ -164,9 +166,17 @@ function WorkflowComposerPlaceholder({
       }`}
       aria-hidden="true"
     >
-      {createMode
-        ? composerCreatePlaceholder(createMode)
-        : workflowComposerPlaceholder(sending)}
+      {homeDiscoveryEnabled && homeView !== "directory" && homeView !== "task"
+        ? t(($) => {
+            return $.chat.homeDiscovery.entries[homeView].placeholder;
+          })
+        : createMode
+          ? composerCreatePlaceholder(createMode)
+          : homeDiscoveryEnabled
+            ? t(($) => {
+                return $.chat.homeDiscovery.placeholder;
+              })
+            : workflowComposerPlaceholder(sending)}
     </div>
   );
 }
@@ -180,8 +190,8 @@ interface TiptapWorkflowComposerProps {
 
 interface ComposerKeyDownContext {
   readonly composer: ComposerSignals;
-  readonly selectedTask: ComposerTask | null;
-  readonly selectTask: (task: ComposerTask | null) => void;
+  readonly hasSelection: boolean;
+  readonly clearSelection: () => void;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }
 
@@ -215,7 +225,7 @@ function shouldRemoveSelectedTask(
   return (
     event.key === "Backspace" &&
     !showSuggestionMenu &&
-    context.selectedTask !== null &&
+    context.hasSelection &&
     context.composer.editor.editor.isEmpty
   );
 }
@@ -278,7 +288,7 @@ function handleComposerKeyDownCapture(
     )
   ) {
     event.preventDefault();
-    context.selectTask(null);
+    context.clearSelection();
     return true;
   }
   if (
@@ -757,8 +767,8 @@ function useComposerSuggestionMenu({
 }): ComposerSuggestionMenuState {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const slashRange = useGet(composer.suggestion.activeSlashRange$);
-  const selectedTask = useGet(composer.taskChips.task$);
-  const selectTask = useSet(composer.taskChips.selectTask$);
+  const hasSelection = useGet(composer.homeDiscovery.hasSelection$);
+  const clearSelection = useSet(composer.homeDiscovery.clearSelection$);
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
   const previewIndex = useGet(composer.suggestion.previewSuggestionIndex$);
   const previewSuggestion = useSet(composer.suggestion.previewSuggestion$);
@@ -831,7 +841,7 @@ function useComposerSuggestionMenu({
   }
 
   const handleKeyDown = createComposerSuggestionKeyDown(
-    { composer, selectedTask, selectTask, onKeyDown },
+    { composer, hasSelection, clearSelection, onKeyDown },
     {
       suggestionOrder,
       selectedSuggestionIndex: selectedIndex,
@@ -1050,8 +1060,8 @@ function ComposerSuggestionMenu({
   readonly children: ReactNode;
 }) {
   const sessionActive = useGet(composer.suggestion.sessionActive$);
-  const selectedTask = useGet(composer.taskChips.task$);
-  const selectTask = useSet(composer.taskChips.selectTask$);
+  const hasSelection = useGet(composer.homeDiscovery.hasSelection$);
+  const clearSelection = useSet(composer.homeDiscovery.clearSelection$);
   const onKeyDown = useComposerKeyboard(composer, actions);
   return (
     <>
@@ -1066,8 +1076,8 @@ function ComposerSuggestionMenu({
           const nativeEvent = event.nativeEvent;
           const handled = handleComposerKeyDownCapture(nativeEvent, {
             composer,
-            selectedTask,
-            selectTask,
+            hasSelection,
+            clearSelection,
             onKeyDown,
           });
           if (handled || nativeEvent.defaultPrevented) {

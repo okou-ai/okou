@@ -1,7 +1,5 @@
-import {
-  workflowAutomationsContract,
-  type ChatThreadWorkflowAutomation,
-} from "@okouai/api-contracts/contracts/workflows";
+import { workflowAutomationsContract } from "@okouai/api-contracts/client/workflows";
+import type { ChatThreadWorkflowAutomation } from "@okouai/api-contracts/contracts/workflows";
 import { accept } from "../../lib/accept.ts";
 import type { ApiClientFactory } from "../api-client.ts";
 

@@ -1,43 +1,13 @@
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  exists,
-  gte,
-  lt,
-  ne,
-  not,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, exists, lt, ne, not, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { UpdateSshCredentialArgs } from "./ssh-credential.service";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 
 // Sessionless construction. The owning command executes the dependent writes.
 export function createSshCredentialUpdateReads(args: UpdateSshCredentialArgs) {
   const qb = new QueryBuilder();
-  const observed = qb.$with("observed_ssh_credential_update").as(
-    qb
-      .select({
-        id: sshCredentials.id,
-        version: sql`${sshCredentials}.xmin::text`
-          .mapWith(pgTextDecoder)
-          .as("observed_version"),
-      })
-      .from(sshCredentials)
-      .where(
-        and(
-          eq(sshCredentials.id, args.credentialId),
-          eq(sshCredentials.orgId, args.owner.orgId),
-          eq(sshCredentials.userId, args.owner.userId),
-        ),
-      ),
-  );
-  const hosts = qb.$with("locked_ssh_credential_hosts").as(
+  const hosts = qb.$with("current_ssh_credential_hosts").as(
     qb
       .select({
         id: sshConnections.id,
@@ -52,16 +22,12 @@ export function createSshCredentialUpdateReads(args: UpdateSshCredentialArgs) {
           eq(sshConnections.userId, args.owner.userId),
         ),
       )
-      .orderBy(asc(sshConnections.id))
-      .for("no key update"),
+      .orderBy(asc(sshConnections.id)),
   );
-  const current = qb.$with("locked_ssh_credential_update").as(
+  const current = qb.$with("current_ssh_credential_update").as(
     qb
       .select({
         id: sshCredentials.id,
-        version: sql`${sshCredentials}.xmin::text`
-          .mapWith(pgTextDecoder)
-          .as("current_version"),
         name: sshCredentials.name,
         username: sshCredentials.username,
         authMethod: sshCredentials.authMethod,
@@ -75,11 +41,8 @@ export function createSshCredentialUpdateReads(args: UpdateSshCredentialArgs) {
           eq(sshCredentials.id, args.credentialId),
           eq(sshCredentials.orgId, args.owner.orgId),
           eq(sshCredentials.userId, args.owner.userId),
-          // Consume the UUID-ordered retained Host set before the credential fence.
-          gte(qb.select({ count: count() }).from(hosts), 0),
         ),
-      )
-      .for("update"),
+      ),
   );
   const effective =
     args.body.authentication !== undefined
@@ -94,10 +57,7 @@ export function createSshCredentialUpdateReads(args: UpdateSshCredentialArgs) {
       .where(
         and(
           lt(current.revision, 2_147_483_647),
-          eq(
-            current.version,
-            qb.select({ version: observed.version }).from(observed),
-          ),
+          eq(current.revision, args.body.expectedRevision),
           or(
             not(effective),
             not(
@@ -114,11 +74,10 @@ export function createSshCredentialUpdateReads(args: UpdateSshCredentialArgs) {
   );
   return {
     qb,
-    observed,
     hosts,
     current,
     eligible,
     effective,
-    ctes: [observed, hosts, current, eligible],
+    ctes: [hosts, current, eligible],
   };
 }

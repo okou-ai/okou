@@ -1,11 +1,9 @@
 import { command } from "ccstate";
-import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
-import {
-  hostContract,
-  isHostedSiteDocument,
-  type HostedSiteFilesResponse,
-} from "@okouai/api-contracts/contracts/host";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactDownloadsContract } from "@okouai/api-contracts/client/artifact-downloads";
+import { hostContract } from "@okouai/api-contracts/client/host";
+import { isHostedSiteDocument } from "@okouai/api-contracts/validators/host";
+import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../lib/accept.ts";
 import { writeHostedPublicationZip } from "../lib/hosted-publication-zip.ts";

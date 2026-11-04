@@ -34,6 +34,7 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "test-oauth\0oauth": FeatureSwitchKey.TestOauthConnector,
   "test-oauth-device\0api": FeatureSwitchKey.TestOauthConnector,
   "test-oauth-device\0oauth": FeatureSwitchKey.TestOauthConnector,
+  "tiktok\0oauth": FeatureSwitchKey.TikTokOAuthConnector,
   "webflow\0oauth": FeatureSwitchKey.WebflowConnector,
   "workday\0api-token": FeatureSwitchKey.WorkdayConnector,
   "zapier\0api-token": FeatureSwitchKey.ZapierConnector,

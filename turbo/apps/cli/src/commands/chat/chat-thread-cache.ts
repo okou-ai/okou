@@ -1,11 +1,12 @@
+import { chatThreadEventSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
-  chatThreadEventSchema,
   chatThreadSnapshotProjectionSchema,
+  type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   replayChatThreadEvents,
@@ -15,13 +16,12 @@ import {
 import {
   getChatThreadSnapshot,
   listChatThreadEvents,
-  type ChatThreadEvent,
   type ChatThreadSnapshot,
 } from "../../lib/api/domains/chat";
 import { decodeSandboxTokenPayload, getApiUrl } from "../../lib/api/config";
 
-const CACHE_VERSION = 2;
-const MAX_EVENT_PAGES_PER_SYNC = 20;
+const CACHE_VERSION = 3;
+const MAX_EVENT_PAGES_PER_SYNC = 1000;
 
 interface ChatThreadCache {
   readonly version: typeof CACHE_VERSION;
@@ -211,6 +211,11 @@ export async function syncCachedChatThreads(): Promise<
       }
     }
 
+    if (page === MAX_EVENT_PAGES_PER_SYNC - 1 && result.hasMore) {
+      throw new Error(
+        "Chat synchronization is incomplete; no partial list was returned",
+      );
+    }
     if (!result.hasMore || result.events.length === 0) {
       break;
     }

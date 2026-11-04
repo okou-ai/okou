@@ -1,9 +1,9 @@
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  integrationsAgentPhoneContract,
-  type AgentPhoneLinkCodeResponse,
-  type AgentPhoneLinkStatusResponse,
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/client/integrations-agentphone";
+import type {
+  AgentPhoneLinkCodeResponse,
+  AgentPhoneLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";

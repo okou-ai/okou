@@ -17,8 +17,10 @@ import {
   object,
   string,
   union,
+  uuid,
   enum as zEnum,
   never as zNever,
+  url as zUrl,
   type infer as zInfer,
 } from "zod";
 
@@ -137,23 +139,21 @@ import {
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
 
-const oauthHttpsUrlSchema = string()
-  .url()
-  .refine((value) => {
-    return new URL(value).protocol === "https:";
-  });
+const oauthHttpsUrlSchema = zUrl().refine((value) => {
+  return new URL(value).protocol === "https:";
+});
 
 const customConnectorCustomOAuthProviderContextSchema = object({
   provider: literal("feishu"),
   completionTarget: zEnum(["custom", "feishu"]),
-  installationId: string().uuid().optional(),
+  installationId: uuid().optional(),
   expectedOpenId: string().min(1).optional(),
 }).strict();
 
 const customConnectorCustomOAuthStateContextSchema = object({
   version: literal(2),
   authMode: literal("oauth"),
-  connectorId: string().uuid(),
+  connectorId: uuid(),
   storageVersion: number().int().positive(),
   providerContext: customConnectorCustomOAuthProviderContextSchema.optional(),
 }).strict();
@@ -163,7 +163,7 @@ export type CustomConnectorCustomOAuthStateContext = zInfer<
 >;
 
 const customConnectorAutomaticOAuthStateContextCoreSchema = object({
-  connectorId: string().uuid(),
+  connectorId: uuid(),
   storageVersion: number().int().positive(),
   issuer: oauthHttpsUrlSchema,
   resource: oauthHttpsUrlSchema,
@@ -196,7 +196,7 @@ const customConnectorAutomaticOAuthStateContextSchema = union([
   customConnectorAutomaticOAuthStateContextBaseSchema
     .extend({
       registrationMethod: literal("dcr"),
-      dcrRegistrationId: string().uuid(),
+      dcrRegistrationId: uuid(),
     })
     .strict(),
 ]);
@@ -1069,7 +1069,7 @@ function automaticNoAuthWakeupFailure(
 
 const automaticNoAuthPublicationRow = object({
   contract_current: boolean(),
-  connection_id: string().uuid().nullable(),
+  connection_id: uuid().nullable(),
 });
 
 const commitAutomaticNoAuthConnection$ = command(
@@ -1883,7 +1883,7 @@ type StoreCustomConnectorOAuth2ConnectionResult =
   | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" };
 
 const customOAuthPublicationRow = object({
-  connection_id: string().uuid().nullable(),
+  connection_id: uuid().nullable(),
   complete: literal(1),
 }).strict();
 

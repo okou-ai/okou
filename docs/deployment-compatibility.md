@@ -95,6 +95,38 @@ preparation, complete this drain, then activate the change. Waiting after a
 combined release does not establish that the preparation and drain preceded
 activation.
 
+### Browser Extension, API, and Frontend
+
+The browser extension participates in the same release-please production
+workflow as the API and App. The production dependency chain in
+[release-please.yml](../.github/workflows/release-please.yml) is:
+
+1. `publish-browser-extension` builds the immutable `release_target`, verifies
+   the version/source/checksum and uploads the extension to Browser Use.
+2. `promote-api-production` depends on extension publication and consumes that
+   job's confirmed upload ID as `OKOU_BROWSER_USE_EXTENSION_ID`. An extension
+   release also requests API deployment, even without a separate API version.
+3. `promote-app-worker-production`, which serves the frontend, depends on
+   successful API production promotion. Its new assets therefore follow the
+   extension/API release lifecycle.
+
+When there is no new extension release, its publication job is skipped and
+the API environment resolver selects the unique highest numeric `X.Y.Z`
+version uploaded as `Okou Browser`. Missing or ambiguous results fail deployment.
+Upload UUID, installed Chrome runtime ID, and extension version are different
+identities; consumers use the API's actual installed metadata.
+
+Validate extension APIs against the provider's upload policy before relying on
+them. [Browser Use extension limits](https://docs.browser-use.com/cloud/browser/extensions#limits)
+prohibit the `debugger` manifest permission, including extensions that only
+intend to call `chrome.debugger.getTargets()` without attaching a debugger.
+Successful local Chromium execution does not establish cloud deployability.
+
+Extension upload makes an artifact available for newly created Browsers; it
+does not hot-replace the extension in an already running Browser. Required
+capability changes must account for that installed artifact's lifetime separately
+from deployment ordering.
+
 ### Runner, Guest, and CLI Artifacts
 
 Runner embeds its Guest binaries and the Okou CLI package in one deployment
@@ -278,10 +310,15 @@ Installed Desktop builds decode every route in
 strictly, and the API deploys long before a Desktop release reaches users. The
 required `lint-runtime-api-compat` job binds those routes into the runtime API
 schema with owner `desktop` and compares the candidate with the production
-snapshot that each API production promotion republishes. Desktop routes compare
+snapshot that each API production promotion republishes. Desktop and iOS routes compare
 every declared response status, because Desktop also decodes error bodies such
-as the `426` upgrade floor; other owners compare `2xx` bodies only. A breaking
-Desktop finding fails the job unless the same PR carries one of two proofs:
+as the `426` upgrade floor; service owners compare `2xx` bodies only.
+Adding a response status to an already registered native route is also a finding,
+even when all previous responses remain unchanged: the existing baseline does
+not establish that installed clients support the new response branch. The same
+native compatibility proofs apply to these additions; a `2xx` transform must
+match the new status, and non-`2xx` additions cannot use a response transform.
+A breaking Desktop finding fails the job unless the same PR carries one of two proofs:
 
 - **(A) Floor raise.** Raise `minimumSupportedVersion` in
   [`desktop-compatibility.json`](../turbo/apps/api/src/lib/desktop-compatibility.json)
@@ -301,6 +338,13 @@ The gate sees only what the contract declares. When Desktop branches on an
 error code, declare that response's `error.code` as an enum of every code the
 handler returns, as the command-completion `409` does, so that a renamed or
 added code becomes a finding.
+
+Open command envelopes can retain opaque helper fields while declaring the
+fields Desktop reads or writes. Mark those objects with
+`x-desktop-stable-fields: true`: removing even an optional declared field then
+becomes a finding, because an installed client still uses its name when that
+operation is present. Keep those fields in the actual queue contracts and
+generate their Swift readers and writers from the same schemas.
 
 The published Desktop version is the release tag version in the redirect from
 `GET https://api.okou.ai/api/desktop/updates/stable/darwin/arm64/release`.
@@ -326,6 +370,64 @@ and once a floor raise passes `maxVersion` the gate rejects the unreachable
 transform. Remove its entry, runtime wiring, and retired tests together with the
 floor raise, verifying that the owning admission boundary rejects unsupported
 clients before producing the changed response.
+
+### iOS Contract Gate
+
+The required `lint-runtime-api-compat` job also blocks breaking changes on
+`ios`-owned routes in
+[`ios-routes.ts`](../turbo/packages/api-contracts/src/runtime-api-schema/ios-routes.ts).
+This explicit consumption inventory covers the App and ChatData API calls,
+including dynamic chat actions and connector authentication paths. Add the
+owning contract reference when adding a native API call. DTO generation can
+progress independently; installed iOS clients retain their compiled Codable
+readers. iOS and Desktop registrations of a shared route are separate consumers,
+so a proof for one never proves compatibility for the other.
+
+The required job runs `lint-ios-api-consumption` for API changes and pure
+iOS PRs, including their merge groups. It checks Swift `APIClient.request`
+and `data` calls against the iOS inventory by HTTP method and path.
+Write the API path and HTTP method explicitly at the call site; interpolate
+only path parameters and enumerate endpoint or method choices in branches.
+Computed paths, unknown methods, and unregistered calls fail with their source
+location. First-party API requests belong in this shared transport; direct
+storage downloads and browser navigation remain separate operations.
+
+The iOS gate compares request schemas, route identities, and every declared
+response status. Requests use Zod input schemas and responses use output schemas,
+so adding a request default does not force an update on clients that omit it.
+Union alternatives, intersection constraints, and dictionary value types remain
+part of the compatibility comparison. The global `426` envelope is defined in
+[`ios-client-compatibility.ts`](../turbo/packages/api-contracts/src/contracts/ios-client-compatibility.ts)
+and included for every iOS route. Error responses cannot be proven by a success
+body transform. The same two-proof policy applies independently to iOS:
+
+- **(A) Floor raise.** Raise
+  [`ios-client-compatibility.json`](../turbo/apps/api/src/lib/ios-client-compatibility.json)
+  above the base branch floor, never above the verified TestFlight version.
+  Review must confirm that the selected build already tolerates the new shape.
+- **(B) Response transform.** Register the same method, path and `2xx` status in
+  [`client-transforms/ios.ts`](../turbo/packages/api-contracts/src/client-transforms/ios.ts),
+  with `maxVersion: null` or at least the verified published iOS version. Mount
+  each transform on its owning route; the production route-registration check
+  verifies the aggregate inventory against runtime wiring. Selection uses exact
+  `X-Client-Type: iOS` and stable versions, with inclusive `v <= maxVersion`.
+  Request or route changes still require proof A or preserving the old contract.
+
+The TestFlight oracle reads GitHub publication evidence with read-only contents
+and Actions permissions, without Apple signing credentials in PR jobs. A stable
+`ios-v*` release must match `MARKETING_VERSION` at its immutable commit and a
+main-branch release workflow at that commit whose `publish-ios-testflight` job
+and internal-availability verification step both succeeded. Upload-only tags,
+failed publication, and verification older than TestFlight's 90-day build
+lifetime do not establish availability. If this evidence cannot be read, a floor
+raise or a bounded transform proof fails; unrelated PRs remain unaffected.
+
+Lowered or removed floors and unreachable transforms fail even without schema
+findings. The base branch's already-proven findings remain inherited warnings,
+as with Desktop. A new client inventory starts comparing against production
+after an API promotion publishes its first snapshot; until then CI explicitly
+warns that its baseline is absent. Register a new inventory without changing
+its existing API shapes, then publish that baseline before contracting them.
 
 ### Coupled Guest Disk and Retained-Image Contracts
 

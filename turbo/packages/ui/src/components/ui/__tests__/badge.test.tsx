@@ -21,9 +21,9 @@ describe("Badge", () => {
       @source "../components/ui/badge.tsx";
       @source inline("text-xs text-sm text-[10px] text-[11px] leading-7");
     `;
-    const compiled = await postcss([tailwindcss()]).process(source, {
-      from: path,
-    });
+    const compiled = await postcss([
+      tailwindcss({ base: packageRoot }),
+    ]).process(source, { from: path });
     // Happy DOM does not implement cascade layers. Keep the real compiled
     // typography declarations in source order for the computed-style checks.
     const rules: string[] = [];

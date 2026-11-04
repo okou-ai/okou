@@ -109,6 +109,10 @@ class FirewallAuthResponseTooLargeError(Exception):
     """Raised when /firewall/auth returns a response body above the local cap."""
 
 
+class FirewallAuthInvalidResponseError(ValueError):
+    """Raised when /firewall/auth returns invalid protocol or success data."""
+
+
 class FirewallAuthFetchPhase(StrEnum):
     """Bounded transport phase active when a firewall auth fetch deadline expires."""
 
@@ -800,8 +804,8 @@ def _firewall_auth_api_error_from_envelope(
 _MALFORMED_FIREWALL_AUTH_SUCCESS = "Firewall auth endpoint returned malformed success response"
 
 
-def _malformed_firewall_auth_success(message: str) -> ValueError:
-    return ValueError(f"{_MALFORMED_FIREWALL_AUTH_SUCCESS}: {message}")
+def _malformed_firewall_auth_success(message: str) -> FirewallAuthInvalidResponseError:
+    return FirewallAuthInvalidResponseError(f"{_MALFORMED_FIREWALL_AUTH_SUCCESS}: {message}")
 
 
 def _parse_string_map(value: object, field_name: str) -> dict[str, str]:
@@ -1042,7 +1046,7 @@ async def fetch_firewall_headers(
             raise FirewallAuthDeadlineExceededError(progress.phase) from None
         raise
     except h11.ProtocolError:
-        raise ValueError("Firewall auth HTTP protocol error") from None
+        raise FirewallAuthInvalidResponseError("Firewall auth HTTP protocol error") from None
 
     if not _HTTP_STATUS_SUCCESS_MIN <= response.status < _HTTP_STATUS_REDIRECTION_MIN:
         _raise_firewall_auth_http_error(response, url)

@@ -52,6 +52,10 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
     append_file(&mut builder, "nested/empty", b"", 0o600, 0).unwrap();
     append_file(&mut builder, &long, b"long name", 0o640, 1234567891).unwrap();
     append_file(&mut builder, binary, b"binary name", 0o644, 1234567892).unwrap();
+    let large = (0..192 * 1024 + 37)
+        .map(|index| (index % 251) as u8)
+        .collect::<Vec<_>>();
+    append_file(&mut builder, "nested/large", &large, 0o4750, 1234567893).unwrap();
     let archive = builder.into_inner().unwrap().finish().unwrap();
 
     assert!(apply(dir.path(), &mount, &archive).unwrap());
@@ -65,6 +69,12 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
         (Path::new("nested/empty"), b"".as_slice(), 0o600, 1),
         (Path::new(&long), b"long name".as_slice(), 0o640, 1234567891),
         (binary, b"binary name".as_slice(), 0o644, 1234567892),
+        (
+            Path::new("nested/large"),
+            large.as_slice(),
+            0o750,
+            1234567893,
+        ),
     ] {
         let path = mount.join(path);
         let metadata = fs::metadata(&path).unwrap();
@@ -178,22 +188,78 @@ fn many_distinct_parents_and_repeated_attempts_release_descriptors() {
 
 #[test]
 fn truncated_ordinary_payload_fails_with_partial_output() {
-    let dir = tempfile::tempdir().unwrap();
-    let mount = dir.path().join("mount");
-    let mut header = tar::Header::new_gnu();
-    header.set_path("nested/partial").unwrap();
-    header.set_mode(0o644);
-    header.set_mtime(1);
-    header.set_size(4096);
-    header.set_cksum();
-    let mut gzip = GzEncoder::new(Vec::new(), Compression::fast());
-    gzip.write_all(header.as_bytes()).unwrap();
-    gzip.write_all(b"abc").unwrap();
-    // Valid gzip, but the member payload is shorter than its tar size.
-    let archive = gzip.finish().unwrap();
+    for size in [4096, 192 * 1024 + 37] {
+        let dir = tempfile::tempdir().unwrap();
+        let mount = dir.path().join("mount");
+        let mut header = tar::Header::new_gnu();
+        header.set_path("nested/partial").unwrap();
+        header.set_mode(0o644);
+        header.set_mtime(1);
+        header.set_size(size);
+        header.set_cksum();
+        let mut gzip = GzEncoder::new(Vec::new(), Compression::fast());
+        gzip.write_all(header.as_bytes()).unwrap();
+        gzip.write_all(b"abc").unwrap();
+        // Valid gzip, but the member payload is shorter than its tar size.
+        let archive = gzip.finish().unwrap();
 
-    assert!(!apply(dir.path(), &mount, &archive).unwrap());
-    assert_eq!(fs::read(mount.join("nested/partial")).unwrap(), b"abc");
+        assert!(!apply(dir.path(), &mount, &archive).unwrap());
+        assert_eq!(fs::read(mount.join("nested/partial")).unwrap(), b"abc");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn buffered_payload_write_failure_is_not_successful() {
+    const CHILD: &str = "OKOU_GUEST_ARCHIVE_FILE_LIMIT_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        let dir = tempfile::tempdir().unwrap();
+        let mount = dir.path().join("mount");
+        let payload = vec![b'x'; 8193];
+        let archive = create_tar_gz_entries(&[
+            TarEntry::File("limited", &payload),
+            TarEntry::File("must-not-write", b"later"),
+        ])
+        .unwrap();
+
+        assert!(!apply(dir.path(), &mount, &archive).unwrap());
+        assert_eq!(fs::read(mount.join("limited")).unwrap(), payload[..8192]);
+        assert!(!mount.join("must-not-write").exists());
+        return;
+    }
+
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+    child
+        .args([
+            "--exact",
+            "rooted_extraction::buffered_payload_write_failure_is_not_successful",
+            "--nocapture",
+        ])
+        .env(CHILD, "1");
+    use std::os::unix::process::CommandExt;
+    // SAFETY: only async-signal-safe signal/setrlimit calls run in the child.
+    // Ignoring SIGXFSZ lets the actual file write return EFBIG to the extractor.
+    unsafe {
+        child.pre_exec(|| {
+            if libc::signal(libc::SIGXFSZ, libc::SIG_IGN) == libc::SIG_ERR {
+                return Err(io::Error::last_os_error());
+            }
+            let limit = libc::rlimit {
+                rlim_cur: 8192,
+                rlim_max: 8192,
+            };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &limit) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let output = crate::process::CommandExecution::spawn(&mut child, None)
+        .unwrap()
+        .wait()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
 }
 
 #[cfg(target_os = "linux")]

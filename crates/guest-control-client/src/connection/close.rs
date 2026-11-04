@@ -15,8 +15,6 @@ pub enum ConnectionCloseReason {
     ClientDropped,
     FrameWriteAbandoned,
     FrameWriteError(io::ErrorKind),
-    FileTransferAbandoned,
-    FileTransferError(io::ErrorKind),
     ExecWaitTimeout,
     StartCancelWriteTimeout,
     UnclassifiedPoison,
@@ -32,8 +30,6 @@ impl ConnectionCloseReason {
             Self::ClientDropped => "client_dropped",
             Self::FrameWriteAbandoned => "frame_write_abandoned",
             Self::FrameWriteError(_) => "frame_write_error",
-            Self::FileTransferAbandoned => "file_transfer_abandoned",
-            Self::FileTransferError(_) => "file_transfer_error",
             Self::ExecWaitTimeout => "exec_wait_timeout",
             Self::StartCancelWriteTimeout => "start_cancel_write_timeout",
             Self::UnclassifiedPoison => "unclassified_poison",
@@ -42,10 +38,9 @@ impl ConnectionCloseReason {
 
     pub fn error_kind(self) -> Option<io::ErrorKind> {
         match self {
-            Self::ReadError(kind)
-            | Self::DispatchError(kind)
-            | Self::FrameWriteError(kind)
-            | Self::FileTransferError(kind) => Some(kind),
+            Self::ReadError(kind) | Self::DispatchError(kind) | Self::FrameWriteError(kind) => {
+                Some(kind)
+            }
             _ => None,
         }
     }
@@ -69,14 +64,10 @@ impl ConnectionCloseInfo {
     ) -> Self {
         // Only an unfinished future, abandoned by its actual owner, can supply
         // expected-cancellation evidence. Errors and unwind remain conservative.
-        let cancelled_owner = matches!(
-            reason,
-            ConnectionCloseReason::FrameWriteAbandoned
-                | ConnectionCloseReason::FileTransferAbandoned
-        )
-        .then(|| owner.and_then(OperationCancellationContext::cancelled_owner))
-        .flatten()
-        .filter(|owner| !std::thread::panicking() && sandbox_id == Some(owner.sandbox_id()));
+        let cancelled_owner = matches!(reason, ConnectionCloseReason::FrameWriteAbandoned)
+            .then(|| owner.and_then(OperationCancellationContext::cancelled_owner))
+            .flatten()
+            .filter(|owner| !std::thread::panicking() && sandbox_id == Some(owner.sandbox_id()));
         Self {
             connection_id,
             sandbox_id: sandbox_id.map(str::to_owned),

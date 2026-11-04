@@ -4,7 +4,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -13,7 +15,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
   createSharedBrowserFixtures,
   MINUTE,
@@ -118,7 +119,20 @@ describe("shared Browser expiry through public reopen", () => {
       const a = await f.start();
       const b = await f.start();
       const first = await open(a);
+      const replacementExtensionId = "22222222-2222-4222-8222-222222222222";
+      expect(first.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", replacementExtensionId);
       const sibling = await open(b);
+      expect(sibling.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      const retainedViewer = await accept(
+        client().viewerConnection({
+          headers,
+          params: { threadId: b.threadId },
+        }),
+        [200],
+      );
+      expect(retainedViewer.body.extension.id).toBe(TEST_BROWSER_EXTENSION.id);
+      expect(retainedViewer.body.browser.window).toStrictEqual(sibling.window);
       navigate(
         f,
         first.window.primaryWindowId,
@@ -140,10 +154,20 @@ describe("shared Browser expiry through public reopen", () => {
       mockNow(START + 11 * MINUTE);
       const reopened = await open(a);
       expect(reopened.window.instanceId).not.toBe(first.window.instanceId);
+      expect(reopened.extension).toStrictEqual({
+        ...TEST_BROWSER_EXTENSION,
+        id: replacementExtensionId,
+      });
       expect(f.provider.createdIds).toHaveLength(1);
       expect(f.provider.sessionRequests).toStrictEqual([
-        expect.objectContaining({ profileId: f.provider.createdIds[0] }),
-        expect.objectContaining({ profileId: f.provider.createdIds[0] }),
+        expect.objectContaining({
+          profileId: f.provider.createdIds[0],
+          extensionIds: [TEST_BROWSER_EXTENSION.id],
+        }),
+        expect.objectContaining({
+          profileId: f.provider.createdIds[0],
+          extensionIds: [replacementExtensionId],
+        }),
       ]);
       expect(
         [...f.provider.native.targets.values()].map((page) => {
@@ -163,59 +187,20 @@ describe("shared Browser expiry through public reopen", () => {
         }),
       ).toStrictEqual(["https://b.example.test/recover"]);
       expect(f.provider.sessionRequests).toHaveLength(2);
+      const replacementViewer = await accept(
+        client().viewerConnection({
+          headers,
+          params: { threadId: b.threadId },
+        }),
+        [200],
+      );
+      expect(replacementViewer.body.extension.id).toBe(replacementExtensionId);
+      expect(replacementViewer.body.browser.window).toStrictEqual(
+        reopenedB.window,
+      );
+      expect(replacementViewer.body.cdpUrl).toBe(f.provider.native.url);
     });
   });
-
-  it.each(["capture", "close"] as const)(
-    "retains an expired lifetime after failed %s until normal reopen reconciles it",
-    async (failure) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await open(a);
-        const sibling = await open(b);
-        const aPage = navigate(
-          f,
-          first.window.primaryWindowId,
-          "https://a.example.test/saved",
-        );
-        const kms = useSecretKmsProbe();
-        mockNow(START + 9 * MINUTE);
-        await renew(b);
-        mockNow(START + 11 * MINUTE);
-        if (failure === "capture") {
-          f.provider.native.windowError = "Provider unavailable";
-        } else {
-          f.provider.native.closeSucceeds = false;
-        }
-        const blocked = await use(a);
-        expect(blocked.status).toBe(409);
-        expect(f.provider.native.targets.get(aPage.targetId)).toStrictEqual(
-          aPage,
-        );
-        expect(f.provider.sessionRequests).toHaveLength(1);
-        if (failure === "close") {
-          const captures = kms.generateDataKeyCalls;
-          const workingSibling = await open(b);
-          expect(workingSibling.window).toStrictEqual(sibling.window);
-          expect(kms.generateDataKeyCalls).toBe(captures);
-        }
-        f.provider.native.windowError = undefined;
-        f.provider.native.closeSucceeds = true;
-        const recovered = await open(a);
-        expect(recovered.window.instanceId).toBe(first.window.instanceId);
-        expect(
-          pages(f, recovered.window.primaryWindowId).map((page) => {
-            return page.url;
-          }),
-        ).toStrictEqual(["https://a.example.test/saved"]);
-        expect(pages(f, sibling.window.primaryWindowId)).toHaveLength(1);
-        expect(f.provider.sessionRequests).toHaveLength(1);
-      });
-    },
-  );
 
   it.each(["failed", "accepted", "lost-response"] as const)(
     "waits for a confirmed provider stop after a %s stop request",
@@ -304,15 +289,14 @@ describe("shared Browser expiry through public reopen", () => {
       mockNow(START + 9 * MINUTE);
       await renew(b);
       mockNow(START + 11 * MINUTE);
-      f.provider.native.beforeWindowReply = (targetId) => {
-        if (
-          targetId === second.targetId &&
-          !f.provider.native.targets.has(page.targetId)
-        ) {
+      f.provider.native.beforeCloseWindowReply = (windowId) => {
+        if (windowId === first.window.primaryWindowId) {
+          f.provider.native.targets.delete(page.targetId);
+          f.provider.native.closed.push(page.targetId);
           f.provider.native.closeSucceeds = false;
         }
       };
-      expect((await use(a)).status).toBe(409);
+      const reopened = await open(a);
       expect(f.provider.native.targets.has(page.targetId)).toBeFalsy();
       expect(f.provider.native.targets.get(second.targetId)).toStrictEqual(
         second,
@@ -325,9 +309,8 @@ describe("shared Browser expiry through public reopen", () => {
         }),
         [200],
       );
-      f.provider.native.beforeWindowReply = undefined;
+      f.provider.native.beforeCloseWindowReply = undefined;
       f.provider.native.closeSucceeds = true;
-      const reopened = await open(a);
       expect(reopened.window.instanceId).toBe(first.window.instanceId);
       expect(
         pages(f, reopened.window.primaryWindowId).map((target) => {
@@ -377,11 +360,10 @@ describe("shared Browser expiry through public reopen", () => {
           return;
         }),
       );
-      f.provider.native.beforeWindowReply = (targetId) => {
-        if (
-          targetId === second.targetId &&
-          !f.provider.native.targets.has(page.targetId)
-        ) {
+      f.provider.native.beforeCloseWindowReply = (windowId) => {
+        if (windowId === first.window.primaryWindowId) {
+          f.provider.native.targets.delete(page.targetId);
+          f.provider.native.closed.push(page.targetId);
           f.provider.native.closeSucceeds = false;
         }
       };
@@ -396,7 +378,7 @@ describe("shared Browser expiry through public reopen", () => {
             throw new Error("The earlier reclaim did not reach provider IO");
           }),
         ]);
-        expect((await use(a)).status).toBe(409);
+        expect((await use(a)).status).toBe(200);
         expect(f.provider.native.targets.has(page.targetId)).toBeFalsy();
         expect(f.provider.native.targets.has(second.targetId)).toBeTruthy();
       });
@@ -408,8 +390,8 @@ describe("shared Browser expiry through public reopen", () => {
       if (!loser.ok) {
         throw loser.error;
       }
-      expect(loser.value.status).toBe(409);
-      f.provider.native.beforeWindowReply = undefined;
+      expect(loser.value.status).toBe(200);
+      f.provider.native.beforeCloseWindowReply = undefined;
       f.provider.native.closeSucceeds = true;
       const reopened = await open(a);
       expect(
@@ -537,11 +519,6 @@ describe("shared Browser teardown through chat deletion", () => {
           bPage,
         );
         expect(f.provider.sessionIds.size).toBe(1);
-        const active = await accept(
-          client().get({ headers, params: { threadId: b.threadId } }),
-          [200],
-        );
-        expect(active.body.browser.window).toStrictEqual(sibling.window);
         await chat.deleteThread(f.owned.actor, b.threadId);
         expect(f.provider.native.targets.size).toBe(0);
         expect(f.provider.sessionIds.size).toBe(0);

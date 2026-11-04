@@ -1,3 +1,4 @@
+import { deleteMarketingContentGrants$ } from "./marketing-handoff.service";
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -253,6 +254,7 @@ export const cleanupClerkDeletedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "user", userId } as const;
     await set(deleteFeatureGuideReceipts$, userId, signal);
+    await set(deleteMarketingContentGrants$, userId, signal);
     await set(deleteTeamsOwnerAccounts$, owner, signal);
     await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);

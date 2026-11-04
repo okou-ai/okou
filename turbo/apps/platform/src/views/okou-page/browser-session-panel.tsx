@@ -1,25 +1,23 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { BrowserViewer } from "../browser-viewer/browser-viewer.tsx";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, LayoutPanel } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import {
   browserSessionReclaimHint,
+  type BrowserSessionPanelState,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
+import { Browser, BrowserRecoveryStatus } from "../browser/browser.tsx";
 
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
-  readonly showPausedScreenshot?: boolean;
   /**
    * Panel actions for a host without its own header. The live viewer places
    * them at the end of its tab row; other states give them a row of their own.
@@ -160,7 +158,7 @@ function BrowserCdpViewer({
   overlay,
 }: {
   readonly signals: BrowserSessionSignals;
-  readonly liveUrl: string;
+  readonly liveUrl: string | null;
   readonly instanceId?: string;
   readonly windowId?: number;
   /** The Cloud browser panel switch: app tokens and presence. */
@@ -169,75 +167,74 @@ function BrowserCdpViewer({
   readonly overlay: ReactNode;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
-  // Keep the stream during lease refreshes, but never reuse an endpoint from a
-  // previous provider instance while its replacement connection is loading.
+  const controls = useGet(signals.browser.controls$);
+  const syncLayout = useSet(signals.browser.syncLayout$);
+  // Keep the DOM during same-identity revalidation. The graph revokes input
+  // immediately while pending and owns endpoint changes without a React remount.
+  // Conceal a known replacement while preserving the graph until its actual
+  // endpoint/window identity is confirmed. A provider URL alone is not that identity.
   const connecting =
-    connection.state === "loading" ||
-    (connection.state === "hasData" &&
-      connection.data !== null &&
-      (connection.data.liveUrl !== liveUrl ||
-        connection.data.instanceId !== (instanceId ?? null) ||
-        connection.data.windowId !== (windowId ?? null)));
-  if (connecting) {
-    return (
-      <>
-        <PanelActions actions={actions} />
-        <LoadingBody />
-      </>
-    );
-  }
-  if (connection.state === "hasError" || !connection.data) {
-    return (
-      <>
-        <PanelActions actions={actions} />
-        <UnavailableBody quiet={refined} />
-      </>
-    );
-  }
+    !controls.recovery &&
+    connection.state === "hasData" &&
+    connection.data !== null &&
+    (connection.data.requestedSession.liveUrl !== liveUrl ||
+      connection.data.requestedSession.window?.instanceId !== instanceId ||
+      connection.data.requestedSession.window?.primaryWindowId !== windowId);
+  // The mounted root owns descriptor deadlines and recovery, including initial
+  // loading and failed HTTP reads. Removing it would cancel its own receipt.
   return (
     <>
       {refined ? null : <PanelActions actions={actions} />}
-      <div
-        key={instanceId ?? liveUrl}
-        data-browser-session-cdp-viewer
-        className="relative isolate flex min-h-0 flex-1"
-      >
-        <BrowserViewer
-          signals={signals.viewer}
-          connectionKey={
-            (instanceId ?? liveUrl) +
-            ":" +
-            (windowId ?? "") +
-            ":" +
-            connection.data.cdpUrl
-          }
-          actions={refined ? actions : null}
-          presence={overlay}
-        />
+      <div className="relative flex min-h-0 flex-1">
+        {connecting && (
+          <div className="absolute inset-0 flex">
+            <LoadingBody />
+          </div>
+        )}
+        {/* Preserve geometry so concealment cannot pause its own connection wait. */}
+        <LayoutPanel
+          active={!connecting}
+          layoutKey="browser-viewer"
+          onLayoutCommit={syncLayout}
+          aria-hidden={connecting}
+          inert={connecting}
+          data-browser-session-cdp-viewer
+          className={cn(
+            "relative isolate flex min-h-0 flex-1",
+            connecting && "invisible",
+          )}
+        >
+          <Browser
+            signals={signals.browser}
+            actions={refined ? actions : null}
+            presence={overlay}
+          />
+          {refined && (
+            <BrowserRecoveryStatus
+              signals={signals.browser}
+              className="pointer-events-none absolute bottom-2 right-3 rounded border border-divider bg-popover px-2 py-1 text-[11px] leading-4 text-muted-foreground shadow-sm"
+            />
+          )}
+        </LayoutPanel>
       </div>
     </>
   );
 }
 
 function PausedBrowserSession({
-  screenshotUrl,
-  screenshotLoad,
-  showPausedScreenshot,
+  signals,
   starting,
   onStart,
   refined,
   actions,
 }: {
-  readonly screenshotUrl?: string | null;
-  readonly screenshotLoad: ImageLoadSignals;
-  readonly showPausedScreenshot: boolean;
+  readonly signals: BrowserSessionSignals;
   readonly starting: boolean;
   readonly onStart: () => void;
   readonly refined: boolean;
   readonly actions: ReactNode;
 }) {
   const { t } = useTranslation();
-  const showScreenshot = showPausedScreenshot && screenshotUrl;
   const startContent = (
     <>
       {starting ? (
@@ -288,49 +285,46 @@ function PausedBrowserSession({
           </button>
         )
       }
-      className={
-        showScreenshot
-          ? "absolute inset-0 z-10 bg-background/50 backdrop-blur-md"
-          : refined
-            ? ""
-            : undefined
-      }
+      className={cn("absolute inset-0 z-10", !refined && "bg-muted/20")}
     />
   );
-  if (!showScreenshot) {
-    return (
-      <PanelFrame>
-        <PanelActions actions={actions} />
-        {pausedMessage}
-      </PanelFrame>
-    );
-  }
   return (
     <PanelFrame>
-      <PanelActions actions={actions} />
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/20">
-        <ArtifactThumbnailImage
-          src={screenshotUrl}
-          load={screenshotLoad}
-          testId="browser-session-panel-screenshot"
-          className="absolute inset-x-0 top-0 h-auto w-full object-contain object-top"
-          fallback={
-            <span className="absolute inset-0 bg-muted/20" aria-hidden />
-          }
-        />
-        <div data-browser-session-screenshot-mask>{pausedMessage}</div>
-      </div>
+      {refined ? null : <PanelActions actions={actions} />}
+      <Browser
+        signals={signals.browser}
+        actions={refined ? actions : null}
+        presence={null}
+        placeholder={pausedMessage}
+      />
     </PanelFrame>
+  );
+}
+
+function equalPanelSessions(
+  previous: BrowserSessionPanelState | null,
+  next: BrowserSessionPanelState | null,
+): boolean {
+  return (
+    previous === next ||
+    (previous !== null &&
+      next !== null &&
+      previous.status === next.status &&
+      previous.screenshotUrl === next.screenshotUrl &&
+      previous.liveUrl === next.liveUrl &&
+      previous.instanceId === next.instanceId &&
+      previous.windowId === next.windowId)
   );
 }
 
 export function BrowserSessionPanel({
   signals,
-  showPausedScreenshot = false,
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
-  const sessionLoadable = useLastLoadable(signals.panelSession$);
+  const sessionLoadable = useLastLoadable(signals.panelSession$, {
+    equalityFn: equalPanelSessions,
+  });
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
@@ -356,13 +350,10 @@ export function BrowserSessionPanel({
   }
 
   const session = sessionLoadable.data;
-  const liveUrl = session?.status === "active" ? session.liveUrl : null;
-  if (liveUrl === null) {
+  if (session?.status !== "active") {
     return (
       <PausedBrowserSession
-        screenshotUrl={session?.screenshotUrl}
-        screenshotLoad={signals.screenshotImageLoad}
-        showPausedScreenshot={showPausedScreenshot}
+        signals={signals}
         starting={starting}
         onStart={() => {
           detach(start(pageSignal), Reason.DomCallback);
@@ -373,24 +364,24 @@ export function BrowserSessionPanel({
     );
   }
 
-  if (!session) {
-    throw new Error("Live managed browser session is unavailable");
-  }
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
         signals={signals}
-        liveUrl={liveUrl}
-        instanceId={session.window?.instanceId}
-        windowId={session.window?.primaryWindowId}
+        liveUrl={session.liveUrl}
+        instanceId={session.instanceId}
+        windowId={session.windowId}
         refined={refined}
         actions={actions}
         overlay={overlay}
       />
       {refined ? null : (
-        <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
-          {browserSessionReclaimHint(session)}
-        </p>
+        <div className="flex shrink-0 items-center gap-3 whitespace-nowrap border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
+          <p className="min-w-0 flex-1 truncate">
+            {browserSessionReclaimHint(session)}
+          </p>
+          <BrowserRecoveryStatus signals={signals.browser} />
+        </div>
       )}
     </PanelFrame>
   );

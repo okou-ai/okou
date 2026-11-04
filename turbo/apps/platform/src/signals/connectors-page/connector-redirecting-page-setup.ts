@@ -2,10 +2,8 @@ import {
   connectorSlugSchema,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  publicConnectorCatalogIconSchema,
-  type PublicConnectorCatalogIcon,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import { publicConnectorCatalogIconSchema } from "@okouai/api-contracts/validators/connector-catalog";
+import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";

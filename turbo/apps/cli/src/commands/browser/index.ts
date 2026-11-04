@@ -6,6 +6,7 @@ import {
   BROWSER_IDLE_LEASE_MINUTES,
   browserCreateRequestSchema,
   type BrowserSession,
+  type BrowserExtension,
 } from "@okouai/api-contracts/contracts/browser";
 import {
   BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
@@ -33,9 +34,9 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { captureBrowserInputTargets } from "./browser-user-action-capture";
 import { BrowserInputRequestError } from "./browser-input-request-error";
 import { getConnectedEmailLoginGuidance } from "./connected-email-login";
+import { launchWindowProxy } from "./proxy/launch";
 import {
   browserTabCommand,
-  bindBrowserWindow,
   DEFAULT_AGENT_BROWSER_SESSION,
   parseAgentSession,
 } from "./browser-tab";
@@ -343,8 +344,10 @@ function renderBrowserUserAction(
   if (loginGuidance) console.log(loginGuidance);
 }
 
-function browserJson(browser: BrowserSession): Omit<BrowserSession, "liveUrl"> {
-  const { liveUrl: _liveUrl, ...safeBrowser } = browser;
+function browserJson(
+  browser: BrowserSession,
+): Omit<BrowserSession, "liveUrl" | "window"> {
+  const { liveUrl: _liveUrl, window: _window, ...safeBrowser } = browser;
   return safeBrowser;
 }
 
@@ -353,8 +356,8 @@ function connectAgentBrowser(
   sessionName: string,
   sharedWindow: boolean,
 ): void {
-  // Fresh pin-on-connect creates a blank tab. Shared setup pins an existing
-  // owned target only after resolving its current native window below.
+  // The shared proxy already exposes existing owned pages; connecting must not
+  // pin by creating another tab.
   const result = spawnSync(
     "agent-browser",
     [
@@ -393,17 +396,32 @@ async function connectResponse(
   response: {
     readonly browser: BrowserSession;
     readonly cdpUrl: string;
+    readonly extension?: BrowserExtension;
   },
   options: ConnectionOptions,
   loginGuidance: string | undefined,
 ): Promise<void> {
   const sessionName = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
-  connectAgentBrowser(
-    response.cdpUrl,
-    sessionName,
-    response.browser.window !== undefined,
-  );
-  await bindBrowserWindow(response.browser, response.cdpUrl, sessionName);
+  if (response.browser.window) {
+    if (!response.extension)
+      throw new Error(
+        "Shared Browser connection has no installed extension metadata",
+      );
+    const proxy = await launchWindowProxy({
+      cdpUrl: response.cdpUrl,
+      runtimeId: response.extension.runtimeId,
+      windowId: response.browser.window.primaryWindowId,
+    });
+    try {
+      connectAgentBrowser(proxy.endpoint, sessionName, true);
+      proxy.detach();
+    } catch (error) {
+      await proxy.stop();
+      throw error;
+    }
+  } else {
+    connectAgentBrowser(response.cdpUrl, sessionName, false);
+  }
   if (options.json) {
     console.log(
       JSON.stringify({
@@ -416,13 +434,6 @@ async function connectResponse(
   }
   console.log(chalk.green("✓ Managed browser ready"));
   console.log(chalk.dim(`  agent-browser session: ${sessionName}`));
-  if (response.browser.window) {
-    console.log(
-      chalk.dim(
-        `  Chat Browser window: ${response.browser.window.primaryWindowId}`,
-      ),
-    );
-  }
   console.log(chalk.dim(`  ${reclaimNotice(response.browser)}`));
   console.log(`[Open live browser](${response.browser.viewerUrl})`);
   if (loginGuidance) console.log(loginGuidance);
@@ -677,11 +688,10 @@ Notes:
   - Okou reclaims it after ${BROWSER_IDLE_LEASE_MINUTES} idle minutes
   - \`okou browser use\` restores a reclaimed browser's login profile and reopens saved tab URLs when possible
   - Browser Use credentials and connection URLs are never printed
-  - When use reports a chat Browser window, it initially selects that window's page; operate on the assigned chat pages
-  - A missing selected page requires explicit selection or reconnect; never adopt another chat's page or infer the intended page from global focus
-  - Tab list shows the driver's tabs with safe origins; explicit tab selection and every CDP API remain available
+  - Shared Browser tools show this chat's tabs and keep new pages in this chat automatically
+  - Use safe tab list/select to choose an existing page and confirm the intended page before acting
+  - Tab list shows safe origins without full URLs or titles
   - Chats sharing a Browser profile share cookies and localStorage, including login/logout changes; separate windows do not provide separate website accounts
-  - Return source-less pages created by Target.createTarget to the reported chat window using native Browser/tab operations; known-source popups are consolidated by the extension
   - Input selectors and refs are resolved locally and are never sent to the API
   - Resolving an @eN ref focuses it but never types, clicks, or submits the website form
   - input-request failures identify a safe error code, affected --field position when known, and next action

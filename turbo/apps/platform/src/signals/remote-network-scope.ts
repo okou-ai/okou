@@ -1,14 +1,12 @@
 import { command, computed, state } from "ccstate";
-import {
-  cloudflareAccessContract,
-  type ScopedCloudflareAccessConfig,
-  type CloudflareAccessImpactPreview,
+import { cloudflareAccessContract } from "@okouai/api-contracts/client/cloudflare-access";
+import type {
+  ScopedCloudflareAccessConfig,
+  CloudflareAccessImpactPreview,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { tailscaleContract } from "@okouai/api-contracts/client/tailscale";
 import { apiClient$ } from "./api-client.ts";
 import { authenticatedSessionKey$ } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { isOrgAdmin$ } from "./org.ts";
 import { accept } from "../lib/accept.ts";
 
@@ -29,33 +27,24 @@ const acknowledged$ = state<string | null>(null);
 const approved$ = state(false);
 const error$ = state<"conflict" | "unavailable" | "uncertain" | null>(null);
 const saved$ = state<{ id: string; sessionKey: string } | null>(null);
-const enabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
-});
 export const remoteNetworkScopeDraft$ = computed((get) => {
   const draft = get(draft$);
-  return get(enabled$) && draft?.sessionKey === get(authenticatedSessionKey$)
-    ? draft
-    : null;
+  return draft?.sessionKey === get(authenticatedSessionKey$) ? draft : null;
 });
 export const remoteNetworkScopeChange$ = computed((get) => {
   const pending = get(pending$);
-  return get(enabled$) && pending?.sessionKey === get(authenticatedSessionKey$)
-    ? pending
-    : null;
+  return pending?.sessionKey === get(authenticatedSessionKey$) ? pending : null;
 });
 export const remoteNetworkScopeStatus$ = computed((get) => {
   const sessionKey = get(authenticatedSessionKey$);
   const active =
-    get(enabled$) &&
-    (get(draft$)?.sessionKey === sessionKey ||
-      get(pending$)?.sessionKey === sessionKey);
+    get(draft$)?.sessionKey === sessionKey ||
+    get(pending$)?.sessionKey === sessionKey;
   const saved = get(saved$);
   return {
     error: active ? get(error$) : null,
     acknowledged: active ? get(acknowledged$) : null,
-    savedId:
-      get(enabled$) && saved?.sessionKey === sessionKey ? saved.id : null,
+    savedId: saved?.sessionKey === sessionKey ? saved.id : null,
   };
 });
 export const editRemoteNetworkScope$ = command(
@@ -66,7 +55,7 @@ export const editRemoteNetworkScope$ = command(
     scope: RemoteNetworkScope,
   ) => {
     const sessionKey = get(authenticatedSessionKey$);
-    if (!sessionKey || !get(enabled$)) {
+    if (!sessionKey) {
       return;
     }
     set(draft$, { provider, configId, scope, sessionKey });

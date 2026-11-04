@@ -10,10 +10,8 @@ import {
   artifactCatalogContract,
   chatArtifactCatalogChangedEvent,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
@@ -27,7 +25,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { sharedThreadRoutes } from "../shared-threads";
-import { featureSwitchesRoutes } from "../feature-switches";
 import {
   createBddApi,
   expectApiError,
@@ -56,7 +53,6 @@ const routeMocks = createRouteMocks(context);
 const sharedThreadTestRoutes: readonly RouteEntry[] = [
   ...artifactCatalogRoutes,
   ...sharedThreadRoutes,
-  ...featureSwitchesRoutes,
 ];
 function createCatalogStorage() {
   let storage:
@@ -374,7 +370,7 @@ async function publishHostedSite(args: {
   const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
   const body = {
     site: args.site,
-    title: args.title,
+    title: args.title ?? args.site,
     artifactKind: args.artifactKind ?? ("hosted-site" as const),
     spaFallback: false,
     files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
@@ -523,15 +519,8 @@ describe("GET /api/artifacts/catalog", () => {
     const headers = authenticateSharedThread(owner.actor);
     const client = setupApp({
       context,
-      routes: [...artifactCatalogRoutes, ...featureSwitchesRoutes],
+      routes: artifactCatalogRoutes,
     });
-    await accept(
-      client(featureSwitchesContract).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
-      }),
-      [200],
-    );
     await accept(
       client(artifactCatalogContract).delete({
         headers,
@@ -569,19 +558,8 @@ describe("GET /api/artifacts/catalog", () => {
       const headers = authenticateSharedThread(owner.actor);
       const client = setupApp({
         context,
-        routes: [
-          ...artifactCatalogRoutes,
-          ...featureSwitchesRoutes,
-          ...hostRoutes,
-        ],
+        routes: [...artifactCatalogRoutes, ...hostRoutes],
       });
-      await accept(
-        client(featureSwitchesContract).update({
-          headers,
-          body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
-        }),
-        [200],
-      );
       await accept(
         client(artifactCatalogContract).delete({
           headers,
@@ -1385,6 +1363,7 @@ describe("GET /api/artifacts/catalog", () => {
     const site = `catalog-cross-chat-${randomUUID().slice(0, 8)}`;
     const body = {
       site,
+      title: site,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       visibility: "public" as const,
@@ -1857,13 +1836,6 @@ describe("shared thread routes", () => {
     }
     const headers = authenticateSharedThread(owner.actor);
     const client = setupApp({ context, routes: sharedThreadTestRoutes });
-    await accept(
-      client(featureSwitchesContract).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
-      }),
-      [200],
-    );
     await accept(
       client(artifactCatalogContract).delete({
         headers,

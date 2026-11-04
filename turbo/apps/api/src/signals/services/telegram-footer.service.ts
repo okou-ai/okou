@@ -1,89 +1,59 @@
-import { computed, type Computed } from "ccstate";
-import { getRunModelDisplayName } from "@okouai/core/model-display-name";
-import { agents } from "@okouai/db/schema/agent";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { eq } from "drizzle-orm";
-
+import { computed } from "ccstate";
+import { and, eq } from "drizzle-orm";
+import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { db$ } from "../external/db";
 import { escapeHtml } from "../../lib/telegram-format";
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
 import {
-  runModelSelectionColumns,
-  runModelSelectionCondition,
-  runModelSelectionFromRow,
-} from "./run-model-selection.service";
+  integrationMessageSendLabels$,
+  integrationMessageSendUserLabel$,
+  integrationMessageSendFooterText,
+} from "./integration-message-context.service";
 
-function displayLabel(row: {
-  agentDisplayName: string | null;
-  agentName: string;
-}): string {
-  const displayName = row.agentDisplayName?.trim();
-  if (displayName) {
-    return displayName;
+export const telegramMessageSendFooterText$ = computed(async (get) => {
+  const labels = await get(integrationMessageSendLabels$);
+  if (!labels.runOwner) {
+    return undefined;
   }
-  return row.agentName;
-}
-
-/**
- * Resolve the attribution footer text appended to user-initiated Telegram messages.
- *
- * Preserves the legacy footer semantics for agent, automation,
- * and selected model labels. Returns undefined when authRunId is undefined
- * (auth source has no run context) or when none of the four data points are
- * available.
- */
-export function telegramMessageSendFooterText(args: {
-  readonly authRunId: string | undefined;
-  readonly botId: string;
-}): Computed<Promise<string | undefined>> {
-  type ModelRead = ReturnType<typeof runModelSelectionFromRow>;
-
-  return computed(async (get): Promise<string | undefined> => {
-    if (!args.authRunId) {
-      return undefined;
-    }
-    const db = get(db$);
-    const runId = args.authRunId;
-
-    const [agentLabel, runModel] = await Promise.all([
-      (async (): Promise<string | undefined> => {
-        const [row] = await db
-          .select({
-            agentDisplayName: agents.displayName,
-            agentName: agents.name,
-          })
-          .from(agentRuns)
-          .innerJoin(agents, eq(agentRuns.agentId, agents.id))
-          .where(eq(agentRuns.id, runId))
-          .limit(1);
-        return row ? displayLabel(row) : undefined;
-      })(),
-      ((): Promise<ModelRead> => {
-        const modelRunId = args.authRunId;
-        return (async (): Promise<ModelRead> => {
-          const [row] = await db
-            .select(runModelSelectionColumns())
-            .from(agentRuns)
-            .where(runModelSelectionCondition(modelRunId))
-            .limit(1);
-          return runModelSelectionFromRow(row);
-        })();
-      })(),
-    ]);
-
-    const parts: string[] = [];
-    if (agentLabel) {
-      parts.push(`Sent via ${escapeHtml(agentLabel)}`);
-    }
-    const modelLabel = runModel?.selectedModel
-      ? getRunModelDisplayName(
-          runModel.selectedModel,
-          runModel.codexServiceTier,
-        )
-      : undefined;
-    if (modelLabel) {
-      parts.push(escapeHtml(modelLabel));
-    }
-
-    return parts.length > 0 ? parts.join(" · ") : undefined;
+  const [sender] = await get(db$)
+    .select({
+      id: telegramOfficialUserLinks.telegramUserId,
+      name: telegramOfficialUserLinks.telegramDisplayName,
+    })
+    .from(telegramOfficialUserLinks)
+    .where(
+      and(
+        eq(telegramOfficialUserLinks.userId, labels.runOwner.userId),
+        eq(telegramOfficialUserLinks.orgId, labels.runOwner.orgId),
+      ),
+    )
+    .limit(1);
+  const name =
+    sender?.name?.trim().replace(/\s+/gu, " ") ||
+    (await get(integrationMessageSendUserLabel$));
+  return integrationMessageSendFooterText({
+    agentLabel: labels.agentLabel ? escapeHtml(labels.agentLabel) : undefined,
+    userLabel:
+      sender && name
+        ? `<a href="tg://user?id=${encodeURIComponent(sender.id)}">${escapeHtml(name)}</a>`
+        : name
+          ? escapeHtml(name)
+          : undefined,
   });
+});
+
+export function telegramMessageSendCaption(
+  caption: string | undefined,
+  footerText: string | undefined,
+): { readonly caption: string | undefined; readonly parseMode?: "HTML" } {
+  return footerText
+    ? {
+        caption: appendIntegrationMessageFooter(
+          caption ? escapeHtml(caption) : undefined,
+          `<i>${footerText}</i>`,
+          1024,
+        ),
+        parseMode: "HTML",
+      }
+    : { caption };
 }

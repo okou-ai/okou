@@ -1,3 +1,10 @@
+import { hydrateProjects$ } from "../projects/projects.ts";
+import { resetProjectUi$ } from "../projects/project-ui.ts";
+import {
+  loadMarketingHandoff$,
+  importMarketingHandoffFiles$,
+  finishMarketingHandoff$,
+} from "../prompt-page/marketing-handoff.ts";
 import { initializeHalloweenHome$ } from "../halloween/halloween.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
@@ -35,10 +42,6 @@ import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 import { detach, Reason } from "../utils.ts";
 import {
-  enterAgentSuggestions$,
-  subscribeAgentSuggestions$,
-} from "./agent-suggestions.ts";
-import {
   enterEntrustedJobs$,
   subscribeEntrustedJobs$,
 } from "./entrusted-jobs.ts";
@@ -47,8 +50,38 @@ import {
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
 
+const restoreMarketingAgentDraft$ = command(
+  async ({ get, set }, agentDraft: EnsuredAgentDraft, signal: AbortSignal) => {
+    const params = get(searchParams$);
+    const handoff = await set(loadMarketingHandoff$, signal);
+    if (!handoff) {
+      throw new Error("Marketing handoff is unavailable");
+    }
+    const imported = await set(
+      importMarketingHandoffFiles$,
+      handoff.hash,
+      signal,
+    );
+    const targetDraft = agentDraft.draft;
+    set(targetDraft.clear$);
+    set(targetDraft.setInput$, handoff.manifest.prompt);
+    await set(targetDraft.restoreAttachments$, imported, signal);
+    signal.throwIfAborted();
+    if (get(targetDraft.attachments$).length !== imported.length) {
+      throw new Error("The received attachments are no longer available");
+    }
+    await set(agentDraft.queueDraftSync$, signal);
+    signal.throwIfAborted();
+    set(finishMarketingHandoff$, handoff);
+    const next = new URLSearchParams(params);
+    next.delete("handoff");
+    set(updateSearchParams$, next);
+  },
+);
+
 export const setupAgentChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(resetProjectUi$);
     const agentId = get(currentAgentId$);
 
     if (!agentId) {
@@ -62,7 +95,6 @@ export const setupAgentChatPage$ = command(
     );
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
-    set(enterAgentSuggestions$);
     set(enterEntrustedJobs$);
     set(get(agentChatComposerSignals$).voice.setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
@@ -142,22 +174,25 @@ export const setupAgentChatPage$ = command(
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
     set(subscribeEntrustedJobs$, signal);
-    set(subscribeAgentSuggestions$, signal);
     detach(
       set(get(agentChatComposerSignals$).taskChips.initializeHomeJobs$, signal),
       Reason.Daemon,
       "initial Jobs selection",
     );
 
+    await set(hydrateProjects$, signal);
     await set(checkUnifiedSettingsParam$, signal);
 
     const params = get(searchParams$);
-    const prompt = params.get("prompt");
+    const prompt = params.get("handoff") ? null : params.get("prompt");
+    if (params.get("handoff")) {
+      await set(restoreMarketingAgentDraft$, agentDraft, signal);
+    }
     const queue = params.get("queue");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
     );
-    if (agentDraft && !prompt) {
+    if (agentDraft && !prompt && !params.get("handoff")) {
       await set(agentDraft.load$, signal);
     }
     if (prompt) {

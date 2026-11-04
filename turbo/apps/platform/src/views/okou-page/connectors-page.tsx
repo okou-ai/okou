@@ -11,7 +11,6 @@ import {
 import {
   remoteSetup$,
   leaveRemoteSetup$,
-  remoteControlGuidedEnabled$,
   type RemoteSetup,
 } from "../../signals/remote-control-setup.ts";
 import { RemoteDetailPage } from "./remote-detail-page.tsx";
@@ -110,6 +109,8 @@ import {
 } from "./components/settings/launch-connector-connect.ts";
 import { ScopeReviewModal } from "./components/settings/scope-review-modal.tsx";
 import { ConnectorAccessManagementDialog } from "./components/settings/connector-access-management-dialog.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   ConnectorAgentAccessButton,
   connectorAgentAccessStatus,
@@ -1002,7 +1003,30 @@ function connectorAgentName(agent: AgentResponse): string {
   );
 }
 
-function ConnectorAccessButton({
+function ConnectorAccessButton(props: {
+  readonly connectorSlug: ConnectorSlug;
+  readonly connectorLabel: string;
+  readonly hasPermissions: boolean;
+  readonly allowAccessIncrease: boolean;
+  readonly onClick: () => void;
+}) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  const { t } = useTranslation();
+  return enabled ? (
+    props.allowAccessIncrease && props.hasPermissions ? (
+      <Button variant="quiet" size="xs" onClick={props.onClick}>
+        {t(($) => {
+          return $.connectorChatAccess.permissions;
+        })}
+      </Button>
+    ) : null
+  ) : (
+    <LegacyConnectorAccessButton {...props} />
+  );
+}
+
+function LegacyConnectorAccessButton({
   connectorSlug,
   connectorLabel,
   allowAccessIncrease,
@@ -1185,10 +1209,9 @@ function ConnectorCatalogHeader() {
   const { t } = useTranslation();
   const count = useLastLoadable(connectorDirectoryPageSignals.catalogCount$);
   const connectorCatalogCount = count.state === "hasData" ? count.data : null;
-  const guided = useGet(remoteControlGuidedEnabled$);
   const scope = useGet(connectorsScope$);
   const description =
-    guided && (scope === "remote-control" || scope === "private-network")
+    scope === "remote-control" || scope === "private-network"
       ? t(($) => {
           return $.remoteControlSetup.catalogDescription;
         })
@@ -1235,6 +1258,7 @@ function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
     <ConnectorAccessButton
       connectorSlug={connector.slug}
       connectorLabel={connector.label}
+      hasPermissions={connector.permissionSummary.hasPermissions}
       allowAccessIncrease={inventoryStatus === "ready" && hasAccounts}
       onClick={manageAccess}
     />

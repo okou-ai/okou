@@ -7,8 +7,8 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::Command,
     sync::mpsc,
-    task::JoinHandle,
 };
+use tokio_util::task::AbortOnDropHandle;
 
 pub(super) enum Input {
     Data(Vec<u8>),
@@ -16,15 +16,10 @@ pub(super) enum Input {
 }
 
 pub(super) struct Process {
+    // Request abort before releasing the remaining fixture fields.
+    _task: AbortOnDropHandle<()>,
     input: mpsc::UnboundedSender<Input>,
-    task: JoinHandle<()>,
     pid: u32,
-}
-
-impl Drop for Process {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
 }
 
 impl Process {
@@ -124,7 +119,11 @@ impl Process {
             };
             tokio::select! { () = inputs => (), () = completed => () }
         });
-        Self { input, task, pid }
+        Self {
+            input,
+            _task: AbortOnDropHandle::new(task),
+            pid,
+        }
     }
 
     pub(super) fn input(&self, input: Input) -> Result<(), russh::Error> {

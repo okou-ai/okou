@@ -14,10 +14,11 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{Mutex, Semaphore, mpsc},
-    task::{JoinHandle, JoinSet},
+    task::JoinSet,
 };
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 
 trait PeerIo: crate::cloudflare::ByteIo {
     fn reset(&self) -> io::Result<()>;
@@ -90,6 +91,8 @@ struct Controls {
 }
 
 pub(crate) struct Peer {
+    // Request abort before releasing the remaining fixture fields.
+    _task: AbortOnDropHandle<()>,
     pub(crate) address: std::net::SocketAddr,
     pub(crate) ca: String,
     pub(super) client_identity: Option<(Vec<String>, String)>,
@@ -98,7 +101,6 @@ pub(crate) struct Peer {
     pub(crate) refuse: Arc<AtomicBool>,
     pub(super) disconnect: CancellationToken,
     events: Mutex<mpsc::UnboundedReceiver<Event>>,
-    task: JoinHandle<()>,
 }
 
 impl Peer {
@@ -225,18 +227,12 @@ impl Peer {
             refuse: controls.refuse,
             disconnect: controls.disconnect,
             events: Mutex::new(receiver),
-            task,
+            _task: AbortOnDropHandle::new(task),
         }
     }
 
     pub(crate) async fn event(&self) -> Event {
         super::harness::bounded(async { self.events.lock().await.recv().await.unwrap() }).await
-    }
-}
-
-impl Drop for Peer {
-    fn drop(&mut self) {
-        self.task.abort();
     }
 }
 

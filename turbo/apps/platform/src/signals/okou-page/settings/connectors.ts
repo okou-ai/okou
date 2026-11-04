@@ -1,6 +1,8 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
 
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
@@ -11,23 +13,28 @@ import {
   type ConnectorAuthMethodId,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
 import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
   builtinConnectorAutomaticContract,
-  builtinConnectorAutomaticResponseSchema,
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
   builtinConnectorOauthDeviceAuthSessionContract,
-} from "@okouai/api-contracts/contracts/connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+} from "@okouai/api-contracts/client/connectors";
+import { builtinConnectorAutomaticResponseSchema } from "@okouai/api-contracts/validators/connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import type {
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
-import type { BuiltinConnectorOauthDeviceAuthSessionPollResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+} from "@okouai/api-contracts/client/types";
+import {
+  builtinConnectorOauthDeviceAuthSessionPollResponseSchema,
+  builtinConnectorExternalCodeSessionCompleteResponseSchema,
+  connectorCompletedOperationResponseSchema,
+  type BuiltinConnectorOauthDeviceAuthSessionPollResponse,
+} from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogIcon,
@@ -131,6 +138,14 @@ const resolveConnectorPostConnectOptions$ = command(
       } else {
         account = { intent: "add" };
       }
+    }
+    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      return {
+        ...options,
+        account,
+        authorizeVisibleAgents: false,
+        agentId: undefined,
+      };
     }
     if (!options.authorizeVisibleAgents) {
       return { ...options, account };
@@ -971,12 +986,15 @@ const authorizeConnectorForVisibleAgents$ = command(
 
 const finishConnectorConnection$ = command(
   async (
-    { set },
+    { get, set },
     connectorSlug: ConnectorSlug,
     options: FinishConnectorConnectionOptions,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    if (options.authorizeVisibleAgents) {
+    if (
+      options.authorizeVisibleAgents &&
+      !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
+    ) {
       await set(authorizeConnectorForVisibleAgents$, connectorSlug, signal);
     }
 
@@ -1051,10 +1069,9 @@ export const submitBuiltinManualGrant$ = command(
       [200],
     );
     signal.throwIfAborted();
-    const { connectionId } =
-      builtinConnectorManualGrantContract.connect.responses[200].parse(
-        result.body,
-      );
+    const { connectionId } = connectorCompletedOperationResponseSchema.parse(
+      result.body,
+    );
     if (
       !(await readCompletedBuiltinConnectorAccount(
         createClient,
@@ -1142,10 +1159,9 @@ export const connectBuiltinConnectorNoAuth$ = command(
       [200],
     );
     signal.throwIfAborted();
-    const { connectionId } =
-      builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
-        result.body,
-      );
+    const { connectionId } = connectorCompletedOperationResponseSchema.parse(
+      result.body,
+    );
     if (
       !(await readCompletedBuiltinConnectorAccount(
         createClient,
@@ -1398,7 +1414,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
 
     signal.throwIfAborted();
     const pollResult =
-      builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
+      builtinConnectorOauthDeviceAuthSessionPollResponseSchema.parse(
         pollResponse.body,
       );
     if (pollResult.status === "complete") {
@@ -1829,7 +1845,7 @@ const connectConnectorExternalCodeCommand$ = command(
             ...(shouldAuthorizeAgent(options)
               ? { authorizeAgent: true as const }
               : {}),
-            ...(args.agentId ? { agentId: args.agentId } : {}),
+            ...(options.agentId ? { agentId: options.agentId } : {}),
           },
           fetchOptions: { signal: flowSignal },
         }),
@@ -1967,7 +1983,7 @@ const completeConnectorExternalCode$ = command(
     }
 
     const { connectionId } =
-      builtinConnectorExternalCodeSessionContract.complete.responses[200].parse(
+      builtinConnectorExternalCodeSessionCompleteResponseSchema.parse(
         completeResult.body,
       );
     if (
@@ -2214,7 +2230,6 @@ const startConnectorBrowserAuthorization$ = command(
     args: {
       readonly connectorSlug: ConnectorSlug;
       readonly method: PublicConnectorCatalogAuthMethodDetail;
-      readonly agentId: string | undefined;
       readonly options: PostConnectOptions;
     },
     signal: AbortSignal,
@@ -2225,7 +2240,7 @@ const startConnectorBrowserAuthorization$ = command(
       ...(shouldAuthorizeAgent(args.options)
         ? { authorizeAgent: true as const }
         : {}),
-      ...(args.agentId ? { agentId: args.agentId } : {}),
+      ...(args.options.agentId ? { agentId: args.options.agentId } : {}),
     };
     const request = {
       params: { connectorSlug: args.connectorSlug },
@@ -2284,7 +2299,6 @@ const openConnectorOAuthAuthCodeWindow$ = command(
       readonly method: PublicConnectorCatalogAuthMethodDetail;
       readonly connectorLabel: string;
       readonly connectorIcon: PublicConnectorCatalogIcon;
-      readonly agentId: string | undefined;
       readonly beforeStart: (
         signal: AbortSignal,
       ) => Promise<PostConnectOptions>;
@@ -2570,7 +2584,6 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
           method,
           connectorLabel: options.connectorLabel ?? connectorSlug,
           connectorIcon: options.connectorIcon,
-          agentId: options.agentId,
           beforeStart: async (sig) => {
             const resolvedOptions = await set(
               resolveConnectorPostConnectOptions$,

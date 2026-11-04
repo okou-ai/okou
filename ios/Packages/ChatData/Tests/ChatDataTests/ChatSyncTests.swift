@@ -9,8 +9,7 @@ import XCTest
 @MainActor
 final class ChatSyncTests: XCTestCase {
   func testExtensionTailBecomesVisibleToAResidentReaderBeforeAnyForegroundRequest() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let later = Mutex(false)
     let offline = Mutex(false)
     let fixture = ChatHTTPFixture { request in
@@ -36,10 +35,10 @@ final class ChatSyncTests: XCTestCase {
       }
     }
     let scope = syncScope(fixture)
-    let app = ChatSync(client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let app = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
     _ = try await app.history(threadID: syncThreadID)
     later.withLock { $0 = true }
-    let nse = ChatSync(client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let nse = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
     let receipt = try await nse.prefetchHistoryTail(threadID: syncThreadID, runID: syncSecondRunID)
     XCTAssertTrue(receipt.containsRun)
     XCTAssertEqual(receipt.lastSeqID, 4)
@@ -49,8 +48,7 @@ final class ChatSyncTests: XCTestCase {
   }
 
   func testNotificationPrefetchReportsThePersistedTargetRunAndReopensOffline() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let offline = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
@@ -65,20 +63,19 @@ final class ChatSyncTests: XCTestCase {
     }
     let scope = syncScope(fixture)
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let receipt = try await service.prefetchHistory(threadID: syncThreadID, runID: syncRunID)
     XCTAssertEqual(receipt.lastSeqID, 2)
     XCTAssertTrue(receipt.containsRun)
     offline.withLock { $0 = true }
     let reopened = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let cached = await reopened.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(cached?.messages.map(\.text), ["Prefetched answer"])
   }
 
   func testPreviousSchemaCacheRebuildsFromHeaderFreeSnapshotAndTail() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let requests = Mutex<[URLRequest]>([])
     let fixture = ChatHTTPFixture { request in
       requests.withLock { $0.append(request) }
@@ -102,7 +99,7 @@ final class ChatSyncTests: XCTestCase {
       }
     }
     let scope = syncScope(fixture)
-    let cache = ChatCache(scope: scope, directory: directory)
+    let cache = directory.cache(scope: scope)
     try await cache.replaceHistory(
       threadID: syncThreadID,
       rows: [
@@ -111,7 +108,7 @@ final class ChatSyncTests: XCTestCase {
       ],
       cursor: ChatCacheCursor(eventID: syncEventID(1), seqID: 1), schemaVersion: 7)
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
 
     let previousSchemaHistory = await service.cachedHistory(threadID: syncThreadID)
     XCTAssertNil(previousSchemaHistory)
@@ -126,7 +123,7 @@ final class ChatSyncTests: XCTestCase {
       observed.allSatisfy { $0.value(forHTTPHeaderField: "X-Chat-Event-Schema-Version") == nil })
 
     let restarted = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Current snapshot"])
     XCTAssertEqual(restored?.executionState, .completed)
@@ -135,9 +132,9 @@ final class ChatSyncTests: XCTestCase {
   }
 
   func testUnavailableCacheRetainsDirtyRowsUntilLaterPersistenceSucceeds() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let blocker = directory.appendingPathComponent("ChatCache")
+    let directory = CacheTestDirectory(owner: self)
+    try FileManager.default.createDirectory(at: directory.url, withIntermediateDirectories: true)
+    let blocker = directory.url.appendingPathComponent("ChatCache")
     try Data("A file prevents creating the cache directory".utf8).write(to: blocker)
     let hasNewTail = Mutex(false)
     let fixture = ChatHTTPFixture { request in
@@ -166,7 +163,7 @@ final class ChatSyncTests: XCTestCase {
     }
     let scope = syncScope(fixture)
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let first = try await service.history(threadID: syncThreadID)
     _ = await service.releaseHistory(threadID: syncThreadID)
     let retained = await service.cachedHistory(threadID: syncThreadID)
@@ -180,7 +177,7 @@ final class ChatSyncTests: XCTestCase {
     XCTAssertEqual(latest.messages.map(\.text), ["Initial answer", "Later answer"])
 
     let restarted = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Initial answer", "Later answer"])
     XCTAssertEqual(restored?.executionState, .completed)
@@ -188,15 +185,14 @@ final class ChatSyncTests: XCTestCase {
   }
 
   func testOverlappingHistoryReadsCatchUpFromPriorCommittedCursor() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let firstTailStarted = expectation(description: "First history tail is in flight")
     let secondReadStarted = expectation(description: "Second history read is submitted")
     let releaseFirstTail = SyncResponseGate()
     defer { releaseFirstTail.open() }
     let requests = Mutex<[URLRequest]>([])
     let startReads = Mutex(0)
-    let detailReads = Mutex(0)
+    let tailReads = Mutex(0)
     let initialRows = [syncRow(1, text: "Initial answer"), syncRow(2)]
     let laterRows = [
       syncRow(3, text: "Latest answer", runID: syncSecondRunID),
@@ -220,21 +216,30 @@ final class ChatSyncTests: XCTestCase {
           }
           return syncPage(initialRows + laterRows, cursor: 4)
         case 2:
-          return detailReads.withLock { $0 == 0 }
+          // The next reader can catch up before the first reader requests thread details.
+          let first = tailReads.withLock {
+            $0 += 1
+            return $0 == 1
+          }
+          return first
             ? syncPage([], cursor: 2) : syncPage(laterRows, cursor: 4)
         case 4: return syncPage([], cursor: 4)
         default: throw URLError(.unsupportedURL)
         }
       case syncPath:
-        detailReads.withLock { $0 += 1 }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       default: throw URLError(.unsupportedURL)
       }
     }
     let scope = syncScope(fixture)
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let firstRead = Task { try await service.history(threadID: syncThreadID) }
+    addTeardownBlock {
+      firstRead.cancel()
+      releaseFirstTail.open()
+      _ = await firstRead.result
+    }
     await fulfillment(of: [firstTailStarted], timeout: 2)
     let prefetchStarted = expectation(description: "Notification prefetch started")
     let prefetchCancelled = expectation(
@@ -248,12 +253,22 @@ final class ChatSyncTests: XCTestCase {
       } catch { XCTFail("Unexpected prefetch failure: \(error)") }
       prefetchCancelled.fulfill()
     }
+    addTeardownBlock {
+      prefetch.cancel()
+      releaseFirstTail.open()
+      await prefetch.value
+    }
     await fulfillment(of: [prefetchStarted], timeout: 2)
     prefetch.cancel()
     await fulfillment(of: [prefetchCancelled], timeout: 2)
     let secondRead = Task {
       secondReadStarted.fulfill()
       return try await service.history(threadID: syncThreadID)
+    }
+    addTeardownBlock {
+      secondRead.cancel()
+      releaseFirstTail.open()
+      _ = await secondRead.result
     }
     await fulfillment(of: [secondReadStarted], timeout: 2)
     releaseFirstTail.open()
@@ -269,17 +284,16 @@ final class ChatSyncTests: XCTestCase {
     XCTAssertEqual(
       observed.filter { $0.url?.path == syncPath + "/event-rows" }.compactMap(syncSequence),
       [0, 2, 2])
-    let cache = ChatCache(scope: scope, directory: directory)
+    let cache = directory.cache(scope: scope)
     let durable = try await cache.loadHistory(threadID: syncThreadID)
     XCTAssertEqual(durable?.cursor, ChatCacheCursor(eventID: syncEventID(4), seqID: 4))
     let restarted = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Initial answer", "Latest answer"])
   }
   func testWarmingPersistsUnopenedHistoryAndContinuesItsCursor() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let cursors = Mutex<[Int]>([])
     let fixture = ChatHTTPFixture { request in
       guard request.url?.path == "/api/chat/events/catch-up" else {
@@ -296,10 +310,10 @@ final class ChatSyncTests: XCTestCase {
     }
     let scope = syncScope(fixture)
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     try await service.warmHistories(threadIDs: [syncThreadID, syncThreadID])
     let restarted = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Prepared answer"])
     XCTAssertEqual(restored?.executionState, .completed)
@@ -308,8 +322,7 @@ final class ChatSyncTests: XCTestCase {
   }
 
   func testOpeningAChatOvertakesWarmingAndKeepsTheNewerHistory() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let warmingStarted = expectation(description: "Batch warming is in flight")
     let releaseWarming = SyncResponseGate()
     defer { releaseWarming.open() }
@@ -334,7 +347,7 @@ final class ChatSyncTests: XCTestCase {
     }
     let scope = syncScope(fixture)
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     try await withThrowingTaskGroup(of: Void.self) { group in
       defer {
         group.cancelAll()
@@ -348,15 +361,14 @@ final class ChatSyncTests: XCTestCase {
       try await group.waitForAll()
     }
     let restarted = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.executionState, .completed)
     XCTAssertEqual(restored?.persistedEventIDs, Set([syncEventID(1), syncEventID(2)]))
   }
 
   func testWarmingRebuildsASnapshotWhenTheBatchCursorCannotContinue() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/chat/events/catch-up":
@@ -375,7 +387,7 @@ final class ChatSyncTests: XCTestCase {
     }
     let scope = syncScope(fixture)
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.client, cache: directory.cache(scope: scope))
     try await service.warmHistories(threadIDs: [syncThreadID])
     let restored = await service.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Snapshot answer"])
@@ -383,13 +395,12 @@ final class ChatSyncTests: XCTestCase {
   }
 
   func testWarmingRejectsAnIncompleteBatchWithoutPublishingHistory() async throws {
-    let directory = try syncDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(body: "{\"events\":{},\"notFoundThreads\":[]}")
     }
     let service = ChatSync(
-      client: fixture.client, cache: ChatCache(scope: syncScope(fixture), directory: directory))
+      client: fixture.client, cache: directory.cache(scope: syncScope(fixture)))
     do {
       try await service.warmHistories(threadIDs: [syncThreadID])
       XCTFail("An incomplete response must not become an empty cached conversation")
@@ -454,13 +465,6 @@ private func syncSequence(_ request: URLRequest) -> Int? {
 
 private func syncScope(_ fixture: ChatHTTPFixture) -> ChatCacheScope {
   ChatCacheScope(apiBaseURL: fixture.baseURL, userID: "sync-user", workspaceID: "sync-workspace")
-}
-
-private func syncDirectory() throws -> URL {
-  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-    "okou-chat-sync-tests-\(UUID().uuidString)", isDirectory: true)
-  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-  return directory
 }
 
 private func syncMissingSnapshot() -> ChatHTTPResponse {

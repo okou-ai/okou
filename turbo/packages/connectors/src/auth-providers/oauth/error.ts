@@ -1,4 +1,8 @@
-import { ProviderHttpError } from "../provider-error";
+import {
+  ProviderHttpError,
+  isProviderHttpError,
+  isProviderResponseError,
+} from "../provider-error";
 
 const MAX_DIAGNOSTIC_LENGTH = 500;
 
@@ -105,4 +109,69 @@ function truncatedDiagnostic(value: string): string {
   return value.length > MAX_DIAGNOSTIC_LENGTH
     ? `${value.slice(0, MAX_DIAGNOSTIC_LENGTH)}...`
     : value;
+}
+
+const STANDARD_OAUTH_ERRORS = Object.freeze([
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "unsupported_response_type",
+  "invalid_scope",
+  "access_denied",
+  "server_error",
+  "temporarily_unavailable",
+]);
+
+export function standardOAuthErrorCode(value: unknown): string | undefined {
+  return typeof value === "string" && STANDARD_OAUTH_ERRORS.includes(value)
+    ? value
+    : undefined;
+}
+
+// Provider errors can contain credentials in their message, body, or cause.
+// Only retain typed status codes and allowlisted OAuth error identifiers.
+export function oauthFailureDiagnostics(
+  error: unknown,
+): Readonly<Record<string, string | number>> {
+  if (isOAuthProviderHttpError(error)) {
+    const oauthError = standardOAuthErrorCode(error.oauthError);
+    return {
+      failureKind: "oauth_http",
+      httpStatus: error.status,
+      ...(oauthError ? { oauthError } : {}),
+    };
+  }
+  if (isProviderHttpError(error)) {
+    return { failureKind: "provider_http", httpStatus: error.status };
+  }
+  if (isProviderResponseError(error)) {
+    const diagnostics = error.diagnostics;
+    return {
+      failureKind: "provider_response",
+      ...(diagnostics
+        ? {
+            responseStage: diagnostics.stage,
+            responseReason: diagnostics.reason,
+            ...(diagnostics.httpStatus === undefined
+              ? {}
+              : { httpStatus: diagnostics.httpStatus }),
+            ...(diagnostics.contentType
+              ? { contentType: diagnostics.contentType }
+              : {}),
+            ...(diagnostics.invalidFields?.length
+              ? { invalidFields: diagnostics.invalidFields.join(",") }
+              : {}),
+            ...(diagnostics.providerCode
+              ? { providerCode: diagnostics.providerCode }
+              : {}),
+            ...(diagnostics.responseShape
+              ? { responseShape: diagnostics.responseShape }
+              : {}),
+          }
+        : {}),
+    };
+  }
+  return { failureKind: "unexpected" };
 }

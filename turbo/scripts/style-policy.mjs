@@ -337,9 +337,9 @@ function isStyleJsxElement(node) {
 function isHtmlStyleMarkup(node, sourceFile) {
   return (
     ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
-      node.text.toLowerCase().includes("<style")) ||
+      /<style(?:[\s/>]|$|\$\{)/iu.test(node.text)) ||
     (ts.isTemplateExpression(node) &&
-      node.getText(sourceFile).toLowerCase().includes("<style"))
+      /<style(?:[\s/>]|$|\$\{)/iu.test(node.getText(sourceFile)))
   );
 }
 

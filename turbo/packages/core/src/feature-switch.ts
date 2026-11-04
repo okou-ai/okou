@@ -46,19 +46,37 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.ChatThreadFolders]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Chat folders",
-    description: "Organize your chats in personal folders within one Agent.",
+  [FeatureSwitchKey.FriendReferrals]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Friend referrals",
+    description:
+      "Earn credits when a referred friend buys a usage pack on Pro or above.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.FirstTaskUpgrade]: {
-    maintainer: "ming@okou.ai",
-    displayName: "First task upgrade",
-    description: "Show the Pro offer after a user's first completed chat task.",
-    enabled: true,
+  [FeatureSwitchKey.TikTokOAuthConnector]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "TikTok OAuth connector",
+    description:
+      "Connect a TikTok account with automatically refreshed read-only access.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
+  [FeatureSwitchKey.MarketingContentHandoff]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Marketing content handoff",
+    description:
+      "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.ConnectorChatAccountAccess]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Chat connector accounts",
+    description:
+      "Configure Chat connector accounts and shared member connector permissions.",
+    enabled: false,
   },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
@@ -67,46 +85,16 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use a textured, breathing brand mark with subtle scaling, sheen, and cycling brand colors in chat thinking states.",
     enabled: false,
   },
-  [FeatureSwitchKey.HalloweenQuiz]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Halloween quiz",
-    description:
-      "Open the 2026 Halloween quiz from the animated chat home dialog and associate results with your account.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",
     description: "Show published product updates once per user and edition.",
     enabled: false,
   },
-  [FeatureSwitchKey.OnboardingSourceOutcomes]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Onboarding source outcomes",
-    description:
-      "Show industry-specific examples of work prepared from connected tools.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Teams workspace identity",
-    description:
-      "Connect your Microsoft Teams identity independently of bot installation and use it in shared conversations.",
-    enabled: false,
-  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",
     description: "Approve up to 20 connector permissions together.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  // Visibility checks remain enforced independently of this management gate.
-  [FeatureSwitchKey.SharedThreadVisibility]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Conversation share visibility",
-    description: "Choose who can view a shared conversation.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -118,26 +106,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.RemoteControlGuidedSetup]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Remote control guided setup",
-    description:
-      "Set up and manage remote connections and private networks step by step.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",
     description:
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ArtifactDeletion]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Artifact deletion",
-    description: "Delete owned artifacts and withdraw their Okou links.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
@@ -158,7 +132,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Unified chat workspace",
     description:
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
@@ -166,14 +140,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ChatThreadTimeline]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Chat timeline",
-    description:
-      "Separate chat history by day, with Today shown only alongside Yesterday.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
@@ -207,6 +173,21 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.MarkdownCjkEmphasis]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "CJK Markdown emphasis",
+    description:
+      "Render paired bold and italic markers next to Chinese, Japanese, and Korean punctuation without showing literal asterisks.",
+    enabled: true,
+  },
+  [FeatureSwitchKey.MarkdownTableExport]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown table export",
+    description:
+      "Export tables to Excel or save them to Google Drive and Google Sheets.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatMessagePdf]: {
     maintainer: "ethan@okou.ai",
     displayName: "Message PDF export",
@@ -215,10 +196,24 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatEmailQuote]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat email quote",
+    description: "Offer a Quote action from the email Mail icon in chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatThreadInlineRename]: {
     maintainer: "tongx@okou.ai",
     displayName: "Inline chat rename",
     description: "Double-click a chat in the sidebar to rename it in place.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.HomeTaskDiscovery]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Home task discovery",
+    description: "Discover tasks from the redesigned homepage.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -356,12 +351,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.LinkWalletApprovalContinuation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
-    enabled: false,
-  },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -445,19 +434,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Connect WeChat by QR code and chat with Okou in direct messages.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.WhatsappFileUpload]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Send private uploaded files to independently verified WhatsApp accounts. Enable after the matching Runner CLI is deployed.",
-    enabled: false,
+    enabledOrgIdHashes: [...STAFF_ORG_ID_HASHES, "3043664c"],
   },
   [FeatureSwitchKey.WhatsappIntegration]: {
     maintainer: "yuma@okou.ai",
     description:
       "Connect WhatsApp to Okou through the shared AgentPhone number.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",
@@ -470,9 +454,16 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Auto-continue busy chats",
     description:
-      "Continue chats interrupted by a busy model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
+      "Continue chats interrupted by a busy or rate-limited model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
     enabled: false,
     enabledUserHashes: ["032a75d8"],
+  },
+  [FeatureSwitchKey.Projects]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",

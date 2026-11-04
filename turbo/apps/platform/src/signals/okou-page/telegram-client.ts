@@ -1,5 +1,5 @@
 import { computed } from "ccstate";
-import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { integrationsTelegramContract } from "@okouai/api-contracts/client/integrations-telegram";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../auth.ts";
 

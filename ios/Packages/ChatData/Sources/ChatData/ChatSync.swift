@@ -183,6 +183,12 @@ public actor ChatSync {
     var cursorFromServerSnapshot: Bool
   }
 
+  private struct CachedThreadSnapshot: Decodable {
+    enum Format: String, Decodable { case projectEvents }
+    let cacheFormat: Format
+    let chatThreads: [ThreadProjection]
+  }
+
   private func readCachedThreadList(newerThan sequence: Int? = nil) async -> ThreadListState? {
     guard let cache else { return nil }
     do {
@@ -195,7 +201,7 @@ public actor ChatSync {
       if let sequence, cursor.seqID <= sequence { return nil }
       let decoder = APIClient.decoder()
       let snapshot = try decoder.decode(
-        ThreadSnapshotArchive.self, from: stored.snapshot
+        CachedThreadSnapshot.self, from: stored.snapshot
       ).chatThreads
       let events = try stored.events.map { row in
         let event = try decoder.decode(ThreadEvent.self, from: row.data)
@@ -245,9 +251,13 @@ public actor ChatSync {
       latestSeqID = seqID
     }
     let projections = try Self.decode(ThreadSnapshotArchive.self, from: archiveData).chatThreads
+    guard var cachedSnapshot = try JSONSerialization.jsonObject(with: archiveData) as? [String: Any]
+    else { throw APIClientError.incompatibleData }
+    cachedSnapshot["cacheFormat"] = CachedThreadSnapshot.Format.projectEvents.rawValue
+    let cachedData = try JSONSerialization.data(withJSONObject: cachedSnapshot)
     let cursor = ChatCacheCursor(eventID: latestEventID, seqID: latestSeqID ?? 0)
     return ThreadListState(
-      snapshot: projections, snapshotData: archiveData, snapshotCursor: cursor,
+      snapshot: projections, snapshotData: cachedData, snapshotCursor: cursor,
       events: [], newEvents: [], cursor: cursor, replaced: true,
       cursorFromServerSnapshot: true)
   }

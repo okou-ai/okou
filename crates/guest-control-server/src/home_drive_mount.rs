@@ -13,6 +13,7 @@ use guest_control_proto::{
 
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
+use crate::helper_output::truncate_utf8;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
@@ -374,16 +375,4 @@ fn captured_output(result: &BoundedDrainResult) -> ExecCapturedOutput<'_> {
 
 fn elapsed_ms(started: Instant) -> u32 {
     u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX)
-}
-
-fn truncate_utf8(mut value: String, limit: usize) -> String {
-    if value.len() <= limit {
-        return value;
-    }
-    let mut end = limit;
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    value.truncate(end);
-    value
 }

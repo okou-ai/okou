@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::task::AbortOnDropHandle;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordedRequest {
@@ -53,9 +54,10 @@ pub enum RecordedHttpEvent {
 }
 
 pub struct RecordingServer {
+    // Request abort before releasing the remaining fixture fields.
+    _handle: AbortOnDropHandle<()>,
     pub base_url: String,
     events: Arc<Mutex<Vec<RecordedHttpEvent>>>,
-    handle: tokio::task::JoinHandle<()>,
 }
 
 impl RecordingServer {
@@ -98,7 +100,7 @@ impl RecordingServer {
         Ok(Self {
             base_url: format!("http://{addr}"),
             events,
-            handle,
+            _handle: AbortOnDropHandle::new(handle),
         })
     }
 
@@ -122,11 +124,17 @@ impl RecordingServer {
             })
             .collect())
     }
-}
 
-impl Drop for RecordingServer {
-    fn drop(&mut self) {
-        self.handle.abort();
+    /// Consume the recording after all request producers have finished.
+    pub fn into_requests(self) -> Result<Vec<RecordedRequest>, String> {
+        let events = std::mem::take(&mut *self.lock_events()?);
+        Ok(events
+            .into_iter()
+            .filter_map(|event| match event {
+                RecordedHttpEvent::Request(request) => Some(request),
+                RecordedHttpEvent::Response { .. } => None,
+            })
+            .collect())
     }
 }
 
@@ -144,12 +152,13 @@ impl ControlledRequest {
 }
 
 pub struct ControlledHttpServer {
+    // Request abort before releasing queued response gates.
+    _handle: AbortOnDropHandle<()>,
     pub base_url: String,
     requests: Arc<AtomicUsize>,
     completed_responses: Arc<AtomicUsize>,
     recorded_requests: Arc<Mutex<Vec<RecordedRequest>>>,
     request_rx: mpsc::UnboundedReceiver<ControlledRequest>,
-    handle: tokio::task::JoinHandle<()>,
 }
 
 impl ControlledHttpServer {
@@ -204,7 +213,7 @@ impl ControlledHttpServer {
             completed_responses,
             recorded_requests,
             request_rx,
-            handle,
+            _handle: AbortOnDropHandle::new(handle),
         })
     }
 
@@ -228,12 +237,6 @@ impl ControlledHttpServer {
             .lock()
             .map(|requests| requests.clone())
             .map_err(|_| "controlled HTTP request mutex poisoned".to_string())
-    }
-}
-
-impl Drop for ControlledHttpServer {
-    fn drop(&mut self) {
-        self.handle.abort();
     }
 }
 

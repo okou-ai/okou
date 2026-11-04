@@ -3,7 +3,7 @@ import {
   connectorSlugSchema,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { apiClient$ } from "../api-client.ts";

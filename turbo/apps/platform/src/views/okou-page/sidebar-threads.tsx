@@ -1,19 +1,18 @@
+import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import {
-  CurrentChatFolderControls,
-  ChatFolderCatalogError,
-  ChatFolderCreateButton,
-  ChatFolderMoveMenuItem,
-  VirtualizedChatFolderRows,
-} from "./sidebar-chat-folders.tsx";
+  draggingProjectThread$,
+  endProjectThreadDrag$,
+  PROJECT_THREAD_DRAG_TYPE,
+  startProjectThreadDrag$,
+} from "../../signals/projects/project-thread-drag.ts";
 import {
-  chatFoldersEnabled$,
-  currentChatFolders$,
-  CHAT_THREAD_FOLDER_DRAG_TYPE,
-} from "../../signals/chat-page/chat-folders.ts";
+  openProjectMembership$,
+  projectDialog$,
+  projectThreadMenuOpenChanged$,
+} from "../../signals/projects/project-ui.ts";
 import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
-  useLoadable,
   useLastLoadable,
   useSet,
   useLastResolved,
@@ -35,6 +34,7 @@ import {
   ArchiveRestore,
   BellOff,
   Bell,
+  FolderInput,
 } from "lucide-react";
 import {
   ChatThreadStateText,
@@ -82,6 +82,7 @@ import {
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type {
+  SidebarProjectContext,
   SidebarChatThreadIndicatorState,
   SidebarChatThreadItemSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
@@ -151,13 +152,6 @@ function equalSidebarChatThreadWindows(
   return (
     previous.startIndex === next.startIndex &&
     previous.showAllChatsRow === next.showAllChatsRow &&
-    equalArrays(
-      previous.folderRows ?? [],
-      next.folderRows ?? [],
-      (left, right) => {
-        return left === right;
-      },
-    ) &&
     equalArrays(previous.items, next.items, (left, right) => {
       return left === right;
     })
@@ -529,6 +523,8 @@ function ChatThreadMenuItems({
 }: Pick<ChatThreadMenuProps, "signals">) {
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
+  const projectsEnabled = useGet(projectsEnabled$);
+  const move = useSet(openProjectMembership$);
 
   return (
     <>
@@ -537,7 +533,18 @@ function ChatThreadMenuItems({
       <ChatThreadMuteMenuItem signals={signals} />
       <ChatThreadArchiveMenuSection signals={signals} />
       <ChatThreadRenameMenuItem signals={signals} />
-      <ChatFolderMoveMenuItem threadId={signals.threadId} />
+      {projectsEnabled && (
+        <DropdownMenuItem
+          onClick={() => {
+            move(signals.threadId);
+          }}
+        >
+          <FolderInput size={16} className="mr-2" />
+          {t(($) => {
+            return $.projects.move;
+          })}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem
         onClick={() => {
           requestDelete();
@@ -558,9 +565,18 @@ function ChatThreadMenu({
   rowIndex,
   touch = false,
 }: ChatThreadMenuProps) {
+  const projectDialog = useGet(projectDialog$);
+  const projectsEnabled = useGet(projectsEnabled$);
+  const menuOpenChanged = useSet(projectThreadMenuOpenChanged$);
   return (
     <TooltipProvider delay={200}>
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open, details) => {
+          if (projectsEnabled) {
+            menuOpenChanged(signals.threadId, open, details.trigger);
+          }
+        }}
+      >
         <ChatThreadMenuTrigger
           signals={signals}
           rowIndex={rowIndex}
@@ -569,6 +585,8 @@ function ChatThreadMenu({
         <DropdownMenuContent
           align="end"
           className={chatThreadMenuContentClassName(touch)}
+          // The Project picker/editor owns focus after this menu hands it off.
+          finalFocus={projectDialog ? false : undefined}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
           <ChatThreadMenuItems signals={signals} />
@@ -596,10 +614,12 @@ function ChatThreadItemLink({
   signals,
   shortcutNumber,
   touch,
+  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   touch: boolean;
+  projectContext?: SidebarProjectContext;
 }) {
   const { t } = useTranslation();
   const title = useGet(signals.title$);
@@ -611,18 +631,42 @@ function ChatThreadItemLink({
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadInlineRename] === true;
   const renaming = useGet(signals.inlineRenaming$);
   const startInlineRename = useSet(signals.startInlineRename$);
+  const projectsEnabled = useGet(projectsEnabled$);
+  const draggingThread = useGet(draggingProjectThread$);
+  const startDrag = useSet(startProjectThreadDrag$);
+  const endDrag = useSet(endProjectThreadDrag$);
+  const draggable = projectsEnabled && !touch && !renaming;
 
   return (
     <Link
       pathname="/chats/:threadId"
-      options={{ pathParams: { threadId: signals.threadId } }}
+      options={{
+        pathParams: { threadId: signals.threadId },
+        searchParams: projectContext
+          ? new URLSearchParams({
+              project: projectContext.projectId,
+              projectAgent: projectContext.agentId,
+            })
+          : undefined,
+      }}
       aria-current={isCurrentPage ? "page" : undefined}
       data-sidebar-chat-thread-id={signals.threadId}
+      draggable={draggable}
+      onDragStart={(event) => {
+        if (!draggable || !startDrag(signals.threadId)) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.clearData();
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData(PROJECT_THREAD_DRAG_TYPE, signals.threadId);
+      }}
+      onDragEnd={endDrag}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey) {
           return;
         }
-        if (select(e.altKey ? "sidebar" : "main")) {
+        if (select(e.altKey ? "sidebar" : "main", projectContext)) {
           e.preventDefault();
         }
       }}
@@ -638,7 +682,7 @@ function ChatThreadItemLink({
             }
           : undefined
       }
-      className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${
+      className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${draggingThread?.id === signals.threadId ? "opacity-40" : ""} ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
           : isUnread
@@ -785,27 +829,16 @@ export function ChatThreadItem({
   shortcutNumber,
   rowIndex,
   touch = false,
+  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   rowIndex: number;
   touch?: boolean;
+  projectContext?: SidebarProjectContext;
 }) {
-  const folderEnabled = useGet(chatFoldersEnabled$);
   return (
     <div
-      draggable={folderEnabled}
-      onDragStart={
-        folderEnabled
-          ? (event) => {
-              event.dataTransfer.setData(
-                CHAT_THREAD_FOLDER_DRAG_TYPE,
-                signals.threadId,
-              );
-              event.dataTransfer.effectAllowed = "move";
-            }
-          : undefined
-      }
       data-sidebar-chat-thread-row-id={signals.threadId}
       className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center"
     >
@@ -813,6 +846,7 @@ export function ChatThreadItem({
         signals={signals}
         shortcutNumber={shortcutNumber}
         touch={touch}
+        projectContext={projectContext}
       />
       <ChatThreadItemRename signals={signals} touch={touch} />
       <div
@@ -1024,7 +1058,6 @@ function DeleteChatThreadDialogBody() {
 export function ChatThreadDialogs() {
   return (
     <>
-      <CurrentChatFolderControls />
       <ChatThreadRenameDialog />
       <DeleteChatThreadDialog />
     </>
@@ -1040,38 +1073,48 @@ function useSelectChatThreadFilter() {
   };
 }
 
-// Switching filters is a secondary action, so it reads as neutral text rather
-// than the brand link colour.
-const CHAT_THREAD_FILTER_ACTION_CLASS_NAME =
-  "font-normal text-nav-copy hover:text-nav-copy active:text-nav-copy/80 focus-visible:ring-inset focus-visible:ring-offset-0";
-
-function ShowAllChatsRow() {
-  const { t } = useTranslation();
+function ChatThreadFilterAction({
+  filter,
+  label,
+}: {
+  readonly filter: ChatThreadFilter;
+  readonly label: string;
+}) {
   const selectFilter = useSelectChatThreadFilter();
 
   return (
-    <div data-testid="sidebar-chat-show-all-row" className="pb-1">
+    <div className="flex flex-col gap-2.5 pb-1 pt-2.5">
+      <div aria-hidden="true" className="mx-2 h-px bg-divider" />
       <Button
         type="button"
-        variant="link"
+        variant="quiet"
         size="sm"
-        className={cn(
-          "w-full justify-start px-2 leading-5",
-          CHAT_THREAD_FILTER_ACTION_CLASS_NAME,
-        )}
+        className="w-full justify-start px-2 font-normal leading-5 pointer-coarse:min-h-11 text-nav-copy-muted hover:text-nav-copy active:text-nav-copy/80 focus-visible:ring-inset focus-visible:ring-offset-0"
         onClick={() => {
-          selectFilter("all");
+          selectFilter(filter);
         }}
       >
-        {t(($) => {
-          return $.chat.sidebar.showAllChats;
-        })}
+        {label}
       </Button>
     </div>
   );
 }
 
-// An empty list is one centred group: what is missing, then the way back.
+function ShowAllChatsRow() {
+  const { t } = useTranslation();
+
+  return (
+    <div data-testid="sidebar-chat-show-all-row">
+      <ChatThreadFilterAction
+        filter="all"
+        label={t(($) => {
+          return $.chat.sidebar.showAllChats;
+        })}
+      />
+    </div>
+  );
+}
+
 function ChatThreadListEmptyState({
   message,
   action,
@@ -1079,26 +1122,12 @@ function ChatThreadListEmptyState({
   message: string;
   action?: { readonly filter: ChatThreadFilter; readonly label: string };
 }) {
-  const selectFilter = useSelectChatThreadFilter();
-
   return (
-    <div className="flex w-full flex-col items-center gap-1 px-4 py-4 text-center text-[13px] leading-5">
-      <p className="text-nav-copy-muted">{message}</p>
-      {action ? (
-        <Button
-          type="button"
-          variant="link"
-          className={cn(
-            "h-auto p-0 text-[13px] leading-5",
-            CHAT_THREAD_FILTER_ACTION_CLASS_NAME,
-          )}
-          onClick={() => {
-            selectFilter(action.filter);
-          }}
-        >
-          {action.label}
-        </Button>
-      ) : null}
+    <div className="w-full">
+      <p className="px-2 py-2 text-sm leading-5 text-nav-copy-muted">
+        {message}
+      </p>
+      {action ? <ChatThreadFilterAction {...action} /> : null}
     </div>
   );
 }
@@ -1111,82 +1140,46 @@ function VirtualizedChatThreads({
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
   const rowCount = useGet(listSignals.rowCount$);
+  const threadCount = useGet(listSignals.count$);
   const window = useGet(listSignals.window$, {
     equalityFn: equalSidebarChatThreadWindows,
   });
   const startIndex = window.startIndex;
   const visibleItems = window.items;
-  const folders = useLoadable(currentChatFolders$);
-  if (window.folderRows && folders.state === "hasData" && folders.data) {
-    return (
-      <VirtualizedChatFolderRows
-        folders={folders.data}
-        rows={window.folderRows}
-        startIndex={startIndex}
-        rowCount={rowCount}
-        showAllChats={window.showAllChatsRow}
-        showAllChatsRow={<ShowAllChatsRow />}
-        searchOpen={searchOpen}
-        renderThread={(row, index, searchOpen) => {
-          return (
-            <ChatThreadItem
-              signals={row.item}
-              rowIndex={index}
-              shortcutNumber={
-                !searchOpen && row.shortcutIndex < 9
-                  ? row.shortcutIndex + 1
-                  : undefined
-              }
-            />
-          );
-        }}
-      />
-    );
-  }
 
+  // Only chat rows have a fixed height. Keep the filter action in normal flow
+  // so its divider and spacing remain reachable at the end of a long list.
   return (
-    <div
-      ref={setShortcutRoot}
-      className="relative w-full"
-      data-testid="sidebar-chat-threads-virtual-list"
-      style={{ height: rowCount * CHAT_THREAD_VIRTUAL_ROW_HEIGHT }}
-    >
-      {visibleItems.map((signals, visibleOffset) => {
-        const index = startIndex + visibleOffset;
-        return (
-          <div
-            key={signals.threadId}
-            data-index={index}
-            data-testid="sidebar-chat-thread-virtual-row"
-            className="absolute left-0 top-0 w-full pb-1"
-            style={{
-              transform: `translateY(${
-                index * CHAT_THREAD_VIRTUAL_ROW_HEIGHT
-              }px)`,
-            }}
-          >
-            <ChatThreadItem
-              signals={signals}
-              rowIndex={index}
-              shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
-            />
-          </div>
-        );
-      })}
-      {window.showAllChatsRow ? (
-        <div
-          data-index={rowCount - 1}
-          data-testid="sidebar-chat-show-all-virtual-row"
-          className="absolute left-0 top-0 w-full"
-          style={{
-            transform: `translateY(${
-              (rowCount - 1) * CHAT_THREAD_VIRTUAL_ROW_HEIGHT
-            }px)`,
-          }}
-        >
-          <ShowAllChatsRow />
-        </div>
-      ) : null}
+    <div ref={setShortcutRoot} className="w-full">
+      <div
+        className="relative w-full"
+        data-testid="sidebar-chat-threads-virtual-list"
+        style={{ height: threadCount * CHAT_THREAD_VIRTUAL_ROW_HEIGHT }}
+      >
+        {visibleItems.map((signals, visibleOffset) => {
+          const index = startIndex + visibleOffset;
+          return (
+            <div
+              key={signals.threadId}
+              data-index={index}
+              data-testid="sidebar-chat-thread-virtual-row"
+              className="absolute left-0 top-0 w-full pb-1"
+              style={{
+                transform: `translateY(${index * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}px)`,
+              }}
+            >
+              <ChatThreadItem
+                signals={signals}
+                rowIndex={index}
+                shortcutNumber={
+                  !searchOpen && index < 9 ? index + 1 : undefined
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+      {rowCount > threadCount ? <ShowAllChatsRow /> : null}
     </div>
   );
 }
@@ -1201,13 +1194,12 @@ function ChatThreads({
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const folderEnabled = useGet(chatFoldersEnabled$);
   const threadCount = useGet(listSignals.count$);
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
 
-  if (threadCount === 0 && !folderEnabled) {
+  if (threadCount === 0) {
     const showAllChats = {
       filter: "all",
       label: t(($) => {
@@ -1294,7 +1286,7 @@ function useNewChatAction() {
       return;
     }
     detach(
-      createNewChat(currentChatAgentId, pane, rootSignal),
+      createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
       Reason.DomCallback,
     );
     setExpanded(false);
@@ -1557,14 +1549,7 @@ function ChatThreadsTitle({
   contentId: string;
   collapsible: boolean;
 }) {
-  const { t } = useTranslation();
-  const folderEnabled = useGet(chatFoldersEnabled$);
-  const flatTitleLabel = useChatThreadsFilteredTitleLabel();
-  const titleLabel = folderEnabled
-    ? t(($) => {
-        return $.chat.folders.title;
-      })
-    : flatTitleLabel;
+  const titleLabel = useChatThreadsFilteredTitleLabel();
   const setCollapsed = useSet(setSessionListCollapsed$);
   const collapsed = useGet(sessionListCollapsed$);
 
@@ -1590,12 +1575,12 @@ function ChatThreadsTitle({
           </span>
         </Button>
       ) : (
-        <span className="min-w-0 flex-1 truncate px-2 text-[13px] leading-4 text-nav-copy-muted">
+        <span className="min-w-0 flex-1 truncate px-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
           {titleLabel}
         </span>
       )}
       <div className="flex items-center gap-0.5">
-        {folderEnabled ? <ChatFolderCreateButton /> : <NewChatThreadButton />}
+        <NewChatThreadButton />
         <ChatThreadsListMenu showMarkAllRead={showMarkAllRead} />
       </div>
     </div>
@@ -1743,8 +1728,7 @@ function AllChatThreadsContent({
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
-  const listLoadable = useLoadable(scrollSignals.list$);
-  const foldersEnabled = useGet(chatFoldersEnabled$);
+  const listLoadable = useLastLoadable(scrollSignals.list$);
 
   if (listLoadable.state === "loading") {
     return (
@@ -1754,7 +1738,7 @@ function AllChatThreadsContent({
     );
   }
   if (listLoadable.state === "hasError") {
-    return foldersEnabled ? <ChatFolderCatalogError /> : null;
+    return null;
   }
 
   return (
@@ -1848,14 +1832,13 @@ function ExpandedChatThreadsContent({
   contentClassName: string;
 }) {
   const unreadOnly = useGet(chatThreadOnlyUnread$);
-  const folderEnabled = useGet(chatFoldersEnabled$);
 
   return (
     <ChatThreadsViewport
       scrollSignals={scrollSignals}
       contentClassName={contentClassName}
     >
-      {unreadOnly && !folderEnabled ? (
+      {unreadOnly ? (
         <UnreadChatThreadsContent scrollSignals={scrollSignals} />
       ) : (
         <AllChatThreadsContent scrollSignals={scrollSignals} />
@@ -1876,9 +1859,12 @@ export function ChatThreadsSection({
 }) {
   const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
+  const projectsEnabled = useGet(projectsEnabled$);
 
   return (
-    <div className="mt-4 flex flex-col min-h-0 flex-1">
+    <div
+      className={cn("flex flex-col min-h-0 flex-1", !projectsEnabled && "mt-4")}
+    >
       <div className={contentClassName}>
         <ChatThreadsTitle
           key={agentScope ?? "no-agent"}

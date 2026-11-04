@@ -1,4 +1,3 @@
-import { chatFoldersChangedEvent } from "@okouai/api-contracts/contracts/chat-folders";
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
 import type { RunnerVncInvalidate } from "@okouai/api-contracts/contracts/runner-vnc";
@@ -670,12 +669,4 @@ export async function publishRunnerJobNotification(args: {
     },
   );
   return published ?? false;
-}
-
-/** Folder metadata is separate from the shared thread lifecycle feed. */
-export function publishChatFoldersChangedSafely(
-  target: { readonly userId: string; readonly orgId: string },
-  agentId: string,
-): Promise<void> {
-  return publishChatDatabaseSignal(target, chatFoldersChangedEvent(agentId));
 }

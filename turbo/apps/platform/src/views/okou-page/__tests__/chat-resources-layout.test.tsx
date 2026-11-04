@@ -96,7 +96,7 @@ test("Recompute the gutter when an artifact pane opens and its divider moves", a
       handle
         .closest<HTMLElement>('[style*="--chat-thread-sidebar-width"]')
         ?.style.getPropertyValue("--chat-thread-sidebar-width"),
-    ).toBe("clamp(400px, 440px, calc(100% - 600px))");
+    ).toBe("clamp(400px, 440px, calc(100% - 420px))");
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   fireEvent.pointerUp(handle, { ...pointer, buttons: 0 });

@@ -166,6 +166,11 @@ that operator interface is explicitly in scope: use its real authentication,
 normal request, isolated database and public observations. The Official catalog
 publisher and automation cron can then exercise publication and reconciliation;
 this does not authorize private state readers, counts, leases or worker commands.
+Select an explicit production route slice for both user and operator tests;
+do not mount the complete API `ROUTES` registry. The route-boundary lint checks
+aggregate bootstrap use rather than maintaining route-name bans or filename
+exceptions. Review still verifies that the operator behavior is in scope and
+that setup and observations use the real caller boundary.
 Do not keep an unsupported case by moving the driver into a fixture, exporting a private command,
 moving the case to a service suite, or adding a product endpoint solely for the
 test. Financial, security, clock, and historical-state labels do not waive this

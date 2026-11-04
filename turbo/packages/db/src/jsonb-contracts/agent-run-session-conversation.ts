@@ -1,3 +1,4 @@
+import type { ContentBundle } from "./content-bundle";
 import type { PersistedStorageMount } from "../types";
 import type { JsonValue } from "./shared";
 
@@ -31,7 +32,8 @@ export interface AgentRunLaunchSnapshotV5 {
   runnerProfile: string;
 }
 export type AgentRunLaunchSnapshot = AgentRunFullLaunchSnapshot;
-export interface AgentRunOfficialWorkflowDefinitionProvenance {
+export interface AgentRunOfficialWorkflowStorageDefinitionProvenance {
+  readonly contentBundle?: never;
   readonly name: string;
   readonly revision: string;
   readonly artifact: {
@@ -42,9 +44,23 @@ export interface AgentRunOfficialWorkflowDefinitionProvenance {
     readonly storageVersion: string;
   };
 }
-export interface AgentRunOfficialWorkflowProvenance {
-  readonly schemaVersion: 1;
-  readonly definitions: readonly AgentRunOfficialWorkflowDefinitionProvenance[];
+export interface AgentRunOfficialWorkflowBundleDefinitionProvenance {
+  readonly name: string;
+  readonly revision: string;
+  readonly contentBundle: ContentBundle;
+  readonly artifact?: never;
 }
+export type AgentRunOfficialWorkflowDefinitionProvenance =
+  | AgentRunOfficialWorkflowStorageDefinitionProvenance
+  | AgentRunOfficialWorkflowBundleDefinitionProvenance;
+export type AgentRunOfficialWorkflowProvenance =
+  | {
+      readonly schemaVersion: 1;
+      readonly definitions: readonly AgentRunOfficialWorkflowStorageDefinitionProvenance[];
+    }
+  | {
+      readonly schemaVersion: 2;
+      readonly definitions: readonly AgentRunOfficialWorkflowBundleDefinitionProvenance[];
+    };
 export type AgentRunResult = JsonValue;
 export type AgentRunStorageMounts = PersistedStorageMount[];

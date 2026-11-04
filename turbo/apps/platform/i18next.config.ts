@@ -42,12 +42,16 @@ export default defineConfig({
       "connectors.providerConnect.lark.*",
       // Source-first onboarding indexes these by industry, source family, or
       // connector slug at runtime.
+      "onboarding.sourcesFirst.capabilities.items.*",
       "onboarding.sourcesFirst.industries.*",
       "onboarding.sourcesFirst.startingPrompt.*",
       "onboarding.sourcesFirst.outcomes.*",
       "onboarding.sourcesFirst.outputFormats.*",
       // Paid tool rows select copy by the shared tool catalog at runtime.
       "settings.paidTools.tools.*",
+      // Homepage copy is selected by research entry or existing creation task.
+      "chat.homeDiscovery.entries.*",
+      "chat.homeDiscovery.create.*",
       // Halloween content is loaded as an on-demand feature namespace, and
       // question copy is selected by the IDs supplied by the API.
       "halloween:*",

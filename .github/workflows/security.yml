@@ -345,6 +345,7 @@ jobs:
             .github/scripts/tests/cloudflare-ssh-tcp-test.sh \
             .github/scripts/tests/deploy-desktop-workflow-test.sh \
             .github/scripts/tests/ios-testflight-workflow-test.sh \
+            .github/scripts/tests/ios-published-version-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
             .github/scripts/tests/discover-runner-pr-namespaces-test.sh \
             .github/scripts/tests/publish-okou-app-assets-test.sh \
@@ -398,6 +399,11 @@ jobs:
             .github/scripts/artifacts/fetch-okou-app-artifact.sh \
             .github/scripts/artifacts/fetch-okou-desktop-artifact.sh
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
+          shellcheck -x -P .github/scripts/runner \
+            .github/scripts/runner/runner-binary-r2.sh \
+            .github/scripts/runner/runner-binary-download.sh \
+            .github/scripts/runner/runner-binary-transport.sh \
+            .github/scripts/tests/runner-binary-publication-test.sh
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
           shellcheck -x -P .github/scripts/runner .github/scripts/runner/wait-runner-image.sh
           shellcheck -x -P crates/runner/tests/behavior/exec crates/runner/tests/behavior/exec/*.sh

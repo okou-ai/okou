@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.28.10](https://github.com/okou-ai/okou/compare/sandbox-v0.28.9...sandbox-v0.28.10) (2026-11-04)
+
+
+### Refactoring
+
+* **sandbox:** retire orphaned staged-file finalization ([#45133](https://github.com/okou-ai/okou/issues/45133)) ([e397ac6](https://github.com/okou-ai/okou/commit/e397ac62f05a037478f6135ecb231f665ab76afe))
+
+## [0.28.9](https://github.com/okou-ai/okou/compare/sandbox-v0.28.8...sandbox-v0.28.9) (2026-11-04)
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.28.8](https://github.com/okou-ai/okou/compare/sandbox-v0.28.7...sandbox-v0.28.8) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
+## [0.28.7](https://github.com/okou-ai/okou/compare/sandbox-v0.28.6...sandbox-v0.28.7) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** retire orphaned guest file compression transport ([#44713](https://github.com/okou-ai/okou/issues/44713)) ([5dc1d17](https://github.com/okou-ai/okou/commit/5dc1d17b797535c5e154a6cf5960534363966fe0))
+
+## [0.28.6](https://github.com/okou-ai/okou/compare/sandbox-v0.28.5...sandbox-v0.28.6) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.28.5](https://github.com/okou-ai/okou/compare/sandbox-v0.28.4...sandbox-v0.28.5) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
 ## [0.28.4](https://github.com/okou-ai/okou/compare/sandbox-v0.28.3...sandbox-v0.28.4) (2026-10-26)
 
 

@@ -1,3 +1,5 @@
+mod teardown;
+
 use std::collections::VecDeque;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;

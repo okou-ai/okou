@@ -1,6 +1,5 @@
 import type { ReactNode, UIEvent as ReactUIEvent } from "react";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ChevronRight,
   File,
@@ -36,7 +35,6 @@ import {
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
@@ -50,7 +48,6 @@ import {
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
 import { officeFilePreviewKind } from "../okou-page/office-file-preview.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { artifactCatalogViewportRef$ } from "../../signals/artifact-deletion.ts";
 import {
   ArtifactDeleteDialog,
@@ -395,11 +392,9 @@ function ArtifactCatalogCard({
 
 function ArtifactSharedConversationList({
   artifacts,
-  canDelete = false,
   scrollToArtifactId,
 }: {
   readonly artifacts: readonly CatalogArtifact[];
-  readonly canDelete?: boolean;
   readonly scrollToArtifactId: string | null;
 }) {
   const { t } = useTranslation();
@@ -411,12 +406,12 @@ function ArtifactSharedConversationList({
       })}
     >
       {artifacts.map((artifact) => {
-        // New App -> old API during deployment or rollback: retain the catalog
-        // deep link until APIs without sharedThreadId are neither serving nor
-        // retained as production rollback targets. Follow-up: #43928.
-        const href = artifact.sharedThreadId
-          ? `/share/threads/${encodeURIComponent(artifact.sharedThreadId)}`
-          : `${ROUTES.artifacts}?tab=shared-thread&artifact=${encodeURIComponent(artifact.id)}`;
+        if (!artifact.sharedThreadId) {
+          throw new Error(
+            `Shared conversation artifact ${artifact.id} is missing its shared thread`,
+          );
+        }
+        const href = `/share/threads/${encodeURIComponent(artifact.sharedThreadId)}`;
         return (
           <li key={artifact.id} className="flex items-center">
             <a
@@ -449,11 +444,9 @@ function ArtifactSharedConversationList({
                 className="shrink-0 transition-colors group-hover:text-foreground"
               />
             </a>
-            {canDelete && (
-              <div className="pr-3">
-                <ArtifactDeleteMenu artifact={artifact} />
-              </div>
-            )}
+            <div className="pr-3">
+              <ArtifactDeleteMenu artifact={artifact} />
+            </div>
           </li>
         );
       })}
@@ -706,8 +699,6 @@ export function ArtifactCatalogPage({
 }) {
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
-  const deletionEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
   const sidebarOpen = useGet(artifactCatalogSidebar.open$);
   const syncImageLayout = useSet(
     artifactCatalogSidebar.imageCanvas.syncLayout$,
@@ -787,7 +778,6 @@ export function ArtifactCatalogPage({
             ) : sharedConversationLayout ? (
               <ArtifactSharedConversationList
                 artifacts={artifacts}
-                canDelete={deletionEnabled}
                 scrollToArtifactId={scrollToArtifactId}
               />
             ) : (
@@ -805,7 +795,7 @@ export function ArtifactCatalogPage({
             )}
           </div>
         </main>
-        {deletionEnabled && <ArtifactDeleteDialog />}
+        <ArtifactDeleteDialog />
       </div>
     </ChatThreadSidebarShell>
   );

@@ -61,6 +61,7 @@ async function setupPdfChat(
   loadFont: (request: Request) => Response | Promise<Response> = () => {
     return HttpResponse.arrayBuffer(new ArrayBuffer(8));
   },
+  cjkEmphasis = false,
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -90,7 +91,10 @@ async function setupPdfChat(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ChatMessagePdf]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.ChatMessagePdf]: true,
+      [FeatureSwitchKey.MarkdownCjkEmphasis]: cjkEmphasis,
+    },
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -237,7 +241,7 @@ test("Removing the message actions cancels PDF generation without leaving the pa
   });
 });
 
-async function exportRenderedPdf(markdown: string) {
+async function exportRenderedPdf(markdown: string, cjkEmphasis = false) {
   const require = createRequire(import.meta.url);
   GlobalWorkerOptions.workerSrc = pathToFileURL(
     require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
@@ -258,18 +262,22 @@ async function exportRenderedPdf(markdown: string) {
     return { ok: true, blob };
   });
   const browser = context.mocks.browser.blobDownload();
-  await setupPdfChat(`${ANSWER}\n\n${markdown}`, async (request) => {
-    const filename = fontFiles.get(request.url);
-    if (!filename) {
-      throw new Error("Unexpected PDF font request");
-    }
-    const data = await readFile(
-      require.resolve(
-        `../../../../test-fixtures/message-pdf-fonts/${filename}`,
-      ),
-    );
-    return HttpResponse.arrayBuffer(Uint8Array.from(data).buffer);
-  });
+  await setupPdfChat(
+    `${ANSWER}\n\n${markdown}`,
+    async (request) => {
+      const filename = fontFiles.get(request.url);
+      if (!filename) {
+        throw new Error("Unexpected PDF font request");
+      }
+      const data = await readFile(
+        require.resolve(
+          `../../../../test-fixtures/message-pdf-fonts/${filename}`,
+        ),
+      );
+      return HttpResponse.arrayBuffer(Uint8Array.from(data).buffer);
+    },
+    cjkEmphasis,
+  );
   click(button("Generate PDF"));
   await rendered.promise;
   await waitFor(() => {
@@ -285,6 +293,57 @@ async function exportRenderedPdf(markdown: string) {
   });
   return { pdf: await task.promise, task };
 }
+
+test.each([false, true])(
+  "PDF text and typography respect the CJK emphasis switch: %s",
+  async (enabled) => {
+    const { pdf, task } = await exportRenderedPdf(
+      [
+        "Normal **Bold** *Italic* ***BoldItalic***",
+        "**机构与身份：**个人站",
+        "*说明：*后文",
+        "***重点：***后文",
+        "未闭合**（保留",
+      ].join("\n\n"),
+      enabled,
+    );
+    try {
+      const content = await (await pdf.getPage(1)).getTextContent();
+      const items = content.items.filter((item) => {
+        return "str" in item;
+      });
+      const text = items
+        .map((item) => {
+          return item.str;
+        })
+        .join("");
+      expect(text).toContain(
+        enabled ? "机构与身份：个人站" : "**机构与身份：**个人站",
+      );
+      expect(text).toContain(enabled ? "说明：后文" : "*说明：*后文");
+      expect(text).toContain(enabled ? "重点：后文" : "***重点：***后文");
+      expect(text).toContain("未闭合**（保留");
+      const fontFor = (value: string) => {
+        const item = items.find((entry) => {
+          return entry.str.includes(value);
+        });
+        if (!item) {
+          throw new Error(`Missing PDF text: ${value}`);
+        }
+        return item.fontName;
+      };
+      expect(fontFor("机构与身份：")).toBe(
+        fontFor(enabled ? "Bold" : "Normal"),
+      );
+      expect(fontFor("说明：")).toBe(fontFor(enabled ? "Italic" : "Normal"));
+      expect(fontFor("重点：")).toBe(
+        fontFor(enabled ? "BoldItalic" : "Normal"),
+      );
+    } finally {
+      await task.destroy();
+    }
+  },
+);
 
 test("Whitespace-only emphasis still exports the surrounding text", async () => {
   const { pdf, task } = await exportRenderedPdf(

@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.187](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.186...guest-telemetry-v0.3.187) (2026-11-04)
+
+## [0.3.186](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.185...guest-telemetry-v0.3.186) (2026-11-03)
+
+## [0.3.185](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.184...guest-telemetry-v0.3.185) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share telemetry destination cleanup ownership ([#44860](https://github.com/okou-ai/okou/issues/44860)) ([27e972b](https://github.com/okou-ai/okou/commit/27e972ba025e79d7d7f1c67d004e9963459867f4))
+
+## [0.3.184](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.183...guest-telemetry-v0.3.184) (2026-11-03)
+
+## [0.3.183](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.182...guest-telemetry-v0.3.183) (2026-11-02)
+
+## [0.3.182](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.181...guest-telemetry-v0.3.182) (2026-11-02)
+
+## [0.3.181](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.180...guest-telemetry-v0.3.181) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.3.180](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.179...guest-telemetry-v0.3.180) (2026-10-31)
+
+## [0.3.179](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.178...guest-telemetry-v0.3.179) (2026-10-30)
+
+## [0.3.178](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.177...guest-telemetry-v0.3.178) (2026-10-30)
+
+## [0.3.177](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.176...guest-telemetry-v0.3.177) (2026-10-30)
+
+## [0.3.176](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.175...guest-telemetry-v0.3.176) (2026-10-30)
+
 ## [0.3.175](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.174...guest-telemetry-v0.3.175) (2026-10-29)
 
 ## [0.3.174](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.173...guest-telemetry-v0.3.174) (2026-10-29)

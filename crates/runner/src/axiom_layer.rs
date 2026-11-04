@@ -110,10 +110,7 @@ impl std::fmt::Write for BoundedTextOutput {
             return Ok(());
         }
 
-        let mut end = remaining;
-        while !value.is_char_boundary(end) {
-            end -= 1;
-        }
+        let end = value.floor_char_boundary(remaining);
         self.value.push_str(&value[..end]);
         self.truncated = true;
         Err(std::fmt::Error)

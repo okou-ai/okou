@@ -332,23 +332,23 @@ describe("POST /api/integrations/telegram/message", () => {
     });
   });
 
-  it("appends the claimed Run's Standard model label to an official message", async () => {
+  it("attributes an official message to the agent and sender with a Standard Run", async () => {
     const { chatId, telegramBody, responseBody } =
       await sendClaimedModelMessage("claude-fable-5-1");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: "Hello from this Run\n\n<i>Sent via Model footer sender · Claude Fable 5.1</i>",
+      text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
   });
 
-  it("appends the claimed Run's Fast model and tier label to an official message", async () => {
+  it("attributes an official message to the agent and sender with a Fast Run", async () => {
     const { chatId, telegramBody, responseBody } =
       await sendClaimedModelMessage("gpt-6.1-sol");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: "Hello from this Run\n\n<i>Sent via Model footer sender · GPT 6.1 Sol Fast</i>",
+      text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
@@ -414,7 +414,7 @@ describe("POST /api/integrations/telegram/message", () => {
     );
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: "Hello from this Run\n\n<i>Sent via API caller credential</i>",
+      text: `Hello from this Run\n\n<i>Sent via API caller credential · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(response.body).toStrictEqual({ ok: true, messageId: 325, chatId });

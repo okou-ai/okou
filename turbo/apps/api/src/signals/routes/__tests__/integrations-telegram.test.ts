@@ -5,7 +5,6 @@ import {
 } from "./helpers/api-bdd-integrations";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
-import { integrationsTelegramBotListContract } from "@okouai/api-contracts/contracts/integrations";
 import {
   integrationsTelegramContract,
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -172,87 +171,6 @@ async function expectTelegramBotConnection(args: {
     }),
   );
 }
-
-describe("GET /api/integrations/telegram/bots", () => {
-  beforeEach(() => {
-    configureOfficialBotEnv();
-  });
-
-  it("returns 401 when no auth token is provided", async () => {
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramRoutes,
-    })(integrationsTelegramBotListContract);
-
-    const response = await accept(client.listBots({ headers: {} }), [401]);
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns 401 when the token has no active organization membership", async () => {
-    expect.hasAssertions();
-
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const token = await credentials.okouToken({ userId, orgId });
-    await credentials.removeMember({ userId, orgId });
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramRoutes,
-    })(integrationsTelegramBotListContract);
-
-    const response = await accept(
-      client.listBots({ headers: { authorization: `Bearer ${token}` } }),
-      [401],
-    );
-
-    expectUnauthorized(response.body);
-  });
-
-  it("returns 401 when the authenticated session has no organization", async () => {
-    expect.hasAssertions();
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramRoutes,
-    })(integrationsTelegramBotListContract);
-
-    const response = await accept(
-      client.listBots({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [401],
-    );
-
-    expectUnauthorized(response.body);
-  });
-
-  it("returns the official bot for the active organization", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-
-    await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
-
-    const token = await credentials.okouToken({ userId, orgId });
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramRoutes,
-    })(integrationsTelegramBotListContract);
-
-    const response = await accept(
-      client.listBots({ headers: { authorization: `Bearer ${token}` } }),
-      [200],
-    );
-
-    expect(response.body.bots).toHaveLength(1);
-    expect(response.body.bots[0]).toMatchObject({
-      id: OFFICIAL_TELEGRAM_BOT_ID,
-      kind: "official",
-      isOwner: false,
-      official: { linkedTelegramUserId: null },
-    });
-  });
-});
 
 describe("GET /api/integrations/telegram", () => {
   beforeEach(() => {

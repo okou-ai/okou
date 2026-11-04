@@ -549,6 +549,29 @@ pub unsafe fn setup_env(
     sigkill_grace_secs: u64,
 ) -> Result<(), String> {
     unsafe {
+        setup_env_with_owned_prompt(
+            mock_path,
+            workdir,
+            prompt.to_string(),
+            sigterm_grace_secs,
+            sigkill_grace_secs,
+        )
+    }
+}
+
+/// Set up the same isolated process as [`setup_env`], consuming an owned prompt.
+///
+/// # Safety
+/// The environment/CWD side effects and caller isolation requirements of
+/// [`setup_env`] apply to this entry as well.
+pub unsafe fn setup_env_with_owned_prompt(
+    mock_path: &Path,
+    workdir: &Path,
+    prompt: String,
+    sigterm_grace_secs: u64,
+    sigkill_grace_secs: u64,
+) -> Result<(), String> {
+    unsafe {
         clear_guest_agent_bootstrap_env_for_test();
         // Route the CLI binary resolution to the cargo-built mock.
         std::env::set_var("CLI_AGENT_TYPE", "claude-code");
@@ -585,7 +608,7 @@ pub unsafe fn setup_env(
         set_run_payload_file_env_for_test(
             &runtime_dir,
             &guest_contracts::env::RunPayload {
-                prompt: prompt.to_string(),
+                prompt,
                 ..guest_contracts::env::RunPayload::default()
             },
         )?;

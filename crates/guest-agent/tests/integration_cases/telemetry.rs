@@ -13,14 +13,18 @@ const OVERSIZED_SYSTEM_LOG_LINE_MARKER_FRAGMENT: &str =
 // Only operation-producing tests install this process-global sink. Borrow both
 // owners so it is cleared before the files or the shared producer lock go away.
 struct SandboxOpsOverrideGuard<'a> {
+    override_guard: Option<guest_telemetry::test_support::SandboxOpsOverrideGuard>,
     _api: &'a SharedApiMock,
     _files: &'a ExplicitTelemetryFiles,
 }
 
 impl<'a> SandboxOpsOverrideGuard<'a> {
     fn set(api: &'a SharedApiMock, files: &'a ExplicitTelemetryFiles) -> Self {
-        guest_telemetry::telemetry::set_sandbox_ops_log_file(files.paths.sandbox_ops_file());
+        let override_guard = guest_telemetry::test_support::SandboxOpsOverrideGuard::set(
+            files.paths.sandbox_ops_file(),
+        );
         Self {
+            override_guard: Some(override_guard),
             _api: api,
             _files: files,
         }
@@ -29,7 +33,8 @@ impl<'a> SandboxOpsOverrideGuard<'a> {
 
 impl Drop for SandboxOpsOverrideGuard<'_> {
     fn drop(&mut self) {
-        guest_telemetry::telemetry::clear_sandbox_ops_log_file();
+        // Retain Drop so the borrowed fixture owners outlive sink cleanup.
+        drop(self.override_guard.take());
     }
 }
 

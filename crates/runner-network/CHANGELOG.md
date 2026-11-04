@@ -1,5 +1,90 @@
 # Changelog
 
+## [0.4.6](https://github.com/okou-ai/okou/compare/runner-network-v0.4.5...runner-network-v0.4.6) (2026-11-04)
+
+## [0.4.5](https://github.com/okou-ai/okou/compare/runner-network-v0.4.4...runner-network-v0.4.5) (2026-11-04)
+
+## [0.4.4](https://github.com/okou-ai/okou/compare/runner-network-v0.4.3...runner-network-v0.4.4) (2026-11-03)
+
+## [0.4.3](https://github.com/okou-ai/okou/compare/runner-network-v0.4.2...runner-network-v0.4.3) (2026-11-03)
+
+## [0.4.2](https://github.com/okou-ai/okou/compare/runner-network-v0.4.1...runner-network-v0.4.2) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share blocking-worker release ownership in tests ([#44912](https://github.com/okou-ai/okou/issues/44912)) ([0c873d8](https://github.com/okou-ai/okou/commit/0c873d8254326de823cf8d42f5fe06489e555299))
+
+## [0.4.1](https://github.com/okou-ai/okou/compare/runner-network-v0.4.0...runner-network-v0.4.1) (2026-11-03)
+
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-network-v0.3.22...runner-network-v0.4.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
+## [0.3.22](https://github.com/okou-ai/okou/compare/runner-network-v0.3.21...runner-network-v0.3.22) (2026-11-02)
+
+## [0.3.21](https://github.com/okou-ai/okou/compare/runner-network-v0.3.20...runner-network-v0.3.21) (2026-11-02)
+
+## [0.3.20](https://github.com/okou-ai/okou/compare/runner-network-v0.3.19...runner-network-v0.3.20) (2026-11-02)
+
+## [0.3.19](https://github.com/okou-ai/okou/compare/runner-network-v0.3.18...runner-network-v0.3.19) (2026-11-02)
+
+
+### Bug Fixes
+
+* **runner:** delay listeners until catalog initialization ([#44530](https://github.com/okou-ai/okou/issues/44530)) ([d056210](https://github.com/okou-ai/okou/commit/d0562106b3f76cc293798e0d3d0e57378c41f97b))
+
+## [0.3.18](https://github.com/okou-ai/okou/compare/runner-network-v0.3.17...runner-network-v0.3.18) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+
+### Performance Improvements
+
+* **runner:** warm firewall catalogs before admitting work ([#44528](https://github.com/okou-ai/okou/issues/44528)) ([1814a6d](https://github.com/okou-ai/okou/commit/1814a6d49bc2d0e20788e71144f30409fff9a0cc))
+
+## [0.3.17](https://github.com/okou-ai/okou/compare/runner-network-v0.3.16...runner-network-v0.3.17) (2026-11-01)
+
+## [0.3.16](https://github.com/okou-ai/okou/compare/runner-network-v0.3.15...runner-network-v0.3.16) (2026-11-01)
+
+## [0.3.15](https://github.com/okou-ai/okou/compare/runner-network-v0.3.14...runner-network-v0.3.15) (2026-10-31)
+
+## [0.3.14](https://github.com/okou-ai/okou/compare/runner-network-v0.3.13...runner-network-v0.3.14) (2026-10-31)
+
+## [0.3.13](https://github.com/okou-ai/okou/compare/runner-network-v0.3.12...runner-network-v0.3.13) (2026-10-31)
+
+## [0.3.12](https://github.com/okou-ai/okou/compare/runner-network-v0.3.11...runner-network-v0.3.12) (2026-10-31)
+
+## [0.3.11](https://github.com/okou-ai/okou/compare/runner-network-v0.3.10...runner-network-v0.3.11) (2026-10-31)
+
+## [0.3.10](https://github.com/okou-ai/okou/compare/runner-network-v0.3.9...runner-network-v0.3.10) (2026-10-30)
+
+## [0.3.9](https://github.com/okou-ai/okou/compare/runner-network-v0.3.8...runner-network-v0.3.9) (2026-10-30)
+
+## [0.3.8](https://github.com/okou-ai/okou/compare/runner-network-v0.3.7...runner-network-v0.3.8) (2026-10-30)
+
+## [0.3.7](https://github.com/okou-ai/okou/compare/runner-network-v0.3.6...runner-network-v0.3.7) (2026-10-30)
+
+## [0.3.6](https://github.com/okou-ai/okou/compare/runner-network-v0.3.5...runner-network-v0.3.6) (2026-10-30)
+
+## [0.3.5](https://github.com/okou-ai/okou/compare/runner-network-v0.3.4...runner-network-v0.3.5) (2026-10-30)
+
+## [0.3.4](https://github.com/okou-ai/okou/compare/runner-network-v0.3.3...runner-network-v0.3.4) (2026-10-30)
+
+## [0.3.3](https://github.com/okou-ai/okou/compare/runner-network-v0.3.2...runner-network-v0.3.3) (2026-10-30)
+
 ## [0.3.2](https://github.com/okou-ai/okou/compare/runner-network-v0.3.1...runner-network-v0.3.2) (2026-10-29)
 
 

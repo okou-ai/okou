@@ -73,6 +73,95 @@ uses requires resolving the imported binding, preserving type positions and
 nested members, and choosing aliases that cannot capture local identifiers.
 A text replacement of `z.` cannot establish those properties.
 
+## String formats
+
+Use Zod 4's top-level format schemas instead of the format methods that Zod 4
+deprecates on `string()`:
+
+```typescript
+import { email, iso, url, uuid } from "zod";
+
+const ownerSchema = object({
+  id: uuid(),
+  homepage: url().optional(),
+  email: email(),
+  createdAt: iso.datetime({ offset: true }),
+});
+```
+
+Keep the original arguments, such as `offset` or `precision`. `datetime`,
+`date`, `time` and `duration` live under `iso`. Alias a format import that
+collides with a local name, for example `url as zUrl`.
+
+A top-level format is both the string schema and its format check, so two
+cases need the deprecated method's internal form, `string().check(format())`:
+
+- The format check runs before any chained checks or transforms. Keep a check
+  or transform that must run first on `string()`.
+- A custom message on the top-level format also replaces the non-string type
+  error. Keep a format-only message on the check.
+
+```typescript
+const hostIdSchema = string().trim().check(uuid());
+const uploadIdSchema = string().check(uuid("Upload ID must be a UUID"));
+```
+
+The `zod/no-string-format-methods` ESLint rule reports the deprecated methods
+on a `string()` or `coerce.string()` call chain from a classic Zod entry point.
+Both spellings use the same Zod format implementation and produce the same
+JSON Schema; the top-level form constructs fewer schema instances.
+
+## Browser HTTP contract imports
+
+Share contract types without sharing endpoint schema construction with the
+browser. Full `contracts/*` modules remain the server/CLI source of truth;
+production HTTP clients use generated `client/*` descriptors. Import independent
+`validators/*` only when browser code actually parses or validates a value:
+
+```typescript
+import { agentsMainContract } from "@okouai/api-contracts/client/agents";
+import type { AgentVisibility } from "@okouai/api-contracts/contracts/agents";
+import { agentVisibilitySchema } from "@okouai/api-contracts/validators/agents";
+```
+
+`client-contracts/prefer-client-descriptors` enforces this boundary in App
+production source, shared Core modules, independent validators, and generated
+client descriptors. Tests, mocks, build-time generators, the test validator
+registry, and Core's original server/CLI compatibility barrels retain full
+contracts where required. Pure schema/helper modules under `contracts/*` are
+not banned merely because of their directory.
+
+The rule uses the generated `client/imports.ts` mapping. Safe fixes split mixed
+imports, preserve local aliases, redirect existing independent exports, and use
+statement-level `import type` for source-schema type queries. An all-inline-type
+import can retain an empty runtime import under `verbatimModuleSyntax`; use
+`import type`, not just `import { type Name }`, at this boundary.
+
+Router fixes require proven HTTP-client or literal metadata use, not a matching
+function name. The App factory must originate from the actual `apiClient$` signal
+through a known `computed` or `command` getter. Unknown consumers, runtime schema
+property reads, enabled or unknown response-validation options, explicit type
+constraints or generic arguments, namespace imports, runtime re-exports, and
+dynamic imports are reported without an unsafe rewrite. Comments or destination
+collisions that cannot be preserved safely also remain report-only. The rule
+never extracts schemas across files, deletes `.parse()`/`.safeParse()`, or weakens
+validation. Extract a needed schema
+into an independent module, keep the original contract using the same singleton,
+and regenerate the mapping before fixing its consumers.
+
+From `turbo/`, generate/check the descriptors and apply safe App import fixes:
+
+```sh
+pnpm --filter @okouai/api-contracts generate:client
+pnpm --filter @okouai/api-contracts generate:client --check
+pnpm --filter @okouai/app exec eslint src --fix
+```
+
+Generation remains separate from lint. CI checks generated-file consistency,
+and the production app/worker bundle guard rejects full HTTP contract modules
+and runtime imports from descriptors, including transitive dependency leaks
+that a local import rule cannot establish.
+
 ## Reproduce a bundle comparison
 
 After installing the pinned workspace dependencies, run this from `turbo/apps/api`:

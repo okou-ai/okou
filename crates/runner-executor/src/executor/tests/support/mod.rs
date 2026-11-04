@@ -8,9 +8,9 @@ mod sandbox;
 mod tracing;
 
 pub(super) use self::config::{
-    assert_proxy_registry_empty, default_params, make_reusable_idle_sandbox, test_budget_lease,
-    test_device_rate_limits, test_executor_config, test_executor_config_with_startup_api,
-    test_telemetry,
+    assert_proxy_registry_empty, default_params, make_reusable_idle_sandbox,
+    make_reusable_idle_sandbox_with_fingerprints, test_budget_lease, test_device_rate_limits,
+    test_executor_config, test_executor_config_with_startup_api, test_telemetry,
 };
 pub(super) use self::context::{context_with_env, minimal_context};
 pub(super) use self::env::{
@@ -22,7 +22,7 @@ pub(super) use self::execution::{
     spawn_run_in_sandbox_test_with_timeouts,
 };
 pub(super) use self::home_cache::{seed_home_image_cache, seed_home_image_cache_with_fingerprints};
-pub(super) use self::manifest::{api_artifact, api_storage, downloaded_workflow_manifest};
+pub(super) use self::manifest::{api_artifact, api_storage, instruction_context, workflow_context};
 pub(super) use self::sandbox::{
     DestroyPanicFactory, create_overridden_sandbox, sandbox_copy_file_error, sandbox_create_error,
     sandbox_exec_error, sandbox_read_file_error, sandbox_write_file_error,

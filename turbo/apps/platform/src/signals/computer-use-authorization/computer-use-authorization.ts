@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  computerUseAuthorizationRequestsContract,
-  type ComputerUseHost,
-} from "@okouai/api-contracts/contracts/computer-use";
+import { computerUseAuthorizationRequestsContract } from "@okouai/api-contracts/client/computer-use";
+import type { ComputerUseHost } from "@okouai/api-contracts/contracts/computer-use";
 import { accept } from "../../lib/accept.ts";
 import { pathParams$ } from "../route.ts";
 import { apiClient$ } from "../api-client.ts";

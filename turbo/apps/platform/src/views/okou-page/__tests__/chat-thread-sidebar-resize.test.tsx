@@ -81,7 +81,7 @@ test.each(["pointerup", "pointercancel", "lostpointercapture"] as const)(
     fireEvent.pointerMove(handle, { ...POINTER, clientX: 840 });
     await waitFor(() => {
       expect(shell.style.getPropertyValue("--chat-thread-sidebar-width")).toBe(
-        "clamp(400px, 600px, calc(100% - 600px))",
+        "clamp(400px, 600px, calc(100% - 420px))",
       );
     });
     fireEvent(handle, new PointerEvent(endEvent, { ...POINTER, buttons: 0 }));
@@ -90,7 +90,7 @@ test.each(["pointerup", "pointercancel", "lostpointercapture"] as const)(
 
     fireEvent.pointerMove(handle, { ...POINTER, clientX: 700 });
     expect(shell.style.getPropertyValue("--chat-thread-sidebar-width")).toBe(
-      "clamp(400px, 600px, calc(100% - 600px))",
+      "clamp(400px, 600px, calc(100% - 420px))",
     );
     click(
       buttonNamed(

@@ -1,7 +1,10 @@
 [package]
 name = "guest-telemetry"
-version = "0.3.175"
+version = "0.3.187"
 edition.workspace = true
+
+[features]
+test-support = []
 
 [dependencies]
 chrono = { workspace = true, features = ["clock", "std"] }

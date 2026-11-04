@@ -1,8 +1,6 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -127,7 +125,6 @@ async function prepareRemoteDefaults(
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -217,7 +214,7 @@ test("A chat can restore multiple SSH host defaults independently", async () => 
   await expectReopenedRemoteAccessCount("2 enabled");
 });
 
-test("Remote host choices stay disabled across resize until a save completes", async () => {
+test("Remote host choices stay read-only across resize and reopen until a save completes", async () => {
   const viewport = context.mocks.browser.matchMedia(true);
   const saveResponse = context.mocks.deferred<void>();
   const { first, second } = await prepareRemoteDefaults(
@@ -227,34 +224,54 @@ test("Remote host choices stay disabled across resize until a save completes", a
 
   await chooseRemoteHost(first, "Off");
   await waitFor(() => {
-    expect(first).toBeDisabled();
-    expect(second).toBeDisabled();
+    expect(first).toHaveAttribute("aria-readonly", "true");
+    expect(second).toHaveAttribute("aria-readonly", "true");
   });
 
   act(() => {
     viewport.setMatches(false);
   });
   const dialog = await screen.findByRole("dialog", { name: "Remote access" });
-  const resizedFirst = within(dialog).getByRole("combobox", {
-    name: "SSH SSH host 1",
-  });
+  expect(
+    within(dialog).getByRole("combobox", {
+      name: "SSH SSH host 1",
+    }),
+  ).toHaveAttribute("aria-readonly", "true");
   const resizedSecond = within(dialog).getByRole("combobox", {
     name: "SSH SSH host 2",
   });
-  expect(resizedFirst).toBeDisabled();
-  expect(resizedSecond).toBeDisabled();
+  expect(resizedSecond).toHaveAttribute("aria-readonly", "true");
+  await closeRemoteAccess();
+  click(await findFastControl("button", "Connectors"));
+  click(await screen.findByText("Remote access"));
+  const reopenedFirst = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  const reopenedSecond = screen.getByRole("combobox", {
+    name: "SSH SSH host 2",
+  });
+  expect(reopenedFirst).toHaveAttribute("aria-readonly", "true");
+  expect(reopenedSecond).toHaveAttribute("aria-readonly", "true");
+  const user = userEvent.setup({ delay: null });
+  reopenedSecond.focus();
+  await user.keyboard("{Enter}{ArrowDown}{Enter}");
+  click(reopenedFirst);
+  expect(screen.queryByRole("listbox")).toBeNull();
+  reopenedSecond.focus();
 
   saveResponse.resolve();
   await waitFor(() => {
-    expect(resizedFirst).toHaveTextContent("Off");
-    expect(resizedFirst).toBeEnabled();
-    expect(resizedSecond).toBeEnabled();
+    expect(reopenedFirst).toHaveTextContent("Off");
+    expect(reopenedSecond).toHaveTextContent("Default (Off)");
+    expect(reopenedFirst).not.toHaveAttribute("aria-readonly", "true");
+    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
   });
-  await chooseRemoteHost(resizedSecond, "On");
+  expect(reopenedSecond).toHaveFocus();
+  await chooseRemoteHost(reopenedSecond, "On");
   await waitFor(() => {
-    expect(resizedFirst).toHaveTextContent("Off");
-    expect(resizedSecond).toHaveTextContent("On");
-    expect(resizedSecond).toBeEnabled();
+    expect(reopenedFirst).toHaveTextContent("Off");
+    expect(reopenedSecond).toHaveTextContent("On");
+    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
   });
 });
 
@@ -323,7 +340,6 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -473,7 +489,6 @@ test("Remote access is absent when no SSH or VNC hosts are configured", async ()
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   await screen.findByText("Cloud browser");
@@ -494,7 +509,6 @@ test("A new chat has no remote access menu when no hosts are configured", async 
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   await screen.findByText("Cloud browser");
@@ -521,7 +535,6 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -546,7 +559,6 @@ test("Remote access remains visible when host discovery fails", async () => {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -585,7 +597,6 @@ test("Remote access displays a failed chat permission read", async () => {
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -622,7 +633,6 @@ async function prepareDraftHostChoices() {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: {},
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
@@ -777,7 +787,6 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`,
-    featureSwitches: {},
   });
   await waitFor(() => {
     expect(
@@ -921,52 +930,4 @@ test("Directory SSH setup follows shelves and categories", async () => {
   expect(window.location.search).toBe(
     "?scope=remote-control&type=ssh&setup=add",
   );
-});
-
-test("Manage SSH hosts reopens opted-out Remote control on connections after viewing credentials", async () => {
-  installComposerConnectorFixture();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-  });
-  const openSshFromComposer = async () => {
-    click(await findFastControl("button", "Connectors"));
-    click(await findFastControl("button", "Add connectors"));
-    const dialog = await screen.findByRole("dialog", { name: "Connectors" });
-    click(await findFastControl("link", "Manage SSH hosts", dialog));
-    return await screen.findByRole("radiogroup", { name: "Remote control" });
-  };
-
-  const views = await openSshFromComposer();
-  const credentials = await findFastControl("radio", "Credentials", views);
-  click(credentials);
-  await waitFor(() => {
-    expect(credentials).toBeChecked();
-  });
-
-  window.history.back();
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
-  });
-
-  const reopenedViews = await openSshFromComposer();
-  const connections = await findFastControl(
-    "radio",
-    "Connections",
-    reopenedViews,
-  );
-  await waitFor(() => {
-    expect(connections).toBeChecked();
-  });
-  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
 });

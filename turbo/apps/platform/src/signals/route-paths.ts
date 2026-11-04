@@ -20,9 +20,11 @@ export const ROUTES = {
   activityInspect: "/activities/inspect",
   activityDetail: "/activities/:activityRunId",
   chat: "/chats/:threadId",
+  project: "/projects/:projectId",
   prompt: "/prompt",
   works: "/works",
   artifacts: "/artifacts",
+  feed: "/feed",
   sharedArtifact: "/artifacts/:artifactShareId",
   legacySharedArtifact: "/share/artifacts/:artifactShareId",
   sharedThread: "/share/threads/:id",
@@ -67,6 +69,7 @@ export const ROUTES = {
   onboardingExperience: "/onboarding/experience",
   onboardingSkills: "/onboarding/skills",
   onboardingSlack: "/onboarding/slack",
+  onboardingCapabilities: "/onboarding/capabilities",
   onboardingReady: "/onboarding/ready",
   signIn: "/sign-in",
   signInCatchAll: "/sign-in{/*path}",
@@ -85,7 +88,7 @@ export const ROUTES = {
 } as const;
 
 export type RouteKey = keyof typeof ROUTES;
-export type RoutePath = (typeof ROUTES)[RouteKey] | `/projects/${string}`;
+export type RoutePath = (typeof ROUTES)[RouteKey];
 
 type WorkflowDetailRouteKey =
   | "workflowDetail"

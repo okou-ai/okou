@@ -185,6 +185,138 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertTrue(store.pendingOptions.initialRemoteAccessOverrides.isEmpty)
   }
 
+  func testRejectedRemoteWriteKeepsItsBusinessReasonUntilExplicitReadback() async throws {
+    let writes = Mutex(0)
+    let holdOld = Mutex(false)
+    let oldReading = expectation(description: "Old read captured before rejection")
+    let oldResponse = ConnectorResponseGate()
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
+        request.httpMethod == "PUT"
+      {
+        writes.withLock { $0 += 1 }
+        return ChatHTTPResponse(
+          status: 403, body: #"{"error":{"message":"Remote access is blocked"}}"#)
+      }
+      let response = try composerResponse(request)
+      if request.url!.path.hasSuffix("/remote-access") {
+        let shouldHold = holdOld.withLock { value in
+          let held = value
+          value = false
+          return held
+        }
+        if shouldHold {
+          oldReading.fulfill()
+          await oldResponse.wait()
+        }
+      }
+      return response
+    }
+    let thread = ChatThread(
+      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+      pinnedAt: nil, pinOrder: nil, indicator: nil)
+    let store = makeStore(fixture, thread: thread)
+    defer { store.close() }
+    await store.refresh()
+    let host = try XCTUnwrap(store.hosts(.ssh).first)
+    holdOld.withLock { $0 = true }
+    let background = Task { await store.refresh() }
+    addTeardownBlock {
+      background.cancel()
+      oldResponse.open()
+      await background.value
+    }
+    await fulfillment(of: [oldReading], timeout: 3)
+    await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertTrue(store.error?.contains("Remote access is blocked") == true)
+    XCTAssertFalse(store.canSend)
+    oldResponse.open()
+    await background.value
+    XCTAssertTrue(store.error?.contains("Remote access is blocked") == true)
+    XCTAssertFalse(store.canSend)
+    await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertEqual(writes.withLock { $0 }, 1)
+    await store.refresh()
+    XCTAssertTrue(store.canSend)
+    XCTAssertEqual(store.hosts(.ssh).first?.enabled, false)
+    XCTAssertEqual(writes.withLock { $0 }, 1)
+  }
+
+  func testReadStartedBeforeAWriteCannotConfirmItsUncertainResult() async throws {
+    struct Server: Sendable {
+      var enabled = true
+      var writes = 0
+    }
+    let server = Mutex(Server())
+    let holdOld = Mutex(false)
+    let holdFresh = Mutex(false)
+    let oldReading = expectation(description: "Old settings captured before the write")
+    let freshReading = expectation(description: "Fresh settings read after the write")
+    let oldResponse = ConnectorResponseGate()
+    let freshResponse = ConnectorResponseGate()
+    let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "PUT" {
+        server.withLock {
+          $0.enabled = false
+          $0.writes += 1
+        }
+        throw URLError(.networkConnectionLost)
+      }
+      if request.url!.path.hasSuffix("/remote-access") {
+        let enabled = server.withLock { $0.enabled }
+        if holdOld.withLock({ value in
+          let held = value
+          value = false
+          return held
+        }) {
+          oldReading.fulfill()
+          await oldResponse.wait()
+        } else if holdFresh.withLock({ value in
+          let held = value
+          value = false
+          return held
+        }) {
+          freshReading.fulfill()
+          await freshResponse.wait()
+        }
+        return ChatHTTPResponse(
+          body: """
+            {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
+            """)
+      }
+      return try composerResponse(request)
+    }
+    let thread = ChatThread(
+      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+      pinnedAt: nil, pinOrder: nil, indicator: nil)
+    let store = makeStore(fixture, thread: thread)
+    defer { store.close() }
+    await store.refresh()
+    let host = try XCTUnwrap(store.hosts(.ssh).first)
+    holdOld.withLock { $0 = true }
+    let background = Task { await store.refresh() }
+    addTeardownBlock {
+      background.cancel()
+      oldResponse.open()
+      freshResponse.open()
+      await background.value
+    }
+    await fulfillment(of: [oldReading], timeout: 3)
+    holdFresh.withLock { $0 = true }
+    await store.setRemote(host, protocol: .ssh, enabled: false)
+    XCTAssertFalse(store.canSend)
+    oldResponse.open()
+    await fulfillment(of: [freshReading], timeout: 3)
+    XCTAssertFalse(store.canSend)
+    freshResponse.open()
+    await background.value
+    XCTAssertTrue(store.canSend)
+    XCTAssertEqual(store.hosts(.ssh).first?.enabled, false)
+    XCTAssertEqual(server.withLock { $0.writes }, 1)
+  }
+
   func testUnknownRemoteWriteRequiresReadbackBeforeSendingAndIsNeverReplayed() async throws {
     struct Server: Sendable {
       var enabled = true
@@ -198,7 +330,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
       if request.url!.path == "/api/remotes/overview", blocked.withLock({ $0 }) {
         reading.fulfill()
         await response.wait()
-        throw URLError(.cancelled)
       }
       if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
         request.httpMethod == "PUT"
@@ -207,6 +338,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
           $0.enabled = false
           $0.writes += 1
         }
+        blocked.withLock { $0 = true }
         throw URLError(.networkConnectionLost)
       }
       if request.url!.path.hasSuffix("/remote-access") {
@@ -226,26 +358,22 @@ final class ComposerConnectorStoreTests: XCTestCase {
     defer { store.close() }
     await store.refresh()
     let host = try XCTUnwrap(store.hosts(.ssh).first)
-    await store.setRemote(host, protocol: .ssh, enabled: false)
-    XCTAssertFalse(store.canSend)
-
-    blocked.withLock { $0 = true }
-    let refresh = Task { await store.refresh() }
+    let saving = Task { await store.setRemote(host, protocol: .ssh, enabled: false) }
     addTeardownBlock {
-      refresh.cancel()
+      saving.cancel()
       response.open()
-      await refresh.value
+      await saving.value
     }
     await fulfillment(of: [reading], timeout: 3)
-    refresh.cancel()
+    XCTAssertFalse(store.canSend)
+    await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertEqual(server.withLock { $0.writes }, 1)
+    blocked.withLock { $0 = false }
     response.open()
-    await refresh.value
+    await saving.value
     XCTAssertNil(store.connectorError)
     XCTAssertNil(store.remoteError)
-    XCTAssertFalse(store.canSend)
-
-    blocked.withLock { $0 = false }
-    await store.refresh()
+    XCTAssertNotNil(store.notice)
     XCTAssertTrue(store.canSend)
     XCTAssertEqual(store.hosts(.ssh).first?.overrideEnabled, false)
     XCTAssertEqual(server.withLock { $0.writes }, 1)
@@ -302,6 +430,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
 private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse {
   typealias F = ConnectorHTTPFixtures
   switch request.url!.path {
+  case "/api/feature-switches":
+    return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
   case "/api/agents/\(F.agentID)":
     return ChatHTTPResponse(body: "{\"agentId\":\"\(F.agentID)\"}")
   case "/api/connectors/connected":

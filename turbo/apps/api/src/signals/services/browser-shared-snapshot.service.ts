@@ -1,12 +1,10 @@
-import {
-  browserOwnerProfiles as profiles,
-  browserOwnerWindows as windows,
-} from "@okouai/db/schema/browser-owner";
+import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { browserSessionTabSnapshots } from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
-import { and, eq, exists, inArray, sql, type Subquery } from "drizzle-orm";
-import { QueryBuilder, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { and, eq, exists, inArray, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import type { BrowserChatWindow } from "./browser-chat-session";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
@@ -14,11 +12,13 @@ import { browserCapturePublication } from "./browser-capture-publication";
 import {
   BrowserUseProviderError,
   listBrowserUseTabUrls,
+  type BrowserUseNativeConnection,
 } from "./browser-use.service";
 import { encryptPersistentSecretValue } from "./crypto.utils";
 
 type Profile = typeof profiles.$inferSelect;
-type Window = typeof windows.$inferSelect;
+type Window = BrowserChatWindow;
+const RETIREMENT_CAPTURE_TIMEOUT_MS = 15_000;
 interface SnapshotOwner {
   readonly orgId: string;
   readonly userId: string;
@@ -63,93 +63,88 @@ export interface SharedSnapshotCapture {
 export const captureSharedSnapshot$ = command(
   async (
     { get },
-    args: {
+    args: BrowserUseNativeConnection & {
       readonly owner: SnapshotOwner;
       readonly window: Pick<Window, "primaryWindowId">;
-      readonly cdpUrl: string;
+      readonly purpose: "active" | "retirement";
     },
     signal: AbortSignal,
   ): Promise<SharedSnapshotCapture | null> => {
-    const { owner, window, cdpUrl } = args;
-    const t = browserSessionTabSnapshots;
+    const { owner, window } = args;
+    const t = windows;
     const [previous] = await get(db$)
       .select({ encryptedTabUrls: t.encryptedTabUrls })
       .from(t)
       .where(eq(t.chatThreadId, owner.chatThreadId));
     signal.throwIfAborted();
-    const observed = await settleIncludingAbort(
-      listBrowserUseTabUrls(cdpUrl, signal, window.primaryWindowId),
-    );
+    const captureSignal =
+      args.purpose === "retirement"
+        ? AbortSignal.any([
+            signal,
+            AbortSignal.timeout(RETIREMENT_CAPTURE_TIMEOUT_MS),
+          ])
+        : signal;
+    // Only remote capture/encryption is advisory. The database read above and
+    // the caller's atomic publication must still fail on local errors.
+    const prepared = await settleIncludingAbort(async () => {
+      // Order captures before native IO; a late reply is not a newer snapshot.
+      const capturedAt = nowDate();
+      const observed = await settleIncludingAbort(
+        listBrowserUseTabUrls(args, captureSignal, window.primaryWindowId),
+      );
+      captureSignal.throwIfAborted();
+      if (!observed.ok) {
+        throw observed.error instanceof BrowserUseProviderError
+          ? observed.error
+          : new BrowserUseProviderError(
+              502,
+              "BROWSER_USE_SHARED_OPERATION_FAILED",
+              "Managed Browser operation could not be confirmed",
+            );
+      }
+      const snapshot = observed.value;
+      // A closed native window cannot replace its last recoverable snapshot.
+      // A live window containing only blank pages still deliberately saves [].
+      if (!snapshot.windowExists) {
+        return null;
+      }
+      const encryptedTabUrls = await encryptPersistentSecretValue(
+        JSON.stringify(snapshot.urls),
+        { userId: owner.userId },
+        captureSignal,
+      );
+      captureSignal.throwIfAborted();
+      return {
+        previousValue: previous?.encryptedTabUrls ?? null,
+        encryptedTabUrls,
+        capturedAt,
+      };
+    });
     signal.throwIfAborted();
-    if (!observed.ok) {
-      throw observed.error instanceof BrowserUseProviderError
-        ? observed.error
-        : new BrowserUseProviderError(
-            502,
-            "BROWSER_USE_SHARED_OPERATION_FAILED",
-            "Managed Browser operation could not be confirmed",
-          );
+    if (!prepared.ok) {
+      if (args.purpose === "retirement") {
+        // Expiry can proceed using only the last accepted snapshot.
+        return null;
+      }
+      throw prepared.error;
     }
-    const snapshot = observed.value;
-    // A closed native window cannot replace its last recoverable snapshot.
-    // A live window containing only blank pages still deliberately saves [].
-    if (!snapshot.windowExists) {
-      return null;
-    }
-    const capturedAt = nowDate();
-    const encryptedTabUrls = await encryptPersistentSecretValue(
-      JSON.stringify(snapshot.urls),
-      { userId: owner.userId },
-    );
-    signal.throwIfAborted();
-    return {
-      previousValue: previous?.encryptedTabUrls ?? null,
-      encryptedTabUrls,
-      capturedAt,
-    };
+    return prepared.value;
   },
 );
 
-/** The source selects only windows whose owning claim/read may publish. */
-export function sharedSnapshotPublication(
-  capture: SharedSnapshotCapture,
-  source: Subquery & { readonly chatThreadId: AnyPgColumn },
-) {
-  const t = browserSessionTabSnapshots;
+/** Publish independent capture fields without touching the binding twice. */
+export function sharedSnapshotPublication(capture: SharedSnapshotCapture) {
   const publication = browserCapturePublication({
-    value: t.encryptedTabUrls,
-    updatedAt: t.updatedAt,
+    value: windows.encryptedTabUrls,
+    updatedAt: windows.tabUrlsCapturedAt,
     previousValue: capture.previousValue,
     capturedAt: capture.capturedAt,
   });
   return {
-    source: new QueryBuilder()
-      .select({
-        chatThreadId: source.chatThreadId,
-        encryptedTabUrls: sql`${capture.encryptedTabUrls}`
-          .mapWith(t.encryptedTabUrls)
-          .as("encrypted_tab_urls"),
-        createdAt: sql`${sql.param(capture.capturedAt, t.createdAt)}::timestamp`
-          .mapWith(t.createdAt)
-          .as("created_at"),
-        updatedAt: sql`${sql.param(capture.capturedAt, t.updatedAt)}::timestamp`
-          .mapWith(t.updatedAt)
-          .as("updated_at"),
-      })
-      .from(source)
-      .getSQL(),
-    conflict: {
-      target: t.chatThreadId,
-      set: {
-        encryptedTabUrls: capture.encryptedTabUrls,
-        updatedAt: publication.updatedAt,
-      },
-      setWhere: and(
-        exists(
-          new QueryBuilder().select({ id: source.chatThreadId }).from(source),
-        ),
-        publication.canReplace,
-      ),
+    canReplace: publication.canReplace,
+    set: {
+      encryptedTabUrls: sql`CASE WHEN ${publication.canReplace} THEN ${capture.encryptedTabUrls} ELSE ${windows.encryptedTabUrls} END`,
+      tabUrlsCapturedAt: sql`CASE WHEN ${publication.canReplace} THEN ${publication.updatedAt} ELSE ${windows.tabUrlsCapturedAt} END`,
     },
   };
 }
@@ -157,15 +152,18 @@ export function sharedSnapshotPublication(
 export const saveSharedSnapshot$ = command(
   async (
     { set },
-    args: {
+    args: BrowserUseNativeConnection & {
       readonly owner: SnapshotOwner;
       readonly profile: Profile;
       readonly window: Window;
-      readonly cdpUrl: string;
     },
     signal: AbortSignal,
   ) => {
-    const capture = await set(captureSharedSnapshot$, args, signal);
+    const capture = await set(
+      captureSharedSnapshot$,
+      { ...args, purpose: "active" },
+      signal,
+    );
     signal.throwIfAborted();
     if (!capture) {
       return false;
@@ -188,17 +186,12 @@ export const saveSharedSnapshot$ = command(
           ),
       ),
     );
-    const source = new QueryBuilder()
-      .select({ chatThreadId: windows.chatThreadId })
-      .from(windows)
-      .where(captureOwner)
-      .as("captured_shared_window");
-    const publication = sharedSnapshotPublication(capture, source);
+    const publication = sharedSnapshotPublication(capture);
     const saved = await set(writeDb$)
-      .insert(browserSessionTabSnapshots)
-      .select(publication.source)
-      .onConflictDoUpdate(publication.conflict)
-      .returning({ id: browserSessionTabSnapshots.chatThreadId });
+      .update(windows)
+      .set(publication.set)
+      .where(and(captureOwner, publication.canReplace))
+      .returning({ id: windows.chatThreadId });
     signal.throwIfAborted();
     return saved.length === 1;
   },

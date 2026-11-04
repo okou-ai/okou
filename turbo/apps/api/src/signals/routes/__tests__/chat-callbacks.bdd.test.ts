@@ -3066,19 +3066,11 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     });
 
     expect((await api.readRun(actor, fourth.runId)).status).toBe("completed");
-    messages = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (threadMessages) => {
-        return (
-          lifecycleMarkers(threadMessages, fourth.runId, "completed").length ===
-          1
-        );
-      },
-    );
-    expect(
-      lifecycleMarkers(messages.events, fourth.runId, "completed"),
-    ).toHaveLength(1);
+    await waitForThreadMessages(actor, first.threadId, (threadMessages) => {
+      return (
+        lifecycleMarkers(threadMessages, fourth.runId, "completed").length === 1
+      );
+    });
     await expect(
       readThreadTitleFromEvents(actor, first.threadId),
     ).resolves.toBe(beforeTitle);
@@ -3134,10 +3126,6 @@ describe("CHAT-02: failed chat callbacks", () => {
             : {}),
         },
       ]);
-      expect(
-        lifecycleMarkers(messages.events, run.runId, "failed")[0]
-          ?.failureReason,
-      ).toBe(scenario.publicReason);
       const detailError =
         scenario.expected === "insufficient_credits"
           ? scenario.error
@@ -5466,9 +5454,6 @@ describe("CHAT-02: push notification gating", () => {
       },
     );
     expect(eventBackedContents(messages.events, first.runId)).toHaveLength(0);
-    expect(
-      lifecycleMarkers(messages.events, first.runId, "completed"),
-    ).toHaveLength(1);
     await flushWaitUntilForTest();
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
 

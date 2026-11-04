@@ -37,6 +37,62 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
   });
 
+  it("withdraws a previously indexed queued message after its public recall", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronProjectChatEventSearchRoutes,
+      isolatePg: true,
+    });
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    createRunsApi(context).configureRunnerGroup();
+    bdd.acceptAgentStorageWrites();
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    await bdd.readOnboardingStatus(owner);
+    await bdd.completeOnboarding(owner);
+    const agent = await bdd.createAgent(owner, {
+      displayName: "Recalled search publication",
+      visibility: "private",
+    });
+    const opened = await chat.requestSendEvent(
+      owner,
+      { agentId: agent.agentId, model: null, prompt: "Start the conversation" },
+      [201],
+    );
+    if (opened.status !== 201) {
+      throw new Error("Expected a publicly accepted conversation");
+    }
+    await flushWaitUntilForTest();
+    const keyword = `recalledsearch${randomUUID().replaceAll("-", "")}`;
+    const clientEventId = randomUUID();
+    const threadId = opened.body.threadId;
+    await chat.requestSendEvent(
+      owner,
+      { agentId: agent.agentId, threadId, clientEventId, prompt: keyword },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    const operator = app(cronProjectChatEventSearchContract);
+    const headers = { authorization: `Bearer ${CRON_SECRET}` };
+    await accept(operator.project({ headers }), [200]);
+    expect((await chat.searchChat(owner, keyword)).results).toContainEqual(
+      expect.objectContaining({
+        chatThreadId: threadId,
+        matchedMessage: expect.objectContaining({ content: keyword }),
+      }),
+    );
+
+    await chat.requestSendEvent(
+      owner,
+      { agentId: agent.agentId, threadId, revokesEventId: clientEventId },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    await accept(operator.project({ headers }), [200]);
+    expect((await chat.searchChat(owner, keyword)).results).toStrictEqual([]);
+  });
+
   it("publishes scoped MCP and Web search hits and respects revoked sharing", async () => {
     // This is the operator index-publication boundary, not a user fixture that
     // privately drives indexing. All business data and observations use APIs.

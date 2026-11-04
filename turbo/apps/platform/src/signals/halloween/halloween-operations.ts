@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  halloweenOperationsContract,
-  type HalloweenParticipant,
-} from "@okouai/api-contracts/contracts/halloween";
+import { halloweenOperationsContract } from "@okouai/api-contracts/client/halloween";
+import type { HalloweenParticipant } from "@okouai/api-contracts/contracts/halloween";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { searchParams$, updateSearchParams$ } from "../route.ts";

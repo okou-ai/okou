@@ -1,6 +1,6 @@
 [package]
 name = "runner-network"
-version = "0.3.2"
+version = "0.4.6"
 edition.workspace = true
 description = "Runner proxy, DNS, CA, and network log behavior"
 
@@ -31,6 +31,8 @@ tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", 
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 
 [dev-dependencies]
+runner-host = { workspace = true, features = ["test-support"] }
+cli-test-support = { workspace = true, features = ["test-support"] }
 api-contracts.workspace = true
 httpmock = { workspace = true, features = ["cookies"] }
 log = { workspace = true }

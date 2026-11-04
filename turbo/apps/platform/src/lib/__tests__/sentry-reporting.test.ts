@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
 
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
+import { createCdpClient } from "../../signals/browser/cdp/client.ts";
+import { isRecord } from "../../signals/browser/cdp/errors.ts";
 import { SharedDatabaseHttpError } from "../../shared-database/http-error.ts";
 import { SharedDatabaseWorkerLoadError } from "../../shared-database/worker-load-error.ts";
 import {
@@ -10,8 +12,79 @@ import {
 import { ApiError } from "../api-error.ts";
 import { captureSentryLogError } from "../sentry-config.ts";
 import { initSentry } from "../sentry.ts";
+import { createDeferredPromise } from "../../signals/utils.ts";
 
 const context = testContext();
+
+test("unrelated deferred failures retain their default error report", async () => {
+  const sentry = context.mocks.sentry();
+  initSentry();
+  const receipt = createDeferredPromise<void>(context.signal);
+  const error = new Error("Unexpected background failure");
+  receipt.reject(error);
+  await Promise.allSettled([receipt.promise]);
+  expect(sentry.reports).toStrictEqual([
+    {
+      type: "exception",
+      error,
+      runtime: "page",
+      context: { tags: { logger: "Promise" } },
+    },
+  ]);
+});
+
+test("reports only safe CDP request diagnostics from the original exception", async () => {
+  const sentry = context.mocks.sentry();
+  initSentry();
+  const options = sentry.initializations.at(-1)?.options;
+  if (!options?.beforeSend) {
+    throw new Error("Expected Sentry reporting hook");
+  }
+  context.mocks.browser.webSocket((data) => {
+    const request: unknown = JSON.parse(data);
+    if (!isRecord(request) || typeof request.id !== "number") {
+      throw new Error("Invalid fixture request");
+    }
+    return JSON.stringify({
+      id: request.id,
+      error: {
+        code: -32_000,
+        message: "private-provider-message",
+        data: { content: "private-provider-data" },
+      },
+    });
+  });
+  const client = createCdpClient(
+    "wss://browser.example/cdp?token=private-endpoint-token",
+    {},
+    context.signal,
+  );
+  await client.opened;
+  const [result] = await Promise.allSettled([
+    client.request(
+      "Runtime.evaluate",
+      { expression: "'private-page-content'" },
+      "private-session-id",
+    ),
+  ]);
+  client.close();
+  if (result.status !== "rejected") {
+    throw new Error("Expected CDP protocol failure");
+  }
+  const event = await options.beforeSend(
+    { type: undefined, contexts: { operation: { source: "browser" } } },
+    { originalException: result.reason },
+  );
+  expect(event?.contexts).toStrictEqual({
+    operation: { source: "browser" },
+    browser_cdp: {
+      kind: "protocol",
+      method: "Runtime.evaluate",
+      code: -32_000,
+    },
+  });
+  expect(JSON.stringify(event)).not.toContain("private-");
+});
 
 test.each([
   "/connectors/slack/callback",

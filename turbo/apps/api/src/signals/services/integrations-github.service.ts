@@ -23,7 +23,7 @@ import {
   linkGithubUser$,
   verifyGithubConnectSignature,
 } from "./github-oauth.service";
-import { connectorActionResolver } from "./connector-action-resolver.service";
+import { readConnectorResolver$ } from "./connector-action-resolver.service";
 
 function errorResponse(status: 400 | 404 | 409, message: string, code: string) {
   return { status, body: { error: { message, code } } };
@@ -278,7 +278,7 @@ export const getGithubInstallation$ = command(
       link === null ? null : await get(userGithubConnectorUsername$);
     signal.throwIfAborted();
 
-    const resolver = await get(connectorActionResolver(["github"]));
+    const resolver = await set(readConnectorResolver$, ["github"]);
     signal.throwIfAborted();
     const resolvedMethod = await resolver.resolveNewActionMethod({
       connectorSlug: "github",

@@ -1,8 +1,8 @@
 import { command, computed, state } from "ccstate";
-import {
-  integrationsGithubContract,
-  type GithubInstallationNotFoundResponse,
-  type GithubInstallationResponse,
+import { integrationsGithubContract } from "@okouai/api-contracts/client/integrations-github";
+import type {
+  GithubInstallationNotFoundResponse,
+  GithubInstallationResponse,
 } from "@okouai/api-contracts/contracts/integrations-github";
 
 import { now } from "../../lib/time.ts";

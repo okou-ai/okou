@@ -1,5 +1,9 @@
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { ChatConnectorMenu } from "./chat-connector-menu.tsx";
+import { ConnectorPermissionsDialog } from "./components/settings/connector-permissions-dialog.tsx";
 import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
 import { Combobox } from "@base-ui/react/combobox";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -296,6 +300,7 @@ import {
   TemplateDetailStageControls,
 } from "./template-detail-layout.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
+import { ComposerSearchSources } from "./composer-search-sources.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
 import {
@@ -4966,6 +4971,9 @@ function ConnectorsPopoverButton({
   const { t } = useTranslation();
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
+  const chatAccessEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
@@ -5023,14 +5031,21 @@ function ConnectorsPopoverButton({
         initialFocus={isMobileTextInputDevice() ? false : undefined}
         // The modal takes focus during the handoff; ordinary dismissal still
         // returns to this popover's trigger through Base UI.
-        finalFocus={connectorUi.remoteAccessDialogOpen ? false : undefined}
+        finalFocus={
+          connectorUi.remoteAccessDialogOpen || chatPermissions !== null
+            ? false
+            : undefined
+        }
         side="top"
         align="start"
         aria-label={t(($) => {
           return $.chat.connectors.title;
         })}
         collisionAvoidance={{ fallbackAxisSide: "none" }}
-        className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
+        className={cn(
+          "flex max-h-[var(--available-height)] flex-col overflow-hidden p-0",
+          chatAccessEnabled ? "w-80 max-w-[calc(100vw-2rem)]" : "w-72",
+        )}
       >
         {connectorUi.popoverOpen && (
           <ComposerConnectorsPopoverBody
@@ -5072,6 +5087,60 @@ function focusComposerConnectorSearch(element: HTMLElement | null) {
  * component that asks for the agent's connectors and their access.
  */
 function ComposerConnectorsPopoverBody({
+  signals,
+  actions,
+  onOpenAddDialog,
+  onOpenDownloadDialog,
+}: {
+  signals: ComposerSignals;
+  actions: ComposerConnectorActions;
+  onOpenAddDialog: () => void;
+  onOpenDownloadDialog: () => void;
+}) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  return enabled ? (
+    <ChatConnectorsPopoverBody
+      signals={signals}
+      onOpenAddDialog={onOpenAddDialog}
+      onOpenDownloadDialog={onOpenDownloadDialog}
+    />
+  ) : (
+    <LegacyComposerConnectorsPopoverBody
+      signals={signals}
+      actions={actions}
+      onOpenAddDialog={onOpenAddDialog}
+      onOpenDownloadDialog={onOpenDownloadDialog}
+    />
+  );
+}
+
+function ChatConnectorsPopoverBody({
+  signals,
+  onOpenAddDialog,
+  onOpenDownloadDialog,
+}: {
+  signals: ComposerSignals;
+  onOpenAddDialog: () => void;
+  onOpenDownloadDialog: () => void;
+}) {
+  const computerUse = useComposerComputerUse(signals);
+  return (
+    <ChatConnectorMenu
+      signals={signals}
+      onOpenAddDialog={onOpenAddDialog}
+      footer={
+        <ComposerRemoteAccessMenu
+          signals={signals}
+          computerUse={computerUse}
+          onOpenDownloadDialog={onOpenDownloadDialog}
+        />
+      }
+    />
+  );
+}
+
+function LegacyComposerConnectorsPopoverBody({
   signals,
   actions,
   onOpenAddDialog,
@@ -6742,6 +6811,12 @@ function ComposerConnectorsSlot({
   actions: ComposerConnectorActions;
 }) {
   const connectorUi = useGet(signals.connector.connectorUiState$);
+  const triggerElement = useGet(signals.connector.triggerElement$);
+  const permissions = useGet(signals.connector.chatAccess.permissions$);
+  const permissionSignals = useGet(
+    signals.connector.chatAccess.permissionSignals$,
+  );
+  const setPermissions = useSet(signals.connector.chatAccess.setPermissions$);
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
   );
@@ -6757,6 +6832,16 @@ function ComposerConnectorsSlot({
         onOpenAddDialog={openAddConnectorsDialog}
       />
       <ThreadRemoteAccessDialog signals={signals} />
+      {permissions && permissionSignals && (
+        <ConnectorPermissionsDialog
+          finalFocus={triggerElement}
+          entry={permissions}
+          signals={permissionSignals}
+          onClose={() => {
+            return setPermissions(null);
+          }}
+        />
+      )}
       {connectorUi.permissionConnectorSlug !== null && (
         <ComposerConnectorPermissionDialogSlot
           signals={signals}
@@ -6783,8 +6868,8 @@ function ComposerConnectorDialogsSlot({
 }) {
   const { t } = useTranslation();
   const lastAuthorization = useLastResolved(
-    signals.connector.connectorAuthorization$,
-  );
+    signals.connector.data$,
+  )?.authorization;
   const authorization =
     lastAuthorization?.agentId === signals.agentId
       ? lastAuthorization
@@ -6807,6 +6892,10 @@ function ComposerConnectorDialogsSlot({
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const openConnectorPermissions = useSet(
+    signals.connector.openConnectorPermissions$,
+  );
+  const directoryFinalFocus = useSet(signals.connector.directoryFinalFocus$);
   const completeAddition = useSet(
     signals.connectorCompletion.completeConnectorAddition$,
   );
@@ -6970,6 +7059,7 @@ function ComposerConnectorDialogsSlot({
       />
       {connectorUi.showAddDialog && (
         <ConnectorDirectoryDialog
+          finalFocus={directoryFinalFocus}
           state={connectorUi}
           onUpdateState={updateConnectorUi}
           categoryCounts={directoryBrowse.categoryCounts}
@@ -6994,15 +7084,11 @@ function ComposerConnectorDialogsSlot({
             if (!connector) {
               return;
             }
-            updateConnectorUi({
-              showAddDialog: false,
-              permissionConnectorSlug: connectorSlug,
-              permissionConnector: {
-                slug: connector.slug,
-                label: connector.label,
-                icon: connector.icon,
-                hasPermissions: connector.permissionSummary.hasPermissions,
-              },
+            openConnectorPermissions({
+              slug: connector.slug,
+              label: connector.label,
+              icon: connector.icon,
+              hasPermissions: connector.permissionSummary.hasPermissions,
             });
           }}
           onClose={() => {
@@ -7025,13 +7111,20 @@ function ComposerIdleControls({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
+  const searchActive = useGet(signals.homeDiscovery.searchActive$);
   return (
     <>
-      <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5",
+          searchActive && "flex-wrap",
+        )}
+      >
         <ComposerAddMenuSlot signals={signals} />
         <ComposerTemplatePickerSlot signals={signals} />
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
         <ComposerTaskControls signals={signals} />
+        {searchActive && <ComposerSearchSources />}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
         <ComposerModelPickerSlot signals={signals} />

@@ -77,8 +77,8 @@ final class StructuredMessageTests: XCTestCase {
 
   func testAnnotatedImageDownloadsTheConfirmedDerivativeThroughItsFileAuthority() async throws {
     let server = try ChatFileHTTPServer { _ in .init(body: Data("rendered image".utf8)) }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ChatHTTPFixture { request in
       XCTAssertEqual(request.url?.path, "/api/web/file-url")
       XCTAssertEqual(

@@ -1,28 +1,13 @@
-import { chatFoldersEnabled$ } from "../chat-page/chat-folders.ts";
-import {
-  chatThreadMetaMap$,
-  eventDrivenChatThreads$,
-} from "../chat-page/chat-thread-event-sourcing.ts";
-import {
-  setChatThreadArchivedFilter$,
-  setChatThreadUnreadFilter$,
-} from "./chat-thread-filter.ts";
-import { detachedNavigateTo$ } from "../route.ts";
-import { command, computed } from "ccstate";
-import {
-  chatSearchContract,
-  type ChatSearchResult,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { computed } from "ccstate";
+import { chatSearchContract } from "@okouai/api-contracts/client/chat-threads";
+import type { ChatSearchResult } from "@okouai/api-contracts/contracts/chat-threads";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { chatThreads$ } from "../agent-chat.ts";
-import {
-  chatListQuery$,
-  debouncedChatListQuery$,
-  setSessionListCollapsed$,
-} from "./sidebar-state.ts";
+import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
+import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 
 const MAX_VISIBLE_CHAT_THREAD_RESULTS = 25;
 
@@ -170,20 +155,5 @@ export const workspaceSearchChatMessages$ = computed(
       [200],
     );
     return { query, chatMessages: result.body.results };
-  },
-);
-
-/** Search must reveal archived chats without changing their saved state. */
-export const openWorkspaceSearchChat$ = command(
-  ({ get, set }, threadId: string) => {
-    if (get(chatFoldersEnabled$)) {
-      if (get(chatThreadMetaMap$).get(threadId)?.archived) {
-        set(setChatThreadArchivedFilter$);
-      } else {
-        set(setChatThreadUnreadFilter$, false);
-      }
-      set(setSessionListCollapsed$, false);
-    }
-    set(detachedNavigateTo$, "/chats/:threadId", { pathParams: { threadId } });
   },
 );

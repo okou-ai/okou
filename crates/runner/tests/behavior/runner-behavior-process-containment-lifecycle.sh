@@ -70,11 +70,13 @@ fd_output_pid=$!
 wait "$fd_output_pid"
 test "$(cat "$marker/fd-output")" = fd-output
 
-expected_path="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/bin"
+expected_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/bin"
 if [ "$PATH" != "$expected_path" ]; then
   echo "Guest Agent CLI child PATH changed: expected=$expected_path actual=$PATH" >&2
   exit 1
 fi
+# Resolve an installed sbin executable through the actual Agent tool environment.
+sysctl --version
 # Install tools after the agent has started and resolve them by name, without
 # exporting PATH or sourcing a user profile.
 (

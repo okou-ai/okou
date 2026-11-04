@@ -13,7 +13,10 @@ const getThreadDraftInner$ = computed(async (get) => {
   const draft = await get(
     chatThreadDraft({ threadId: params.id, userId: auth.userId }),
   );
-  return { status: 200 as const, body: draft };
+  return {
+    status: 200 as const,
+    body: draft,
+  };
 });
 
 export const chatThreadDraftGetRoutes: readonly RouteEntry[] = [

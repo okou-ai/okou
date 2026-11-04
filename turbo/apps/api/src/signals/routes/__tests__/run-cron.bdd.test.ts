@@ -24,9 +24,9 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
  * - RUN-04 persisted runner log ingestion needs callback/event API helpers.
  *   Output publication through the sandbox webhook is covered by
  *   run-lifecycle-completion.bdd.test.ts; missing-run GET boundaries stay here.
- * - SCHED-02 sync-skills valid-path coverage needs a focused external GitHub
- *   tarball/S3 helper; this file keeps shared cron auth rejection route-based
- *   without running valid global sweeps from the wrong owner file.
+ * - SCHED-02 sync-skills publication and retry are covered by
+ *   cron-sync-skills.test.ts with external GitHub/S3 fixtures. This file keeps
+ *   shared cron auth rejection without running global sweeps here.
  */
 
 const context = testContext();

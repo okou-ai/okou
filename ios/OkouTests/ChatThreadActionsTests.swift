@@ -47,6 +47,27 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(store.selectedConversation?.thread.displayTitle, "Updated from another device")
   }
 
+  func testAcceptedArchiveKeepsUndoWhenTheFollowingListRefreshFails() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    fixture.state.value.withLock { $0.failNext["events"] = 503 }
+
+    let archived = await store.setArchived(ThreadActionsFixture.thread, archived: true)
+
+    XCTAssertTrue(archived)
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isArchived)
+    await store.refresh()
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isArchived)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
+  }
+
   func testDetailArchiveWaitsForNewChatCreationToReleaseNavigation() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
@@ -526,6 +547,10 @@ private final class ThreadActionsFixture: Sendable {
             "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
         )
       case "/api/chat-threads/events":
+        if let status = state.value.withLock({ $0.failNext.removeValue(forKey: "events") }) {
+          return ChatHTTPResponse(
+            status: status, body: #"{"error":{"message":"List refresh unavailable"}}"#)
+        }
         let since =
           Int(
             URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {

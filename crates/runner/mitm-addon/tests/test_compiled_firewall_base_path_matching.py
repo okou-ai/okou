@@ -71,7 +71,29 @@ def test_compiled_rule_accepts_hyphenated_param_name():
     assert result.params == {"dataset-id": "events"}
 
 
-def test_compiled_parameterized_base_treats_encoded_slash_as_segment_content():
+def test_uri_normalized_base_retains_original_api_and_encoded_captures():
+    api = {
+        "base": "https://api.example.com/v%32/{tenant}",
+        "auth": {"headers": {"Authorization": "Bearer token"}},
+        "permissions": [{"name": "read", "rules": ["GET /files/{key+}"]}],
+    }
+    firewalls = wrap_firewalls([api], name="example")
+    policies = {"example": {"allow": ["read"], "deny": [], "unknownPolicy": "deny"}}
+
+    result = matching.match_compiled_firewall_request(
+        "https://api.example.com/v%32/acme%20%E4%B8%AD/files/key%20x",
+        "GET",
+        compile_firewalls_or_fail(firewalls),
+        policies,
+    )
+
+    assert isinstance(result, matching.FirewallAllow)
+    assert result.api_entry is api
+    assert result.params == {"tenant": "acme%20%E4%B8%AD", "key": "key%20x"}
+    assert result.rel_path == "/files/key%20x"
+
+
+def test_compiled_parameterized_base_rejects_encoded_slash_changing_scope():
     fws = wrap_firewalls(
         [
             {
@@ -93,11 +115,12 @@ def test_compiled_parameterized_base_treats_encoded_slash_as_segment_content():
         policies,
     )
 
-    assert isinstance(result, matching.FirewallAllow)
-    assert result.params == {"org": "acme%2Fteam", "id": "123"}
+    assert isinstance(result, matching.FirewallBlock)
+    assert result.reason == "unsafe_path"
+    assert result.path == "/projects/123"
 
 
-def test_compiled_rule_treats_encoded_slash_as_segment_content():
+def test_compiled_rule_rejects_encoded_slash_changing_resource_structure():
     fws = wrap_firewalls(
         [
             {
@@ -119,8 +142,9 @@ def test_compiled_rule_treats_encoded_slash_as_segment_content():
         policies,
     )
 
-    assert isinstance(result, matching.FirewallAllow)
-    assert result.params == {"owner": "acme%2Fteam", "repo": "project"}
+    assert isinstance(result, matching.FirewallBlock)
+    assert result.reason == "unsafe_path"
+    assert result.path == "/repos/acme%2Fteam/project"
 
 
 @pytest.mark.parametrize(

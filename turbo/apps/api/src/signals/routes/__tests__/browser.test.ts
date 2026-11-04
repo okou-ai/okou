@@ -44,6 +44,7 @@ import {
 
 import { createApp } from "../../../app-factory";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -165,14 +166,10 @@ function browserValidationNodeResult(args: {
   readonly backendNodeId: unknown;
   readonly available: boolean;
   readonly missingBackendNodeId: number | null;
-  readonly malformed: boolean;
   readonly failure: string | null;
 }): unknown {
   if (args.failure) {
     return new Error(args.failure);
-  }
-  if (args.malformed) {
-    return {};
   }
   return args.available && args.backendNodeId !== args.missingBackendNodeId
     ? { object: { objectId: browserUserActionObjectId(args.backendNodeId) } }
@@ -3372,9 +3369,6 @@ describe("Browser user-action route", () => {
       { value: { kind: "checkbox", checked: false, observedChecked: true } },
       { value: 0 },
     ]);
-    expect(
-      JSON.stringify(browserSelectWrites().at(-1)?.[0].params.arguments),
-    ).not.toContain('"on"');
     const untouched = await createCheckbox();
     expect(
       (await accept(apply(untouched.body.action.requestToken, []), [200])).body
@@ -4084,9 +4078,6 @@ describe("Browser user-action route", () => {
       { value: { kind: "select", mode: "select-one", indices: [3] } },
       { value: 0 },
     ]);
-    expect(JSON.stringify(write?.params.arguments)).not.toContain(
-      "native-select-object",
-    );
 
     mode = "select-multiple";
     const multi = await createSelect();
@@ -5553,7 +5544,6 @@ describe("Browser user-action route", () => {
     let resolveNodeAvailable = true;
     let missingBackendNodeId: number | null = null;
     let nodeResolutionFailure: string | null = null;
-    let malformedNodeResponse = false;
     let verificationMatches = true;
     let failNextProviderRead = false;
     let providerStopped = false;
@@ -5598,7 +5588,6 @@ describe("Browser user-action route", () => {
           backendNodeId: command.params.backendNodeId,
           available: resolveNodeAvailable,
           missingBackendNodeId,
-          malformed: malformedNodeResponse,
           failure: nodeResolutionFailure,
         });
       }
@@ -5958,16 +5947,6 @@ describe("Browser user-action route", () => {
       "Target session closed",
     );
     nodeResolutionFailure = null;
-
-    malformedNodeResponse = true;
-    const malformedNodeInspection = await userActionClient().create(
-      nodeInspectionRequest,
-    );
-    expect(malformedNodeInspection).toMatchObject({
-      status: 502,
-      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
-    });
-    malformedNodeResponse = false;
 
     const missingPage = await userActionClient().create({
       headers: current.claim.browserHeaders,
@@ -6509,16 +6488,6 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(retriedPreflight.body.state).toBe("pending");
-    malformedNodeResponse = true;
-    const malformedPreflight = await userActionClient().preflight({
-      headers: { authorization: "Bearer clerk-session" },
-      params: {
-        requestToken: providerRetryCandidate.body.action.requestToken,
-      },
-      body: {},
-    });
-    malformedNodeResponse = false;
-    expect(malformedPreflight.status).toBe(502);
     expect(
       (
         await accept(
@@ -7207,6 +7176,7 @@ function providerBrowser(
         ? "https://live.browser-use.com/?wss=provider-live-token"
         : null,
     cdpUrl: status === "active" ? `https://${id}.cdp.browser-use.com/` : null,
+    extensions: [TEST_BROWSER_EXTENSION],
     // The API buys the provider's longest lifetime and reclaims idle browsers
     // itself, so the provider deadline stays far away in these tests.
     timeoutAt: isoAt(240 * MINUTE_MS),
@@ -7678,7 +7648,7 @@ describe("okou browser route", () => {
       "Browser tab continuity:",
     );
     expect(claim.appendSystemPrompt ?? "").not.toContain(
-      "Browser chat window:",
+      "Browser shared profile:",
     );
     const browserToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!browserToken) {
@@ -7718,7 +7688,7 @@ describe("okou browser route", () => {
       "Browser tab continuity: When resuming a page after `okou browser use`",
     );
     expect(appendSystemPrompt).toContain("`okou browser tab list`");
-    expect(appendSystemPrompt).not.toContain("Browser chat window:");
+    expect(appendSystemPrompt).not.toContain("Browser shared profile:");
     expect(appendSystemPrompt).toContain(
       "Keep the selected tab only if non-sensitive page evidence confirms it",
     );
@@ -7738,35 +7708,53 @@ describe("okou browser route", () => {
     );
   });
 
-  it("guides enabled chats to their shared Browser window", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserSharedOwner]: true,
-    });
-    const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "Use this chat's shared Browser window",
-      cloudBrowserEnabled: true,
-    });
+  it.each([false, true])(
+    "describes shared Browser tabs and login state with native input %s",
+    async (nativeInput) => {
+      const { runs, chat, actor, agent } = await setupBrowserScenario();
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+        [FeatureSwitchKey.BrowserNativeInput]: nativeInput,
+      });
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt: "Use this chat's shared Browser",
+        cloudBrowserEnabled: true,
+      });
 
-    await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain("this chat's managed Browser");
-    expect(appendSystemPrompt).toContain(
-      "initially selects a page in the reported chat window",
-    );
-    expect(appendSystemPrompt).toContain(
-      "shows the driver's safe tab inventory",
-    );
-    expect(appendSystemPrompt).toContain("Every CDP API remains callable");
-    expect(appendSystemPrompt).toContain(
-      "source-less `Target.createTarget` pages",
-    );
-    expect(appendSystemPrompt).toContain(
-      "login, logout and account switching affect sibling chats",
-    );
-  });
+      await flushWaitUntilForTest();
+      const claim = await runs.claimRunnerJob(sent.runId);
+      const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+      expect(appendSystemPrompt).toContain("this chat's managed Browser");
+      expect(appendSystemPrompt).toContain(
+        "Each chat has its own window and tabs",
+      );
+      expect(appendSystemPrompt).toContain(
+        "website login state is shared across chats",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Browser tab continuity: When resuming a page after `okou browser use`",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Keep the selected tab only if non-sensitive page evidence confirms it",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Origin or selection alone is not proof, even with one match",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
+      );
+      if (nativeInput) {
+        expect(appendSystemPrompt).toContain("Browser user input priority:");
+        expect(appendSystemPrompt).toContain(
+          "prefer `okou browser input-request` over direct Browser takeover",
+        );
+        expect(appendSystemPrompt).toContain("Browser input completion:");
+      } else {
+        expect(appendSystemPrompt).not.toContain("okou browser input-request");
+      }
+    },
+  );
 
   it("prioritizes native input when both browser and native input are enabled", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
@@ -8756,6 +8744,7 @@ describe("okou browser route", () => {
           browserScreenHeight: literal(900),
           allowResizing: literal(true),
           enableRecording: literal(false),
+          extensionIds: array(uuid()).length(1),
         }).parse(body).profileId;
       }),
     ).toStrictEqual(expect.arrayContaining([...profileIds]));

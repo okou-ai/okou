@@ -2,6 +2,7 @@
 
 mod authority_invalidation;
 mod cloudflare;
+mod connector_accounts;
 mod destination;
 mod diagnostics;
 pub mod guest_rpc;

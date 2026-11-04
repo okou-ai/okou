@@ -1,4 +1,4 @@
-import { escapeHtml } from "markdown-it/lib/common/utils.mjs";
+import { escapeUTF8 as escapeHtml } from "entities";
 
 interface EmailLayoutLink {
   readonly label: string;

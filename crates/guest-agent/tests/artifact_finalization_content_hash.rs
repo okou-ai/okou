@@ -2,6 +2,7 @@ use guest_agent::env::{GuestConfig, GuestConfigRaw};
 use guest_agent::http::HttpClient;
 use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
+use guest_telemetry::test_support::SandboxOpsOverrideGuard;
 use httpmock::prelude::*;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -49,21 +50,6 @@ fn finalization_request_has_storage_outputs(
                 }
             ]
         }))
-}
-
-struct SandboxOpsOverrideGuard;
-
-impl SandboxOpsOverrideGuard {
-    fn set(path: &str) -> Self {
-        guest_telemetry::telemetry::set_sandbox_ops_log_file(path);
-        Self
-    }
-}
-
-impl Drop for SandboxOpsOverrideGuard {
-    fn drop(&mut self) {
-        guest_telemetry::telemetry::clear_sandbox_ops_log_file();
-    }
 }
 
 fn write_run_payload(

@@ -74,8 +74,10 @@ import {
   mockSlidesFontRestoration,
   slidesTextProvenanceFixture,
   slidesImportFixture,
+  slidesNonChartFidelityFixture,
   slidesPictureCropFixture,
   slidesPictureCropNoopFixture,
+  uploadedSlidesNonChart,
   uploadedSlidesPictures,
   uploadedSlidesText,
 } from "./helpers/slides-import-fixture";
@@ -1869,6 +1871,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
       const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
         site: `private-drive-${randomUUID().slice(0, 8)}`,
+        title: "Private drive",
         artifactKind,
         spaFallback: false,
         files: [
@@ -1954,6 +1957,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `public-deck-${randomUUID().slice(0, 8)}`,
+      title: "Public deck",
       artifactKind: "presentation-html",
       spaFallback: false,
       files: [
@@ -2036,6 +2040,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `single-page-${randomUUID().slice(0, 8)}`,
+      title: "Single page",
       artifactKind: "presentation-html",
       spaFallback: false,
       files: [hostedTextFile("/index.html", index)],
@@ -3172,6 +3177,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   async function publicOfficeConversionSource(
     bytes: Buffer,
     format: "docx" | "pptx" = "pptx",
+    slidesEnabled = format === "pptx",
   ) {
     const filename = format === "docx" ? "bilingual.docx" : "deck.pptx";
     const contentType =
@@ -3183,7 +3189,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     owned.ownsFeatureSwitches();
     await owned.run(() => {
       return createBillingMediaApi(context).updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.GoogleSlidesConversion]: format === "pptx",
+        [FeatureSwitchKey.GoogleSlidesConversion]: slidesEnabled,
       });
     });
     const run = await owned.sendChatRun(actor, {
@@ -3484,6 +3490,243 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
     expect(outgoing).toStrictEqual(bytes);
     expectPicturePackagePreserved(bytes, outgoing);
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+  }, 120_000);
+
+  type NonChartElement = ReturnType<
+    typeof uploadedSlidesNonChart
+  >[number]["xml"];
+  const nonChartDrawingNamespace =
+    "http://schemas.openxmlformats.org/drawingml/2006/main";
+  const nonChartPresentationNamespace =
+    "http://schemas.openxmlformats.org/presentationml/2006/main";
+
+  function nonChartDescendants(
+    parent: NonChartElement,
+    uri: string,
+    local: string,
+  ): NonChartElement[] {
+    return parent.children.flatMap((node) => {
+      if (typeof node === "string") {
+        return [];
+      }
+      return [
+        ...(node.uri === uri && node.local === local ? [node] : []),
+        ...nonChartDescendants(node, uri, local),
+      ];
+    });
+  }
+
+  function expectNonChartFidelity(
+    source: Buffer,
+    outgoing: Buffer,
+    { tableOnly = false } = {},
+  ) {
+    const expected = uploadedSlidesNonChart(source);
+    expect(expected).toHaveLength(1);
+    const root = expected[0]!.xml;
+    const owner = (local: string, id: string) => {
+      const node = nonChartDescendants(
+        root,
+        nonChartPresentationNamespace,
+        local,
+      ).find((node) => {
+        return nonChartDescendants(
+          node,
+          nonChartPresentationNamespace,
+          "cNvPr",
+        ).some((identity) => {
+          return identity.attributes.id === id;
+        });
+      });
+      if (!node) {
+        throw new Error(`Missing synthetic ${local} ${id}`);
+      }
+      return node;
+    };
+    if (!tableOnly) {
+      // Literal calibration vectors include sub-100% leading and rounding:
+      // Font/fixed pairs: 50.9/54.98 -> 90013, 20/24 -> 100000, 20/25 -> 104167.
+      for (const [id, values] of [
+        ["2", ["90013", "90013"]],
+        ["3", ["100000", "104167"]],
+        ["14", ["100000"]],
+      ] as const) {
+        const spacing = nonChartDescendants(
+          owner("sp", id),
+          nonChartDrawingNamespace,
+          "lnSpc",
+        );
+        expect(spacing).toHaveLength(values.length);
+        for (const [index, node] of spacing.entries()) {
+          expect(node.children).toHaveLength(1);
+          node.children = [
+            {
+              name: "a:spcPct",
+              local: "spcPct",
+              uri: nonChartDrawingNamespace,
+              attributes: { val: values[index]! },
+              children: [],
+            },
+          ];
+        }
+      }
+    }
+
+    const table = owner("graphicFrame", "30");
+    const cells = nonChartDescendants(
+      table,
+      nonChartDrawingNamespace,
+      "tr",
+    ).map((row) => {
+      return nonChartDescendants(row, nonChartDrawingNamespace, "tc");
+    });
+    expect(
+      cells.map((row) => {
+        return row.length;
+      }),
+    ).toStrictEqual([2, 2]);
+    const edge = (row: number, column: number, side: string) => {
+      const line = nonChartDescendants(
+        cells[row]![column]!,
+        nonChartDrawingNamespace,
+        `ln${side}`,
+      )[0];
+      if (!line) {
+        throw new Error(
+          `Missing synthetic cell edge ${String(row)},${String(column)},${side}`,
+        );
+      }
+      return line;
+    };
+    // Horizontal 0.25pt rules are owned by opposite rows in each column;
+    // retain a vertical shared rule too. Mirror complete styling, not just width.
+    for (const [from, to] of [
+      [edge(0, 0, "B"), edge(1, 0, "T")],
+      [edge(1, 1, "T"), edge(0, 1, "B")],
+      [edge(0, 0, "R"), edge(0, 1, "L")],
+    ] as const) {
+      expect(from.attributes.w).toBe("3175");
+      expect(to.attributes.w).toBe("0");
+      to.attributes = { ...from.attributes };
+      to.children = structuredClone(from.children);
+    }
+    for (const [row, column, side] of [
+      [0, 0, "L"],
+      [0, 0, "T"],
+      [0, 1, "R"],
+      [1, 0, "L"],
+      [1, 0, "R"],
+      [1, 1, "L"],
+      [1, 1, "R"],
+    ] as const) {
+      const line = edge(row, column, side);
+      expect(line.attributes.w).toBe("0");
+      expect(line.children[0]).toMatchObject({
+        name: "grid:solidFill",
+        uri: nonChartDrawingNamespace,
+      });
+      line.children[0] = {
+        name: "grid:noFill",
+        local: "noFill",
+        uri: nonChartDrawingNamespace,
+        attributes: {},
+        children: [],
+      };
+    }
+    // Full parsed equality also retains text, IDs, geometry, sizes, paragraph
+    // before/after spacing, existing percentages/noFill, and unsupported owners.
+    // In particular the two 1pt bottom rules, merged/inherited tables and media
+    // shape remain intact. Prefix-sensitive nodes catch an invalid noFill name.
+    expect(uploadedSlidesNonChart(outgoing)).toStrictEqual(expected);
+    expectPicturePackagePreserved(source, outgoing);
+  }
+
+  it.each(["google", "legacy"] as const)(
+    "non-chart Slides fidelity converts fixed spacing and explicit table borders (%s)",
+    async (mode) => {
+      const bytes = slidesNonChartFidelityFixture();
+      const fixture = await publicOfficeConversionSource(bytes);
+      mockSlidesImportFonts();
+      const native = {
+        id: `nonchart-fidelity-${mode}-${randomUUID()}`,
+        name: "deck",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      if (mode === "google") {
+        mockGoogleWorkspaceReadback(native);
+      }
+      mockGoogleSlidesReadback([{ pageElementCount: 18 }]);
+      const response =
+        mode === "legacy"
+          ? await fixture.uploadLegacy()
+          : await fixture.upload("google");
+      expect(response.body).toMatchObject(native);
+      const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
+      expectNonChartFidelity(bytes, outgoing);
+      await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+    },
+    120_000,
+  );
+
+  it("non-chart Slides fidelity serializes table-only repairs without editable text frames", async () => {
+    const bytes = slidesNonChartFidelityFixture({ tableOnly: true });
+    const fixture = await publicOfficeConversionSource(bytes);
+    const native = {
+      id: `table-only-fidelity-${randomUUID()}`,
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    mockGoogleSlidesReadback([{ pageElementCount: 4 }]);
+    const response = await fixture.upload("google");
+    expect(response.body).toMatchObject(native);
+    const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
+    expect(uploadedSlidesText(outgoing)).toStrictEqual([]);
+    expectNonChartFidelity(bytes, outgoing, { tableOnly: true });
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+  }, 120_000);
+
+  it("non-chart Slides fidelity keeps original-mode source bytes identical", async () => {
+    const bytes = slidesNonChartFidelityFixture();
+    const fixture = await publicOfficeConversionSource(bytes);
+    const original = {
+      id: `original-nonchart-${randomUUID()}`,
+      name: "deck.pptx",
+      mimeType: picturePptxMime,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(original);
+    const response = await fixture.upload("original");
+    expect(response.body).toMatchObject(original);
+    expect(outgoingPictureDeck(uploaded, original.mimeType)).toStrictEqual(
+      bytes,
+    );
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+  }, 120_000);
+
+  it("non-chart Slides fidelity honors the Google switch and legacy passthrough", async () => {
+    const bytes = slidesNonChartFidelityFixture();
+    const fixture = await publicOfficeConversionSource(bytes, "pptx", false);
+    const original = {
+      id: `disabled-nonchart-${randomUUID()}`,
+      name: "deck.pptx",
+      mimeType: picturePptxMime,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(original);
+    const blocked = await fixture.upload("google", [400]);
+    expect(blocked.status).toBe(400);
+    expectApiError(blocked.body);
+    expect(blocked.body.error.message).toContain(
+      "Google Slides conversion is not enabled",
+    );
+    expect(uploaded.bodies).toHaveLength(0);
+    const legacy = await fixture.uploadLegacy();
+    expect(legacy.body).toMatchObject(original);
+    expect(outgoingPictureDeck(uploaded, original.mimeType)).toStrictEqual(
+      bytes,
+    );
     await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
   }, 120_000);
 
@@ -4445,6 +4688,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     // dedupe still resolves that URL to run 2.
     const prepared = await chat.prepareHostedSiteWithBearer(bearer2, {
       site: `bdd-artifact-${randomUUID().slice(0, 8)}`,
+      title: "BDD artifact",
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>artifact run</main>")],
@@ -4566,6 +4810,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `bdd-media-${randomUUID().slice(0, 8)}`,
+      title: "BDD media",
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>kitten</main>")],

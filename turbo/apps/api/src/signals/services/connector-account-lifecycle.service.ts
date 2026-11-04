@@ -1291,21 +1291,6 @@ export function connectorAccountOwnerCondition(args: {
   ) as SQL;
 }
 
-export function connectorAccountById(owner: SQL, connectionId: string) {
-  return and(owner, eq(connectors.id, connectionId));
-}
-
-export function connectorAccountSibling(owner: SQL, connectionId: string) {
-  return and(owner, ne(connectors.id, connectionId));
-}
-
-export function connectorAccountDeletionResult(
-  resolvedSelectionCount: number,
-  promotedDefaultConnectionId: string | null,
-): PreparedConnectorAccountDeletion {
-  return { kind: "ready", resolvedSelectionCount, promotedDefaultConnectionId };
-}
-
 function clearOtherDefaultsSql(
   owner: ReturnType<typeof connectorAccountOwnerCondition>,
   connectionId: string,
@@ -1362,6 +1347,7 @@ export const setDefaultGoogleFormsAccount$ = command(
             owner,
             eq(connectors.id, args.connectionId),
             gte(db.select({ value: count() }).from(cleared), 0),
+            eq(connectors.defaultEnabledForChats, true),
           ),
         )
         .returning({ id: connectors.id, updatedAt: connectors.updatedAt }),
@@ -1546,6 +1532,7 @@ const publishConnectorDefault$ = command(
             owner,
             eq(connectors.id, args.connectionId),
             gte(db.select({ value: count() }).from(cleared), 0),
+            eq(connectors.defaultEnabledForChats, true),
           ),
         )
         .returning({ id: connectors.id, updatedAt: connectors.updatedAt }),
@@ -1752,10 +1739,3 @@ export type PreparedConnectorAccountDeletion =
       readonly resolvedSelectionCount: number;
       readonly promotedDefaultConnectionId: string | null;
     };
-
-export interface ConnectorAccountDeletionScope {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly target: ConnectorAccountTarget;
-  readonly connectionId: string;
-}

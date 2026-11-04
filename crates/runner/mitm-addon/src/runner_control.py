@@ -89,12 +89,14 @@ class ControlServer:
         delivery_owner: runner_flush_lifecycle.DeliveryControl | None = None,
         *,
         usage_snapshot: Callable[[str], dict[str, object]] | None = None,
+        listener_ready: Callable[[], bool] | None = None,
     ) -> None:
         self._directory = directory
         self._generation = _identifier(generation)
         self._registry_owner = registry_owner
         self._delivery_owner = delivery_owner
         self._usage_snapshot = usage_snapshot
+        self._listener_ready = listener_ready
         self._started: Future[None] = Future()
         self._shutdown: Future[None] = Future()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -222,6 +224,12 @@ class ControlServer:
                 return await self._flush_logs(request_id, request["params"])
             if method == "registry.apply":
                 return await self._apply_registry(request_id, request["params"])
+            if method == "catalog.warm":
+                if request["params"]:
+                    return self._error(request_id, "invalid_request")
+                if self._registry_owner is None:
+                    return self._error(request_id, "not_ready")
+                return await self._registry_operation(request_id, self._registry_owner.warm_catalog)
             if method == "registry.status":
                 if request["params"]:
                     return self._error(request_id, "invalid_request")
@@ -230,6 +238,8 @@ class ControlServer:
                 return self._error(request_id, "unknown_method")
             if request["params"]:
                 return self._error(request_id, "invalid_request")
+            if self._listener_ready is not None and not self._listener_ready():
+                return self._error(request_id, "not_ready")
         except ValueError, RecursionError:
             return self._error(request_id, "invalid_request")
         return {
@@ -287,8 +297,16 @@ class ControlServer:
             return self._error(request_id, "invalid_request")
         if self._registry_owner is None:
             return self._error(request_id, "not_ready")
+        owner = self._registry_owner
+        return await self._registry_operation(request_id, lambda: owner.apply(digest))
+
+    async def _registry_operation(
+        self,
+        request_id: str,
+        operation: Callable[[], Future[dict[str, object] | None] | None],
+    ) -> dict[str, object]:
         try:
-            future = self._registry_owner.apply(digest)
+            future = operation()
             if future is None:
                 return self._error(request_id, "busy")
             async with asyncio.timeout(4.0):
@@ -297,7 +315,7 @@ class ControlServer:
             return self._error(request_id, "deadline")
         except Exception as error:
             addon_process_logging.emit_addon_process_event(
-                "error", f"Registry control application failed ({type(error).__name__})"
+                "error", f"Registry control operation failed ({type(error).__name__})"
             )
             return self._error(request_id, "internal_error")
         if result is None:

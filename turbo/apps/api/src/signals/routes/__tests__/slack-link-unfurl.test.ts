@@ -110,6 +110,7 @@ async function fixture(
   });
   const prepared = await host.prepareHostedSite(actor, {
     site: `slack-report-${randomUUID().slice(0, 8)}`,
+    title: "Slack report",
     artifactKind: "hosted-site",
     spaFallback: false,
     visibility: "public",

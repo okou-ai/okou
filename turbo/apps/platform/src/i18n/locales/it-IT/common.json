@@ -418,6 +418,7 @@
         "agents": "Agenti",
         "artifacts": "Artefatti",
         "connectors": "Connettori",
+        "feed": "Feed",
         "settings": "Impostazioni",
         "workflows": "Flussi di lavoro",
         "works": "Dove lavora {{agentName}}"
@@ -1076,6 +1077,7 @@
       "notNow": "Non ora",
       "review": "Esamina autorizzazioni",
       "scopeNote": "Si applica a questo agente, non solo all’attività corrente.",
+      "sharedScopeNote": "Si applica a questo connettore in tutte le tue chat e i tuoi agenti.",
       "title": "Concedi le seguenti autorizzazioni"
     }
   },
@@ -1085,6 +1087,7 @@
       "amountTitle": "Importo della ricarica",
       "automaticTopUps": "Ricariche automatiche",
       "description": "Acquista crediti quando il tuo saldo scende al di sotto di una soglia.",
+      "disabledAfterFailures": "La ricarica automatica è stata disattivata dopo ripetuti pagamenti non riusciti. Controlla il metodo di pagamento prima di riattivarla.",
       "enableAria": "Abilita la ricarica automatica",
       "thresholdAria": "Soglia di credito per la ricarica automatica",
       "thresholdDescription": "Attiva un acquisto quando il saldo del tuo credito scende sotto questo numero.",
@@ -1408,11 +1411,12 @@
       "handBack": "Restituisci",
       "handBackMessage": "Ho finito nel browser. Continua pure.",
       "memberInControl": "Hai il controllo",
-      "takeOver": "Prendi il controllo"
+      "takeOver": "Prendi il controllo",
+      "takeOverMessage": "Ho preso il controllo del browser. Non usarlo finché non te lo restituisco."
     },
-    "reclaimHint_one": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuto di inattività.",
-    "reclaimHint_many": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
-    "reclaimHint_other": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
+    "reclaimHint_one": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuto di inattività.",
+    "reclaimHint_many": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuti di inattività.",
+    "reclaimHint_other": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuti di inattività.",
     "status": {
       "live": "Attivo",
       "starting": "Avvio",
@@ -1450,6 +1454,7 @@
     "paused": "Vista in pausa",
     "quality": "Qualità immagine",
     "reconnect": "Riconnetti",
+    "reconnecting": "Riconnessione…",
     "reload": "Ricarica",
     "remoteInput": "Input del browser remoto",
     "resolution": "Risoluzione",
@@ -1506,7 +1511,7 @@
         },
         "connector": {
           "action": "Collega",
-          "description": "Gmail, Notion e altri 100+",
+          "description": "Gmail, Notion e altri 4.000+",
           "name": "Collega uno strumento",
           "unit": "per connettore"
         },
@@ -1558,7 +1563,7 @@
           "unit": "per membro"
         },
         "pendingState": "{{amount}} in sospeso",
-        "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
+        "rewardsNote": "I premi delle attività scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "slack": {
           "action": "Aggiungi",
           "description": "Dove il tuo team lavora già",
@@ -1618,8 +1623,6 @@
       "customDirection": "Vorrei…",
       "customDirectionDescription": "Fai una domanda o descrivi cosa vorresti fare.",
       "customPlaceholder": "Cosa hai in mente?",
-      "customPrepared": "Continua…",
-      "customPreparedDescription": "Aggiungi il tuo messaggio qui sopra, poi invialo.",
       "dismiss": "Ignora",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -1627,11 +1630,8 @@
       "label": "Suggerimenti",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
-      "next": "Suggerimento successivo",
       "notPlanned": "Not planned",
       "notPlannedRecorded": "Noted — this is not planned",
-      "position": "{{current}} di {{total}}",
-      "previous": "Suggerimento precedente",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "undoFeedback": "Undo",
@@ -1797,9 +1797,10 @@
       "outOfCredits": "Hai esaurito i crediti",
       "proCard": {
         "creditsNow": "crediti · Proprio ora",
-        "description": "Crediti extra · Funzioni avanzate · 3 computer cloud",
+        "description": "Funzioni avanzate · 3 computer cloud",
         "priceUnavailable": "Consulta i piani per i prezzi attuali",
         "title": "Circa 5 attività rimaste",
+        "upgradeFromPrice": "Passa al piano da {{price}}/mese",
         "upgradeNow": "Passa a Pro ora"
       },
       "redirecting": "Reindirizzamento...",
@@ -2055,6 +2056,8 @@
       "recovery": {
         "accessProgramDescription": "Riprova tra poco. Puoi lasciare aperta questa chat.",
         "accessProgramTitle": "L’accesso a Codex non è temporaneamente disponibile",
+        "accountVerificationDescription": "Al momento il tuo account Claude non può ricevere risposte. Consulta il portale di verifica Anthropic per conoscere il prossimo passaggio.",
+        "accountVerificationTitle": "È richiesta la verifica dell'account Claude",
         "autonomyLimitDescription": "È stato raggiunto il limite di esecuzioni automatiche consecutive. Conferma per continuare.",
         "autonomyLimitTitle": "Limite di esecuzioni automatiche raggiunto",
         "capacityDescription": "Riprova tra poco oppure scegli un altro modello per continuare a lavorare.",
@@ -2118,33 +2121,13 @@
       "partsHeading_other": "{{count}} parti citate dalla tua risposta",
       "placeholder": "Fai una domanda o commenta questa citazione",
       "quote": "Cita",
+      "quoteEmail": "Cita {{email}}",
       "remove": "Rimuovi feedback",
       "sentEmailDescription": "un'e-mail inviata",
       "sourcePartHeading": "Citato da {{description}}",
       "sourcePartsHeading_one": "{{count}} parte citata da {{description}}",
       "sourcePartsHeading_many": "{{count}} parti citate da {{description}}",
       "sourcePartsHeading_other": "{{count}} parti citate da {{description}}"
-    },
-    "folders": {
-      "actions": "Azioni per {{name}}",
-      "chats": "Chat",
-      "create": "Crea cartella",
-      "delete": "Elimina cartella",
-      "deleteDescription": "Eliminare “{{name}}”? Verrà eliminata solo la cartella. Le conversazioni saranno conservate.",
-      "description": "Le cartelle organizzano le tue chat personali in questo Agente.",
-      "down": "Sposta cartella in basso",
-      "empty": "Nessuna chat",
-      "failed": "Impossibile salvare le modifiche. Riprova.",
-      "move": "Sposta in…",
-      "name": "Nome della cartella",
-      "refresh": "Aggiorna cartelle",
-      "rename": "Rinomina cartella",
-      "running": "Chat in corso",
-      "save": "Salva",
-      "title": "Cartelle",
-      "unfiled": "Senza cartella",
-      "unread": "Chat non lette",
-      "up": "Sposta cartella in alto"
     },
     "forward": {
       "action": "Inoltra",
@@ -2158,6 +2141,78 @@
       "sent": "Inoltrato correttamente",
       "threads": "Chat",
       "title": "Inoltra a"
+    },
+    "homeDiscovery": {
+      "create": {
+        "document": "Documento",
+        "image": "Immagine",
+        "presentation": "Presentation",
+        "visualization": "Grafico",
+        "website": "Sito web"
+      },
+      "entries": {
+        "briefs": {
+          "examples": {
+            "first": "Aiutami a impostare un riepilogo mattutino delle email che richiedono la mia attenzione; prima conferma la casella di posta e l'orario di invio",
+            "second": "Aiutami a impostare un riepilogo settimanale sui concorrenti; prima conferma le aziende, le fonti e la programmazione",
+            "third": "Aiutami a impostare un riepilogo giornaliero delle vendite; prima conferma la fonte dei dati, le metriche e l'orario di invio"
+          },
+          "label": "Riepiloghi",
+          "placeholder": "Descrivi cosa vorresti nel riepilogo e con quale frequenza riceverlo…",
+          "title": "Quale riepilogo vorresti ricevere?"
+        },
+        "general": {
+          "examples": {
+            "first": "Trova agenzie di brand design adatte a un team agli inizi",
+            "second": "Confronta gli strumenti di gestione clienti per funzionalità e prezzo",
+            "third": "Cerca le tendenze recenti e le aziende leader di un settore"
+          },
+          "label": "Generale",
+          "placeholder": "Descrivi la tua domanda o cosa vorresti sapere…",
+          "title": "Cosa vorresti scoprire?"
+        },
+        "information": {
+          "examples": {
+            "first": "Trova studi recenti sull'adozione dell'IA nelle piccole imprese, con le fonti originali",
+            "second": "Raccogli esempi pubblici di lanci di prodotto di successo e spiega cosa ha funzionato",
+            "third": "Trova dati di settore affidabili per una presentazione, con date e link alle fonti"
+          },
+          "label": "Informazioni",
+          "placeholder": "Descrivi l'argomento, il periodo o a cosa ti servono le informazioni…",
+          "title": "Su cosa vorresti fare una ricerca?"
+        },
+        "monitor": {
+          "examples": {
+            "first": "Aiutami a seguire le variazioni dei prezzi dei concorrenti; prima conferma le aziende, le fonti e quando avvisarmi",
+            "second": "Aiutami a tenere d'occhio la risposta a un'email inviata a un cliente; prima conferma l'email e come avvisarmi",
+            "third": "Aiutami a seguire gli aggiornamenti importanti di un settore; concordiamo prima le fonti, la frequenza e gli aspetti rilevanti"
+          },
+          "label": "Monitora",
+          "placeholder": "Descrivi cosa vuoi seguire e quali cambiamenti sono importanti…",
+          "title": "Quali cambiamenti vorresti seguire?"
+        },
+        "people": {
+          "examples": {
+            "first": "Trova 5 relatori per un evento sul marketing con l'IA, con i motivi per cui sono adatti e fonti pubbliche",
+            "second": "Trova creator che raggiungono i titolari d'impresa e spiega perché il loro pubblico è adatto",
+            "third": "Trova potenziali clienti per i miei servizi di consulenza, con informazioni pubbliche pertinenti sul loro profilo"
+          },
+          "label": "Persone",
+          "placeholder": "Descrivi il ruolo, il settore, l'azienda o la località…",
+          "title": "Chi stai cercando?"
+        }
+      },
+      "groups": {
+        "automate": "Automatizza",
+        "create": "Crea",
+        "search": "Cerca"
+      },
+      "label": "Scopri cosa può fare Okou",
+      "placeholder": "Descrivi cosa vuoi fare…",
+      "sources": {
+        "trigger": "Strumenti"
+      },
+      "workflows": "Flussi di lavoro"
     },
     "mail": {
       "bcc": "bcc",
@@ -2311,6 +2366,8 @@
     "remoteAccess": {
       "default": "Predefinito",
       "defaultEnabled": "Abilitato per impostazione predefinita nelle chat",
+      "disabled": "Disabilitato",
+      "enabled": "Abilitato",
       "enabledCount_one": "{{count}} attivo",
       "enabledCount_many": "{{count}} attivi",
       "enabledCount_other": "{{count}} attivi",
@@ -2389,19 +2446,18 @@
       "cancel": "Annulla",
       "close": "Chiudi",
       "copyFailed": "Impossibile copiare il link",
-      "copyLink": "Copia link",
       "create": "Condividi",
       "createFailed": "Impossibile creare la conversazione condivisa.",
       "deselectGroup": "Deseleziona il gruppo di messaggi",
+      "everyone": "Tutti",
       "linkCopied": "Link copiato",
       "messageShareFailed": "Impossibile creare il link condiviso.",
-      "publicDescription": "I messaggi selezionati e i relativi allegati saranno pubblici.",
+      "organizationDescription": "Solo persone della tua organizzazione",
       "selectedCount_one": "{{count}} selezionato",
       "selectedCount_many": "{{count}} selezionati",
       "selectedCount_other": "{{count}} selezionati",
       "selectGroup": "Seleziona il gruppo di messaggi",
       "shareLink": "Link alla conversazione condivisa",
-      "shareLinkCopied": "Link di condivisione copiato",
       "start": "Condividi messaggi",
       "tooLarge": "Seleziona meno messaggi da condividere",
       "visibilityDescription": "Scegli chi può vedere questa conversazione. Solo tu puoi modificare l’accesso."
@@ -2692,7 +2748,6 @@
         "image": "Immagine",
         "jobs": "Tasks",
         "presentation": "Diapositive",
-        "suggestions": "Suggerimenti",
         "visualization": "Visualizzazione",
         "website": "Sito web",
         "workflow": "Workflow"
@@ -3139,21 +3194,14 @@
     }
   },
   "cloudflareAccess": {
-    "add": "Aggiungi Cloudflare Access",
     "affectedMembers_one": "{{count}} membro",
     "affectedMembers_many": "",
     "affectedMembers_other": "{{count}} membri",
     "cancel": "Annulla",
     "changed": "Questo Cloudflare Access è cambiato durante la modifica. Le modifiche non sono state salvate.",
-    "clientId": "ID client del Service Token",
     "clientIdPlaceholder": "Incolla il Client ID del Service Token",
-    "clientSecret": "Segreto client del Service Token",
     "clientSecretPlaceholder": "Incolla il Client Secret del Service Token",
     "configuration": "Cloudflare Access",
-    "convert": "Rendi personale",
-    "convertHelp": "Questo Cloudflare Access dell'organizzazione diventerà una tua configurazione personale, anche se è stato creato da un'altra persona. Il Service Token resterà invariato e i tuoi host SSH potranno rimanere connessi.",
-    "convertUncertain": "Impossibile confermare la conversione.",
-    "createNew": "Crea nuovo Cloudflare Access",
     "delete": "Elimina Cloudflare Access",
     "deleteHelp": "Eliminare questo Cloudflare Access? Il Service Token salvato non sarà recuperabile. Prima ricollega i tuoi host a un'altra configurazione.",
     "deleteUncertain": "Impossibile confermare l'eliminazione.",
@@ -3167,34 +3215,33 @@
     "loading": "Caricamento di Cloudflare Access…",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "Questo Cloudflare Access non è più disponibile. Selezionane un altro o creane uno.",
-    "name": "Nome",
-    "namePlaceholder": "ad es. Accesso produzione",
     "nameUnavailable": "Nome non disponibile",
     "organization": "Organizzazione",
-    "organizationHelp": "Tutti i membri dell'organizzazione possono usare questo Service Token. Solo gli amministratori possono modificarlo.",
     "personal": "Personale",
-    "promote": "Condividi con l'organizzazione",
-    "promoteConfirm": "Comprendo che tutti i membri dell'organizzazione potranno usare questo Service Token.",
-    "promoteHelp": "Condividi il tuo Cloudflare Access personale con l'organizzazione. Il Service Token e i collegamenti dei tuoi host SSH restano invariati.",
-    "promoteUncertain": "Non è stato possibile confermare la conversione.",
     "replace": "Sostituisci Service Token",
     "resourceIdConflict": "Questo ID risorsa non può essere utilizzato.",
     "revisionExhausted": "Questa configurazione non può più essere aggiornata. Creane una nuova.",
-    "save": "Salva",
     "saveUncertain": "Salvataggio non riuscito.",
     "scope": "Chi può usarlo",
-    "sectionEmpty": "Non ci sono ancora configurazioni qui.",
     "select": "Seleziona Cloudflare Access",
-    "summary_one": "{{count}} Cloudflare Access impostato",
-    "summary_many": "{{count}} Cloudflare Access impostati",
-    "summary_other": "{{count}} Cloudflare Access impostati",
     "title": "Cloudflare Access",
-    "tokenHelp": "Accedi alle applicazioni protette con i token di servizio Cloudflare Access.",
     "unavailable": "Cloudflare Access non è disponibile per questo account.",
     "unused": "Nessuno dei tuoi host la usa",
     "usedBy_one": "Usata da {{count}} dei tuoi host:",
     "usedBy_many": "Usata da {{count}} dei tuoi host:",
     "usedBy_other": "Usata da {{count}} dei tuoi host:"
+  },
+  "connectorChatAccess": {
+    "accountAccess": "Accesso di {{account}}",
+    "enableByDefault": "Attiva {{account}} per impostazione predefinita",
+    "enabledAccounts": "{{value}} attivi",
+    "manageAccounts": "Gestisci account",
+    "noAccount": "Nessun account selezionato",
+    "noEnabledAccount": "Nessun account attivo per questa chat",
+    "permissions": "Autorizzazioni",
+    "permissionsDescription": "Queste regole si applicano a questo connettore in tutte le tue chat e account.",
+    "settingsDescription": "Scegli gli account attivi per impostazione predefinita e l'account predefinito per le nuove chat.",
+    "thisChat": "Questa chat"
   },
   "connectors": {
     "access": {
@@ -3404,7 +3451,6 @@
       "otherCategory": "Altro",
       "remoteAccess": "Accesso remoto",
       "remoteControl": {
-        "connections": "Connessioni",
         "credentials": "Credenziali",
         "type": "Tipo"
       },
@@ -3660,6 +3706,7 @@
         "backToSettings": "Torna alle impostazioni",
         "checkingTitle": "Verifica dello stato dell'account in corso...",
         "connectionFailed": "Connessione non riuscita",
+        "invalidBotConnectLink": "Questo link di connessione non è valido o è scaduto. Torna su {{provider}} e invia un messaggio al bot per ottenere un nuovo link.",
         "invalidLink": "Collegamento non valido",
         "verifying": "Attendi mentre verifichiamo la connessione."
       },
@@ -3732,13 +3779,10 @@
         "install": "Installa in Teams",
         "invalidContext": "Il link non contiene tutti i dati dell’account Teams. Apri un nuovo link di connessione da Teams.",
         "open": "Apri Microsoft Teams",
-        "orgMismatch": "Questo link appartiene a un’altra organizzazione. Passa a tale organizzazione e riprova.",
         "pendingDescription": "Installa l’app in Teams, poi torna qui per completare il collegamento.",
         "pendingTitle": "Installa in Teams per completare",
-        "providerName": "Microsoft Teams",
         "reinstall": "Reinstalla in Teams",
         "statusFailed": "Impossibile verificare la connessione Teams.",
-        "successDescription": "Sei connesso a {{team}}. Menziona @{{botName}} in Teams per iniziare a chattare.",
         "successTitle": "Connesso a Microsoft Teams",
         "unavailable": "La configurazione Teams non è disponibile. Contatta l’amministratore della tua organizzazione."
       },
@@ -4188,6 +4232,29 @@
     "previousFeature": "Funzionalità precedente",
     "tryPrompt": "Prova questa attività"
   },
+  "feed": {
+    "description": "Prossimi passi suggeriti in base al tuo lavoro recente.",
+    "emptyDescription": "I nuovi suggerimenti appariranno qui.",
+    "emptyTitle": "Sei in pari",
+    "title": "Feed"
+  },
+  "friendReferrals": {
+    "copied": "Copiato",
+    "copy": "Copia link",
+    "copyFailed": "Copia non riuscita. Seleziona e copia il link qui sopra.",
+    "description": "Guadagna $20 in crediti quando un amico si registra tramite il tuo link, acquista un usage pack e passa a Pro o a un piano superiore.",
+    "earned": "Crediti guadagnati",
+    "expiryNote": "I premi per gli inviti scadono un mese dopo l’assegnazione.",
+    "invite": "Invita",
+    "linkLabel": "Il tuo link di invito",
+    "loadFailed": "Impossibile caricare il tuo link di invito. Riprova.",
+    "loading": "Caricamento del tuo link di invito…",
+    "perFriend": "per amico pagante",
+    "registered": "Amici registrati",
+    "retry": "Riprova",
+    "terms": "Solo per nuovi utenti. Un premio per amico. I crediti vengono aggiunti al tuo saldo personale in questo spazio e scadono un mese dopo l’assegnazione.",
+    "title": "Invita i tuoi amici"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4271,6 +4338,26 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "columns_one": "{{formattedCount}} colonna",
+      "columns_many": "{{formattedCount}} colonne",
+      "columns_other": "{{formattedCount}} colonne",
+      "drive": "Salva su Google Drive",
+      "excel": "Esporta in Excel",
+      "export": "Esporta",
+      "filename": "Tabella",
+      "googleUnavailable": "Apri questa tabella nella tua chat o controlla la connessione a Google Drive.",
+      "rows_one": "{{formattedCount}} riga",
+      "rows_many": "{{formattedCount}} righe",
+      "rows_other": "{{formattedCount}} righe",
+      "savedDrive": "Salvato su Google Drive",
+      "savedSheets": "Salvato in Google Sheets",
+      "saving": "Salvataggio…",
+      "sheets": "Salva in Google Sheets",
+      "uploadFailed": "Impossibile caricare la tabella. Riprova."
+    }
+  },
   "onboarding": {
     "common": {
       "next": "Avanti",
@@ -4281,14 +4368,28 @@
       "make": "Benvenuto a {{brandName}}"
     },
     "make": {
-      "promptDescription": "Modificalo qui sotto oppure eseguilo così com'è: {{assistantName}} farà il resto. I tuoi strumenti rimangono nella sandbox e nulla lascia la tua area di lavoro.",
       "promptLabel": "Richiesta di onboarding",
-      "promptTitle": "Prova questo suggerimento"
+      "promptTitle": "Personalizza questa attività"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Fai ricerche sul web, trova persone e crea immagini con Okou. Questi strumenti sono attivi per impostazione predefinita; puoi modificarli ora o più tardi.",
+        "items": {
+          "image-generation": {
+            "description": "Crea immagini originali per post, campagne e presentazioni.",
+            "name": "Generazione di immagini"
+          },
+          "web-search": {
+            "description": "Trova notizie e fatti aggiornati con fonti verificabili.",
+            "name": "Ricerca web"
+          }
+        },
+        "listLabel": "Capacità integrate",
+        "title": "Più modi per portare a termine il tuo lavoro"
+      },
       "chatChannels": {
         "connectedTitle": "La tua chat è connessa",
-        "copy": "Scrivi a Okou o aggiungilo alla chat del tuo team. Scegli il modo in cui lavori già.",
+        "copy": "Usa Okou nelle tue chat abituali, da solo o con il tuo team. Puoi continuare a lavorare qui e collegare un’app di messaggistica più tardi.",
         "imessageConnected": "iMessage è connesso",
         "imessageCopy": "Il tuo lavoro, a un messaggio di distanza.",
         "imessageExpired": "Il codice di connessione è scaduto.",
@@ -4304,19 +4405,18 @@
         "notNow": "Non ora"
       },
       "documentTitles": {
-        "experience": "La tua esperienza con l'IA",
+        "experience": "Scegli come iniziare",
         "industry": "Scegli il tuo ambito",
-        "ready": "Okou è pronto",
+        "ready": "La tua prima attività",
         "skills": "Importa le tue skill",
-        "sources": "Collega il tuo lavoro",
-        "team": "Invita un membro del team"
+        "sources": "Collega il tuo lavoro"
       },
       "experience": {
-        "copy": "Inizia con una guida oppure usa il tuo piano Codex o Claude Code.",
-        "no": "Sono alle prime armi con gli agenti AI",
-        "noCopy": "Okou ti aiuta a scegliere un primo compito utile.",
+        "copy": "Inizia subito con Okou o collega un piano Codex o Claude Code che hai già.",
+        "no": "Inizia con Okou",
+        "noCopy": "Ricevi aiuto con la tua prima attività.",
         "title": "Come vuoi iniziare con Okou?",
-        "trust": "Le attività usano il tuo piano Codex o Claude Code invece dei crediti Okou, così puoi fare di più senza preoccuparti dei consumi. Collegalo ora o più tardi."
+        "trust": "I piani collegati usano la propria quota invece dei crediti Okou. Puoi collegarli più tardi; i loro limiti di utilizzo restano validi."
       },
       "industries": {
         "coaching": {
@@ -4376,11 +4476,11 @@
         }
       },
       "industry": {
-        "copy": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud. Scegli il tuo settore per una prima attività su misura.",
+        "copy": "Raccontaci di cosa ti occupi. Ti suggeriremo una prima attività adatta al tuo lavoro.",
         "title": "Che tipo di lavoro fai?"
       },
       "mobile": {
-        "channelsCopy": "Scrivi a Okou dove lavori già.",
+        "channelsCopy": "Continua a lavorare qui o collega un’app di messaggistica.",
         "channelsTitle": "Scegli un’app di chat",
         "connect": "Collega",
         "copyImportPrompt": "Copia il prompt di importazione",
@@ -4396,12 +4496,10 @@
         "planCopy": "Esegui attività con il tuo abbonamento.",
         "promptTitle": "Cosa vuoi fare?",
         "readyTitle": "Inizia la prima attività",
-        "skillsCopy": "Usa {{provider}} sul computer.",
+        "skillsCopy": "Hai delle skill in {{provider}}? Importale dal tuo computer, oppure fallo più tardi.",
         "skillsTitle": "Importa le tue competenze",
-        "sourcesCopy": "Collega uno strumento per la prima attività.",
-        "startTask": "Avvia attività",
-        "teamCopy": "Lavorate nello stesso spazio.",
-        "teamTitle": "Invita un collega"
+        "sourcesCopy": "Collega uno strumento, oppure salta il passaggio e fallo più tardi.",
+        "startTask": "Avvia attività"
       },
       "outcomes": {
         "accessibleLabel": "Esempio di {{title}} preparato da {{source}}. Tutti i contenuti sono dimostrativi.",
@@ -4547,8 +4645,8 @@
             "label": "Presentazione"
           },
           "report": {
-            "instruction": "Presenta i risultati in un report strutturato con risultati principali, raccomandazioni e prossimi passi.",
-            "label": "Report"
+            "instruction": "Crea un documento completo con i risultati nel formato di file richiesto (Markdown predefinito). Caricalo come artefatto e includi un link funzionante all’artefatto nella risposta finale.",
+            "label": "Documento"
           },
           "research": {
             "instruction": "Presenta i risultati in una sintesi della ricerca con fonti e domande aperte. Distingui i fatti documentati dalle raccomandazioni.",
@@ -4559,17 +4657,17 @@
             "label": "Sito web"
           }
         },
-        "title": "Scegli un formato",
+        "title": "Scegli un formato (facoltativo)",
         "tooLong": "Accorcia il testo dell’attività per scegliere un altro formato."
       },
       "prompt": {
-        "connectorsDescription": "Collega i tuoi strumenti per aiutare Okou a capire il tuo lavoro e svolgere le attività in base alle tue esigenze. Puoi farlo anche più tardi.",
+        "connectorsDescription": "Collega le tue app per aiutare Okou a capire meglio il tuo lavoro.",
         "connectorsTitle": "Collega i tuoi strumenti di lavoro",
-        "intro": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud."
+        "intro": "Collega le tue app per risultati migliori e scegli un formato."
       },
       "skills": {
         "copied": "Copiato",
-        "copy": "Esegui questo prompt in {{provider}} per importare le skill che hai già creato, così Okou può usarle da subito.",
+        "copy": "Se hai salvato delle skill in {{provider}}, importale per permettere a Okou di seguire il tuo modo di lavorare. Puoi saltare questo passaggio e importarle più tardi.",
         "copyError": "Non è stato possibile copiare il prompt.",
         "copyPrompt": "Copia prompt",
         "guide": {
@@ -4632,14 +4730,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Più Okou conosce il tuo lavoro, più diventa intelligente. Collega uno strumento che usi ogni giorno per iniziare con un’attività basata sul tuo lavoro reale.",
-        "permissions": "Okou usa un piccolo campione per personalizzare la tua prima attività. Sei tu a decidere cosa possono fare gli Agent e per quanto tempo.",
+        "copy": "Collega uno strumento per iniziare con un’attività del tuo lavoro, oppure salta questo passaggio e collegalo più tardi.",
+        "permissions": "Okou usa un piccolo campione per suggerire la tua prima attività. Decidi tu a cosa può accedere Okou e per quanto tempo.",
         "securityLink": "Come Okou protegge i tuoi dati",
         "skipDialog": {
           "connect": "Collega uno strumento",
-          "description": "Ti consigliamo di collegare i tuoi strumenti, così Okou può capire il tuo lavoro e offrirti un aiuto più mirato. Puoi sempre collegarli in seguito.",
+          "description": "Puoi già iniziare un’attività. Collega uno strumento più tardi quando vuoi che Okou lavori con le tue email, i tuoi documenti o i tuoi dati.",
           "skip": "Salta per ora",
-          "title": "Okou ti aiuta meglio con i tuoi strumenti"
+          "title": "Iniziare senza collegare uno strumento?"
         },
         "title": "Collega uno strumento di lavoro"
       },
@@ -4973,34 +5071,51 @@
         "connected": "Collegato",
         "connecting": "Collegamento…",
         "failedNote": "Non siamo riusciti a collegare {{provider}}. Puoi continuare e collegarlo in seguito.",
-        "rowCopy": "Collegalo per usare il tuo piano anziché i crediti Okou.",
+        "rowCopy": "Usa il tuo piano attuale per le attività.",
         "unconfirmedNote": "Non siamo riusciti a verificare il collegamento a {{provider}}. Puoi continuare e collegarlo in seguito."
       },
-      "team": {
-        "copy": "Invita un membro del team a condividere i tuoi flussi di lavoro, mentre ognuno collega i propri strumenti.",
-        "invalidEmail": "Inserisci un indirizzo email valido",
-        "invite": "Invia invito",
-        "invited": "Invitato",
-        "label": "Email del membro del team",
-        "note": "Potrà iniziare subito a lavorare con Okou.",
-        "notSent": "Non inviato",
-        "panelTitle": "Invita un membro del team",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "Collega i propri strumenti quando servono.",
-          "workflows": "Può eseguire tutti i flussi di lavoro del team.",
-          "workspace": "Entra nel tuo workspace."
-        },
-        "sending": "Invio in corso…",
-        "title": "Rendi Okou utile a tutto il team"
-      },
       "welcome": {
-        "copy": "Rivedi un compito suggerito per il tuo lavoro, adattalo al tuo obiettivo e lascia iniziare Okou.",
-        "promptLabel": "Il tuo prompt iniziale",
-        "start": "Inizia con Okou",
-        "title": "Inizia con un compito che conta"
+        "copy": "Abbiamo suggerito una prima attività adatta al tuo lavoro. Modificala o sostituiscila con qualcosa che vuoi portare a termine.",
+        "preparing": "Cerchiamo una prima attività utile per te…",
+        "promptLabel": "La tua prima attività",
+        "start": "Inizia la mia prima attività",
+        "title": "Iniziamo la tua prima attività"
       }
     }
+  },
+  "projects": {
+    "active": "Active chats",
+    "archived": "Archived chats",
+    "close": "Close",
+    "create": "Create Project",
+    "createChatError": "Could not create chat",
+    "delete": "Delete",
+    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
+    "deleteError": "Could not delete Project",
+    "deleteProject": "Delete Project",
+    "deleteTitle": "Delete Project?",
+    "description": "Keep related chats together across Agents",
+    "empty": "No chats here yet",
+    "emptyArchive": "No archived chats",
+    "fromChat": "Create a Project from this chat",
+    "move": "Move to Project",
+    "moveError": "Could not move chat",
+    "moveTitle": "Move chat",
+    "moveTo": "Sposta in {{name}}",
+    "name": "Project name",
+    "newChat": "New chat",
+    "noMatches": "No projects found",
+    "options": "Options for {{name}}",
+    "projects": "Projects",
+    "remove": "Remove from Project",
+    "rename": "Rename",
+    "renameProject": "Rename Project",
+    "save": "Save",
+    "saveError": "Could not save Project",
+    "saving": "Saving…",
+    "search": "Search projects…",
+    "showMore": "Show more chats",
+    "unavailable": "Project unavailable"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} esecuzione simultanea",
@@ -5395,9 +5510,14 @@
       "settings": "Impostazioni",
       "signOut": "Esci",
       "subscriptions": {
+        "credits": "Crediti",
+        "fiveHourLimit": "Limite di 5 ore",
+        "label": "Utilizzo degli abbonamenti",
+        "lowUsage": "Utilizzo degli abbonamenti: meno del 20% rimanente",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
-        "usageRemaining": "{{provider}} {{window}} rimanente"
+        "usageRemaining": "{{provider}} {{window}} rimanente",
+        "weeklyLimit": "Limite settimanale"
       },
       "switchAccount": "Cambia account",
       "userFallback": "Utente"
@@ -5409,6 +5529,12 @@
       "loading": "Caricamento in corso",
       "title": "Costruisci informazioni",
       "unavailable": "Non disponibile"
+    },
+    "connectorCatalog": {
+      "hash": "Hash del catalogo",
+      "schemaVersion": "Versione dello schema",
+      "title": "Catalogo dei connettori",
+      "version": "Versione"
     },
     "dialog": {
       "description": "Gestisci il tuo account, le preferenze, l'area di lavoro e le impostazioni di fatturazione.",
@@ -6146,19 +6272,14 @@
       "direct": "Diretta",
       "mode": "Connessione",
       "needsRebind": "Questo host richiede una nuova configurazione Cloudflare Access. Modificalo per associarlo di nuovo o scegliere Direct. Fino ad allora non potrà connettersi.",
-      "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nome host pubblicato",
       "rebindHelp": "Scegli una configurazione Cloudflare Access consentita o Direct per ripristinare questo host. Nulla cambia finché non salvi.",
-      "title": "Cloudflare Access",
-      "unavailable": "Cloudflare Access non è disponibile per questo account."
+      "title": "Cloudflare Access"
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access non ha stabilito un tunnel SSH. Controlla il nome host pubblicato e l’instradamento del Tunnel.",
       "accessRejected": "Cloudflare Access ha rifiutato la connessione. Controlla il token di servizio e la policy Service Auth dell’applicazione.",
       "accessTlsFailure": "Impossibile verificare la connessione sicura a Cloudflare Access. Controlla il nome host e il certificato TLS.",
-      "attention_one": "{{count}} host SSH richiede attenzione",
-      "attention_many": "{{count}} host SSH richiedono attenzione",
-      "attention_other": "{{count}} host SSH richiedono attenzione",
       "authenticationFailed": "Autenticazione SSH non riuscita. Controlla nome utente, chiave privata o password e autorizzazioni del server. Modifica le credenziali o selezionane altre per questo host.",
       "credentialResourceLimit": "La chiave privata supera i limiti di elaborazione supportati. Esportala di nuovo con una cifratura supportata, quindi sostituisci le credenziali.",
       "hostKeyMismatch": "La chiave host del server non corrisponde all’identità salvata. Verifica il server in modo indipendente prima di reimpostare la chiave host.",
@@ -6167,7 +6288,6 @@
       "observedAt": "Rilevato: {{time}}",
       "protocol": "L’handshake SSH non è riuscito. Verifica che la porta offra SSH e che il server supporti algoritmi compatibili.",
       "timedOut": "L’ultima connessione SSH è scaduta prima del completamento dell’autenticazione. Verifica endpoint, firewall e disponibilità del server.",
-      "unavailable": "Stato della connessione SSH non disponibile",
       "unsafeDestination": "Questo host non si risolve in un indirizzo pubblico consentito. Usa un endpoint SSH pubblico.",
       "unsupportedCredential": "Il formato o l’algoritmo della chiave privata non è supportato. Sostituiscila con una chiave OpenSSH, PKCS8 o RSA PEM supportata.",
       "unsupportedHostKey": "La chiave host del server non è supportata. Configura una chiave host Ed25519, ECDSA o RSA supportata sul server."
@@ -6175,17 +6295,13 @@
     "credential": {
       "add": "Aggiungi credenziali",
       "authentication": "Autenticazione",
-      "createNew": "Crea credenziali",
       "delete": "Elimina credenziali",
       "deleteHelp": "Eliminare queste credenziali inutilizzate? Il segreto salvato non potrà essere recuperato.",
       "edit": "Modifica credenziali",
       "empty": "Nessuna credenziale SSH. Aggiungi una chiave privata o una password da riutilizzare su più host.",
-      "label": "Credenziali",
       "loading": "Caricamento delle credenziali SSH…",
       "name": "Nome delle credenziali",
       "password": "Password",
-      "replaceAuthentication": "Sostituisci autenticazione",
-      "select": "Seleziona una credenziale",
       "sharedHelp_one": "Le modifiche di accesso si applicano a {{count}} host:",
       "sharedHelp_many": "Le modifiche di accesso si applicano a tutti i {{count}} host:",
       "sharedHelp_other": "Le modifiche di accesso si applicano a tutti i {{count}} host:",
@@ -6194,14 +6310,10 @@
       "summary_other": "{{count}} credenziali configurate",
       "unused": "Non utilizzate da alcun host"
     },
-    "credentialsHelp": "Le credenziali sono di sola scrittura e restano fuori dal sandbox. Incolla la chiave completa; gli spazi vengono conservati. I campi vengono cancellati alla chiusura del modulo.",
-    "delete": "Elimina host",
     "deleteHelp": "Eliminare questo host? Le sue credenziali saranno conservate. Gli Agents non lo vedranno più nell’inventario.",
     "description": "Configura host SSH per consentire ai tuoi agenti di eseguire comandi remoti.",
-    "displayName": "Nome visualizzato",
     "edit": "Modifica host",
     "editHelp": "Scegliere credenziali diverse modifica solo questo host. I cambiamenti all’endpoint diretto cancellano la chiave host salvata; quelli che coinvolgono Cloudflare Access la conservano.",
-    "empty": "Nessun host SSH configurato. Aggiungi un host, poi abilitalo per impostazione predefinita o in singole chat.",
     "errors": {
       "configurationChanged": "Questo host è cambiato durante la modifica. Le modifiche non sono state salvate; la bozza è conservata.",
       "credentialChanged": "Questa credenziale è cambiata durante la modifica. Le modifiche non sono state salvate; la bozza è conservata.",
@@ -6228,7 +6340,6 @@
     "passphrase": "Passphrase (facoltativa)",
     "placeholders": {
       "credentialName": "ad es. Accesso deployment",
-      "displayName": "ad es. Server di produzione",
       "host": "ad es. ssh.example.com",
       "passphrase": "Lascia vuoto se la chiave non è cifrata",
       "password": "Inserisci la password dell'utente SSH",
@@ -6244,9 +6355,6 @@
       "resourceIdConflict": "Questo ID risorsa non può essere utilizzato.",
       "uncertain": "Salvataggio non riuscito."
     },
-    "summary_one": "{{count}} host configurato",
-    "summary_many": "{{count}} host configurati",
-    "summary_other": "{{count}} host configurati",
     "tailscale": {
       "authenticationFailed": "Autenticazione Tailscale SSH non riuscita. Controlla il nome utente di sistema, abilita Tailscale SSH sulla destinazione con tag e autorizza questo accesso nella policy SSH accept della tailnet.",
       "deleteHelp": "Eliminare questo host? Gli agenti non lo vedranno più nell’inventario in tempo reale.",
@@ -6259,55 +6367,24 @@
     "username": "Nome utente SSH"
   },
   "tailscale": {
-    "add": "Aggiungi Tailscale",
-    "addressHelp": "Usa l'IP, il nome completo o il nome breve di un peer registrato nel tailnet. Restano necessari l'accesso SSH e la verifica della chiave host.",
-    "adoptHelp": "Trasforma questa rete dell'organizzazione nella tua rete personale. Gli altri proprietari dovranno ricollegare gli host salvati.",
     "changed": "Questa rete Tailscale è cambiata. Le modifiche non sono state salvate; la bozza è conservata.",
-    "clientId": "ID client OAuth",
-    "clientSecret": "Segreto del client OAuth",
-    "createNew": "Crea una rete Tailscale",
     "delete": "Elimina Tailscale",
     "deleteHelp": "Eliminare questa rete? Le credenziali salvate non possono essere recuperate. Ricollega prima i tuoi host.",
     "edit": "Modifica Tailscale",
     "failed": "Impossibile salvare la modifica Tailscale.",
     "forbidden": "Non puoi gestire questa rete Tailscale. Le reti dell'organizzazione richiedono un amministratore.",
-    "guide": {
-      "accessControls": "Access controls",
-      "allPortsAndProtocols": "All ports and protocols",
-      "allUsersAndDevices": "All users and devices",
-      "destination": "Destination",
-      "oauth": "OAuth",
-      "oauthHelp": "In Trust credentials, seleziona Credential → OAuth. In Keys → Auth Keys, seleziona Write e tag:okou. Seleziona Generate credential e copia Client ID e Client secret nei campi qui sotto.",
-      "policyHelp": "Questa regola consente a tag:okou di raggiungere tutti gli utenti e dispositivi su tutte le porte e i protocolli. Aggiungila ai grants esistenti e conserva il resto della policy.",
-      "portAndProtocol": "Port and protocol",
-      "rules": "General access rules",
-      "rulesHelp": "In Access controls → Visual editor → General access rules, seleziona Add rule e usa questi valori consigliati.",
-      "source": "Source",
-      "stepsLabel": "Passaggi di configurazione di Tailscale",
-      "tags": "Tags",
-      "tagsHelp": "Usa la tailnet del dispositivo di destinazione. In Access controls → Visual editor → Tags, seleziona Create tag. Inserisci okou in Tag name e scegli Tag owners. Inserisci tag:okou nei tag di registrazione qui sotto.",
-      "title": "Come configurare Tailscale?",
-      "trustCredentials": "Trust credentials"
-    },
     "inUse": "I tuoi host SSH usano ancora questa rete. Ricollegali o eliminali prima.",
     "invalid": "Alcune impostazioni Tailscale non sono valide. Controlla i campi e riprova.",
     "loadFailed": "Impossibile caricare Tailscale.",
     "loading": "Caricamento di Tailscale…",
     "missing": "Questa rete Tailscale non è più disponibile. Selezionane un'altra o creane una.",
     "peer": "Nome host o indirizzo IP del tailnet",
-    "promoteConfirm": "Comprendo che tutti nell'organizzazione potranno usare questa rete.",
-    "promoteHelp": "Condividi la tua rete personale con l'organizzazione. Le credenziali e i collegamenti SSH restano invariati.",
     "protectedHost": "Tailscale · {{name}}",
     "rebindAction": "Ricollega host SSH",
     "rebindAvailable": "Questo host richiede una nuova rete Tailscale. Modificalo per selezionarne o crearne una.",
     "rebindHelp": "Seleziona o crea una rete Tailscale per ricollegare questo host. L'accesso SSH e la chiave host attendibile vengono conservati.",
     "replace": "Sostituisci le credenziali OAuth",
     "select": "Seleziona una rete Tailscale",
-    "summary_one": "{{count}} Tailscale impostato",
-    "summary_many": "{{count}} Tailscale impostati",
-    "summary_other": "{{count}} Tailscale impostati",
-    "tags": "Tag di registrazione",
-    "tagsHelp": "Separa i tag con virgole, ad esempio tag:okou",
     "title": "Tailscale",
     "uncertain": "Salvataggio non riuscito.",
     "vncRebind": "Ricollega questo host SSH salvato a una rete Tailscale prima di usare VNC."
@@ -6403,11 +6480,7 @@
     "add": "Aggiungi host",
     "cancel": "Annulla",
     "close": "Chiudi",
-    "configured": "Configurato",
     "connectionStatus": {
-      "attention_one": "{{count}} host VNC richiede attenzione",
-      "attention_many": "{{count}} host VNC richiedono attenzione",
-      "attention_other": "{{count}} host VNC richiedono attenzione",
       "observedAt": "Osservato {{time}}",
       "reasons": {
         "access_protocol_failure": "Il protocollo di connessione Cloudflare non è riuscito.",
@@ -6426,38 +6499,26 @@
         "timed_out": "Il tentativo di connessione è scaduto.",
         "unsafe_destination": "La destinazione è stata rifiutata dalla politica di rete.",
         "unsupported_profile": "Il server non supporta il profilo di sicurezza selezionato."
-      },
-      "unavailable": "Stato della connessione VNC non disponibile"
+      }
     },
     "credential": {
       "add": "Aggiungi credenziali",
-      "appleDhFieldHelp": "Ogni campo deve contenere da 1 a 63 byte UTF-8. NUL non è consentito.",
       "appleDhMethod": "Nome utente e password Apple DH",
       "appleRsaSrpMethod": "Nome utente e password Apple RSA/SRP",
-      "appleRsaSrpUsernameHelp": "Nome utente RSA/SRP: 1–234 byte UTF-8. NUL non è consentito.",
       "appleSrpMethod": "Nome utente e password Apple Direct SRP",
       "authentication": "Metodo di autenticazione",
       "certificateChain": "Catena di certificati client (PEM)",
       "clientKeyHelp": "Incolla 1–8 certificati e la chiave corrispondente. Entrambi vengono cifrati al salvataggio. Sostituiscili insieme durante la rotazione; la chiave non sarà più mostrata.",
-      "createNew": "Crea credenziali",
       "delete": "Elimina credenziali",
       "deleteHelp": "Eliminare queste credenziali inutilizzate? L’azione non può essere annullata.",
       "edit": "Modifica credenziali",
       "empty": "Nessuna credenziale VNC salvata.",
       "inUse": "Elimina o riassegna gli host che usano queste credenziali prima di eliminarle.",
-      "label": "Credenziali",
       "method": "Password VNC",
       "name": "Nome delle credenziali",
       "nameHint": "ad es. Accesso al desktop dell’ufficio",
       "password": "Password VNC",
-      "passwordHelp": "Le password VNC classiche usano da 1 a 8 caratteri ASCII stampabili. Gli spazi vengono mantenuti.",
-      "passwordHint": "Inserisci la password VNC del server",
       "privateKey": "Chiave privata PKCS#8 non cifrata (PEM)",
-      "qemuScramPasswordHelp": "Da 1 a 1023 caratteri ASCII stampabili; gli spazi vengono mantenuti.",
-      "qemuScramUsernameHelp": "Da 1 a 255 caratteri ASCII stampabili; senza spazi, virgole o segni di uguale.",
-      "replace": "Sostituisci autenticazione",
-      "replaceHelp": "Lascia questa opzione disattivata per mantenere l'autenticazione salvata. La sostituzione interessa tutti gli host che usano queste credenziali.",
-      "select": "Seleziona una credenziale",
       "sharedHelp_one": "Usate da {{count}} host. Le modifiche all'autenticazione interessano questo host.",
       "sharedHelp_many": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
       "sharedHelp_other": "Usate da {{count}} host. Le modifiche all'autenticazione li interessano tutti.",
@@ -6466,21 +6527,15 @@
       "summary_other": "{{count}} credenziali configurate",
       "unused": "Nessun host salvato usa queste credenziali.",
       "username": "Nome utente",
-      "usernameHelp": "Da 1 a 255 byte UTF-8. NUL non è consentito.",
       "usernameHint": "Inserisci il nome utente del server",
       "usernamePassword": "Password",
-      "usernamePasswordHelp": "Da 1 a 1023 byte UTF-8. NUL non è consentito e gli spazi vengono mantenuti.",
       "usernamePasswordHint": "Inserisci la password per questo nome utente",
       "usernamePasswordMethod": "Nome utente e password"
     },
-    "delete": "Elimina host",
     "deleteHelp": "Eliminare questo host salvato? Le credenziali riutilizzabili verranno conservate.",
     "description": "Consenti ai tuoi agenti di visualizzare e controllare i tuoi desktop remoti.",
-    "displayName": "Nome visualizzato",
-    "displayNameHint": "ad es. Desktop dell’ufficio",
     "edit": "Modifica host",
     "editHelp": "Le modifiche si applicano a questo host salvato e invalidano la sua configurazione di connessione attuale.",
-    "empty": "Aggiungi un host VNC per iniziare.",
     "errors": {
       "configurationChanged": "Questo host è cambiato da quando lo hai aperto.",
       "credentialChanged": "Queste credenziali sono cambiate da quando le hai aperte.",
@@ -6492,7 +6547,6 @@
       "invalidTrust": "Inserisci un insieme valido di massimo 8 certificati CA pubblici, non superiore a 64 KiB.",
       "revisionExhausted": "Questa configurazione non può più essere aggiornata. Creane una nuova."
     },
-    "host": "Nome host o indirizzo IP",
     "hostHint": "ad es. desktop.example.com",
     "kerberos": {
       "componentsHelp": "Inserisci un componente del principal per riga. I nomi distinguono maiuscole e minuscole.",
@@ -6518,9 +6572,6 @@
     "loading": "Caricamento della configurazione VNC…",
     "manage": "Gestisci VNC",
     "native": {
-      "configuration": "Configurazione di rete",
-      "empty": "Aggiungi una rete riutilizzabile nelle impostazioni di Cloudflare Access o Tailscale, poi torna qui per selezionarla.",
-      "gatewayHelp": "Usa il nome host dell’applicazione TCP di Cloudflare e la porta 443. Il tunnel seleziona la porta di destinazione; configura separatamente l’identità del certificato VNC e quella del servizio Kerberos.",
       "hostCount_one": "{{count}} host",
       "hostCount_many": "{{count}} host",
       "hostCount_other": "{{count}} host",
@@ -6535,16 +6586,12 @@
       "originCaBundle": "Certificati CA del TLS di origine",
       "originServerName": "Nome del server TLS di origine",
       "originTls": "TLS di origine",
-      "originTlsHelp": "Mac e le modalità RSA-AES con sola autenticazione richiedono sul server selezionato un servizio TLS con certificato verificato che inoltri esclusivamente al VNC locale. Identità e attendibilità sono indipendenti dal gateway Cloudflare e dal certificato VNC interno.",
       "originTrust": "Attendibilità del certificato TLS di origine",
-      "peerHelp": "Usa l’IP o il nome esatti del peer Tailscale e la porta del servizio consentiti dalla rete selezionata. Non sono necessari un servizio o un’autorizzazione SSH.",
       "protectionHelp": "Questa modalità di autenticazione non cifra il traffico del desktop. Il percorso di rete privata selezionato deve proteggere l’intera connessione a questo server.",
       "rfbRole": "Desktop",
       "select": "Seleziona una configurazione di rete salvata"
     },
-    "port": "Porta",
     "rsaAes": {
-      "fieldHelp": "Ogni campo richiede 1–255 byte UTF-8, senza NUL. Gli spazi sono mantenuti; non è la password VNC classica di otto byte.",
       "fullHelp": "RA2 e RA2_256 cifrano l'intera sessione RFB con EAX. Verificare indipendentemente il pin completo della chiave RSA nel formato di protocollo; la fiducia CA non lo sostituisce.",
       "importHelp": "Ottenere PUBLIC KEY o RSA PUBLIC KEY PEM tramite amministrazione affidabile del server. Non incollare chiavi private/certificati né accettare automaticamente una chiave in linea. La conversione non prova l'identità né salva: verificare il pin completo e salvare esplicitamente.",
       "importKey": "Importa chiave pubblica affidabile",
@@ -6578,7 +6625,6 @@
       "appleSrp": "VNC Mac (Apple Direct SRP)",
       "appleSrpHelp": "Richiede una connessione SSH salvata al Mac e 127.0.0.1 o ::1 come destinazione RFB. SRP verifica l’account e la prova del server; SSH protegge l’intera sessione VNC. La chiave host SSH identifica l’endpoint scelto, ma non esclude un proxy successivo.",
       "appleVncPassword": "VNC Mac (password VNC classica)",
-      "appleVncPasswordHelp": "La password VNC opzionale del Mac usa 1–8 byte ASCII stampabili. Il solo tipo 2 non verifica l’identità del server né cifra il desktop. SSH verificato protegge questa sessione Okou, non la porta del Mac: altri client potrebbero raggiungere la porta 5900 secondo la rete. Attiva l’opzione sul Mac solo se accetti il rischio.",
       "appleVncSecurityHelp": "Il solo tipo 2 non verifica l’identità del server né cifra il desktop. SSH verificato protegge questa sessione Okou, non la porta del Mac: altri client potrebbero raggiungere la porta 5900 secondo la rete. Attiva l’opzione sul Mac solo se accetti il rischio.",
       "caBundle": "Certificati CA (PEM)",
       "caHelp": "Fino a 8 certificati CA, per un totale di 64 KiB. Non incollare una chiave privata né un certificato del server.",
@@ -6587,11 +6633,9 @@
       "clientCertificateNone": "Certificato client senza password VNC (X509None)",
       "clientCertificateVnc": "Certificato client con password VNC (X509Vnc)",
       "custom": "Autorità di certificazione personalizzate",
-      "profileLabel": "Profilo di sicurezza",
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "Solo sottotipo QEMU 263. TLS verifica il server prima di SCRAM; nessun fallback a PLAIN o al sottotipo 264.",
       "serverName": "Identità del certificato TLS",
-      "serverNameHelp": "Cloudflare Access richiede l’identità del certificato del server RFB. Per le altre route, puoi lasciare vuoto questo campo per verificare rispetto all’host di destinazione RFB.",
       "serverNameHint": "es. desktop.internal.example.com",
       "system": "Autorità di certificazione del sistema",
       "title": "Attendibilità del certificato del server",
@@ -6602,18 +6646,12 @@
       "x509Vnc": "VNC crittografato (X509Vnc)",
       "x509VncHelp": "Richiede VeNCrypt X509Vnc. TLS verifica il server prima di inviare la password VNC."
     },
-    "summary_one": "{{count}} host configurato",
-    "summary_many": "{{count}} host configurati",
-    "summary_other": "{{count}} host configurati",
     "transport": {
       "appleDhDestinationHelp": "Per Apple DH, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
       "appleRsaSrpDestinationHelp": "Per Apple RSA/SRP, inserisci 127.0.0.1 o ::1 sul Mac tramite l’host SSH selezionato.",
       "appleSrpDestinationHelp": "Per Apple Direct SRP, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
       "appleVncPasswordDestinationHelp": "Per la password VNC classica, inserisci 127.0.0.1 o ::1 sul Mac raggiunto tramite SSH salvato.",
-      "destination": "Destinazione RFB",
-      "destinationHelp": "Per i percorsi SSH, questo host e questa porta vengono raggiunti dal server SSH selezionato, non direttamente dal Runner.",
       "direct": "Diretto dal Runner",
-      "empty": "Non sono disponibili host SSH salvati. Aggiungine uno nelle impostazioni SSH prima di usare questo percorso.",
       "loadFailed": "Impossibile caricare gli host SSH salvati.",
       "loading": "Caricamento degli host SSH salvati…",
       "privateDirectHelp": "Gli indirizzi IP privati richiedono un percorso di rete privata supportato o un host SSH salvato. Scegli esplicitamente il percorso.",
@@ -6621,10 +6659,7 @@
       "selectionUnavailable": "L’host SSH selezionato non è più disponibile. Selezionane un altro o passa esplicitamente a Diretto.",
       "ssh": "Tramite host SSH salvato",
       "sshConnection": "Host SSH",
-      "sshHelp": "SSH protegge il tratto dal Runner al server SSH. Il server deve poter raggiungere la destinazione RFB. Una chat può usare questo percorso solo se anche quell’host SSH è abilitato nella chat.",
       "sshNeedsRebind": "L’host SSH di questa connessione VNC deve essere ricollegato a Cloudflare Access. Ricollegalo nelle impostazioni SSH o scegli esplicitamente Diretto lì prima di connetterti.",
-      "sshNeedsRebindStatus": "SSH da ricollegare",
-      "title": "Percorso di connessione",
       "unavailable": "Le impostazioni SSH non sono disponibili per questo account.",
       "via": "Host SSH:"
     },
@@ -7314,9 +7349,7 @@
       "uninstallTitle": "Disinstallare l'integrazione Slack?"
     },
     "teams": {
-      "adminInstall": "Chiedi al tuo amministratore di installare l'integrazione di Microsoft Teams",
       "connectAccount": "Collega il tuo account Microsoft per completare la configurazione",
-      "connectThenInstall": "Collega il tuo account Microsoft, quindi installa l'app Teams",
       "description": "Comunicazione e collaborazione del team",
       "disconnect": "Disconnetti Microsoft Teams",
       "install": "Installa in Teams",
@@ -7324,7 +7357,7 @@
       "permissionsUpdated": "Le autorizzazioni di Microsoft Teams sono state aggiornate",
       "title": "Microsoft Teams",
       "uninstall": "Disinstallare Microsoft Teams",
-      "uninstallDescription": "Questa operazione rimuove l'integrazione di Microsoft Teams da {{brandName}} per la tua area di lavoro. Tutti gli utenti connessi verranno disconnessi e {{displayName}} non risponderà più ai messaggi di Teams per questa area di lavoro finché un amministratore non la riconnetterà.",
+      "uninstallDescription": "Questa azione rimuove l’integrazione Microsoft Teams per {{displayName}} dal tuo spazio di lavoro {{brandName}}. Gli account Teams connessi vengono mantenuti.",
       "uninstallTitle": "Disinstallare l'integrazione di Microsoft Teams?"
     },
     "telegram": {

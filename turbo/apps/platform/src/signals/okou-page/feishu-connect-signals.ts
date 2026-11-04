@@ -1,7 +1,5 @@
-import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
-import { feishuPlatform$ } from "./feishu.ts";
 import { command, computed } from "ccstate";
-import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
+import { feishuBrowserConnectContract } from "@okouai/api-contracts/client/feishu-browser-connect";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -49,12 +47,14 @@ const feishuConnectParams$ = computed((get): FeishuConnectParams | null => {
 });
 
 export const connectFeishuAccount$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<"invalid_link" | "redirecting"> => {
+    signal.throwIfAborted();
     const params = get(feishuConnectParams$);
     if (!params) {
-      throw new Error(
-        `Invalid ${FEISHU_PLATFORMS[get(feishuPlatform$)].name} connect link`,
-      );
+      return "invalid_link";
     }
 
     const client = get(apiClient$)(feishuBrowserConnectContract);
@@ -63,10 +63,19 @@ export const connectFeishuAccount$ = command(
         body: params,
         fetchOptions: { signal },
       }),
-      [200],
+      [200, 400],
+      signal,
     );
     signal.throwIfAborted();
 
+    if (result.status === 400) {
+      if (result.body.error.code === "FEISHU_CONNECT_LINK_INVALID") {
+        return "invalid_link";
+      }
+      return await accept(Promise.resolve(result), [200], signal);
+    }
+
     window.location.assign(result.body.openUrl);
+    return "redirecting";
   },
 );

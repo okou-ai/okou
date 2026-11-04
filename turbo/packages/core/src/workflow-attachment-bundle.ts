@@ -42,7 +42,7 @@ export function workflowAttachmentHash(bytes: Uint8Array | string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function validatedFiles(
+export function normalizeWorkflowAttachmentFiles(
   files: readonly WorkflowAttachmentFile[],
 ): readonly WorkflowAttachmentFile[] {
   const seen = new Map<string, WorkflowAttachmentFile>();
@@ -85,7 +85,7 @@ function validatedFiles(
 export function workflowAttachmentMetadata(
   input: readonly WorkflowAttachmentFile[],
 ) {
-  return validatedFiles(input).map((file) => {
+  return normalizeWorkflowAttachmentFiles(input).map((file) => {
     return {
       path: file.path,
       size: file.content.length,
@@ -103,7 +103,7 @@ export async function prepareWorkflowAttachmentBundle(
   readonly descriptor: WorkflowAttachments;
   readonly archive: Buffer | null;
 }> {
-  const files = validatedFiles(input);
+  const files = normalizeWorkflowAttachmentFiles(input);
   if (files.length === 0)
     return { descriptor: { kind: "empty" }, archive: null };
   if (
@@ -234,5 +234,5 @@ function readArchiveFiles(
     throw new Error("Legacy Workflow archive is missing SKILL.md");
   if (!legacy && paths.has("SKILL.md"))
     throw new Error("Attachment-only archive contains SKILL.md");
-  return validatedFiles(files);
+  return normalizeWorkflowAttachmentFiles(files);
 }

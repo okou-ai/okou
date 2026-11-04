@@ -33,6 +33,14 @@ inputs:
     description: "Backend API URL; required for API deployments, optional for web proxy routes"
     required: false
     default: ""
+  browser-extension-release-created:
+    description: "Whether this release published a Browser extension"
+    required: false
+    default: "false"
+  browser-extension-id:
+    description: "Verified extension ID from this release's publication"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -48,6 +56,8 @@ runs:
         INPUT_WEB_URL: ${{ inputs.web-url }}
         INPUT_APP_URL: ${{ inputs.app-url }}
         INPUT_API_BACKEND_URL: ${{ inputs.api-backend-url }}
+        INPUT_BROWSER_EXTENSION_RELEASE_CREATED: ${{ inputs.browser-extension-release-created }}
+        INPUT_BROWSER_EXTENSION_ID: ${{ inputs.browser-extension-id }}
       run: |
         set -euo pipefail
         set +x
@@ -140,6 +150,10 @@ runs:
           add_env "$1" "$(repo_var "$2")"
         }
 
+        add_doppler_config() {
+          add_env "$1" "$(doppler_secret "$1")"
+        }
+
         add_secret() {
           add_env "$1" "$(repo_secret "$2")"
         }
@@ -171,12 +185,6 @@ runs:
           add_oauth_client_config_key "${prefix}_OAUTH_CLIENT_SECRET"
         }
 
-        github_app_slug="$(repo_var OKOU_GITHUB_APP_SLUG)"
-        github_app_id="$(repo_var OKOU_GITHUB_APP_ID)"
-        github_app_client_id="$(repo_var OKOU_GITHUB_APP_CLIENT_ID)"
-        github_app_client_secret="$(repo_secret OKOU_GITHUB_APP_CLIENT_SECRET)"
-        github_app_webhook_secret="$(repo_secret OKOU_GITHUB_APP_WEBHOOK_SECRET)"
-        github_app_private_key="$(repo_secret OKOU_GITHUB_APP_PRIVATE_KEY)"
         machine_secret_key="$(repo_secret OKOU_MACHINE_SECRET_KEY)"
         api_backend_url="$INPUT_API_BACKEND_URL"
         : > "$env_file"
@@ -192,8 +200,11 @@ runs:
           deploy_env="production"
           runner_default_group="vm0/production"
           concurrent_run_limit_cap="10"
-          slack_redirect_base_url="$(repo_var SLACK_REDIRECT_BASE_URL)"
           strapi_url="$(repo_var STRAPI_URL)"
+          marketing_handoff_bucket="$(repo_var R2_MARKETING_HANDOFF_BUCKET_NAME)"
+          marketing_handoff_access_key_id="$(repo_secret R2_MARKETING_HANDOFF_ACCESS_KEY_ID)"
+          marketing_handoff_secret_access_key="$(repo_secret R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY)"
+          marketing_handoff_publish_token="$(repo_secret MARKETING_HANDOFF_PUBLISH_TOKEN)"
           private_artifacts_bucket="user-artifact-private-prod"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID)"
           private_artifacts_secret_access_key="$(repo_secret R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY)"
@@ -210,8 +221,11 @@ runs:
           deploy_env="preview"
           runner_default_group="vm0/development-${INPUT_JOB_REF}"
           concurrent_run_limit_cap="0"
-          slack_redirect_base_url="$INPUT_WEB_URL"
           strapi_url=""
+          marketing_handoff_bucket="$(repo_var R2_MARKETING_HANDOFF_BUCKET_NAME_DEV)"
+          marketing_handoff_access_key_id="$(repo_secret R2_MARKETING_HANDOFF_ACCESS_KEY_ID_DEV)"
+          marketing_handoff_secret_access_key="$(repo_secret R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY_DEV)"
+          marketing_handoff_publish_token="$(repo_secret MARKETING_HANDOFF_PUBLISH_TOKEN_DEV)"
           private_artifacts_bucket="user-artifact-private-dev"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV)"
           private_artifacts_secret_access_key="$(repo_secret R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV)"
@@ -265,6 +279,10 @@ runs:
         add_secret R2_ACCESS_KEY_ID R2_ACCESS_KEY_ID
         add_secret R2_SECRET_ACCESS_KEY R2_SECRET_ACCESS_KEY
         add_var R2_USER_STORAGES_BUCKET_NAME R2_USER_STORAGES_BUCKET_NAME
+        add_env R2_MARKETING_HANDOFF_BUCKET_NAME "$marketing_handoff_bucket"
+        add_env R2_MARKETING_HANDOFF_ACCESS_KEY_ID "$marketing_handoff_access_key_id"
+        add_env R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY "$marketing_handoff_secret_access_key"
+        add_env MARKETING_HANDOFF_PUBLISH_TOKEN "$marketing_handoff_publish_token"
         add_env R2_PRIVATE_ARTIFACTS_BUCKET_NAME "$private_artifacts_bucket"
         add_env R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "$private_artifacts_access_key_id"
         add_env R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "$private_artifacts_secret_access_key"
@@ -316,32 +334,31 @@ runs:
         if [[ "$INPUT_ENVIRONMENT" == "preview" ]]; then
           add_env OKOU_DEBUG "*"
         fi
-        add_secret SLACK_SIGNING_SECRET SLACK_SIGNING_SECRET
-        add_secret TELEGRAM_OFFICIAL_BOT_TOKEN TELEGRAM_OFFICIAL_BOT_TOKEN
-        add_var TELEGRAM_OFFICIAL_BOT_USERNAME TELEGRAM_OFFICIAL_BOT_USERNAME
-        add_secret TELEGRAM_OFFICIAL_WEBHOOK_SECRET TELEGRAM_OFFICIAL_WEBHOOK_SECRET
+        add_doppler_config SLACK_SIGNING_SECRET
+        add_doppler_config TELEGRAM_OFFICIAL_BOT_TOKEN
+        add_doppler_config TELEGRAM_OFFICIAL_BOT_USERNAME
+        add_doppler_config TELEGRAM_OFFICIAL_WEBHOOK_SECRET
         if [[ "$INPUT_APP" == "api" ]]; then
           if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
             add_secret APNS_PRIVATE_KEY_BASE64 APNS_PRIVATE_KEY_BASE64
             add_var APNS_KEY_ID APNS_KEY_ID
             add_var APNS_TEAM_ID APNS_TEAM_ID
           fi
-          add_var LINK_APPROVAL_WORKER_URL LINK_APPROVAL_WORKER_URL
-          add_secret LINK_APPROVAL_WORKER_SECRET LINK_APPROVAL_WORKER_SECRET
-          add_secret LINK_APPROVAL_CONTROL_SECRET LINK_APPROVAL_CONTROL_SECRET
-          add_var WECHAT_GATEWAY_URL WECHAT_GATEWAY_URL
-          add_secret WECHAT_GATEWAY_SECRET WECHAT_GATEWAY_SECRET
-          add_secret WECHAT_GATEWAY_CONTROL_SECRET WECHAT_GATEWAY_CONTROL_SECRET
-          add_var DISCORD_APPLICATION_ID DISCORD_APPLICATION_ID
-          add_var DISCORD_PUBLIC_KEY DISCORD_PUBLIC_KEY
-          add_secret DISCORD_BOT_TOKEN DISCORD_BOT_TOKEN
-          add_secret DISCORD_GATEWAY_SECRET DISCORD_GATEWAY_SECRET
+          add_doppler_config LINK_APPROVAL_WORKER_URL
+          add_doppler_config LINK_APPROVAL_WORKER_SECRET
+          add_doppler_config LINK_APPROVAL_CONTROL_SECRET
+          add_doppler_config WECHAT_GATEWAY_URL
+          add_doppler_config WECHAT_GATEWAY_SECRET
+          add_doppler_config WECHAT_GATEWAY_CONTROL_SECRET
+          add_doppler_config DISCORD_APPLICATION_ID
+          add_doppler_config DISCORD_PUBLIC_KEY
+          add_doppler_config DISCORD_BOT_TOKEN
+          add_doppler_config DISCORD_GATEWAY_SECRET
           add_env DISCORD_OAUTH_CLIENT_SECRET "$(doppler_secret DISCORD_OAUTH_CLIENT_SECRET)"
-          add_var MICROSOFT_TEAMS_BOT_APP_ID MICROSOFT_TEAMS_BOT_APP_ID
-          add_secret MICROSOFT_TEAMS_BOT_APP_PASSWORD MICROSOFT_TEAMS_BOT_APP_PASSWORD
-          add_var MICROSOFT_TEAMS_APP_TENANT_ID MICROSOFT_TEAMS_APP_TENANT_ID
+          add_doppler_config MICROSOFT_TEAMS_BOT_APP_ID
+          add_doppler_config MICROSOFT_TEAMS_BOT_APP_PASSWORD
+          add_doppler_config MICROSOFT_TEAMS_APP_TENANT_ID
         fi
-        add_env SLACK_REDIRECT_BASE_URL "$slack_redirect_base_url"
         if [[ "$INPUT_APP" == "web" && "$INPUT_ENVIRONMENT" == "production" ]]; then
           add_var POSTHOG_KEY POSTHOG_KEY
           add_var POSTHOG_HOST POSTHOG_HOST
@@ -389,6 +406,7 @@ runs:
           COPPER
           META_ADS
           TIKTOK_ADS
+          TIKTOK
           AHREFS
           AIRTABLE
           CALENDLY
@@ -408,30 +426,34 @@ runs:
           add_oauth_client_config "$prefix"
         done
 
-        add_secret GOOGLE_ADS_DEVELOPER_TOKEN GOOGLE_ADS_DEVELOPER_TOKEN
-        add_secret GOOGLE_ADS_LOGIN_CUSTOMER_ID GOOGLE_ADS_LOGIN_CUSTOMER_ID
+        add_doppler_config GOOGLE_ADS_DEVELOPER_TOKEN
         if [[ "$INPUT_APP" == "api" ]]; then
           # Data Router credentials are configured per deployment.
           add_secret OKOU_DATA_ROUTER_URL OKOU_DATA_ROUTER_URL
           add_secret OKOU_DATA_TOKEN OKOU_DATA_TOKEN
           add_secret OKOU_BROWSER_USE_API_KEY OKOU_BROWSER_USE_API_KEY
-          add_var OKOU_BROWSER_USE_EXTENSION_IDS OKOU_BROWSER_USE_EXTENSION_IDS
+          browser_extension_id="$(
+            BROWSER_EXTENSION_RELEASE_CREATED="$INPUT_BROWSER_EXTENSION_RELEASE_CREATED" \
+            BROWSER_EXTENSION_ID="$INPUT_BROWSER_EXTENSION_ID" \
+            OKOU_BROWSER_USE_API_KEY="$(repo_secret OKOU_BROWSER_USE_API_KEY)" \
+              node .github/scripts/release/resolve-browser-extension.mjs
+          )"
+          add_env OKOU_BROWSER_USE_EXTENSION_ID "$browser_extension_id"
           # Optional while the default-off hosted-consent pilot is unconfigured.
           add_env LINK_OAUTH_CLIENT_ID "$(doppler_secret LINK_OAUTH_CLIENT_ID)"
           add_env LINK_OAUTH_CLIENT_SECRET "$(doppler_secret LINK_OAUTH_CLIENT_SECRET)"
           add_env LINK_STRIPE_PUBLISHABLE_KEY "$(doppler_secret LINK_STRIPE_PUBLISHABLE_KEY)"
         fi
-        add_secret STEAM_WEB_API_KEY STEAM_WEB_API_KEY
-        add_secret FINICITY_APP_KEY FINICITY_APP_KEY
-        add_secret FINICITY_APP_SECRET FINICITY_APP_SECRET
-        add_var FINICITY_PARTNER_ID FINICITY_PARTNER_ID
-        add_var VERCEL_INTEGRATION_SLUG VERCEL_INTEGRATION_SLUG
-        add_var MERCURY_OAUTH_ENVIRONMENT MERCURY_OAUTH_ENVIRONMENT
-        add_var MONDAY_OAUTH_APP_ID MONDAY_OAUTH_APP_ID
+        add_doppler_config STEAM_WEB_API_KEY
+        add_doppler_config FINICITY_APP_KEY
+        add_doppler_config FINICITY_APP_SECRET
+        add_doppler_config FINICITY_PARTNER_ID
+        add_doppler_config VERCEL_INTEGRATION_SLUG
+        add_doppler_config MERCURY_OAUTH_ENVIRONMENT
         add_secret STRIPE_SECRET_KEY STRIPE_SECRET_KEY
         add_var STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID
         add_secret STRIPE_WEBHOOK_SECRET STRIPE_WEBHOOK_SECRET
-        add_secret STRIPE_AUTOMATION_WEBHOOK_SECRET STRIPE_AUTOMATION_WEBHOOK_SECRET
+        add_doppler_config STRIPE_AUTOMATION_WEBHOOK_SECRET
         add_secret CLERK_WEBHOOK_SIGNING_SECRET CLERK_WEBHOOK_SIGNING_SECRET
         okou_price_var_suffixes=(
           PRICE_PRO
@@ -452,34 +474,34 @@ runs:
           add_var "OKOU_${suffix}" "OKOU_${suffix}"
         done
         add_var ATOM_GRANT_PRICE ATOM_GRANT_PRICE
-        add_secret AGENTPHONE_API_KEY AGENTPHONE_API_KEY
-        add_var AGENTPHONE_API_BASE_URL AGENTPHONE_API_BASE_URL
-        add_var AGENTPHONE_AGENT_ID AGENTPHONE_AGENT_ID
-        add_var AGENTPHONE_PHONE_NUMBER AGENTPHONE_PHONE_NUMBER
-        add_secret AGENTPHONE_WEBHOOK_SECRET AGENTPHONE_WEBHOOK_SECRET
+        add_doppler_config AGENTPHONE_API_KEY
+        add_doppler_config AGENTPHONE_API_BASE_URL
+        add_doppler_config AGENTPHONE_AGENT_ID
+        add_doppler_config AGENTPHONE_PHONE_NUMBER
+        add_doppler_config AGENTPHONE_WEBHOOK_SECRET
         if [[ "$INPUT_APP" == "api" ]]; then
           # Empty or unset disables WhatsApp country filtering.
           add_var WHATSAPP_ALLOWED_COUNTRY_PREFIXES WHATSAPP_ALLOWED_COUNTRY_PREFIXES
         fi
         add_env APP_URL "$app_url"
-        add_secret RESEND_API_KEY RESEND_API_KEY
-        add_secret RESEND_WEBHOOK_SECRET RESEND_WEBHOOK_SECRET
-        add_var RESEND_FROM_DOMAIN RESEND_FROM_DOMAIN
-        add_var GMAIL_PUBSUB_TOPIC_NAME GMAIL_PUBSUB_TOPIC_NAME
-        add_var GMAIL_PUBSUB_PUSH_AUDIENCE GMAIL_PUBSUB_PUSH_AUDIENCE
-        add_var GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
-        add_var GOOGLE_FORMS_PUBSUB_TOPIC_NAME GOOGLE_FORMS_PUBSUB_TOPIC_NAME
-        add_var GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE
-        add_var GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
-        add_var GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME
-        add_var GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE
-        add_var GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
-        add_env GITHUB_APP_SLUG "$github_app_slug"
-        add_env GITHUB_APP_ID "$github_app_id"
-        add_env GITHUB_APP_CLIENT_ID "$github_app_client_id"
-        add_env GITHUB_APP_CLIENT_SECRET "$github_app_client_secret"
-        add_env GITHUB_APP_WEBHOOK_SECRET "$github_app_webhook_secret"
-        add_env GITHUB_APP_PRIVATE_KEY "$github_app_private_key"
+        add_doppler_config RESEND_API_KEY
+        add_doppler_config RESEND_WEBHOOK_SECRET
+        add_doppler_config RESEND_FROM_DOMAIN
+        add_doppler_config GMAIL_PUBSUB_TOPIC_NAME
+        add_doppler_config GMAIL_PUBSUB_PUSH_AUDIENCE
+        add_doppler_config GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
+        add_doppler_config GOOGLE_FORMS_PUBSUB_TOPIC_NAME
+        add_doppler_config GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE
+        add_doppler_config GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
+        add_doppler_config GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME
+        add_doppler_config GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE
+        add_doppler_config GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
+        add_doppler_config GITHUB_APP_SLUG
+        add_doppler_config GITHUB_APP_ID
+        add_doppler_config GITHUB_APP_CLIENT_ID
+        add_doppler_config GITHUB_APP_CLIENT_SECRET
+        add_doppler_config GITHUB_APP_WEBHOOK_SECRET
+        add_doppler_config GITHUB_APP_PRIVATE_KEY
         add_secret VERCEL_AUTOMATION_BYPASS_SECRET VERCEL_AUTOMATION_BYPASS_SECRET
 
         echo "file=$env_file" >> "$GITHUB_OUTPUT"

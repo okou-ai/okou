@@ -6,6 +6,7 @@ struct ChatSidebarView: View {
   let authentication: AuthenticationService
   let workspaceID: String
   let notifications: NotificationService
+  let sidebar: SidebarInteraction
   let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
@@ -57,25 +58,16 @@ struct ChatSidebarView: View {
   var body: some View {
     List {
       pinnedAgentsSection
-      if let error = store.list.navigationError {
-        Text(error)
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-      }
-      if let error = store.list.error ?? store.error {
-        VStack(alignment: .leading, spacing: 8) {
-          Text(error).font(.footnote).foregroundStyle(.secondary)
-          Button("Try again") { Task { await store.refresh() } }
-            .font(.footnote.weight(.semibold))
-        }
-      }
       if store.list.isLoading && !store.list.hasLoadedThreads {
         ProgressView("Loading chats…")
           .frame(maxWidth: .infinity)
+      } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
+        Text("Your chats could not be loaded. Try updating again.")
+          .font(.footnote).foregroundStyle(.secondary)
       } else {
         threadSection
         if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
-          Text("Your conversations will appear here.")
+          Text("Your chats will appear here.")
             .font(.subheadline)
             .foregroundStyle(.secondary)
         }
@@ -90,8 +82,9 @@ struct ChatSidebarView: View {
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectHidden(true, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
-      header
-        .padding(.horizontal, 16)
+      VStack(spacing: 0) {
+        header.padding(.horizontal, 16)
+      }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
@@ -113,7 +106,7 @@ struct ChatSidebarView: View {
         .buttonStyle(.glass)
         .accessibilityIdentifier("search-chats")
     }
-    .frame(height: headerHeight)
+    .frame(minHeight: headerHeight)
   }
 
   private var workspaceSwitcher: some View {
@@ -362,30 +355,11 @@ struct ChatSidebarView: View {
       .accessibilityLabel("New chat")
       .accessibilityIdentifier("new-chat")
       Spacer()
-      Menu {
-        Link("Open Okou on web", destination: store.webURL)
-        Button(
-          notifications.status == .authorized ? "Notifications enabled" : "Enable notifications",
-          systemImage: "bell"
-        ) {
-          Task { await notifications.enable() }
-        }
-        Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-          Task {
-            do {
-              try await notifications.signOut(authentication: authentication)
-            } catch {
-              accountError = error.localizedDescription
-            }
-          }
-        }
-      } label: {
-        Image(systemName: "gearshape")
-          .font(.system(size: 21))
-          .frame(width: 32, height: 32)
-      }
-      .buttonStyle(.glass)
-      .accessibilityLabel("Account")
+      ChatSidebarAccountButton(
+        sidebar: sidebar, authentication: authentication, notifications: notifications,
+        webURL: store.webURL, accountError: $accountError
+      )
+      .frame(width: 48, height: 48)
     }
     .buttonStyle(.plain)
     .frame(height: ChatComposerView.compactHeight)

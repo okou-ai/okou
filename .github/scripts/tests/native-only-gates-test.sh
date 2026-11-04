@@ -25,7 +25,7 @@ for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
         'the required CodeQL job must initialize and execute its scanner'
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
-           'test-other']
+           'test-other', 'test-browser-extension']
 artifacts = ['deploy-app']
 
 def context(ios=True, ts=False, event='pull_request', release=False):
@@ -92,8 +92,9 @@ for result in ['failure', 'cancelled', 'skipped']:
     # Release classification cannot turn a rejected admission into a pass.
     gate(turbo, 'ci-gate-turbo', blocked | {'needs.detect-release.outputs.skip': 'true'}, False)
 
-for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
+for job in ts_jobs + artifacts:
     assert not condition(turbo[job], native), job
+assert condition(turbo['lint-runtime-api-compat'], native)
 for job in ['bench-app']:
     assert not condition(benchmark[job], native), job
     assert condition(benchmark[job], context(ios=False, ts=True)), job
@@ -122,7 +123,7 @@ for job in artifacts:
         broken['needs.detect-turbo-ts-checks.result'] = result
         assert not condition(turbo[job], broken), (job, result)
 
-for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
+for job in ts_jobs + artifacts:
     native[f'needs.{job}.result'] = 'skipped'
 gate(turbo, 'ci-gate-turbo', native, True)
 for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
@@ -132,11 +133,12 @@ for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
 assert 'lint-runtime-api-compat' in turbo['ci-gate-turbo']['needs']
 assert 'continue-on-error' not in turbo['lint-runtime-api-compat']
 for event in ['pull_request', 'merge_group']:
-    selected = context(ios=False, ts=True, event=event)
-    assert condition(turbo['lint-runtime-api-compat'], selected)
-    gate(turbo, 'ci-gate-turbo', selected, True)
-    for result in ['failure', 'cancelled', 'skipped']:
-        gate(turbo, 'ci-gate-turbo', selected | {'needs.lint-runtime-api-compat.result': result}, False)
+    for ios in [False, True]:
+        selected = context(ios=ios, ts=not ios, event=event)
+        assert condition(turbo['lint-runtime-api-compat'], selected)
+        gate(turbo, 'ci-gate-turbo', selected, True)
+        for result in ['failure', 'cancelled', 'skipped']:
+            gate(turbo, 'ci-gate-turbo', selected | {'needs.lint-runtime-api-compat.result': result}, False)
 for failure in ['failure', 'cancelled', 'skipped']:
     gate(turbo, 'ci-gate-turbo', native | {'needs.detect-turbo-ts-checks.result': failure}, False)
 for ios in ['false', '']:

@@ -51,6 +51,11 @@ export const agentphoneMessages = pgTable(
     isBot: boolean("is_bot").default(false).notNull(),
     receivedAt: timestamp("received_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // Capture recipients independently of whether they have connected Okou yet.
+    participantHandles: text("participant_handles")
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
   },
   (table) => {
     return [
@@ -74,6 +79,10 @@ export const agentphoneMessages = pgTable(
         table.createdAt,
       ),
       index("idx_agentphone_messages_user_link").on(table.agentphoneUserLinkId),
+      index("idx_agentphone_messages_participants").using(
+        "gin",
+        table.participantHandles,
+      ),
       check(
         "chk_agentphone_messages_group_received_at",
         sql`${table.groupId} IS NULL OR ${table.receivedAt} IS NOT NULL`,

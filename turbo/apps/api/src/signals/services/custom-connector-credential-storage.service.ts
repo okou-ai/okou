@@ -1,7 +1,7 @@
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { boolean, literal, object, string } from "zod";
+import { boolean, literal, object, uuid } from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -354,7 +354,7 @@ export const customConnectorAccountDeletionRow = object({
   definition_current: boolean(),
   deleted_count: pgInt8ToSafeIntegerSchema,
   resolved_selection_count: pgInt8ToSafeIntegerSchema,
-  promoted_default_connection_id: string().uuid().nullable(),
+  promoted_default_connection_id: uuid().nullable(),
   promotion_guard: literal(1),
   cleanup_complete: pgInt8ToSafeIntegerSchema,
 });
@@ -401,6 +401,7 @@ function accountDeletionStatements(
         accountOwner(args),
         ne(connectors.id, args.memberConnectorId),
         exists(sql`(SELECT 1 FROM deleted_account WHERE is_default)`),
+        eq(connectors.defaultEnabledForChats, true),
       ),
     )
     .orderBy(asc(connectors.createdAt), asc(connectors.id))

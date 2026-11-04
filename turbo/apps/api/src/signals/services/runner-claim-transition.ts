@@ -2,8 +2,21 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { and, eq, exists, isNull, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
+import {
+  contentBundleSchema,
+  type ContentBundle,
+} from "@okouai/api-contracts/contracts/content-bundle";
 import {
   array as zArray,
   number,
@@ -13,6 +26,8 @@ import {
 } from "zod";
 
 import { runnerJobQueueExpiredCondition } from "./runner-job-queue-lifecycle.service";
+import { agentInstructionsClaimSelectionSql } from "./agent-instructions-claim.service";
+import { contentBundleAvailableCondition } from "./content-bundle-claim";
 import {
   claimedWorkflowSchema,
   workflowClaimSelectionSql,
@@ -25,8 +40,11 @@ export type ClaimTransitionResult =
       readonly status: "claimed";
       readonly claimedAt: Date;
       readonly workflows: readonly ClaimedWorkflow[];
+      readonly instructionsBundle: ContentBundle | null;
     }
   | { readonly status: "workflow-unavailable" }
+  | { readonly status: "agent-unavailable" }
+  | { readonly status: "bundle-unavailable" }
   | { readonly status: "job-not-found" }
   | { readonly status: "run-not-found" };
 
@@ -37,9 +55,12 @@ export const claimTransitionSqlRowSchema = object({
     "run-not-found",
     "invariant-error",
     "workflow-unavailable",
+    "agent-unavailable",
+    "bundle-unavailable",
   ]),
   claimedAtMs: number().nullable(),
   workflows: zArray(claimedWorkflowSchema),
+  instructionsBundle: contentBundleSchema.nullable(),
 });
 
 export function decodeClaimTransitionResult(
@@ -57,6 +78,7 @@ export function decodeClaimTransitionResult(
       status: "claimed",
       claimedAt: new Date(row.claimedAtMs),
       workflows: row.workflows,
+      instructionsBundle: row.instructionsBundle,
     };
   }
   return { status: row.status };
@@ -104,6 +126,35 @@ function buildClaimThreadStartSql(): SQL {
              started_thread AS (${threadStart})`;
 }
 
+function buildClaimAdmissionSql(workflowInput: WorkflowClaimInput): SQL {
+  return sql`${agentInstructionsClaimSelectionSql()},
+    ${workflowClaimSelectionSql(workflowInput)},
+    bundle_admission AS MATERIALIZED (
+      SELECT locked_run."id"
+      FROM locked_run, workflow_selection
+      WHERE workflow_selection."bundlesAvailable" AND (
+        locked_run."agentId" IS NULL OR EXISTS (
+          SELECT 1 FROM selected_agent
+          WHERE ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)}
+        )
+      )
+    ), claim_clock AS MATERIALIZED (
+      SELECT
+        date_trunc(
+          'milliseconds',
+          clock_timestamp() AT TIME ZONE 'UTC'
+        ) AS "claimedAt"
+      FROM locked_run
+      INNER JOIN locked_job
+        ON locked_job."runId" = locked_run."id"
+      WHERE
+        locked_run."status" = 'pending'
+        AND NOT locked_job."isExpired"
+        AND EXISTS (SELECT 1 FROM workflow_admission)
+        AND EXISTS (SELECT 1 FROM bundle_admission)
+    )`;
+}
+
 export function buildClaimTransitionSql(
   runId: string,
   runner: {
@@ -139,21 +190,7 @@ export function buildClaimTransitionSql(
               ON locked_run."id" = ${runnerJobQueue.runId}
             FOR UPDATE OF ${runnerJobQueue}
           ),
-          ${workflowClaimSelectionSql(workflowInput)},
-          claim_clock AS MATERIALIZED (
-            SELECT
-              date_trunc(
-                'milliseconds',
-                clock_timestamp() AT TIME ZONE 'UTC'
-              ) AS "claimedAt"
-            FROM locked_run
-            INNER JOIN locked_job
-              ON locked_job."runId" = locked_run."id"
-            WHERE
-              locked_run."status" = 'pending'
-              AND NOT locked_job."isExpired"
-              AND EXISTS (SELECT 1 FROM workflow_admission)
-          ),
+          ${buildClaimAdmissionSql(workflowInput)},
           ${buildClaimThreadStartSql()},
           updated_run AS (
             UPDATE ${agentRuns}
@@ -217,8 +254,14 @@ export function buildClaimTransitionSql(
               WHEN EXISTS (SELECT 1 FROM updated_run)
                 AND EXISTS (SELECT 1 FROM deleted_job)
                 THEN 'claimed'
+              WHEN EXISTS (
+                SELECT 1 FROM locked_run WHERE ${isNotNull(sql`locked_run."agentId"`)}
+              ) AND NOT EXISTS (SELECT 1 FROM selected_agent)
+                THEN 'agent-unavailable'
               WHEN NOT EXISTS (SELECT 1 FROM workflow_admission)
                 THEN 'workflow-unavailable'
+              WHEN NOT EXISTS (SELECT 1 FROM bundle_admission)
+                THEN 'bundle-unavailable'
               ELSE 'invariant-error'
             END AS "status",
             (
@@ -228,6 +271,7 @@ export function buildClaimTransitionSql(
                 )::double precision
               FROM updated_run
             ) AS "claimedAtMs",
-            CASE WHEN EXISTS (SELECT 1 FROM updated_run) THEN (SELECT documents FROM workflow_selection) ELSE '[]'::jsonb END AS workflows
+            CASE WHEN EXISTS (SELECT 1 FROM updated_run) THEN (SELECT documents FROM workflow_selection) ELSE '[]'::jsonb END AS workflows,
+            CASE WHEN EXISTS (SELECT 1 FROM updated_run) THEN (SELECT "instructionsBundle" FROM selected_agent) ELSE NULL END AS "instructionsBundle"
           `;
 }

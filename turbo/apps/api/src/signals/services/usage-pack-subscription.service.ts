@@ -53,6 +53,7 @@ import {
   string,
   uuid,
   enum as zEnum,
+  url as zUrl,
   type infer as zInfer,
 } from "zod";
 
@@ -235,8 +236,8 @@ const usagePackPurchasePreviewTokenSchema = object({
   immediateAmountCents: number().int().nonnegative(),
   nextRecurringAmountCents: number().int().nonnegative(),
   currency: string().length(3),
-  successUrl: string().url(),
-  cancelUrl: string().url(),
+  successUrl: zUrl(),
+  cancelUrl: zUrl(),
   expiresAt: iso.datetime(),
 });
 

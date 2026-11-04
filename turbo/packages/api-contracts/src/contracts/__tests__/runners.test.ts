@@ -161,6 +161,11 @@ describe("runner claim response contract", () => {
       modelUsageProvider: "fixture-model",
       modelUsageLongContextMinTotalInputTokens: 272_001,
       platformEnvironment: { OKOU_AGENT_ID: "fixture-agent-id" },
+      contentBundles: {
+        format: "tar-gzip-v1",
+        instructions: { sha256: "a".repeat(64), archiveBytes: 128 },
+        skills: [{ mountPath: "/home/user/.codex/skills/fixture-skill" }],
+      },
     });
     expect(context.environment).not.toHaveProperty("OKOU_AGENT_ID");
     expect(context).not.toHaveProperty("experimentalProfile");
@@ -169,6 +174,7 @@ describe("runner claim response contract", () => {
   it("round-trips canonical trusted environments through stored contexts", () => {
     const storedContext = storedExecutionContextSchema.parse({
       storageMounts: [],
+      seedSkillBundles: [],
       connectorRuntimeTargets: [],
       environment: {
         USER_VALUE: "user-value",
@@ -202,10 +208,62 @@ describe("runner claim response contract", () => {
   });
 });
 
+describe("stored Seed Skill bundle contract", () => {
+  const context = {
+    storageMounts: [],
+    seedSkillBundles: [],
+    connectorRuntimeTargets: [],
+    environment: null,
+    platformEnvironment: {},
+    secretValueEnvironmentKeys: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
+    encryptedSecrets: null,
+    cliAgentType: "claude-code",
+  };
+
+  it("preserves captured Seed references for all supported skill roots", () => {
+    for (const root of [".claude", ".codex", ".pi/agent"]) {
+      const bundle = {
+        sha256: "a".repeat(64),
+        archiveBytes: 200,
+        mountPath: `/home/user/${root}/skills/workflow-setup`,
+      };
+      const captured = { ...context, seedSkillBundles: [bundle] };
+      for (const schema of [
+        storedExecutionContextSchema,
+        claimCompatibleStoredExecutionContextSchema,
+      ]) {
+        expect(schema.parse(captured).seedSkillBundles).toStrictEqual([bundle]);
+      }
+    }
+  });
+
+  it("requires immutable references within a supported skill directory", () => {
+    for (const mountPath of [
+      "/etc/workflow-setup",
+      "/home/user/.codex/skills/../workflow-setup",
+    ]) {
+      expect(
+        storedExecutionContextSchema.safeParse({
+          ...context,
+          seedSkillBundles: [
+            { sha256: "a".repeat(64), archiveBytes: 200, mountPath },
+          ],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("stored Workflow selection contract", () => {
   it("preserves legacy selection and current claim-time invocation intent", () => {
     const context = {
       storageMounts: [],
+      seedSkillBundles: [],
       connectorRuntimeTargets: [],
       environment: null,
       platformEnvironment: {},
@@ -247,6 +305,7 @@ describe("Pi sandbox execution contract", () => {
   const piSessionId = "22222222-2222-4222-8222-222222222222";
   const storedContext = {
     storageMounts: [],
+    seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
@@ -691,7 +750,7 @@ describe("connector runtime synchronization contract", () => {
     expect(execution.connectorRuntimeTargets).toEqual([target]);
   });
 
-  it("keeps builtin runtime synchronization policy-only", () => {
+  it("accepts legacy builtin policy refreshes without an account binding", () => {
     const result = {
       target: { kind: "builtin", connectorSlug: "plaud-mcp" },
       state: "available",
@@ -710,6 +769,44 @@ describe("connector runtime synchronization contract", () => {
       }),
     ).toStrictEqual(result);
   });
+
+  it.each(["builtin", "custom"] as const)(
+    "preserves an optional exact account binding on available %s results",
+    (kind) => {
+      const connectionId = "10000000-0000-4000-8000-000000000001";
+      const baseUrlVars = { workspace: "account-b" };
+      const result = {
+        target:
+          kind === "builtin"
+            ? { kind, connectorSlug: "slack" }
+            : { kind, customConnectorId },
+        state: "available",
+        networkPolicy: { allow: [], deny: [], ask: [], unknownPolicy: "ask" },
+        ...(kind === "custom"
+          ? {
+              firewall: {
+                kind: "inline",
+                customConnectorId,
+                sourceId: connectionId,
+                firewall: { name: "custom-connector", apis: [] },
+              },
+              baseUrlVars,
+            }
+          : {}),
+        accountBinding: { connectionId, baseUrlVars },
+      };
+
+      expect(connectorRuntimeSyncResultSchema.parse(result)).toStrictEqual(
+        result,
+      );
+      expect(
+        connectorRuntimeSyncResultSchema.safeParse({
+          ...result,
+          accountBinding: { connectionId },
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it("requires stable API identities on available custom firewalls", () => {
     const result = {
@@ -906,6 +1003,7 @@ describe("runner poll response contract", () => {
 describe("runner storage manifest contract", () => {
   const storedContext = {
     storageMounts: [],
+    seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
@@ -1947,5 +2045,63 @@ describe("native continuation intent", () => {
       },
     ])
       expect(nativeContinuationSchema.safeParse(intent).success).toBe(false);
+  });
+});
+
+describe("pinned Official Workflow bundle queue metadata", () => {
+  const context = {
+    storageMounts: [],
+    seedSkillBundles: [],
+    connectorRuntimeTargets: [],
+    environment: null,
+    platformEnvironment: {},
+    secretValueEnvironmentKeys: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
+    encryptedSecrets: null,
+    cliAgentType: "claude-code",
+  };
+  it("preserves exact descriptors in both stored-context readers", () => {
+    const officialWorkflowBundles = [
+      {
+        sha256: "a".repeat(64),
+        archiveBytes: 200,
+        mountPath: "/home/user/.claude/skills/morning-brief",
+      },
+    ];
+    const queued = { ...context, officialWorkflowBundles };
+    expect(
+      storedExecutionContextSchema.parse(queued).officialWorkflowBundles,
+    ).toStrictEqual(officialWorkflowBundles);
+    expect(
+      claimCompatibleStoredExecutionContextSchema.parse(queued)
+        .officialWorkflowBundles,
+    ).toStrictEqual(officialWorkflowBundles);
+    expect(storedExecutionContextSchema.parse(context)).not.toHaveProperty(
+      "officialWorkflowBundles",
+    );
+  });
+  it("rejects unsafe destinations and incomplete bundle references", () => {
+    for (const reference of [
+      { sha256: "a".repeat(64), archiveBytes: 200, mountPath: "/tmp/escape" },
+      {
+        sha256: "a".repeat(64),
+        archiveBytes: 0,
+        mountPath: "/home/user/.codex/skills/morning-brief",
+      },
+      {
+        archiveBytes: 200,
+        mountPath: "/home/user/.codex/skills/morning-brief",
+      },
+    ])
+      expect(
+        claimCompatibleStoredExecutionContextSchema.safeParse({
+          ...context,
+          officialWorkflowBundles: [reference],
+        }).success,
+      ).toBe(false);
   });
 });

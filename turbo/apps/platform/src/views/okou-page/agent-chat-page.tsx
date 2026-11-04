@@ -23,6 +23,7 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
+import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import {
   ChatHomeCompliance,
   useChatHomeComplianceVisible,
@@ -461,6 +462,7 @@ function AgentComposerPage() {
     user === undefined ? undefined : (user.firstName ?? null);
 
   const composerSignals = useGet(agentChatComposerSignals$);
+  const homeDiscoveryEnabled = useGet(composerSignals.homeDiscovery.enabled$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
   const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
@@ -520,7 +522,10 @@ function AgentComposerPage() {
             as a form to fill in. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-3xl flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0"
+          className={cn(
+            "mx-auto w-full max-w-3xl flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0",
+            homeDiscoveryEnabled && "gap-0",
+          )}
         >
           <div aria-hidden className="hidden sm:block sm:min-h-8 sm:flex-1" />
 
@@ -530,7 +535,13 @@ function AgentComposerPage() {
               it and the line lands in the middle of what is left. The row is at
               its final width on the first frame, so it is centered once and
               never moves again. */}
-          <div className="flex min-h-14 w-full justify-center my-auto sm:mt-0 sm:mb-10">
+          <div
+            className={cn(
+              "flex min-h-14 w-full justify-center my-auto sm:mt-0 sm:mb-10",
+              homeDiscoveryEnabled &&
+                "mt-0 mb-7 justify-start sm:justify-center",
+            )}
+          >
             {/* The async agent identity and user profile leave the first
                 renders incomplete. Reserve the finished row's height, but do
                 not let the avatar run a throwaway entrance before the real
@@ -578,7 +589,10 @@ function AgentComposerPage() {
               keyboard. */}
           <div
             data-chat-composer
-            className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
+            className={cn(
+              "order-3 pb-safe-or-2 sm:order-none sm:pb-0",
+              homeDiscoveryEnabled && "order-none",
+            )}
           >
             <ChatComposer signals={composerSignals} />
           </div>
@@ -601,10 +615,16 @@ function AgentComposerPage() {
               before the page needs to scroll. Allowing this box to shrink
               below its contents creates overflow even when the whole panel
               could fit in the viewport. */}
-          <div className="contents sm:flex sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28">
+          <div
+            className={cn(
+              "contents sm:flex sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28",
+              homeDiscoveryEnabled && "flex flex-col pt-5",
+            )}
+          >
             {/* Keep the final row clear of the scrollport's bottom edge. */}
             <div className="order-2 sm:order-none sm:pb-10">
               <ComposerTaskChips signals={composerSignals} />
+              <SuggestionSaveErrors />
             </div>
           </div>
         </div>

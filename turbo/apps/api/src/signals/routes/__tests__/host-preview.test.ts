@@ -198,6 +198,7 @@ describe("sandbox hosted previews", () => {
     previewStorage();
     const prepared = await host.prepareHostedSite(owner, {
       site: "sproutpop-launch-deck-p9jk",
+      title: "sproutpop-launch-deck-p9jk",
       artifactKind: "presentation-html",
       spaFallback: false,
       visibility: "public",
@@ -251,6 +252,7 @@ describe("sandbox hosted previews", () => {
       const declared = preview(bytes, contentType);
       const prepared = await host.prepareHostedSite(actor, {
         site: `original-${randomUUID().slice(0, 8)}`,
+        title: "Original",
         artifactKind: "hosted-site",
         spaFallback: false,
         files: [hostedTextFile("/index.html", "<main>Original cover</main>")],
@@ -321,6 +323,7 @@ describe("sandbox hosted previews", () => {
     const bytes = png;
     const prepared = await host.prepareHostedSite(actor, {
       site: `cover-${randomUUID().slice(0, 8)}`,
+      title: "Cover",
       artifactKind: "hosted-site",
       spaFallback: false,
       visibility: "public",
@@ -397,6 +400,7 @@ describe("sandbox hosted previews", () => {
     });
     const prepared = await host.prepareHostedSite(actor, {
       site: `og-html-${randomUUID().slice(0, 8)}`,
+      title: "OG HTML",
       artifactKind: "hosted-site",
       spaFallback: false,
       visibility: "public",
@@ -406,7 +410,7 @@ describe("sandbox hosted previews", () => {
     const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
       artifactOgContract,
     );
-    context.mocks.s3.clientConfig.mockClear();
+    context.mocks.s3.requestConfig.mockClear();
     const metadata = await accept(
       og.metadata({ query: { kind: "host", id: prepared.deploymentId } }),
       [200],
@@ -416,7 +420,7 @@ describe("sandbox hosted previews", () => {
       title: "Morning coffee",
       description: "Fresh coffee daily",
     });
-    expect(context.mocks.s3.clientConfig).toHaveBeenCalledWith(
+    expect(context.mocks.s3.requestConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         credentials: {
           accessKeyId: "test-hosted-sites-access-key",
@@ -424,7 +428,7 @@ describe("sandbox hosted previews", () => {
         },
       }),
     );
-    expect(context.mocks.s3.clientConfig).not.toHaveBeenCalledWith(
+    expect(context.mocks.s3.requestConfig).not.toHaveBeenCalledWith(
       expect.objectContaining({
         credentials: {
           accessKeyId: "test-access-key",
@@ -464,6 +468,7 @@ describe("sandbox hosted previews", () => {
     const site = `og-${randomUUID().slice(0, 8)}`;
     const first = await host.prepareHostedSite(actor, {
       site,
+      title: site,
       artifactKind: "hosted-site",
       spaFallback: false,
       visibility: "public",
@@ -537,6 +542,7 @@ describe("sandbox hosted previews", () => {
     const nextBytes = secondPng;
     const second = await host.prepareHostedSite(actor, {
       site,
+      title: site,
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", html)],
@@ -593,6 +599,7 @@ describe("sandbox hosted previews", () => {
     const secondImage = secondPng;
     const body = {
       site: `preview-${randomUUID().slice(0, 8)}`,
+      title: "Preview",
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       visibility: "public" as const,
@@ -620,7 +627,7 @@ describe("sandbox hosted previews", () => {
     expect(catalog.artifacts).toStrictEqual([
       expect.objectContaining({
         kind: "hosted-site",
-        title: body.site,
+        title: body.title,
         thumbnail: { url: latest.previewImageUrl },
       }),
     ]);
@@ -677,6 +684,7 @@ describe("sandbox hosted previews", () => {
     const bytes = jpeg;
     const body = {
       site: `preview-retry-${randomUUID().slice(0, 8)}`,
+      title: "Preview retry",
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>Website</main>")],
@@ -706,7 +714,7 @@ describe("sandbox hosted previews", () => {
     expect((await chat.listArtifactCatalog(actor)).artifacts).toStrictEqual([
       expect.objectContaining({
         kind: "hosted-site",
-        title: body.site,
+        title: body.title,
         thumbnail: { url: completed.previewImageUrl },
       }),
     ]);
@@ -722,6 +730,7 @@ describe("sandbox hosted previews", () => {
     const bytes = png;
     const body = {
       site: `preview-errors-${randomUUID().slice(0, 8)}`,
+      title: "Preview errors",
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>Website</main>")],

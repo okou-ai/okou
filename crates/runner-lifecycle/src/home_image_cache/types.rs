@@ -209,7 +209,7 @@ impl HomeCachePressureThresholds {
 
     pub(super) fn with_reserve(stats: FsStats, reserve: sandbox::HomeDriveSpaceReserve) -> Self {
         let reserve_bytes = reserve.bytes_for_capacity(stats.total_bytes);
-        let margin = reserve_bytes.min(stats.total_bytes.saturating_sub(reserve_bytes)) / 4;
+        let margin = reserve_bytes.min(stats.total_bytes.saturating_sub(reserve_bytes)) / 2;
         Self {
             reserve_bytes,
             low_free_bytes: reserve_bytes.saturating_add(margin),

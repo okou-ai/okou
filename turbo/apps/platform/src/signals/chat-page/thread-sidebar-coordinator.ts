@@ -11,7 +11,8 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { animationFrame, delay } from "signal-timers";
+import { waitForMailLayout } from "../utils.ts";
+import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
   threadMailLocation$,
@@ -68,11 +69,13 @@ export const activeThreadSidebarFullscreen$ = computed((get) => {
   return active ? get(active.thread.sidebar.fullscreen$) : false;
 });
 
-/** The sidebar shell acknowledges its committed image viewport layout. */
-export const syncActiveImageLayout$ = command(({ get, set }) => {
+/** The sidebar shell acknowledges its committed panel layout to embedded viewports. */
+export const syncActiveSidebarLayout$ = command(({ get, set }) => {
   const active = get(activeThreadSidebar$);
   if (active?.target.type === "artifact") {
     set(active.thread.sidebar.imageCanvas.syncLayout$);
+  } else if (active?.target.type === "browser") {
+    set(active.thread.browserSessionSignals.browser.syncLayout$);
   }
 });
 
@@ -217,14 +220,6 @@ export const openThreadMailDraft$ = command(
     }
   },
 );
-
-async function waitForMailLayout(signal: AbortSignal): Promise<void> {
-  // View Transitions pause animation frames while React and Floating UI commit.
-  await delay(0, { signal });
-  signal.throwIfAborted();
-  await delay(0, { signal });
-  signal.throwIfAborted();
-}
 
 /** Navigation commits before the destination reads its data. */
 export const navigateThreadMail$ = command(

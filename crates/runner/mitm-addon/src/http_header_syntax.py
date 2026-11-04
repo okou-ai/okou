@@ -5,6 +5,9 @@ trust-boundary-specific encoding rules, exception types, and error messages.
 """
 
 from collections.abc import Sequence
+from typing import Literal
+
+type HeaderValueBudgetStatus = Literal["missing", "within_budget", "exceeded"]
 
 _HTTP_TOKEN_CHARS: frozenset[str] = frozenset(
     "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -103,6 +106,68 @@ def header_fields_contain_token(
             return True
 
     return False
+
+
+def header_value_budget_status(
+    fields: Sequence[tuple[bytes, bytes]],
+    name: bytes,
+    *,
+    max_value_bytes: int,
+    separator_bytes: int,
+) -> HeaderValueBudgetStatus:
+    """Check a single name's aggregate raw-value budget without collecting values.
+
+    Count caller-selected separators between matching fields, including empty
+    values, and stop at the first over-budget value before decoding or copying.
+    No field-count limit is added. Callers provide a lowercase ASCII name and
+    nonnegative limits/separator width, and own missing/exhaustion policy.
+    """
+    value_bytes = 0
+    has_value = False
+    for raw_name, raw_value in fields:
+        if len(raw_name) != len(name) or raw_name.lower() != name:
+            continue
+        if has_value:
+            value_bytes += separator_bytes
+        value_bytes += len(raw_value)
+        if value_bytes > max_value_bytes:
+            return "exceeded"
+        has_value = True
+    return "within_budget" if has_value else "missing"
+
+
+def bounded_header_values(
+    fields: Sequence[tuple[bytes, bytes]],
+    name: bytes,
+    *,
+    max_fields: int,
+    max_value_bytes: int,
+    separator_bytes: int,
+) -> list[bytes] | None:
+    """Acquire raw values only when complete field and folded-byte budgets fit.
+
+    Return borrowed values in field order, an empty list when missing, or None
+    on exhaustion. Count separator bytes between matching fields, including
+    empty values. Check field count before traversal and name length before
+    normalization; never decode, copy or normalize values. Callers provide a
+    lowercase ASCII name and nonnegative limits/separator width, and retain
+    ownership of decoding, folding, cardinality and content policies.
+    """
+    if len(fields) > max_fields:
+        return None
+
+    values: list[bytes] = []
+    value_bytes = 0
+    for raw_name, raw_value in fields:
+        if len(raw_name) != len(name) or raw_name.lower() != name:
+            continue
+        value_bytes += len(raw_value)
+        if values:
+            value_bytes += separator_bytes
+        if value_bytes > max_value_bytes:
+            return None
+        values.append(raw_value)
+    return values
 
 
 def single_header_value(

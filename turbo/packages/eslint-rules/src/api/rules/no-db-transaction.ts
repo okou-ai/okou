@@ -8,13 +8,13 @@ export const noDbTransaction = createRule({
     type: "problem",
     docs: {
       description:
-        "Prohibit new database transactions except necessary billing atomicity",
+        "Prohibit new application database transactions except necessary billing atomicity",
       requiresTypeChecking: false,
     },
     schema: [],
     messages: {
       transaction:
-        "New non-billing database transactions are prohibited. Only necessary financial atomicity may use a reviewed next-line billing exception; legacy IDs must match the deletion-only legacy ledger. See docs/api/database.md#transaction-lint.",
+        "New non-billing application database transactions are prohibited. Only necessary financial atomicity may use a reviewed next-line billing exception; legacy IDs must match the deletion-only legacy ledger. See docs/api/database.md#transaction-lint.",
     },
   },
   create(context) {

@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.20.59](https://github.com/okou-ai/okou/compare/guest-init-v0.20.58...guest-init-v0.20.59) (2026-11-04)
+
+## [0.20.58](https://github.com/okou-ai/okou/compare/guest-init-v0.20.57...guest-init-v0.20.58) (2026-11-04)
+
+## [0.20.57](https://github.com/okou-ai/okou/compare/guest-init-v0.20.56...guest-init-v0.20.57) (2026-11-03)
+
+## [0.20.56](https://github.com/okou-ai/okou/compare/guest-init-v0.20.55...guest-init-v0.20.56) (2026-11-03)
+
+## [0.20.55](https://github.com/okou-ai/okou/compare/guest-init-v0.20.54...guest-init-v0.20.55) (2026-11-03)
+
+## [0.20.54](https://github.com/okou-ai/okou/compare/guest-init-v0.20.53...guest-init-v0.20.54) (2026-11-02)
+
+## [0.20.53](https://github.com/okou-ai/okou/compare/guest-init-v0.20.52...guest-init-v0.20.53) (2026-11-02)
+
+## [0.20.52](https://github.com/okou-ai/okou/compare/guest-init-v0.20.51...guest-init-v0.20.52) (2026-11-02)
+
+## [0.20.51](https://github.com/okou-ai/okou/compare/guest-init-v0.20.50...guest-init-v0.20.51) (2026-11-02)
+
+## [0.20.50](https://github.com/okou-ai/okou/compare/guest-init-v0.20.49...guest-init-v0.20.50) (2026-11-02)
+
+## [0.20.49](https://github.com/okou-ai/okou/compare/guest-init-v0.20.48...guest-init-v0.20.49) (2026-11-02)
+
+## [0.20.48](https://github.com/okou-ai/okou/compare/guest-init-v0.20.47...guest-init-v0.20.48) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.20.47](https://github.com/okou-ai/okou/compare/guest-init-v0.20.46...guest-init-v0.20.47) (2026-10-31)
+
+## [0.20.46](https://github.com/okou-ai/okou/compare/guest-init-v0.20.45...guest-init-v0.20.46) (2026-10-30)
+
+## [0.20.45](https://github.com/okou-ai/okou/compare/guest-init-v0.20.44...guest-init-v0.20.45) (2026-10-30)
+
+## [0.20.44](https://github.com/okou-ai/okou/compare/guest-init-v0.20.43...guest-init-v0.20.44) (2026-10-30)
+
+## [0.20.43](https://github.com/okou-ai/okou/compare/guest-init-v0.20.42...guest-init-v0.20.43) (2026-10-30)
+
 ## [0.20.42](https://github.com/okou-ai/okou/compare/guest-init-v0.20.41...guest-init-v0.20.42) (2026-10-29)
 
 ## [0.20.41](https://github.com/okou-ai/okou/compare/guest-init-v0.20.40...guest-init-v0.20.41) (2026-10-29)

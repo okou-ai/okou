@@ -192,7 +192,11 @@ export function DefaultWorkspaceLogo({
         color: colorway.mark,
       }}
     >
-      <OkouLogomark className="w-[58%]" />
+      {/* The mark keeps one proportion wherever the logo sits. `Button` and
+          `DropdownMenuItem` size every descendant svg to an icon with
+          `[&_svg]:size-4`, which outranks a plain width and would draw the
+          mark at 44% of the rail button and 67% of a menu row. */}
+      <OkouLogomark className="h-auto! w-[58%]!" />
     </span>
   );
 }

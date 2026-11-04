@@ -83,7 +83,7 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import { readAgentInstructionsForClaim$ } from "../services/agent-instructions-claim.service";
+import { signClaimedContentBundle$ } from "../services/content-bundle-claim";
 import {
   workflowClaimInput,
   type WorkflowClaimInput,
@@ -98,7 +98,6 @@ import {
   recordSandboxOperations,
 } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
-import { runnerWorkflowRoutes } from "./runner-workflows";
 import {
   declareSteeredInput$,
   loadNextSteerableInput$,
@@ -707,23 +706,23 @@ function recordPollTimingMetrics(args: {
   ]);
 }
 
-function runnerPollPriorityOrder(args: {
+type RunnerPollReusePriority = ReturnType<
+  typeof runnerReusePreferencePollPriority
+>;
+
+function runnerPollReusePriority(args: {
   readonly runnerId: string | undefined;
   readonly runnerGroup: string;
   readonly currentDate: Date;
-}): SQL[] {
+}): RunnerPollReusePriority | null {
   if (!args.runnerId) {
-    return [];
+    return null;
   }
-  return [
-    desc(
-      runnerReusePreferencePollPriority({
-        runnerId: args.runnerId,
-        runnerGroup: args.runnerGroup,
-        currentDate: args.currentDate,
-      }),
-    ),
-  ];
+  return runnerReusePreferencePollPriority({
+    runnerId: args.runnerId,
+    runnerGroup: args.runnerGroup,
+    currentDate: args.currentDate,
+  });
 }
 
 const resolvePollRunnerReusePreference$ = command(
@@ -757,10 +756,10 @@ const findPendingRunnerJob$ = command(
     { get },
     args: {
       readonly conditions: readonly SQL[];
-      readonly priorityOrder: readonly SQL[];
+      readonly reusePriority: RunnerPollReusePriority | null;
     },
   ) => {
-    const [pendingJob] = await get(db$)
+    const pendingJobs = get(db$)
       .select({
         runId: runnerJobQueue.runId,
         prompt: agentRuns.prompt,
@@ -773,14 +772,24 @@ const findPendingRunnerJob$ = command(
         discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
       })
       .from(runnerJobQueue)
-      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-      .where(and(...args.conditions))
-      .orderBy(
-        ...args.priorityOrder,
-        runnerJobQueue.createdAt,
-        runnerJobQueue.runId,
-      )
-      .limit(1);
+      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id));
+    const where = and(...args.conditions);
+    const { reusePriority } = args;
+    // Every priority tier reads the job's Thread predecessor from one join.
+    const [pendingJob] = await (reusePriority
+      ? pendingJobs
+          .leftJoinLateral(reusePriority.predecessor, sql`true`)
+          .where(where)
+          .orderBy(
+            desc(reusePriority.priority),
+            runnerJobQueue.createdAt,
+            runnerJobQueue.runId,
+          )
+          .limit(1)
+      : pendingJobs
+          .where(where)
+          .orderBy(runnerJobQueue.createdAt, runnerJobQueue.runId)
+          .limit(1));
     return pendingJob;
   },
 );
@@ -824,14 +833,14 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(writeDb$);
   const pendingJobLookupStartedAtMs = now();
   const currentDate = nowDate();
-  const reusePreferencePriorityOrder = runnerPollPriorityOrder({
+  const reusePriority = runnerPollReusePriority({
     runnerId: body.data.runnerId,
     runnerGroup: group,
     currentDate,
   });
   const pendingJob = await set(findPendingRunnerJob$, {
     conditions: whereConditions,
-    priorityOrder: reusePreferencePriorityOrder,
+    reusePriority,
   });
   signal.throwIfAborted();
   const pendingJobLookupFinishedAtMs = now();
@@ -1065,38 +1074,78 @@ type ClaimedTransitionResult = Extract<
   ClaimTransitionResult,
   { readonly status: "claimed" }
 >;
-function withClaimedWorkflows(args: {
-  readonly responseBody: ExecutionContext;
-  readonly workflows: ClaimedTransitionResult["workflows"];
-  readonly workflowInput: WorkflowClaimInput;
-}): ExecutionContext {
-  const { responseBody, workflowInput } = args;
-  const workflowSkills = args.workflows.map((workflow) => {
+type BaseClaimResponse = Omit<ExecutionContext, "contentBundles">;
+
+const withClaimedContentBundles$ = command(
+  async (
+    { set },
+    args: {
+      readonly responseBody: BaseClaimResponse;
+      readonly claim: ClaimedTransitionResult;
+      readonly workflowInput: WorkflowClaimInput;
+      readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
+      readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+    },
+    signal: AbortSignal,
+  ): Promise<ExecutionContext> => {
+    const instructions =
+      args.claim.instructionsBundle === null
+        ? undefined
+        : await set(
+            signClaimedContentBundle$,
+            args.claim.instructionsBundle,
+            signal,
+          );
+    const skills = await Promise.all(
+      [
+        ...args.claim.workflows.map((workflow) => {
+          return {
+            contentBundle: workflow.contentBundle,
+            mountPath: `${args.workflowInput.skillRoot}/${workflow.name}`,
+          };
+        }),
+        ...[
+          ...(args.officialWorkflowBundles ?? []),
+          ...args.seedSkillBundles,
+        ].map((bundle) => {
+          return {
+            contentBundle: bundle,
+            mountPath: bundle.mountPath,
+          };
+        }),
+      ].map(async (bundle) => {
+        return {
+          ...(await set(
+            signClaimedContentBundle$,
+            bundle.contentBundle,
+            signal,
+          )),
+          mountPath: bundle.mountPath,
+        };
+      }),
+    );
+    signal.throwIfAborted();
+    const bundledMountPaths = new Set(
+      skills.map((skill) => {
+        return skill.mountPath;
+      }),
+    );
     return {
-      workflowId: workflow.id,
-      mountPath: `${workflowInput.skillRoot}/${workflow.name}`,
-    };
-  });
-  const workflowMountPaths = new Set(
-    workflowSkills.map((skill) => {
-      return skill.mountPath;
-    }),
-  );
-  return {
-    ...responseBody,
-    storageManifest: {
-      storageMounts: (responseBody.storageManifest?.storageMounts ?? []).filter(
-        (mount) => {
+      ...args.responseBody,
+      contentBundles: { format: "tar-gzip-v1", instructions, skills },
+      storageManifest: {
+        storageMounts: (
+          args.responseBody.storageManifest?.storageMounts ?? []
+        ).filter((mount) => {
           return (
             !mount.name.startsWith("custom-skill@") &&
-            !workflowMountPaths.has(mount.mountPath)
+            !bundledMountPaths.has(mount.mountPath)
           );
-        },
-      ),
-      workflowSkills,
-    },
-  };
-}
+        }),
+      },
+    };
+  },
+);
 
 type FailedClaimTransitionResult = Exclude<
   ClaimTransitionResult,
@@ -1104,6 +1153,12 @@ type FailedClaimTransitionResult = Exclude<
 >;
 
 function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
+  if (result.status === "agent-unavailable") {
+    return notFound("Agent not found");
+  }
+  if (result.status === "bundle-unavailable") {
+    throw new Error("Required content bundle is missing or invalid at claim");
+  }
   if (result.status === "workflow-unavailable") {
     return notFound("Workflow is no longer available for this claim");
   }
@@ -1368,10 +1423,12 @@ function claimResponseBody(args: {
     StoredExecutionContext,
     "networkPolicies" | "networkPolicyRefreshes"
   >;
-}): ExecutionContext {
+}): BaseClaimResponse {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
+    officialWorkflowBundles: _officialWorkflowBundles,
+    seedSkillBundles: _seedSkillBundles,
     storageMounts: _storedStorageMounts,
     ...runnerStoredContext
   } = args.storedContext;
@@ -1412,7 +1469,7 @@ const buildClaimResponseBodyForClaim$ = command(
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
-  ): Promise<ExecutionContext> => {
+  ): Promise<BaseClaimResponse> => {
     const secretValues = await secretValuesForRunner(
       args.storedContext,
       args.timing,
@@ -1954,9 +2011,9 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
-    const workflowInput = workflowClaimInput(storedContext, run.prompt);
+    const workflowInput = workflowClaimInput(storedContext);
 
-    let responseBody = await set(
+    const baseResponseBody = await set(
       buildClaimResponseBodyForClaim$,
       {
         run,
@@ -1967,25 +2024,6 @@ const claimAuthorizedJob$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    if (run.agentId !== null) {
-      const instructions = await set(
-        readAgentInstructionsForClaim$,
-        {
-          agentId: run.agentId,
-          orgId: run.orgId,
-          userId: run.userId,
-        },
-        signal,
-      );
-      if (!instructions.available) {
-        return instructions.response;
-      }
-      responseBody = {
-        ...responseBody,
-        agentInstructions: instructions.instructions,
-      };
-    }
 
     claimRouteTiming.recordElapsed(
       "claim_route_request_to_transition_start",
@@ -2021,11 +2059,17 @@ const claimAuthorizedJob$ = command(
       return claimTransitionErrorResponse(claimResult);
     }
 
-    responseBody = withClaimedWorkflows({
-      responseBody,
-      workflows: claimResult.workflows,
-      workflowInput,
-    });
+    const responseBody = await set(
+      withClaimedContentBundles$,
+      {
+        responseBody: baseResponseBody,
+        claim: claimResult,
+        workflowInput,
+        officialWorkflowBundles: storedContext.officialWorkflowBundles,
+        seedSkillBundles: storedContext.seedSkillBundles,
+      },
+      signal,
+    );
 
     const response = {
       status: 200 as const,
@@ -2190,6 +2234,7 @@ const connectorRuntimeSyncInner$ = command(
         orgId: run.orgId,
         userId: run.userId,
         agentId: run.agentId,
+        runId: run.runId,
       },
       targets: body.data.targets,
     });
@@ -2372,7 +2417,6 @@ const observeClaimJsonResponse: JsonResponseObserver = (
 };
 
 export const runnersRoutes: readonly RouteEntry[] = [
-  ...runnerWorkflowRoutes,
   {
     route: runnersHeartbeatContract.heartbeat,
     handler: heartbeatInner$,

@@ -1,4 +1,4 @@
-import { array, object, string, type infer as zInfer } from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import { teamsFileTokenPayloadSchema } from "./teams-file-token";
 
@@ -29,5 +29,5 @@ export const teamsDeliveryTargetSchema = object({
 export type TeamsDeliveryTarget = zInfer<typeof teamsDeliveryTargetSchema>;
 
 export const teamsChatCallbackPayloadSchema = teamsDeliveryTargetSchema.extend({
-  chatEventId: string().uuid(),
+  chatEventId: uuid(),
 });

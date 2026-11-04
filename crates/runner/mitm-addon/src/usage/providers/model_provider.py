@@ -225,12 +225,12 @@ def report_model_provider_usage_source(
     frames cannot add a second input partition for the same response id. Output
     remains independently admissible for compatible transports that report it
     in a later frame. Callers can drop the source from flow metadata after this
-    returns. Tiered models retain only their bounded concrete
-    tier decision. Evicted decisions are recovered from bounded source-key
-    admission history when possible so later or duplicate snapshots derive
-    the same billable category even when they repeat input tokens or change
-    service-tier metadata. Without retained history or a classifiable input
-    partition, positive usage receives a conservative billable fallback.
+    returns. All models retain a bounded concrete pricing decision, including
+    the service tier for single-tier routes. Evicted decisions are recovered
+    from bounded source-key admission history when possible, keeping categories
+    stable when later snapshots repeat input tokens or change service-tier
+    metadata. Without retained history or a classifiable input partition,
+    positive usage receives a conservative billable fallback.
     """
     usage_events: list[UsageEvent] = []
     source_id = f"{flow.id}:{message_id}"
@@ -591,9 +591,6 @@ def _source_model_usage_pricing(
     usage: dict,
 ) -> tuple[_ModelUsageTier, _ModelServiceTier] | None:
     billing_tier = _model_usage_tier(flow, provider, usage)
-    if _long_context_min_total_input_tokens(flow, provider) is None:
-        return (billing_tier, _model_service_tier(usage)) if billing_tier else None
-
     tiers = _model_provider_usage_tiers(flow)
     remembered_decision = tiers.get(message_id)
     observed_service_tier = _observed_model_service_tier(usage)

@@ -2878,6 +2878,237 @@
       "when": 1793308535254,
       "tag": "1489_retire_presigned_url_refresh_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 1490,
+      "version": "7",
+      "when": 1793326405452,
+      "tag": "1490_drop_chat_thread_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 1491,
+      "version": "7",
+      "when": 1793330139802,
+      "tag": "1491_charming_naoko",
+      "breakpoints": true
+    },
+    {
+      "idx": 1492,
+      "version": "7",
+      "when": 1793337228658,
+      "tag": "1492_atomic_agent_metadata_update",
+      "breakpoints": true
+    },
+    {
+      "idx": 1493,
+      "version": "7",
+      "when": 1793341156711,
+      "tag": "1493_atomic_user_builtin_connectors",
+      "breakpoints": true
+    },
+    {
+      "idx": 1494,
+      "version": "7",
+      "when": 1793344891499,
+      "tag": "1494_atomic_agent_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1495,
+      "version": "7",
+      "when": 1793349563883,
+      "tag": "1495_atomic_workflow_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1496,
+      "version": "7",
+      "when": 1793353454921,
+      "tag": "1496_slippery_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 1497,
+      "version": "7",
+      "when": 1793356291934,
+      "tag": "1497_atomic_chat_thread_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1498,
+      "version": "7",
+      "when": 1793359349592,
+      "tag": "1498_atomic_run_builtin_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 1499,
+      "version": "7",
+      "when": 1793375625566,
+      "tag": "1499_atomic_chat_event_search_projection",
+      "breakpoints": true
+    },
+    {
+      "idx": 1500,
+      "version": "7",
+      "when": 1793392088046,
+      "tag": "1500_write_usage_pack_pending_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 1501,
+      "version": "7",
+      "when": 1793398192619,
+      "tag": "1501_delete_builtin_connector_local_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 1502,
+      "version": "7",
+      "when": 1793421320347,
+      "tag": "1502_browser_chat_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1503,
+      "version": "7",
+      "when": 1793421342501,
+      "tag": "1503_discard_preacceptance_shared_browser_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 1504,
+      "version": "7",
+      "when": 1793440565800,
+      "tag": "1504_drop_browser_owner_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 1505,
+      "version": "7",
+      "when": 1793443672462,
+      "tag": "1505_browser_owner_instance_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 1506,
+      "version": "7",
+      "when": 1793455707553,
+      "tag": "1506_browser_owner_extension_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1507,
+      "version": "7",
+      "when": 1793494852919,
+      "tag": "1507_official_workflow_bundle_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1508,
+      "version": "7",
+      "when": 1793593407839,
+      "tag": "1508_seed_skill_bundle_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1509,
+      "version": "7",
+      "when": 1793600389091,
+      "tag": "1509_auto_recharge_failure_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 1510,
+      "version": "7",
+      "when": 1793607132876,
+      "tag": "1510_project_reader_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1511,
+      "version": "7",
+      "when": 1793607150741,
+      "tag": "1511_project_thread_activity_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1512,
+      "version": "7",
+      "when": 1793611801134,
+      "tag": "1512_marketing_content_handoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 1513,
+      "version": "7",
+      "when": 1793614197167,
+      "tag": "1513_slack_reward_financial_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1514,
+      "version": "7",
+      "when": 1793614223919,
+      "tag": "1514_ssh_observation_incarnation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1515,
+      "version": "7",
+      "when": 1793618241490,
+      "tag": "1515_chat_connector_account_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1516,
+      "version": "7",
+      "when": 1793627178908,
+      "tag": "1516_seed_skill_storage_binding_retirement",
+      "breakpoints": true
+    },
+    {
+      "idx": 1517,
+      "version": "7",
+      "when": 1793675303073,
+      "tag": "1517_project_snapshot_gc_prefix",
+      "breakpoints": true
+    },
+    {
+      "idx": 1518,
+      "version": "7",
+      "when": 1793680062602,
+      "tag": "1518_imessage_message_recipients",
+      "breakpoints": true
+    },
+    {
+      "idx": 1519,
+      "version": "7",
+      "when": 1793683465743,
+      "tag": "1519_registry_resource_bundle_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1520,
+      "version": "7",
+      "when": 1793687900107,
+      "tag": "1520_connector_catalog_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 1521,
+      "version": "7",
+      "when": 1793697501912,
+      "tag": "1521_friend_referrals",
+      "breakpoints": true
+    },
+    {
+      "idx": 1522,
+      "version": "7",
+      "when": 1793725191980,
+      "tag": "1522_repair_deleted_chat_connector_accounts",
+      "breakpoints": true
     }
   ]
 }

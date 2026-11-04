@@ -1,5 +1,81 @@
 # Changelog
 
+## [0.12.4](https://github.com/okou-ai/okou/compare/runner-types-v0.12.3...runner-types-v0.12.4) (2026-11-04)
+
+## [0.12.3](https://github.com/okou-ai/okou/compare/runner-types-v0.12.2...runner-types-v0.12.3) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+* **storage:** share canonical mount-path uniqueness validation ([#45042](https://github.com/okou-ai/okou/issues/45042)) ([893d967](https://github.com/okou-ai/okou/commit/893d967b6c850f220a45e8f011822a1fdf0340a1))
+
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-types-v0.12.1...runner-types-v0.12.2) (2026-11-03)
+
+## [0.12.1](https://github.com/okou-ai/okou/compare/runner-types-v0.12.0...runner-types-v0.12.1) (2026-11-03)
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-types-v0.11.8...runner-types-v0.12.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+
+## [0.11.8](https://github.com/okou-ai/okou/compare/runner-types-v0.11.7...runner-types-v0.11.8) (2026-11-02)
+
+## [0.11.7](https://github.com/okou-ai/okou/compare/runner-types-v0.11.6...runner-types-v0.11.7) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
+## [0.11.6](https://github.com/okou-ai/okou/compare/runner-types-v0.11.5...runner-types-v0.11.6) (2026-11-02)
+
+## [0.11.5](https://github.com/okou-ai/okou/compare/runner-types-v0.11.4...runner-types-v0.11.5) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** share strict percent decoding in runner types ([#44539](https://github.com/okou-ai/okou/issues/44539)) ([49b47df](https://github.com/okou-ai/okou/commit/49b47df4bccfb397ff7475050d68c8fd12e3a762))
+
+## [0.11.4](https://github.com/okou-ai/okou/compare/runner-types-v0.11.3...runner-types-v0.11.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.11.3](https://github.com/okou-ai/okou/compare/runner-types-v0.11.2...runner-types-v0.11.3) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.11.2](https://github.com/okou-ai/okou/compare/runner-types-v0.11.1...runner-types-v0.11.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
+## [0.11.1](https://github.com/okou-ai/okou/compare/runner-types-v0.11.0...runner-types-v0.11.1) (2026-10-30)
+
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-types-v0.10.4...runner-types-v0.11.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.10.4](https://github.com/okou-ai/okou/compare/runner-types-v0.10.3...runner-types-v0.10.4) (2026-10-30)
+
 ## [0.10.3](https://github.com/okou-ai/okou/compare/runner-types-v0.10.2...runner-types-v0.10.3) (2026-10-29)
 
 ## [0.10.2](https://github.com/okou-ai/okou/compare/runner-types-v0.10.1...runner-types-v0.10.2) (2026-10-29)

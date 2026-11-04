@@ -269,11 +269,17 @@ test("rejects a new inline stylesheet", (t) => {
   const jsxFile = "packages/ui/src/view.tsx";
   const htmlFile = "apps/platform/src/html.ts";
   const templateFile = "apps/platform/src/template.ts";
+  const attributedFile = "apps/platform/src/attributed.ts";
+  const interpolatedFile = "apps/platform/src/interpolated.ts";
   const root = createWorkspace(t, {
     [jsxFile]: 'export const View = () => <style>{".new-class {}"}</style>;',
     [htmlFile]:
       'export const html = "<style>.new-class { color: red }</style>";',
     [templateFile]: "export const html = `<style>${dynamicCss}</style>`;",
+    [attributedFile]:
+      'export const html = "<STYLE media=print>.new-class{}</STYLE>";',
+    [interpolatedFile]:
+      "export const html = `<style${attributes}>${dynamicCss}</style>`;",
   });
   const result = checkStylePolicy({
     root,
@@ -289,7 +295,18 @@ test("rejects a new inline stylesheet", (t) => {
       })
       .map(({ file }) => file)
       .sort(),
-    [htmlFile, jsxFile, templateFile].sort(),
+    [htmlFile, jsxFile, templateFile, attributedFile, interpolatedFile].sort(),
+  );
+});
+
+test("spreadsheet XML styleSheet elements are not HTML style injections", (t) => {
+  const root = createWorkspace(t, {
+    "apps/platform/src/workbook.ts":
+      'export const xml = `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"/></styleSheet>`;',
+  });
+  assert.deepEqual(
+    checkStylePolicy({ root, allowlist: EMPTY_ALLOWLIST }).issues,
+    [],
   );
 });
 

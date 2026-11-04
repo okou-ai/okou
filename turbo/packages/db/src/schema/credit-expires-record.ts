@@ -38,6 +38,11 @@ export const creditExpiresRecord = pgTable(
       uniqueIndex("uq_credit_expires_invoice")
         .on(table.orgId, table.stripeInvoiceId)
         .where(sql`stripe_invoice_id IS NOT NULL`),
+      // Slack's permanent organization reward is unique even across API writers.
+      uniqueIndex("uq_credit_expires_slack_reward_org")
+        .on(table.orgId)
+        .where(sql`source = 'get_started_reward'`)
+        .concurrently(),
       uniqueIndex("uq_credit_expires_starter_grant")
         .on(table.orgId)
         .where(sql`source = 'starter_grant'`),

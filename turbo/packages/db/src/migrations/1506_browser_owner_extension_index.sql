@@ -1,0 +1,1 @@
+CREATE INDEX "idx_browser_owner_profiles_extension" ON "browser_owner_profiles" USING btree ("browser_extension_id") WHERE "browser_owner_profiles"."browser_extension_id" IS NOT NULL;

@@ -11,6 +11,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import type { TestContext } from "../../../../__tests__/test-context";
+import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-skill-bundle-archive";
 
 function s3BodyBuffer(body: unknown): Buffer {
   if (Buffer.isBuffer(body)) {
@@ -47,6 +48,7 @@ export function installWorkflowVolumeS3Fixture(
     ((key: string, body: Buffer) => void | Promise<void>) | undefined;
   let beforeNextDelete:
     ((keys: readonly string[]) => void | Promise<void>) | undefined;
+  let beforeNextBundleWrite: (() => void | Promise<void>) | undefined;
 
   async function multipart(command: unknown) {
     if (command instanceof CreateMultipartUploadCommand) {
@@ -115,6 +117,27 @@ export function installWorkflowVolumeS3Fixture(
     return undefined;
   }
 
+  async function putObject(command: PutObjectCommand) {
+    const key = command.input.Key;
+    if (!key) {
+      throw new Error("Expected an S3 object key");
+    }
+    const body = s3BodyBuffer(command.input.Body);
+    if (key.startsWith("bundles/v1/") && beforeNextBundleWrite) {
+      const callback = beforeNextBundleWrite;
+      beforeNextBundleWrite = undefined;
+      await callback();
+    }
+    if (key.endsWith("/archive.tar.gz") && beforeNextArchiveWrite) {
+      const callback = beforeNextArchiveWrite;
+      beforeNextArchiveWrite = undefined;
+      await callback(key, body);
+    }
+    objects.set(key, body);
+    writes.push({ key, body });
+    return {};
+  }
+
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
     const uploaded = await multipart(command);
     if (uploaded !== undefined) {
@@ -138,26 +161,14 @@ export function installWorkflowVolumeS3Fixture(
       return {};
     }
     if (command instanceof PutObjectCommand) {
-      const key = command.input.Key;
-      if (!key) {
-        throw new Error("Expected an S3 object key");
-      }
-      const body = s3BodyBuffer(command.input.Body);
-      if (key.endsWith("/archive.tar.gz") && beforeNextArchiveWrite) {
-        const callback = beforeNextArchiveWrite;
-        beforeNextArchiveWrite = undefined;
-        await callback(key, body);
-      }
-      objects.set(key, body);
-      writes.push({ key, body });
-      return {};
+      return await putObject(command);
     }
     if (command instanceof HeadObjectCommand) {
       const key = command.input.Key;
       if (!key) {
         throw new Error("Expected an S3 object key");
       }
-      const body = objects.get(key);
+      const body = objects.get(key) ?? seededSkillBundleArchive(key);
       if (!body) {
         throw missingS3Object(key);
       }
@@ -168,7 +179,7 @@ export function installWorkflowVolumeS3Fixture(
       if (!key) {
         throw new Error("Expected an S3 object key");
       }
-      const body = objects.get(key);
+      const body = objects.get(key) ?? seededSkillBundleArchive(key);
       if (!body) {
         throw missingS3Object(key);
       }
@@ -182,6 +193,9 @@ export function installWorkflowVolumeS3Fixture(
     writes,
     clearWrites(): void {
       writes.length = 0;
+    },
+    beforeNextBundleWrite(callback: () => void | Promise<void>): void {
+      beforeNextBundleWrite = callback;
     },
     beforeNextArchiveWrite(
       callback: (key: string, body: Buffer) => void | Promise<void>,

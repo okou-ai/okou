@@ -8,6 +8,7 @@ use guest_agent_tests as common;
 use common::SystemLogOverrideGuard;
 use guest_agent::masker::SecretMasker;
 use guest_contracts::diagnostics::{FailureDetailSource, FailureReason};
+use shell_quote::quote_shell_arg;
 use std::time::Duration;
 
 #[tokio::test]
@@ -27,6 +28,10 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
         (
             "Credit balance is too low",
             Some(FailureReason::ProviderInsufficientCredits),
+        ),
+        (
+            "API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification?token=private-verification-token",
+            Some(FailureReason::AccountVerificationRequired),
         ),
         (
             "Failed to authenticate. API Error: 401 OAuth access token is invalid.",
@@ -53,7 +58,7 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
             None,
         ),
     ] {
-        runtime.config.prompt = format!("printf '{failure_message}'; exit 2");
+        runtime.config.prompt = format!("printf '%s' {}; exit 2", quote_shell_arg(failure_message));
         let cli_result = tokio::time::timeout(
             Duration::from_secs(5),
             common::execute_cli_for_runtime(&runtime, &masker, common::spawn_dummy_heartbeat()),
@@ -82,7 +87,15 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
             None,
             &cli_result,
         );
-        assert_eq!(terminal_failure.message, failure_message);
+        let expected_message = if expected_reason
+            == Some(FailureReason::AccountVerificationRequired)
+        {
+            "Your Claude account can't receive replies right now. Check the Anthropic Verification Portal for the next step."
+        } else {
+            failure_message
+        };
+        assert_eq!(terminal_failure.message, expected_message);
+        assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(2));
         assert_eq!(
             terminal_failure.diagnostic.failure_reason, expected_reason,
             "unexpected classification for {failure_message}"

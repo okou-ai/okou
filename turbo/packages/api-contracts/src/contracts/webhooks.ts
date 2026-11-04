@@ -163,7 +163,7 @@ const notionWebhookResponseSchema = object({
 const workflowAutomationWebhookResponseSchema = object({
   success: literal(true),
   duplicate: boolean(),
-  runId: string().uuid().optional(),
+  runId: uuid().optional(),
 });
 
 /**
@@ -910,7 +910,7 @@ export const webhookStoragesPrepareContract = c.router({
        * Canonical Storage identity authorized against the run's writeback
        * mounts.
        */
-      storageId: string().uuid(),
+      storageId: uuid(),
       files: storageManifestFilesSchema,
       parentVersionId: string().optional(),
       /** Legacy request field; a registered version cannot be re-uploaded. */
@@ -954,7 +954,7 @@ export const webhookStoragesCommitContract = c.router({
        * Canonical Storage identity authorized against the run's writeback
        * mounts.
        */
-      storageId: string().uuid(),
+      storageId: uuid(),
       versionId: string().min(1, "Version ID is required"),
       parentVersionId: string().optional(),
       files: storageManifestFilesSchema,

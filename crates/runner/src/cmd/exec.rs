@@ -1,6 +1,6 @@
 //! Execute a command inside a running sandbox for live debugging.
 
-use std::io::Write;
+use std::io::{self, Write};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -78,6 +78,11 @@ pub struct ExecArgs {
 /// CLI boundary; ordinary process exit codes are truncated to `u8`, matching
 /// shell behavior for values outside the 0-255 range.
 ///
+/// Both host output streams are attempted and explicitly flushed. Delivery
+/// failure changes an otherwise successful CLI status to failure; an existing
+/// non-success guest/terminal status takes precedence. A bounded host diagnostic
+/// is printed when stderr remains usable.
+///
 /// [`SandboxControlError::Remote`] values are printed to stderr and returned
 /// as [`ExitCode::FAILURE`]. Other sandbox-control errors are propagated as
 /// [`RunnerError::Config`].
@@ -130,13 +135,19 @@ async fn run_exec_with_home_and_writers(
         .await
     {
         Ok(result) => {
-            let _ = stdout.write_all(&result.stdout);
-            write_remote_exec_stderr(stderr, &result, args.show_diagnostic);
+            let output_result =
+                write_remote_exec_output(stdout, stderr, &result, args.show_diagnostic);
+            let exit_code = remote_exec_exit_code(result.termination);
 
-            Ok(remote_exec_exit_code(result.termination))
+            if exit_code == ExitCode::SUCCESS && output_result.is_err() {
+                return Ok(ExitCode::FAILURE);
+            }
+            Ok(exit_code)
         }
         Err(SandboxControlError::Remote(msg)) => {
+            // The remote failure remains primary even if its message cannot be delivered.
             let _ = writeln!(stderr, "error: {msg}");
+            let _ = stderr.flush();
             Ok(ExitCode::FAILURE)
         }
         Err(e) => Err(RunnerError::Config(e.to_string())),
@@ -161,9 +172,10 @@ fn write_remote_exec_stderr(
     stderr: &mut impl Write,
     result: &RemoteExecResult,
     show_diagnostic: bool,
-) {
-    let _ = stderr.write_all(&result.stderr);
-    let mut line_open = !result.stderr.is_empty() && !result.stderr.ends_with(b"\n");
+    line_open: &mut bool,
+) -> io::Result<()> {
+    *line_open = !result.stderr.is_empty() && !result.stderr.ends_with(b"\n");
+    stderr.write_all(&result.stderr)?;
 
     write_terminal_diagnostic(
         stderr,
@@ -171,23 +183,60 @@ fn write_remote_exec_stderr(
         &result.stderr,
         &result.diagnostic,
         show_diagnostic,
-        &mut line_open,
-    );
+        line_open,
+    )?;
     if result.stdout_truncated {
-        write_remote_exec_warning(stderr, &mut line_open, REMOTE_EXEC_STDOUT_TRUNCATED_WARNING);
+        write_remote_exec_warning(stderr, line_open, REMOTE_EXEC_STDOUT_TRUNCATED_WARNING)?;
     }
     if result.stderr_truncated {
-        write_remote_exec_warning(stderr, &mut line_open, REMOTE_EXEC_STDERR_TRUNCATED_WARNING);
+        write_remote_exec_warning(stderr, line_open, REMOTE_EXEC_STDERR_TRUNCATED_WARNING)?;
     }
+    Ok(())
 }
 
-fn write_remote_exec_warning(stderr: &mut impl Write, line_open: &mut bool, message: &str) {
+fn write_remote_exec_warning(
+    stderr: &mut impl Write,
+    line_open: &mut bool,
+    message: &str,
+) -> io::Result<()> {
     if *line_open {
-        let _ = writeln!(stderr);
+        writeln!(stderr)?;
         *line_open = false;
     }
 
-    let _ = writeln!(stderr, "{message}");
+    writeln!(stderr, "{message}")
+}
+
+fn write_remote_exec_output(
+    stdout: &mut impl Write,
+    stderr: &mut impl Write,
+    result: &RemoteExecResult,
+    show_diagnostic: bool,
+) -> io::Result<()> {
+    let stdout_result = stdout
+        .write_all(&result.stdout)
+        .and_then(|()| stdout.flush());
+    // Attempt stderr independently so a broken stdout cannot suppress guest diagnostics.
+    let mut line_open = false;
+    let stderr_result = write_remote_exec_stderr(stderr, result, show_diagnostic, &mut line_open);
+    if stderr_result.is_err() {
+        // A failed write may have delivered a partial line, even for generated text.
+        line_open = true;
+    }
+    let stderr_result = stderr_result.and_then(|()| stderr.flush());
+    let output_result = stdout_result
+        .map_err(|error| ("stdout", error.kind()))
+        .and(stderr_result.map_err(|error| ("stderr", error.kind())));
+    if let Err((stream, kind)) = output_result {
+        // Only static stream context and ErrorKind enter this bounded diagnostic.
+        // Stderr can itself be broken; never send host error text to guest stdout.
+        if line_open {
+            let _ = writeln!(stderr);
+        }
+        let _ = writeln!(stderr, "error: failed to deliver exec {stream}: {kind}");
+        let _ = stderr.flush();
+    }
+    output_result.map_err(|(_, kind)| kind.into())
 }
 
 #[cfg(test)]

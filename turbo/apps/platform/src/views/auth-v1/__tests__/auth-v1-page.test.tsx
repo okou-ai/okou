@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
 
 import { PRESENTATION_ONBOARDING_URL } from "../../../__tests__/presentation-onboarding-fixture.ts";
 import {
@@ -11,6 +12,17 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
+
+test("An unavailable referral link still opens the normal signup form", async () => {
+  context.mocks.api(friendReferralsContract.visit, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
+    });
+  });
+  await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
+  expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
+  expect(document.title).toBe("Sign up | Okou");
+});
 
 function setupSignedOutPage(path: string): Promise<void> {
   return setupPage({ auth: null, context, host: "app.okou.ai", path });

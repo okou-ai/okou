@@ -15,15 +15,12 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
-  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  ShortcutTooltipGroup,
 } from "@okouai/ui";
-import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { openThreadAutomations$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
@@ -34,64 +31,8 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 
-export function ChatThreadPinButton({
-  thread,
-}: {
-  readonly thread: ChatPanelSignals;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const pinned = useGet(thread.pin.pinned$);
-  const setPinned = useSet(thread.pin.setPinned$);
-
-  return (
-    <ShortcutTooltipGroup
-      items={[
-        {
-          shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatPin.binding,
-          trigger: (
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className={cn(
-                "shrink-0 duration-150",
-                pinned ? "text-gray-700" : "text-gray-600",
-              )}
-              aria-label={
-                pinned
-                  ? t(($) => {
-                      return $.chat.sidebar.unpin;
-                    })
-                  : t(($) => {
-                      return $.chat.sidebar.pin;
-                    })
-              }
-              aria-keyshortcuts={
-                GLOBAL_KEYBOARD_SHORTCUTS.toggleChatPin.ariaKeyShortcuts
-              }
-              aria-pressed={pinned}
-              onClick={() => {
-                detach(setPinned(!pinned, pageSignal), Reason.DomCallback);
-              }}
-            >
-              <span className="relative inline-flex" aria-hidden="true">
-                <Pin size={18} strokeWidth={1.75} />
-                {pinned && (
-                  <span className="absolute -bottom-1 left-1/2 size-0.75 -translate-x-1/2 rounded-full bg-current" />
-                )}
-              </span>
-            </Button>
-          ),
-        },
-      ]}
-    />
-  );
-}
-
-// The header has no menu on desktop, so a muted chat says so here, next to
-// Pin, and the same button unmutes it. An unmuted chat adds nothing.
+// The header has no menu on desktop, so a muted chat says so here,
+// and the same button unmutes it. An unmuted chat adds nothing.
 export function ChatThreadMutedButton({
   thread,
 }: {

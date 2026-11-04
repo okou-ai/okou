@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { resolveTeamsMessageSendPresentation$ } from "../services/integration-message-send-presentation.service";
 import { completeCanonicalTeamsUpload$ } from "../services/canonical-teams-asset-delivery.service";
 import { command, computed } from "ccstate";
 import { env } from "../../lib/env";
@@ -85,6 +87,136 @@ const legacyTeamsInstallation$ = computed(async (get) => {
   return { ...installation, serviceUrl: installation.serviceUrl };
 });
 
+const completeLegacyUpload$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly body: TeamsUploadCompleteBody;
+      readonly runId: string | undefined;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { body, runId } = args;
+    const auth = args;
+    const installation = await get(legacyTeamsInstallation$);
+    signal.throwIfAborted();
+    if ("status" in installation) {
+      return installation;
+    }
+    const object = await set(
+      materializeUploadedArtifact$,
+      { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
+      signal,
+    );
+    if (!object) {
+      return routeError(404, "Uploaded file not found", "NOT_FOUND");
+    }
+
+    const target = await set(
+      resolveTeamsMessageTarget$,
+      {
+        installation,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        body,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if ("status" in target) {
+      return target;
+    }
+
+    const file: UploadedFileInfo = {
+      size: object.size,
+      filename: object.filename,
+      fileUrl: object.url,
+    };
+    const mimetype = body.contentType ?? object.contentType;
+
+    const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
+    signal.throwIfAborted();
+    const presentation = await set(
+      resolveTeamsMessageSendPresentation$,
+      installation.teamsTenantId,
+      signal,
+    );
+    const result = await sendTeamsMessage(
+      {
+        serviceUrl: installation.serviceUrl,
+        conversationId: target.conversationId,
+        activityId: target.activityId,
+        tenantId: installation.teamsTenantId,
+        text: appendIntegrationMessageFooter(
+          buildTeamsFileText({
+            body,
+            file: {
+              ...file,
+              fileUrl: new URL(file.fileUrl, env("APP_URL")).href,
+            },
+          }),
+          presentation.footerText,
+        ),
+        ...(presentation.entities.length > 0
+          ? { entities: presentation.entities }
+          : {}),
+        attachments: [
+          {
+            contentType: mimetype,
+            contentUrl: fetchUrl,
+            name: file.filename,
+          },
+        ],
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.kind === "teams-error") {
+      return teamsErrorResponse(result);
+    }
+
+    const externalId =
+      result.activityId ?? `${target.conversationId}:${body.uploadId}`;
+    await set(
+      recordTeamsUploadedFile$,
+      {
+        runId,
+        externalId,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        filename: file.filename,
+        contentType: mimetype,
+        sizeBytes: file.size,
+        url: file.fileUrl,
+        layout: object.layout,
+        metadata: buildMetadata({
+          body,
+          conversationId: target.conversationId,
+          s3Key: object.key,
+          sourceUrl: file.fileUrl,
+          teamsActivityId: result.activityId,
+        }),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    return {
+      status: 200 as const,
+      body: {
+        activityId: result.activityId,
+        conversationId: target.conversationId,
+        filename: file.filename,
+        mimetype,
+        size: file.size,
+        url: file.fileUrl,
+      },
+    };
+  },
+);
+
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const runId =
@@ -118,106 +250,11 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const installation = await get(legacyTeamsInstallation$);
-  signal.throwIfAborted();
-  if ("status" in installation) {
-    return installation;
-  }
-  const object = await set(
-    materializeUploadedArtifact$,
-    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
+  return await set(
+    completeLegacyUpload$,
+    { body, runId, userId: auth.userId, orgId: auth.orgId },
     signal,
   );
-  if (!object) {
-    return routeError(404, "Uploaded file not found", "NOT_FOUND");
-  }
-
-  const target = await set(
-    resolveTeamsMessageTarget$,
-    {
-      installation,
-      userId: auth.userId,
-      orgId: auth.orgId,
-      body,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if ("status" in target) {
-    return target;
-  }
-
-  const file: UploadedFileInfo = {
-    size: object.size,
-    filename: object.filename,
-    fileUrl: object.url,
-  };
-  const mimetype = body.contentType ?? object.contentType;
-
-  const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
-  signal.throwIfAborted();
-  const result = await sendTeamsMessage(
-    {
-      serviceUrl: installation.serviceUrl,
-      conversationId: target.conversationId,
-      activityId: target.activityId,
-      tenantId: installation.teamsTenantId,
-      text: buildTeamsFileText({
-        body,
-        file: { ...file, fileUrl: new URL(file.fileUrl, env("APP_URL")).href },
-      }),
-      attachments: [
-        {
-          contentType: mimetype,
-          contentUrl: fetchUrl,
-          name: file.filename,
-        },
-      ],
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (result.kind === "teams-error") {
-    return teamsErrorResponse(result);
-  }
-
-  const externalId =
-    result.activityId ?? `${target.conversationId}:${body.uploadId}`;
-  await set(
-    recordTeamsUploadedFile$,
-    {
-      runId,
-      externalId,
-      userId: auth.userId,
-      orgId: auth.orgId,
-      filename: file.filename,
-      contentType: mimetype,
-      sizeBytes: file.size,
-      url: file.fileUrl,
-      layout: object.layout,
-      metadata: buildMetadata({
-        body,
-        conversationId: target.conversationId,
-        s3Key: object.key,
-        sourceUrl: file.fileUrl,
-        teamsActivityId: result.activityId,
-      }),
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  return {
-    status: 200 as const,
-    body: {
-      activityId: result.activityId,
-      conversationId: target.conversationId,
-      filename: file.filename,
-      mimetype,
-      size: file.size,
-      url: file.fileUrl,
-    },
-  };
 });
 
 const teamsWriteAuth = {

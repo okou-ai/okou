@@ -12,8 +12,10 @@ final class MessageArtifactStore {
     var images: [ChatArtifact]
     var file: ChatAttachmentFile?
     var contentURL: URL?
+    var htmlExpiresAt: Date?
     var text: ArtifactTextContent?
     var error: String?
+    var canRetry = true
     var renewedHTMLSignature = false
     var isDownloading = false
     var downloadError: String?
@@ -117,6 +119,7 @@ final class MessageArtifactStore {
         }
         if resolved.artifact.kind == .html {
           preview?.contentURL = resolved.contentURL
+          preview?.htmlExpiresAt = resolved.expiresAt
         } else {
           let kind = resolved.artifact.kind
           let isText = [.markdown, .text, .json, .csv].contains(kind)
@@ -133,16 +136,17 @@ final class MessageArtifactStore {
       } catch {
         guard !Task.isCancelled, preview?.id == previewID else { return }
         preview?.error = Self.message(for: error)
+        preview?.canRetry = ChatRequestFailure.canRetry(error)
       }
     }
   }
 
   func renewHTMLSignature(status: Int?) -> Bool {
-    guard let item = preview, !item.renewedHTMLSignature, [401, 403].contains(status ?? 0) else {
-      return false
-    }
+    guard let item = preview, !item.renewedHTMLSignature else { return false }
+    let expired = item.htmlExpiresAt.map { $0 <= Date() } ?? false
+    guard [401, 403].contains(status ?? 0) || (status == 404 && expired) else { return false }
     switch item.artifact.source {
-    case .reference, .file:
+    case .reference, .file, .hostedSite:
       open(item.artifact, images: item.images, renewedHTMLSignature: true)
       return true
     case .published: return false
@@ -190,6 +194,22 @@ final class MessageArtifactStore {
         guard !Task.isCancelled, preview?.id == item.id else { return }
         preview?.downloadError = Self.message(for: error)
       }
+    }
+  }
+
+  func refreshDetails() async {
+    guard !closed, let id = preview?.id else { return }
+    catalog = nil
+    do {
+      try await loadCatalog()
+      guard !closed, !Task.isCancelled, preview?.id == id, let artifact = preview?.artifact else {
+        return
+      }
+      preview?.artifact = metadata(artifact)
+    } catch {
+      guard !closed, !Task.isCancelled, preview?.id == id else { return }
+      preview?.error = Self.message(for: error)
+      preview?.canRetry = ChatRequestFailure.canRetry(error)
     }
   }
 
@@ -309,6 +329,6 @@ final class MessageArtifactStore {
     if (error as? URLError)?.code == .dataLengthExceedsMaximum {
       return "This result is too large to read in the app. Download it to share or save to Files."
     }
-    return error.localizedDescription
+    return ChatRequestFailure.message(for: error)
   }
 }

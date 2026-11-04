@@ -1,10 +1,10 @@
 import { command, computed, state, type Computed } from "ccstate";
-import {
-  chatRelationsContract,
-  type ChatCommunication,
-  type ChatRelationMessage,
-  type CreatedChatRelation,
-  type RelatedChat,
+import { chatRelationsContract } from "@okouai/api-contracts/client/chat-relations";
+import type {
+  ChatCommunication,
+  ChatRelationMessage,
+  CreatedChatRelation,
+  RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";

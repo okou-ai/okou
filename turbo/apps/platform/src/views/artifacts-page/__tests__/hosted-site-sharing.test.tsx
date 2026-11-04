@@ -4,6 +4,7 @@ import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/con
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
 import type { infer as zInfer } from "zod";
 import {
   click,
@@ -117,7 +118,7 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
   });
 });
 
-test("published sites customize their address in Share and copy the saved URL alongside permission choices", async () => {
+test("published sites customize their address in Share and manually copy the saved URL", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site);
   });
@@ -159,6 +160,7 @@ test("published sites customize their address in Share and copy the saved URL al
     }),
   ).toBeFalsy();
   expect(input).toHaveValue("launch-report");
+  const clipboard = context.mocks.browser.clipboardWriteText();
   click(getButtonByName("Save"));
   await screen.findByText("Website URL updated");
   expect(getButtonByName("Customize URL")).toHaveFocus();
@@ -166,8 +168,9 @@ test("published sites customize their address in Share and copy the saved URL al
     expect(
       screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
     ).toHaveAttribute("src", "https://launch-report.okou.app/");
+    expect(getButtonByName("Copy link")).toBeEnabled();
   });
-  const clipboard = context.mocks.browser.clipboardWriteText();
+  expect(clipboard.writes).toStrictEqual([]);
   click(getButtonByName("Copy link"));
   await waitFor(() => {
     expect(queryButtonByName("Copied")).toBeDefined();
@@ -792,5 +795,42 @@ test("rapid permission choices settle on the latest audience using the refreshed
     response.resolve();
   }
   await expectPermission("Only me");
-  await screen.findByText("Access updated");
+  await waitFor(() => {
+    expect(getButtonByName("Copy link")).toBeEnabled();
+  });
 });
+
+test.each([false, true])(
+  "Share and Download open on click and retain keyboard dismissal (sidebar: %s)",
+  async (sidebar) => {
+    const user = userEvent.setup();
+    await openSite({ sidebar });
+    const shareLabel = sidebar ? "Share artifact" : "Share";
+    const share = getButtonByName(shareLabel);
+    click(share);
+    const menu = await screen.findByRole("dialog", { name: shareLabel });
+    await waitFor(() => {
+      expect(getButtonByName("Copy link", menu)).toBeEnabled();
+    });
+    expect(share).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(share).toHaveAttribute("aria-expanded", "false");
+    });
+    expect(share).toBeInTheDocument();
+    const download = getButtonByName(
+      sidebar ? "Download artifact" : "Download options",
+    );
+    click(download);
+    const downloadMenu = await screen.findByRole("menu");
+    expect(within(downloadMenu).getByText("Download")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(download).toHaveAttribute("aria-expanded", "false");
+    });
+    // Keyboard users still open the same menu without a mouse.
+    download.focus();
+    await user.keyboard("{ArrowDown}");
+    await screen.findByRole("menu");
+  },
+);

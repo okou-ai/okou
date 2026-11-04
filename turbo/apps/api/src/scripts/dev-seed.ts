@@ -1,34 +1,36 @@
 #!/usr/bin/env tsx
 
 import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
 
-import { and, count, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
+import { count, gte, sql, type SQL } from "drizzle-orm";
 import { escapeLiteral } from "pg";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { resolveSkillRef } from "@okouai/core/github-url";
-import {
-  getSkillStorageName,
-  SYSTEM_ORG_ID,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  contentBundleKey,
+  readContentBundle,
+} from "@okouai/core/content-bundle";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { skills } from "@okouai/db/schema/skill";
-import { storages } from "@okouai/db/schema/storage";
 import { command, createStore } from "ccstate";
 
 import { closeDbPool, db } from "../lib/db";
 import { pgIntegerDecoder } from "../lib/db-structured-result";
-import { optionalEnv } from "../lib/env";
+import { env, optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
+import { putS3Object$ } from "../signals/external/s3";
 import { immutableCatalogHash$ } from "../signals/services/connector-catalog-immutable.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
 import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
 import { onRejection } from "../signals/utils";
 import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "./dev-seed-managed-model-key";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
+import devSeedSkillBundles from "./dev-seed-skill-bundles.json";
 
 function writeLine(message: string): void {
   process.stdout.write(`${message}\n`);
@@ -81,7 +83,6 @@ const DEV_SEED_SKILL_VOLUMES: readonly DevSeedSkillVolume[] =
   rawDevSeedSkillVolumes;
 
 const PREVIEW_E2E_VOLUME_SKILL_NAMES: readonly string[] = [
-  ...SEED_SKILLS,
   "github",
   "slack",
   "discord-webhook",
@@ -177,53 +178,52 @@ function withLongContextPricing(
 
 function withFastPricing(
   rows: readonly UsagePricingRow[],
+  multiplier: number,
 ): readonly UsagePricingRow[] {
   return [
     ...rows,
     ...rows.map(([category, unitPrice, unitSize]) => {
-      return [`${category}.fast`, unitPrice * 2, unitSize] as const;
+      return [`${category}.fast`, unitPrice * multiplier, unitSize] as const;
     }),
   ];
 }
 
 const GPT_5_6_SOL_USAGE_PRICING = withFastPricing(
   withLongContextPricing(GPT_5_6_SOL_PRICING, 2, 1.5),
+  2,
 );
 
 const GPT_5_6_LUNA_USAGE_PRICING = withFastPricing(
   withLongContextPricing(GPT_5_6_LUNA_PRICING, 2, 1.5),
+  2,
 );
 
 function buildSeedSkillValues(
   names: readonly string[],
 ): (typeof skills.$inferInsert)[] {
   return names.map((name) => {
+    const published = devSeedSkillBundles.find((skill) => {
+      return skill.name === name;
+    });
+    if (!published) {
+      throw new Error(`Development Seed Skill bundle is missing: ${name}`);
+    }
     const url = resolveSkillRef(name);
     const fullPath = url.replace("https://github.com/", "");
     return {
       url,
       name,
       fullPath,
-      versionHash: null,
-      frontmatter: {
-        name,
-        description: `${name} skill`,
-      },
+      versionHash: published.versionHash,
+      storageId: null,
+      s3Key: null,
+      contentBundle: published.contentBundle,
+      contentBundleSourceVersionHash: published.versionHash,
+      commitSha: published.commitSha,
+      size: published.size,
+      fileCount: published.fileCount,
+      frontmatter: published.frontmatter,
     };
-  });
-}
-
-export function getMetadataOnlySeedSkillNames(
-  names: readonly string[],
-  publishedVolumes: readonly { readonly url: string }[],
-): readonly string[] {
-  const publishedUrls = new Set(
-    publishedVolumes.map((volume) => {
-      return volume.url;
-    }),
-  );
-  return names.filter((name) => {
-    return !publishedUrls.has(resolveSkillRef(name));
   });
 }
 
@@ -466,7 +466,7 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup(
     "model",
     "gpt-6-astra",
-    withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
+    withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5), 2),
   ),
   // https://developers.openai.com/api/docs/models/gpt-6.1-sol
   ...usageGroup(
@@ -483,6 +483,7 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
         2,
         1.5,
       ),
+      2,
     ),
   ),
   // No official rate page is recorded for gpt-6-sol. These rows mirror the
@@ -504,6 +505,7 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
         2,
         1.5,
       ),
+      2,
     ),
   ),
   // https://developers.openai.com/api/docs/models/gpt-6-luna
@@ -516,19 +518,22 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // is copied from the target database's current GPT rows by migration 1194.
   ...usageGroup("model", "okou-1.0", GPT_5_6_LUNA_USAGE_PRICING),
   // Synthetic test/preview rates, not production tariffs. Cover both runtime
-  // presets and every standard/long-context category without copying live data.
+  // presets and every standard/long-context/fast category without copying live data.
   ...["@preset/okou-1-0", "@preset/okou-1-0-dsf"].flatMap((provider) => {
     return usageGroup(
       "model",
       provider,
-      withLongContextPricing(
-        [
-          ["tokens.input", 1000, 1_000_000],
-          ["tokens.output", 1000, 1_000_000],
-          ["tokens.cache_read", 1000, 1_000_000],
-          ["tokens.cache_creation", 1000, 1_000_000],
-        ],
-        1,
+      withFastPricing(
+        withLongContextPricing(
+          [
+            ["tokens.input", 1000, 1_000_000],
+            ["tokens.output", 1000, 1_000_000],
+            ["tokens.cache_read", 1000, 1_000_000],
+            ["tokens.cache_creation", 1000, 1_000_000],
+          ],
+          1,
+          1,
+        ),
         1,
       ),
     );
@@ -721,58 +726,61 @@ export function devSeedUsagePricing(environment: string | undefined) {
   return USAGE_PRICING;
 }
 
-const seedMetadataOnlySkills$ = command(
+const seedPreparedSkills$ = command(
   async (
     { set },
-    fallbackSkillValues: (typeof skills.$inferInsert)[],
-    fallbackStorageNames: string[],
+    values: (typeof skills.$inferInsert)[],
     timestamp: Date,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    const database = set(writeDb$);
-    const upsertedSkills = database.$with("upserted_skills").as(
-      database
-        .insert(skills)
-        .values(fallbackSkillValues)
-        .onConflictDoUpdate({
-          target: skills.url,
-          set: {
-            name: sql`excluded.name`,
-            fullPath: sql`excluded.full_path`,
-            storageId: null,
-            versionHash: null,
-            commitSha: null,
-            frontmatter: sql`excluded.frontmatter`,
-            s3Key: null,
-            size: 0,
-            fileCount: 0,
-            syncedAt: null,
-            updatedAt: timestamp,
-          },
-        })
-        .returning({ id: skills.id }),
-    );
-    const clearedStorages = database.$with("cleared_storages").as(
-      database.delete(storages).where(
-        and(
-          eq(storages.orgId, SYSTEM_ORG_ID),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-          inArray(storages.name, fallbackStorageNames),
-          // Consume every upsert before deleting volumes whose skill FK was cleared.
-          gte(database.select({ count: count() }).from(upsertedSkills), sql`0`),
+    // Preview/development buckets do not inherit production's immutable objects.
+    // Publish verified bytes before exposing their references in this environment.
+    for (const skill of devSeedSkillBundles) {
+      const archive = await readFile(
+        new URL(
+          `./dev-seed-skill-bundles/${skill.name}.tar.gz`,
+          import.meta.url,
         ),
-      ),
-    );
-    const [result] = await database
-      .with(upsertedSkills, clearedStorages)
-      .select({ insertedCount: count() })
-      .from(upsertedSkills);
-    signal.throwIfAborted();
-    if (!result) {
-      throw new Error("Metadata-only skill seed did not return its count");
+      );
+      signal.throwIfAborted();
+      readContentBundle(archive, skill.contentBundle);
+      await set(
+        putS3Object$,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+          key: contentBundleKey(skill.contentBundle.sha256),
+          body: archive,
+          contentType: "application/gzip",
+        },
+        signal,
+      );
+      signal.throwIfAborted();
     }
-    return result.insertedCount;
+    const database = set(writeDb$);
+    const upserted = await database
+      .insert(skills)
+      .values(values)
+      .onConflictDoUpdate({
+        target: skills.url,
+        set: {
+          name: sql`excluded.name`,
+          fullPath: sql`excluded.full_path`,
+          versionHash: sql`excluded.version_hash`,
+          storageId: null,
+          s3Key: null,
+          contentBundle: sql`excluded.content_bundle`,
+          contentBundleSourceVersionHash: sql`excluded.content_bundle_source_version_hash`,
+          commitSha: sql`excluded.commit_sha`,
+          frontmatter: sql`excluded.frontmatter`,
+          size: sql`excluded.size`,
+          fileCount: sql`excluded.file_count`,
+          updatedAt: timestamp,
+        },
+      })
+      .returning({ id: skills.id });
+    signal.throwIfAborted();
+    return upserted.length;
   },
 );
 
@@ -832,7 +840,7 @@ async function devSeed() {
   }
   writeLine(`Seeded ${apiKeys.length} built-in model key entries`);
 
-  // --- skills (published volumes + seed-skill metadata fallback) ---
+  // --- skills (legacy volumes + verified current Seed bundle references) ---
   const seedSkillVolumes = getDevSeedSkillVolumes();
   writeLine("Seeding official skill volumes");
   await database.execute(buildOfficialSkillVolumesSeedSql(seedSkillVolumes));
@@ -840,24 +848,14 @@ async function devSeed() {
 
   const store = createStore();
   const signal = new AbortController().signal;
-  const fallbackSkillValues = buildSeedSkillValues(
-    getMetadataOnlySeedSkillNames(SEED_SKILLS, seedSkillVolumes),
-  );
-  if (fallbackSkillValues.length > 0) {
-    const timestamp = nowDate();
-    const fallbackStorageNames = fallbackSkillValues.map((skill) => {
-      return getSkillStorageName(skill.fullPath);
-    });
+  {
     const insertedCount = await store.set(
-      seedMetadataOnlySkills$,
-      fallbackSkillValues,
-      fallbackStorageNames,
-      timestamp,
+      seedPreparedSkills$,
+      buildSeedSkillValues(SEED_SKILLS),
+      nowDate(),
       signal,
     );
-    writeLine(
-      `Seeded ${insertedCount} metadata-only skills and cleared stale volumes`,
-    );
+    writeLine(`Seeded ${insertedCount} prepared Seed Skill bundles`);
   }
 
   // --- connector catalog (validated R2 publication -> pointer + entries) ---

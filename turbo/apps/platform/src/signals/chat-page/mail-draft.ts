@@ -6,12 +6,12 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import {
-  mailContract,
-  type MailAttachment,
-  type MailDraft,
-  type MailDraftStatus,
-  type MailInlineImage,
+import { mailContract } from "@okouai/api-contracts/client/mail";
+import type {
+  MailAttachment,
+  MailDraft,
+  MailDraftStatus,
+  MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
 
 import { accept } from "../../lib/accept.ts";

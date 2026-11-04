@@ -1,13 +1,15 @@
+import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
-import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/validators/artifact-catalog";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
-  chatThreadDraftSchema,
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
-  type PersistedAttachment,
-  type UserMessageInputDocument,
+} from "@okouai/api-contracts/client/chat-threads";
+import type {
+  PersistedAttachment,
+  UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { accept } from "../../lib/accept.ts";
@@ -117,16 +119,18 @@ export const patchChatThreadDraft$ = command(
     signal: AbortSignal,
   ) => {
     const client = get(apiClient$)(chatThreadByIdContract);
+    const body = {
+      draftUserMessage: userMessage,
+      draftAttachments: attachments,
+    };
     await accept(
       client.patch({
         params: { id: threadId },
-        body: {
-          draftUserMessage: userMessage,
-          draftAttachments: attachments,
-        },
+        body,
         fetchOptions: { signal },
       }),
       [200, 204],
+      signal,
     );
     signal.throwIfAborted();
     // Most saves only change the text of a draft that is already listed.
@@ -350,11 +354,12 @@ export function createRemoteChatThreadDraft(threadId: string) {
     if (get(optimisticCreateUnsettled$)) {
       return null;
     }
-    const client = get(apiClient$)(chatThreadDraftContract);
     const result = await accept(
-      client.get({ params: { id: threadId } }),
+      get(apiClient$)(chatThreadDraftContract).get({
+        params: { id: threadId },
+      }),
       [200],
     );
-    return chatThreadDraftSchema.parse(result.body);
+    return composerDraftSchema.parse(result.body);
   });
 }

@@ -30,6 +30,7 @@ async function publish() {
   const name = `url-${randomUUID().slice(0, 8)}`;
   const prepared = await api.prepareHostedSite(owner, {
     site: name,
+    title: name,
     artifactKind: "hosted-site",
     spaFallback: false,
     visibility: "public",
@@ -112,6 +113,7 @@ test("renames only the active address while immutable versions and the CLI site 
   }
   const upload = await api.prepareHostedSite(owner, {
     site: name,
+    title: name,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [hostedTextFile("/index.html", "<p>two</p>")],
@@ -210,6 +212,7 @@ test("rejects stale edits and reserves previous published names for their owner"
   const other = createBddApi(context).user();
   const upload = await api.prepareHostedSite(other, {
     site: name,
+    title: name,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [hostedTextFile("/index.html", "<p>other</p>")],
@@ -239,6 +242,7 @@ test("an upload prepared before renaming completes at the new address", async ()
   const { owner, api, name, prepared } = await publish();
   const pending = await api.prepareHostedSite(owner, {
     site: name,
+    title: name,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [hostedTextFile("/index.html", "<p>next</p>")],
@@ -267,6 +271,7 @@ test("concurrent websites cannot claim the same address", async () => {
   const { owner, api, name, prepared } = await publish();
   const other = await api.prepareHostedSite(owner, {
     site: `${name}-second`,
+    title: `${name}-second`,
     artifactKind: "hosted-site",
     spaFallback: false,
     files: [hostedTextFile("/index.html", "<p>second</p>")],

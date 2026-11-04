@@ -1,10 +1,5 @@
 import { fetchResource } from "../lib/resource-fetch.ts";
-import {
-  chatThreadsContract,
-  chatThreadEventsContract,
-  chatThreadSnapshotArchiveSchema,
-  type ChatThreadEvent,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadEventsContract } from "@okouai/api-contracts/client/chat-threads";
 import {
   chatEventRowSchema,
   type ChatEventRow,
@@ -12,10 +7,10 @@ import {
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type {
-  AppRouter,
+  ClientRouter,
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 import type { IDBPDatabase } from "idb";
 
 import {
@@ -26,31 +21,39 @@ import { now } from "../lib/time.ts";
 import { createChatIdbOpener } from "../signals/external/chat-idb-opener.ts";
 import { createIdbDiagnosticsStore } from "../signals/external/idb-diagnostics-store.ts";
 import { createIdbEventRowStores } from "../signals/external/idb-event-row-store.ts";
-import { createStrictIdbChatThreadEventStores } from "../signals/external/idb-chat-thread-event-store.ts";
+import {
+  metadataEventCursor,
+  type MetadataEvent,
+  type MetadataSnapshot,
+  type MetadataEventResult,
+} from "../signals/external/idb-metadata-event-store.ts";
+import {
+  createChatThreadEventSource,
+  createProjectEventSource,
+  loadMetadataEventTail,
+  type MetadataEventSource,
+  type MetadataEventRemoteState,
+} from "./metadata-event-source.ts";
 import type { ApiClientFactory } from "../signals/api-client.ts";
 import { logger } from "../signals/log.ts";
 import { isAbortError, settle } from "../signals/utils.ts";
 import {
   scopeSharedDatabaseDataKey,
   type ChatEventDataKey,
-  type ChatThreadEventDataKey,
-  type ChatThreadEventQueryResult,
   type SharedDatabaseDataKey,
   type SharedDatabaseIdentity,
   type SharedDatabaseQuery,
   type SharedDatabaseQueryResult,
   type ScopedChatEventDataKey,
-  type ScopedChatThreadEventDataKey,
   type ScopedSharedDatabaseDataKey,
 } from "./data-key.ts";
 import type {
   IndexedDbDiagnostics,
   IndexedDbSnapshotMeasurement,
 } from "./computed-key.ts";
-import { CHAT_THREAD_EVENT_LOG_SNAPSHOT_REBASE_THRESHOLD } from "./event-log-policy.ts";
 import type { SharedDatabaseWorkerMessage } from "./protocol.ts";
 import { SharedDatabaseHttpError } from "./http-error.ts";
-type SharedDatabaseContractClient<TContract extends AppRouter> =
+type SharedDatabaseContractClient<TContract extends ClientRouter> =
   InitClientReturn<TContract, InitClientArgs>;
 
 const CHAT_EVENT_ROWS_PAGE_LIMIT = 50;
@@ -92,27 +95,10 @@ interface ChatEventRemoteContext {
   readonly dataKey: ScopedChatEventDataKey;
 }
 
-interface ChatThreadEventRemoteState {
-  readonly result: ChatThreadEventQueryResult;
-  readonly cursor: { readonly eventId: string; readonly seqId: number } | null;
-  readonly replacement: boolean;
-  readonly cursorFromServerSnapshot: boolean;
-  readonly newEvents: readonly ChatThreadEvent[];
-}
-
-interface ChatThreadEventRemoteContext {
-  readonly client: SharedDatabaseContractClient<typeof chatThreadsContract>;
-}
-
-interface ChatDatabaseEntry {
+interface SharedDatabaseEntry {
   readonly promise: Promise<IDBPDatabase>;
   database: IDBPDatabase | null;
   invalidated: boolean;
-}
-
-interface ChatThreadEventCache {
-  readonly result: ChatThreadEventQueryResult;
-  readonly degraded: boolean;
 }
 
 interface ChatEventBatchWrite {
@@ -144,6 +130,22 @@ function dataKeyDiagnosticDetails(dataKey: ScopedSharedDatabaseDataKey): {
     orgId: dataKey.orgId,
     userId: dataKey.userId,
   };
+}
+
+function isIndexedDbUnavailable(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    [
+      "AbortError",
+      "InvalidStateError",
+      "NotAllowedError",
+      "NotReadableError",
+      "QuotaExceededError",
+      "SecurityError",
+      "UnknownError",
+      "VersionError",
+    ].includes(error.name)
+  );
 }
 
 function logDataKeyError(
@@ -210,36 +212,15 @@ function requireChatEventCursor(
   return cursor;
 }
 
-function chatThreadEventCursor(
-  result: ChatThreadEventQueryResult,
-): { readonly eventId: string; readonly seqId: number } | null {
-  const event = result.events.at(-1);
-  if (event) {
-    return { eventId: event.id, seqId: event.seqId };
-  }
-  const snapshot = result.snapshot;
-  if (
-    !snapshot ||
-    snapshot.latestEventId === null ||
-    snapshot.latestSeqId === null
-  ) {
-    return null;
-  }
-  return {
-    eventId: snapshot.latestEventId,
-    seqId: snapshot.latestSeqId,
-  };
-}
-
 export class SharedDatabaseWorkerRuntime {
   private readonly identity: SharedDatabaseIdentity;
-  private databaseEntry: ChatDatabaseEntry | null = null;
+  private databaseEntry: SharedDatabaseEntry | null = null;
   private readonly emit: (message: WorkerRuntimeEvent) => void;
   private readonly createContractClient: ApiClientFactory;
 
   constructor(
     options: SharedDatabaseWorkerRuntimeOptions,
-    rootSignal: AbortSignal,
+    private readonly rootSignal: AbortSignal,
   ) {
     const { identity, emit, createContractClient } = options;
     this.emit = emit;
@@ -285,7 +266,7 @@ export class SharedDatabaseWorkerRuntime {
   async getIndexedDbDiagnostics(
     signal: AbortSignal,
   ): Promise<IndexedDbDiagnostics> {
-    return await this.runChatIdbOperation(
+    return await this.runIndexedDbOperation(
       createIdbDiagnosticsStore,
       (store) => {
         return store.read(signal);
@@ -297,7 +278,7 @@ export class SharedDatabaseWorkerRuntime {
   async measureIndexedDbSnapshot(
     signal: AbortSignal,
   ): Promise<IndexedDbSnapshotMeasurement | null> {
-    return await this.runChatIdbOperation(
+    return await this.runIndexedDbOperation(
       createIdbDiagnosticsStore,
       (store) => {
         return store.measureSnapshot(signal);
@@ -327,7 +308,7 @@ export class SharedDatabaseWorkerRuntime {
     }
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cachedCursorsResult = await settle(
-      this.runChatIdbOperation(
+      this.runIndexedDbOperation(
         createIdbEventRowStores,
         (stores) => {
           return stores.readStore.readCursors(threadIds, signal);
@@ -472,7 +453,7 @@ export class SharedDatabaseWorkerRuntime {
     }
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const written = await settle(
-      this.runChatIdbOperation(
+      this.runIndexedDbOperation(
         createIdbEventRowStores,
         (stores) => {
           return stores.writeStore.upsertRowsAndCursors(
@@ -550,7 +531,7 @@ export class SharedDatabaseWorkerRuntime {
   ): Promise<boolean> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cleared = await settle(
-      this.runChatIdbOperation(
+      this.runIndexedDbOperation(
         createIdbEventRowStores,
         (stores) => {
           return stores.writeStore.clearThread(dataKey.threadId, signal);
@@ -584,12 +565,21 @@ export class SharedDatabaseWorkerRuntime {
       );
       return result as SharedDatabaseQueryResult<TKey>;
     }
+    if (dataKey.kind === "project-event") {
+      return (await this.queryMetadataEvents(
+        dataKey,
+        query.consistency,
+        createProjectEventSource(this.createContractClient),
+        signal,
+      )) as SharedDatabaseQueryResult<TKey>;
+    }
     if (dataKey.kind !== "chat-thread-event") {
       throw new Error("Shared database query data key is invalid");
     }
-    const result = await this.queryChatThreadEvents(
+    const result = await this.queryMetadataEvents(
       dataKey,
       query.consistency,
+      createChatThreadEventSource(this.createContractClient),
       signal,
     );
     return result as SharedDatabaseQueryResult<TKey>;
@@ -613,24 +603,13 @@ export class SharedDatabaseWorkerRuntime {
     return mergeChatEventRows([cached, requestedRemoteRows]);
   }
 
-  private async queryChatThreadEvents(
-    dataKey: ScopedChatThreadEventDataKey,
-    consistency: SharedDatabaseQuery<ChatThreadEventDataKey>["consistency"],
-    signal: AbortSignal,
-  ): Promise<ChatThreadEventQueryResult> {
-    if (consistency === "cache-only") {
-      return (await this.readChatThreadEventCache(dataKey, signal)).result;
-    }
-    return await this.syncChatThreadEvents(dataKey, signal);
-  }
-
   private async syncChatEvents(
     dataKey: ScopedChatEventDataKey,
     signal: AbortSignal,
   ): Promise<readonly ChatEventRow[]> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cachedCursorResult = await settle(
-      this.runChatIdbOperation(
+      this.runIndexedDbOperation(
         createIdbEventRowStores,
         (stores) => {
           return stores.readStore.readCursor(dataKey.threadId, signal);
@@ -692,7 +671,7 @@ export class SharedDatabaseWorkerRuntime {
     }
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const written = await settle(
-      this.runChatIdbOperation(
+      this.runIndexedDbOperation(
         createIdbEventRowStores,
         (stores) => {
           return state.replacedCache
@@ -850,213 +829,122 @@ export class SharedDatabaseWorkerRuntime {
     };
   }
 
-  private async syncChatThreadEvents(
-    dataKey: ScopedChatThreadEventDataKey,
+  private async queryMetadataEvents<
+    TSnapshot extends MetadataSnapshot,
+    TEvent extends MetadataEvent,
+  >(
+    dataKey: ScopedSharedDatabaseDataKey,
+    consistency: "cache-only" | "catch-up",
+    source: MetadataEventSource<TSnapshot, TEvent>,
     signal: AbortSignal,
-  ): Promise<ChatThreadEventQueryResult> {
-    const cached = await this.readChatThreadEventCache(dataKey, signal);
-    const client = this.createContractClient(chatThreadsContract);
-    const cachedCursor = chatThreadEventCursor(cached.result);
-    let state: ChatThreadEventRemoteState = {
+  ): Promise<MetadataEventResult<TSnapshot, TEvent>> {
+    const cached = await this.readMetadataEventCache(dataKey, source, signal);
+    if (consistency === "cache-only") {
+      return cached.result;
+    }
+    let state: MetadataEventRemoteState<TSnapshot, TEvent> = {
       result: cached.result,
-      cursor: cachedCursor,
       replacement: false,
       cursorFromServerSnapshot: false,
       newEvents: [],
     };
-
     if (
       cached.result.snapshot === null ||
-      cachedCursor === null ||
+      metadataEventCursor(cached.result) === null ||
       cached.degraded
     ) {
-      const result = {
-        snapshot: await this.fetchChatThreadSnapshot(client, signal),
-        events: [],
-      };
       state = {
-        result,
-        cursor: chatThreadEventCursor(result),
+        result: { snapshot: await source.snapshot(signal), events: [] },
         replacement: true,
         cursorFromServerSnapshot: true,
         newEvents: [],
       };
     }
-
-    const remoteContext = { client };
-    state = await this.loadChatThreadEventTail(remoteContext, state, signal);
-    state = await this.maybeRebaseChatThreadEventSnapshot(
+    state = await loadMetadataEventTail(source, state, signal);
+    state = await this.maybeRebaseMetadataEventSnapshot(
       dataKey,
-      remoteContext,
+      source,
       state,
       signal,
     );
-
-    const shouldWrite = state.replacement || state.newEvents.length > 0;
-    if (shouldWrite) {
-      const snapshot = state.result.snapshot;
-      if (!snapshot) {
-        throw new Error("ChatThreadEvent synchronization requires a snapshot");
-      }
-      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-      const written = await settle(
-        this.runChatIdbOperation(
-          createStrictIdbChatThreadEventStores,
-          (stores) => {
-            return state.replacement
-              ? stores.writeStore.replaceFromSnapshot(
-                  {
-                    chatThreads: snapshot.chatThreads,
-                    latestEventId: snapshot.latestEventId,
-                    latestSeqId: snapshot.latestSeqId,
-                  },
-                  state.result.events,
-                  signal,
-                )
-              : stores.writeStore.upsertEvents(state.newEvents, signal);
-          },
-          signal,
-        ),
-        signal,
-      );
-      if (!written.ok) {
-        logDataKeyError(
-          dataKey,
-          "indexeddb.chat-thread-event.write.error",
-          written.error,
-        );
-      }
+    if (!state.replacement && state.newEvents.length === 0) {
+      return state.result;
     }
-    return state.result;
-  }
-
-  private async loadChatThreadEventTail(
-    context: ChatThreadEventRemoteContext,
-    initialState: ChatThreadEventRemoteState,
-    signal: AbortSignal,
-  ): Promise<ChatThreadEventRemoteState> {
-    const { client } = context;
-    let state = initialState;
-    let hasMore = true;
-    while (hasMore) {
-      const page = await client.events({
-        query: state.cursor ? { sinceSeqId: state.cursor.seqId } : {},
-        fetchOptions: { signal },
-      });
-      signal.throwIfAborted();
-      if (page.status === 410) {
-        if (state.cursorFromServerSnapshot) {
-          throw new Error(
-            "ChatThreadEvent cursor expired immediately after a server snapshot",
+    const snapshot = state.result.snapshot;
+    if (!snapshot) {
+      throw new Error(`${source.dataset} synchronization requires a snapshot`);
+    }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
+    const written = await settle(
+      this.runIndexedDbOperation(
+        source.createStores,
+        async (stores) => {
+          await stores.write(
+            snapshot,
+            state.replacement ? state.result.events : state.newEvents,
+            state.replacement,
+            signal,
           );
-        }
-        const result = {
-          snapshot: await this.fetchChatThreadSnapshot(client, signal),
-          events: [],
-        };
-        state = {
-          result,
-          cursor: chatThreadEventCursor(result),
-          replacement: true,
-          cursorFromServerSnapshot: true,
-          newEvents: [],
-        };
-        continue;
+          return await stores.read(signal);
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!written.ok) {
+      if (!isIndexedDbUnavailable(written.error)) {
+        throw written.error;
       }
-      if (page.status !== 200) {
-        throw new SharedDatabaseHttpError(page.status);
-      }
-      const pageEvents = page.body.events.filter((event) => {
-        return state.cursor === null || event.seqId > state.cursor.seqId;
-      });
-      if (pageEvents.length > 0) {
-        const lastEvent = pageEvents.at(-1)!;
-        state = {
-          result: {
-            snapshot: state.result.snapshot,
-            events: [...state.result.events, ...pageEvents],
-          },
-          cursor: { eventId: lastEvent.id, seqId: lastEvent.seqId },
-          replacement: state.replacement,
-          cursorFromServerSnapshot: false,
-          newEvents: [...state.newEvents, ...pageEvents],
-        };
-      }
-      hasMore = page.body.hasMore && page.body.events.length > 0;
+      logDataKeyError(
+        dataKey,
+        "indexeddb.metadata-event.write.error",
+        written.error,
+      );
+      return state.result;
     }
-    return state;
+    return (metadataEventCursor(written.value) ?? 0) >
+      (metadataEventCursor(state.result) ?? 0)
+      ? written.value
+      : state.result;
   }
 
-  private async maybeRebaseChatThreadEventSnapshot(
-    dataKey: ScopedChatThreadEventDataKey,
-    context: ChatThreadEventRemoteContext,
-    state: ChatThreadEventRemoteState,
+  private async maybeRebaseMetadataEventSnapshot<
+    TSnapshot extends MetadataSnapshot,
+    TEvent extends MetadataEvent,
+  >(
+    dataKey: ScopedSharedDatabaseDataKey,
+    source: MetadataEventSource<TSnapshot, TEvent>,
+    state: MetadataEventRemoteState<TSnapshot, TEvent>,
     signal: AbortSignal,
-  ): Promise<ChatThreadEventRemoteState> {
+  ): Promise<MetadataEventRemoteState<TSnapshot, TEvent>> {
     if (
+      source.rebaseThreshold === null ||
       state.replacement ||
-      state.result.events.length <=
-        CHAT_THREAD_EVENT_LOG_SNAPSHOT_REBASE_THRESHOLD
+      state.result.events.length <= source.rebaseThreshold
     ) {
       return state;
     }
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-    const rebasedSnapshot = await settle(
-      this.fetchChatThreadSnapshot(context.client, signal),
-      signal,
-    );
+    const rebasedSnapshot = await settle(source.snapshot(signal), signal);
     if (!rebasedSnapshot.ok) {
-      if (
-        rebasedSnapshot.error instanceof SharedDatabaseHttpError &&
-        rebasedSnapshot.error.status === 401
-      ) {
-        throw rebasedSnapshot.error;
+      const error = rebasedSnapshot.error;
+      if (!(error instanceof SharedDatabaseHttpError) || error.status < 500) {
+        throw error;
       }
-      L.debug("snapshot-rebase.skip", {
-        ...dataKeyDiagnosticDetails(dataKey),
-        error: rebasedSnapshot.error,
-      });
+      // Compaction is optional: the synchronized tail is still authoritative.
+      logDataKeyError(dataKey, "snapshot-rebase.skip", error);
       return state;
     }
-    const result = { snapshot: rebasedSnapshot.value, events: [] };
-    return await this.loadChatThreadEventTail(
-      context,
+    return await loadMetadataEventTail(
+      source,
       {
-        result,
-        cursor: chatThreadEventCursor(result),
+        result: { snapshot: rebasedSnapshot.value, events: [] },
         replacement: true,
         cursorFromServerSnapshot: true,
         newEvents: [],
       },
       signal,
     );
-  }
-
-  private async fetchChatThreadSnapshot(
-    client: SharedDatabaseContractClient<typeof chatThreadsContract>,
-    signal: AbortSignal,
-  ): Promise<NonNullable<ChatThreadEventQueryResult["snapshot"]>> {
-    const snapshot = await client.snapshot({ fetchOptions: { signal } });
-    signal.throwIfAborted();
-    if (snapshot.status !== 200) {
-      throw new SharedDatabaseHttpError(snapshot.status);
-    }
-    if ("chatThreads" in snapshot.body) {
-      return snapshot.body;
-    }
-    const response = await fetchResource(snapshot.body.url, {}, signal);
-    if (!response.ok) {
-      throw new SharedDatabaseHttpError(response.status);
-    }
-    const archive = chatThreadSnapshotArchiveSchema.parse(
-      await response.json(),
-    );
-    signal.throwIfAborted();
-    return {
-      chatThreads: archive.chatThreads,
-      latestEventId: snapshot.body.latestEventId,
-      latestSeqId: snapshot.body.latestSeqId,
-    };
   }
 
   private async readChatEventCache(
@@ -1066,7 +954,7 @@ export class SharedDatabaseWorkerRuntime {
   ): Promise<ChatEventRow[]> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
-      this.runChatIdbOperation(
+      this.runIndexedDbOperation(
         createIdbEventRowStores,
         (stores) => {
           return stores.readStore.readRowsAfter(
@@ -1086,53 +974,45 @@ export class SharedDatabaseWorkerRuntime {
     return result.value;
   }
 
-  private async readChatThreadEventCache(
-    dataKey: ScopedChatThreadEventDataKey,
+  private async readMetadataEventCache<
+    TSnapshot extends MetadataSnapshot,
+    TEvent extends MetadataEvent,
+  >(
+    dataKey: ScopedSharedDatabaseDataKey,
+    source: MetadataEventSource<TSnapshot, TEvent>,
     signal: AbortSignal,
-  ): Promise<ChatThreadEventCache> {
+  ): Promise<{
+    readonly result: MetadataEventResult<TSnapshot, TEvent>;
+    readonly degraded: boolean;
+  }> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
-      this.runChatIdbOperation(
-        createStrictIdbChatThreadEventStores,
+      this.runIndexedDbOperation(
+        source.createStores,
         (stores) => {
-          return Promise.all([
-            stores.readStore.readSnapshot(signal),
-            stores.readStore.readEventLog(signal),
-          ]);
+          return stores.read(signal);
         },
         signal,
       ),
       signal,
     );
     if (!result.ok) {
+      // Storage availability is optional; malformed persisted data and
+      // programming errors must not masquerade as an empty cache.
+      if (!isIndexedDbUnavailable(result.error)) {
+        throw result.error;
+      }
       logDataKeyError(
         dataKey,
-        "indexeddb.chat-thread-event.read.error",
+        "indexeddb.metadata-event.read.error",
         result.error,
       );
-      return {
-        result: { snapshot: null, events: [] },
-        degraded: true,
-      };
+      return { result: { snapshot: null, events: [] }, degraded: true };
     }
-    const [snapshot, eventLog] = result.value;
-    return {
-      result: {
-        snapshot:
-          snapshot === null
-            ? null
-            : {
-                chatThreads: [...snapshot.chatThreads],
-                latestEventId: snapshot.latestEventId,
-                latestSeqId: snapshot.latestSeqId,
-              },
-        events: [...eventLog.events],
-      },
-      degraded: false,
-    };
+    return { result: result.value, degraded: false };
   }
 
-  private async runChatIdbOperation<TStores, TResult>(
+  private async runIndexedDbOperation<TStores, TResult>(
     createStores: (getDatabase: () => Promise<IDBPDatabase>) => TStores,
     operation: (stores: TStores) => Promise<TResult>,
     signal: AbortSignal,
@@ -1149,7 +1029,7 @@ export class SharedDatabaseWorkerRuntime {
   }
 
   private async getDatabaseConnection(signal: AbortSignal): Promise<{
-    readonly entry: ChatDatabaseEntry;
+    readonly entry: SharedDatabaseEntry;
     readonly database: IDBPDatabase;
   }> {
     let entry = this.databaseEntry;
@@ -1165,7 +1045,7 @@ export class SharedDatabaseWorkerRuntime {
           });
         },
       });
-      const nextEntry: ChatDatabaseEntry = {
+      const nextEntry: SharedDatabaseEntry = {
         promise: opener.openChatIdb(this.identity.userId, this.identity.orgId),
         database: null,
         invalidated: false,
@@ -1174,13 +1054,25 @@ export class SharedDatabaseWorkerRuntime {
       this.databaseEntry = entry;
     }
     if (entry.invalidated) {
-      throw new Error("Chat IndexedDB version changed; reload is required");
+      throw new DOMException(
+        "Chat IndexedDB version changed; reload is required",
+        "InvalidStateError",
+      );
     }
     const database = await entry.promise;
-    signal.throwIfAborted();
     entry.database ??= database;
+    // Opening IndexedDB cannot be aborted. Adopt its connection before a
+    // query cancellation, and close a late open if the runtime already ended.
+    if (this.rootSignal.aborted) {
+      database.close();
+      this.rootSignal.throwIfAborted();
+    }
+    signal.throwIfAborted();
     if (entry.invalidated) {
-      throw new Error("Chat IndexedDB version changed; reload is required");
+      throw new DOMException(
+        "Chat IndexedDB version changed; reload is required",
+        "InvalidStateError",
+      );
     }
     return { entry, database };
   }

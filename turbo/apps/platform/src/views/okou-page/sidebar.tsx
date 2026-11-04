@@ -1,10 +1,16 @@
-import { openWorkspaceSearchChat$ } from "../../signals/okou-page/workspace-chat-search.ts";
+import { Collapsible } from "@base-ui/react/collapsible";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import type { ComponentProps, MouseEvent, ReactNode } from "react";
+import type {
+  ComponentProps,
+  CSSProperties,
+  MouseEvent,
+  ReactNode,
+} from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   LayoutGrid,
+  Lightbulb,
   Package,
   Route,
   Users,
@@ -49,6 +55,7 @@ import { OrgSwitcher, OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
+import { ProjectSidebar } from "../projects/project-sidebar.tsx";
 import { ChatThreadDialogs, ChatThreadsSection } from "./sidebar-threads.tsx";
 import {
   responsiveSidebarChatThreadScrollSignals,
@@ -72,6 +79,7 @@ import {
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
+import { suggestionFeedEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
@@ -79,7 +87,7 @@ type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 const slackIcon = settingsIconAssetUrl("slack");
 const MANAGE_CONTENT_ID = "sidebar-manage-content";
 
-type ManageNavId = "agents" | "artifacts" | "connectors" | "workflows";
+type ManageNavId = "feed" | "agents" | "artifacts" | "connectors" | "workflows";
 type SidebarNavId = ManageNavId | "chat" | "works";
 
 interface ManageNavItem {
@@ -90,6 +98,12 @@ interface ManageNavItem {
 }
 
 const MANAGE_NAV: readonly ManageNavItem[] = [
+  {
+    id: "feed",
+    activeKeys: ["feed"],
+    pathname: "/feed",
+    icon: Lightbulb as NavIcon,
+  },
   {
     id: "agents",
     activeKeys: ["agents", "agentDetail", "agentPermissions"],
@@ -145,8 +159,14 @@ const FOOTER_NAV: readonly FooterNavItem[] = [
 
 function useManageNavItems() {
   const { t } = useTranslation();
+  const feedEnabled = useGet(suggestionFeedEnabled$);
   const manageLabel = (id: ManageNavId): string => {
     switch (id) {
+      case "feed": {
+        return t(($) => {
+          return $.appShell.sidebar.navigation.feed;
+        });
+      }
       case "agents": {
         return t(($) => {
           return $.appShell.sidebar.navigation.agents;
@@ -169,7 +189,9 @@ function useManageNavItems() {
       }
     }
   };
-  return MANAGE_NAV.map((item) => {
+  return MANAGE_NAV.filter((item) => {
+    return item.id !== "feed" || feedEnabled;
+  }).map((item) => {
     return { ...item, label: manageLabel(item.id) };
   });
 }
@@ -237,6 +259,7 @@ function AccountDropdownContainer({
       onAccountAction={onAccountAction}
       collapsed={collapsed}
       renderCodexResetDialog={renderCodexResetDialog}
+      showSubscriptionEntry={collapsed}
     />
   );
 }
@@ -428,6 +451,7 @@ function ExpandedSidebarSections() {
       <div className="px-2">
         <PinnedAgentListSection />
       </div>
+      <ProjectSidebar touch />
       <ChatThreadsSection
         scrollSignals={responsiveSidebarChatThreadScrollSignals}
         contentClassName="px-2"
@@ -783,7 +807,6 @@ function LabeledNavRailFrame({
 }
 
 export function ThreeColumnSearchDialogContainer() {
-  const openSearchChat = useSet(openWorkspaceSearchChat$);
   const open = useGet(threeColumnSearchOpen$);
   const onOpenChange = useSet(setThreeColumnSearchOpen$);
   const navigate = useSet(detachedNavigateTo$);
@@ -797,7 +820,9 @@ export function ThreeColumnSearchDialogContainer() {
       open
       onOpenChange={onOpenChange}
       onSelectChatThread={(threadId) => {
-        openSearchChat(threadId);
+        navigate("/chats/:threadId", {
+          pathParams: { threadId },
+        });
       }}
       onSelectAgent={(agentId) => {
         navigate("/agents/:agentId/chat", {
@@ -918,20 +943,22 @@ function ChatListResizeSeam() {
   const width = useGet(chatListWidth$);
   const resizing = useGet(chatListResizing$);
   const ref = useSet(chatListResizeHandleRef$);
+  const hidden = useGet(sidebarOff$);
   return (
     <ResizeSeam
       ref={ref}
       label={t(($) => {
         return $.appShell.sidebar.resizeChatList;
       })}
-      valueMin={CHAT_LIST_MIN_WIDTH}
+      valueMin={hidden ? 0 : CHAT_LIST_MIN_WIDTH}
       valueMax={CHAT_LIST_MAX_WIDTH}
-      valueNow={width}
+      valueNow={hidden ? 0 : width}
       resizing={resizing}
-      // The target stays inside the list so it needs no paint priority over
-      // the sheet; the sheet's own border draws the resting line at its end.
-      line="end"
-      className="absolute inset-y-0 right-0"
+      // This shell-owned 12px target straddles the list/workspace boundary.
+      // Its local paint priority keeps the later workspace from covering the
+      // right half; shared modal/menu portals still paint above the shell.
+      line="center"
+      className="absolute inset-y-2 right-0 z-1 translate-x-1/2"
     />
   );
 }
@@ -958,6 +985,7 @@ function ChatListColumn() {
         <div className={CHAT_LIST_INSET}>
           <PinnedAgentListSection layout="horizontal" />
         </div>
+        <ProjectSidebar />
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}
@@ -971,17 +999,39 @@ function ChatListColumn() {
       <div className={cn("pb-3 empty:hidden", CHAT_LIST_INSET)}>
         <SidebarUpgradeCard />
       </div>
-      {unified && <ChatListResizeSeam />}
     </aside>
   );
 }
 
 function ThreeColumnNav() {
-  const chatListHidden = useGet(sidebarOff$);
+  const hidden = useGet(sidebarOff$);
+  const unified = useGet(unifiedChatWorkspace$);
+  const width = useGet(chatListWidth$);
+  const resizing = useGet(chatListResizing$);
   return withChatScrollLayout(
     <>
       <LabeledNavRail />
-      {!chatListHidden && <ChatListColumn />}
+      <Collapsible.Root
+        open={!hidden}
+        className="relative hidden shrink-0 md:flex"
+      >
+        <Collapsible.Panel
+          inert={hidden}
+          className={cn(
+            "flex overflow-hidden w-[var(--chat-list-width)] data-[starting-style]:w-0 data-[ending-style]:w-0",
+            !resizing &&
+              "motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
+          )}
+          style={
+            {
+              "--chat-list-width": `${String(unified ? width : 300)}px`,
+            } as CSSProperties
+          }
+        >
+          <ChatListColumn />
+        </Collapsible.Panel>
+        {unified && <ChatListResizeSeam />}
+      </Collapsible.Root>
     </>,
     { measureWidth: true },
   );

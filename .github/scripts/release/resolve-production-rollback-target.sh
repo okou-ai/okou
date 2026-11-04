@@ -10,6 +10,9 @@ readonly IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT=01d21f7c5857795104c27cd54e724f2ce
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
+# Project lifecycle events require the CLI reader installed by #44617.
+readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
+readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
 # #40206 migrates encrypted Link grants before requiring their metadata. Old
 # writers must never recreate the retired shape after the migration.
 readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
@@ -109,6 +112,14 @@ readonly AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT=b4a90a6b3f79527f91836df6a2bcc8
 readonly RUN_REFERENCE_PREPARATION_PATH=.github/rollback-floors/run-reference-preparation
 # #41393 prepared inline file injection before release 2 emits it.
 readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29
+# #44189 prepared immutable content publishers and the hash-addressed Runner reader.
+# Rollback starts Runner before API, so both artifacts must retain that preparation.
+readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
+readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
+readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
+readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
+readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
+readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
@@ -250,6 +261,18 @@ if [[ ! "$workflow_attachments_direct_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$workflow_attachments_direct_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates direct Workflow attachment ownership: ${workflow_attachments_direct_commit}."
+fi
+
+# New Official artifacts omit the definition snapshot. Earlier publishers cannot
+# reconstruct their recorded digest during synchronization. Resolve the actual
+# squash-merged reader rather than a branch-only commit.
+official_workflow_artifact_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH" | sed -n '1p')
+if [[ ! "$official_workflow_artifact_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Official Workflow artifact reader on main."
+fi
+if ! git merge-base --is-ancestor "$official_workflow_artifact_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates manifest-free Official Workflow artifacts: ${official_workflow_artifact_reader_commit}."
 fi
 if ! git merge-base --is-ancestor "$wechat_workflows_only_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the WeChat Workflows-only receiver: ${wechat_workflows_only_commit}."
@@ -786,6 +809,17 @@ if ! git merge-base --is-ancestor "$storage_debug_contracts_commit" "$TARGET_COM
   fail "Rollback target predates the Storage debug contract cleanup: ${storage_debug_contracts_commit}."
 fi
 
+# Canonical Project parts now use ordinary chat/draft contracts. Earlier APIs
+# reject those writes and restore reader floors below the prepared clients.
+project_wire_contracts_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PROJECT_WIRE_CONTRACTS_PATH" | sed -n '1p')
+if [[ ! "$project_wire_contracts_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Project wire contract activation on main."
+fi
+if ! git merge-base --is-ancestor "$project_wire_contracts_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Project wire contract activation: ${project_wire_contracts_commit}."
+fi
+
 # Pi memory's private tables no longer exist. Earlier APIs still name them
 # during ordinary native memory writes, even though producers were retired.
 pi_memory_retired_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
@@ -830,6 +864,62 @@ fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the database-only Agent instructions reader: ${AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT}."
+fi
+
+# Hash-only Runners cannot execute claims from an inline/document API producer.
+# Read the activation floor from current main, independently of the Runner reader floor.
+if ! content_bundle_reference_only_api_commit=$(git show "origin/main:${CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH}"); then
+  fail "Cannot read the reference-only content bundle API rollback floor from main."
+fi
+if [[ ! "$content_bundle_reference_only_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid reference-only content bundle API rollback floor."
+fi
+if ! git merge-base --is-ancestor "$content_bundle_reference_only_api_commit" origin/main; then
+  fail "Reference-only content bundle API rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$content_bundle_reference_only_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates reference-only content bundle claims: ${content_bundle_reference_only_api_commit}."
+fi
+
+# Bundle-only Seed updates do not create matching legacy Storage versions.
+# Earlier sync publishers still require those versions when content is unchanged.
+seed_skill_bundle_only_api_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SEED_SKILL_BUNDLE_ONLY_API_PATH" | sed -n '1p')
+if [[ ! "$seed_skill_bundle_only_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Seed Skill bundle-only publisher on main."
+fi
+if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates immutable content bundle publication: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
+fi
+
+# Catalog v4 and provenance v2 survive rollback. Require the released preparation
+# API, whose publisher also fences against downgrading an accepted v4 catalog.
+if ! official_workflow_bundle_reader_commit=$(git show "origin/main:${OFFICIAL_WORKFLOW_BUNDLE_READER_PATH}"); then
+  fail "Cannot read the Official Workflow bundle reader rollback floor from main."
+fi
+if [[ ! "$official_workflow_bundle_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Official Workflow bundle reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$official_workflow_bundle_reader_commit" origin/main; then
+  fail "Official Workflow bundle reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$official_workflow_bundle_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Official Workflow bundle reader preparation: ${official_workflow_bundle_reader_commit}."
+fi
+
+# Reference-only claims require the corrected archive reader. Keep the API
+# producer floor independent of the selected Runner reader artifact.
+content_bundle_archive_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CONTENT_BUNDLE_ARCHIVE_READER_PATH" | sed -n '1p')
+if [[ ! "$content_bundle_archive_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged content bundle archive reader on main."
+fi
+if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" origin/main; then
+  fail "Content bundle archive reader rollback floor is not on main."
 fi
 
 # Retained decoded-v1 entries can outlive the wider writer. Read main's floor
@@ -955,6 +1045,9 @@ fi
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates DAV firewall method support: ${DAV_FIREWALL_READER_COMMIT}."
 fi
+if ! git merge-base --is-ancestor "$PROJECT_READER_PREPARATION_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the Project CLI readers: ${PROJECT_READER_PREPARATION_COMMIT}."
+fi
 if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the blank sandbox status reader: ${BLANK_SANDBOX_STATUS_READER_COMMIT}."
 fi
@@ -977,6 +1070,14 @@ fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates inline Agent instructions: ${AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates hash-addressed content bundles: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates bounded content bundle archive delivery: ${content_bundle_archive_reader_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$WORKFLOW_DOWNLOAD_READER_COMMIT" "$runner_tag_commit"; then

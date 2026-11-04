@@ -17,8 +17,19 @@ from mitmproxy.proxy.layers.http import (
     HttpStream,
     SendHttp,
 )
-from mitmproxy.proxy.layers.http._events import RequestData, RequestEndOfMessage, RequestHeaders
-from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
+from mitmproxy.proxy.layers.http._events import (
+    RequestData,
+    RequestEndOfMessage,
+    RequestHeaders,
+    ResponseEndOfMessage,
+    ResponseHeaders,
+)
+from mitmproxy.proxy.layers.http._hooks import (
+    HttpRequestHeadersHook,
+    HttpRequestHook,
+    HttpResponseHeadersHook,
+    HttpResponseHook,
+)
 from mitmproxy.test import taddons, tutils
 
 import auth
@@ -26,6 +37,7 @@ import flow_metadata_keys as metadata_keys
 import matching
 import mitm_addon
 import registry
+from body_limits import STREAM_BUFFER_LIMIT
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.mitmproxy_http_framing_helpers import start_http_layer
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
@@ -383,3 +395,145 @@ async def test_native_http_acquisition_keeps_public_ip_and_wire_authority(
             b"".join(cmd.event.data for cmd in sends if isinstance(cmd.event, RequestData)) == body
         )
         assert len([cmd for cmd in sends if isinstance(cmd.event, RequestEndOfMessage)]) == 1
+
+
+@pytest.mark.parametrize("alpn", [b"http/1.1", b"h2"])
+@pytest.mark.parametrize("content_length", [17, STREAM_BUFFER_LIMIT + 1])
+@pytest.mark.parametrize("invalid_source", [False, True])
+async def test_native_invalid_http_path_rejects_before_dns_and_upload(
+    tmp_path, dns, fake_firewall_headers, alpn, content_length, invalid_source
+):
+    sandbox = _sandbox(tmp_path)
+    if invalid_source:
+        sandbox["firewalls"][0]["firewall"]["apis"][0]["permissions"][0]["rules"] = ["ANY /%ZZ"]
+    path = b"/outside/items?caller=private" if invalid_source else b"/outside/%ZZ?caller=private"
+    reg = _write_registry(tmp_path, sandbox_info=sandbox)
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+        fake_firewall_headers() as fetch,
+    ):
+        addon_context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(reg)
+        )
+        client, layer = start_http_layer(
+            addon_context,
+            alpn=alpn,
+            host=_HOST,
+            server_host=_IP,
+            server_port=80,
+            mode=HTTPMode.transparent,
+        )
+        client.tls = False
+        client.sni = None
+        layer.context.server.tls = False
+        stream = HttpStream(layer.context.fork(), 1)
+        list(stream.handle_event(events.Start()))
+        request = tutils.treq(
+            scheme=b"http",
+            method=b"POST",
+            host=_IP.encode(),
+            port=80,
+            path=path,
+            http_version=b"HTTP/2.0" if alpn == b"h2" else b"HTTP/1.1",
+            headers=http.Headers(
+                ((b"Host", _HOST.encode()), (b"Content-Length", str(content_length).encode()))
+            ),
+            content=b"",
+        )
+        if alpn == b"h2":
+            request.authority = _HOST
+        history = list(stream.handle_event(RequestHeaders(1, request, end_stream=False)))
+        headers_hook = next(cmd for cmd in history if isinstance(cmd, HttpRequestHeadersHook))
+        await addon_context.master.addons.invoke_addon(mitm_addon, headers_hook)
+        flow = headers_hook.flow
+        assert flow.response is not None
+        assert flow.response.status_code == 403
+        assert flow.response.content is not None
+        body = json.loads(flow.response.content)
+        assert body["reason"] == "unsafe_path"
+        assert "name" not in body
+        assert "base" not in body
+        assert "private" not in body["url"]
+        assert metadata_keys.CUSTOM_HTTP_BINDING not in flow.metadata
+        assert not flow.request.stream
+        assert "Authorization" not in flow.request.headers
+        pending = list(stream.handle_event(events.HookCompleted(headers_hook, None)))
+        history.extend(pending)
+        for hook_type in (HttpResponseHeadersHook, HttpResponseHook):
+            hook = next(cmd for cmd in pending if isinstance(cmd, hook_type))
+            await addon_context.master.addons.invoke_addon(mitm_addon, hook)
+            pending = list(stream.handle_event(events.HookCompleted(hook, None)))
+            history.extend(pending)
+        client_events = [
+            cmd.event for cmd in history if isinstance(cmd, SendHttp) and cmd.connection is client
+        ]
+        assert any(
+            isinstance(event, ResponseHeaders) and event.response.status_code == 403
+            for event in client_events
+        )
+        assert any(isinstance(event, ResponseEndOfMessage) for event in client_events)
+        assert not any(isinstance(cmd, GetHttpConnection) for cmd in history)
+        assert not any(
+            isinstance(cmd, SendHttp) and isinstance(cmd.connection, connection.Server)
+            for cmd in history
+        )
+    fetch.assert_not_awaited()
+    dns.assert_not_awaited()
+
+
+async def test_invalid_http_request_hook_rejects_before_dns(
+    tmp_path, real_flow, headers, mitm_ctx, fake_firewall_headers, dns
+):
+    reg = _write_registry(tmp_path, sandbox_info=_sandbox(tmp_path))
+    flow = _flow(real_flow, headers)
+    flow.request.path = "/outside/%ZZ?caller=private"
+    with mitm_ctx(registry_path=str(reg)), fake_firewall_headers() as fetch:
+        await mitm_addon.request(flow)
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    body = json.loads(flow.response.content)
+    assert body["reason"] == "unsafe_path"
+    assert "name" not in body
+    assert "base" not in body
+    assert "private" not in body["url"]
+    assert "Authorization" not in flow.request.headers
+    assert metadata_keys.CUSTOM_HTTP_BINDING not in flow.metadata
+    fetch.assert_not_awaited()
+    dns.assert_not_awaited()
+
+
+@pytest.mark.parametrize("headers_phase", [False, True])
+async def test_invalid_http_path_retains_target_when_registry_changes_between_reads(
+    tmp_path, real_flow, headers, mitm_ctx, fake_firewall_headers, dns, monkeypatch, headers_phase
+):
+    reg = _write_registry(tmp_path, sandbox_info=_sandbox(tmp_path))
+    flow = _flow(real_flow, headers)
+    flow.request.path = "/outside/%ZZ?caller=private"
+    real_load = registry.load_registry_state
+    replaced = False
+
+    def replace_after_read(path):
+        nonlocal replaced
+        snapshot = real_load(path)
+        if not replaced:
+            # Schedule an external registry replacement between the two real
+            # reads; return the actual first snapshot, not fabricated state.
+            _write_registry(tmp_path, client_ip="10.200.0.6", sandbox_info=_sandbox(tmp_path))
+            replaced = True
+        return snapshot
+
+    with mitm_ctx(registry_path=str(reg)), fake_firewall_headers() as fetch:
+        monkeypatch.setattr(registry, "load_registry_state", replace_after_read)
+        if headers_phase:
+            assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    body = json.loads(flow.response.content)
+    assert body["reason"] == "unsafe_path"
+    assert body["url"] == f"http://{_IP}/outside/%ZZ"
+    assert metadata_keys.CUSTOM_HTTP_BINDING not in flow.metadata
+    assert "Authorization" not in flow.request.headers
+    fetch.assert_not_awaited()
+    dns.assert_not_awaited()

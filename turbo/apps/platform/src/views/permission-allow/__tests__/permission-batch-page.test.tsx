@@ -11,6 +11,10 @@ import {
   type UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  connectorPermissionsContract,
+  type ConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -107,7 +111,8 @@ function installResources({
 function openPage({
   callback = false,
   malformed = false,
-}: { callback?: boolean; malformed?: boolean } = {}) {
+  chatAccounts = false,
+}: { callback?: boolean; malformed?: boolean; chatAccounts?: boolean } = {}) {
   const params = new URLSearchParams({
     items: malformed ? "not-json" : JSON.stringify(items),
     action: "allow",
@@ -120,30 +125,84 @@ function openPage({
     context,
     host: "app.okou.ai",
     path: `/agents/${AGENT_ID}/permissions/batch?${params}`,
-    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.BatchConnectorPermissions]: true,
+      [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
+    },
   });
 }
 
 test.each([
   {
     outcome: "success",
-    message: "The conversation has continued.",
+    message: "The chat has continued.",
+    chatAccounts: false,
   },
   {
     outcome: "failure",
     message: /^Permissions allowed, but could not continue\./u,
+    chatAccounts: false,
+  },
+  {
+    outcome: "success",
+    message: "The chat has continued.",
+    chatAccounts: true,
   },
 ] as const)(
   "Grouped permissions remain allowed after continuation $outcome",
-  async ({ outcome, message }) => {
+  async ({ outcome, message, chatAccounts }) => {
     const grants = installResources();
     const applied: string[] = [];
+    const durations: string[] = [];
+    if (chatAccounts) {
+      const shared = new Map<string, ConnectorPermissions["grants"]>();
+      context.mocks.api(
+        connectorPermissionsContract.get,
+        ({ query, respond }) => {
+          return respond(200, {
+            target: query,
+            grants:
+              shared.get(
+                query.kind === "builtin"
+                  ? query.connectorSlug
+                  : query.customConnectorId,
+              ) ?? [],
+          });
+        },
+      );
+      context.mocks.api(
+        connectorPermissionsContract.apply,
+        ({ body, respond }) => {
+          if (body.target.kind !== "builtin") {
+            throw new Error("Expected builtin target");
+          }
+          const connectorSlug = body.target.connectorSlug;
+          for (const grant of body.grants) {
+            durations.push(String(grant.expiresIn));
+            applied.push(`${connectorSlug}:${grant.permission}`);
+          }
+          const saved = body.grants.map((grant) => {
+            return {
+              permission: grant.permission,
+              action: grant.action,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+            };
+          });
+          shared.set(connectorSlug, saved);
+          return respond(200, {
+            target: body.target,
+            grants: saved,
+          });
+        },
+      );
+    }
     context.mocks.api(
       userPermissionGrantsContract.applyBatch,
       ({ body, respond }) => {
         for (const group of body.groups) {
           for (const grant of group.grants) {
             expect(grant.expiresIn).toBe("1h");
+            durations.push(String(grant.expiresIn));
             applied.push(`${group.connectorSlug}:${grant.permission}`);
             grants.push({
               agentId: AGENT_ID,
@@ -170,7 +229,7 @@ test.each([
             },
           });
     });
-    await openPage({ callback: true });
+    await openPage({ callback: true, chatAccounts });
     await screen.findByText("Description for chat:write");
     expect(screen.getByText("GitHub")).toBeInTheDocument();
     expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
@@ -188,6 +247,7 @@ test.each([
       "github:issues:read",
       "slack:chat:write",
     ]);
+    expect(durations).toStrictEqual(["1h", "1h"]);
   },
 );
 
@@ -275,7 +335,7 @@ test.each(["dismissed", "continued"] as const)(
       await screen.findByText("No permissions were changed.");
     } else {
       click(button("Allow all 2 permissions"));
-      await screen.findByText("The conversation has continued.");
+      await screen.findByText("The chat has continued.");
     }
 
     const nextParams = new URLSearchParams({
@@ -302,7 +362,7 @@ test.each(["dismissed", "continued"] as const)(
       "1 hour",
     );
     click(button("Allow 1 permission"));
-    await screen.findByText("The conversation has continued.");
+    await screen.findByText("The chat has continued.");
     expect(applied.at(-1)).toStrictEqual({
       agentId: nextAgentId,
       groups: [

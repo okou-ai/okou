@@ -5,6 +5,7 @@ import {
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as Infer,
 } from "zod";
@@ -24,7 +25,7 @@ export const halloweenQuestionSchema = object({
   options: array(object({ id: string(), text: string() })).length(3),
 });
 export const halloweenRoundSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   outcome: halloweenOutcomeSchema,
   correct: number().int().min(0).max(5),
   question: halloweenQuestionSchema.nullable(),
@@ -42,7 +43,7 @@ export type HalloweenQuestion = Infer<typeof halloweenQuestionSchema>;
 export type HalloweenPhase = Infer<typeof halloweenPhaseSchema>;
 
 const roundReference = object({
-  id: string().uuid(),
+  id: uuid(),
 });
 const errors = {
   400: apiErrorSchema,
@@ -123,7 +124,7 @@ export const halloweenParticipantSchema = object({
 });
 export type HalloweenParticipant = Infer<typeof halloweenParticipantSchema>;
 const batch = object({
-  id: string().uuid(),
+  id: uuid(),
   capturedAt: string(),
   participants: array(halloweenParticipantSchema),
 });
@@ -132,14 +133,14 @@ export const halloweenOperationsContract = c.router({
     method: "POST",
     path: "/api/halloween/operations/batches",
     headers: authHeadersSchema,
-    body: object({ id: string().uuid() }),
+    body: object({ id: uuid() }),
     responses: { 200: batch, ...errors },
   },
   batch: {
     method: "GET",
     path: "/api/halloween/operations/batches/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: { 200: batch, ...errors },
   },
   review: {
@@ -147,7 +148,7 @@ export const halloweenOperationsContract = c.router({
     path: "/api/halloween/operations/review",
     headers: authHeadersSchema,
     body: object({
-      batchId: string().uuid(),
+      batchId: uuid(),
       userId: string(),
       decision: zEnum(["winner", "not_selected"]),
     }),

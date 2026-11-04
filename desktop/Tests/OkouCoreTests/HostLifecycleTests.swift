@@ -99,12 +99,15 @@ private func notificationTestSession() -> URLSession {
 
 private func notificationTestRuntime(
   session: URLSession, notifications: NotificationBoundary,
+  now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+  awakeNow: @escaping @Sendable () -> SuspendingClock.Instant = { .now },
   tokenProvider: @escaping @Sendable (Bool) async throws -> String = { _ in "clerk-session" },
   onChange: @escaping @MainActor @Sendable (RuntimeState) -> Void = { _ in }
 ) -> HostRuntime {
   HostRuntime(
     api: APIClient(
-      baseURL: URL(string: "https://api.example.test")!, version: "0.52.0", session: session),
+      baseURL: URL(string: "https://api.example.test")!, version: "0.52.0", session: session,
+      now: now, awakeNow: awakeNow),
     executor: CommandExecutor(
       helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
     installationId: UUID().uuidString, hostName: "Test Mac", version: "0.52.0",
@@ -212,6 +215,123 @@ private final class StateTransitions: @unchecked Sendable {
 
 final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   @MainActor
+  func testHeartbeatRetainsHTTPHeadersWhenItsResponseBodyDisconnects() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let server = try HeartbeatFaultServer()
+    addTeardownBlock { server.close() }
+    let recovering = expectation(description: "A partial response enters recovery")
+    let recovered = expectation(description: "The next heartbeat recovers the same host")
+    let transitions = StateTransitions()
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let runtime = HostRuntime(
+      api: APIClient(baseURL: server.baseURL, version: "0.54.11", session: session),
+      executor: CommandExecutor(
+        helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
+      installationId: UUID().uuidString, hostName: "Test Mac", version: "0.54.11",
+      notifications: NotificationBoundary(attachedOnStart: false),
+      tokenProvider: { _ in "private-cached-token" },
+      onChange: { state in
+        if state.status == "recovering" {
+          transitions.notify("recovering", expectation: recovering)
+        } else if state.status == "online" && transitions.hasSeen("recovering") {
+          transitions.notify("recovered", expectation: recovered)
+        }
+      })
+    addTeardownBlock { await runtime.stop() }
+    await runtime.start()
+    await fulfillment(of: [recovering, recovered], timeout: 8, enforceOrder: true)
+    await runtime.stop()
+    let events = try collector.events()
+    let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
+    let restored = try XCTUnwrap(
+      events.first { $0["tags"]["heartbeatOutcome"].string == "recovered" })
+    let failure = failed["contexts"]["heartbeat"]["firstFailure"]
+    let request = try XCTUnwrap(failure["requests"].array?.first)
+    XCTAssertEqual(request["urlErrorCode"].number, -1005)
+    XCTAssertEqual(request["status"].number, 200)
+    XCTAssertEqual(request["responseHeaders"]["cf-ray"].string, "partial-response-ray")
+    let transaction = try XCTUnwrap(request["transport"]["transactions"].array?.last)
+    XCTAssertEqual(transaction["responseStarted"].bool, true)
+    XCTAssertEqual(transaction["status"].number, 200)
+    XCTAssertEqual(failure["operation"]["phase"].string, "http_request")
+    XCTAssertEqual(
+      failed["contexts"]["heartbeat"]["episodeId"], restored["contexts"]["heartbeat"]["episodeId"])
+    for event in events {
+      XCTAssertFalse(event.formatted.contains("private-response-body"))
+      XCTAssertFalse(event.formatted.contains("private-response-cookie"))
+      XCTAssertFalse(event.formatted.contains("private-cached-token"))
+      XCTAssertFalse(event.formatted.contains(server.baseURL.absoluteString))
+    }
+  }
+
+  @MainActor
+  func testHeartbeatTokenFailureIdentifiesItsPhaseAndRecovers() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let recovering = expectation(description: "A token error enters recovery")
+    let recovered = expectation(description: "A successful token read restores the host")
+    let transitions = StateTransitions()
+    let tokens = RequestCount()
+    let started = ContinuousClock.now
+    let awakeStarted = SuspendingClock.now
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      if connection.request.url!.path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if connection.request.url!.path.hasSuffix("/heartbeat") {
+        connection.reply(heartbeatResponse(pending: false))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(
+      session: session, notifications: NotificationBoundary(attachedOnStart: false),
+      now: { started.advanced(by: .seconds(tokens.value >= 2 ? 31 : 0)) },
+      awakeNow: { awakeStarted.advanced(by: .seconds(tokens.value >= 2 ? 1 : 0)) },
+      tokenProvider: { _ in
+        if tokens.next() == 2 {
+          throw URLError(
+            .secureConnectionFailed, userInfo: [NSLocalizedDescriptionKey: "private-token-error"])
+        }
+        return "private-cached-token"
+      },
+      onChange: { state in
+        if state.status == "recovering" {
+          transitions.notify("recovering", expectation: recovering)
+        } else if state.status == "online" && transitions.hasSeen("recovering") {
+          transitions.notify("recovered", expectation: recovered)
+        }
+      })
+    addTeardownBlock { await runtime.stop() }
+    await runtime.start()
+    await fulfillment(of: [recovering, recovered], timeout: 8, enforceOrder: true)
+    await runtime.stop()
+    let events = try collector.events()
+    let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
+    let failure = failed["contexts"]["heartbeat"]["firstFailure"]
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
+    XCTAssertEqual(failure["requests"].array?.count, 0)
+    XCTAssertEqual(failure["operation"]["phase"].string, "token_lookup")
+    let operation = failure["operation"]
+    XCTAssertEqual(operation["durationMs"].number, 31_000)
+    XCTAssertEqual(operation["awakeElapsedMs"].number, 1_000)
+    XCTAssertEqual(operation["systemSuspendedMs"].number, 30_000)
+    let authentication = try XCTUnwrap(operation["phaseTimings"].array?.first)
+    XCTAssertEqual(authentication["urlErrorCode"].number, -1200)
+    XCTAssertEqual(authentication["outcome"].string, "failed")
+    XCTAssertEqual(authentication["durationMs"].number, 31_000)
+    XCTAssertEqual(authentication["awakeElapsedMs"].number, 1_000)
+    XCTAssertEqual(authentication["systemSuspendedMs"].number, 30_000)
+    for event in events {
+      XCTAssertFalse(event.formatted.contains("private-token-error"))
+      XCTAssertFalse(event.formatted.contains("private-cached-token"))
+    }
+  }
+
+  @MainActor
   func testHeartbeatFailureAndRecoveryDeliverCorrelatedSafeSentryDiagnostics() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
@@ -219,6 +339,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let recovered = expectation(description: "A later heartbeat restores the host")
     let transitions = StateTransitions()
     let beats = RequestCount()
+    let started = ContinuousClock.now
+    let awakeStarted = SuspendingClock.now
     let session = notificationTestSession()
     defer { session.invalidateAndCancel() }
     URLProtocolFixture.boundary.set { connection in
@@ -254,6 +376,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     }
     let runtime = notificationTestRuntime(
       session: session, notifications: NotificationBoundary(),
+      now: { started.advanced(by: .seconds(beats.value >= 2 ? 31 : 0)) },
+      awakeNow: { awakeStarted.advanced(by: .seconds(beats.value >= 2 ? 1 : 0)) },
       tokenProvider: { force in force ? "private-refreshed-token" : "private-cached-token" },
       onChange: { state in
         if state.status == "recovering" {
@@ -269,6 +393,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
 
     let events = try collector.events()
     XCTAssertEqual(events.count, 2)
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
     let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
     let restored = try XCTUnwrap(
       events.first { $0["tags"]["heartbeatOutcome"].string == "recovered" })
@@ -281,17 +406,30 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(summary["failedAttempts"].number, 2)
     XCTAssertEqual(summary["pathTemplate"].string, "/api/computer-use/hosts/:hostId/heartbeat")
     let requests = try XCTUnwrap(first["firstFailure"]["requests"].array)
+    XCTAssertEqual(first["firstFailure"]["errorType"].string, "DesktopFailure")
+    XCTAssertEqual(
+      first["firstFailure"]["operation"]["phaseTimings"].array?.compactMap { $0["phase"].string },
+      ["token_lookup", "token_refresh"])
     XCTAssertEqual(requests.compactMap { $0["status"].number }, [401, 502])
     XCTAssertNotEqual(requests[0]["clientRequestId"], requests[1]["clientRequestId"])
     XCTAssertEqual(requests[0]["clientSessionId"], requests[1]["clientSessionId"])
     XCTAssertEqual(requests[1]["responseHeaders"]["cf-ray"].string, "test-first-ray-LAX")
     XCTAssertEqual(requests[1]["responseHeaders"]["content-type"].string, "text/html")
     XCTAssertEqual(requests[1]["responseHeaders"]["x-vercel-id"].string?.count, 256)
-    XCTAssertGreaterThanOrEqual(try XCTUnwrap(requests[1]["durationMs"].number), 0)
+    XCTAssertEqual(requests[1]["durationMs"].number, 31_000)
+    XCTAssertEqual(requests[1]["awakeElapsedMs"].number, 1_000)
+    XCTAssertEqual(requests[1]["systemSuspendedMs"].number, 30_000)
+    let operation = first["firstFailure"]["operation"]
+    XCTAssertEqual(operation["durationMs"].number, 31_000)
+    XCTAssertEqual(operation["awakeElapsedMs"].number, 1_000)
+    XCTAssertEqual(operation["systemSuspendedMs"].number, 30_000)
     let retries = try XCTUnwrap(summary["recentFailures"].array)
     XCTAssertEqual(retries.count, 2)
     XCTAssertEqual(retries[1]["requests"].array?.last?["status"].number, 503)
     XCTAssertEqual(summary["finalRequests"].array?.last?["status"].number, 200)
+    XCTAssertEqual(summary["finalOperation"]["durationMs"].number, 0)
+    XCTAssertEqual(summary["finalOperation"]["awakeElapsedMs"].number, 0)
+    XCTAssertEqual(summary["finalOperation"]["systemSuspendedMs"].number, 0)
     XCTAssertEqual(
       summary["finalRequests"].array?.last?["clientSessionId"], requests[1]["clientSessionId"])
     for event in events {
@@ -319,7 +457,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.client?.urlProtocol(
           connection,
           didFailWithError: URLError(
-            .cannotFindHost, userInfo: [NSLocalizedDescriptionKey: "private-transport-description"]))
+            .cannotFindHost, userInfo: [NSLocalizedDescriptionKey: "private-transport-description"])
+        )
       } else if path.hasSuffix("/next") {
         connection.reply(.object(["status": .string("idle")]))
       } else {
@@ -811,10 +950,11 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     defer { session.invalidateAndCancel() }
     let api = APIClient(
       baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session)
+    let trace = APIRequestTrace()
     do {
       _ = try await api.request(
         ApiRoutes.computerUseHostCommandNext(hostId: "host"), token: "host-token",
-        body: .object([:]), timeout: 0)
+        body: .object([:]), timeout: 0, trace: trace)
       XCTFail("An exhausted budget must fail without waiting for transport")
     } catch let error as DesktopFailure {
       XCTAssertEqual(error.code, "network_error")
@@ -822,43 +962,54 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     } catch {
       XCTFail("Expected the total request deadline, received \(error)")
     }
+    let operation = await trace.snapshot()
+    XCTAssertEqual(operation.deadline, .httpRequest)
   }
 
   func testAPICancelsAnUnfinishedClaimRequest() async {
-    let began = expectation(description: "Server received a claim")
-    let stopped = expectation(description: "The pending claim transport was cancelled")
-    URLProtocolFixture.boundary.set { connection in
-      connection.whenStopped { stopped.fulfill() }
-      began.fulfill()
+    for authenticated in [false, true] {
+      let began = expectation(description: "Server received a claim")
+      let stopped = expectation(description: "The pending claim transport was cancelled")
+      URLProtocolFixture.boundary.set { connection in
+        connection.whenStopped { stopped.fulfill() }
+        began.fulfill()
+      }
+      let session = notificationTestSession()
+      defer { session.invalidateAndCancel() }
+      let api = APIClient(
+        baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session)
+      let trace = APIRequestTrace()
+      let request = Task {
+        let route = ApiRoutes.computerUseHostCommandNext(hostId: "host")
+        if authenticated {
+          return try await api.authenticatedRequest(
+            route, body: .object([:]), timeout: 30, trace: trace,
+            tokenProvider: { _ in "session" })
+        }
+        return try await api.request(
+          route, token: "host-token", body: .object([:]), trace: trace)
+      }
+      await fulfillment(of: [began], timeout: 1)
+      request.cancel()
+      switch await request.result {
+      case .success:
+        XCTFail("Cancelling an unfinished claim must fail the request")
+      case .failure(let error):
+        XCTAssertTrue(
+          error is CancellationError || (error as? URLError)?.code == .cancelled,
+          "Expected cancellation, received \(error)")
+      }
+      await fulfillment(of: [stopped], timeout: 1)
+      let operation = await trace.snapshot()
+      XCTAssertNil(operation.deadline, "Caller cancellation must not invent a local deadline")
     }
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [URLProtocolFixture.self]
-    let session = URLSession(configuration: configuration)
-    defer { session.invalidateAndCancel() }
-    let api = APIClient(
-      baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session)
-    let request = Task {
-      try await api.request(
-        ApiRoutes.computerUseHostCommandNext(hostId: "host"), token: "host-token",
-        body: .object([:]))
-    }
-    await fulfillment(of: [began], timeout: 1)
-    request.cancel()
-    switch await request.result {
-    case .success:
-      XCTFail("Cancelling an unfinished claim must fail the request")
-    case .failure(let error):
-      XCTAssertTrue(
-        error is CancellationError || (error as? URLError)?.code == .cancelled,
-        "Expected cancellation, received \(error)")
-    }
-    await fulfillment(of: [stopped], timeout: 1)
   }
 
   func testStopKeepsHeartbeatAliveUntilRunningCommandIsReported() async throws {
     let transitions = StateTransitions()
     let claimReceived = expectation(description: "Server receives the initial claim request")
-    let earlyHeartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
+    let earlyHeartbeatReceived = expectation(
+      description: "Heartbeat arrives before native dispatch")
     let heartbeatReceived = expectation(description: "New heartbeat arrives after admission closes")
     let began = expectation(description: "Command is visible in the UI")
     let stopping = expectation(description: "Admission is closed")
@@ -971,7 +1122,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   func testUpgradeRejectionWhileDrainingDoesNotCancelCompletion() async throws {
     let transitions = StateTransitions()
     let claimReceived = expectation(description: "Server receives the initial claim request")
-    let earlyHeartbeatReceived = expectation(description: "Heartbeat arrives before native dispatch")
+    let earlyHeartbeatReceived = expectation(
+      description: "Heartbeat arrives before native dispatch")
     let heartbeatReceived = expectation(description: "New heartbeat arrives after admission closes")
     let began = expectation(description: "Command is visible in the UI")
     let stopping = expectation(description: "Admission is closed")
@@ -1209,6 +1361,62 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await fulfillment(of: [reported, idle], timeout: 3)
     await runtime.stop()
   }
+  func testAPIPreservesNonJSONErrorStatusAndResponseMetadata() async throws {
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.0", session: session)
+    for status in [401, 403, 409, 426, 502, 503] {
+      let data = Data((status == 503 ? "{\"error\":" : "<html>Upstream error</html>").utf8)
+      URLProtocolFixture.boundary.set { connection in
+        connection.replyData(
+          data, status: status,
+          headers: [
+            "Content-Type": status == 503 ? "application/json" : "text/html", "Retry-After": "3",
+          ])
+      }
+      let response = try await api.request(ApiRoutes.authMe, token: "session")
+      XCTAssertEqual(response.status, status)
+      XCTAssertEqual(response.body, .null)
+      XCTAssertEqual(response.data, data)
+      XCTAssertEqual(response.retryAfter, 3)
+    }
+  }
+
+  func testAPIPreservesStructuredJSONErrorBodies() async throws {
+    let body: JSONValue = .object([
+      "error": .object(["code": .string("provider_unavailable"), "message": .string("Try later")]),
+    ])
+    URLProtocolFixture.boundary.set { connection in
+      connection.reply(body, status: 503)
+    }
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.0", session: session)
+    let response = try await api.request(ApiRoutes.authMe, token: "session")
+    XCTAssertEqual(response.status, 503)
+    XCTAssertEqual(response.body, body)
+    XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: response.data), body)
+  }
+
+  func testAPIMalformedSuccessStillFailsJSONDecoding() async throws {
+    URLProtocolFixture.boundary.set { connection in
+      connection.replyData(
+        Data("<html>Invalid success response</html>".utf8), status: 200,
+        headers: ["Content-Type": "text/html"])
+    }
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.0", session: session)
+    do {
+      _ = try await api.request(ApiRoutes.authMe, token: "session")
+      XCTFail("A successful response must retain strict JSON validation")
+    } catch is DecodingError {
+    }
+  }
+
   func testAuthenticationRefreshesRejectedTokenBeforeReportingTheSameResult() async throws {
     let old = expectation(description: "Cached token rejected")
     let renewed = expectation(description: "SDK refresh used for the same result")
@@ -1223,7 +1431,9 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(connection.body, result)
       if connection.request.value(forHTTPHeaderField: "Authorization") == "Bearer cached-session" {
         old.fulfill()
-        connection.reply(.object([:]), status: 401)
+        connection.replyData(
+          Data("<html>Unauthorized</html>".utf8), status: 401,
+          headers: ["Content-Type": "text/html"])
       } else {
         XCTAssertEqual(
           connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer fresh-session")
@@ -1241,6 +1451,112 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await fulfillment(of: [old, renewed], timeout: 1, enforceOrder: true)
   }
 
+  @MainActor
+  func testAuthenticationDeadlineExplainsTransportCancellation() async throws {
+    try await assertAuthenticationDeadlineExplainsTransportCancellation(refreshesToken: false)
+  }
+
+  @MainActor
+  func testAuthenticationDeadlineExplainsRefreshedTransportCancellation() async throws {
+    try await assertAuthenticationDeadlineExplainsTransportCancellation(refreshesToken: true)
+  }
+
+  @MainActor
+  func testTokenRefreshDeadlineKeepsHeartbeatRecoveryAtInfo() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let refreshing = expectation(description: "A rejected token starts a forced SDK refresh")
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      connection.reply(.object([:]), status: 401)
+    }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.3", session: session)
+    let trace = APIRequestTrace()
+    do {
+      _ = try await api.authenticatedRequest(
+        ApiRoutes.computerUseHostHeartbeat(hostId: "host"), body: .object([:]),
+        timeout: 1, trace: trace,
+        tokenProvider: { force in
+          if force {
+            refreshing.fulfill()
+            try await Task.sleep(for: .seconds(10))
+          }
+          return "private-session"
+        })
+      XCTFail("The total budget must bound an unfinished token refresh")
+    } catch let error as DesktopFailure {
+      let operation = await trace.snapshot()
+      XCTAssertEqual(operation.phase, .tokenRefresh)
+      XCTAssertEqual(operation.deadline, .authenticatedRequest)
+      XCTAssertEqual(operation.requests.map(\.status), [401])
+      var diagnostics = HeartbeatDiagnostics()
+      diagnostics.failed(
+        error: error, requests: operation.requests, retryDelay: 2, operation: operation)
+      diagnostics.finish(outcome: .stopped)
+    }
+    await fulfillment(of: [refreshing], timeout: 1)
+    let events = try collector.events()
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
+  }
+
+  @MainActor
+  private func assertAuthenticationDeadlineExplainsTransportCancellation(refreshesToken: Bool)
+    async throws
+  {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let began = expectation(description: "The HTTP request reached the transport")
+    let cancelled = expectation(description: "The total operation deadline cancels the transport")
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    let requests = RequestCount()
+    URLProtocolFixture.boundary.set { connection in
+      let attempt = requests.next()
+      if refreshesToken && attempt == 1 {
+        connection.reply(.object([:]), status: 401)
+        return
+      }
+      connection.whenStopped { cancelled.fulfill() }
+      began.fulfill()
+    }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.54.11", session: session)
+    let trace = APIRequestTrace()
+    do {
+      _ = try await api.authenticatedRequest(
+        ApiRoutes.computerUseHostHeartbeat(hostId: "host"), body: .object([:]),
+        timeout: 0.15, trace: trace,
+        tokenProvider: { force in force ? "refreshed-session" : "session" })
+      XCTFail("The total operation must expire while its HTTP request is pending")
+    } catch let error as DesktopFailure {
+      XCTAssertEqual(error.code, "network_error")
+      XCTAssertEqual(error.message, "Desktop authentication request timed out")
+      let operation = await trace.snapshot()
+      var diagnostics = HeartbeatDiagnostics()
+      diagnostics.failed(
+        error: error, requests: operation.requests, retryDelay: 2, operation: operation)
+    }
+    await fulfillment(of: [began, cancelled], timeout: 1, enforceOrder: true)
+    let operation = await trace.snapshot()
+    XCTAssertEqual(operation.phase, .httpRequest)
+    XCTAssertEqual(operation.deadline, .authenticatedRequest)
+    let expectedRequests = refreshesToken ? 2 : 1
+    XCTAssertEqual(requests.value, expectedRequests)
+    XCTAssertEqual(operation.requests.count, expectedRequests)
+    XCTAssertEqual(
+      operation.authentication.map(\.phase),
+      refreshesToken ? [.tokenLookup, .tokenRefresh] : [.tokenLookup])
+    let failed = try XCTUnwrap(collector.events().first)
+    let context = failed["contexts"]["heartbeat"]["firstFailure"]["operation"]
+    XCTAssertEqual(context["budgetScope"].string, "operation")
+    XCTAssertEqual(context["phaseTimings"].array?.first?["phase"].string, "token_lookup")
+    XCTAssertNotNil(context["durationMs"].number)
+    XCTAssertNotNil(context["awakeElapsedMs"].number)
+    XCTAssertNotNil(context["systemSuspendedMs"].number)
+  }
+
   func testAuthenticationBudgetIncludesAnUnfinishedSDKRead() async throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [URLProtocolFixture.self]
@@ -1252,9 +1568,10 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     }
     let api = APIClient(
       baseURL: URL(string: "https://api.example.test")!, version: "0.50.0", session: session)
+    let trace = APIRequestTrace()
     do {
       _ = try await api.authenticatedRequest(
-        ApiRoutes.computerUseHostRegister, body: .object([:]), timeout: 0.05,
+        ApiRoutes.computerUseHostRegister, body: .object([:]), timeout: 0.05, trace: trace,
         tokenProvider: { _ in
           try await Task.sleep(for: .seconds(10))
           return "session"
@@ -1263,6 +1580,11 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     } catch let error as DesktopFailure {
       XCTAssertEqual(error.code, "network_error")
     }
+    let operation = await trace.snapshot()
+    XCTAssertEqual(operation.phase, .tokenLookup)
+    XCTAssertEqual(operation.deadline, .authenticatedRequest)
+    XCTAssertEqual(operation.authentication.first?.phase, .tokenLookup)
+    XCTAssertEqual(operation.authentication.first?.errorType, "CancellationError")
   }
 
   func testOldAPIDoesNotFallBackToHostTokenRegistration() async throws {

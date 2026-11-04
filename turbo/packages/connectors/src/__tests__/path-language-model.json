@@ -1,0 +1,2234 @@
+[
+  {
+    "pattern": "/files/{id}",
+    "path": "/files",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files//",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/a%2Fb",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/prefixx%61%62%63",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/{admin}",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/管",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%E7%AE%A1",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/%2566iles/a%2Fb",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/delegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/delegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{id}",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 1, 0, 0, 5, 2],
+    "maximum": [1, 0, 1, 0, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files//",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/a%2Fb",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/prefixx%61%62%63",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/{admin}",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/管",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%E7%AE%A1",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/%2566iles/a%2Fb",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/delegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/delegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key+}",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 1, 0, 5, 2],
+    "maximum": [1, 0, 0, 1, 0, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files//",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/a%2Fb",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/prefixx%61%62%63",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/{admin}",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/管",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%E7%AE%A1",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/%2566iles/a%2Fb",
+    "possible": true,
+    "certain": false,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/delegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/delegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/{key*}",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 0, 0, 0, -1, 5, 2],
+    "maximum": [1, 0, 0, 0, -1, 5, 2]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files//",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/prefixx%61%62%63",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/{admin}",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/管",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%E7%AE%A1",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/%2566iles/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/delegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/delegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/delegations%2Ffoo",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": false,
+    "minimum": [2, 0, 0, 0, 0, 22, 2],
+    "maximum": [3, 0, 0, 0, 0, 19, 3]
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files//",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/prefixx%61%62%63",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 1, 0, 0, 0, 8, 2],
+    "maximum": [1, 1, 0, 0, 0, 8, 2]
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/{admin}",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/管",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%E7%AE%A1",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/%2566iles/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/delegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/delegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/{id}%61%62%63",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files//",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/prefixx%61%62%63",
+    "possible": true,
+    "certain": true,
+    "minimum": [1, 1, 0, 0, 0, 11, 2],
+    "maximum": [1, 1, 0, 0, 0, 11, 2]
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/{admin}",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/管",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%E7%AE%A1",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/%2566iles/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/delegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/delegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/prefix{id}",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files//",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/prefixx%61%62%63",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/{admin}",
+    "possible": true,
+    "certain": true,
+    "minimum": [2, 0, 0, 0, 0, 16, 2],
+    "maximum": [2, 0, 0, 0, 0, 16, 2]
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/管",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%E7%AE%A1",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/%2566iles/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/delegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/delegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%7Badmin%7D",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files//",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/prefixx%61%62%63",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/{admin}",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/管",
+    "possible": true,
+    "certain": true,
+    "minimum": [2, 0, 0, 0, 0, 6, 2],
+    "maximum": [2, 0, 0, 0, 0, 6, 2]
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%E7%AE%A1",
+    "possible": true,
+    "certain": true,
+    "minimum": [2, 0, 0, 0, 0, 6, 2],
+    "maximum": [2, 0, 0, 0, 0, 6, 2]
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/%2566iles/a%2Fb",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/delegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/delegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/files/%E7%AE%A1",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": false,
+    "certain": false,
+    "minimum": null,
+    "maximum": null
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files//",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/a%2Fb",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%25%36%34elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/prefixx%61%62%63",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/{admin}",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/管",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%E7%AE%A1",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/%2566iles/a%2Fb",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/delegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/delegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/delegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/delegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%64elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%64elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%64elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%64elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%2564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%2564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%2564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%2564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%252564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%252564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%25252564elegations%2Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%25252564elegations%252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%25252564elegations%25252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  },
+  {
+    "pattern": "/{key+}",
+    "path": "/files/%25252564elegations%2525252Ffoo",
+    "possible": true,
+    "certain": true,
+    "minimum": [0, 0, 0, 1, 0, 0, 1],
+    "maximum": [0, 0, 0, 1, 0, 0, 1]
+  }
+]

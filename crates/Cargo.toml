@@ -139,7 +139,7 @@ rmp-serde = { version = "1", default-features = false }
 rmpv = { version = "1", default-features = false }
 roxmltree = { version = "0.21", default-features = false }
 rsa = { version = "=0.10.0-rc.18", default-features = false }
-russh = { version = "=0.65.0", default-features = false }
+russh = { version = "=0.65.1", default-features = false }
 rustix = { version = "1", default-features = false }
 rsasl = { version = "2.3.1", default-features = false, features = ["std", "config_builder", "provider", "scram-sha-2"] }
 rustls = { version = "0.23", default-features = false }
@@ -165,6 +165,25 @@ tracing-subscriber = { version = "0.3", default-features = false }
 tower-layer = { version = "0.3", default-features = false }
 tower-service = { version = "0.3", default-features = false }
 trybuild = { version = "1", default-features = false }
+ts_bart = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_capabilityversion = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_control = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_control_noise = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_control_serde = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_dataplane = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_derp = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_http_util = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_keys = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_netstack_smoltcp_core = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_netstack_smoltcp_socket = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_noise = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_overlay_router = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_packet = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_packetfilter = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_packetfilter_state = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_tls_util = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_transport = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
+ts_tunnel = { git = "https://github.com/tailscale/tailscale-rs", tag = "v0.6.1", default-features = false }
 unicode-normalization = { version = "0.1", default-features = false }
 ureq = { version = "3", default-features = false }
 url = { version = "2", default-features = false }

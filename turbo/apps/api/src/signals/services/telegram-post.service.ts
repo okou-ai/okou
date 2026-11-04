@@ -60,7 +60,7 @@ import {
 } from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { resolveOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import {
   bindTelegramReplyMessageRoute$,
   createTelegramChatThread$,
@@ -1458,16 +1458,13 @@ const handleTelegramAgentMessage$ = command(
       currentMessageId: String(args.message.message_id),
       botId: args.botId,
     });
-    const context = await loadOptionalChatEnrichment(
-      "telegram",
-      () => {
-        return contextRead;
-      },
-      () => {
+    const context = await (async () => {
+      const read = contextRead;
+      const result = await settle(read, signal);
+      return resolveOptionalChatEnrichment("telegram", result, () => {
         return "";
-      },
-      signal,
-    );
+      });
+    })();
     signal.throwIfAborted();
 
     const runPrompt = buildTelegramAgentPrompt(args);

@@ -1,11 +1,11 @@
 import { command, computed, state } from "ccstate";
 import type { AgentPhoneLinkStatusResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
-import {
-  GET_STARTED_REWARDS_CHANGED_EVENT,
-  getStartedContract,
-  type GetStartedQuestKey,
-  type GetStartedStatus,
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/validators/get-started";
+import { getStartedContract } from "@okouai/api-contracts/client/get-started";
+import type {
+  GetStartedQuestKey,
+  GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";

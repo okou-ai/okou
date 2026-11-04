@@ -1,9 +1,9 @@
 import { command, computed, state } from "ccstate";
-import {
-  morningBriefPreferenceContract,
-  MORNING_BRIEF_PREFERENCES_FOCUS,
-  type MorningBriefPreferenceErrorCode,
-  type MorningBriefPreferenceResponse,
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/client/morning-brief-preference";
+import { MORNING_BRIEF_PREFERENCES_FOCUS } from "@okouai/api-contracts/validators/morning-brief-preference";
+import type {
+  MorningBriefPreferenceErrorCode,
+  MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 
 import { accept } from "../../../lib/accept.ts";

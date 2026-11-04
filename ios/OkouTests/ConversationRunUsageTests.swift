@@ -77,7 +77,7 @@ final class ConversationRunUsageTests: XCTestCase {
   }
 
   func testHidingUsageCancelsOldReadBeforeSameRunIsShownAgain() async throws {
-    let gate = UsageResponseGate()
+    let gate = UsageResponseGate(owner: self)
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { _ in
       let count = reads.withLock {
@@ -91,11 +91,11 @@ final class ConversationRunUsageTests: XCTestCase {
       sync: ChatSync(client: fixture.client), threadID: "thread", didFail: { _ in })
     defer { store.close() }
     store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
-    await gate.started()
+    try await gate.started()
     store.update(runIDs: [], events: [Self.runID: "event"])
     store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
     try await waitForBusinessResult { store.states[Self.runID] == .available(Self.usage(3)) }
-    await gate.release()
+    gate.release()
     XCTAssertEqual(store.states[Self.runID], .available(Self.usage(3)))
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
@@ -211,29 +211,30 @@ final class ConversationRunUsageTests: XCTestCase {
   }
 
   func testClosingScopeRejectsLateResponseAndOtherScopeKeepsItsOwnTotal() async throws {
-    let gate = UsageResponseGate()
+    let gate = UsageResponseGate(owner: self)
     let old = ChatHTTPFixture { _ in
       await gate.wait()
       return Self.response(999)
     }
     let store = ConversationRunUsageStore(
       sync: ChatSync(client: old.client), threadID: "old-thread", didFail: { _ in })
+    defer { store.close() }
     store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
-    await gate.started()
+    try await gate.started()
     store.close()
     let other = ChatHTTPFixture { _ in Self.response(3) }
     let next = ConversationRunUsageStore(
       sync: ChatSync(client: other.client), threadID: "new-thread", didFail: { _ in })
     defer { next.close() }
     next.update(runIDs: [Self.runID], events: [Self.runID: "event"])
-    await gate.release()
+    gate.release()
     try await waitForBusinessResult { next.states[Self.runID] == .available(Self.usage(3)) }
     XCTAssertTrue(store.states.isEmpty)
   }
 
   func testNewUsageHintDuringReadDiscardsOldTotalAndCoalescesRetry() async throws {
-    let first = UsageResponseGate()
-    let second = UsageResponseGate()
+    let first = UsageResponseGate(owner: self)
+    let second = UsageResponseGate(owner: self)
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { _ in
       let count = reads.withLock {
@@ -247,13 +248,13 @@ final class ConversationRunUsageTests: XCTestCase {
       sync: ChatSync(client: fixture.client), threadID: "thread", didFail: { _ in })
     defer { store.close() }
     store.update(runIDs: [Self.runID], events: [Self.runID: "first"])
-    await first.started()
+    try await first.started()
     store.update(runIDs: [Self.runID], events: [Self.runID: "replacement"])
     store.retry(Self.runID)
-    await first.release()
-    await second.started()
+    first.release()
+    try await second.started()
     XCTAssertEqual(store.states[Self.runID], .loading)
-    await second.release()
+    second.release()
     try await waitForBusinessResult { store.states[Self.runID] == .available(Self.usage(12)) }
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
@@ -290,22 +291,33 @@ final class ConversationRunUsageTests: XCTestCase {
   private struct UsageBody: Decodable { let runIds: [String] }
 }
 
-private actor UsageResponseGate {
-  private var blocked: CheckedContinuation<Void, Never>?
-  private var ready: CheckedContinuation<Void, Never>?
+private final class UsageResponseGate: Sendable {
+  private let entered: XCTestExpectation
+  private let responses: AsyncStream<Void>
+  private let continuation: AsyncStream<Void>.Continuation
+
+  @MainActor
+  init(owner: XCTestCase) {
+    entered = owner.expectation(description: "The usage request reached its HTTP gate")
+    entered.assertForOverFulfill = true
+    let pair = AsyncStream<Void>.makeStream()
+    responses = pair.stream
+    continuation = pair.continuation
+    owner.addTeardownBlock { pair.continuation.finish() }
+  }
+
   func wait() async {
-    await withCheckedContinuation { continuation in
-      blocked = continuation
-      ready?.resume()
-      ready = nil
-    }
+    entered.fulfill()
+    for await _ in responses { break }
   }
-  func started() async {
-    if blocked != nil { return }
-    await withCheckedContinuation { ready = $0 }
+
+  @MainActor
+  func started(file: StaticString = #filePath, line: UInt = #line) async throws {
+    let result = await XCTWaiter.fulfillment(of: [entered], timeout: 3)
+    _ = try XCTUnwrap(
+      result == .completed ? true : nil, "The usage request did not reach HTTP",
+      file: file, line: line)
   }
-  func release() {
-    blocked?.resume()
-    blocked = nil
-  }
+
+  func release() { continuation.finish() }
 }

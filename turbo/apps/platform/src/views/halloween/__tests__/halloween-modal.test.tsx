@@ -2,7 +2,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { state } from "ccstate";
 import { beforeEach, expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   halloweenContract,
   type HalloweenRound,
@@ -15,15 +14,12 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
+import { pathname, search } from "../../../signals/location.ts";
 
 const context = testContext();
 const homeAnimationStorage = localStorageSignals(
   "halloween_2026_home_animation_seen",
 );
-const switches = Object.freeze({
-  [FeatureSwitchKey.HalloweenQuiz]: true,
-});
 const question = Object.freeze({
   id: "QUIZ-01",
   text: "How do you pronounce Okou?",
@@ -108,20 +104,39 @@ beforeEach(() => {
     context.store.set(currentRound$, answered);
     return respond(200, answered);
   });
-  context.mocks.api(halloweenContract.leave, ({ body, respond }) => {
-    const left = {
-      ...round(body.id),
-      question: null,
-      outcome: "left",
-      completedAt: "2026-10-30T12:01:00Z",
-    } as const;
-    context.store.set(currentRound$, left);
-    return respond(200, left);
+});
+
+test("the email deep link opens the quiz and returns to the chat when dismissed", async () => {
+  await setupPage({
+    context,
+    path: "/?halloween=1&prompt=Keep%20my%20request",
   });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Spooky Halloween",
+  });
+  expect(within(dialog).getByText("Let’s go")).toBeInTheDocument();
+  expect(new URLSearchParams(search()).get("halloween")).toBeNull();
+  expect(screen.queryByTestId("halloween-bubbles")).not.toBeInTheDocument();
+
+  click(button("Back to Okou", dialog));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Spooky Halloween" }),
+    ).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Keep my request",
+    );
+  });
+  click(button("Play the Halloween quiz"));
+  await expect(
+    screen.findByRole("dialog", { name: "Spooky Halloween" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("shows the first-visit home animation", async () => {
-  await setupPage({ context, path: "/", featureSwitches: switches });
+  await setupPage({ context, path: "/" });
   await expect(
     screen.findByTestId("halloween-bubbles"),
   ).resolves.toBeInTheDocument();
@@ -129,7 +144,7 @@ test("shows the first-visit home animation", async () => {
 
 test("does not repeat the home animation stored in this browser", async () => {
   context.store.set(homeAnimationStorage.set$, "seen");
-  await setupPage({ context, path: "/", featureSwitches: switches });
+  await setupPage({ context, path: "/" });
   await waitFor(() => {
     expect(button("Play the Halloween quiz")).toBeInTheDocument();
   });
@@ -142,7 +157,7 @@ test.each(["(hover: hover)", "(hover: none)"])(
     context.mocks.browser.matchMedia((query) => {
       return query === hoverQuery;
     });
-    await setupPage({ context, path: "/", featureSwitches: switches });
+    await setupPage({ context, path: "/" });
     const composer = await screen.findByRole("textbox", { name: "Message" });
     await fill(composer, "Keep my unfinished request");
     const homePath = pathname();
@@ -198,7 +213,7 @@ test.each(["success", "wrong"] as const)(
       },
       completedAt: "2026-10-30T12:05:00Z",
     });
-    await setupPage({ context, path: "/", featureSwitches: switches });
+    await setupPage({ context, path: "/" });
     await waitFor(() => {
       expect(button("Play the Halloween quiz")).toBeInTheDocument();
     });
@@ -245,31 +260,8 @@ test.each(["success", "wrong"] as const)(
   },
 );
 
-test("keeps the current question when leaving the round fails", async () => {
-  await setupPage({ context, path: "/", featureSwitches: switches });
-  const entry = await waitFor(() => {
-    return button("Play the Halloween quiz");
-  });
-  click(entry);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Spooky Halloween",
-  });
-  click(button("Let’s go", dialog));
-  await within(dialog).findByRole("heading", { name: question.text });
-  context.mocks.api(halloweenContract.leave, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "Leave request failed" },
-    });
-  });
-  click(button("Leave quiz", dialog));
-  await screen.findByText("Leave request failed");
-  expect(
-    within(dialog).getByRole("heading", { name: question.text }),
-  ).toBeInTheDocument();
-});
-
 test("rules open over the quiz and return to the same answer and feedback", async () => {
-  await setupPage({ context, path: "/", featureSwitches: switches });
+  await setupPage({ context, path: "/" });
   await waitFor(() => {
     expect(button("Play the Halloween quiz")).toBeInTheDocument();
   });
@@ -283,7 +275,7 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   await within(dialog).findByText(correctExplanation);
   click(button("Activity rules", dialog));
   const rules = await screen.findByRole("dialog", {
-    name: "Spooky Halloween — Activity Rules",
+    name: "Spooky Halloween — Activity rules",
   });
   expect(within(rules).getByText("Your Halloween reward")).toBeInTheDocument();
   expect(
@@ -296,7 +288,7 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", {
-        name: "Spooky Halloween — Activity Rules",
+        name: "Spooky Halloween — Activity rules",
       }),
     ).not.toBeInTheDocument();
   });
@@ -305,32 +297,24 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   expect(button("Next question", dialog)).toBeEnabled();
 });
 
-test("keeps ordinary home usable when the campaign endpoint is unavailable and the switch is off", async () => {
+test("the email deep link respects availability reported by the API", async () => {
   context.mocks.api(halloweenContract.status, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Campaign endpoint unavailable" },
-    });
+    return respond(200, { phase: "unavailable" });
   });
   await setupPage({
     context,
-    path: "/",
-    featureSwitches: { [FeatureSwitchKey.HalloweenQuiz]: false },
+    path: "/?halloween=1",
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fill(composer, "Keep working without the campaign");
-  expect(composer).toHaveTextContent("Keep working without the campaign");
+  await fill(composer, "Keep working outside the campaign");
+  expect(composer).toHaveTextContent("Keep working outside the campaign");
   expect(
-    screen.queryByText("Campaign endpoint unavailable"),
+    screen.queryByRole("dialog", { name: "Spooky Halloween" }),
   ).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").find((element) => {
-      return element.getAttribute("aria-label") === "Play the Halloween quiz";
-    }),
-  ).toBeUndefined();
 });
 
 test("opens by keyboard and restores focus through nested Escape dismissal", async () => {
-  await setupPage({ context, path: "/", featureSwitches: switches });
+  await setupPage({ context, path: "/" });
   const entry = await waitFor(() => {
     return button("Play the Halloween quiz");
   });
@@ -343,13 +327,13 @@ test("opens by keyboard and restores focus through nested Escape dismissal", asy
   rulesButton.focus();
   await userEvent.keyboard(" ");
   await screen.findByRole("dialog", {
-    name: "Spooky Halloween — Activity Rules",
+    name: "Spooky Halloween — Activity rules",
   });
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", {
-        name: "Spooky Halloween — Activity Rules",
+        name: "Spooky Halloween — Activity rules",
       }),
     ).not.toBeInTheDocument();
     expect(rulesButton).toHaveFocus();

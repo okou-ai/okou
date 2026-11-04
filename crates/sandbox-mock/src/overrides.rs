@@ -6,10 +6,9 @@ use ::sandbox::*;
 use tokio_util::sync::CancellationToken;
 
 use crate::call_records::{
-    CodexSessionCleanupCall, CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall,
-    GuestStateRestoreCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
-    SessionHistoryIdentityVerifyCall, StartAgentProcessCall, StartProcessCall, StorageManifestCall,
-    WaitProcessCall, WriteFileCall, WriteFilesCall,
+    AgentInstructionsCall, CopyFileCall, ExecCall, ExecMatcher, GuestStateRestoreCall,
+    ProcessCancelCall, ProcessControlCall, ReadFileCall, StartAgentProcessCall, StartProcessCall,
+    StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
 };
 use crate::lifecycle::{DestroyBehavior, LifecycleBehaviors, MockLifecycleGate};
 use crate::support::LockIgnoringPoison;
@@ -46,6 +45,8 @@ impl GuestStateRestoreBehavior {
 
 #[derive(Default)]
 pub(crate) struct ExecOverrideState {
+    /// Typed instruction operations never appear in generic exec observations.
+    pub(crate) agent_instructions_calls: Mutex<Vec<AgentInstructionsCall>>,
     /// Pattern-matched exec behaviors. First matching pattern wins and is
     /// consumed (one-shot).
     pub(crate) matchers: Mutex<Vec<ExecMatcherBehavior>>,
@@ -69,13 +70,6 @@ pub(crate) struct ExecOverrideState {
     /// Optional gate entered after every fixed home-drive mount call is
     /// recorded but before its configured result is selected.
     pub(crate) home_drive_mount_lifecycle_gate: Mutex<Option<MockLifecycleGate>>,
-    /// Recorded fixed live identity verifier calls across attached sandboxes.
-    pub(crate) session_history_identity_verify_calls: Mutex<Vec<SessionHistoryIdentityVerifyCall>>,
-    /// Recorded fixed requested-session Codex cleanup calls across attached sandboxes.
-    pub(crate) codex_session_cleanup_calls: Mutex<Vec<CodexSessionCleanupCall>>,
-    /// FIFO results and an optional gate for destination preparation.
-    pub(crate) codex_session_cleanup_results: Mutex<VecDeque<Result<ExecResult>>>,
-    pub(crate) codex_session_cleanup_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded fixed guest-state restore calls across all attached sandboxes.
     pub(crate) guest_state_restore_calls: Mutex<Vec<GuestStateRestoreCall>>,
     /// FIFO behaviors for fixed guest-state restore operations.
@@ -99,12 +93,6 @@ pub(crate) struct FileOverrideState {
     pub(crate) write_file_results: Mutex<VecDeque<Result<()>>>,
     /// Optional gate entered after recording a write_file call.
     pub(crate) write_file_gate: Mutex<Option<MockLifecycleGate>>,
-    /// Recorded staged-file finalizer calls across attached sandboxes.
-    pub(crate) finalize_staged_file_calls: Mutex<Vec<FinalizeStagedFileCall>>,
-    /// FIFO staged-file finalizer results.
-    pub(crate) finalize_staged_file_results: Mutex<VecDeque<Result<StagedFileFinalizeOutcome>>>,
-    /// Optional gate entered after recording a staged-file finalizer call.
-    pub(crate) finalize_staged_file_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded write_files calls across all sandboxes built from this override set.
     pub(crate) write_files_calls: Mutex<Vec<WriteFilesCall>>,
     /// Recorded write_private_file calls across all sandboxes built from this override set.
@@ -343,14 +331,6 @@ impl MockSandboxOverrides {
         }
     }
 
-    /// Queue one staged-file finalizer result shared by attached sandboxes.
-    pub fn push_finalize_staged_file_result(&self, result: Result<StagedFileFinalizeOutcome>) {
-        self.file
-            .finalize_staged_file_results
-            .lock_ignoring_poison()
-            .push_back(result);
-    }
-
     /// Queue one ordinary-write result shared by attached sandboxes.
     /// Both `write_file` and nonempty `write_files` consume one result per call
     /// after any sandbox-local result queue has been checked.
@@ -359,19 +339,6 @@ impl MockSandboxOverrides {
             .write_file_results
             .lock_ignoring_poison()
             .push_back(result);
-    }
-
-    /// Return recorded staged-file finalizer calls.
-    pub fn finalize_staged_file_calls(&self) -> Vec<FinalizeStagedFileCall> {
-        self.file
-            .finalize_staged_file_calls
-            .lock_ignoring_poison()
-            .clone()
-    }
-
-    /// Block staged-file finalization after call recording.
-    pub fn set_finalize_staged_file_lifecycle_gate(&self, gate: MockLifecycleGate) {
-        *self.file.finalize_staged_file_gate.lock_ignoring_poison() = Some(gate);
     }
 
     /// Block `write_file` and nonempty `write_files` after call recording.
@@ -607,6 +574,14 @@ impl MockSandboxOverrides {
             .clone()
     }
 
+    /// Return typed instruction operations across attached sandboxes.
+    pub fn agent_instructions_calls(&self) -> Vec<AgentInstructionsCall> {
+        self.exec
+            .agent_instructions_calls
+            .lock_ignoring_poison()
+            .clone()
+    }
+
     /// Block fixed storage-manifest operations until the gate is released.
     pub fn set_storage_manifest_lifecycle_gate(&self, gate: MockLifecycleGate) {
         *self.exec.storage_manifest_gate.lock_ignoring_poison() = Some(gate);
@@ -632,35 +607,6 @@ impl MockSandboxOverrides {
     /// sandboxes.
     pub fn home_drive_mount_calls(&self) -> u32 {
         *self.exec.home_drive_mount_calls.lock_ignoring_poison()
-    }
-
-    /// Return fixed live session-history identity verifier calls.
-    pub fn session_history_identity_verify_calls(&self) -> Vec<SessionHistoryIdentityVerifyCall> {
-        self.exec
-            .session_history_identity_verify_calls
-            .lock_ignoring_poison()
-            .clone()
-    }
-
-    /// Queue a fixed requested-session cleanup result.
-    pub fn push_codex_session_cleanup_result(&self, result: Result<ExecResult>) {
-        self.exec
-            .codex_session_cleanup_results
-            .lock_ignoring_poison()
-            .push_back(result);
-    }
-
-    /// Gate fixed requested-session cleanup after recording the call.
-    pub fn set_codex_session_cleanup_gate(&self, gate: MockLifecycleGate) {
-        *self.exec.codex_session_cleanup_gate.lock_ignoring_poison() = Some(gate);
-    }
-
-    /// Return fixed requested-session Codex cleanup calls across all attached sandboxes.
-    pub fn codex_session_cleanup_calls(&self) -> Vec<CodexSessionCleanupCall> {
-        self.exec
-            .codex_session_cleanup_calls
-            .lock_ignoring_poison()
-            .clone()
     }
 
     /// Queue a result for the next fixed guest-state restore operation.

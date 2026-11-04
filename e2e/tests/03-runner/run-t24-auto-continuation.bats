@@ -39,13 +39,12 @@ assert_auto_route() {
     run create_runner_agent "e2e-auto-continuation-${TEST_ID}"
     assert_success
     AGENT_ID="$output"
-    run set_runner_agent_instructions "$AGENT_ID" "Auto continuation test instructions."
+    run set_runner_model_test_instructions "$AGENT_ID"
     assert_success
 
-    local nonce expected first_session successor_result successor_run_id
-    nonce="$(_runner_uuid)"
-    expected="auto-${nonce%%-*}"
-    run runner_chat_send "$AGENT_ID" "Reply with only this token: ${expected}" "" "auto"
+    # Run and thread IDs isolate this invocation; keep live-model replies simple.
+    local expected='CONTINUE_OK' first_session successor_result successor_run_id
+    run runner_chat_send "$AGENT_ID" "This is a conversation continuity test. In this first turn, do not use tools. Reply with only this token: ${expected}" "" "auto"
     assert_success
     RUN_ID="$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")"
     THREAD_ID="$(jq -er '.threadId | select(type == "string" and length > 0)' <<<"$output")"
@@ -60,7 +59,7 @@ assert_auto_route() {
     # No explicit model on continuation: the thread keeps Auto and its session.
     run runner_chat_send_after_completion \
         "$AGENT_ID" "$THREAD_ID" "$RUN_ID" \
-        "Repeat your previous response exactly." "$expected" 180
+        "This turn checks whether the previous conversation is available. Repeat only the exact final answer you gave in the immediately preceding turn. Do not use tools or add any explanation." "$expected" 180
     assert_success
     successor_result="$output"
     successor_run_id="$(runner_chat_field "$successor_result" '.runId')"

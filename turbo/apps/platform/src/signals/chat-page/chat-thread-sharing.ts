@@ -1,14 +1,9 @@
-import {
-  sharedThreadVisibilityContract,
-  type SharedThreadAudience,
-} from "@okouai/api-contracts/contracts/shared-thread-visibility";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { sharedThreadVisibilityContract } from "@okouai/api-contracts/client/shared-thread-visibility";
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
   createSharedThreadVisibilitySignals,
   type SharedThreadVisibilitySignals,
 } from "../shared-thread-visibility.ts";
-import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   command,
@@ -18,11 +13,13 @@ import {
   type Computed,
   type State,
 } from "ccstate";
+import { timeout } from "signal-timers";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
+import { resetSignal } from "../utils.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
 import { buildRunWorkFolding } from "./run-work-folding.ts";
@@ -46,6 +43,7 @@ export interface ChatThreadSharingSignals {
   readonly selectedEventIds$: Computed<ReadonlySet<string>>;
   readonly selectedCount$: Computed<number>;
   readonly createdSharedThreadId$: Computed<string | null>;
+  readonly copiedMessageEventId$: Computed<string | null>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly close$: Command<Promise<void>, [AbortSignal]>;
   readonly toggle$: Command<
@@ -56,12 +54,12 @@ export interface ChatThreadSharingSignals {
   /**
    * Share persisted assistant events with the user prompt that precedes them.
    * The link is copied before the first await so the clipboard write stays
-   * inside the click gesture; the share is created afterwards. Resolves false
-   * when the copied link is unusable, after reporting why.
+   * inside the click gesture; the share is created afterwards. Reports copy
+   * and creation failures at the action.
    */
   readonly shareMessage$: Command<
-    Promise<boolean>,
-    [readonly string[], AbortSignal]
+    Promise<void>,
+    [readonly string[], SharedThreadAudience, AbortSignal]
   >;
 }
 
@@ -171,21 +169,24 @@ function sharedThreadUrl(id: string): string {
   return `${window.location.origin}/share/threads/${id}`;
 }
 
-function createShareMessageCommand(
+function createMessageSharingSignals(
   threadId: string,
   allChatGroups$: Computed<ChatEventGroup[]>,
-  audience$: Computed<SharedThreadAudience>,
-  internalCreatedSharedThreadId$: State<string | null>,
-): ChatThreadSharingSignals["shareMessage$"] {
-  return command(
+): Pick<ChatThreadSharingSignals, "shareMessage$" | "copiedMessageEventId$"> {
+  const copiedMessageEventId$ = state<string | null>(null);
+  const resetCopied$ = resetSignal();
+  const shareMessage$ = command(
     async (
       { get, set },
       assistantEventIds: readonly string[],
+      audience: SharedThreadAudience,
       signal: AbortSignal,
-    ): Promise<boolean> => {
-      if (assistantEventIds.length === 0) {
-        return false;
+    ): Promise<void> => {
+      const firstEventId = assistantEventIds[0];
+      if (firstEventId === undefined) {
+        return;
       }
+      const confirmationSignal = set(resetCopied$, signal);
       const eventIds = messageShareEventIds(
         get(allChatGroups$),
         assistantEventIds,
@@ -194,30 +195,42 @@ function createShareMessageCommand(
       // Start the clipboard write synchronously in the user gesture. Waiting
       // for the API first would lose the gesture in Safari.
       const copied = writeToClipboard(sharedThreadUrl(id));
-      const client = get(apiClient$)(sharedThreadsContract);
-      const visibilityEnabled =
-        get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
-      const creation = visibilityEnabled
-        ? accept(
-            get(apiClient$)(sharedThreadVisibilityContract).create({
-              params: { threadId },
-              body: { eventIds: [...eventIds], id, audience: get(audience$) },
-              fetchOptions: { signal },
-            }),
-            [201, 400, 403, 404, 409, 413],
-            signal,
-          )
-        : accept(
-            client.create({
-              params: { threadId },
-              body: { eventIds: [...eventIds], id },
-              fetchOptions: { signal },
-            }),
-            [201, 400, 403, 404, 409, 413],
-            signal,
-          );
-      const [copySucceeded, result] = await Promise.all([copied, creation]);
+      // Confirm and start resetting in the click while the server creates
+      // the optimistically generated link.
+      set(copiedMessageEventId$, firstEventId);
+      timeout(
+        () => {
+          set(copiedMessageEventId$, null);
+        },
+        2000,
+        { signal: confirmationSignal },
+      );
+      const creation = accept(
+        get(apiClient$)(sharedThreadVisibilityContract).create({
+          params: { threadId },
+          body: { eventIds: [...eventIds], id, audience },
+          fetchOptions: { signal },
+        }),
+        [201, 400, 403, 404, 409, 413],
+        signal,
+      );
+      const [shared] = await Promise.allSettled([
+        Promise.all([copied, creation]),
+      ]);
       signal.throwIfAborted();
+      if (shared.status === "rejected") {
+        if (!confirmationSignal.aborted) {
+          set(copiedMessageEventId$, null);
+        }
+        throw shared.reason;
+      }
+      const [copySucceeded, result] = shared.value;
+      if (
+        (!copySucceeded || result.status !== 201) &&
+        !confirmationSignal.aborted
+      ) {
+        set(copiedMessageEventId$, null);
+      }
       if (!copySucceeded) {
         toast.error(
           i18n.t(($) => {
@@ -231,14 +244,16 @@ function createShareMessageCommand(
             return $.chat.sharing.messageShareFailed;
           }),
         );
-        return false;
+        return;
       }
-      if (visibilityEnabled) {
-        set(internalCreatedSharedThreadId$, result.body.id);
-      }
-      return copySucceeded;
     },
   );
+  return {
+    shareMessage$,
+    copiedMessageEventId$: computed((get) => {
+      return get(copiedMessageEventId$);
+    }),
+  };
 }
 
 function createShareCommand(
@@ -257,26 +272,15 @@ function createShareCommand(
     if (eventIds.length === 0) {
       return;
     }
-    const client = get(apiClient$)(sharedThreadsContract);
-    const result = get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
-      ? await accept(
-          get(apiClient$)(sharedThreadVisibilityContract).create({
-            params: { threadId },
-            body: { eventIds, audience: get(audience$) },
-            fetchOptions: { signal },
-          }),
-          [201, 400, 413],
-          signal,
-        )
-      : await accept(
-          client.create({
-            params: { threadId },
-            body: { eventIds },
-            fetchOptions: { signal },
-          }),
-          [201, 400, 413],
-          signal,
-        );
+    const result = await accept(
+      get(apiClient$)(sharedThreadVisibilityContract).create({
+        params: { threadId },
+        body: { eventIds, audience: get(audience$) },
+        fetchOptions: { signal },
+      }),
+      [201, 400, 413],
+      signal,
+    );
     if (result.status !== 201) {
       throw new Error(result.body.error.message);
     }
@@ -305,20 +309,15 @@ function createShareCommand(
 function createShareVisibility$(id$: State<string | null>) {
   return computed((get) => {
     const id = get(id$);
-    return id !== null &&
-      get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
-      ? createSharedThreadVisibilitySignals(id)
-      : null;
+    return id !== null ? createSharedThreadVisibilitySignals(id) : null;
   });
 }
 
 function createSharedThreadAudienceSignals() {
-  const draft$ = state<SharedThreadAudience>("private");
+  const draft$ = state<SharedThreadAudience>("public");
   return {
     audience$: computed((get) => {
-      return get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
-        ? get(draft$)
-        : "public";
+      return get(draft$);
     }),
     changeAudience$: command(({ set }, audience: SharedThreadAudience) => {
       set(draft$, audience);
@@ -364,7 +363,7 @@ export function createChatThreadSharingSignals(
     set(closeFeedbackSelection$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "private");
+    set(changeAudience$, "public");
     set(internalPhase$, "selecting");
     return set(scroll.autoScroll$, position, signal);
   });
@@ -373,7 +372,7 @@ export function createChatThreadSharingSignals(
     const position = set(scroll.readRenderedThreadScrollPosition$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "private");
+    set(changeAudience$, "public");
     set(internalPhase$, "idle");
     return set(scroll.autoScroll$, position, signal);
   });
@@ -426,11 +425,9 @@ export function createChatThreadSharingSignals(
     internalPhase$,
   );
 
-  const shareMessage$ = createShareMessageCommand(
+  const { shareMessage$, copiedMessageEventId$ } = createMessageSharingSignals(
     threadId,
     allChatGroups$,
-    audience$,
-    internalCreatedSharedThreadId$,
   );
 
   return {
@@ -460,5 +457,6 @@ export function createChatThreadSharingSignals(
     toggle$,
     create$,
     shareMessage$,
+    copiedMessageEventId$,
   };
 }

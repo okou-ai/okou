@@ -1,10 +1,8 @@
 import { command, computed, state } from "ccstate";
 import { animationFrame } from "signal-timers";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  artifactCatalogContract,
-  type ArtifactSummary,
-} from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
+import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { toast } from "@okouai/ui/components/ui/sonner";
 
 import { accept } from "../lib/accept.ts";

@@ -1,8 +1,6 @@
+import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
-import {
-  agentDraftContract,
-  agentDraftResponseSchema,
-} from "@okouai/api-contracts/contracts/agent-draft";
+import { agentDraftContract } from "@okouai/api-contracts/client/agent-draft";
 import type {
   PersistedAttachment,
   UserMessageDocument,
@@ -78,7 +76,8 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
           },
           fetchOptions: { signal },
         }),
-        [200, 204],
+        [204],
+        signal,
       );
     },
   );
@@ -223,9 +222,7 @@ function createAgentDraftLoad(
       get(apiClient$)(agentDraftContract).get({ params: { id: agentId } }),
       [200],
     );
-    return userMessageAgentDraftState(
-      agentDraftResponseSchema.parse(result.body),
-    );
+    return userMessageAgentDraftState(composerDraftSchema.parse(result.body));
   });
   const load$ = command(async ({ get, set }, signal: AbortSignal) => {
     const hasLocalDraft = (): boolean => {

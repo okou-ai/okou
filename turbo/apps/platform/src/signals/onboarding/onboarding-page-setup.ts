@@ -1,3 +1,4 @@
+import { loadMarketingHandoff$ } from "../prompt-page/marketing-handoff.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
@@ -25,9 +26,14 @@ export const setupOnboardingPromptPage$ = command(
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
-    // The handoff sets up a workspace, which only an admin does.
-    if (!status.needsOnboarding || !status.isAdmin) {
-      const prompt = searchParams.get("prompt")?.trim();
+    // Legacy prompt links provision a workspace. Hash handoffs also preserve
+    // an invited member's task while they complete their personal onboarding.
+    if (
+      !status.needsOnboarding ||
+      (!status.isAdmin && !searchParams.get("handoff"))
+    ) {
+      const prompt =
+        searchParams.get("handoff") || searchParams.get("prompt")?.trim();
       set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
         searchParams: prompt
           ? promptHandoffParams(searchParams)
@@ -39,7 +45,9 @@ export const setupOnboardingPromptPage$ = command(
 
     set(subscribeBuiltinConnectorChanges$, signal);
     set(sendEvent$, "onboarding-start");
-    set(hydrateOnboardingRoute$, searchParams);
+    const handoff = await set(loadMarketingHandoff$, signal);
+    signal.throwIfAborted();
+    set(hydrateOnboardingRoute$, searchParams, handoff?.manifest);
 
     const title = i18n.t(
       ($) => {

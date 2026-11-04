@@ -12,9 +12,11 @@ import {
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadRenameContract,
-  type FeedbackNotePart,
-  type UserMessageDocument,
-  type UserMessagePart,
+} from "@okouai/api-contracts/client/chat-threads";
+import type {
+  FeedbackNotePart,
+  UserMessageDocument,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -51,6 +53,10 @@ type UserMessageExternalSourcePart = Exclude<
 
 export type UserMessageFeedbackNoteRenderPart =
   | {
+      readonly type: "project";
+      readonly part: FeedbackNotePartOfType<"project">;
+    }
+  | {
       readonly type: "text";
       readonly part: FeedbackNotePartOfType<"text">;
     }
@@ -69,6 +75,10 @@ export type UserMessageFeedbackNoteRenderPart =
     };
 
 export type UserMessageRenderPart =
+  | {
+      readonly type: "project";
+      readonly part: UserMessagePartOfType<"project">;
+    }
   | {
       readonly type: "text";
       readonly part: UserMessagePartOfType<"text">;
@@ -156,7 +166,7 @@ export const deleteChatThread$ = command(
     const threads = await get(chatThreads$);
     signal.throwIfAborted();
     const eventId = crypto.randomUUID();
-    const existingThread = threads.find((thread) => {
+    const existingThread = get(eventDrivenChatThreads$).find((thread) => {
       return thread.id === threadId;
     });
     if (existingThread) {

@@ -1,3 +1,7 @@
+import { settle } from "../utils";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { projectAccess$ } from "./projects";
+import { projectById } from "../services/project.service";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -55,6 +59,7 @@ const committedClientThread$ = computed(async (get) => {
   const [thread] = await db
     .select({
       id: chatThreads.id,
+      projectId: chatThreads.projectId,
       title: chatThreads.title,
       selectedModel: chatThreads.selectedModel,
       codexServiceTier: chatThreads.codexServiceTier,
@@ -87,13 +92,18 @@ interface ChatThreadCreateSettings {
 }
 
 function chatThreadCreatedResponse(
-  thread: { readonly id: string; readonly createdAt: Date },
+  thread: {
+    readonly id: string;
+    readonly createdAt: Date;
+    readonly projectId?: string | null;
+  },
   settings: ChatThreadCreateSettings,
 ) {
   return {
     status: 201 as const,
     body: {
       id: thread.id,
+      ...(thread.projectId ? { projectId: thread.projectId } : {}),
       title: settings.title,
       createdAt: thread.createdAt.toISOString(),
       selectedModel: settings.selectedModel,
@@ -290,6 +300,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       agentId: body.data.agentId,
       title: body.data.title,
+      projectId: body.data.projectId,
       clientThreadId: body.data.clientThreadId,
       eventId: body.data.eventId,
       selectedModel: pin.selectedModel,
@@ -297,7 +308,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       cloudBrowserEnabled: defaults.cloudBrowserEnabled,
       codexServiceTier,
       connectorSelections: body.data.connectorSelections ?? [],
-      connectorSelectionPolicy: body.data.connectorSelectionPolicy,
       committedThread: await get(committedClientThread$),
       initialRemoteAccessOverrides,
     },
@@ -331,6 +341,33 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
 });
 
+const createWithProject$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const body = await get(createBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    if (
+      body.data.projectId !== undefined &&
+      (!(await get(projectAccess$)) ||
+        !(await get(projectById(auth, body.data.projectId))))
+    ) {
+      return notFound("Project not found");
+    }
+
+    const result = await settle(set(createInner$, signal), signal);
+    if (result.ok) {
+      return result.value;
+    }
+    if (isForeignKeyViolation(result.error, "chat_threads_project_owner_fk")) {
+      return notFound("Project not found");
+    }
+    throw result.error;
+  },
+);
+
 export const chatThreadCreateRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadsContract.create,
@@ -340,7 +377,7 @@ export const chatThreadCreateRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
       },
-      createInner$,
+      createWithProject$,
     ),
   },
 ];

@@ -11,6 +11,7 @@ use tokio::process::Command;
 const LIMIT: usize = 4 * 1024 * 1024;
 const SESSION_ID: &str = "00000000-0000-4000-8000-000000000042";
 const SECRET: &str = "oversized-delivery-secret";
+const MOCK_ECHO_PREFIX: &[u8] = b"@ECHO@\n";
 
 fn large_text(label: &str) -> Value {
     Value::String(format!(
@@ -44,8 +45,8 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     result["result"] = large_text("result");
     let mut tail = json!({"type":"result","subtype":"success","session_id":SESSION_ID,"is_error":false,"result":"final native result","protectedMetadata":null});
     tail["protectedMetadata"] = Value::String("protected-tail-".repeat(LIMIT / 12));
-    // Batch the serializer's small escaped-string writes into canonical JSONL.
-    let mut source = BufWriter::new(Vec::new());
+    // Serialize canonical JSONL directly into the final mock prompt buffer.
+    let mut prompt = BufWriter::new(MOCK_ECHO_PREFIX.to_vec());
     for event in [
         json!({"type":"system","subtype":"init","session_id":SESSION_ID,"model":"mock-claude"}),
         json!({"type":"assistant","message":{"id":"ordinary","role":"assistant","content":[{"type":"text","text":"ordinary text"}]}}),
@@ -58,14 +59,17 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
         result,
         tail,
     ] {
-        serde_json::to_writer(&mut source, &event)?;
-        source.write_all(b"\n")?;
+        serde_json::to_writer(&mut prompt, &event)?;
+        prompt.write_all(b"\n")?;
     }
-    let source = source.into_inner()?;
+    let prompt = prompt.into_inner()?;
     let source_path = tmp.path().join("original.jsonl");
-    std::fs::write(&source_path, &source)?;
-    let mut prompt = b"@ECHO@\n".to_vec();
-    prompt.extend(source);
+    std::fs::write(
+        &source_path,
+        prompt
+            .strip_prefix(MOCK_ECHO_PREFIX)
+            .ok_or("missing echo prompt prefix")?,
+    )?;
     let payload = common::write_run_payload_file_for_test(
         &runtime_dir,
         &guest_contracts::env::RunPayload {
@@ -123,7 +127,7 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     assert!(!stderr.contains("protected-tail-"));
 
     // The process has exited after delivery drained; requests precede responses.
-    let requests = server.requests()?;
+    let requests = server.into_requests()?;
     let mut delivered = Vec::new();
     let mut completions = Vec::new();
     for request in requests {
@@ -194,10 +198,7 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
         .join(format!("{SESSION_ID}.jsonl"));
     assert_eq!(std::fs::read_to_string(native)?, source);
     let log = std::fs::read_to_string(paths.agent_log_file())?;
-    assert!(
-        source
-            .lines()
-            .all(|line| log.lines().any(|actual| actual == line))
-    );
+    let logged_lines = log.lines().collect::<Vec<_>>();
+    assert!(source.lines().all(|line| logged_lines.contains(&line)));
     Ok(())
 }

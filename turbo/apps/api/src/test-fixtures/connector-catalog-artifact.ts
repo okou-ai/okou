@@ -2445,6 +2445,7 @@ function automaticMcpConnector(
     : `AUTOMATIC_${firewallAuth.toUpperCase()}`,
   staticHeaders: Readonly<Record<string, string>> = {},
   scopes?: readonly string[],
+  authorizationPrompt?: string | null,
 ): ConnectorCatalogArtifactConnector {
   const template = connectors.find((entry) => {
     return entry.slug === "public-mcp";
@@ -2479,6 +2480,7 @@ function automaticMcpConnector(
           kind: "automatic",
           callbackOrigin: "api",
           ...(scopes ? { scopes: [...scopes] } : {}),
+          ...(authorizationPrompt === undefined ? {} : { authorizationPrompt }),
           outputs,
         },
         access: { kind: "automatic", inputs: outputs, outputs },
@@ -2554,6 +2556,26 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
         "read",
       ]),
       slug: "automatic-mcp-declared-scopes",
+    },
+    {
+      ...automaticMcpConnector(
+        "oauth",
+        "AUTOMATIC_PROVIDER_PROMPT",
+        {},
+        ["read", "write"],
+        null,
+      ),
+      slug: "automatic-mcp-provider-prompt",
+    },
+    {
+      ...automaticMcpConnector(
+        "oauth",
+        "AUTOMATIC_EXPLICIT_PROMPT",
+        {},
+        ["read", "write"],
+        "login consent",
+      ),
+      slug: "automatic-mcp-explicit-prompt",
     },
     {
       ...automaticMcpConnector("oauth", "AUTOMATIC_STATIC", {

@@ -1,13 +1,21 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { array, boolean, iso, object, string, type infer as zInfer } from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  literal,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { safeJsonParse, settle } from "../utils";
 
 const log = logger("api:agentphone");
 
-interface AgentPhoneSentMessage {
+export interface AgentPhoneSentMessage {
   readonly id: string;
   readonly channel: string | null;
   readonly fromNumber: string | null;
@@ -61,10 +69,42 @@ export function isAgentPhoneApiError(
   );
 }
 
+export function isAgentPhoneWhatsappWindowClosed(error: unknown): boolean {
+  if (!isAgentPhoneApiError(error) || error.status !== 422) {
+    return false;
+  }
+  const body = valueObject(safeJsonParse(error.body));
+  const details = valueObject(body.error);
+  // AgentPhone documents Meta 131047 in the rejection message. Other 422s
+  // (including invalid templates) must never trigger another send.
+  return (
+    details.code === 131_047 ||
+    details.code === "131047" ||
+    [details.message, body.detail].some((message) => {
+      return typeof message === "string" && /\b131047\b/u.test(message);
+    })
+  );
+}
+
 const whatsappNumbersSchema = object({
   data: array(object({ phoneNumber: string(), whatsappEnabled: boolean() })),
   hasMore: boolean(),
 });
+
+async function rejectAgentPhoneMessage(response: Response): Promise<never> {
+  const text = await response.text();
+  const error = makeAgentPhoneApiError(response.status, text);
+  if (
+    !isAgentPhoneWhatsappWindowClosed(error) &&
+    (error.status !== 422 || error.code !== "CONVERSATION_CONTENT_RESTRICTED")
+  ) {
+    log.error("AgentPhone send message failed", {
+      status: response.status,
+      body: text,
+    });
+  }
+  throw error;
+}
 
 export async function isAgentPhoneWhatsappNumberEnabled(
   phoneNumber: string,
@@ -105,6 +145,11 @@ export async function sendAgentPhoneMessage(
     readonly mediaUrl?: string | null;
     readonly mediaUrls?: readonly string[] | null;
     readonly channel?: "whatsapp";
+    readonly template?: {
+      readonly name: "okou_task_completed";
+      readonly language: "en_US";
+      readonly variables: readonly [string, string];
+    };
   },
   signal?: AbortSignal,
 ): Promise<AgentPhoneSentMessage> {
@@ -133,6 +178,7 @@ export async function sendAgentPhoneMessage(
             ? { reply_to_message_id: opts.replyToMessageId }
             : {}),
           body: opts.body,
+          ...(opts.template ? { template: opts.template } : {}),
           ...(opts.mediaUrl ? { media_url: opts.mediaUrl } : {}),
           ...(opts.mediaUrls?.length ? { media_urls: opts.mediaUrls } : {}),
         }),
@@ -146,19 +192,7 @@ export async function sendAgentPhoneMessage(
     if (!(failure instanceof HttpStatusError)) {
       throw failure;
     }
-    const response = failure.response;
-    const text = await response.text();
-    const error = makeAgentPhoneApiError(response.status, text);
-    if (
-      error.status !== 422 ||
-      error.code !== "CONVERSATION_CONTENT_RESTRICTED"
-    ) {
-      log.error("AgentPhone send message failed", {
-        status: response.status,
-        body: text,
-      });
-    }
-    throw error;
+    return await rejectAgentPhoneMessage(failure.response);
   }
   const response = responseResult.value;
 
@@ -182,6 +216,44 @@ export async function sendAgentPhoneMessage(
       typeof result.to_number === "string" ? result.to_number : opts.toNumber,
     mediaUrls,
   };
+}
+
+const agentPhoneReactionSchema = object({
+  id: string().min(1),
+  reaction_type: string().min(1),
+  message_id: string().min(1),
+  channel: literal("imessage"),
+});
+
+export async function sendAgentPhoneReaction(
+  opts: { readonly messageId: string; readonly reaction: string },
+  signal: AbortSignal,
+) {
+  const result = await settle(
+    accept(
+      fetch(
+        `${agentPhoneApiBase()}/v1/messages/${encodeURIComponent(opts.messageId)}/reactions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${agentPhoneApiKey()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reaction: opts.reaction }),
+          signal,
+        },
+      ),
+      [200],
+    ),
+  );
+  if (!result.ok) {
+    if (!(result.error instanceof HttpStatusError)) {
+      throw result.error;
+    }
+    const response = result.error.response;
+    throw makeAgentPhoneApiError(response.status, await response.text());
+  }
+  return agentPhoneReactionSchema.parse(await result.value.json());
 }
 
 const conversationMediaCapabilitiesSchema = object({
@@ -274,10 +346,10 @@ export async function getAgentPhoneMessagesAfter(
   return conversationMessagesSchema.parse(await response.json());
 }
 
-export async function getAgentPhoneConversationParticipants(
+async function readAgentPhoneConversation(
   opts: { readonly conversationId: string },
   signal?: AbortSignal,
-): Promise<readonly string[]> {
+) {
   const responseResult = await settle(
     accept(
       fetch(
@@ -317,10 +389,55 @@ export async function getAgentPhoneConversationParticipants(
       : Object.keys(data).length > 0
         ? data
         : result;
+  return source;
+}
+
+const agentPhoneGroupConversationSchema = object({
+  id: string().min(1),
+  agentId: string().min(1),
+  phoneNumber: string().min(1),
+  isGroup: boolean(),
+  groupId: string().nullable(),
+  groupName: string().nullable().optional(),
+  participants: array(
+    string()
+      .min(1)
+      .or(object({ identifier: string().min(1) })),
+  ),
+});
+
+export async function getAgentPhoneGroupConversation(
+  opts: { readonly conversationId: string },
+  signal?: AbortSignal,
+) {
+  const source = await readAgentPhoneConversation(opts, signal);
+  const parsed = agentPhoneGroupConversationSchema.safeParse(source);
+  if (!parsed.success) {
+    throw makeAgentPhoneApiError(
+      502,
+      "Invalid AgentPhone conversation response",
+    );
+  }
+  const conversation = parsed.data;
+  return {
+    ...conversation,
+    groupName: conversation.groupName ?? null,
+    participants: conversation.participants.map((participant) => {
+      return typeof participant === "string"
+        ? participant
+        : participant.identifier;
+    }),
+  };
+}
+
+export async function getAgentPhoneConversationParticipants(
+  opts: { readonly conversationId: string },
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const source = await readAgentPhoneConversation(opts, signal);
   const participants = Array.isArray(source.participants)
     ? source.participants
     : [];
-
   return participants
     .map((participant) => {
       if (typeof participant === "string") {

@@ -18,19 +18,19 @@ use guest_control_proto::{
     GuestStateRestoreTimezone as ProtoGuestStateRestoreTimezone,
 };
 use sandbox::{
-    CodexSessionCleanupRequest, CopyFileOptions, CopyFileResult, DEFAULT_PROCESS_START_TIMEOUT,
-    ExecRequest, ExecResult, GuestAgentProcessHandle, GuestAgentStartTiming, GuestMemorySnapshot,
-    GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessHandle, GuestProcessWaiter,
-    GuestStateRestoreRequest, GuestStateRestoreTimezone, ProcessControlAck,
-    ProcessControlFailureKind, ProcessControlGuestStatus, ProcessControlOutcome,
-    ProcessControlWriteState, ProcessExit, ProcessOutputMode, Sandbox, SandboxConfig, SandboxError,
-    SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
-    SandboxFinalExecParkHandoffPoint, SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome,
-    SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
-    SandboxIdleTransition, SandboxInvalidStateContext, SandboxOperation, SandboxOperationReason,
+    CopyFileOptions, CopyFileResult, DEFAULT_PROCESS_START_TIMEOUT, ExecRequest, ExecResult,
+    GuestAgentProcessHandle, GuestAgentStartTiming, GuestMemorySnapshot, GuestProcessCancelHandle,
+    GuestProcessControlHandle, GuestProcessHandle, GuestProcessWaiter, GuestStateRestoreRequest,
+    GuestStateRestoreTimezone, ProcessControlAck, ProcessControlFailureKind,
+    ProcessControlGuestStatus, ProcessControlOutcome, ProcessControlWriteState, ProcessExit,
+    ProcessOutputMode, Sandbox, SandboxConfig, SandboxError, SandboxFinalExecParkHandoff,
+    SandboxFinalExecParkHandoffOutcome, SandboxFinalExecParkHandoffPoint,
+    SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome, SandboxFinalExecParkStage,
+    SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome, SandboxIdleTransition,
+    SandboxInvalidStateContext, SandboxOperation, SandboxOperationReason,
     SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartStage,
-    SessionHistoryIdentityVerifyRequest, SevereMemoryRetentionDiagnostics,
-    StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
+    SevereMemoryRetentionDiagnostics, StartAgentProcessRequest, StartProcessRequest,
+    StorageManifestRequest, WriteFileEntry,
 };
 use tokio::io::AsyncRead;
 use tokio::sync::{mpsc, watch};
@@ -2648,6 +2648,24 @@ impl FirecrackerSandbox {
 
 #[async_trait]
 impl Sandbox for FirecrackerSandbox {
+    async fn run_agent_instructions(
+        &self,
+        request: &sandbox::AgentInstructionsRequest<'_>,
+    ) -> sandbox::Result<ExecResult> {
+        self.run_bounded_guest_operation(SandboxOperation::Exec, |guest| async move {
+            let timeout_ms = request.timeout_ms();
+            validate_exec_capture_timeout(timeout_ms)?;
+            guest
+                .guest_agent_instructions(
+                    request,
+                    Duration::from_millis(u64::from(timeout_ms) + 5_000),
+                )
+                .await
+                .map(storage_manifest_exec_result)
+        })
+        .await
+    }
+
     // -- identity --
 
     fn id(&self) -> &str {
@@ -3098,57 +3116,6 @@ impl Sandbox for FirecrackerSandbox {
         result
     }
 
-    async fn verify_session_history_identity(
-        &self,
-        request: &SessionHistoryIdentityVerifyRequest<'_>,
-    ) -> sandbox::Result<ExecResult> {
-        let operation = SandboxOperation::VerifySessionHistoryIdentity;
-        let timeout_ms = request.timeout_ms();
-
-        self.run_bounded_guest_operation(operation, |guest| async move {
-            validate_exec_capture_timeout(timeout_ms)?;
-            guest
-                .verify_session_history_identity(
-                    guest_control_client::SessionHistoryIdentityVerifyRequest {
-                        metadata_path: request.metadata_path,
-                        runtime_dir: request.runtime_dir,
-                        framework: request.framework,
-                        session_id_hash: request.session_id_hash,
-                        history_ref_kind: request.history_ref_kind,
-                        history_hash: request.history_hash,
-                        history_size_bytes: request.history_size_bytes,
-                        timeout_ms,
-                        wait_timeout: Duration::from_millis(u64::from(timeout_ms) + 5_000),
-                    },
-                )
-                .await
-                .and_then(exec_result_from_operation_result)
-        })
-        .await
-    }
-
-    async fn cleanup_codex_session(
-        &self,
-        request: &CodexSessionCleanupRequest<'_>,
-    ) -> sandbox::Result<ExecResult> {
-        let operation = SandboxOperation::CleanupCodexSession;
-        let timeout_ms = request.timeout_ms();
-
-        self.run_bounded_guest_operation(operation, |guest| async move {
-            validate_exec_capture_timeout(timeout_ms)?;
-            guest
-                .cleanup_codex_session(guest_control_client::CodexSessionCleanupRequest {
-                    session_id: request.session_id,
-                    fallback_relative_path: request.fallback_relative_path,
-                    timeout_ms,
-                    wait_timeout: Duration::from_millis(u64::from(timeout_ms) + 5_000),
-                })
-                .await
-                .and_then(exec_result_from_operation_result)
-        })
-        .await
-    }
-
     async fn restore_guest_state(
         &self,
         request: &GuestStateRestoreRequest<'_>,
@@ -3234,31 +3201,6 @@ impl Sandbox for FirecrackerSandbox {
 
         self.run_bounded_guest_operation(operation, |guest| async move {
             guest.write_file(path, content, false).await
-        })
-        .await
-    }
-
-    async fn write_file_with_compression(
-        &self,
-        path: &str,
-        content: &[u8],
-        compression: sandbox::FileCompression,
-    ) -> sandbox::Result<Option<sandbox::FileWriteMeasurements>> {
-        self.run_bounded_guest_operation(SandboxOperation::WriteFile, |guest| async move {
-            guest
-                .write_file_with_compression(path, content, false, compression)
-                .await
-        })
-        .await
-        .map(Some)
-    }
-
-    async fn finalize_staged_file(
-        &self,
-        request: &sandbox::StagedFileFinalizeRequest<'_>,
-    ) -> sandbox::Result<sandbox::StagedFileFinalizeOutcome> {
-        self.run_bounded_guest_operation(SandboxOperation::FinalizeStagedFile, |guest| async move {
-            guest.finalize_staged_file(request).await
         })
         .await
     }

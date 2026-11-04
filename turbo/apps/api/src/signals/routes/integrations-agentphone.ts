@@ -10,7 +10,7 @@ import {
   type AgentPhoneConnectStatus,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
+import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -33,6 +33,7 @@ import {
   object,
   record,
   string,
+  uuid,
   unknown as zUnknown,
   type infer as zInfer,
 } from "zod";
@@ -83,6 +84,7 @@ import {
   whatsappEnabled$,
 } from "../services/whatsapp-config";
 import { safeJsonParse, settle, tapError } from "../utils";
+import { integrationsAgentPhoneGroupRoutes } from "./integrations-agentphone-groups";
 
 interface AgentPhoneConfig {
   readonly agentphoneAgentId: string | null;
@@ -123,7 +125,7 @@ const webhookBodySchema = record(string(), zUnknown());
 const groupHistoryCursorSchema = object({
   groupId: string(),
   receivedAt: iso.datetime(),
-  id: string().uuid(),
+  id: uuid(),
 });
 
 type VerificationSendCooldownScope = "phone" | "user_org";
@@ -1170,6 +1172,20 @@ function classifyAgentPhoneEvent(args: {
     return "ignore";
   }
 
+  // SMS short codes can send notifications, but cannot identify an Okou user.
+  // Acknowledge them without admission so the provider does not retry them.
+  if (
+    args.channel === "sms" &&
+    /^\d{5,6}$/u.test(args.event.fromNumber.trim())
+  ) {
+    log.debug("Ignoring AgentPhone SMS from an unsupported short code", {
+      webhookId: args.webhookId,
+      channel: args.channel,
+      reason: "unsupported_sender_short_code",
+    });
+    return "ignore";
+  }
+
   const normalizedFrom = normalizeAgentPhoneHandle(
     args.event.fromNumber,
     args.channel,
@@ -1630,8 +1646,7 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
     eq(agentphoneMessages.agentphoneAgentId, config.agentphoneAgentId),
     eq(agentphoneMessages.groupId, query.groupId),
     eq(agentphoneMessages.channel, "imessage"),
-    eq(agentphoneMessageVisibility.orgId, auth.orgId),
-    eq(agentphoneMessageVisibility.userId, auth.userId),
+    agentPhoneMessageVisibleTo(auth),
   ];
   let cursor: zInfer<typeof groupHistoryCursorSchema> | undefined;
   if (query.cursor) {
@@ -1678,10 +1693,6 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
       receivedAt: messageAt,
     })
     .from(agentphoneMessages)
-    .innerJoin(
-      agentphoneMessageVisibility,
-      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-    )
     .where(and(...conditions))
     .orderBy(asc(messageAt), asc(agentphoneMessages.id))
     .limit(query.limit + 1);
@@ -1725,6 +1736,7 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
 });
 
 export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
+  ...integrationsAgentPhoneGroupRoutes,
   {
     route: integrationsAgentPhoneContract.getConnectStatus,
     handler: authRoute(agentPhoneAuthOptions, getConnectStatus$),

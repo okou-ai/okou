@@ -45,6 +45,9 @@ const postGmailWebhook$ = command(
       case "config_error": {
         return jsonError(result.message, 503);
       }
+      case "retryable_error": {
+        return jsonError(result.message, 503);
+      }
       case "run_error": {
         return jsonError(result.message, 429);
       }

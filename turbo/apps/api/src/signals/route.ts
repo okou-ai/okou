@@ -1,9 +1,13 @@
+import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { halloweenOperationsRoutes } from "./routes/halloween-operations";
 import { halloweenRoutes } from "./routes/halloween";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
 import type { RouteEntry } from "./route-entry";
-import { agentDraftRoutes } from "./routes/agent-draft";
+import {
+  agentDraftRoutes,
+  projectAgentDraftRoutes,
+} from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
 import { jobsRoutes } from "./routes/jobs";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
@@ -39,6 +43,8 @@ import { buildInfoRoutes } from "./routes/build-info";
 import { builtInGenerationRoutes } from "./routes/built-in-generation";
 import { chatEventsRoutes } from "./routes/chat-events";
 import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
+import { projectChatRoutes } from "./routes/project-chat";
+import { projectRoutes } from "./routes/projects";
 import { chatThreadRoutes } from "./routes/chat-threads";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
@@ -49,6 +55,9 @@ import { computerUseRoutes } from "./routes/computer-use";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
 import { desktopShellAuthorizationRoutes } from "./routes/desktop-shell-authorization";
 import { connectorAccountRoutes } from "./routes/connector-accounts";
+import { chatConnectorAccessRoutes } from "./routes/chat-connector-access";
+import { runConnectorAccountRoutes } from "./routes/run-connector-accounts";
+import { connectorPermissionsRoutes } from "./routes/connector-permissions";
 import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
@@ -109,6 +118,7 @@ import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
+import { friendReferralRoutes } from "./routes/friend-referrals";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
 import { hostRoutes } from "./routes/host";
@@ -247,6 +257,7 @@ import { workflowsRoutes } from "./routes/workflows";
 export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
+  ...friendReferralRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,
@@ -329,6 +340,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingStatusRoutes,
   ...billingUsagePackCreditsRoutes,
   ...bankingRoutes,
+  ...projectRoutes,
+  ...projectChatRoutes,
+  ...projectAgentDraftRoutes,
   ...chatThreadRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
@@ -348,6 +362,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...builtinConnectorsOauthDeviceAuthRoutes,
   ...builtinConnectorsRoutes,
   ...connectorAccountRoutes,
+  ...chatConnectorAccessRoutes,
+  ...runConnectorAccountRoutes,
+  ...connectorPermissionsRoutes,
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
   ...featureSwitchesRoutes,
@@ -476,6 +493,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...integrationsTelegramUploadInitRoutes,
   ...uploadsCompleteRoutes,
   ...uploadsMultipartRoutes,
+  ...marketingHandoffsRoutes,
   ...uploadsPrepareRoutes,
   ...presentationTemplatesRoutes,
   ...userTemplatesRoutes,

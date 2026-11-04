@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computed, type Computed } from "ccstate";
 import type { Root } from "hast";
 
@@ -9,6 +10,7 @@ import {
   type MermaidDiagramPreviewCommand,
 } from "./mermaid-diagram.ts";
 import type { TextPreviewComputed } from "./text-preview.ts";
+import { featureSwitch$ } from "./external/feature-switch.ts";
 
 export type MarkdownPreviewTreeComputed = Computed<Promise<Root>>;
 
@@ -18,6 +20,8 @@ export function createMarkdownPreviewTree(
   openDiagram$: MermaidDiagramPreviewCommand,
 ): MarkdownPreviewTreeComputed {
   return computed(async (get): Promise<Root> => {
+    const cjkEmphasis =
+      get(featureSwitch$)[FeatureSwitchKey.MarkdownCjkEmphasis] === true;
     const { text: source } = await get(text$);
     const plainTree = createPlainMarkdownTree(source, { mathEnabled: false });
     if (plainTree !== null) {
@@ -25,6 +29,7 @@ export function createMarkdownPreviewTree(
     }
     const tree = parseMarkdownTree(source, {
       mermaid: true,
+      cjkEmphasis,
     });
     const diagrams = createMermaidDiagramRegistry(openDiagram$);
     embedMermaidSignals(tree, diagrams.register);

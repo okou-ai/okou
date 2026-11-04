@@ -404,9 +404,14 @@ export function createTestMocks(getSignal: () => AbortSignal) {
     },
     browser: {
       webSocket: (
-        respond: (data: string, url: string) => string | null,
+        respond: (
+          data: string,
+          url: string,
+          peer: BrowserWebSocketPeer,
+        ) => string | null,
+        options?: { readonly autoOpen?: boolean },
       ): ReturnType<typeof mockBrowserWebSocket> => {
-        return mockBrowserWebSocket(getSignal(), respond);
+        return mockBrowserWebSocket(getSignal(), respond, options);
       },
       url: (url: string, options: BrowserUrlOptions = {}): void => {
         if (originalBrowserUrl === null) {
@@ -692,9 +697,12 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           Uint8Array,
           "fromBase64",
           (value: string) => {
-            return Uint8Array.from(atob(value), (character) => {
-              return character.charCodeAt(0);
-            });
+            const binary = atob(value);
+            const bytes = new Uint8Array(binary.length);
+            for (let index = 0; index < binary.length; index++) {
+              bytes[index] = binary.charCodeAt(index);
+            }
+            return bytes;
           },
         );
         restoreOnAbort(getSignal(), () => {
@@ -1499,49 +1507,81 @@ function mockImageDimensions(
   return { createdUrls, revokedUrls };
 }
 
+export interface BrowserWebSocketPeer {
+  readonly id: number;
+  readonly url: string;
+  receive(data: string): void;
+}
+
 function mockBrowserWebSocket(
   signal: AbortSignal,
-  respond: (data: string, url: string) => string | null,
+  respond: (
+    data: string,
+    url: string,
+    peer: BrowserWebSocketPeer,
+  ) => string | null,
+  options: { readonly autoOpen?: boolean } = {},
 ) {
   const sockets = new Set<TestWebSocket>();
+  let connectionCount = 0;
   class TestWebSocket extends EventTarget {
     static readonly CONNECTING = 0;
     static readonly OPEN = 1;
     static readonly CLOSING = 2;
     static readonly CLOSED = 3;
     readyState = TestWebSocket.CONNECTING;
+    readonly id: number;
 
     constructor(readonly url: string) {
       super();
+      connectionCount += 1;
+      this.id = connectionCount;
       sockets.add(this);
-      queueMicrotask(() => {
-        if (this.readyState !== TestWebSocket.CONNECTING) {
-          return;
-        }
-        this.readyState = TestWebSocket.OPEN;
-        this.dispatchEvent(new Event("open"));
-      });
+      if (options.autoOpen !== false) {
+        queueMicrotask(() => {
+          this.open();
+        });
+      }
+    }
+
+    open(): void {
+      if (this.readyState !== TestWebSocket.CONNECTING) {
+        return;
+      }
+      this.readyState = TestWebSocket.OPEN;
+      this.dispatchEvent(new Event("open"));
     }
 
     send(data: string): void {
-      const response = respond(data, this.url);
+      const response = respond(data, this.url, this);
       if (response === null) {
         return;
       }
       queueMicrotask(() => {
-        if (this.readyState === TestWebSocket.OPEN) {
-          this.dispatchEvent(new MessageEvent("message", { data: response }));
-        }
+        this.receive(response);
       });
     }
 
+    receive(data: string): void {
+      if (this.readyState === TestWebSocket.OPEN) {
+        this.dispatchEvent(new MessageEvent("message", { data }));
+      }
+    }
+
     close(): void {
+      this.terminate({ code: 1000, wasClean: true });
+    }
+
+    terminate(event: CloseEventInit, error = false): void {
       if (this.readyState === TestWebSocket.CLOSED) {
         return;
       }
       this.readyState = TestWebSocket.CLOSED;
       sockets.delete(this);
-      this.dispatchEvent(new Event("close"));
+      if (error) {
+        this.dispatchEvent(new Event("error"));
+      }
+      this.dispatchEvent(new CloseEvent("close", event));
     }
   }
   const descriptor = defineWindowProperty(
@@ -1556,6 +1596,36 @@ function mockBrowserWebSocket(
     restoreWindowProperty(globalThis, "WebSocket", descriptor);
   });
   return {
+    connections(): number {
+      return connectionCount;
+    },
+    activeConnections(): number {
+      return sockets.size;
+    },
+    open(url: string): void {
+      for (const socket of sockets) {
+        if (socket.url === url) {
+          socket.open();
+        }
+      }
+    },
+    fail(url: string): void {
+      for (const socket of sockets) {
+        if (socket.url === url) {
+          socket.terminate({ code: 1006, wasClean: false }, true);
+        }
+      }
+    },
+    disconnect(url: string, event: CloseEventInit, index?: number): void {
+      const matching = [...sockets].filter((socket) => {
+        return socket.url === url;
+      });
+      for (const socket of index === undefined
+        ? matching
+        : matching.slice(index, index + 1)) {
+        socket.terminate(event);
+      }
+    },
     receive(url: string, data: string): void {
       for (const socket of sockets) {
         if (socket.url === url && socket.readyState === TestWebSocket.OPEN) {

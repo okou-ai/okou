@@ -2,7 +2,7 @@ import type { Select as SelectPrimitive } from "@base-ui/react/select";
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Database, Image, Search, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -29,14 +29,10 @@ import {
 import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
+import { getToolCapabilityIcon } from "../../../../components/tool-capability-icons.ts";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
 import { getMediaModelPriceTierLabel } from "../provider-ui-config.ts";
 import { SettingsSectionHeading } from "../settings-section-heading.tsx";
-
-const TOOL_ICONS = {
-  "web-search": Search,
-  "image-generation": Image,
-} as const;
 
 function ToolToggleRow({
   tool,
@@ -109,7 +105,7 @@ function PaidToolRow({
   return (
     <ToolToggleRow
       tool={tool}
-      icon={TOOL_ICONS[tool.toolId]}
+      icon={getToolCapabilityIcon(tool.toolId)}
       grouped={grouped}
       title={t(($) => {
         return $.settings.paidTools.tools[tool.toolId].name;
@@ -128,7 +124,7 @@ function DataFamilyRow({ tool }: { readonly tool: DataFamilySettings }) {
   return (
     <ToolToggleRow
       tool={tool}
-      icon={Database}
+      icon={getToolCapabilityIcon(tool.toolId)}
       title={dataRouterFamilyText(tool.family.title, locale, tool.family.id)}
       description={dataRouterFamilyText(
         tool.family.description,

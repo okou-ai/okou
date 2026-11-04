@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
-import {
-  browserOwnerProfiles,
-  browserOwnerWindows,
-} from "@okouai/db/schema/browser-owner";
+import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 import {
   browserProfiles,
   browserSessionInstances,
@@ -18,6 +16,8 @@ import {
   exists,
   getTableColumns,
   gt,
+  isNotNull,
+  isNull,
   notExists,
   or,
   sql,
@@ -28,15 +28,20 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 
+import {
+  browserChatWindow,
+  type BrowserChatWindow,
+} from "./browser-chat-session";
+
 const SETUP_MS = 60_000;
 const IDLE_MS = 10 * 60_000;
 const MAX_BROWSER_MS = 240 * 60_000;
 const profiles = browserOwnerProfiles;
-const windows = browserOwnerWindows;
+const windows = browserChatSessions;
 type ProfileRow = typeof profiles.$inferSelect;
 type WindowView = Pick<
   typeof windows.$inferSelect,
-  "chatThreadId" | "state" | "expiresAt" | "primaryWindowId"
+  "chatThreadId" | "instanceId" | "state" | "expiresAt" | "primaryWindowId"
 >;
 interface BrowserView {
   readonly profile: ProfileRow;
@@ -44,12 +49,17 @@ interface BrowserView {
 }
 export type BrowserOwnerResult =
   | { readonly outcome: "unavailable" }
-  | ({ readonly outcome: "accepted" } & BrowserView);
+  | {
+      readonly outcome: "accepted";
+      readonly profile: ProfileRow;
+      readonly window?: BrowserChatWindow | null;
+    };
 
 type BrowserOwnerMutation =
   | {
       readonly kind: "allocate";
       readonly providerProfileId: string;
+      readonly browserExtensionId: string;
       readonly previousProfile: {
         readonly providerProfileId: string;
         readonly instanceId: string;
@@ -76,56 +86,57 @@ export interface BrowserPublicAuthority {
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
-  readonly runId: string;
-  readonly requireLiveRun: boolean;
+  // Only Run-token callers carry a Run; session callers own the chat directly.
+  readonly runId?: string;
 }
 
 export function authorityStillCurrent(owner: BrowserPublicAuthority) {
   return exists(
     new QueryBuilder()
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          browserAuthorityRun(owner),
-          eq(agentRuns.orgId, owner.orgId),
-          eq(agentRuns.userId, owner.userId),
-          eq(agentRuns.chatThreadId, owner.chatThreadId),
-        ),
-      ),
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(browserAuthorityThread(owner)),
   );
 }
 
-function browserAuthorityRun(owner: BrowserPublicAuthority) {
+function browserAuthorityThread(owner: BrowserPublicAuthority) {
   return and(
-    eq(agentRuns.id, owner.runId),
-    eq(agentRuns.orgId, owner.orgId),
-    eq(agentRuns.userId, owner.userId),
-    eq(agentRuns.chatThreadId, owner.chatThreadId),
-    owner.requireLiveRun
-      ? or(eq(agentRuns.status, "pending"), eq(agentRuns.status, "running"))
-      : undefined,
+    eq(chatThreads.id, owner.chatThreadId),
+    eq(chatThreads.userId, owner.userId),
+    eq(chatThreads.cloudBrowserEnabled, true),
     exists(
       new QueryBuilder()
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .innerJoin(
-          agents,
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
           and(
             eq(agents.id, chatThreads.agentId),
             eq(agents.orgId, owner.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(chatThreads.id, owner.chatThreadId),
-            eq(chatThreads.userId, owner.userId),
-            eq(chatThreads.cloudBrowserEnabled, true),
-            eq(agentRuns.agentId, chatThreads.agentId),
             or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
           ),
         ),
     ),
+    owner.runId
+      ? exists(
+          new QueryBuilder()
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.id, owner.runId),
+                eq(agentRuns.orgId, owner.orgId),
+                eq(agentRuns.userId, owner.userId),
+                eq(agentRuns.chatThreadId, chatThreads.id),
+                eq(agentRuns.agentId, chatThreads.agentId),
+                isNotNull(agentRuns.triggerSource),
+                or(
+                  eq(agentRuns.status, "pending"),
+                  eq(agentRuns.status, "running"),
+                ),
+              ),
+            ),
+        )
+      : undefined,
   );
 }
 
@@ -181,20 +192,24 @@ function mutationResult(row: BrowserView | undefined): BrowserOwnerResult {
   if (!row) {
     return { outcome: "unavailable" };
   }
-  return { outcome: "accepted", ...row };
+  return {
+    outcome: "accepted",
+    profile: row.profile,
+    window: row.window ? browserChatWindow(row.window) : null,
+  };
 }
 
 /** Only the named business-key competitions are normal unavailable outcomes. */
 function lifecycleCompetition(error: unknown): boolean {
   return (
-    isUniqueViolation(error, "uq_browser_owner_windows_native_window") ||
+    isUniqueViolation(error, "uq_browser_chat_sessions_native_window") ||
     (isForeignKeyViolation(error) &&
       error instanceof Error &&
       typeof error.cause === "object" &&
       error.cause !== null &&
       "constraint" in error.cause &&
-      (error.cause.constraint === "browser_owner_windows_active_instance_fk" ||
-        error.cause.constraint === "browser_owner_windows_instance_fk"))
+      (error.cause.constraint === "browser_chat_sessions_active_instance_fk" ||
+        error.cause.constraint === "browser_chat_sessions_instance_fk"))
   );
 }
 
@@ -231,8 +246,10 @@ const allocateOwnerBrowser$ = command(
           new QueryBuilder()
             .select({
               id: sql`${randomUUID()}::uuid`.mapWith(profiles.id).as("id"),
-              orgId: agentRuns.orgId,
-              userId: agentRuns.userId,
+              orgId: sql`${owner.orgId}::text`
+                .mapWith(profiles.orgId)
+                .as("org_id"),
+              userId: chatThreads.userId,
               providerProfileId: sql`${action.providerProfileId}::uuid`
                 .mapWith(profiles.providerProfileId)
                 .as("provider_profile_id"),
@@ -242,6 +259,9 @@ const allocateOwnerBrowser$ = command(
               providerSessionId: sql`NULL::uuid`
                 .mapWith(profiles.providerSessionId)
                 .as("provider_session_id"),
+              browserExtensionId: sql`${action.browserExtensionId}::uuid`
+                .mapWith(profiles.browserExtensionId)
+                .as("browser_extension_id"),
               status: sql`'creating'`.mapWith(profiles.status).as("status"),
               creationExpiresAt:
                 sql`${sql.param(creationExpiresAt, profiles.creationExpiresAt)}::timestamp`
@@ -258,10 +278,10 @@ const allocateOwnerBrowser$ = command(
                 .mapWith(profiles.updatedAt)
                 .as("updated_at"),
             })
-            .from(agentRuns)
+            .from(chatThreads)
             .where(
               and(
-                browserAuthorityRun(owner),
+                browserAuthorityThread(owner),
                 action.previousProfile
                   ? exists(
                       new QueryBuilder()
@@ -307,6 +327,7 @@ const allocateOwnerBrowser$ = command(
             providerProfileId: action.providerProfileId,
             instanceId,
             providerSessionId: null,
+            browserExtensionId: action.browserExtensionId,
             status: "creating",
             creationExpiresAt,
             timeoutAt,
@@ -399,6 +420,9 @@ const admitOwnerBrowserWindow$ = command(
               chatThreadId: sql`${owner.chatThreadId}::uuid`
                 .mapWith(windows.chatThreadId)
                 .as("chat_thread_id"),
+              orgId: profiles.orgId,
+              userId: profiles.userId,
+              name: sql`'browser'`.mapWith(windows.name).as("name"),
               instanceId: profiles.instanceId,
               state: sql`'active'`.mapWith(windows.state).as("state"),
               primaryWindowId: sql`${action.primaryWindowId}::bigint`
@@ -408,6 +432,15 @@ const admitOwnerBrowserWindow$ = command(
                 sql`least(${profiles.timeoutAt}, ${sql.param(new Date(now.getTime() + IDLE_MS), windows.expiresAt)}::timestamp)`
                   .mapWith(windows.expiresAt)
                   .as("expires_at"),
+              encryptedTabUrls: sql`NULL::text`.as("encrypted_tab_urls"),
+              tabUrlsCapturedAt: sql`NULL::timestamp`.as(
+                "tab_urls_captured_at",
+              ),
+              screenshotObjectKey: sql`NULL::text`.as("screenshot_object_key"),
+              screenshotUrl: sql`NULL::text`.as("screenshot_url"),
+              screenshotCapturedAt: sql`NULL::timestamp`.as(
+                "screenshot_captured_at",
+              ),
               createdAt: sql`${sql.param(now, windows.createdAt)}::timestamp`
                 .mapWith(windows.createdAt)
                 .as("created_at"),
@@ -419,7 +452,28 @@ const admitOwnerBrowserWindow$ = command(
             .where(activeInstance(owner, action.instanceId, now))
             .getSQL(),
         )
-        .onConflictDoNothing({ target: windows.chatThreadId })
+        .onConflictDoUpdate({
+          target: windows.chatThreadId,
+          set: {
+            instanceId: action.instanceId,
+            state: "active",
+            primaryWindowId: action.primaryWindowId,
+            expiresAt: sql`excluded.expires_at`,
+            updatedAt: now,
+          },
+          setWhere: and(
+            eq(windows.orgId, owner.orgId),
+            eq(windows.userId, owner.userId),
+            isNull(windows.instanceId),
+            isNull(windows.state),
+            exists(
+              new QueryBuilder()
+                .select({ id: profiles.id })
+                .from(profiles)
+                .where(activeInstance(owner, action.instanceId, now)),
+            ),
+          ),
+        })
         .returning(),
     );
     const rows = await db
@@ -428,6 +482,7 @@ const admitOwnerBrowserWindow$ = command(
         profile: getTableColumns(profiles),
         window: {
           chatThreadId: changed.chatThreadId,
+          instanceId: changed.instanceId,
           state: changed.state,
           expiresAt: changed.expiresAt,
           primaryWindowId: changed.primaryWindowId,
@@ -473,6 +528,7 @@ const renewOwnerBrowserWindow$ = command(
         profile: getTableColumns(profiles),
         window: {
           chatThreadId: changed.chatThreadId,
+          instanceId: changed.instanceId,
           state: changed.state,
           expiresAt: changed.expiresAt,
           primaryWindowId: changed.primaryWindowId,

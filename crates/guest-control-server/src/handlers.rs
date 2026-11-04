@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 #[cfg(any(debug_assertions, feature = "test-support"))]
 use std::sync::Mutex;
@@ -139,36 +139,13 @@ where
     )
 }
 
-fn wait_write_file_child_with_timeout<S>(
-    child: Child,
+fn wait_write_file_child_with_timeout<S: ThreadSpawner>(
+    mut child: Child,
     content: &[u8],
     timeout_ms: u32,
     connection_cancel: &AtomicBool,
     progress: &FileWriteRequestProgress,
     spawner: S,
-) -> (bool, String)
-where
-    S: ThreadSpawner,
-{
-    wait_write_input(
-        child,
-        move |mut stdin| stdin.write_all(content),
-        timeout_ms,
-        connection_cancel,
-        progress,
-        spawner,
-        None,
-    )
-}
-
-fn wait_write_input<S: ThreadSpawner>(
-    mut child: Child,
-    copy_input: impl FnOnce(ChildStdin) -> io::Result<()> + Send,
-    timeout_ms: u32,
-    connection_cancel: &AtomicBool,
-    progress: &FileWriteRequestProgress,
-    spawner: S,
-    input_cancel: Option<Arc<AtomicBool>>,
 ) -> (bool, String) {
     progress.mark(FileWriteStage::WaitingForHelper);
     let cancel = match DrainCancellation::new() {
@@ -228,7 +205,8 @@ fn wait_write_input<S: ThreadSpawner>(
     std::thread::scope(|scope| {
         let (stdin_done_tx, stdin_done_rx) = std::sync::mpsc::channel::<()>();
         let stdin_handle = match spawn_scoped_named(scope, THREAD_WRITE_STDIN, move || {
-            let result = copy_input(stdin_pipe);
+            let mut stdin_pipe = stdin_pipe;
+            let result = stdin_pipe.write_all(content);
             let _ = stdin_done_tx.send(());
             result
         }) {
@@ -254,9 +232,6 @@ fn wait_write_input<S: ThreadSpawner>(
             },
         );
         progress.mark(FileWriteStage::JoiningStdin);
-        if let Some(stop) = input_cancel {
-            stop.store(true, std::sync::atomic::Ordering::Release);
-        }
         let stdin_result = match stdin_handle.join() {
             Ok(result) => result,
             Err(panic) => std::panic::resume_unwind(panic),
@@ -341,55 +316,6 @@ fn spawn_write_files_command(private: bool) -> io::Result<Child> {
         .stderr(Stdio::piped());
     apply_command_identity(&mut command, false)?;
     spawn_in_own_process_group(&mut command)
-}
-
-pub(crate) fn handle_file_stream(
-    seq: u32,
-    payload: &[u8],
-    mut input: crate::file_stream::Input,
-    connection_cancel: &AtomicBool,
-    progress: &FileWriteRequestProgress,
-) -> io::Result<Vec<u8>> {
-    let begin = crate::file_stream::decode_begin(payload).map_err(to_io_error)?;
-    progress.mark(FileWriteStage::StartingHelper);
-    let mut command = Command::new(guest_write_file_path());
-    match begin.codec {
-        crate::file_stream::StreamCodec::Zstd => {
-            command.args(["--zstd", &begin.raw_size.to_string()]);
-        }
-        crate::file_stream::StreamCodec::ZstdSource { crc32, .. } => {
-            command.args([
-                "--zstd-source",
-                &begin.raw_size.to_string(),
-                &crc32.to_string(),
-            ]);
-        }
-    }
-    command.args(write_file_command_args(begin.sudo, begin.append, false)?);
-    command
-        .arg("--")
-        .arg(begin.path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-    apply_command_identity(&mut command, begin.sudo)?;
-    let child = spawn_in_own_process_group(&mut command)?;
-    if let Err(error) = input.grant_initial() {
-        kill_and_reap_child(child);
-        return Err(error);
-    }
-    let stop = Arc::clone(&input.stop);
-    let (success, error) = wait_write_input(
-        child,
-        move |mut stdin| io::copy(&mut input, &mut stdin).map(|_| ()),
-        WRITE_FILE_HELPER_TIMEOUT_MS,
-        connection_cancel,
-        progress,
-        SystemThreadSpawner,
-        Some(stop),
-    );
-    let payload = guest_control_proto::encode_write_file_result(success, &error);
-    guest_control_proto::encode(MSG_WRITE_FILE_RESULT, seq, &payload).map_err(to_io_error)
 }
 
 fn guest_write_file_path() -> PathBuf {
@@ -517,191 +443,4 @@ fn encode_error_response(seq: u32, message: &str) -> io::Result<MessageOutcome> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[cfg(target_os = "linux")]
-    use std::io::{BufRead, BufReader};
-    #[cfg(target_os = "linux")]
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-    #[cfg(target_os = "linux")]
-    use crate::test_support::{kill_pidfd_and_wait, open_pidfd, wait_for_pidfd_exit};
-    use crate::threading::test_support::FailingThreadSpawner;
-    use std::sync::Mutex;
-
-    static WRITE_FILE_CHILD_TESTS: Mutex<()> = Mutex::new(());
-
-    fn spawn_write_file_test_child(script: &str) -> Child {
-        // Use a stable shell binary instead of a freshly written temp
-        // executable; some CI filesystems can transiently reject immediate exec
-        // of a just-created file with ETXTBSY.
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(script)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        spawn_in_own_process_group(&mut command).unwrap()
-    }
-
-    fn pid_alive(pid: u32) -> bool {
-        // SAFETY: kill(pid, 0) is the standard process-existence check.
-        unsafe { libc::kill(pid as i32, 0) == 0 }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn write_file_child_starts_as_process_group_leader() {
-        let _guard = WRITE_FILE_CHILD_TESTS.lock().unwrap();
-        let child = spawn_write_file_test_child("sleep 60");
-        let pid = child.id();
-
-        let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
-        kill_and_reap_child(child);
-
-        assert_eq!(pgid, pid as libc::pid_t);
-    }
-
-    #[test]
-    fn write_file_stderr_drain_spawn_failure_kills_and_reaps_child() {
-        let _guard = WRITE_FILE_CHILD_TESTS.lock().unwrap();
-        let child = spawn_write_file_test_child("sleep 60");
-        let pid = child.id();
-        let connection_cancel = AtomicBool::new(false);
-
-        let (success, error) = wait_write_file_child(
-            child,
-            b"",
-            &connection_cancel,
-            &crate::file_write_progress::FileWriteProgress::default().start(1),
-            FailingThreadSpawner::fail_once(THREAD_WRITE_STDERR),
-        );
-
-        assert!(!success);
-        assert!(error.contains("stderr drain thread"));
-        assert!(!pid_alive(pid), "child pid {pid} should have been reaped");
-    }
-
-    #[test]
-    fn write_file_command_args_use_private_mode_without_create_parents() {
-        let args = write_file_command_args(false, false, true).unwrap();
-
-        assert_eq!(args, vec!["--private"]);
-    }
-
-    #[test]
-    fn write_file_command_args_use_private_append_mode() {
-        let args = write_file_command_args(false, true, true).unwrap();
-
-        assert_eq!(args, vec!["--private", "--append"]);
-    }
-
-    #[test]
-    fn write_file_command_args_reject_private_sudo() {
-        let error = write_file_command_args(true, false, true).unwrap_err();
-
-        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
-    }
-
-    #[test]
-    fn write_file_timeout_kills_child_while_stdin_writer_is_blocked() {
-        let _guard = WRITE_FILE_CHILD_TESTS.lock().unwrap();
-        let child = spawn_write_file_test_child("sleep 60; cat >/dev/null");
-        let pid = child.id();
-        let content = vec![b'x'; 1024 * 1024];
-        let connection_cancel = AtomicBool::new(false);
-
-        let (success, error) = wait_write_file_child_with_timeout(
-            child,
-            &content,
-            10,
-            &connection_cancel,
-            &crate::file_write_progress::FileWriteProgress::default().start(1),
-            SystemThreadSpawner,
-        );
-
-        assert!(!success);
-        assert_eq!(error, "write timed out");
-        assert!(!pid_alive(pid), "child pid {pid} should have been reaped");
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn write_file_kills_lingering_process_group_after_parent_exit() {
-        let _guard = WRITE_FILE_CHILD_TESTS.lock().unwrap();
-        let fifo_path = std::env::temp_dir().join(format!(
-            "guest-control-write-file-stdin-{}-{}.fifo",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(
-                "mkfifo \"$FIFO\"; \
-                 exec 3<&0; \
-                 sleep 60 <&3 >/dev/null 2>/dev/null & \
-                 printf '%s\\n' \"$!\"; \
-                 exec 3<&-; \
-                 read _ < \"$FIFO\"; \
-                 rm -f \"$FIFO\"; \
-                 exit 0",
-            )
-            .env("FIFO", &fifo_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = spawn_in_own_process_group(&mut command).unwrap();
-        let pid = child.id();
-        let stdout = child.stdout.take().unwrap();
-        let mut descendant_pid = String::new();
-        BufReader::new(stdout)
-            .read_line(&mut descendant_pid)
-            .unwrap();
-        let descendant_pid = descendant_pid.trim().parse::<libc::pid_t>().unwrap();
-        let descendant_pidfd = open_pidfd(descendant_pid).unwrap();
-        let mut fifo = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&fifo_path)
-            .unwrap();
-        writeln!(fifo, "exit").unwrap();
-        drop(fifo);
-        let content = vec![b'x'; 1024 * 1024];
-        let connection_cancel = AtomicBool::new(false);
-
-        let (success, error) = wait_write_file_child_with_timeout(
-            child,
-            &content,
-            1_000,
-            &connection_cancel,
-            &crate::file_write_progress::FileWriteProgress::default().start(1),
-            SystemThreadSpawner,
-        );
-        let _ = std::fs::remove_file(&fifo_path);
-
-        assert!(!success);
-        assert!(error.contains("Failed to write to stdin"), "got: {error}");
-        assert!(!pid_alive(pid), "child pid {pid} should have been reaped");
-        match wait_for_pidfd_exit(&descendant_pidfd, Duration::from_secs(2)) {
-            Ok(true) => {}
-            Ok(false) => {
-                kill_pidfd_and_wait(&descendant_pidfd).unwrap_or_else(|cleanup| {
-                    panic!(
-                        "failed to clean up lingering descendant pid {descendant_pid}: {cleanup}"
-                    )
-                });
-                panic!("lingering descendant pid {descendant_pid} should be terminated");
-            }
-            Err(error) => {
-                let cleanup = kill_pidfd_and_wait(&descendant_pidfd);
-                panic!(
-                    "failed to wait for lingering descendant pid {descendant_pid}: {error}; cleanup={cleanup:?}"
-                );
-            }
-        }
-    }
-}
+mod tests;

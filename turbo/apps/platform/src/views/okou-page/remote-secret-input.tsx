@@ -3,7 +3,6 @@ import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Eye, EyeOff } from "lucide-react";
 import { IconButton, Input, cn } from "@okouai/ui";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import {
   mountRemoteSecretInput$,
   remoteSecretVisibility$,
@@ -15,13 +14,9 @@ export function RemoteSecretInput(
 ) {
   const { t } = useTranslation();
   const { id } = props;
-  const guided = useGet(remoteControlGuidedEnabled$);
   const visible = useGet(remoteSecretVisibility$).has(id);
   const toggle = useSet(toggleRemoteSecret$);
   const mount = useSet(mountRemoteSecretInput$);
-  if (!guided) {
-    return <Input {...props} type="password" />;
-  }
   return (
     <span className="relative block" ref={mount}>
       <Input

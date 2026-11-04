@@ -28,7 +28,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
+import {
+  mockBrowserCdp,
+  TEST_BROWSER_EXTENSION,
+} from "../../../__tests__/browser-cdp-fixture.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   CAPABILITY_AGENT_ID,
@@ -279,7 +282,7 @@ async function openManagedBrowserChat(
   const cdpUrl = "wss://cdp.browser-use.com/research";
   mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
+    return respond(200, { browser, cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
   let browser = managedBrowserSession({
     status: "active",
@@ -411,36 +414,55 @@ test("Browser cards show status and thumbnail changes on events and continuity g
   );
 });
 
-test("A browser card uses a private screenshot thumbnail while its panel keeps the original", async () => {
-  const screenshotUrl =
-    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
-    "?X-Amz-Signature=browser-screenshot-signature";
-  const browser = managedBrowserSession({
-    status: "suspended",
-    screenshotUrl,
-    liveUrl: null,
-  });
-  installCapabilityChat({
-    events: completedConversation(
-      `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
-    ),
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser });
-  });
+test.each([false, true])(
+  "A stopped browser keeps its card thumbnail and offers a start action with cloud browser panel=%s",
+  async (cloudBrowserPanel) => {
+    const screenshotUrl =
+      `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
+      "?X-Amz-Signature=browser-screenshot-signature";
+    const browser = managedBrowserSession({
+      status: "suspended",
+      screenshotUrl,
+      liveUrl: null,
+    });
+    installCapabilityChat({
+      events: completedConversation(
+        `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
+      ),
+    });
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(200, { browser });
+    });
 
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  const card = await findButton("Open Research browser");
-  expect(within(card).getByTestId("browser-session-thumbnail")).toHaveAttribute(
-    "src",
-    `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${screenshotUrl}`,
-  );
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.CloudBrowserPanel]: cloudBrowserPanel,
+      },
+    });
+    const card = await findButton("Open Research browser");
+    expect(
+      within(card).getByTestId("browser-session-thumbnail"),
+    ).toHaveAttribute(
+      "src",
+      `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${screenshotUrl}`,
+    );
 
-  click(card);
-  await expect(
-    screen.findByTestId("browser-session-panel-screenshot"),
-  ).resolves.toHaveAttribute("src", screenshotUrl);
-});
+    click(card);
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Cloud browser",
+    });
+    await expect(
+      within(sidebar).findByText("Browser not live"),
+    ).resolves.toBeInTheDocument();
+    expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeDisabled();
+  },
+);
 
 test("Follow suspension and resumption in the live browser panel", async () => {
   const { updateBrowser } = await openManagedBrowserChat();
@@ -474,13 +496,11 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       "Stopped",
     );
   });
-  expect(
-    within(sidebar).queryByRole("region", { name: "Remote browser viewer" }),
-  ).toBeNull();
   await expect(
-    screen.findByTestId("browser-session-panel-screenshot"),
-  ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
-  expect(within(sidebar).getByText("Browser not live")).toBeVisible();
+    within(sidebar).findByText("Browser not live"),
+  ).resolves.toBeInTheDocument();
+  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
+  expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
 
   updateBrowser(
     managedBrowserSession({
@@ -498,7 +518,6 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       within(sidebar).getByDisplayValue("https://example.com"),
     ).toBeEnabled();
   });
-  expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
 });
 
 test("Keep foreign and untrusted browser URLs as ordinary links", async () => {
@@ -1081,10 +1100,6 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   if (!submitButton) {
     throw new Error("Missing Browser submit button");
   }
-  expect(buttonsByName("Leave website value unchanged", dialog)).toHaveLength(
-    0,
-  );
-  expect(buttonsByName("Clear website value", dialog)).toHaveLength(0);
   expect(submitButton).toBeEnabled();
   click(submitButton);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1467,10 +1482,6 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
   if (!submit) {
     throw new Error("Missing Browser submit button");
   }
-  expect(buttonsByName("Leave website value unchanged", dialog)).toHaveLength(
-    0,
-  );
-  expect(buttonsByName("Clear website value", dialog)).toHaveLength(0);
   expect(submit).toBeEnabled();
   click(submit);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();

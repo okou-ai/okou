@@ -50,13 +50,36 @@ final class WorkspaceStore {
   var newAttachmentDraft: AttachmentDraftStore { newComposer.attachments }
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
+  private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
   @ObservationIgnored private var agentDrafts: [String: ComposerDraftStore] = [:]
   private var agentDraftTask: Task<Void, Never>?
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
+  var synchronizationState: ChatSynchronizationState? {
+    guard !closed else { return nil }
+    if list.isLoading || selectedConversation?.isLoading == true { return .updating }
+    if list.syncError != nil || list.navigationError != nil
+      || selectedConversation?.syncError != nil
+    {
+      return .unavailable
+    }
+    guard realtime != nil else { return nil }
+    switch connectionStatus {
+    case .connecting: return .connecting
+    case .unavailable, .disconnected: return .unavailable
+    case .connected: return nil
+    }
+  }
+
+  func retrySynchronization() async {
+    await refreshNavigation()
+    await refresh()
+  }
+
   @ObservationIgnored lazy var modelStore = ChatModelStore(
-    client: client, webURL: webURL, didFail: { [weak self] in self?.handle($0) })
+    client: client, webURL: webURL, readRetrySleep: readRetrySleep,
+    didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
     client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
@@ -87,6 +110,7 @@ final class WorkspaceStore {
   init(
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
     sharedSync: ChatSync? = nil, draftStorage: ChatDraftStorage? = nil,
+    measurementScope: ChatCacheScope? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -100,6 +124,7 @@ final class WorkspaceStore {
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
     self.draftStorage = draftStorage
+    self.measurementScope = measurementScope
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync
@@ -184,6 +209,7 @@ final class WorkspaceStore {
       modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
+      measurementScope: measurementScope,
       didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) },
       readRetrySleep: readRetrySleep)
     conversation.composer.setForeground(isForeground)
@@ -250,7 +276,7 @@ final class WorkspaceStore {
       let composer = ComposerDraftStore(
         target: .agent(id), commands: commands,
         repository: draftRepository, storage: draftStorage,
-        didFail: { [weak self] in self?.handle($0) })
+        didFail: { [weak self] in self?.handle($0) }, syncSleep: readRetrySleep)
       // Preserve input entered before navigation resolves the default Agent.
       if !isCreating && newComposer.hasContent && agentDrafts.isEmpty {
         newComposer.move(to: composer)
@@ -516,10 +542,13 @@ final class WorkspaceStore {
     // Creation already owns the next navigation when its response arrives.
     guard !isCreating || (!leaving && !reopenOnSuccess) else { return false }
     let restore = leaving || restoreOnUndo
-    let succeeded = await list.setArchived(thread, archived: archived, eventID: eventID) {
-      // The list owns the write, so leaving the detail cannot cancel it.
-      if leaving { self.startNewChat(agentID: thread.agentID) }
-    }
+    var failure: String?
+    let succeeded = await list.setArchived(
+      thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
+      didBegin: {
+        // The list owns the write, so leaving the detail cannot cancel it.
+        if leaving { self.startNewChat(agentID: thread.agentID) }
+      })
     guard !closed, !needsUpgrade else { return false }
     if succeeded {
       if reopenOnSuccess { selectChat(id) }
@@ -538,8 +567,8 @@ final class WorkspaceStore {
       }
     } else {
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: list.error ?? "The archive change was not saved.",
-        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess
+        threadID: id, message: failure ?? "The archive change was not confirmed.",
+        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess, kind: .error
       ) { [weak self] in
         await self?.setArchived(
           id, archived: archived, restoreOnUndo: restore,
@@ -551,13 +580,15 @@ final class WorkspaceStore {
 
   func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
     guard !closed, !needsUpgrade, list.canMute(id) else { return }
-    let succeeded = await list.setMuted(id, muted: muted, markRead: markRead)
+    var failure: String?
+    let succeeded = await list.setMuted(
+      id, muted: muted, markRead: markRead, onFailure: { failure = $0 })
     guard !closed, !needsUpgrade else { return }
     if succeeded {
       let message =
         muted
-        ? "Chat muted. Notifications and unread badges are off; tasks keep running."
-        : "Chat unmuted. Notifications and unread badges are on."
+        ? "Chat muted"
+        : "Chat unmuted"
       let canUndo = muted || list.canMuteChats
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: message, actionTitle: canUndo ? "Undo" : nil
@@ -567,8 +598,8 @@ final class WorkspaceStore {
       }
     } else {
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: list.error ?? "The mute change was not saved.",
-        actionTitle: "Retry", persists: true
+        threadID: id, message: failure ?? "The mute change was not confirmed.",
+        actionTitle: "Retry", persists: true, kind: .error
       ) { [weak self] in
         await self?.setMuted(id, muted: muted, markRead: markRead)
       }

@@ -29,7 +29,7 @@ import addon_process_logging
 # --- Sub-module imports ---
 #
 # auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/content_length/
-# http_header_syntax/matching/model_websocket_usage/registry/
+# http_header_syntax/matching/model_websocket_usage/
 # response_encoding_negotiation/
 # response_streaming/
 # runner_flush_lifecycle/terminal_usage/upstream_admission/usage/websocket_framing/
@@ -39,7 +39,7 @@ import addon_process_logging
 #      ``body_capture.X(...)`` / ``connector_diagnostics.X(...)`` /
 #      ``connector_intent.X(...)`` /
 #      ``content_length.X(...)`` /
-#      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` / ``registry.X(...)`` /
+#      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` /
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
 #      ``terminal_usage.X(...)`` /
 #      ``upstream_admission.X(...)`` / ``usage.X(...)`` /
@@ -51,6 +51,7 @@ import auth_base_forwarder
 import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
 import body_capture
+import builtin_connector_diagnostics
 import builtin_host_policy
 import codex_model_catalog_cache
 import connector_diagnostics
@@ -72,7 +73,6 @@ import mitmproxy_compat
 import model_websocket_usage
 import platform_api
 import public_destination_body_admission
-import registry
 import registry_control
 import request_body_admission
 import request_classification
@@ -268,6 +268,10 @@ def load(loader: Loader) -> None:
 
 
 def configure(updated: set[str]) -> None:
+    if "okou_builtin_firewall_catalog_cache_path" in updated:
+        # Runner disables its listener until running() below. Script loading
+        # itself is asynchronous and does not precede native listener setup.
+        builtin_connector_diagnostics.prepare_configured_catalog_snapshot()
     platform_api.configure_client_headers(
         client_session_id=ctx.options.okou_client_session_id,
         client_version=ctx.options.okou_client_version,
@@ -289,6 +293,10 @@ def running() -> None:
     usage_state_id = ctx.options.okou_usage_state_id
     run_usage.initialize(usage_state_id or None)
     if control_dir and usage_state_id:
+        proxy_server = ctx.master.addons.get("proxyserver")
+        if proxy_server is None:
+            raise RuntimeError("managed addon requires the native proxy server")
+        proxy_servers = proxy_server.servers
         registry_owner = registry_control.RegistryControl(
             asyncio.get_running_loop(), get_registry_path()
         )
@@ -298,10 +306,16 @@ def running() -> None:
             registry_owner,
             runner_flush_lifecycle.DeliveryControl(),
             usage_snapshot=run_usage.snapshot,
+            # Native server maps are replaced, and is_running only reads each
+            # instance's published listener state. No policy work runs here.
+            listener_ready=lambda: any(server.is_running for server in proxy_servers),
         )
         control.start()
         _registry_control = registry_owner
         _runner_control = control
+        # Managed launches start with server=false so reconnecting sandboxes
+        # cannot enter before configure() has validated the existing catalog.
+        ctx.options.update(server=True)
 
 
 def get_api_url() -> str:
@@ -434,23 +448,24 @@ def _prebind_bounded_requestheaders_upstream_destination(
         hostname=trusted_authority.host,
         port=trusted_authority.port,
     )
-    if (
+    reuse_binding = (
         not is_api_destination
         and upstream_admission.has_bound_destination(
             flow,
             allowed_kinds=frozenset(("connector_auth",)),
         )
         and not _request_may_use_aws_sigv4(flow)
-        # A bound connection cannot skip managed OpenRouter body admission.
-        # The canonical classifier below still selects the credential owner.
+        # Reusing a connection skips binding work, never current path validation.
+        # Managed OpenRouter still requires body admission.
         and trusted_authority.host != managed_openrouter.HOST
-    ):
-        return None
+    )
     classification = _classify_request_for_flow_with_trusted_authority(
         flow,
         trusted_authority=trusted_authority,
         defer_unresolved_public_destination=True,
     )
+    if reuse_binding:
+        return classification
     _prebind_requestheaders_upstream_destination(flow, classification)
     return classification
 
@@ -734,43 +749,6 @@ def _http_network_log_entry(
     return entry, url
 
 
-def _block_authority_validation_error(flow: http.HTTPFlow, error: AuthorityValidationError) -> None:
-    http_local_responses.block_authority_validation_error(flow, error)
-
-
-def _block_registry_unavailable(
-    flow: http.HTTPFlow,
-    unavailable: registry.RegistryUnavailable,
-) -> None:
-    http_local_responses.block_registry_unavailable(flow, unavailable)
-
-
-def _block_invalid_registry_sandbox(
-    flow: http.HTTPFlow,
-    invalid_sandbox: registry.InvalidSandboxEntry,
-) -> None:
-    http_local_responses.block_invalid_registry_sandbox(flow, invalid_sandbox)
-
-
-def _block_stale_tls_admission(flow: http.HTTPFlow, *, reason: str) -> None:
-    http_local_responses.block_stale_tls_admission(flow, reason=reason)
-
-
-def _block_platform_path_denied(flow: http.HTTPFlow) -> None:
-    http_local_responses.block_platform_path_denied(flow)
-
-
-def _block_firewall_authorization_changed(
-    flow: http.HTTPFlow,
-    *,
-    current_decision: str,
-) -> None:
-    http_local_responses.block_firewall_authorization_changed(
-        flow,
-        current_decision=current_decision,
-    )
-
-
 def _block_upstream_destination_unbound(
     flow: http.HTTPFlow,
     *,
@@ -849,6 +827,13 @@ def client_disconnected(client: connection.Client) -> None:
 # ============================================================================
 
 
+def _terminate_classified_requestheaders(flow: http.HTTPFlow) -> None:
+    """Drop cached classification and kill a rejected header-phase request."""
+    request_classification.pop_cached_classification(flow)
+    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+    flow.kill()
+
+
 def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
     try:
         return _requestheaders(flow)
@@ -890,6 +875,11 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
 
     try:
         preparation = custom_http.prepare(flow, registry_path=get_registry_path())
+    except custom_http.InvalidFirewallInputError as error:
+        _block_custom_http_invalid_input(flow, error)
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        header_auth_response.mark(flow)
+        return None
     except AuthorityValidationError as error:
         _reject_custom_http_requestheaders(flow, error)
         return None
@@ -900,12 +890,25 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
     return _requestheaders_after_authority(flow, request_end_stream=request_end_stream)
 
 
+def _block_custom_http_invalid_input(
+    flow: http.HTTPFlow, error: custom_http.InvalidFirewallInputError
+) -> None:
+    _classify_request_for_flow(flow)
+    # Classification may observe a newer registry without this sandbox. The
+    # rejecting preparation already validated this immutable diagnostic target.
+    authority = error.authority
+    flow.metadata[metadata_keys.ORIGINAL_URL] = authority.url
+    http_network_log.set_target(flow, url=authority.url, host=authority.host, port=authority.port)
+    _start_request_timing(flow)
+    http_local_responses.set_firewall_invalid_input_response(flow, error.result)
+
+
 def _reject_custom_http_requestheaders(
     flow: http.HTTPFlow, error: AuthorityValidationError
 ) -> None:
     # Preserve early error framing rather than forwarding an unadmitted body.
     _classify_request_for_flow(flow)
-    _block_authority_validation_error(flow, error)
+    http_local_responses.block_authority_validation_error(flow, error)
     flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
     header_auth_response.mark(flow)
 
@@ -948,6 +951,14 @@ def _requestheaders_after_authority(
         except BaseException:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             raise
+        if isinstance(bounded_classification, request_classification.FirewallInvalidInput):
+            _start_request_timing(flow)
+            http_local_responses.set_firewall_invalid_input_response(
+                flow, bounded_classification.firewall_invalid_input
+            )
+            flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+            header_auth_response.mark(flow)
+            return None
         if bounded_classification is not None and _admit_managed_openrouter_from_headers(
             flow, bounded_classification, request_end_stream=request_end_stream
         ):
@@ -996,6 +1007,14 @@ def _requestheaders_after_authority(
             classification=classification,
             body_check=aws_sigv4_body_check,
         )
+        return None
+    if classification.kind == "firewall_invalid_input":
+        _start_request_timing(flow)
+        http_local_responses.set_firewall_invalid_input_response(
+            flow, classification.firewall_invalid_input
+        )
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        header_auth_response.mark(flow)
         return None
     if classification.kind == "public_destination_denied":
         _start_request_timing(flow)
@@ -1079,9 +1098,7 @@ def _requestheaders_after_authority(
                     firewall_base=firewall_base,
                     reason=auth_base_body_check.reason,
                 )
-            request_classification.pop_cached_classification(flow)
-            flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-            flow.kill()
+            _terminate_classified_requestheaders(flow)
             return None
 
         if auth_base and auth_base_body_check.kind == "ok":
@@ -1102,9 +1119,7 @@ def _requestheaders_after_authority(
                     proxy_log_path=proxy_log_path,
                     firewall_base=firewall_base,
                 )
-                request_classification.pop_cached_classification(flow)
-                flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-                flow.kill()
+                _terminate_classified_requestheaders(flow)
                 return None
             try:
                 auth_base_forwarder.attach_forward_request_admission_to_flow(flow, admission)
@@ -1314,9 +1329,7 @@ def _check_data_router_request_body(
         observed_size=body_check.observed_size,
         request_body_limit_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
     )
-    request_classification.pop_cached_classification(flow)
-    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-    flow.kill()
+    _terminate_classified_requestheaders(flow)
 
 
 def _admit_buffered_public_destination_request(
@@ -1367,9 +1380,7 @@ def _admit_buffered_public_destination_request(
         observed_size=body_check.observed_size,
         request_body_limit_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
     )
-    request_classification.pop_cached_classification(flow)
-    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-    flow.kill()
+    _terminate_classified_requestheaders(flow)
 
 
 def _admit_buffered_aws_sigv4_request(
@@ -1429,9 +1440,7 @@ def _admit_buffered_aws_sigv4_request(
             action=action,
         )
     release_aws_sigv4_request_inspection(flow)
-    request_classification.pop_cached_classification(flow)
-    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-    flow.kill()
+    _terminate_classified_requestheaders(flow)
 
 
 async def _try_firewall_request_stream_from_headers(
@@ -1564,17 +1573,6 @@ async def _try_firewall_request_stream_from_headers(
         restore_request_state()
         _restore_request_headers_probe_metadata(flow, metadata_snapshot)
         raise
-
-
-def _set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBlock) -> None:
-    http_local_responses.set_firewall_block_response(flow, result)
-
-
-def _set_firewall_ambiguous_response(
-    flow: http.HTTPFlow,
-    result: matching.FirewallAmbiguous,
-) -> None:
-    http_local_responses.set_firewall_ambiguous_response(flow, result)
 
 
 def _block_public_destination_denied(
@@ -1728,19 +1726,19 @@ def _block_request_classification(
     classification: request_classification.BlockingRequestClassification,
 ) -> None:
     if classification.kind == "registry_unavailable":
-        _block_registry_unavailable(flow, classification.registry_unavailable)
+        http_local_responses.block_registry_unavailable(flow, classification.registry_unavailable)
         return
     if classification.kind == "stale_tls_admission":
-        _block_stale_tls_admission(flow, reason=classification.stale_tls_reason)
+        http_local_responses.block_stale_tls_admission(flow, reason=classification.stale_tls_reason)
         return
     if classification.kind == "invalid_registry_sandbox":
-        _block_invalid_registry_sandbox(flow, classification.invalid_sandbox)
+        http_local_responses.block_invalid_registry_sandbox(flow, classification.invalid_sandbox)
         return
     if classification.kind == "authority_denied":
-        _block_authority_validation_error(flow, classification.authority_error)
+        http_local_responses.block_authority_validation_error(flow, classification.authority_error)
         return
     if classification.kind == "platform_path_denied":
-        _block_platform_path_denied(flow)
+        http_local_responses.block_platform_path_denied(flow)
         return
     if classification.kind == "outlook_send_blocked":
         http_local_responses.block_outlook_send(flow)
@@ -1749,10 +1747,17 @@ def _block_request_classification(
         http_local_responses.block_gmail_send(flow)
         return
     if classification.kind == "firewall_ambiguous":
-        _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
+        http_local_responses.set_firewall_ambiguous_response(
+            flow, classification.firewall_ambiguous
+        )
+        return
+    if classification.kind == "firewall_invalid_input":
+        http_local_responses.set_firewall_invalid_input_response(
+            flow, classification.firewall_invalid_input
+        )
         return
     if classification.kind == "firewall_block":
-        _set_firewall_block_response(flow, classification.firewall_block)
+        http_local_responses.set_firewall_block_response(flow, classification.firewall_block)
         return
     if classification.kind == "public_destination_denied":
         _block_public_destination_denied(flow, classification.public_destination_denial)
@@ -1770,7 +1775,7 @@ def _block_current_firewall_authorization(
         if isinstance(classification, request_classification.BlockingRequestClassification):
             _block_request_classification(flow, classification)
             return
-        _block_firewall_authorization_changed(
+        http_local_responses.block_firewall_authorization_changed(
             flow,
             current_decision=classification.kind,
         )
@@ -1820,6 +1825,15 @@ def _unhandled_request_classification(classification: NoReturn) -> NoReturn:
     raise AssertionError(f"Unhandled request classification: {classification!r}")
 
 
+def _release_early_request_preparation(flow: http.HTTPFlow) -> None:
+    """Release preparation state when the request hook skips normal dispatch."""
+    auth_base_forwarder.release_forward_request_admission_from_flow(flow)
+    aws_sigv4_body_admission.release_from_flow(flow)
+    public_destination_body_admission.release_from_flow(flow)
+    release_aws_sigv4_request_inspection(flow)
+    request_classification.pop_cached_classification(flow)
+
+
 async def request(flow: http.HTTPFlow) -> None:
     """Dispatch a request-phase classification and apply its outcome.
 
@@ -1831,11 +1845,7 @@ async def request(flow: http.HTTPFlow) -> None:
     """
     if flow.metadata.get(_REQUEST_HEADERS_TERMINATED):
         managed_openrouter.release_from_flow(flow)
-        auth_base_forwarder.release_forward_request_admission_from_flow(flow)
-        aws_sigv4_body_admission.release_from_flow(flow)
-        public_destination_body_admission.release_from_flow(flow)
-        release_aws_sigv4_request_inspection(flow)
-        request_classification.pop_cached_classification(flow)
+        _release_early_request_preparation(flow)
         return
 
     codex_model_catalog_cache.capture_and_strip_prefetch_marker(flow)
@@ -1848,11 +1858,7 @@ async def request(flow: http.HTTPFlow) -> None:
             managed_openrouter.release_from_flow(flow)
         elif managed_upload.get(flow) is not None:
             flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
-        auth_base_forwarder.release_forward_request_admission_from_flow(flow)
-        aws_sigv4_body_admission.release_from_flow(flow)
-        public_destination_body_admission.release_from_flow(flow)
-        release_aws_sigv4_request_inspection(flow)
-        request_classification.pop_cached_classification(flow)
+        _release_early_request_preparation(flow)
         return
 
     try:
@@ -1863,9 +1869,12 @@ async def request(flow: http.HTTPFlow) -> None:
             preparation = custom_http.prepare(flow, registry_path=get_registry_path())
             if preparation is not None:
                 await preparation
+        except custom_http.InvalidFirewallInputError as error:
+            _block_custom_http_invalid_input(flow, error)
+            return
         except AuthorityValidationError as error:
             _classify_request_for_flow(flow)
-            _block_authority_validation_error(flow, error)
+            http_local_responses.block_authority_validation_error(flow, error)
             return
         classification = _request_classification_for_flow(flow)
         if classification.kind != "firewall_allow" or not _firewall_allow_auth_base(

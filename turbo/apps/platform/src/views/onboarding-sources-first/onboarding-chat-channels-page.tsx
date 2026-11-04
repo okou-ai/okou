@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { Button, Card, cn, surfaceVariants } from "@okouai/ui";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
-import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/validators/integrations-telegram";
 import {
   captureSourceOnboardingChannelClicked$,
   captureSourceOnboardingSlackInstallStarted$,

@@ -3,7 +3,8 @@ import OSLog
 import Synchronization
 
 public enum APIClientError: LocalizedError, Sendable {
-  case http(status: Int, message: String, code: String? = nil)
+  case http(
+    status: Int, message: String, code: String? = nil, retryAfter: TimeInterval? = nil)
   case invalidResponse
   case incompatibleData
   case invalidURL
@@ -11,23 +12,29 @@ public enum APIClientError: LocalizedError, Sendable {
   case downloadFailed(status: Int)
 
   public var statusCode: Int? {
-    if case .http(let status, _, _) = self { return status }
+    if case .http(let status, _, _, _) = self { return status }
     return nil
   }
 
   public var serverCode: String? {
-    if case .http(_, _, let code) = self { return code }
+    if case .http(_, _, let code, _) = self { return code }
+    return nil
+  }
+
+  public var retryAfter: TimeInterval? {
+    if case .http(_, _, _, let delay) = self { return delay }
     return nil
   }
 
   public var errorDescription: String? {
     switch self {
-    case .http(401, _, _): "Your session expired. Sign in again."
-    case .http(426, _, _): "Update Okou in TestFlight to continue."
-    case .http(402, let message, _): "\(message) Manage your plan on the Okou website."
-    case .http(403, let message, _): "\(message) Check your workspace access on the Okou website."
-    case .http(429, let message, _): "\(message) Wait a moment, then refresh."
-    case .http(_, let message, _): message
+    case .http(401, _, _, _): "Your session expired. Sign in again."
+    case .http(426, _, _, _): "Update Okou in TestFlight to continue."
+    case .http(402, let message, _, _): "\(message) Manage your plan on the Okou website."
+    case .http(403, let message, _, _):
+      "\(message) Check your workspace access on the Okou website."
+    case .http(429, let message, _, _): "\(message) Wait a moment, then refresh."
+    case .http(_, let message, _, _): message
     case .invalidResponse: "The server returned an invalid response. Try refreshing."
     case .incompatibleData:
       "This app could not read the server response. Please try again or use Okou on the web."
@@ -147,6 +154,16 @@ public struct APIClient: Sendable {
     return try await execute(request).data
   }
 
+  private static func retryDelay(_ value: String?) -> TimeInterval? {
+    guard let value else { return nil }
+    if let seconds = TimeInterval(value), seconds.isFinite { return max(0, seconds) }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    return formatter.date(from: value).map { max(0, $0.timeIntervalSinceNow) }
+  }
+
   private func execute(_ request: URLRequest) async throws -> APIResponse {
     try Task.checkCancellation()
     let (data, response) = try await session.data(for: request)
@@ -158,7 +175,8 @@ public struct APIClient: Sendable {
         status: response.statusCode,
         message: serverError?.error.message
           ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode),
-        code: serverError?.error.code
+        code: serverError?.error.code,
+        retryAfter: Self.retryDelay(response.value(forHTTPHeaderField: "Retry-After"))
       )
     }
     return APIResponse(data: data, response: response)

@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq } from "drizzle-orm";
@@ -6,64 +6,52 @@ import { and, eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { notFound } from "../../lib/error";
 import type { SlackClient } from "../external/slack-message-client";
-import { settle, tapError } from "../utils";
+import { settle } from "../utils";
 import {
   isSlackConversationShared,
   isSlackConversationSharedByMembers,
   isSlackConversationWritable,
 } from "../../lib/slack-client";
-import { integrationMessageSendLabels$ } from "./integration-message-context.service";
+import {
+  integrationMessageSendLabels$,
+  integrationMessageSendUserLabel$,
+  integrationMessageSendFooterText,
+} from "./integration-message-context.service";
 import { slackAccountOwnerCondition } from "./slack-workspace-identity.service";
+import { escapeSlackFooterLabel } from "../../lib/integration-message-footer";
 
-const userMention$ = computed(async (get) => {
-  const { runOwner } = await get(integrationMessageSendLabels$);
-  if (!runOwner) {
-    return undefined;
-  }
-  const [row] = await get(db$)
-    .select({ slackUserId: slackOrgConnections.slackUserId })
-    .from(slackOrgInstallations)
-    .innerJoin(
-      slackOrgConnections,
-      and(
-        eq(slackOrgConnections.userId, runOwner.userId),
-        eq(
-          slackOrgConnections.slackWorkspaceId,
-          slackOrgInstallations.slackWorkspaceId,
+/** The mention belongs to the authorized destination's workspace. */
+export const resolveSlackMessageSendFooter$ = command(
+  async (
+    { get },
+    workspaceId: string,
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    const labels = await get(integrationMessageSendLabels$);
+    signal.throwIfAborted();
+    if (!labels.runOwner) {
+      return undefined;
+    }
+    const rows = await get(db$)
+      .select({ slackUserId: slackOrgConnections.slackUserId })
+      .from(slackOrgConnections)
+      .where(
+        and(
+          eq(slackOrgConnections.userId, labels.runOwner.userId),
+          eq(slackOrgConnections.slackWorkspaceId, workspaceId),
         ),
-      ),
-    )
-    .where(eq(slackOrgInstallations.orgId, runOwner.orgId))
-    .limit(1);
-  return row ? `<@${row.slackUserId}>` : undefined;
-});
-
-/**
- * Resolve the attribution footer text appended to user-initiated Slack messages.
- *
- * Mirrors the Slack message route footer resolver. Each resolver swallows its
- * own errors so any single lookup failure degrades the footer gracefully.
- */
-export const slackMessageSendFooterText$ = computed(
-  async (get): Promise<string | undefined> => {
-    const noop = (): void => {};
-    const [{ agentLabel, modelLabel }, userMention] = await Promise.all([
-      get(integrationMessageSendLabels$),
-      tapError(get(userMention$), noop),
-    ]);
-
-    const parts: string[] = [];
-    if (agentLabel) {
-      parts.push(`Sent via ${agentLabel}`);
-    }
-    if (userMention) {
-      parts.push(`Triggered by ${userMention}`);
-    }
-    if (modelLabel) {
-      parts.push(modelLabel);
-    }
-
-    return parts.length > 0 ? parts.join(" · ") : undefined;
+      )
+      .limit(2);
+    signal.throwIfAborted();
+    const sender = rows.length === 1 ? rows[0] : undefined;
+    const userLabel = sender
+      ? `<@${sender.slackUserId}>`
+      : escapeSlackFooterLabel(await get(integrationMessageSendUserLabel$));
+    signal.throwIfAborted();
+    return integrationMessageSendFooterText({
+      agentLabel: escapeSlackFooterLabel(labels.agentLabel),
+      userLabel,
+    });
   },
 );
 

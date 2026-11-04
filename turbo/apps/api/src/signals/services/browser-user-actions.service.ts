@@ -17,10 +17,8 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  browserOwnerProfiles,
-  browserOwnerWindows,
-} from "@okouai/db/schema/browser-owner";
+import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 import {
   browserUserActionFieldSupportsTarget,
   parseBrowserUserActionPayload,
@@ -48,7 +46,6 @@ import {
   isNull,
   lt,
   lte,
-  notExists,
   not,
   or,
   sql,
@@ -96,23 +93,6 @@ const TERMINAL_STATES: readonly BrowserUserActionState[] = [
 
 type RequestRow = typeof browserUserActionRequests.$inferSelect;
 
-function noSharedInputOwner(owner: {
-  readonly orgId: string;
-  readonly userId: string;
-}) {
-  return notExists(
-    new QueryBuilder()
-      .select({ id: browserOwnerProfiles.id })
-      .from(browserOwnerProfiles)
-      .where(
-        and(
-          eq(browserOwnerProfiles.orgId, owner.orgId),
-          eq(browserOwnerProfiles.userId, owner.userId),
-        ),
-      ),
-  );
-}
-
 function sharedInputWindowCondition(
   owner: {
     readonly orgId: string;
@@ -124,11 +104,11 @@ function sharedInputWindowCondition(
   at: Date,
 ) {
   return and(
-    eq(browserOwnerWindows.chatThreadId, owner.chatThreadId),
-    eq(browserOwnerWindows.instanceId, window.instanceId),
-    eq(browserOwnerWindows.primaryWindowId, window.primaryWindowId),
-    eq(browserOwnerWindows.state, "active"),
-    gt(browserOwnerWindows.expiresAt, at),
+    eq(browserChatSessions.chatThreadId, owner.chatThreadId),
+    eq(browserChatSessions.instanceId, window.instanceId),
+    eq(browserChatSessions.primaryWindowId, window.primaryWindowId),
+    eq(browserChatSessions.state, "active"),
+    gt(browserChatSessions.expiresAt, at),
     exists(
       new QueryBuilder()
         .select({ id: browserOwnerProfiles.id })
@@ -152,16 +132,16 @@ const storedInputWindow = sql`${browserUserActionRequests.payload}->'target'->'w
 function storedSharedInputIsLive(at: Date) {
   return exists(
     new QueryBuilder()
-      .select({ id: browserOwnerWindows.chatThreadId })
-      .from(browserOwnerWindows)
+      .select({ id: browserChatSessions.chatThreadId })
+      .from(browserChatSessions)
       .innerJoin(
         browserOwnerProfiles,
-        eq(browserOwnerProfiles.instanceId, browserOwnerWindows.instanceId),
+        eq(browserOwnerProfiles.instanceId, browserChatSessions.instanceId),
       )
       .where(
         and(
           eq(
-            browserOwnerWindows.chatThreadId,
+            browserChatSessions.chatThreadId,
             browserUserActionRequests.chatThreadId,
           ),
           eq(browserOwnerProfiles.orgId, browserUserActionRequests.orgId),
@@ -171,25 +151,11 @@ function storedSharedInputIsLive(at: Date) {
             browserUserActionRequests.providerSessionId,
           ),
           sql`${browserOwnerProfiles.instanceId}::text = ${storedInputWindow}->>'instanceId'`,
-          sql`${browserOwnerWindows.primaryWindowId}::text = ${storedInputWindow}->>'primaryWindowId'`,
-          eq(browserOwnerWindows.state, "active"),
-          gt(browserOwnerWindows.expiresAt, at),
+          sql`${browserChatSessions.primaryWindowId}::text = ${storedInputWindow}->>'primaryWindowId'`,
+          eq(browserChatSessions.state, "active"),
+          gt(browserChatSessions.expiresAt, at),
           eq(browserOwnerProfiles.status, "active"),
           gt(browserOwnerProfiles.timeoutAt, at),
-        ),
-      ),
-  );
-}
-
-function storedInputHasSharedOwner() {
-  return exists(
-    new QueryBuilder()
-      .select({ id: browserOwnerProfiles.id })
-      .from(browserOwnerProfiles)
-      .where(
-        and(
-          eq(browserOwnerProfiles.orgId, browserUserActionRequests.orgId),
-          eq(browserOwnerProfiles.userId, browserUserActionRequests.userId),
         ),
       ),
   );
@@ -507,8 +473,8 @@ const requestHasLiveBrowser$ = command(
     }
     if (payload.target.window) {
       const [live] = await db
-        .select({ id: browserOwnerWindows.chatThreadId })
-        .from(browserOwnerWindows)
+        .select({ id: browserChatSessions.chatThreadId })
+        .from(browserChatSessions)
         .where(sharedInputWindowCondition(row, payload.target.window, now));
       return live !== undefined;
     }
@@ -522,7 +488,6 @@ const requestHasLiveBrowser$ = command(
           eq(browserSessionInstances.status, "active"),
           gt(browserSessionInstances.timeoutAt, now),
           gt(browserSessionInstances.idleExpiresAt, now),
-          noSharedInputOwner(row),
         ),
       )
       .limit(1);
@@ -551,15 +516,15 @@ const touchExactProvider$ = command(
       }
       const leaseTime = nowDate();
       const [touched] = await db
-        .update(browserOwnerWindows)
+        .update(browserChatSessions)
         .set({
-          expiresAt: sql`least(greatest(${browserOwnerWindows.expiresAt}, ${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserOwnerWindows.expiresAt)}::timestamp), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
+          expiresAt: sql`least(greatest(${browserChatSessions.expiresAt}, ${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserChatSessions.expiresAt)}::timestamp), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
           updatedAt: leaseTime,
         })
         .where(
           sharedInputWindowCondition(row, payload.target.window, leaseTime),
         )
-        .returning({ id: browserOwnerWindows.chatThreadId });
+        .returning({ id: browserChatSessions.chatThreadId });
       signal.throwIfAborted();
       return touched !== undefined;
     }
@@ -577,7 +542,6 @@ const touchExactProvider$ = command(
           eq(browserSessionInstances.status, "active"),
           gt(browserSessionInstances.timeoutAt, now),
           gt(browserSessionInstances.idleExpiresAt, now),
-          noSharedInputOwner(row),
         ),
       )
       .returning({
@@ -693,13 +657,8 @@ const convertClosedBrowserUserActions$ = command(
             ),
             and(
               isNull(storedInputWindow),
-              or(
-                and(
-                  eq(browserSessionInstances.status, "stopped"),
-                  isNotNull(browserSessionInstances.finishedAt),
-                ),
-                storedInputHasSharedOwner(),
-              ),
+              eq(browserSessionInstances.status, "stopped"),
+              isNotNull(browserSessionInstances.finishedAt),
             ),
           ),
         ),
@@ -1041,17 +1000,17 @@ const resolveBrowserUserActionLifetime$ = command(
         status: browserOwnerProfiles.status,
         timeoutAt: browserOwnerProfiles.timeoutAt,
         window: {
-          primaryWindowId: browserOwnerWindows.primaryWindowId,
-          state: browserOwnerWindows.state,
-          expiresAt: browserOwnerWindows.expiresAt,
+          primaryWindowId: browserChatSessions.primaryWindowId,
+          state: browserChatSessions.state,
+          expiresAt: browserChatSessions.expiresAt,
         },
       })
       .from(browserOwnerProfiles)
       .leftJoin(
-        browserOwnerWindows,
+        browserChatSessions,
         and(
-          eq(browserOwnerWindows.instanceId, browserOwnerProfiles.instanceId),
-          eq(browserOwnerWindows.chatThreadId, chatThreadId),
+          eq(browserChatSessions.instanceId, browserOwnerProfiles.instanceId),
+          eq(browserChatSessions.chatThreadId, chatThreadId),
         ),
       )
       .where(
@@ -1066,20 +1025,26 @@ const resolveBrowserUserActionLifetime$ = command(
       readonly providerSessionId: string;
       readonly window?: BrowserWindowContext;
     } | null = null;
-    if (shared) {
-      const features = await set(
-        loadUserFeatureSwitchContext$,
-        args.orgId,
-        args.userId,
-        signal,
-      );
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    const sharedEnabled = isFeatureEnabled(
+      FeatureSwitchKey.BrowserSharedOwner,
+      features,
+    );
+    if (sharedEnabled) {
       if (
-        !isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, features) ||
+        !shared ||
         shared.status !== "active" ||
         !shared.providerSessionId ||
         shared.timeoutAt <= now ||
         !shared.window ||
         shared.window.state !== "active" ||
+        shared.window.primaryWindowId === null ||
+        shared.window.expiresAt === null ||
         shared.window.expiresAt <= now
       ) {
         return conflict(
@@ -1332,10 +1297,10 @@ function browserUserActionCreationPlan(args: {
               .mapWith(browserSessionInstances.providerSessionId)
               .as("input_provider_session_id"),
           })
-          .from(browserOwnerWindows)
+          .from(browserChatSessions)
           .innerJoin(
             browserOwnerProfiles,
-            eq(browserOwnerProfiles.instanceId, browserOwnerWindows.instanceId),
+            eq(browserOwnerProfiles.instanceId, browserChatSessions.instanceId),
           )
           .innerJoin(
             liveClock,
@@ -1351,13 +1316,13 @@ function browserUserActionCreationPlan(args: {
                 args.providerSessionId,
               ),
               eq(browserOwnerProfiles.status, "active"),
-              eq(browserOwnerWindows.chatThreadId, args.chatThreadId),
+              eq(browserChatSessions.chatThreadId, args.chatThreadId),
               eq(
-                browserOwnerWindows.primaryWindowId,
+                browserChatSessions.primaryWindowId,
                 args.window.primaryWindowId,
               ),
-              eq(browserOwnerWindows.state, "active"),
-              gt(browserOwnerWindows.expiresAt, liveClock.at),
+              eq(browserChatSessions.state, "active"),
+              gt(browserChatSessions.expiresAt, liveClock.at),
             ),
           ),
       )
@@ -1391,7 +1356,6 @@ function browserUserActionCreationPlan(args: {
               eq(browserSessions.status, "active"),
               eq(browserSessionInstances.status, "active"),
               gt(browserSessionInstances.idleExpiresAt, liveClock.at),
-              noSharedInputOwner(args),
             ),
           )
           .limit(1)
@@ -1467,9 +1431,9 @@ const persistBrowserUserAction = command(
     const leased = prepared.window
       ? db.$with("action_leased_browser").as(
           db
-            .update(browserOwnerWindows)
+            .update(browserChatSessions)
             .set({
-              expiresAt: sql`least(greatest(${browserOwnerWindows.expiresAt}, ${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond'), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, prepared.window.instanceId))}))`,
+              expiresAt: sql`least(greatest(${browserChatSessions.expiresAt}, ${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond'), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, prepared.window.instanceId))}))`,
               updatedAt: sql`${plan.leaseClock.at}`,
             })
             .from(plan.leaseClock)
@@ -1480,14 +1444,14 @@ const persistBrowserUserAction = command(
                   plan.leaseClock.providerSessionId,
                   prepared.providerSessionId,
                 ),
-                eq(browserOwnerWindows.chatThreadId, prepared.chatThreadId),
-                eq(browserOwnerWindows.instanceId, prepared.window.instanceId),
+                eq(browserChatSessions.chatThreadId, prepared.chatThreadId),
+                eq(browserChatSessions.instanceId, prepared.window.instanceId),
                 eq(
-                  browserOwnerWindows.primaryWindowId,
+                  browserChatSessions.primaryWindowId,
                   prepared.window.primaryWindowId,
                 ),
-                eq(browserOwnerWindows.state, "active"),
-                gt(browserOwnerWindows.expiresAt, plan.leaseClock.at),
+                eq(browserChatSessions.state, "active"),
+                gt(browserChatSessions.expiresAt, plan.leaseClock.at),
                 exists(
                   new QueryBuilder()
                     .select({ id: browserOwnerProfiles.id })
@@ -1541,7 +1505,6 @@ const persistBrowserUserAction = command(
                 eq(browserSessionInstances.status, "active"),
                 gt(browserSessionInstances.timeoutAt, plan.leaseClock.at),
                 gt(browserSessionInstances.idleExpiresAt, plan.leaseClock.at),
-                noSharedInputOwner(args),
               ),
             )
             .returning({

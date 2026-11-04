@@ -39,6 +39,37 @@ async fn bounded<T>(future: impl Future<Output = T>) -> T {
     timeout(Duration::from_secs(5), future).await.unwrap()
 }
 
+async fn expire_stalled_authentication<S: AsyncRead + Unpin, T>(
+    peer: impl Future<Output = S>,
+    caller: impl Future<Output = T>,
+    end: Instant,
+) -> T {
+    bounded(async {
+        let mut caller = std::pin::pin!(caller);
+        let mut server = tokio::select! {
+            _ = &mut caller => panic!("authentication ended before the peer reached its stall"),
+            server = peer => server,
+        };
+        assert!(Instant::now() < end);
+        std::future::poll_fn(|cx| {
+            assert!(caller.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        // Real peer readiness and a pending client establish the stalled phase.
+        // Keep the client unpolled while only its original deadline advances;
+        // resume before polling it or observing physical socket cleanup.
+        tokio::time::pause();
+        tokio::time::advance(end.saturating_duration_since(Instant::now())).await;
+        assert!(Instant::now() >= end);
+        tokio::time::resume();
+        let result = caller.await;
+        disconnected(&mut server).await;
+        result
+    })
+    .await
+}
+
 async fn sockets() -> (TcpStream, TcpStream) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (client, server) = tokio::join!(
@@ -688,16 +719,17 @@ async fn a_security_negotiation_stall_reports_its_stage_and_disconnects() {
         let mut version = [0; 12];
         server.read_exact(&mut version).await.unwrap();
         assert_eq!(&version, BANNER);
-        disconnected(&mut server).await;
+        server
     };
+    let end = Instant::now() + Duration::from_secs(1);
     let caller = authenticate(
         client,
         NAME,
         authentication(),
         TrustRoots::public_roots(),
-        Instant::now() + Duration::from_secs(1),
+        end,
     );
-    let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
+    let result = expire_stalled_authentication(peer, caller, end).await;
     assert!(matches!(
         result,
         Err(Error::AuthenticationDeadlineExceeded {
@@ -739,18 +771,10 @@ async fn a_vnc_authentication_stall_reports_its_stage_and_disconnects() {
     let cert = Certificate::new(NAME, false, false);
     let roots = cert.roots();
     let (client, server) = sockets().await;
-    let peer = async move {
-        let mut server = secure(server, cert.config).await;
-        disconnected(&mut server).await;
-    };
-    let caller = authenticate(
-        client,
-        NAME,
-        authentication(),
-        roots,
-        Instant::now() + Duration::from_secs(1),
-    );
-    let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
+    let peer = secure(server, cert.config);
+    let end = Instant::now() + Duration::from_secs(1);
+    let caller = authenticate(client, NAME, authentication(), roots, end);
+    let result = expire_stalled_authentication(peer, caller, end).await;
     assert!(matches!(
         result,
         Err(Error::AuthenticationDeadlineExceeded {
@@ -776,16 +800,11 @@ async fn assert_x509_authentication_stall(
             server.read_exact(&mut credentials).await.unwrap();
             assert_eq!(&credentials, b"operatorpassword");
         }
-        disconnected(&mut server).await;
+        server
     };
-    let caller = authenticate(
-        client,
-        NAME,
-        authentication,
-        roots,
-        Instant::now() + Duration::from_secs(1),
-    );
-    let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
+    let end = Instant::now() + Duration::from_secs(1);
+    let caller = authenticate(client, NAME, authentication, roots, end);
+    let result = expire_stalled_authentication(peer, caller, end).await;
     assert!(matches!(
         result,
         Err(Error::AuthenticationDeadlineExceeded { stage }) if stage == expected_stage

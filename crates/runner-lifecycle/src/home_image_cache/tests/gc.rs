@@ -269,8 +269,8 @@ fn pressure_watermarks_cover_small_infeasible_and_integer_boundaries() {
         ..FsStats::default()
     });
     assert_eq!(example.reserve_bytes, 50 * GIB);
-    assert_eq!(example.low_free_bytes, 50 * GIB + 50 * GIB / 4);
-    assert_eq!(example.high_free_bytes, 75 * GIB);
+    assert_eq!(example.low_free_bytes, 75 * GIB);
+    assert_eq!(example.high_free_bytes, 100 * GIB);
     assert!(example.reserve_feasible);
     for total_bytes in [0, 1, 40 * GIB] {
         let policy = HomeCachePressureThresholds::from_fs_stats(FsStats {
@@ -280,15 +280,27 @@ fn pressure_watermarks_cover_small_infeasible_and_integer_boundaries() {
         assert_eq!(policy.reserve_bytes, 50 * GIB);
         assert!(!policy.reserve_feasible);
     }
+    for total_bytes in [50 * GIB, 50 * GIB + 1, 75 * GIB, 100 * GIB] {
+        let policy = HomeCachePressureThresholds::from_fs_stats(FsStats {
+            total_bytes,
+            ..FsStats::default()
+        });
+        assert_eq!(policy.reserve_bytes, 50 * GIB);
+        assert!(policy.reserve_feasible);
+        assert!(policy.reserve_bytes <= policy.low_free_bytes);
+        assert!(policy.low_free_bytes <= policy.high_free_bytes);
+        assert!(policy.high_free_bytes <= total_bytes);
+    }
     let largest = HomeCachePressureThresholds::from_fs_stats(FsStats {
         total_bytes: u64::MAX,
         ..FsStats::default()
     });
-    assert_eq!(largest.reserve_bytes, u64::MAX / 10);
+    assert_eq!(largest.reserve_bytes, 50 * GIB);
     assert!(largest.reserve_feasible);
     assert!(largest.reserve_bytes < largest.low_free_bytes);
     assert!(largest.low_free_bytes < largest.high_free_bytes);
-    assert_eq!(largest.high_free_bytes, 2_767_011_611_056_432_741);
+    assert_eq!(largest.low_free_bytes, 75 * GIB);
+    assert_eq!(largest.high_free_bytes, 100 * GIB);
 }
 
 #[test]
@@ -309,7 +321,7 @@ fn foreground_peak_and_complete_legacy_projection_are_distinct_from_background_r
     let complete = CacheBudget::from_observed_allocation(stats, Some(250 * GIB));
     assert!(complete.complete);
     assert_eq!(complete.max_cache_bytes, 251 * GIB);
-    assert_eq!(complete.target_after_gc_bytes, 226 * GIB);
+    assert_eq!(complete.target_after_gc_bytes, 201 * GIB);
     let unavailable = CacheBudget::from_observed_allocation(stats, None);
     assert!(!unavailable.complete);
     assert_eq!(unavailable.max_cache_bytes, 0);

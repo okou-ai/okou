@@ -37,8 +37,16 @@ public actor CommandExecutor {
     self.helper = helper
     self.shells = shells
   }
-  public func permissions() async throws -> JSONValue {
-    try await call(.object(["kind": .string("permissions.state")]), remaining: 10)
+  // An interrupted refresh has no new permission state; a later refresh owns recovery.
+  public func permissions() async throws -> JSONValue? {
+    do {
+      return try await call(
+        .object(["kind": .string("permissions.state")]), remaining: 10, intent: .permissionRefresh)
+    } catch let failure as DesktopFailure
+      where failure.interruption == .suspendedPermissionRefresh
+    {
+      return nil
+    }
   }
   public func requestPermission(screenRecording: Bool) async throws -> JSONValue {
     try await call(
@@ -48,12 +56,15 @@ public actor CommandExecutor {
             ? "permissions.request_screen_recording" : "permissions.request_accessibility")
       ]), remaining: 30)
   }
-  private func call(_ request: JSONValue, remaining: TimeInterval) async throws -> JSONValue {
+  private func call(
+    _ request: JSONValue, remaining: TimeInterval,
+    intent: NativeProcess.RequestIntent = .unspecified
+  ) async throws -> JSONValue {
     guard remaining > 0 else {
       throw DesktopFailure(
         "command_timeout", "Command expired before native dispatch; no action was started")
     }
-    let response = try await helper.request(request, timeout: remaining)
+    let response = try await helper.request(request, timeout: remaining, intent: intent)
     guard response["status"].string == "succeeded" else {
       throw DesktopFailure(
         response["error"]["code"].string ?? "accessibility_unavailable",
@@ -72,25 +83,26 @@ public actor CommandExecutor {
           throw DesktopFailure("command_timeout", "Shell operation expired before dispatch")
         }
         guard let shellPermissionId,
-          command.payload["shellPermissionId"]?.string == shellPermissionId
+          command.payload.shellPermissionId == shellPermissionId
         else {
           throw DesktopFailure(
             "permission_denied", "Shell Access is disabled or its permission changed")
         }
         return await shells.execute(
-          kind: kind, payload: .object(command.payload), budget: budget.remaining)
+          kind: command.kind, payload: command.payload, budget: budget.remaining)
       }
       guard Self.capabilities.contains(kind) else {
         throw DesktopFailure("unsupported_command", "Unsupported command: \(kind)")
       }
       let budget = try CommandBudget(command: command, claimStarted: claimStarted)
       let permissions = try await call(
-        .object(["kind": .string("permissions.state")]), remaining: budget.remaining)
+        .object(["kind": .string("permissions.state")]), remaining: budget.remaining,
+        intent: .commandPreflight)
       guard permissions["accessibility"].bool == true else {
         throw DesktopFailure("permission_denied", "Accessibility permission is required")
       }
       // The helper speaks the contract's dynamic payload shape; keep it opaque here.
-      var payload = JSONValue.object(command.payload)
+      var payload = try JSONValue(encoding: command.payload)
       if kind == "apps.list" {
         let apps = try await call(.object(["kind": .string(kind)]), remaining: budget.remaining)
         return .object(["status": .string("succeeded"), "result": apps])

@@ -203,7 +203,10 @@ fi
                 terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
             assert_eq!(serde_json::to_value(reason)?, "safety_policy_refusal");
         }
-        if expected_failure_reason == Some(FailureReason::ProviderServerError) {
+        if matches!(
+            expected_failure_reason,
+            Some(FailureReason::ProviderServerError | FailureReason::FirewallAuthFailed)
+        ) {
             assert_eq!(
                 terminal_failure.diagnostic.failure_class,
                 FailureClass::CliNonzero
@@ -236,7 +239,10 @@ fi
             }
             let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
                 terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
-            assert_eq!(serde_json::to_value(reason)?, "provider_server_error");
+            assert_eq!(
+                serde_json::to_value(reason)?,
+                serde_json::to_value(expected_failure_reason)?
+            );
         }
         if expected_failure_reason == Some(FailureReason::ProviderQueueTimeout) {
             assert_eq!(
@@ -391,7 +397,10 @@ fi
                 .and_then(|message| message.pointer("/diagnostics/0/details/failureReason"))
         );
     }
-    if expected_failure_reason == Some(FailureReason::ProviderServerError) {
+    if matches!(
+        expected_failure_reason,
+        Some(FailureReason::ProviderServerError | FailureReason::FirewallAuthFailed)
+    ) {
         if let Some(expected_status) = assistant_messages
             .last()
             .and_then(|message| message.pointer("/diagnostics/0/details/httpStatus"))
@@ -651,6 +660,25 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
         )
         .await?;
     }
+    let firewall_failure: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/local-firewall-auth-failure.json"
+    ))?;
+    let firewall_message = &firewall_failure["message"];
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000190",
+        std::slice::from_ref(firewall_message),
+        ExpectedTerminalResult::Exact(
+            firewall_message["errorMessage"]
+                .as_str()
+                .ok_or_else(|| std::io::Error::other("missing finite firewall error"))?,
+        ),
+        Some(FailureReason::FirewallAuthFailed),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+
     let processing_failure: Value = serde_json::from_str(include_str!(
         "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-request-processing-error.json"
     ))?;

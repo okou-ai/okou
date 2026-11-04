@@ -1,14 +1,19 @@
 import {
   connectorAccountSelectionSchema,
   connectorAccountTargetKey,
-  connectorAccountsContract,
-  type ConnectorAccountConnection,
-  type ConnectorAccountSelection,
-  type ConnectorAccountTarget,
+} from "@okouai/api-contracts/validators/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/client/chat-threads";
+import { runConnectorAccountsContract } from "@okouai/api-contracts/client/run-connector-accounts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { command, computed, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
@@ -211,6 +216,7 @@ function customActionConnector(
 function createConnectorAccountConfirmSignal(
   descriptor: ConnectorAccountActionDescriptor,
   status$: ConnectorAccountActionSignals["status$"],
+  connector: ComposerConnectorSignals,
 ): ConnectorAccountActionSignals["confirm$"] {
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const status = await get(status$);
@@ -222,15 +228,30 @@ function createConnectorAccountConfirmSignal(
       clientEventId: crypto.randomUUID(),
       chatThreadSortEventId: crypto.randomUUID(),
     };
-    await accept(
-      get(apiClient$)(chatThreadConnectorSelectionContract).update({
-        params: { id: descriptor.threadId },
-        body: descriptor.selection,
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
+    const features = await get(featureSwitch$);
+    signal.throwIfAborted();
+    if (features[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      await accept(
+        get(apiClient$)(runConnectorAccountsContract).approve({
+          params: { threadId: descriptor.threadId },
+          body: descriptor.selection,
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+      set(connector.reloadAccountPreference$);
+    } else {
+      await accept(
+        get(apiClient$)(chatThreadConnectorSelectionContract).update({
+          params: { id: descriptor.threadId },
+          body: descriptor.selection,
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+    }
     await set(
       runChatActionCallback$,
       {
@@ -255,9 +276,15 @@ function createConnectorAccountActionSignals(
       : customActionConnector(target.customConnectorId);
   const status$ = computed(
     async (get): Promise<ConnectorAccountActionStatus> => {
-      const authorization = await get(connector.connectorAuthorization$);
-      if (!targetIsAuthorized(authorization, descriptor.selection.target)) {
-        return { kind: "unavailable" };
+      if (
+        !(await get(featureSwitch$))[
+          FeatureSwitchKey.ConnectorChatAccountAccess
+        ]
+      ) {
+        const authorization = await get(connector.connectorAuthorization$);
+        if (!targetIsAuthorized(authorization, descriptor.selection.target)) {
+          return { kind: "unavailable" };
+        }
       }
       const result = await accept(
         get(apiClient$)(connectorAccountsContract).connection({
@@ -285,7 +312,11 @@ function createConnectorAccountActionSignals(
     ...descriptor,
     status$,
     connector$,
-    confirm$: createConnectorAccountConfirmSignal(descriptor, status$),
+    confirm$: createConnectorAccountConfirmSignal(
+      descriptor,
+      status$,
+      connector,
+    ),
   };
 }
 

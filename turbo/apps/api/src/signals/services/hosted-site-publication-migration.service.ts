@@ -119,7 +119,7 @@ function validateSnapshotPolicy(
   }
 }
 
-/** The owner locks the share before these policy reads. */
+/** Check the share identity before reading its current storage-owned policy. */
 export const readHostedSnapshotPolicy$ = command(
   async (
     { get },
@@ -343,7 +343,7 @@ export function hostedSnapshotSourceCondition(snapshot: SnapshotPolicyContext) {
   );
 }
 
-/** Remote writes remain inside the owner's existing transaction. */
+/** Publish storage references before the owner commits deployment readiness. */
 export const writeHostedPointerPublication$ = command(
   async (
     { get },

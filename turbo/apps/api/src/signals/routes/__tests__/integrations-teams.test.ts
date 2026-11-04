@@ -1,10 +1,10 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { randomUUID } from "node:crypto";
 
 import {
   integrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,7 +15,6 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
 import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upload-complete";
-import { teamsConnectRoutes } from "../teams-connect";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
@@ -72,6 +71,7 @@ function mockOutgoingTeams(
           ? HttpResponse.json({
               id: recipientId,
               tenantId: fixture.teamsTenantId,
+              aadObjectId: fixture.teamsAadObjectId,
             })
           : new HttpResponse(null, { status: 404 });
       },
@@ -130,21 +130,7 @@ async function seedConnectedTeams(fixture: TeamsConnectFixture): Promise<void> {
   await installTeamsForTest(context.signal, fixture);
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
-  const client = setupApp({ context, routes: teamsConnectRoutes })(
-    teamsConnectContract,
-  );
-  await accept(
-    client.connect({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        tenantId: fixture.teamsTenantId,
-        teamsUserId: fixture.teamsUserId,
-        teamsUserDisplayName: "Ada Lovelace",
-        teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-      },
-    }),
-    [200],
-  );
+  await connectTeamsAccountForTest(context, fixture);
 }
 
 describe("Microsoft Teams integration CLI routes", () => {
@@ -197,7 +183,14 @@ describe("Microsoft Teams integration CLI routes", () => {
     expect(captured.authorization).toBe("Bearer bot-framework-token");
     expect(captured.body).toMatchObject({
       type: "message",
-      text: "Hello from Teams CLI",
+      text: "Hello from Teams CLI\n\nSent via API caller credential · Triggered by <at>Ada Lovelace</at>",
+      entities: [
+        {
+          type: "mention",
+          text: "<at>Ada Lovelace</at>",
+          mentioned: { id: fixture.teamsAadObjectId, name: "Ada Lovelace" },
+        },
+      ],
       textFormat: "markdown",
       replyToId: fixture.teamsThreadId,
       channelData: { tenant: { id: fixture.teamsTenantId } },
@@ -266,6 +259,7 @@ describe("Microsoft Teams integration CLI routes", () => {
             card: {
               type: "AdaptiveCard",
               version: "1.4",
+              msteams: { width: "Full" },
               body: [
                 {
                   type: "TextBlock",
@@ -301,13 +295,38 @@ describe("Microsoft Teams integration CLI routes", () => {
       expect(captured.conversationId).toBe(outgoing.dmConversationId);
       expect(captured.body).toMatchObject({
         type: "message",
-        summary: "Pick a workflow",
+        summary:
+          "Pick a workflow\n\nSent via API caller credential · Triggered by <at>Ada Lovelace</at>",
         attachments: [
           {
             contentType: "application/vnd.microsoft.card.adaptive",
             content: {
               type: "AdaptiveCard",
               version: "1.4",
+              body: [
+                { type: "TextBlock", text: "Pick a workflow", wrap: true },
+                {
+                  type: "TextBlock",
+                  text: "Sent via API caller credential · Triggered by <at>Ada Lovelace</at>",
+                  size: "Small",
+                  isSubtle: true,
+                  wrap: true,
+                  separator: true,
+                },
+              ],
+              msteams: {
+                width: "Full",
+                entities: [
+                  {
+                    type: "mention",
+                    text: "<at>Ada Lovelace</at>",
+                    mentioned: {
+                      id: fixture.teamsAadObjectId,
+                      name: "Ada Lovelace",
+                    },
+                  },
+                ],
+              },
             },
           },
         ],

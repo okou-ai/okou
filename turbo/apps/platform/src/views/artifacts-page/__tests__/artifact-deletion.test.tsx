@@ -95,23 +95,6 @@ async function openDeletion() {
   return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });
 }
 
-test("the deletion switch hides artifact management actions", async () => {
-  mockPreview();
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [report], nextCursor: null });
-  });
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: false },
-  });
-  await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
-  expect(queryButtonByName(`More actions for ${report.title}`)).toBeUndefined();
-  click(await findArtifactAction(report.title));
-  const preview = await screen.findByTestId("attachment-lightbox");
-  expect(queryButtonByName("Delete", preview)).toBeUndefined();
-});
-
 test.each([false, true])(
   "preview cancellation and deletion keep the catalog consistent (sidebar=%s)",
   async (sidebar) => {
@@ -140,7 +123,6 @@ test.each([false, true])(
       context,
       path: "/artifacts?tab=file",
       featureSwitches: {
-        [FeatureSwitchKey.ArtifactDeletion]: true,
         [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       },
     });
@@ -221,7 +203,6 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   await setupPage({
     context,
     path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
   });
   const dialog = await openDeletion();
   click(getButtonByName("Delete", dialog));
@@ -255,7 +236,10 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
 
 test("deleting a shared conversation explains that its shared link will stop working", async () => {
   let removed = false;
-  const conversation = artifact({ kind: "shared-thread" });
+  const conversation = artifact({
+    kind: "shared-thread",
+    sharedThreadId: "b0000000-0000-4000-a000-000000000001",
+  });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: removed ? [] : [conversation],
@@ -269,7 +253,6 @@ test("deleting a shared conversation explains that its shared link will stop wor
   await setupPage({
     context,
     path: "/artifacts?tab=shared-thread",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
   });
   const dialog = await openSharedConversationDeletion();
   expect(
@@ -306,7 +289,6 @@ test("deleting a later-page artifact discards stale pages when the catalog refre
   await setupPage({
     context,
     path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
   });
   await expect(findArtifactAction(first.title)).resolves.toBeInTheDocument();
   fireEvent.scroll(getCatalogViewport());
@@ -338,7 +320,6 @@ test("a new publication can reappear under the same catalog identity", async () 
   await setupPage({
     context,
     path: "/artifacts?tab=hosted-site",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
   });
   const dialog = await openDeletion();
   click(getButtonByName("Delete", dialog));

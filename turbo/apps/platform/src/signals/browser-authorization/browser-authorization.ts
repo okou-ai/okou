@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
+import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/client/browser";
 
 import { accept } from "../../lib/accept.ts";
 import { pathParams$ } from "../route.ts";

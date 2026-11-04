@@ -2,10 +2,10 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  integrationsWhatsappContract,
-  type WhatsappLinkCodeResponse,
-  type WhatsappLinkStatusResponse,
+import { integrationsWhatsappContract } from "@okouai/api-contracts/client/integrations-whatsapp";
+import type {
+  WhatsappLinkCodeResponse,
+  WhatsappLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-whatsapp";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";

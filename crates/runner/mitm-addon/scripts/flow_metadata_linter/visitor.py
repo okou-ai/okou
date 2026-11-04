@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import overload
@@ -610,13 +612,14 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             exception_state.aliases.discard(handler.name)
         return result_aliases, falls_through, exception_state
 
-    def _visit_scoped_body(
+    @contextmanager
+    def _lexical_alias_scope(
         self,
-        body: list[ast.stmt],
         shadowed: set[str] | None = None,
         added: set[str] | None = None,
         base_aliases: set[str] | None = None,
-    ) -> bool:
+    ) -> Iterator[None]:
+        """Own lexical aliases and isolate comprehension walrus targets."""
         aliases = set(self._metadata_aliases if base_aliases is None else base_aliases)
         if shadowed is not None:
             aliases.difference_update(shadowed)
@@ -625,10 +628,21 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._metadata_alias_scopes.append(aliases)
         previous_named_expr_target_scope_indexes = self._named_expr_target_scope_indexes
         self._named_expr_target_scope_indexes = []
-        falls_through = self._visit_current_scope_body(body)
-        self._named_expr_target_scope_indexes = previous_named_expr_target_scope_indexes
-        self._metadata_alias_scopes.pop()
-        return falls_through
+        try:
+            yield
+        finally:
+            self._named_expr_target_scope_indexes = previous_named_expr_target_scope_indexes
+            self._metadata_alias_scopes.pop()
+
+    def _visit_scoped_body(
+        self,
+        body: list[ast.stmt],
+        shadowed: set[str] | None = None,
+        added: set[str] | None = None,
+        base_aliases: set[str] | None = None,
+    ) -> bool:
+        with self._lexical_alias_scope(shadowed, added, base_aliases):
+            return self._visit_current_scope_body(body)
 
     def _visit_scoped_expression(
         self,
@@ -637,18 +651,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         added: set[str] | None = None,
         base_aliases: set[str] | None = None,
     ) -> None:
-        aliases = set(self._metadata_aliases if base_aliases is None else base_aliases)
-        if shadowed is not None:
-            aliases.difference_update(shadowed)
-        if added is not None:
-            aliases.update(added)
-        self._metadata_alias_scopes.append(aliases)
-        previous_named_expr_target_scope_indexes = self._named_expr_target_scope_indexes
-        self._named_expr_target_scope_indexes = []
-        self._record_metadata_merge_key_violations(expression)
-        self.visit(expression)
-        self._named_expr_target_scope_indexes = previous_named_expr_target_scope_indexes
-        self._metadata_alias_scopes.pop()
+        with self._lexical_alias_scope(shadowed, added, base_aliases):
+            self._record_metadata_merge_key_violations(expression)
+            self.visit(expression)
 
     def _visit_function_definition(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         for decorator in node.decorator_list:

@@ -1,9 +1,15 @@
-import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
-import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  loadMarketingHandoff$,
+  marketingHandoff$,
+  saveMarketingHandoff$,
+} from "../prompt-page/marketing-handoff.ts";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/client/billing";
+import { onboardingCompleteContract } from "@okouai/api-contracts/client/onboarding";
+import { orgContract } from "@okouai/api-contracts/client/org-routes";
+import { runModelsMainContract } from "@okouai/api-contracts/client/run-models";
+import { userModelPreferenceContract } from "@okouai/api-contracts/client/user-model-preference";
 import { command, computed } from "ccstate";
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { resolvePlatformEnvironment } from "../../lib/platform-host.ts";
 import { reloadAgents$ } from "../agent.ts";
@@ -14,12 +20,18 @@ import { reloadUserModelPreference$ } from "../external/user-model-preference.ts
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
 import { refreshOrg$ } from "../org.ts";
 import { ROUTES } from "../route-paths.ts";
-import { detachedNavigateTo$, pathname$, searchParams$ } from "../route.ts";
+import {
+  detachedNavigateTo$,
+  replaceSearchParams$,
+  pathname$,
+  searchParams$,
+} from "../route.ts";
 import {
   clearSourcesFirstDraft$,
   sourcesFirstDraft$,
 } from "./onboarding-sources-first-state.ts";
 import { onboardingDraft$ } from "./onboarding-state.ts";
+import type { StartingPromptOutput } from "./onboarding-output-format.ts";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
   "choice",
@@ -132,21 +144,64 @@ export const runOnboardingRequest$ = command(
     { get, set },
     request: string,
     template: string | null,
+    output: StartingPromptOutput | null,
     signal: AbortSignal,
   ): Promise<void> => {
+    let outputSuffix = output?.suffix ?? "";
+    if (output?.format === "report") {
+      const documentSuffix = `\n\n${i18n.t(($) => {
+        return $.onboarding.sourcesFirst.outputFormats.options.report
+          .instruction;
+      })}`;
+      // Older drafts can contain custom report instructions. Preserve those
+      // while applying Document's artifact delivery contract at submission.
+      if (outputSuffix !== documentSuffix) {
+        outputSuffix += documentSuffix;
+      }
+    }
     const searchParams = get(searchParams$);
+    const handoffParams = promptHandoffParams(searchParams);
+    if (searchParams.get("handoff")) {
+      const handoff =
+        get(marketingHandoff$) ?? (await set(loadMarketingHandoff$, signal));
+      if (!handoff) {
+        throw new Error("Marketing handoff has not been loaded");
+      }
+      const hash = await set(
+        saveMarketingHandoff$,
+        {
+          ...handoff.manifest,
+          prompt: request + outputSuffix,
+          options: {
+            ...handoff.manifest.options,
+            template: template ?? undefined,
+          },
+        },
+        signal,
+      );
+      handoffParams.delete("prompt");
+      handoffParams.delete("template");
+      handoffParams.set("handoff", hash);
+      // Persist the edited reference before completion can change the route's guard.
+      // A failed/uncertain completion must not make a refresh run the old task.
+      const pending = new URLSearchParams(searchParams);
+      pending.delete("prompt");
+      pending.delete("template");
+      pending.set("handoff", hash);
+      set(replaceSearchParams$, pending);
+    } else {
+      handoffParams.set("prompt", request + outputSuffix);
+      if (template) {
+        handoffParams.set("template", template);
+      } else {
+        handoffParams.delete("template");
+      }
+    }
     await set(
       completeOnboarding$,
       searchParams.get("redeemCode")?.trim() || null,
       signal,
     );
-    const handoffParams = promptHandoffParams(searchParams);
-    handoffParams.set("prompt", request);
-    if (template) {
-      handoffParams.set("template", template);
-    } else {
-      handoffParams.delete("template");
-    }
     set(detachedNavigateTo$, ROUTES.prompt, {
       searchParams: handoffParams,
       replace: true,
@@ -155,14 +210,29 @@ export const runOnboardingRequest$ = command(
 );
 
 /**
- * Runs the prompt a visitor brought, as edited on the handoff step, with the
- * template its link names. Completion resets the draft, so the prompt is read
- * before it.
+ * Combines the edited task and selected format only at submission. Capture
+ * both before completion so the editable draft stays intact during handoff.
  */
 export const runPromptOnboarding$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const prompt = get(onboardingDraft$).prompt;
-    const template = get(searchParams$).get("template")?.trim() || null;
-    await set(runOnboardingRequest$, prompt, template, signal);
+    const { prompt, output } = get(onboardingDraft$);
+    const copy = i18n.t(
+      ($) => {
+        return $.onboarding.sourcesFirst.outputFormats;
+      },
+      { returnObjects: true },
+    );
+    const template = get(searchParams$).get("handoff")
+      ? (get(marketingHandoff$)?.manifest.options.template ?? null)
+      : get(searchParams$).get("template")?.trim() || null;
+    await set(
+      runOnboardingRequest$,
+      prompt,
+      template,
+      output
+        ? { format: output, suffix: `\n\n${copy.options[output].instruction}` }
+        : null,
+      signal,
+    );
   },
 );

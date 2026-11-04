@@ -3,9 +3,8 @@ import type {
   RunnerSshPinResponse,
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
-import { and, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { command } from "ccstate";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
@@ -17,20 +16,16 @@ import {
   runnerPinDecision,
 } from "./runner-ssh-mutation-result";
 
-interface PinAttempt {
-  readonly retry: boolean;
-  readonly result: RunnerSshPinResponse;
-}
 export const commitRunnerSshPinAttempt$ = command(
   async (
     { set },
     input: RunnerSshPinRequest & { readonly runId: string },
     initial: RunnerSshHostIdentity,
     signal: AbortSignal,
-  ): Promise<PinAttempt> => {
+  ): Promise<RunnerSshPinResponse> => {
     const db = set(writeDb$);
     const reads = createRunnerSshMutationReads(input, initial);
-    const { observed, host, current, eligible } = reads;
+    const { host, current, eligible } = reads;
     const changed = db.$with("pinned_runner_ssh_host").as(
       db
         .update(sshConnections)
@@ -47,6 +42,7 @@ export const commitRunnerSshPinAttempt$ = command(
               db.select({ id: eligible.id }).from(eligible),
             ),
             eq(sshConnections.generation, input.expectedGeneration),
+            eq(sshConnections.createdAt, sql`${initial.createdAt}::timestamp`),
             lt(sshConnections.generation, 2_147_483_647),
             isNull(sshConnections.learnedHostKeyAlgorithm),
             isNull(sshConnections.learnedHostKeyFingerprint),
@@ -60,38 +56,43 @@ export const commitRunnerSshPinAttempt$ = command(
     const [row] = await db
       .with(...reads.ctes, changed)
       .select({
-        retry:
-          sql`coalesce(${ne(host.version, observed.version)}, false)`.mapWith(
-            pgBooleanDecoder,
-          ),
         current: reads.fields,
         eligibleId: eligible.id,
         changedId: changed.id,
         changedGeneration: changed.generation,
       })
-      .from(observed)
-      .leftJoin(host, eq(host.id, observed.id))
+      .from(host)
       .leftJoin(current, eq(current.id, host.id))
       .leftJoin(eligible, eq(eligible.id, current.id))
       .leftJoin(changed, eq(changed.id, current.id));
     signal.throwIfAborted();
-    if (row?.retry) {
-      return { retry: true, result: { outcome: "unavailable" } };
+    if (row?.changedId && row.changedGeneration !== null) {
+      return { outcome: "pinned", generation: row.changedGeneration };
     }
     const authority = availableRunnerMutationAuthority(row);
     if (!authority) {
-      return { retry: false, result: { outcome: "unavailable" } };
+      return { outcome: "unavailable" };
     }
     const decision = runnerPinDecision(authority, input);
     if (decision) {
-      return { retry: false, result: decision };
+      return decision;
     }
-    if (row?.changedId === null || row?.changedGeneration === null || !row) {
-      throw new Error("Locked SSH connection update returned no row");
+    // Classify a concurrent winner through a fresh read; do not replay the pin.
+    const [latest] = await db
+      .with(...reads.ctes)
+      .select({ current: reads.fields, eligibleId: eligible.id })
+      .from(host)
+      .leftJoin(current, eq(current.id, host.id))
+      .leftJoin(eligible, eq(eligible.id, current.id));
+    signal.throwIfAborted();
+    const latestAuthority = availableRunnerMutationAuthority(latest);
+    if (!latestAuthority) {
+      return { outcome: "unavailable" };
     }
-    return {
-      retry: false,
-      result: { outcome: "pinned", generation: row.changedGeneration },
-    };
+    return (
+      runnerPinDecision(latestAuthority, input) ?? {
+        outcome: "configuration_changed",
+      }
+    );
   },
 );

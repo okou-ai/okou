@@ -351,7 +351,7 @@ const expectedClerkCoreScript = clerkCoreScript(builtIndexTemplate);
 const expectedClerkBootstrap = clerkBootstrap(builtIndexTemplate);
 const okouTitle = "AI Teammate for Real Work — More Done, Same Team | Okou";
 const okouDescription =
-  "An AI teammate that connects to 3,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.";
+  "An AI teammate that connects to 4,000+ tools: get the right data, run agentic workflows, and deliver finished work with team-wide context.";
 
 function publishableKey(environment, host) {
   return `pk_${environment}_${Buffer.from(`${host}$`).toString("base64")}`;
@@ -888,7 +888,7 @@ assert.equal(
 assert.equal(metaContent(okouPage.html, "property", "og:image:alt"), okouTitle);
 assert.equal(
   metaContent(okouPage.html, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
+  "https://static.okou.io/web/okou-og-image-more-done-2400-a37778bc6c62.png",
 );
 assert.equal(metaContent(okouPage.html, "name", "twitter:title"), okouTitle);
 assert.equal(
@@ -897,7 +897,7 @@ assert.equal(
 );
 assert.equal(
   metaContent(okouPage.html, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
+  "https://static.okou.io/web/okou-og-image-more-done-2400-a37778bc6c62.png",
 );
 assert.equal(
   tagAttribute(okouPage.html, "link", "rel", "canonical", "href"),
@@ -1719,11 +1719,11 @@ assert.equal(
 );
 assert.equal(
   metaContent(previewHtml, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
+  "https://static.okou.io/web/okou-og-image-more-done-2400-a37778bc6c62.png",
 );
 assert.equal(
   metaContent(previewHtml, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
+  "https://static.okou.io/web/okou-og-image-more-done-2400-a37778bc6c62.png",
 );
 assert.equal(
   tagAttribute(previewHtml, "link", "rel", "canonical", "href"),
@@ -1870,7 +1870,7 @@ for (const state of [
   if (state !== "public") {
     assert.equal(
       metaContent(html, "property", "og:image"),
-      "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
+      "https://static.okou.io/web/okou-og-image-more-done-2400-a37778bc6c62.png",
     );
     assert.equal(
       metaContent(html, "property", "og:description"),

@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.12.47](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.46...codex-mock-v0.12.47) (2026-11-04)
+
+
+### Refactoring
+
+* **test:** share synchronous child output capture ([#45088](https://github.com/okou-ai/okou/issues/45088)) ([b73eac3](https://github.com/okou-ai/okou/commit/b73eac3fb31c9416315cabf05813ffd41b9420a6))
+
+## [0.12.46](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.45...codex-mock-v0.12.46) (2026-11-04)
+
+## [0.12.45](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.44...codex-mock-v0.12.45) (2026-11-03)
+
+## [0.12.44](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.43...codex-mock-v0.12.44) (2026-11-03)
+
+## [0.12.43](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.42...codex-mock-v0.12.43) (2026-11-03)
+
+## [0.12.42](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.41...codex-mock-v0.12.42) (2026-11-02)
+
+## [0.12.41](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.40...codex-mock-v0.12.41) (2026-11-02)
+
+## [0.12.40](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.39...codex-mock-v0.12.40) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.12.39](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.38...codex-mock-v0.12.39) (2026-10-31)
+
+## [0.12.38](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.37...codex-mock-v0.12.38) (2026-10-30)
+
+## [0.12.37](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.36...codex-mock-v0.12.37) (2026-10-30)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify unwrapped codex output token limits ([#44234](https://github.com/okou-ai/okou/issues/44234)) ([deaa4ce](https://github.com/okou-ai/okou/commit/deaa4ced7f2f82b3fa081c275c88980b83f2db93))
+
+## [0.12.36](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.35...codex-mock-v0.12.36) (2026-10-30)
+
+## [0.12.35](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.34...codex-mock-v0.12.35) (2026-10-30)
+
 ## [0.12.34](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.33...codex-mock-v0.12.34) (2026-10-29)
 
 ## [0.12.33](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.32...codex-mock-v0.12.33) (2026-10-29)

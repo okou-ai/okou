@@ -5,4 +5,6 @@ export const halloweenTypography = {
     "text-base font-normal not-italic leading-6 tracking-normal font-family-sans",
   labelClassName:
     "text-sm font-medium not-italic leading-5 tracking-normal font-family-sans",
+  captionClassName:
+    "text-xs font-normal not-italic leading-5 tracking-normal font-family-sans",
 } as const;

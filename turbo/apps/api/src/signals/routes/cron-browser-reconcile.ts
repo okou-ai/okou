@@ -5,6 +5,7 @@ import type { RouteEntry } from "../route-entry";
 import { joinAll } from "../utils";
 import { reconcileBrowsers$ } from "../services/browser.service";
 import { reconcileSharedBrowsers$ } from "../services/browser-shared-reconcile.service";
+import { cleanupBrowserScreenshots$ } from "../services/browser-screenshot-cleanup.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const reconcileBrowsersRoute$ = command(
@@ -17,11 +18,13 @@ const reconcileBrowsersRoute$ = command(
       set(reconcileSharedBrowsers$, null, signal),
     ]);
     signal.throwIfAborted();
+    const screenshots = await set(cleanupBrowserScreenshots$, 20, signal);
+    signal.throwIfAborted();
     const body = {
       ...legacy,
-      checked: legacy.checked + shared.checked,
-      stopped: legacy.stopped + shared.stopped,
-      errors: legacy.errors + shared.errors,
+      checked: legacy.checked + shared.checked + screenshots.checked,
+      stopped: legacy.stopped + shared.stopped + screenshots.cleaned,
+      errors: legacy.errors + shared.errors + screenshots.errors,
     };
     return { status: 200 as const, body };
   },

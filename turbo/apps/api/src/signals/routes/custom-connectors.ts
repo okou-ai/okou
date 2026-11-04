@@ -3,7 +3,7 @@ import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { customConnectorList } from "../services/custom-connector-list.service";
+import { createCustomConnectorList } from "../services/custom-connector-list.service";
 import type { RouteEntry } from "../route-entry";
 import { customConnectorsCreateRoutes } from "./custom-connectors-create";
 import { customConnectorsDeleteRoutes } from "./custom-connectors-delete";
@@ -13,11 +13,16 @@ import { customConnectorProposalRoutes } from "./custom-connectors-proposal";
 import { customConnectorOAuth2Routes } from "./custom-connectors-oauth2";
 import { customConnectorsValuesSetRoutes } from "./custom-connectors-values-set";
 
-const listCustomConnectorsInner$ = computed(async (get) => {
+const customConnectorListScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
-  const connectors = await get(
-    customConnectorList({ orgId: auth.orgId, userId: auth.userId }),
-  );
+  return { orgId: auth.orgId, userId: auth.userId };
+});
+const customConnectorList$ = createCustomConnectorList(
+  customConnectorListScope$,
+);
+
+const listCustomConnectorsInner$ = computed(async (get) => {
+  const connectors = await get(customConnectorList$);
   return { status: 200 as const, body: { connectors: [...connectors] } };
 });
 

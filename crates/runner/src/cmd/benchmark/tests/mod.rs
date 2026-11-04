@@ -193,7 +193,7 @@ fn benchmark_output_preserves_timeout_stderr_fallback() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    write_benchmark_exec_output(&mut stdout, &mut stderr, &result);
+    write_benchmark_exec_output(&mut stdout, &mut stderr, &result).unwrap();
 
     assert_eq!(stdout, b"partial stdout\n");
     assert_eq!(stderr, b"Timeout\n");
@@ -210,7 +210,7 @@ fn benchmark_output_starts_terminal_diagnostic_on_new_line() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    write_benchmark_exec_output(&mut stdout, &mut stderr, &result);
+    write_benchmark_exec_output(&mut stdout, &mut stderr, &result).unwrap();
 
     assert!(stdout.is_empty());
     assert_eq!(stderr, b"stderr clue\nwait failed\n");
@@ -278,10 +278,209 @@ fn benchmark_terminal_output_preserves_binary_bytes_and_diagnostic_policy() {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
-        write_benchmark_exec_output(&mut stdout, &mut stderr, &result);
+        write_benchmark_exec_output(&mut stdout, &mut stderr, &result).unwrap();
 
         assert_eq!(stdout, b"\0\xfe\n", "{termination:?}");
         assert_eq!(stderr, expected_stderr, "{termination:?}");
+    }
+}
+
+struct FailingWriter {
+    bytes: Vec<u8>,
+    remaining: usize,
+    fail_flush: bool,
+}
+
+impl FailingWriter {
+    fn after(remaining: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            remaining,
+            fail_flush: false,
+        }
+    }
+}
+
+impl Write for FailingWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.remaining == 0 {
+            // Error text must not expand the host's bounded delivery diagnostic.
+            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "x".repeat(4096)));
+        }
+        let written = bytes.len().min(self.remaining);
+        self.bytes.extend_from_slice(&bytes[..written]);
+        self.remaining -= written;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if self.fail_flush {
+            Err(io::Error::from(io::ErrorKind::StorageFull))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[test]
+fn benchmark_output_failure_preserves_guest_and_cleanup_precedence() {
+    for (termination, expected_status) in [
+        (ExecTermination::Exited { exit_code: 0 }, ExitCode::FAILURE),
+        (
+            ExecTermination::Exited { exit_code: 42 },
+            ExitCode::from(42),
+        ),
+        (ExecTermination::TimedOut, ExitCode::from(124)),
+    ] {
+        for cleanup_failed in [false, true] {
+            let result = exec_result(termination, b"result", b"guest stderr", "");
+            let mut stdout = FailingWriter::after(2);
+            let mut stderr = Vec::new();
+            let cleanup = if cleanup_failed {
+                Err(RunnerError::Internal("proxy stop failure".into()))
+            } else {
+                Ok(())
+            };
+
+            let outcome = finish_benchmark(&mut stdout, &mut stderr, &result, cleanup);
+
+            if cleanup_failed && matches!(termination, ExecTermination::Exited { exit_code: 0 }) {
+                assert!(
+                    matches!(outcome, Err(RunnerError::Internal(message)) if message == "proxy stop failure")
+                );
+            } else {
+                assert_eq!(outcome.unwrap(), expected_status, "{termination:?}");
+            }
+            assert_eq!(stdout.bytes, b"re");
+            assert_eq!(
+                stderr,
+                format!(
+                    "guest stderr\nerror: failed to deliver benchmark stdout: {}\n",
+                    io::ErrorKind::BrokenPipe
+                )
+                .as_bytes(),
+            );
+        }
+    }
+}
+
+#[test]
+fn benchmark_stderr_failure_preserves_stdout_and_fails_successful_guest() {
+    let result = exec_result(
+        ExecTermination::Exited { exit_code: 0 },
+        b"\0\xfe",
+        b"stderr",
+        "",
+    );
+    let mut stdout = Vec::new();
+    let mut stderr = FailingWriter::after(3);
+
+    let outcome = finish_benchmark(&mut stdout, &mut stderr, &result, Ok(()));
+
+    assert_eq!(outcome.unwrap(), ExitCode::FAILURE);
+    assert_eq!(stdout, b"\0\xfe");
+    assert_eq!(stderr.bytes, b"std");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn benchmark_fails_when_stdout_is_dev_full() {
+    let result = exec_result(
+        ExecTermination::Exited { exit_code: 0 },
+        b"result\n",
+        b"",
+        "",
+    );
+    let mut stdout = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let mut stderr = Vec::new();
+
+    let outcome = finish_benchmark(&mut stdout, &mut stderr, &result, Ok(()));
+
+    assert_eq!(outcome.unwrap(), ExitCode::FAILURE);
+    assert_eq!(
+        stderr,
+        format!(
+            "error: failed to deliver benchmark stdout: {}\n",
+            io::ErrorKind::StorageFull
+        )
+        .as_bytes(),
+    );
+}
+
+#[test]
+fn benchmark_flushes_unterminated_output_and_observes_buffered_write_failure() {
+    let result = exec_result(ExecTermination::Exited { exit_code: 0 }, b"result", b"", "");
+    for capacity in [0, usize::MAX] {
+        let mut stdout = io::BufWriter::new(FailingWriter::after(capacity));
+        let mut stderr = Vec::new();
+
+        let outcome = finish_benchmark(&mut stdout, &mut stderr, &result, Ok(()));
+
+        if capacity == 0 {
+            assert_eq!(outcome.unwrap(), ExitCode::FAILURE);
+            assert_eq!(
+                stderr,
+                format!(
+                    "error: failed to deliver benchmark stdout: {}\n",
+                    io::ErrorKind::BrokenPipe
+                )
+                .as_bytes(),
+            );
+        } else {
+            assert_eq!(outcome.unwrap(), ExitCode::SUCCESS);
+            assert_eq!(stdout.get_ref().bytes, b"result");
+            assert!(stderr.is_empty());
+        }
+    }
+}
+
+#[test]
+fn benchmark_reports_stderr_flush_failure() {
+    let result = exec_result(
+        ExecTermination::Exited { exit_code: 0 },
+        b"result",
+        b"stderr",
+        "",
+    );
+    let mut stdout = Vec::new();
+    let mut stderr = FailingWriter {
+        fail_flush: true,
+        ..FailingWriter::after(usize::MAX)
+    };
+
+    let outcome = finish_benchmark(&mut stdout, &mut stderr, &result, Ok(()));
+
+    assert_eq!(outcome.unwrap(), ExitCode::FAILURE);
+    assert_eq!(stdout, b"result");
+    assert_eq!(
+        stderr.bytes,
+        format!(
+            "stderr\nerror: failed to deliver benchmark stderr: {}\n",
+            io::ErrorKind::StorageFull
+        )
+        .as_bytes(),
+    );
+}
+
+#[test]
+fn benchmark_observes_terminal_fallback_separator_and_diagnostic_write_failures() {
+    for (termination, raw_stderr, remaining) in [
+        (ExecTermination::TimedOut, b"".as_slice(), 0),
+        (ExecTermination::WaitFailed, b"clue".as_slice(), 4),
+        (ExecTermination::WaitFailed, b"clue\n".as_slice(), 5),
+    ] {
+        let result = exec_result(termination, b"result", raw_stderr, "wait failed");
+        let mut stdout = Vec::new();
+        let mut stderr = FailingWriter::after(remaining);
+
+        let error = write_benchmark_exec_output(&mut stdout, &mut stderr, &result).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(stdout, b"result");
+        assert_eq!(stderr.bytes, raw_stderr);
     }
 }
 

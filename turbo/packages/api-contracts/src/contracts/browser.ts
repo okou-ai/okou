@@ -14,17 +14,24 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
+export { BROWSER_IDLE_LEASE_MINUTES } from "../validators/browser";
+
 const c = initContract();
 
 // Okou always asks Browser Use for its longest provider lifetime and manages
 // reclamation itself through the idle lease below, so a hard provider timeout
 // can never cut a browser short while somebody is still using it.
 export const BROWSER_PROVIDER_TIMEOUT_MINUTES = 240;
-export const BROWSER_IDLE_LEASE_MINUTES = 10;
 export const BROWSER_SCREEN_WIDTH = 1440;
 export const BROWSER_INITIAL_SCREEN_HEIGHT = 900;
 export const BROWSER_MIN_SCREEN_HEIGHT = 320;
 export const BROWSER_MAX_SCREEN_HEIGHT = 3456;
+// Transient viewer measurements; the API and viewer apply the same raster budget.
+const browserInitialDisplaySchema = object({
+  width: number().positive().max(65_536),
+  height: number().positive().max(65_536),
+  dpr: number().positive().max(32),
+});
 export const browserStatusSchema = zEnum([
   "creating",
   "active",
@@ -137,8 +144,27 @@ const browserAuthorizationRequestApplyResponseSchema = object({
   cloudBrowserEnabled: literal(true),
 });
 
+export const browserExtensionSchema = object({
+  id: uuid(),
+  runtimeId: string().regex(/^[a-p]{32}$/u),
+  version: string().min(1),
+});
+
+export type BrowserExtension = zInfer<typeof browserExtensionSchema>;
+
+const browserViewerConnectionSchema = browserResponseSchema.extend({
+  cdpUrl: url({ protocol: /^wss$/u }),
+  extension: browserExtensionSchema,
+});
+
+export type BrowserViewerConnection = zInfer<
+  typeof browserViewerConnectionSchema
+>;
+
 const browserConnectionResponseSchema = browserResponseSchema.extend({
   cdpUrl: url(),
+  // Actual installed metadata accompanies shared connections and their live window.
+  extension: browserExtensionSchema.optional(),
 });
 
 const commonErrorResponses = {
@@ -204,7 +230,7 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/open",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: object({}),
+    body: object({ initialDisplay: browserInitialDisplaySchema.optional() }),
     responses: {
       200: browserResponseSchema,
       ...commonErrorResponses,
@@ -262,9 +288,7 @@ export const browserContract = c.router({
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
     responses: {
-      200: object({
-        cdpUrl: url({ protocol: /^wss$/u }),
-      }),
+      200: browserViewerConnectionSchema,
       ...commonErrorResponses,
     },
     summary: "Get a live browser's WebSocket endpoint for its signed-in owner",

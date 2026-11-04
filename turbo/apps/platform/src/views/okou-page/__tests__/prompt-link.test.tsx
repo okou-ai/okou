@@ -1,4 +1,10 @@
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import {
+  marketingHandoffsContract,
+  type MarketingHandoffManifest,
+} from "@okouai/api-contracts/contracts/marketing-handoffs";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatEventsContract,
@@ -26,11 +32,24 @@ import {
 } from "./chat-model-panel-test-helpers.ts";
 import { findButton } from "./chat-run-test-fixtures.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 
 const context = testContext();
 
 const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const DESIGN_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
+
+function enableMarketingHandoff() {
+  context.mocks.api(marketingHandoffsContract.session, ({ respond }) => {
+    return respond(200, { ready: true });
+  });
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: { marketingContentHandoff: true },
+      effectiveSwitches: { marketingContentHandoff: true },
+    });
+  });
+}
 
 interface PromptLaunchCapture {
   readonly createdThreads: {
@@ -42,7 +61,12 @@ interface PromptLaunchCapture {
   readonly sends: ChatEventSendBody[];
 }
 
-function capturePromptLaunch(sendGate?: Promise<void>): PromptLaunchCapture {
+function capturePromptLaunch(
+  sendGate?: (
+    body: ChatEventSendBody,
+    never: () => Promise<never>,
+  ) => Promise<void>,
+): PromptLaunchCapture {
   const capture: PromptLaunchCapture = { createdThreads: [], sends: [] };
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     capture.createdThreads.push({
@@ -63,17 +87,20 @@ function capturePromptLaunch(sendGate?: Promise<void>): PromptLaunchCapture {
       serviceTier: body.serviceTier ?? null,
     });
   });
-  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
-    if (body.prompt === undefined) {
-      throw new Error("Expected a prompt launch request");
-    }
-    capture.sends.push(body);
-    await sendGate;
-    return respond(201, {
-      threadId: body.threadId ?? "b0000000-0000-4000-a000-000000000001",
-      createdAt: "2026-03-10T00:00:00Z",
-    });
-  });
+  context.mocks.api(
+    chatEventsContract.send,
+    async ({ body, respond, never }) => {
+      if (body.prompt === undefined) {
+        throw new Error("Expected a prompt launch request");
+      }
+      capture.sends.push(body);
+      await sendGate?.(body, never);
+      return respond(201, {
+        threadId: body.threadId ?? "b0000000-0000-4000-a000-000000000001",
+        createdAt: "2026-03-10T00:00:00Z",
+      });
+    },
+  );
   return capture;
 }
 
@@ -252,6 +279,16 @@ test.each(["", "&model=unknown-model"])(
 
 test("Completing a prompt link preserves a model chosen in a later composer", async () => {
   installConnectedPersonalSubscriptions(context);
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "gpt-6-astra",
+      modelProviderId: "e8000000-0000-4000-a000-000000000001",
+    }),
+    buildRunModel({
+      model: "claude-sonnet-5-5",
+      modelProviderId: "e8000000-0000-4000-a000-000000000002",
+    }),
+  ]);
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-astra",
     serviceTier: null,
@@ -260,11 +297,20 @@ test("Completing a prompt link preserves a model chosen in a later composer", as
     updatedAt: null,
   });
   const sendGate = context.mocks.deferred<void>();
-  const capture = capturePromptLaunch(sendGate.promise);
+  const laterSend = context.mocks.deferred<ChatEventSendBody>();
+  const capture = capturePromptLaunch(async (body, never) => {
+    if (body.prompt === "Finish the linked task") {
+      await sendGate.promise;
+      return;
+    }
+    laterSend.resolve(body);
+    await never();
+  });
   const page = await startPage({
     context,
     path: "/prompt?prompt=Finish%20the%20linked%20task&model=gpt-6-astra",
   });
+  await page.content;
   await waitForPromptLaunch("Finish the linked task", capture);
 
   act(() => {
@@ -289,9 +335,9 @@ test("Completing a prompt link preserves a model chosen in a later composer", as
   ).resolves.toBeInTheDocument();
   await fill(mountedComposer(), "Send my next task with this model");
   click(await findButton("Send"));
-  await waitFor(() => {
-    expect(capture.sends[1]?.prompt).toBe("Send my next task with this model");
-  });
+  expect((await laterSend.promise).prompt).toBe(
+    "Send my next task with this model",
+  );
   expect(capture.createdThreads[1]?.model).toBe("claude-sonnet-5-5");
 });
 
@@ -426,4 +472,171 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   expect(capture.createdThreads).toHaveLength(0);
   expect(capture.sends).toHaveLength(0);
   expect(draftUpdates).toHaveLength(0);
+});
+
+test.each([12, 64])(
+  "An onboarded visitor starts the received task using a %i-character hash",
+  async (length) => {
+    enableMarketingHandoff();
+    const received: MarketingHandoffManifest = {
+      version: 1,
+      prompt: "Summarize the customer feedback",
+      options: {},
+      files: [],
+    };
+    context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
+      return respond(200, received);
+    });
+    context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
+      return respond(200, { files: [] });
+    });
+    const capture = capturePromptLaunch();
+    await setupPage({
+      context,
+      path: `/onboarding?handoff=${"a".repeat(length)}&prompt=Untrusted%20extra%20text&template=retired-template`,
+    });
+    const sent = await waitForPromptLaunch(received.prompt, capture);
+    expect(sent.prompt).toBe(received.prompt);
+    expect(search()).toBe("");
+  },
+);
+
+test.each([true, false])(
+  "A received task can be edited during onboarding without putting its text back in a URL (admin: %s)",
+  async (isAdmin) => {
+    enableMarketingHandoff();
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: true,
+      onboardingComplete: !isAdmin,
+      isAdmin,
+    });
+    const received: MarketingHandoffManifest = {
+      version: 1,
+      prompt: "Review the customer feedback",
+      options: {},
+      files: [],
+    };
+    let edited: MarketingHandoffManifest | undefined;
+    context.mocks.api(
+      marketingHandoffsContract.resolve,
+      ({ params, respond }) => {
+        return respond(
+          200,
+          params.hash === "b".repeat(64) && edited ? edited : received,
+        );
+      },
+    );
+    context.mocks.api(marketingHandoffsContract.create, ({ body, respond }) => {
+      edited = body;
+      return respond(200, { hash: "b".repeat(64) });
+    });
+    context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
+      return respond(200, { files: [] });
+    });
+    const capture = capturePromptLaunch();
+    await setupPage({
+      context,
+      path: `/onboarding?handoff=${"a".repeat(64)}`,
+      locale: "en-US",
+    });
+    const input = await screen.findByRole("textbox", {
+      name: "Onboarding prompt",
+    });
+    expect(input).toHaveValue(received.prompt);
+    expect(search()).toBe(`?handoff=${"a".repeat(64)}`);
+    await fill(input, "Review the feedback and suggest three improvements.");
+    click(await findButton("Next"));
+    await waitFor(() => {
+      return expect(capture.sends).toHaveLength(1);
+    });
+    expect(edited?.prompt).toContain(
+      "Review the feedback and suggest three improvements.",
+    );
+    expect(capture.sends[0]?.prompt).toBe(edited?.prompt);
+    expect(search()).toBe("");
+  },
+);
+
+test("A file-only hash handoff sends its imported private attachment", async () => {
+  enableMarketingHandoff();
+  const file = {
+    id: "bc3125d1-dc3f-4422-955c-f69f1d077608",
+    filename: "notes.txt",
+    contentType: "text/plain",
+    size: 5,
+    url: "https://app.okou.ai/artifacts/abcdefgh12/notes.txt",
+  };
+  context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
+    return respond(200, {
+      version: 1,
+      prompt: "",
+      options: {},
+      files: [
+        {
+          hash: "f".repeat(64),
+          filename: file.filename,
+          contentType: file.contentType,
+          size: file.size,
+        },
+      ],
+    });
+  });
+  context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
+    return respond(200, { files: [file] });
+  });
+  const capture = capturePromptLaunch();
+  await setupPage({ context, path: `/prompt?handoff=${"a".repeat(64)}` });
+  await waitFor(() => {
+    return expect(capture.sends).toHaveLength(1);
+  });
+  expect(userMessageParts(capture.sends[0]!)).toContainEqual(
+    expect.objectContaining({
+      type: "file",
+      fileId: file.id,
+      filenameSnapshot: file.filename,
+    }),
+  );
+  expect(search()).toBe("");
+});
+
+test("An edited hash is retained while onboarding completion is still pending", async () => {
+  enableMarketingHandoff();
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  const received: MarketingHandoffManifest = {
+    version: 1,
+    prompt: "Review the feedback",
+    options: {},
+    files: [],
+  };
+  context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
+    return respond(200, received);
+  });
+  context.mocks.api(marketingHandoffsContract.create, ({ respond }) => {
+    return respond(200, { hash: "b".repeat(64), shortHash: "b".repeat(12) });
+  });
+  context.mocks.api(onboardingCompleteContract.complete, async ({ never }) => {
+    return await never();
+  });
+  await setupPage({
+    context,
+    path: `/onboarding?handoff=${"a".repeat(64)}`,
+    locale: "en-US",
+  });
+  const input = await screen.findByRole("textbox", {
+    name: "Onboarding prompt",
+  });
+  await fill(
+    input,
+    "Preserve this edited request if completion is interrupted.",
+  );
+  click(await findButton("Next"));
+  await waitFor(() => {
+    return expect(search()).toBe(`?handoff=${"b".repeat(12)}`);
+  });
+  expect(
+    screen.getByRole("textbox", { name: "Onboarding prompt" }),
+  ).toHaveValue("Preserve this edited request if completion is interrupted.");
 });

@@ -4,11 +4,13 @@ import {
   boolean,
   discriminatedUnion,
   literal,
+  looseObject,
   number,
   object,
   record,
   string,
   union,
+  uuid,
   enum as zEnum,
   unknown as zUnknown,
 } from "zod";
@@ -108,11 +110,43 @@ describe("renderSwiftRoutes", () => {
 });
 
 describe("renderSwiftTypes", () => {
+  it("uses the same object type for a value and its sibling list", () => {
+    const session = object({ id: string() });
+    const swift = renderSwiftTypes([
+      {
+        schema: object({
+          session: session.optional(),
+          sessions: array(session).optional(),
+        }),
+        swiftTypeName: "SessionResult",
+        doc: [],
+      },
+    ]);
+    expect(swift).toContain("public let session: Session?");
+    expect(swift).toContain("public let sessions: [Session]?");
+  });
+  it("retains opaque fields alongside typed fields in open command envelopes", () => {
+    const swift = renderSwiftTypes([
+      {
+        schema: looseObject({ command: string().optional() }),
+        swiftTypeName: "OpenPayload",
+        doc: [],
+      },
+    ]);
+    expect(swift).toContain("public let command: String?");
+    expect(swift).toContain("public let additionalFields: [String: JSONValue]");
+    expect(swift).toContain(
+      "for key in additional.allKeys where CodingKeys(stringValue: key.stringValue) == nil",
+    );
+    expect(swift).toContain(
+      "try additional.encode(value, forKey: AdditionalKey(stringValue: key))",
+    );
+  });
   it("renders structs with optional, nullable, nested, record, and unknown fields", () => {
     const swift = renderSwiftTypes([
       {
         schema: object({
-          id: string().uuid(),
+          id: uuid(),
           count: number().int(),
           ratio: number(),
           label: string().nullable(),
@@ -332,7 +366,7 @@ describe("desktop bindings", () => {
     expect(types).toContain(
       "public let commandNotifications: CommandNotifications\n",
     );
-    expect(types).toContain("public let payload: [String: JSONValue]");
+    expect(types).toContain("public let payload: Payload");
     expect(types).toContain("public let minimumSupportedVersion: String?");
     expect(generatedSwiftDirectory).toMatch(
       /desktop\/Okou\/Core\/Generated\/$/u,

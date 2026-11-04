@@ -1,10 +1,14 @@
-import * as chatThreadFolderSchema from "./schema/chat-thread-folder";
+import * as marketingContentGrantSchema from "./schema/marketing-content-grant";
+import * as projectSchema from "./schema/project";
+import * as projectEventSchema from "./schema/project-event";
+import * as projectSnapshotSchema from "./schema/project-snapshot";
 import * as halloweenSchema from "./schema/halloween";
 import * as iosPushRegistrationSchema from "./schema/ios-push-registration";
 import * as dataRouterRequestSchema from "./schema/data-router-request";
 import * as wechatSchema from "./schema/wechat";
 import * as whatsappSchema from "./schema/whatsapp";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
+import * as friendReferralSchema from "./schema/friend-referral";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
@@ -18,6 +22,7 @@ import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as storageSchema from "./schema/storage";
+import * as registryResourceArchiveSchema from "./schema/registry-resource-archive";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
 import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-presigned-url-cache";
 import * as blobSchema from "./schema/blob";
@@ -45,6 +50,8 @@ import * as variableSchema from "./schema/variable";
 import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
 import * as chatThreadConnectorSelectionSchema from "./schema/chat-thread-connector-selection";
+import * as chatThreadConnectorAccessSchema from "./schema/chat-thread-connector-access";
+import * as connectorPermissionGrantSchema from "./schema/connector-permission-grant";
 import * as chatThreadSshAccessOverrideSchema from "./schema/chat-thread-ssh-access-override";
 import * as chatThreadVncAccessOverrideSchema from "./schema/chat-thread-vnc-access-override";
 import * as builtinConnectorExternalCodeSessionSchema from "./schema/connector-external-code-session";
@@ -155,6 +162,7 @@ import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catal
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
 import * as browserOwnerSchema from "./schema/browser-owner";
+import * as browserChatSessionSchema from "./schema/browser-chat-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
@@ -166,13 +174,17 @@ import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config
 import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
-  ...chatThreadFolderSchema,
+  ...marketingContentGrantSchema,
+  ...projectSchema,
+  ...projectEventSchema,
+  ...projectSnapshotSchema,
   ...iosPushRegistrationSchema,
   ...halloweenSchema,
   ...mailNotificationSchema,
   ...wechatSchema,
   ...whatsappSchema,
   ...getStartedClaimSchema,
+  ...friendReferralSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
   ...userSchema,
@@ -184,6 +196,7 @@ export const schema = {
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...storageSchema,
+  ...registryResourceArchiveSchema,
   ...storagePublicationFenceSchema,
   ...systemStoragePresignedUrlCacheSchema,
   ...blobSchema,
@@ -230,6 +243,8 @@ export const schema = {
   ...composeJobSchema,
   ...connectorSchema,
   ...chatThreadConnectorSelectionSchema,
+  ...chatThreadConnectorAccessSchema,
+  ...connectorPermissionGrantSchema,
   ...chatThreadSshAccessOverrideSchema,
   ...chatThreadVncAccessOverrideSchema,
   ...builtinConnectorExternalCodeSessionSchema,
@@ -323,6 +338,7 @@ export const schema = {
   ...mailDraftSchema,
   ...browserSessionSchema,
   ...browserOwnerSchema,
+  ...browserChatSessionSchema,
   ...presentationTemplateSchema,
   ...userTemplateSchema,
   ...piResourceVersionIndexSchema,

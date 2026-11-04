@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.57](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.56...guest-home-mount-v0.2.57) (2026-11-04)
+
+## [0.2.56](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.55...guest-home-mount-v0.2.56) (2026-11-03)
+
+## [0.2.55](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.54...guest-home-mount-v0.2.55) (2026-11-03)
+
+## [0.2.54](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.53...guest-home-mount-v0.2.54) (2026-11-03)
+
+## [0.2.53](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.52...guest-home-mount-v0.2.53) (2026-11-02)
+
+## [0.2.52](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.51...guest-home-mount-v0.2.52) (2026-11-02)
+
+## [0.2.51](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.50...guest-home-mount-v0.2.51) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.2.50](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.49...guest-home-mount-v0.2.50) (2026-10-31)
+
+## [0.2.49](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.48...guest-home-mount-v0.2.49) (2026-10-30)
+
+## [0.2.48](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.47...guest-home-mount-v0.2.48) (2026-10-30)
+
+## [0.2.47](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.46...guest-home-mount-v0.2.47) (2026-10-30)
+
+## [0.2.46](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.45...guest-home-mount-v0.2.46) (2026-10-30)
+
 ## [0.2.45](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.44...guest-home-mount-v0.2.45) (2026-10-29)
 
 ## [0.2.44](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.43...guest-home-mount-v0.2.44) (2026-10-29)

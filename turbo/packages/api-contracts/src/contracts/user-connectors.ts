@@ -1,10 +1,4 @@
-import {
-  array,
-  object,
-  string,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
+import { array, object, uuid, enum as zEnum, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
@@ -40,7 +34,7 @@ export const userBuiltinConnectorsContract = c.router({
     method: "GET",
     path: "/api/agents/:id/user-connectors",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: userBuiltinConnectorEnabledSlugsSchema,
       401: apiErrorSchema,
@@ -53,7 +47,7 @@ export const userBuiltinConnectorsContract = c.router({
     method: "PUT",
     path: "/api/agents/:id/user-connectors",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: userBuiltinConnectorUpdateSchema,
     responses: {
       200: userBuiltinConnectorEnabledSlugsSchema,

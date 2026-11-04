@@ -35,8 +35,8 @@ final class MessageAttachmentTests: XCTestCase {
   func testPreviewFailureRetryDismissAndWorkspaceCloseReleaseFiles() async throws {
     let denied = Mutex(true)
     let server = try ChatFileHTTPServer { _ in .init(body: Data("local-file".utf8)) }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ChatHTTPFixture { _ in
       if denied.withLock({ $0 }) {
         return ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Forbidden\"}}")
@@ -54,6 +54,7 @@ final class MessageAttachmentTests: XCTestCase {
     XCTAssertTrue(
       viewer.preview?.error?.contains("permission") == true,
       viewer.preview?.error ?? "Missing error")
+    XCTAssertEqual(viewer.preview?.canRetry, false)
     denied.withLock { $0 = false }
     viewer.open(file)
     try await waitForBusinessResult { viewer.preview?.file != nil }
@@ -77,8 +78,8 @@ final class MessageAttachmentTests: XCTestCase {
     defer { continuation.finish() }
     let first = Mutex(true)
     let server = try ChatFileHTTPServer { _ in .init(body: Data("new-scope-file".utf8)) }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ChatHTTPFixture { _ in
       let waits = first.withLock { value in
         let previous = value
@@ -109,8 +110,8 @@ final class MessageAttachmentTests: XCTestCase {
 
   func testPreviousDetailCannotCancelReplacementAttachmentPreview() async throws {
     let server = try ChatFileHTTPServer { _ in .init(body: Data("current detail".utf8)) }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ConversationHistoryFixture(rows: [], fileOrigin: origin)
     let conversation = fixture.conversation()
     defer { conversation.close() }

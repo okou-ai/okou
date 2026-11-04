@@ -6,6 +6,7 @@ import {
 } from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
+import { env } from "../../lib/env";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { db$ } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
@@ -156,6 +157,7 @@ export const allocateBrowserOwnerProfile$ = command(
         {
           kind: "allocate",
           providerProfileId,
+          browserExtensionId: env("OKOU_BROWSER_USE_EXTENSION_ID"),
           previousProfile: profile,
         },
         signal,

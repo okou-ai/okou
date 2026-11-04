@@ -11,6 +11,7 @@ import {
 } from "@okouai/db/schema/google-calendar-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
+import { loadWorkflowAutomationAccountMode$ } from "./workflow-automation-account.service";
 import {
   and,
   count,
@@ -1957,11 +1958,17 @@ export const repairGoogleCalendarAutomationProjections$ = command(
       readonly userId: string;
     },
   ): Promise<void> => {
+    const chatAccountAccess = await set(
+      loadWorkflowAutomationAccountMode$,
+      args,
+    );
     const db = set(writeDb$);
     // One conditional UPDATE computes each target from the member's current
     // account set and default; an account change committed after its
     // snapshot is picked up by the next repair.
-    await db.execute(googleCalendarAccountProjectionStatement(args));
+    await db.execute(
+      googleCalendarAccountProjectionStatement({ ...args, chatAccountAccess }),
+    );
   },
 );
 

@@ -4,6 +4,7 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { ne, sql, type SQL } from "drizzle-orm";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 
 /**
  * Publish the selected business source and discard an incompatible cursor.
@@ -15,6 +16,7 @@ import { ne, sql, type SQL } from "drizzle-orm";
 export function googleFormsAccountProjectionStatement(args: {
   readonly orgId: string;
   readonly userId: string;
+  readonly chatAccountAccess?: boolean;
 }) {
   return sql`
     WITH changed AS (${googleFormsAccountProjectionUpdate(args)})
@@ -27,6 +29,7 @@ export function googleFormsAccountProjectionStatement(args: {
 export function googleFormsAccountProjectionUpdate(args: {
   readonly orgId: string;
   readonly userId: string;
+  readonly chatAccountAccess?: boolean;
   readonly defaultConnectorId?: SQL;
   readonly excludedChatThreadId?: string;
   readonly selectedThread?: {
@@ -43,8 +46,9 @@ export function googleFormsAccountProjectionUpdate(args: {
   const snapshotConnectorId = sql`CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
     THEN ${chatThreadConnectorSelections.connectorId}
     ELSE ${defaultConnectorId} END`;
-  const selectedConnectorId =
-    args.selectedThread === undefined
+  const selectedConnectorId = args.chatAccountAccess
+    ? sql`(${workflowAutomationConnectorSelectionSql({ ...args, workflowId: sql`${workflowAutomations.workflowId}`, connectorSlug: "google-forms" })})`
+    : args.selectedThread === undefined
       ? snapshotConnectorId
       : sql`CASE WHEN ${workflowUserAutomationThreads.chatThreadId} = ${args.selectedThread.chatThreadId}
         THEN ${args.selectedThread.connectorId}::uuid ELSE ${snapshotConnectorId} END`;

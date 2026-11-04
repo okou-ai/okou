@@ -1,4 +1,10 @@
-import { computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { memberConnectorSelectionQueries } from "./member-connector-selection";
 import { and, asc, eq, getTableColumns, isNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
@@ -44,7 +50,11 @@ const workflowColumns = Object.freeze({
   officialDefinitionName: workflows.officialDefinitionName,
   createdAt: workflows.createdAt,
 });
-function agentSelectionQueries(scope: AgentConnectorSelectionScope, at: Date) {
+function agentSelectionQueries(
+  scope: AgentConnectorSelectionScope,
+  at: Date,
+  chatAccounts: boolean,
+) {
   const builder = new QueryBuilder();
   const builtin = builder
     .select({
@@ -129,16 +139,27 @@ function agentSelectionQueries(scope: AgentConnectorSelectionScope, at: Date) {
         ),
       ),
     );
-  return { builtin, custom, permissions, definitions };
+  return {
+    ...(chatAccounts
+      ? memberConnectorSelectionQueries(scope, at)
+      : { builtin, custom, permissions }),
+    definitions,
+  };
 }
 
 export function createAgentSelectionContext(
   scope: AgentConnectorSelectionScope,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ) {
   const raw$ = computed(async (get) => {
+    const chatAccounts = isFeatureEnabled(
+      FeatureSwitchKey.ConnectorChatAccountAccess,
+      await get(featureSwitches$),
+    );
     const { builtin, custom, permissions, definitions } = agentSelectionQueries(
       scope,
       nowDate(),
+      chatAccounts,
     );
     const [row] = await get(db$)
       .select({

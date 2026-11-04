@@ -1,3 +1,4 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
@@ -9,7 +10,6 @@ import {
 } from "./helpers/google-text";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -21,7 +21,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -376,28 +375,7 @@ async function connectTeamsFixture(
   } = {},
 ): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-  const client = setupApp({
-    context,
-    routes: teamsConnectRoutes,
-  })(teamsConnectContract);
-  await accept(
-    client.connect({
-      headers: {
-        authorization: "Bearer clerk-session",
-      },
-      body: {
-        tenantId: fixture.teamsTenantId,
-        teamsUserId: fixture.teamsUserId,
-        teamsUserDisplayName: options.displayName ?? "Ada Lovelace",
-        teamsUserPrincipalName:
-          options.principalName ?? fixture.teamsUserPrincipalName,
-        teamId: fixture.teamsTeamId,
-        teamName: fixture.teamsTeamName,
-        serviceUrl: fixture.serviceUrl,
-      },
-    }),
-    [200],
-  );
+  await connectTeamsAccountForTest(context, fixture, options);
 }
 
 async function setupConnectedTeamsActor(
@@ -1245,7 +1223,6 @@ describe("Teams chat callbacks", () => {
           exitCode: 0,
         });
 
-        expect(teamsApi.tokenRequests).toHaveLength(2);
         expect(teamsApi.tokenRequests[0]?.get("client_id")).toBe(BOT_APP_ID);
         expect(teamsApi.tokenRequests[0]?.get("client_secret")).toBe(
           BOT_APP_PASSWORD,
@@ -1260,7 +1237,7 @@ describe("Teams chat callbacks", () => {
           },
         });
         expect(teamsApi.postedActivities[0]?.text).toBe(
-          "Task completed successfully.\n\n_Claude Fable 5.1_",
+          "Task completed successfully.",
         );
         expect(teamsApi.reactionRequests).toStrictEqual([
           {
@@ -1605,7 +1582,6 @@ describe("Teams chat callbacks", () => {
       exitCode: 0,
     });
 
-    expect(teamsApi.tokenRequests).toHaveLength(2);
     expect(teamsApi.postedActivities).toHaveLength(1);
     expect(teamsApi.postedActivities[0]?.text).toContain(
       "Task completed successfully.",

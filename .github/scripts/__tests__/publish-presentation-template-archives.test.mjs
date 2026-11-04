@@ -109,6 +109,7 @@ test(
       const publication = JSON.parse(
         await readFile(path.join(outputDir, "publication.json"), "utf8"),
       );
+      assert.equal(publication.schemaVersion, 2);
       assert.equal(publication.source.commit, sourceCommit);
       assert.equal(publication.packages.length, config.templates.length);
       for (const pkg of publication.packages) {
@@ -116,7 +117,31 @@ test(
         assert.ok(
           (await stat(path.join(outputDir, pkg.archive.path))).size > 0,
         );
+        const archive = await readFile(path.join(outputDir, pkg.archive.path));
+        assert.deepEqual(pkg.registryArchive, {
+          format: "registry-tar-gzip-v1",
+          sha256: digest(archive),
+          archiveBytes: archive.length,
+          objectKey: `registry-archives/v1/${digest(archive)}.tar.gz`,
+        });
       }
+
+      const metadataPath = path.join(outputDir, "publication.json");
+      const originalMetadata = await readFile(metadataPath);
+      publication.packages[0].registryArchive.objectKey =
+        "foreign/archive.tar.gz";
+      await writeFile(metadataPath, JSON.stringify(publication));
+      await assert.rejects(
+        runTool("verify", "--output-dir", outputDir),
+        (error) => {
+          assert.match(
+            error.stderr,
+            /registry archive descriptor does not match/u,
+          );
+          return true;
+        },
+      );
+      await writeFile(metadataPath, originalMetadata);
 
       const firstArchive = path.join(
         outputDir,

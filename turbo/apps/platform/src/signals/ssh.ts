@@ -1,17 +1,16 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { resetRemoteLogin$ } from "./remote-login.ts";
 import type {
   InitClientReturn,
   InitClientArgs,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 import { command, computed, state } from "ccstate";
+import { sshCredentialsContract } from "@okouai/api-contracts/client/ssh-credentials";
 import {
-  sshCredentialsContract,
   createSshCredentialRequestSchema,
   updateSshCredentialRequestSchema,
-  type SshCredentialResponse,
-} from "@okouai/api-contracts/contracts/ssh-credentials";
+  SSH_PRIVATE_KEY_MAX_LENGTH,
+} from "@okouai/api-contracts/validators/ssh-credentials";
+import type { SshCredentialResponse } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
@@ -20,19 +19,16 @@ import {
   invalidateVncObservationConfiguration$,
   remoteHostDefaultsReload$,
 } from "./remote-access-refresh.ts";
+import { invalidateTailscale$, tailscaleConfigs$ } from "./tailscale.ts";
+import { sshConnectionsContract } from "@okouai/api-contracts/client/ssh-connections";
+import type {
+  SshConnectionResponse,
+  SshConnectionMode,
+} from "@okouai/api-contracts/contracts/ssh-connections";
 import {
-  invalidateTailscale$,
-  tailscaleConfigs$,
-  tailscaleFieldsFromForm,
-} from "./tailscale.ts";
-import {
-  sshConnectionsContract,
-  type SshConnectionResponse,
-  type SshConnectionMode,
   createSshConnectionRequestSchema,
   updateSshConnectionRequestSchema,
-  SSH_PRIVATE_KEY_MAX_LENGTH,
-} from "@okouai/api-contracts/contracts/ssh-connections";
+} from "@okouai/api-contracts/validators/ssh-connections";
 import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
@@ -512,9 +508,7 @@ const initializeSshSelection$ = command(
       return;
     }
     const items = result.value;
-    const allowCreate =
-      resource === "credential" ||
-      !get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
+    const allowCreate = resource === "credential";
     const selection =
       items.length === 0
         ? allowCreate
@@ -611,10 +605,7 @@ export const openSshDialog$ = command(
       return;
     }
     const loginCredential =
-      kind === "edit" &&
-      connection &&
-      "credentialId" in connection &&
-      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+      kind === "edit" && connection && "credentialId" in connection
         ? (await get(sshCredentials$))?.find((credential) => {
             return credential.id === connection.credentialId;
           })
@@ -684,13 +675,6 @@ export const openSshCredentialDialog$ = command(
     });
   },
 );
-
-function accessCredentialsFromForm(form: HTMLFormElement) {
-  return {
-    clientId: textField(form, "clientId"),
-    clientSecret: textField(form, "clientSecret"),
-  };
-}
 
 function textField(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
@@ -838,22 +822,13 @@ function hostFieldsFromForm(
       connectionEditor.mode === "cloudflare_access"
         ? {
             type: "cloudflare_access",
-            ...(connectionEditor.configId === "new"
-              ? {
-                  create: {
-                    name: textField(form, "accessName"),
-                    credentials: accessCredentialsFromForm(form),
-                  },
-                }
-              : { configId: connectionEditor.configId }),
+            configId: connectionEditor.configId,
           }
         : connectionEditor.mode === "tailscale" ||
             connectionEditor.mode === "tailscale_ssh"
           ? {
               type: connectionEditor.mode,
-              ...(connectionEditor.tailscaleConfigId === "new"
-                ? { create: tailscaleFieldsFromForm(form) }
-                : { configId: connectionEditor.tailscaleConfigId }),
+              configId: connectionEditor.tailscaleConfigId,
             }
           : { type: "direct" },
     ...(connectionEditor.mode === "tailscale_ssh"
@@ -1014,8 +989,7 @@ const prepareSshFormSave$ = command(
     const editor = get(credentialEditor$);
     if (
       (dialog.kind === "create" || dialog.kind === "edit") &&
-      editor.selection === "new" &&
-      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+      editor.selection === "new"
     ) {
       const name = form.elements.namedItem("credentialName");
       if (name instanceof HTMLInputElement) {
@@ -1026,8 +1000,7 @@ const prepareSshFormSave$ = command(
       dialog.kind === "edit" &&
       dialog.loginCredential &&
       get(connectionModeEditor$).mode !== "tailscale_ssh" &&
-      editor.selection === dialog.loginCredential.id &&
-      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+      editor.selection === dialog.loginCredential.id
         ? sshLoginPatch(form, dialog.loginCredential, editor.method)
         : null;
     if (login && !login.success) {

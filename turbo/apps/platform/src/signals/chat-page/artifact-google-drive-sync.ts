@@ -6,8 +6,9 @@ import {
   type GoogleDriveUploadMode,
 } from "@okouai/core/google-workspace-conversion";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/client/artifact-google-drive";
+import type { artifactGoogleDriveContract as SourceArtifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -15,12 +16,13 @@ import { pageVersion$ } from "../page-signal.ts";
 import type { infer as zInfer } from "zod";
 
 type GoogleDriveUploadedFile = zInfer<
-  (typeof artifactGoogleDriveContract.uploadWithMode.responses)[200]
+  (typeof SourceArtifactGoogleDriveContract.uploadWithMode.responses)[200]
 >;
 
 type ArtifactGoogleDriveSyncParams = {
   readonly agentId: string;
   readonly connectionId?: string;
+  readonly successMessage?: string;
 } & ArtifactGoogleDriveSyncFile;
 
 type ArtifactGoogleDriveSyncFile = {
@@ -71,12 +73,13 @@ async function syncArtifactFileToGoogleDrive(
     return { kind: "conversion-unconfirmed", file: response.body };
   }
   toast.success(
-    i18n.t(
-      ($) => {
-        return $.artifacts.googleDrive.syncedFiles;
-      },
-      { count: 1 },
-    ),
+    params.successMessage ??
+      i18n.t(
+        ($) => {
+          return $.artifacts.googleDrive.syncedFiles;
+        },
+        { count: 1 },
+      ),
     {
       action: response.body.webViewLink
         ? createElement(
@@ -121,8 +124,8 @@ export const googleDriveSyncAccount$ = computed((get) => {
   return get(get(pageGoogleDriveSyncAccount$));
 });
 
-// Retain the selected account and acknowledged native import without reloading
-// the thread's attachment list. Catalog consumers can still refresh.
+// Retain the selected account and acknowledged native import for menu state.
+// Explicit saves still reach the API so every attempt gets current feedback.
 export const syncArtifactAndRefresh$ = command(
   async (
     { get, set },
@@ -137,14 +140,6 @@ export const syncArtifactAndRefresh$ = command(
     // a replacement page's graph even if its completion races navigation.
     const account$ = get(pageGoogleDriveSyncAccount$);
     const createClient = get(apiClient$);
-    const previous = get(account$);
-    const sameAccount =
-      previous?.artifactId === params.artifactId &&
-      previous.agentId === params.agentId &&
-      previous.connectionId === params.connectionId;
-    if (params.mode === "google" && sameAccount && previous.googleImport) {
-      return;
-    }
     if (params.authorize) {
       await authorizeGoogleDriveForAgent(
         { agentId: params.agentId, createClient },

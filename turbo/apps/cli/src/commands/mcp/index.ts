@@ -15,6 +15,7 @@ import {
   resolveMcpToolInput,
 } from "./input";
 import { listRunMcpConnectors, resolveRunMcpConnector } from "./run-connectors";
+import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 
 interface JsonOptions {
   readonly json?: boolean;
@@ -85,7 +86,11 @@ function printCleanupWarning(cleanupWarning: boolean): void {
 
 const listCommand = new Command()
   .name("list")
-  .description("List MCP connectors authorized for this Agent")
+  .description(
+    chatConnectorAccountsEnabled()
+      ? "List MCP connectors available in this Chat"
+      : "List MCP connectors authorized for this Agent",
+  )
   .option("--json", "Print compact JSON")
   .action(
     withErrorHandler(async (options: JsonOptions) => {
@@ -111,7 +116,11 @@ const listCommand = new Command()
       }
       if (connectors.length === 0) {
         console.log(
-          chalk.dim("No MCP connectors are authorized for this Agent"),
+          chalk.dim(
+            chatConnectorAccountsEnabled()
+              ? "No MCP connectors have an allowed account in this Chat"
+              : "No MCP connectors are authorized for this Agent",
+          ),
         );
         return;
       }
@@ -274,7 +283,11 @@ const callCommand = new Command()
 
 export const mcpCommand = new Command()
   .name("mcp")
-  .description("Use MCP connectors authorized for this Agent")
+  .description(
+    chatConnectorAccountsEnabled()
+      ? "Use this Chat's current MCP connector accounts"
+      : "Use MCP connectors authorized for this Agent",
+  )
   .addCommand(listCommand)
   .addCommand(listToolsCommand)
   .addCommand(callCommand)
@@ -290,7 +303,7 @@ Examples:
 
 Notes:
   - Select by full slug, custom UUID, builtin:<selector>, custom:<selector>, or an exact unique display name
-  - Available only inside an Agent Run and scoped to its Agent's current authorization
+  - ${chatConnectorAccountsEnabled() ? "Available only inside a Run, using this Chat's allowed current account" : "Available only inside an Agent Run and scoped to its Agent's current authorization"}
   - Runner remains execution authority; authorization changes may require a new Run
   - Runner applies endpoint policy and injects connector credentials
   - Successful call JSON is the raw MCP result; failed --json calls use a stable error envelope

@@ -404,6 +404,7 @@
         "agents": "एजेंटों",
         "artifacts": "आर्टिफ़ैक्ट्स",
         "connectors": "कनेक्टर्स",
+        "feed": "फ़ीड",
         "settings": "सेटिंग्स",
         "workflows": "वर्कफ़्लो",
         "works": "जहां {{agentName}} काम करता है"
@@ -1056,6 +1057,7 @@
       "notNow": "अभी नहीं",
       "review": "अनुमतियों की समीक्षा करें",
       "scopeNote": "यह इस एजेंट पर लागू होता है, केवल मौजूदा कार्य पर नहीं।",
+      "sharedScopeNote": "इस कनेक्टर की अनुमतियाँ आपकी सभी चैट और एजेंट पर लागू होती हैं।",
       "title": "निम्नलिखित अनुमतियाँ दें"
     }
   },
@@ -1065,6 +1067,7 @@
       "amountTitle": "पुनर्भरण राशि",
       "automaticTopUps": "स्वचालित टॉप-अप",
       "description": "जब आपका शेष एक सीमा से कम हो जाए तो क्रेडिट खरीदें।",
+      "disabledAfterFailures": "लगातार भुगतान विफल होने के कारण ऑटो-रिचार्ज बंद कर दिया गया है। दोबारा चालू करने से पहले अपनी भुगतान विधि जाँचें।",
       "enableAria": "ऑटो-रिचार्ज सक्षम करें",
       "thresholdAria": "ऑटो-रीचार्ज के लिए क्रेडिट सीमा",
       "thresholdDescription": "जब आपका क्रेडिट बैलेंस इस संख्या के अंतर्गत चला जाए तो खरीदारी शुरू करें।",
@@ -1386,10 +1389,11 @@
       "handBack": "वापस सौंपें",
       "handBackMessage": "मैंने ब्राउज़र में काम पूरा कर लिया है। कृपया जारी रखें।",
       "memberInControl": "नियंत्रण आपके पास है",
-      "takeOver": "नियंत्रण लें"
+      "takeOver": "नियंत्रण लें",
+      "takeOverMessage": "मैंने ब्राउज़र का नियंत्रण ले लिया है। जब तक मैं इसे वापस न सौंपूँ, कृपया इसका उपयोग न करें।"
     },
-    "reclaimHint_one": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनट के बाद इसे पुनः प्राप्त करता है।",
-    "reclaimHint_other": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनटों के बाद इसे पुनः प्राप्त करता है।",
+    "reclaimHint_one": "पैनल खुला रहने तक सुरक्षित; {{formattedCount}} मिनट निष्क्रिय रहने पर मुक्त।",
+    "reclaimHint_other": "पैनल खुला रहने तक सुरक्षित; {{formattedCount}} मिनट निष्क्रिय रहने पर मुक्त।",
     "status": {
       "live": "रहना",
       "starting": "प्रारंभ",
@@ -1427,6 +1431,7 @@
     "paused": "दृश्य रुका हुआ है",
     "quality": "इमेज की गुणवत्ता",
     "reconnect": "फिर कनेक्ट करें",
+    "reconnecting": "फिर से कनेक्ट हो रहा है…",
     "reload": "फिर लोड करें",
     "remoteInput": "रिमोट ब्राउज़र इनपुट",
     "resolution": "रिज़ॉल्यूशन",
@@ -1483,7 +1488,7 @@
         },
         "connector": {
           "action": "कनेक्ट करें",
-          "description": "Gmail, Notion और 100+ अन्य",
+          "description": "Gmail, Notion और 4,000+ अन्य",
           "name": "एक टूल कनेक्ट करें",
           "unit": "प्रति कनेक्टर"
         },
@@ -1535,7 +1540,7 @@
           "unit": "प्रति सदस्य"
         },
         "pendingState": "{{amount}} लंबित",
-        "rewardsNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
+        "rewardsNote": "टास्क के इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
         "slack": {
           "action": "जोड़ें",
           "description": "जहाँ आपकी टीम पहले से काम करती है",
@@ -1595,8 +1600,6 @@
       "customDirection": "मैं चाहता हूँ…",
       "customDirectionDescription": "कोई सवाल पूछें या बताएँ कि आप क्या करना चाहते हैं।",
       "customPlaceholder": "आपके मन में क्या है?",
-      "customPrepared": "आगे बताएँ…",
-      "customPreparedDescription": "ऊपर अपना संदेश लिखें, फिर भेजें।",
       "dismiss": "खारिज करें",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -1604,11 +1607,8 @@
       "label": "सुझाव",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
-      "next": "अगला सुझाव",
       "notPlanned": "Not planned",
       "notPlannedRecorded": "Noted — this is not planned",
-      "position": "{{total}} में से {{current}}",
-      "previous": "पिछला सुझाव",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "undoFeedback": "Undo",
@@ -1769,9 +1769,10 @@
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
       "proCard": {
         "creditsNow": "क्रेडिट · अभी",
-        "description": "अतिरिक्त क्रेडिट · उन्नत सुविधाएँ · 3 क्लाउड कंप्यूटर",
+        "description": "उन्नत सुविधाएँ · 3 क्लाउड कंप्यूटर",
         "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",
         "title": "लगभग 5 टास्क बचे हैं",
+        "upgradeFromPrice": "{{price}}/माह से अपग्रेड करें",
         "upgradeNow": "अभी अपग्रेड करें"
       },
       "redirecting": "पुनर्निर्देशन...",
@@ -2024,6 +2025,8 @@
       "recovery": {
         "accessProgramDescription": "थोड़ी देर बाद फिर कोशिश करें। आप इस चैट को खुला रख सकते हैं।",
         "accessProgramTitle": "Codex एक्सेस अस्थायी रूप से उपलब्ध नहीं है",
+        "accountVerificationDescription": "आपका Claude खाता अभी जवाब प्राप्त नहीं कर सकता। अगले कदम के लिए Anthropic सत्यापन पोर्टल देखें।",
+        "accountVerificationTitle": "Claude खाते का सत्यापन ज़रूरी है",
         "autonomyLimitDescription": "लगातार अपने-आप चलने की सीमा पूरी हो गई है। जारी रखने के लिए पुष्टि करें।",
         "autonomyLimitTitle": "अपने-आप चलने की सीमा पूरी हो गई",
         "capacityDescription": "कुछ देर बाद फिर कोशिश करें, या काम जारी रखने के लिए दूसरा मॉडल चुनें।",
@@ -2085,32 +2088,12 @@
       "partsHeading_other": "आपके उत्तर से {{count}} भाग उद्धृत",
       "placeholder": "इस उद्धरण पर सवाल पूछें या टिप्पणी करें",
       "quote": "उद्धृत करें",
+      "quoteEmail": "{{email}} उद्धृत करें",
       "remove": "प्रतिक्रिया हटाएँ",
       "sentEmailDescription": "एक भेजा गया ईमेल",
       "sourcePartHeading": "{{description}} से उद्धृत",
       "sourcePartsHeading_one": "{{description}} से {{count}} भाग उद्धृत",
       "sourcePartsHeading_other": "{{description}} से {{count}} भाग उद्धृत"
-    },
-    "folders": {
-      "actions": "{{name}} की कार्रवाइयाँ",
-      "chats": "चैट",
-      "create": "फ़ोल्डर बनाएँ",
-      "delete": "फ़ोल्डर हटाएँ",
-      "deleteDescription": "“{{name}}” हटाएँ? केवल फ़ोल्डर हटेगा। आपकी बातचीत सुरक्षित रहेगी।",
-      "description": "फ़ोल्डर इस एजेंट में आपकी निजी चैट व्यवस्थित करते हैं।",
-      "down": "फ़ोल्डर नीचे करें",
-      "empty": "अभी कोई चैट नहीं",
-      "failed": "बदलाव सहेजे नहीं जा सके। फिर कोशिश करें।",
-      "move": "यहाँ ले जाएँ…",
-      "name": "फ़ोल्डर का नाम",
-      "refresh": "फ़ोल्डर रीफ़्रेश करें",
-      "rename": "फ़ोल्डर का नाम बदलें",
-      "running": "चल रही चैट",
-      "save": "सहेजें",
-      "title": "फ़ोल्डर",
-      "unfiled": "बिना फ़ोल्डर",
-      "unread": "अपठित चैट",
-      "up": "फ़ोल्डर ऊपर करें"
     },
     "forward": {
       "action": "फ़ॉरवर्ड करें",
@@ -2124,6 +2107,78 @@
       "sent": "सफलतापूर्वक फ़ॉरवर्ड किया गया",
       "threads": "चैट",
       "title": "फ़ॉरवर्ड करें"
+    },
+    "homeDiscovery": {
+      "create": {
+        "document": "दस्तावेज़",
+        "image": "इमेज",
+        "presentation": "Presentation",
+        "visualization": "चार्ट",
+        "website": "वेबसाइट"
+      },
+      "entries": {
+        "briefs": {
+          "examples": {
+            "first": "जिन ईमेल पर मुझे ध्यान देना है, उनका सुबह का सारांश पाने की व्यवस्था करने में मदद करें; पहले इनबॉक्स और भेजने के समय की पुष्टि करें",
+            "second": "प्रतिस्पर्धियों के बारे में साप्ताहिक ब्रीफ़ पाने की व्यवस्था करने में मदद करें; पहले कंपनियों, स्रोतों और समय-सारणी की पुष्टि करें",
+            "third": "बिक्री का दैनिक सारांश पाने की व्यवस्था करने में मदद करें; पहले डेटा स्रोत, मेट्रिक्स और भेजने के समय की पुष्टि करें"
+          },
+          "label": "ब्रीफ़",
+          "placeholder": "बताएँ कि ब्रीफ़ में क्या चाहिए और कितनी बार पाना चाहते हैं…",
+          "title": "आप किस विषय पर ब्रीफ़ पाना चाहेंगे?"
+        },
+        "general": {
+          "examples": {
+            "first": "शुरुआती दौर की टीम के लिए उपयुक्त ब्रांड डिज़ाइन एजेंसियाँ खोजें",
+            "second": "ग्राहक प्रबंधन टूल की सुविधाओं और कीमतों की तुलना करें",
+            "third": "किसी उद्योग के हालिया रुझानों और प्रमुख कंपनियों पर रिसर्च करें"
+          },
+          "label": "सामान्य",
+          "placeholder": "अपना सवाल या जो जानना चाहते हैं, वह बताएँ…",
+          "title": "आप क्या जानना चाहेंगे?"
+        },
+        "information": {
+          "examples": {
+            "first": "छोटे व्यवसायों में AI अपनाने पर हालिया शोध, मूल स्रोतों के साथ खोजें",
+            "second": "सफल प्रोडक्ट लॉन्च के सार्वजनिक उदाहरण जुटाएँ और बताएँ कि किन तरीकों ने काम किया",
+            "third": "प्रेज़ेंटेशन के लिए भरोसेमंद उद्योग डेटा, तारीखों और स्रोत लिंक के साथ खोजें"
+          },
+          "label": "जानकारी",
+          "placeholder": "विषय, समयावधि या जानकारी की ज़रूरत का उद्देश्य बताएँ…",
+          "title": "आप किस विषय पर रिसर्च करना चाहेंगे?"
+        },
+        "monitor": {
+          "examples": {
+            "first": "प्रतिस्पर्धियों की कीमतों में बदलाव पर नज़र रखने में मदद करें; पहले कंपनियों, स्रोतों और मुझे कब सूचना देनी है, इसकी पुष्टि करें",
+            "second": "क्लाइंट को भेजे गए ईमेल के जवाब पर नज़र रखने में मदद करें; पहले ईमेल और सूचना देने के तरीके की पुष्टि करें",
+            "third": "किसी उद्योग के महत्वपूर्ण अपडेट पर नज़र रखने में मदद करें; पहले स्रोत, कितनी बार जाँच करनी है और क्या महत्वपूर्ण है, यह मिलकर तय करें"
+          },
+          "label": "निगरानी",
+          "placeholder": "बताएँ कि किस पर नज़र रखनी है और कौन-से बदलाव महत्वपूर्ण हैं…",
+          "title": "आप किन बदलावों पर नज़र रखना चाहेंगे?"
+        },
+        "people": {
+          "examples": {
+            "first": "AI मार्केटिंग कार्यक्रम के लिए 5 वक्ता खोजें, उनके उपयुक्त होने के कारण और सार्वजनिक स्रोत भी दें",
+            "second": "व्यवसाय मालिकों तक पहुँच रखने वाले क्रिएटर्स खोजें और बताएँ कि उनकी ऑडियंस क्यों उपयुक्त है",
+            "third": "मेरी कंसल्टिंग सेवाओं के लिए संभावित ग्राहक खोजें, उनके बारे में प्रासंगिक सार्वजनिक जानकारी भी दें"
+          },
+          "label": "लोग",
+          "placeholder": "पद, क्षेत्र, कंपनी या स्थान बताएँ…",
+          "title": "आप किस तरह के लोगों को ढूँढ रहे हैं?"
+        }
+      },
+      "groups": {
+        "automate": "ऑटोमेट करें",
+        "create": "बनाएँ",
+        "search": "खोजें"
+      },
+      "label": "जानें, Okou क्या कर सकता है",
+      "placeholder": "बताएँ कि आप क्या काम करवाना चाहते हैं…",
+      "sources": {
+        "trigger": "टूल"
+      },
+      "workflows": "वर्कफ़्लो"
     },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
@@ -2273,6 +2328,8 @@
     "remoteAccess": {
       "default": "डिफ़ॉल्ट",
       "defaultEnabled": "चैट के लिए डिफ़ॉल्ट रूप से सक्षम",
+      "disabled": "बंद",
+      "enabled": "चालू",
       "enabledCount_one": "{{count}} सक्षम",
       "enabledCount_other": "{{count}} सक्षम",
       "loadFailed": "रिमोट एक्सेस लोड नहीं हो सका।",
@@ -2346,18 +2403,17 @@
       "cancel": "रद्द करें",
       "close": "बंद करें",
       "copyFailed": "लिंक कॉपी नहीं हो सका",
-      "copyLink": "लिंक कॉपी करें",
       "create": "शेयर करें",
       "createFailed": "साझा बातचीत नहीं बनाई जा सकी।",
       "deselectGroup": "संदेश समूह का चयन हटाएँ",
+      "everyone": "सभी",
       "linkCopied": "लिंक कॉपी हो गया",
       "messageShareFailed": "साझा लिंक नहीं बनाया जा सका।",
-      "publicDescription": "चुने गए संदेश और उनके अटैचमेंट सार्वजनिक होंगे।",
+      "organizationDescription": "केवल आपके संगठन के लोग",
       "selectedCount_one": "{{count}} चुना गया",
       "selectedCount_other": "{{count}} चुने गए",
       "selectGroup": "संदेश समूह चुनें",
       "shareLink": "साझा बातचीत का लिंक",
-      "shareLinkCopied": "साझा लिंक कॉपी किया गया",
       "start": "संदेश शेयर करें",
       "tooLarge": "शेयर करने के लिए कम संदेश चुनें",
       "visibilityDescription": "चुनें कि यह बातचीत कौन देख सकता है। केवल आप ही पहुँच बदल सकते हैं।"
@@ -2646,7 +2702,6 @@
         "image": "चित्र",
         "jobs": "Tasks",
         "presentation": "स्लाइड",
-        "suggestions": "सुझाव",
         "visualization": "विज़ुअलाइज़ेशन",
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
@@ -3093,20 +3148,13 @@
     }
   },
   "cloudflareAccess": {
-    "add": "Cloudflare Access जोड़ें",
     "affectedMembers_one": "{{count}} सदस्य",
     "affectedMembers_other": "{{count}} सदस्य",
     "cancel": "रद्द करें",
     "changed": "संपादन के दौरान यह Cloudflare Access बदल गया। आपके बदलाव सहेजे नहीं गए।",
-    "clientId": "Service Token क्लाइंट ID",
     "clientIdPlaceholder": "Service Token का Client ID पेस्ट करें",
-    "clientSecret": "Service Token क्लाइंट सीक्रेट",
     "clientSecretPlaceholder": "Service Token का Client Secret पेस्ट करें",
     "configuration": "Cloudflare Access",
-    "convert": "व्यक्तिगत बनाएं",
-    "convertHelp": "संगठन का यह Cloudflare Access आपका अपना व्यक्तिगत कॉन्फ़िगरेशन बन जाएगा, भले ही इसे किसी और ने बनाया हो। Service Token वही रहेगा और आपके SSH होस्ट जुड़े रह सकते हैं।",
-    "convertUncertain": "रूपांतरण की पुष्टि नहीं हो सकी।",
-    "createNew": "नया Cloudflare Access बनाएँ",
     "delete": "Cloudflare Access हटाएँ",
     "deleteHelp": "यह Cloudflare Access हटाएँ? सहेजा गया Service Token वापस नहीं मिल सकेगा। पहले अपने होस्ट को दोबारा बाइंड करें।",
     "deleteUncertain": "हटाए जाने की पुष्टि नहीं हो सकी।",
@@ -3120,32 +3168,32 @@
     "loading": "Cloudflare Access लोड हो रहा है…",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "यह Cloudflare Access अब उपलब्ध नहीं है। दूसरा चुनें या नया बनाएँ।",
-    "name": "नाम",
-    "namePlaceholder": "जैसे, प्रोडक्शन एक्सेस",
     "nameUnavailable": "नाम उपलब्ध नहीं",
     "organization": "संगठन",
-    "organizationHelp": "इस संगठन के सभी सदस्य इस Service Token का उपयोग कर सकते हैं। इसे केवल एडमिन बदल सकते हैं।",
     "personal": "व्यक्तिगत",
-    "promote": "संगठन के लिए साझा करें",
-    "promoteConfirm": "मैं समझता/समझती हूँ कि संगठन के सभी सदस्य इस Service Token का उपयोग कर सकेंगे।",
-    "promoteHelp": "अपना व्यक्तिगत Cloudflare Access संगठन से साझा करें। Service Token और आपके SSH होस्ट बाइंडिंग वैसे ही रहेंगे।",
-    "promoteUncertain": "हम रूपांतरण की पुष्टि नहीं कर सके।",
     "replace": "Service Token बदलें",
     "resourceIdConflict": "इस संसाधन आईडी का उपयोग नहीं किया जा सकता।",
     "revisionExhausted": "यह कॉन्फ़िगरेशन अब अपडेट नहीं किया जा सकता। नया कॉन्फ़िगरेशन बनाएँ।",
-    "save": "सहेजें",
     "saveUncertain": "सहेजना विफल रहा।",
     "scope": "इसे कौन उपयोग कर सकता है",
-    "sectionEmpty": "यहाँ अभी कोई कॉन्फ़िगरेशन नहीं है।",
     "select": "Cloudflare Access चुनें",
-    "summary_one": "{{count}} Cloudflare Access सेट है",
-    "summary_other": "{{count}} Cloudflare Access सेट हैं",
     "title": "Cloudflare Access",
-    "tokenHelp": "Cloudflare Access सर्विस टोकन से सुरक्षित ऐप्लिकेशन एक्सेस करें।",
     "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।",
     "unused": "आपका कोई होस्ट इसका उपयोग नहीं करता",
     "usedBy_one": "आपके {{count}} होस्ट इसका उपयोग करते हैं:",
     "usedBy_other": "आपके {{count}} होस्ट इसका उपयोग करते हैं:"
+  },
+  "connectorChatAccess": {
+    "accountAccess": "{{account}} की पहुँच",
+    "enableByDefault": "{{account}} को डिफ़ॉल्ट रूप से चालू करें",
+    "enabledAccounts": "{{value}} चालू",
+    "manageAccounts": "खाते प्रबंधित करें",
+    "noAccount": "कोई खाता नहीं चुना गया",
+    "noEnabledAccount": "इस चैट के लिए कोई खाता चालू नहीं है",
+    "permissions": "अनुमतियाँ",
+    "permissionsDescription": "ये नियम आपकी सभी चैट और खातों में इस कनेक्टर पर लागू होते हैं।",
+    "settingsDescription": "डिफ़ॉल्ट रूप से चालू खाते और नई चैट के लिए डिफ़ॉल्ट खाता चुनें।",
+    "thisChat": "यह चैट"
   },
   "connectors": {
     "access": {
@@ -3354,7 +3402,6 @@
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
       "remoteControl": {
-        "connections": "कनेक्शन",
         "credentials": "क्रेडेंशियल",
         "type": "प्रकार"
       },
@@ -3606,6 +3653,7 @@
         "backToSettings": "सेटिंग्स पर वापस जाएँ",
         "checkingTitle": "खाते की स्थिति जाँची जा रही है...",
         "connectionFailed": "कनेक्शन विफल",
+        "invalidBotConnectLink": "यह कनेक्शन लिंक अमान्य है या इसकी समय-सीमा समाप्त हो गई है। {{provider}} पर वापस जाएँ और नया लिंक पाने के लिए बॉट को संदेश भेजें।",
         "invalidLink": "अमान्य लिंक",
         "verifying": "कृपया तब तक प्रतीक्षा करें जब तक हम आपका कनेक्शन सत्यापित नहीं कर देते।"
       },
@@ -3678,13 +3726,10 @@
         "install": "Teams में इंस्टॉल करें",
         "invalidContext": "इस लिंक में Teams खाते की पूरी जानकारी नहीं है। Teams से नया कनेक्शन लिंक खोलें।",
         "open": "टीमें खोलें",
-        "orgMismatch": "यह लिंक दूसरे संगठन का है। उस संगठन में स्विच करके फिर प्रयास करें।",
         "pendingDescription": "Teams में ऐप इंस्टॉल करें, फिर कनेक्शन पूरा करने के लिए यहाँ लौटें।",
         "pendingTitle": "पूरा करने के लिए Teams में इंस्टॉल करें",
-        "providerName": "Microsoft Teams",
         "reinstall": "Teams में फिर से इंस्टॉल करें",
         "statusFailed": "Teams कनेक्शन की जाँच नहीं हो सकी।",
-        "successDescription": "आप {{team}} से जुड़े हैं। चैटिंग शुरू करने के लिए Teams में @{{botName}} का उल्लेख करें।",
         "successTitle": "Microsoft Teams से जुड़ा",
         "unavailable": "Teams सेटअप उपलब्ध नहीं है। अपने संगठन के व्यवस्थापक से सहायता लें।"
       },
@@ -4134,6 +4179,29 @@
     "previousFeature": "पिछली सुविधा",
     "tryPrompt": "यह काम आज़माएँ"
   },
+  "feed": {
+    "description": "आपके हाल के काम के आधार पर सुझाए गए अगले कदम।",
+    "emptyDescription": "नए सुझाव यहाँ दिखाई देंगे।",
+    "emptyTitle": "आप पूरी तरह अप टू डेट हैं",
+    "title": "फ़ीड"
+  },
+  "friendReferrals": {
+    "copied": "कॉपी किया गया",
+    "copy": "लिंक कॉपी करें",
+    "copyFailed": "कॉपी नहीं हो सका। ऊपर का लिंक चुनकर कॉपी करें।",
+    "description": "जब कोई दोस्त आपके लिंक से साइन अप करके usage pack खरीदता है और Pro या उससे ऊपर अपग्रेड करता है, तो $20 के क्रेडिट पाएँ।",
+    "earned": "मिले हुए क्रेडिट",
+    "expiryNote": "दोस्तों के रेफ़रल इनाम मिलने के एक महीने बाद समाप्त होते हैं।",
+    "invite": "आमंत्रित करें",
+    "linkLabel": "आपका रेफ़रल लिंक",
+    "loadFailed": "आपका रेफ़रल लिंक लोड नहीं हो सका। फिर कोशिश करें।",
+    "loading": "आपका रेफ़रल लिंक लोड हो रहा है…",
+    "perFriend": "प्रति भुगतान करने वाला दोस्त",
+    "registered": "साइन अप करने वाले दोस्त",
+    "retry": "फिर कोशिश करें",
+    "terms": "केवल नए उपयोगकर्ताओं के लिए। हर दोस्त पर एक बार इनाम मिलता है। क्रेडिट इस कार्यक्षेत्र में आपके निजी बैलेंस में जुड़ते हैं और मिलने के एक महीने बाद समाप्त होते हैं।",
+    "title": "दोस्तों को आमंत्रित करें"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -4217,6 +4285,24 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "columns_one": "{{formattedCount}} कॉलम",
+      "columns_other": "{{formattedCount}} कॉलम",
+      "drive": "Google Drive में सेव करें",
+      "excel": "Excel में एक्सपोर्ट करें",
+      "export": "एक्सपोर्ट करें",
+      "filename": "तालिका",
+      "googleUnavailable": "इस तालिका को अपने चैट में खोलें या अपना Google Drive कनेक्शन जाँचें।",
+      "rows_one": "{{formattedCount}} पंक्ति",
+      "rows_other": "{{formattedCount}} पंक्तियाँ",
+      "savedDrive": "Google Drive में सेव किया गया",
+      "savedSheets": "Google Sheets में सेव किया गया",
+      "saving": "सेव हो रहा है…",
+      "sheets": "Google Sheets में सेव करें",
+      "uploadFailed": "तालिका अपलोड नहीं हो सकी। फिर से कोशिश करें।"
+    }
+  },
   "onboarding": {
     "common": {
       "next": "अगला",
@@ -4227,14 +4313,28 @@
       "make": "{{brandName}} में आपका स्वागत है"
     },
     "make": {
-      "promptDescription": "इसे नीचे संशोधित करें या इसे वैसे ही चलाएँ जैसे यह है। {{assistantName}} इसे यहां से लेता है। आपके उपकरण सैंडबॉक्स में बंद रहते हैं और आपके वर्कस्पेस से कुछ भी नहीं छूटता।",
       "promptLabel": "ऑनबोर्डिंग प्रॉम्प्ट",
-      "promptTitle": "इस प्रॉम्प्ट को आज़माएँ"
+      "promptTitle": "इस काम को अपनी ज़रूरत के अनुसार ढालें"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Okou से वेब पर रिसर्च करें, लोग खोजें और इमेज बनाएं। ये टूल डिफ़ॉल्ट रूप से चालू हैं; आप इन्हें अभी या बाद में बदल सकते हैं।",
+        "items": {
+          "image-generation": {
+            "description": "सोशल पोस्ट, अभियानों और प्रस्तुतियों के लिए मौलिक चित्र बनाएं।",
+            "name": "इमेज बनाना"
+          },
+          "web-search": {
+            "description": "जांचने योग्य स्रोतों के साथ ताज़ा समाचार और तथ्य खोजें।",
+            "name": "वेब खोज"
+          }
+        },
+        "listLabel": "अंतर्निहित क्षमताएं",
+        "title": "अपना काम पूरा करने के और तरीके"
+      },
       "chatChannels": {
         "connectedTitle": "आपकी चैट कनेक्ट हो गई है",
-        "copy": "Okou को संदेश भेजें या उसे अपनी टीम की चैट में जोड़ें। अपने परिचित तरीके से काम करें।",
+        "copy": "अपनी रोज़ की चैट में अकेले या टीम के साथ Okou इस्तेमाल करें। आप यहीं काम जारी रख सकते हैं और चैट ऐप बाद में जोड़ सकते हैं।",
         "imessageConnected": "iMessage कनेक्ट हो गया है",
         "imessageCopy": "आपका काम, बस एक संदेश दूर।",
         "imessageExpired": "आपके कनेक्शन कोड की समय सीमा समाप्त हो गई है।",
@@ -4250,19 +4350,18 @@
         "notNow": "अभी नहीं"
       },
       "documentTitles": {
-        "experience": "आपका AI अनुभव",
+        "experience": "शुरू करने का तरीका चुनें",
         "industry": "अपना क्षेत्र चुनें",
-        "ready": "Okou तैयार है",
+        "ready": "आपका पहला काम",
         "skills": "अपनी skills इम्पोर्ट करें",
-        "sources": "अपना काम जोड़ें",
-        "team": "टीम सदस्य को आमंत्रित करें"
+        "sources": "अपना काम जोड़ें"
       },
       "experience": {
-        "copy": "मार्गदर्शन से शुरू करें या अपना मौजूदा Codex या Claude Code प्लान साथ लाएँ।",
-        "no": "मैं AI एजेंट में नया हूँ",
-        "noCopy": "Okou आपके लिए उपयोगी पहला काम चुनने में मदद करता है।",
+        "copy": "सीधे Okou के साथ शुरू करें, या अपना मौजूदा Codex या Claude Code प्लान जोड़ें।",
+        "no": "Okou के साथ शुरू करें",
+        "noCopy": "अपने पहले काम में मदद पाएं।",
         "title": "आप Okou के साथ कैसे शुरू करना चाहेंगे?",
-        "trust": "टास्क Okou क्रेडिट की बजाय आपके Codex या Claude Code प्लान पर चलते हैं, इसलिए खपत की चिंता किए बिना ज़्यादा काम करें। अभी या बाद में जोड़ें।"
+        "trust": "जुड़े हुए प्लान Okou क्रेडिट के बजाय अपना कोटा इस्तेमाल करते हैं। आप बाद में भी जोड़ सकते हैं; प्लान की उपयोग सीमाएं लागू रहेंगी।"
       },
       "industries": {
         "coaching": {
@@ -4322,11 +4421,11 @@
         }
       },
       "industry": {
-        "copy": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है। अपने लिए सही पहला टास्क पाने के लिए अपना क्षेत्र चुनें।",
+        "copy": "हमें बताएं कि आप क्या काम करते हैं। हम आपके काम के हिसाब से पहला उपयोगी काम सुझाएंगे।",
         "title": "आप किस तरह का काम करते हैं?"
       },
       "mobile": {
-        "channelsCopy": "अपने पसंदीदा चैट ऐप में Okou से बात करें।",
+        "channelsCopy": "यहीं काम जारी रखें, या अभी चैट ऐप जोड़ें।",
         "channelsTitle": "चैट ऐप चुनें",
         "connect": "कनेक्ट करें",
         "copyImportPrompt": "इंपोर्ट प्रॉम्प्ट कॉपी करें",
@@ -4342,12 +4441,10 @@
         "planCopy": "अपने सब्सक्रिप्शन से काम चलाएँ।",
         "promptTitle": "आप क्या करवाना चाहते हैं?",
         "readyTitle": "अपना पहला काम शुरू करें",
-        "skillsCopy": "कंप्यूटर पर {{provider}} इस्तेमाल करें।",
+        "skillsCopy": "{{provider}} में स्किल्स हैं? अपने कंप्यूटर से इंपोर्ट करें, या बाद में करें।",
         "skillsTitle": "अपनी स्किल इंपोर्ट करें",
-        "sourcesCopy": "पहले काम के लिए एक टूल जोड़ें।",
-        "startTask": "काम शुरू करें",
-        "teamCopy": "एक ही वर्कस्पेस में साथ काम करें।",
-        "teamTitle": "टीम के सदस्य को बुलाएँ"
+        "sourcesCopy": "एक टूल जोड़ें, या यह चरण छोड़कर बाद में जोड़ें।",
+        "startTask": "काम शुरू करें"
       },
       "outcomes": {
         "accessibleLabel": "{{source}} से तैयार {{title}} का उदाहरण। सभी सामग्री नमूना डेटा है।",
@@ -4493,8 +4590,8 @@
             "label": "प्रेज़ेंटेशन"
           },
           "report": {
-            "instruction": "निष्कर्षों को एक व्यवस्थित रिपोर्ट में प्रस्तुत करें, जिसमें मुख्य परिणाम, सुझाव और अगले कदम शामिल हों।",
-            "label": "रिपोर्ट"
+            "instruction": "पूरे परिणामों के साथ अनुरोधित फ़ाइल प्रारूप में एक दस्तावेज़ बनाएँ (डिफ़ॉल्ट रूप से Markdown)। इसे आर्टिफ़ैक्ट के रूप में अपलोड करें और अपने अंतिम उत्तर में आर्टिफ़ैक्ट का काम करने वाला लिंक शामिल करें।",
+            "label": "दस्तावेज़"
           },
           "research": {
             "instruction": "निष्कर्षों को सहायक स्रोतों और अनसुलझे प्रश्नों सहित शोध सारांश के रूप में प्रस्तुत करें। स्रोत-समर्थित तथ्यों और सुझावों में अंतर स्पष्ट करें।",
@@ -4505,17 +4602,17 @@
             "label": "वेबसाइट"
           }
         },
-        "title": "फ़ॉर्मैट चुनें",
+        "title": "फ़ॉर्मैट चुनें (वैकल्पिक)",
         "tooLong": "दूसरा फ़ॉर्मैट चुनने के लिए कार्य का विवरण छोटा करें।"
       },
       "prompt": {
-        "connectorsDescription": "अपने टूल कनेक्ट करें ताकि Okou आपके काम का संदर्भ समझे और आपकी ज़रूरतों के अनुसार कार्य पूरे करे। आप बाद में भी कनेक्ट कर सकते हैं।",
+        "connectorsDescription": "अपने ऐप कनेक्ट करें, ताकि Okou आपके काम को बेहतर समझ सके।",
         "connectorsTitle": "अपने काम के टूल कनेक्ट करें",
-        "intro": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है।"
+        "intro": "बेहतर नतीजों के लिए अपने ऐप कनेक्ट करें और एक फ़ॉर्मैट चुनें।"
       },
       "skills": {
         "copied": "कॉपी हो गया",
-        "copy": "{{provider}} में यह प्रॉम्प्ट चलाकर अपनी बनाई हुई स्किल आयात करें, ताकि Okou पहले दिन से उनका इस्तेमाल कर सके।",
+        "copy": "अगर आपने {{provider}} में स्किल्स सेव की हैं, तो उन्हें इंपोर्ट करें ताकि Okou आपके काम करने के तरीके को अपना सके। आप यह चरण छोड़कर बाद में भी इंपोर्ट कर सकते हैं।",
         "copyError": "prompt कॉपी नहीं हो सका।",
         "copyPrompt": "prompt कॉपी करें",
         "guide": {
@@ -4577,14 +4674,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Okou आपके काम को जितना जानता है, उतना ही स्मार्ट होता जाता है। रोज़ इस्तेमाल होने वाला टूल जोड़ें और अपने असली काम पर आधारित टास्क से शुरुआत करें।",
-        "permissions": "Okou आपका पहला टास्क तय करने के लिए थोड़ी-सी जानकारी का इस्तेमाल करता है। Agents क्या कर सकते हैं और कितने समय तक, यह आप तय करते हैं।",
+        "copy": "अपने काम से जुड़ा पहला टास्क शुरू करने के लिए एक टूल जोड़ें, या इस चरण को छोड़कर बाद में जोड़ें।",
+        "permissions": "Okou थोड़ी-सी जानकारी से आपका पहला काम सुझाता है। Okou क्या ऐक्सेस कर सकता है और कितने समय तक, यह आप तय करते हैं।",
         "securityLink": "Okou आपका डेटा कैसे सुरक्षित रखता है",
         "skipDialog": {
           "connect": "टूल जोड़ें",
-          "description": "हम आपके टूल जोड़ने की सलाह देते हैं, ताकि Okou आपके काम को समझकर ज़्यादा उपयोगी मदद कर सके। आप इन्हें बाद में भी जोड़ सकते हैं।",
+          "description": "आप अभी भी काम शुरू कर सकते हैं। जब Okou को आपके ईमेल, दस्तावेज़ या डेटा के साथ काम करना हो, तब टूल जोड़ें।",
           "skip": "अभी छोड़ें",
-          "title": "आपके टूल से जुड़कर Okou बेहतर मदद कर सकता है"
+          "title": "बिना टूल जोड़े शुरू करें?"
         },
         "title": "काम का एक टूल कनेक्ट करें"
       },
@@ -4918,34 +5015,51 @@
         "connected": "जुड़ गया",
         "connecting": "जोड़ा जा रहा है…",
         "failedNote": "हम {{provider}} को जोड़ नहीं सके। आप आगे बढ़ सकते हैं और इसे बाद में जोड़ सकते हैं।",
-        "rowCopy": "Okou क्रेडिट की जगह अपने प्लान से काम चलाने के लिए उसे कनेक्ट करें।",
+        "rowCopy": "काम के लिए अपना मौजूदा प्लान इस्तेमाल करें।",
         "unconfirmedNote": "हम आपके {{provider}} कनेक्शन की जाँच नहीं कर सके। आप आगे बढ़ सकते हैं और इसे बाद में जोड़ सकते हैं।"
       },
-      "team": {
-        "copy": "अपने वर्कफ़्लो साझा करने के लिए टीम सदस्य को आमंत्रित करें, जबकि हर कोई अपने टूल खुद जोड़ता है।",
-        "invalidEmail": "कृपया एक मान्य ईमेल पता दर्ज करें",
-        "invite": "न्योता भेजें",
-        "invited": "न्योता भेजा गया",
-        "label": "टीम सदस्य का ईमेल",
-        "note": "वे तुरंत Okou के साथ काम शुरू कर सकते हैं।",
-        "notSent": "न्योता नहीं भेजा गया",
-        "panelTitle": "टीम सदस्य को आमंत्रित करें",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "ज़रूरत पड़ने पर अपने टूल जोड़ते हैं।",
-          "workflows": "टीम के बनाए सभी वर्कफ़्लो चला सकते हैं।",
-          "workspace": "आपके वर्कस्पेस से जुड़ते हैं।"
-        },
-        "sending": "भेजा जा रहा है…",
-        "title": "पूरी टीम के लिए Okou को उपयोगी बनाएँ"
-      },
       "welcome": {
-        "copy": "अपने काम के लिए सुझाया गया पहला काम देखें, लक्ष्य के अनुसार बदलें और Okou को शुरू करने दें।",
-        "promptLabel": "आपका शुरुआती प्रॉम्प्ट",
-        "start": "Okou से शुरू करें",
-        "title": "ऐसे काम से शुरू करें जो मायने रखता है"
+        "copy": "हमने आपके काम के हिसाब से पहला टास्क सुझाया है। इसे बदलें या इसकी जगह वह लिखें जो आप करवाना चाहते हैं।",
+        "preparing": "आपके लिए पहला उपयोगी काम खोज रहे हैं…",
+        "promptLabel": "आपका पहला काम",
+        "start": "मेरा पहला काम शुरू करें",
+        "title": "चलिए आपका पहला काम शुरू करें"
       }
     }
+  },
+  "projects": {
+    "active": "Active chats",
+    "archived": "Archived chats",
+    "close": "Close",
+    "create": "Create Project",
+    "createChatError": "Could not create chat",
+    "delete": "Delete",
+    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
+    "deleteError": "Could not delete Project",
+    "deleteProject": "Delete Project",
+    "deleteTitle": "Delete Project?",
+    "description": "Keep related chats together across Agents",
+    "empty": "No chats here yet",
+    "emptyArchive": "No archived chats",
+    "fromChat": "Create a Project from this chat",
+    "move": "Move to Project",
+    "moveError": "Could not move chat",
+    "moveTitle": "Move chat",
+    "moveTo": "{{name}} में ले जाएँ",
+    "name": "Project name",
+    "newChat": "New chat",
+    "noMatches": "No projects found",
+    "options": "Options for {{name}}",
+    "projects": "Projects",
+    "remove": "Remove from Project",
+    "rename": "Rename",
+    "renameProject": "Rename Project",
+    "save": "Save",
+    "saveError": "Could not save Project",
+    "saving": "Saving…",
+    "search": "Search projects…",
+    "showMore": "Show more chats",
+    "unavailable": "Project unavailable"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} समवर्ती रन",
@@ -5335,9 +5449,14 @@
       "settings": "सेटिंग्स",
       "signOut": "साइन आउट",
       "subscriptions": {
+        "credits": "क्रेडिट",
+        "fiveHourLimit": "5 घंटे की सीमा",
+        "label": "सदस्यता का उपयोग",
+        "lowUsage": "सदस्यता का उपयोग: 20% से कम शेष",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
-        "usageRemaining": "{{provider}} {{window}} शेष"
+        "usageRemaining": "{{provider}} {{window}} शेष",
+        "weeklyLimit": "साप्ताहिक सीमा"
       },
       "switchAccount": "खाता स्थानांतरित करें",
       "userFallback": "उपयोगकर्ता"
@@ -5349,6 +5468,12 @@
       "loading": "लोड हो रहा है",
       "title": "जानकारी बनाएँ",
       "unavailable": "अनुपलब्ध"
+    },
+    "connectorCatalog": {
+      "hash": "कैटलॉग हैश",
+      "schemaVersion": "स्कीमा संस्करण",
+      "title": "कनेक्टर कैटलॉग",
+      "version": "संस्करण"
     },
     "dialog": {
       "description": "अपना खाता, प्राथमिकताएँ, वर्कस्पेस और बिलिंग सेटिंग्स प्रबंधित करें।",
@@ -6083,18 +6208,14 @@
       "direct": "सीधा",
       "mode": "कनेक्शन",
       "needsRebind": "इस होस्ट को नए Cloudflare Access कॉन्फ़िगरेशन से फिर जोड़ना होगा। होस्ट संपादित करके दूसरा कॉन्फ़िगरेशन या Direct चुनें। तब तक यह कनेक्ट नहीं होगा।",
-      "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "प्रकाशित होस्टनाम",
       "rebindHelp": "इस होस्ट को बहाल करने के लिए अनुमति प्राप्त Cloudflare Access कॉन्फ़िगरेशन या Direct चुनें। सेव करने तक कुछ नहीं बदलेगा।",
-      "title": "Cloudflare Access",
-      "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।"
+      "title": "Cloudflare Access"
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access SSH टनल स्थापित नहीं कर सका। प्रकाशित होस्टनाम और Tunnel रूटिंग जाँचें।",
       "accessRejected": "Cloudflare Access ने कनेक्शन अस्वीकार कर दिया। सर्विस टोकन और ऐप्लिकेशन की Service Auth नीति जाँचें।",
       "accessTlsFailure": "Cloudflare Access से सुरक्षित कनेक्शन सत्यापित नहीं हो सका। होस्टनाम और TLS प्रमाणपत्र जाँचें।",
-      "attention_one": "{{count}} SSH होस्ट पर ध्यान देने की ज़रूरत है",
-      "attention_other": "{{count}} SSH होस्ट पर ध्यान देने की ज़रूरत है",
       "authenticationFailed": "SSH प्रमाणीकरण विफल हुआ। उपयोगकर्ता नाम, निजी कुंजी या पासवर्ड और सर्वर की अनुमति जांचें। क्रेडेंशियल संपादित करें या इस होस्ट के लिए दूसरा चुनें।",
       "credentialResourceLimit": "निजी कुंजी समर्थित प्रोसेसिंग सीमा से बड़ी है। इसे समर्थित एन्क्रिप्शन सेटिंग के साथ फिर से एक्सपोर्ट करें और क्रेडेंशियल बदलें।",
       "hostKeyMismatch": "सर्वर की होस्ट कुंजी सहेजी गई पहचान से मेल नहीं खाती। होस्ट कुंजी रीसेट करने से पहले सर्वर की स्वतंत्र रूप से पुष्टि करें।",
@@ -6103,7 +6224,6 @@
       "observedAt": "देखा गया: {{time}}",
       "protocol": "SSH हैंडशेक विफल हुआ। जाँचें कि यह पोर्ट SSH सेवा देता है और सर्वर संगत एल्गोरिदम का समर्थन करता है।",
       "timedOut": "प्रमाणीकरण पूरा होने से पहले पिछले SSH कनेक्शन का समय समाप्त हो गया। एंडपॉइंट, फ़ायरवॉल और सर्वर की उपलब्धता जाँचें।",
-      "unavailable": "SSH कनेक्शन की स्थिति उपलब्ध नहीं है",
       "unsafeDestination": "यह होस्ट किसी अनुमत सार्वजनिक पते पर रिज़ॉल्व नहीं होता। सार्वजनिक SSH एंडपॉइंट इस्तेमाल करें।",
       "unsupportedCredential": "निजी कुंजी का फ़ॉर्मैट या एल्गोरिदम समर्थित नहीं है। इसे समर्थित OpenSSH, PKCS8 या RSA PEM कुंजी से बदलें।",
       "unsupportedHostKey": "सर्वर की होस्ट कुंजी समर्थित नहीं है। सर्वर पर समर्थित Ed25519, ECDSA या RSA होस्ट कुंजी कॉन्फ़िगर करें।"
@@ -6111,31 +6231,23 @@
     "credential": {
       "add": "क्रेडेंशियल जोड़ें",
       "authentication": "प्रमाणीकरण",
-      "createNew": "नया क्रेडेंशियल बनाएं",
       "delete": "क्रेडेंशियल हटाएं",
       "deleteHelp": "यह अप्रयुक्त क्रेडेंशियल हटाएं? सहेजा गया गुप्त डेटा वापस नहीं पाया जा सकेगा।",
       "edit": "क्रेडेंशियल संपादित करें",
       "empty": "अभी कोई SSH क्रेडेंशियल नहीं है। कई होस्ट पर उपयोग के लिए निजी कुंजी या पासवर्ड जोड़ें।",
-      "label": "क्रेडेंशियल",
       "loading": "SSH क्रेडेंशियल लोड हो रहे हैं…",
       "name": "क्रेडेंशियल का नाम",
       "password": "पासवर्ड",
-      "replaceAuthentication": "प्रमाणीकरण बदलें",
-      "select": "क्रेडेंशियल चुनें",
       "sharedHelp_one": "लॉगिन में बदलाव {{count}} होस्ट पर लागू होंगे:",
       "sharedHelp_other": "लॉगिन में बदलाव सभी {{count}} होस्ट पर लागू होंगे:",
       "summary_one": "{{count}} क्रेडेंशियल कॉन्फ़िगर किया गया",
       "summary_other": "{{count}} क्रेडेंशियल कॉन्फ़िगर किए गए",
       "unused": "किसी होस्ट द्वारा उपयोग नहीं किया जा रहा"
     },
-    "credentialsHelp": "क्रेडेंशियल केवल लिखे जा सकते हैं और सैंडबॉक्स के बाहर रहते हैं। पूरी कुंजी पेस्ट करें; खाली स्थान बनाए रखे जाते हैं। फ़ॉर्म बंद करने पर फ़ील्ड साफ़ हो जाते हैं।",
-    "delete": "होस्ट हटाएँ",
     "deleteHelp": "यह होस्ट हटाएं? इसका क्रेडेंशियल बना रहेगा। Agents को यह होस्ट सूची में नहीं दिखेगा।",
     "description": "अपने एजेंटों के लिए दूरस्थ कमांड चलाने हेतु SSH होस्ट कॉन्फ़िगर करें।",
-    "displayName": "दिखाया जाने वाला नाम",
     "edit": "होस्ट संपादित करें",
     "editHelp": "दूसरे क्रेडेंशियल चुनने से केवल यह होस्ट बदलता है। सीधे कनेक्शन के गंतव्य में बदलाव सहेजी गई होस्ट कुंजी हटाते हैं; Cloudflare Access से जुड़े बदलाव उसे बनाए रखते हैं।",
-    "empty": "कोई SSH होस्ट कॉन्फ़िगर नहीं है। होस्ट जोड़ें, फिर उसे डिफ़ॉल्ट रूप से या अलग-अलग चैट में सक्षम करें।",
     "errors": {
       "configurationChanged": "संपादन के दौरान यह होस्ट बदल गया। आपके बदलाव सहेजे नहीं गए; आपका ड्राफ़्ट सुरक्षित है।",
       "credentialChanged": "संपादन के दौरान यह क्रेडेंशियल बदल गया। आपके बदलाव सहेजे नहीं गए; आपका ड्राफ़्ट सुरक्षित है।",
@@ -6162,7 +6274,6 @@
     "passphrase": "पासफ़्रेज़ (वैकल्पिक)",
     "placeholders": {
       "credentialName": "जैसे, डिप्लॉयमेंट लॉगिन",
-      "displayName": "जैसे, प्रोडक्शन सर्वर",
       "host": "जैसे, ssh.example.com",
       "passphrase": "कुंजी एन्क्रिप्टेड न हो तो खाली छोड़ें",
       "password": "SSH उपयोगकर्ता का पासवर्ड दर्ज करें",
@@ -6178,8 +6289,6 @@
       "resourceIdConflict": "इस संसाधन आईडी का उपयोग नहीं किया जा सकता।",
       "uncertain": "सहेजना विफल रहा।"
     },
-    "summary_one": "{{count}} होस्ट कॉन्फ़िगर किया गया",
-    "summary_other": "{{count}} होस्ट कॉन्फ़िगर किए गए",
     "tailscale": {
       "authenticationFailed": "Tailscale SSH प्रमाणीकरण विफल हुआ। सिस्टम उपयोगकर्ता नाम जाँचें, टैग वाले गंतव्य पर Tailscale SSH सक्षम करें और tailnet की SSH accept नीति में इस लॉगिन को अनुमति दें।",
       "deleteHelp": "यह होस्ट हटाएँ? एजेंटों को यह होस्ट अब लाइव इन्वेंट्री में नहीं दिखेगा।",
@@ -6192,54 +6301,24 @@
     "username": "SSH उपयोगकर्ता नाम"
   },
   "tailscale": {
-    "add": "Tailscale जोड़ें",
-    "addressHelp": "पंजीकृत tailnet पीयर का IP, पूरा होस्टनाम या छोटा नाम इस्तेमाल करें। SSH लॉगिन और होस्ट कुंजी सत्यापन अभी भी आवश्यक हैं।",
-    "adoptHelp": "इस संगठन के नेटवर्क को अपना निजी नेटवर्क बनाएं। अन्य मालिकों को अपने सहेजे गए होस्ट दोबारा जोड़ने होंगे।",
     "changed": "यह Tailscale नेटवर्क बदल गया। आपके बदलाव सहेजे नहीं गए; आपका ड्राफ़्ट सुरक्षित है।",
-    "clientId": "OAuth क्लाइंट ID",
-    "clientSecret": "OAuth क्लाइंट सीक्रेट",
-    "createNew": "नया Tailscale नेटवर्क बनाएं",
     "delete": "Tailscale हटाएं",
     "deleteHelp": "यह नेटवर्क हटाएं? सहेजे गए क्रेडेंशियल वापस नहीं मिल सकेंगे। पहले अपने होस्ट दोबारा जोड़ें।",
     "edit": "Tailscale संपादित करें",
     "failed": "Tailscale बदलाव सहेजा नहीं जा सका।",
     "forbidden": "आप इस Tailscale नेटवर्क का प्रबंधन नहीं कर सकते। संगठन के नेटवर्क के लिए व्यवस्थापक चाहिए।",
-    "guide": {
-      "accessControls": "Access controls",
-      "allPortsAndProtocols": "All ports and protocols",
-      "allUsersAndDevices": "All users and devices",
-      "destination": "Destination",
-      "oauth": "OAuth",
-      "oauthHelp": "Trust credentials में Credential → OAuth चुनें। Keys → Auth Keys में Write और tag:okou चुनें। Generate credential चुनकर Client ID और Client secret नीचे दिए फ़ील्ड में कॉपी करें।",
-      "policyHelp": "यह नियम tag:okou को सभी पोर्ट और प्रोटोकॉल पर सभी उपयोगकर्ताओं और डिवाइस तक पहुँच देता है। इसे मौजूदा grants में जोड़ें और बाकी नीति बनाए रखें।",
-      "portAndProtocol": "Port and protocol",
-      "rules": "General access rules",
-      "rulesHelp": "Access controls → Visual editor → General access rules में Add rule चुनें और ये सुझाए गए मान इस्तेमाल करें।",
-      "source": "Source",
-      "stepsLabel": "Tailscale सेटअप के चरण",
-      "tags": "Tags",
-      "tagsHelp": "लक्षित डिवाइस की tailnet इस्तेमाल करें। Access controls → Visual editor → Tags में Create tag चुनें। Tag name में okou भरें और Tag owners चुनें। नीचे पंजीकरण टैग में tag:okou भरें।",
-      "title": "Tailscale कैसे कॉन्फ़िगर करें?",
-      "trustCredentials": "Trust credentials"
-    },
     "inUse": "आपके SSH होस्ट अभी भी इस नेटवर्क का उपयोग करते हैं। पहले उन्हें दोबारा जोड़ें या हटाएं।",
     "invalid": "कुछ Tailscale सेटिंग अमान्य हैं। फ़ील्ड जांचकर फिर कोशिश करें।",
     "loadFailed": "Tailscale लोड नहीं हो सका।",
     "loading": "Tailscale लोड हो रहा है…",
     "missing": "यह Tailscale नेटवर्क अब उपलब्ध नहीं है। दूसरा चुनें या नया बनाएं।",
     "peer": "Tailnet होस्टनाम या IP पता",
-    "promoteConfirm": "मैं समझता हूं कि इस संगठन का हर व्यक्ति इस नेटवर्क का उपयोग कर सकेगा।",
-    "promoteHelp": "अपना निजी नेटवर्क संगठन के साथ साझा करें। क्रेडेंशियल और आपके SSH बंधन नहीं बदलते।",
     "protectedHost": "Tailscale · {{name}}",
     "rebindAction": "SSH होस्ट दोबारा जोड़ें",
     "rebindAvailable": "इस होस्ट को नया Tailscale नेटवर्क चाहिए। चुनने या बनाने के लिए इसे संपादित करें।",
     "rebindHelp": "इस होस्ट को दोबारा जोड़ने के लिए Tailscale नेटवर्क चुनें या बनाएं। SSH लॉगिन और विश्वसनीय होस्ट कुंजी सुरक्षित रहती हैं।",
     "replace": "OAuth क्रेडेंशियल बदलें",
     "select": "Tailscale नेटवर्क चुनें",
-    "summary_one": "{{count}} Tailscale सेट है",
-    "summary_other": "{{count}} Tailscale सेट हैं",
-    "tags": "पंजीकरण टैग",
-    "tagsHelp": "टैग को कॉमा से अलग करें, जैसे tag:okou",
     "title": "Tailscale",
     "uncertain": "सहेजना विफल रहा।",
     "vncRebind": "VNC इस्तेमाल करने से पहले इस सहेजे गए SSH होस्ट को Tailscale नेटवर्क से दोबारा जोड़ें।"
@@ -6333,10 +6412,7 @@
     "add": "होस्ट जोड़ें",
     "cancel": "रद्द करें",
     "close": "बंद करें",
-    "configured": "कॉन्फ़िगर किया गया",
     "connectionStatus": {
-      "attention_one": "{{count}} VNC होस्ट पर ध्यान देने की ज़रूरत है",
-      "attention_other": "{{count}} VNC होस्ट पर ध्यान देने की ज़रूरत है",
       "observedAt": "रिकॉर्ड का समय {{time}}",
       "reasons": {
         "access_protocol_failure": "Cloudflare कनेक्शन प्रोटोकॉल विफल हो गया।",
@@ -6355,59 +6431,41 @@
         "timed_out": "कनेक्शन प्रयास का समय समाप्त हो गया।",
         "unsafe_destination": "नेटवर्क नीति ने गंतव्य को अस्वीकार कर दिया।",
         "unsupported_profile": "सर्वर चुने गए सुरक्षा प्रोफ़ाइल का समर्थन नहीं करता।"
-      },
-      "unavailable": "VNC कनेक्शन की स्थिति उपलब्ध नहीं है"
+      }
     },
     "credential": {
       "add": "क्रेडेंशियल जोड़ें",
-      "appleDhFieldHelp": "हर फ़ील्ड 1–63 UTF-8 बाइट का होना चाहिए। NUL की अनुमति नहीं है।",
       "appleDhMethod": "Apple DH उपयोगकर्ता नाम और पासवर्ड",
       "appleRsaSrpMethod": "Apple RSA/SRP उपयोगकर्ता नाम और पासवर्ड",
-      "appleRsaSrpUsernameHelp": "RSA/SRP उपयोगकर्ता नाम 1–234 UTF-8 बाइट का होना चाहिए। NUL की अनुमति नहीं है।",
       "appleSrpMethod": "Apple Direct SRP उपयोगकर्ता नाम और पासवर्ड",
       "authentication": "प्रमाणीकरण विधि",
       "certificateChain": "क्लाइंट प्रमाणपत्र शृंखला (PEM)",
       "clientKeyHelp": "1–8 प्रमाणपत्र और उनसे मेल खाने वाली कुंजी पेस्ट करें। सेव होने पर दोनों एन्क्रिप्ट होते हैं; बदलते समय दोनों बदलें। कुंजी फिर नहीं दिखाई जाएगी।",
-      "createNew": "नया क्रेडेंशियल बनाएं",
       "delete": "क्रेडेंशियल हटाएं",
       "deleteHelp": "इस अप्रयुक्त क्रेडेंशियल को हटाएँ? यह कार्रवाई वापस नहीं की जा सकती।",
       "edit": "क्रेडेंशियल संपादित करें",
       "empty": "कोई VNC क्रेडेंशियल सहेजा नहीं गया है।",
       "inUse": "इस क्रेडेंशियल को हटाने से पहले इसका उपयोग करने वाले होस्ट हटाएँ या उन्हें दूसरा क्रेडेंशियल दें।",
-      "label": "क्रेडेंशियल",
       "method": "VNC पासवर्ड",
       "name": "क्रेडेंशियल का नाम",
       "nameHint": "जैसे, कार्यालय डेस्कटॉप लॉगिन",
       "password": "VNC पासवर्ड",
-      "passwordHelp": "पारंपरिक VNC पासवर्ड में 1–8 प्रिंट करने योग्य ASCII वर्ण होते हैं। स्पेस बनाए रखे जाते हैं।",
-      "passwordHint": "सर्वर का VNC पासवर्ड दर्ज करें",
       "privateKey": "बिना एन्क्रिप्शन वाली PKCS#8 निजी कुंजी (PEM)",
-      "qemuScramPasswordHelp": "1–1023 प्रिंट करने योग्य ASCII अक्षर; स्पेस बनाए रखे जाते हैं।",
-      "qemuScramUsernameHelp": "1–255 प्रिंट करने योग्य ASCII अक्षर; स्पेस, कॉमा या बराबर का चिह्न नहीं।",
-      "replace": "प्रमाणीकरण बदलें",
-      "replaceHelp": "सहेजा गया प्रमाणीकरण बनाए रखने के लिए इसे बंद रखें। इसे बदलने से इस क्रेडेंशियल का उपयोग करने वाले हर होस्ट पर असर पड़ता है।",
-      "select": "क्रेडेंशियल चुनें",
       "sharedHelp_one": "{{count}} होस्ट इसका उपयोग करता है। प्रमाणीकरण बदलने से इस होस्ट पर असर पड़ता है।",
       "sharedHelp_other": "{{count}} होस्ट इसका उपयोग करते हैं। प्रमाणीकरण बदलने से उन सभी पर असर पड़ता है।",
       "summary_one": "{{count}} क्रेडेंशियल कॉन्फ़िगर किया गया",
       "summary_other": "{{count}} क्रेडेंशियल कॉन्फ़िगर किए गए",
       "unused": "कोई सहेजा गया होस्ट इसका उपयोग नहीं करता।",
       "username": "उपयोगकर्ता नाम",
-      "usernameHelp": "1–255 UTF-8 बाइट। NUL की अनुमति नहीं है।",
       "usernameHint": "सर्वर का उपयोगकर्ता नाम दर्ज करें",
       "usernamePassword": "पासवर्ड",
-      "usernamePasswordHelp": "1–1023 UTF-8 बाइट। NUL की अनुमति नहीं है और स्पेस बनाए रखे जाते हैं।",
       "usernamePasswordHint": "इस उपयोगकर्ता नाम का पासवर्ड दर्ज करें",
       "usernamePasswordMethod": "उपयोगकर्ता नाम और पासवर्ड"
     },
-    "delete": "होस्ट हटाएँ",
     "deleteHelp": "इस सहेजे गए होस्ट को हटाएँ? इसके पुन: उपयोग योग्य क्रेडेंशियल सुरक्षित रखे जाएँगे।",
     "description": "अपने एजेंटों को आपके रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
-    "displayName": "प्रदर्शित होने वाला नाम",
-    "displayNameHint": "जैसे, कार्यालय का डेस्कटॉप",
     "edit": "होस्ट संपादित करें",
     "editHelp": "बदलाव इस सहेजे गए होस्ट पर लागू होते हैं और उसके मौजूदा कनेक्शन कॉन्फ़िगरेशन को अमान्य कर देते हैं।",
-    "empty": "शुरू करने के लिए एक VNC होस्ट जोड़ें।",
     "errors": {
       "configurationChanged": "आपके खोलने के बाद यह होस्ट बदल गया है।",
       "credentialChanged": "आपके खोलने के बाद यह क्रेडेंशियल बदल गया है।",
@@ -6419,7 +6477,6 @@
       "invalidTrust": "अधिकतम 8 सार्वजनिक CA प्रमाणपत्रों का मान्य बंडल दर्ज करें, जिसका कुल आकार 64 KiB से अधिक न हो।",
       "revisionExhausted": "यह कॉन्फ़िगरेशन अब अपडेट नहीं किया जा सकता। नया कॉन्फ़िगरेशन बनाएँ।"
     },
-    "host": "होस्टनाम या IP पता",
     "hostHint": "जैसे, desktop.example.com",
     "kerberos": {
       "componentsHelp": "हर पंक्ति में प्रिंसिपल का एक घटक दर्ज करें। नामों में बड़े और छोटे अक्षर अलग माने जाते हैं।",
@@ -6445,9 +6502,6 @@
     "loading": "VNC कॉन्फ़िगरेशन लोड हो रहा है…",
     "manage": "VNC प्रबंधित करें",
     "native": {
-      "configuration": "नेटवर्क कॉन्फ़िगरेशन",
-      "empty": "Cloudflare Access या Tailscale की सेटिंग में दोबारा इस्तेमाल किया जा सकने वाला नेटवर्क जोड़ें, फिर उसे चुनने के लिए यहाँ लौटें।",
-      "gatewayHelp": "Cloudflare TCP ऐप का होस्ट नाम और पोर्ट 443 इस्तेमाल करें। टनल गंतव्य पोर्ट चुनती है; VNC प्रमाणपत्र की पहचान और Kerberos सेवा की पहचान अलग से कॉन्फ़िगर करें।",
       "hostCount_one": "{{count}} होस्ट",
       "hostCount_other": "{{count}} होस्ट",
       "impactConfirm": "मुझे समझ है कि इन सदस्यों के होस्ट सहेजे रहेंगे, लेकिन उनके स्वामी द्वारा फिर से जोड़ने तक कनेक्ट नहीं हो पाएँगे।",
@@ -6461,16 +6515,12 @@
       "originCaBundle": "ऑरिजिन TLS के CA प्रमाणपत्र",
       "originServerName": "ऑरिजिन TLS सर्वर का नाम",
       "originTls": "ऑरिजिन TLS",
-      "originTlsHelp": "Mac और केवल प्रमाणीकरण वाले RSA-AES मोड के लिए चुने गए सर्वर पर प्रमाणपत्र से सत्यापित TLS सेवा चाहिए, जो केवल स्थानीय VNC को फ़ॉरवर्ड करे। इसकी पहचान और ट्रस्ट सेटिंग Cloudflare गेटवे और अंदरूनी VNC प्रमाणपत्र से अलग हैं।",
       "originTrust": "ऑरिजिन TLS प्रमाणपत्र का ट्रस्ट",
-      "peerHelp": "चुने गए नेटवर्क में अनुमत सटीक Tailscale पीयर IP या नाम और सेवा पोर्ट इस्तेमाल करें। SSH सेवा या SSH अनुमति की ज़रूरत नहीं है।",
       "protectionHelp": "यह प्रमाणीकरण मोड डेस्कटॉप ट्रैफ़िक को एन्क्रिप्ट नहीं करता। चुने गए निजी नेटवर्क मार्ग को इस सर्वर तक पूरे कनेक्शन की सुरक्षा करनी चाहिए।",
       "rfbRole": "डेस्कटॉप",
       "select": "सहेजा गया नेटवर्क कॉन्फ़िगरेशन चुनें"
     },
-    "port": "पोर्ट",
     "rsaAes": {
-      "fieldHelp": "हर फ़ील्ड में 1–255 UTF-8 बाइट हों, NUL नहीं। स्पेस सुरक्षित रहते हैं; यह क्लासिक आठ-बाइट VNC पासवर्ड नहीं है।",
       "fullHelp": "RA2 और RA2_256 पूरे RFB सत्र को EAX से एन्क्रिप्ट करते हैं। सर्वर की पूरी RSA वायर-कुंजी pin स्वतंत्र रूप से सत्यापित करें; CA भरोसा उसका विकल्प नहीं है।",
       "importHelp": "विश्वसनीय सर्वर प्रबंधन से PUBLIC KEY या RSA PUBLIC KEY PEM प्राप्त करें। निजी कुंजी/प्रमाणपत्र न चिपकाएँ और लाइव कनेक्शन की कुंजी पर स्वतः भरोसा न करें। रूपांतरण पहचान साबित या सहेजता नहीं है: पूरी pin जाँचकर स्पष्ट रूप से सहेजें।",
       "importKey": "विश्वसनीय सार्वजनिक कुंजी आयात करें",
@@ -6504,7 +6554,6 @@
       "appleSrp": "Mac VNC (Apple Direct SRP)",
       "appleSrpHelp": "इसके लिए Mac से सहेजा गया SSH कनेक्शन और RFB गंतव्य 127.0.0.1 या ::1 चाहिए। SRP खाते और सर्वर प्रमाण को सत्यापित करता है; SSH पूरे VNC सत्र की सुरक्षा करता है। SSH होस्ट कुंजी चुने गए एंडपॉइंट की पहचान करती है, लेकिन आगे के प्रॉक्सी को नकार नहीं सकती।",
       "appleVncPassword": "Mac VNC (क्लासिक VNC पासवर्ड)",
-      "appleVncPasswordHelp": "Mac का वैकल्पिक VNC पासवर्ड 1–8 प्रिंट करने योग्य ASCII बाइट का होता है। अकेला type 2 सर्वर की पहचान सत्यापित नहीं करता और डेस्कटॉप को एन्क्रिप्ट नहीं करता। सत्यापित SSH इस Okou सत्र की रक्षा करता है, Mac के सुनने वाले पोर्ट की नहीं; नेटवर्क के अनुसार अन्य क्लाइंट पोर्ट 5900 तक पहुँच सकते हैं। जोखिम स्वीकार हो तभी Mac पर यह विकल्प स्वयं चालू करें।",
       "appleVncSecurityHelp": "अकेला type 2 सर्वर की पहचान सत्यापित नहीं करता और डेस्कटॉप को एन्क्रिप्ट नहीं करता। सत्यापित SSH इस Okou सत्र की रक्षा करता है, Mac के सुनने वाले पोर्ट की नहीं; नेटवर्क के अनुसार अन्य क्लाइंट पोर्ट 5900 तक पहुँच सकते हैं। जोखिम स्वीकार हो तभी Mac पर यह विकल्प स्वयं चालू करें।",
       "caBundle": "CA प्रमाणपत्र (PEM)",
       "caHelp": "अधिकतम 8 CA प्रमाणपत्र, कुल 64 KiB। निजी कुंजी या सर्वर प्रमाणपत्र न चिपकाएँ।",
@@ -6513,11 +6562,9 @@
       "clientCertificateNone": "बिना VNC पासवर्ड क्लाइंट प्रमाणपत्र (X509None)",
       "clientCertificateVnc": "VNC पासवर्ड सहित क्लाइंट प्रमाणपत्र (X509Vnc)",
       "custom": "कस्टम प्रमाणपत्र प्राधिकरण",
-      "profileLabel": "सुरक्षा प्रोफ़ाइल",
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "केवल QEMU उपप्रकार 263। TLS, SCRAM से पहले सर्वर सत्यापित करता है; PLAIN या उपप्रकार 264 पर वापस नहीं जाता।",
       "serverName": "TLS प्रमाणपत्र पहचान",
-      "serverNameHelp": "Cloudflare Access के लिए RFB सर्वर के प्रमाणपत्र की पहचान आवश्यक है। अन्य मार्गों में, RFB गंतव्य होस्ट के विरुद्ध सत्यापन के लिए इसे खाली छोड़ सकते हैं।",
       "serverNameHint": "उदा. desktop.internal.example.com",
       "system": "सिस्टम के प्रमाणपत्र प्राधिकरण",
       "title": "सर्वर प्रमाणपत्र पर भरोसा",
@@ -6528,17 +6575,12 @@
       "x509Vnc": "एन्क्रिप्ट किया गया VNC (X509Vnc)",
       "x509VncHelp": "VeNCrypt X509Vnc आवश्यक है। VNC पासवर्ड भेजने से पहले TLS सर्वर को सत्यापित करता है।"
     },
-    "summary_one": "{{count}} कॉन्फ़िगर किया गया होस्ट",
-    "summary_other": "{{count}} कॉन्फ़िगर किए गए होस्ट",
     "transport": {
       "appleDhDestinationHelp": "Apple DH के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
       "appleRsaSrpDestinationHelp": "Apple RSA/SRP के लिए चुने गए SSH होस्ट से Mac के 127.0.0.1 या ::1 पर पहुँचें।",
       "appleSrpDestinationHelp": "Apple Direct SRP के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
       "appleVncPasswordDestinationHelp": "Mac क्लासिक VNC पासवर्ड के लिए, सेव किए गए SSH से पहुँचने वाले Mac पर 127.0.0.1 या ::1 दर्ज करें।",
-      "destination": "RFB गंतव्य",
-      "destinationHelp": "SSH रूट के लिए इस होस्ट और पोर्ट तक चुने गए SSH सर्वर से पहुँचा जाता है, Runner से सीधे नहीं।",
       "direct": "Runner से सीधे",
-      "empty": "कोई सहेजा हुआ SSH होस्ट उपलब्ध नहीं है। इस रूट का उपयोग करने से पहले SSH सेटिंग में एक जोड़ें।",
       "loadFailed": "सहेजे गए SSH होस्ट लोड नहीं हो सके।",
       "loading": "सहेजे गए SSH होस्ट लोड हो रहे हैं…",
       "privateDirectHelp": "निजी IP पतों के लिए समर्थित निजी नेटवर्क रूट या सहेजा गया SSH होस्ट ज़रूरी है। रूट स्पष्ट रूप से चुनें।",
@@ -6546,10 +6588,7 @@
       "selectionUnavailable": "चुना गया SSH होस्ट अब उपलब्ध नहीं है। कोई दूसरा होस्ट चुनें या स्पष्ट रूप से Direct पर बदलें।",
       "ssh": "सहेजे गए SSH होस्ट के माध्यम से",
       "sshConnection": "SSH होस्ट",
-      "sshHelp": "SSH Runner से SSH सर्वर तक के चरण को सुरक्षित करता है। वह सर्वर RFB गंतव्य तक पहुँचने में सक्षम होना चाहिए। कोई चैट इस रूट का उपयोग तभी कर सकती है जब उसमें वह SSH होस्ट भी सक्षम हो।",
       "sshNeedsRebind": "इस VNC कनेक्शन के SSH होस्ट को Cloudflare Access से फिर जोड़ना होगा। कनेक्ट करने से पहले SSH सेटिंग में उसे फिर जोड़ें या वहाँ स्पष्ट रूप से Direct चुनें।",
-      "sshNeedsRebindStatus": "SSH को फिर जोड़ना होगा",
-      "title": "कनेक्शन रूट",
       "unavailable": "इस खाते के लिए SSH सेटिंग उपलब्ध नहीं हैं।",
       "via": "SSH होस्ट:"
     },
@@ -7235,9 +7274,7 @@
       "uninstallTitle": "Slack एकीकरण अनइंस्टॉल करें?"
     },
     "teams": {
-      "adminInstall": "अपने व्यवस्थापक से Microsoft Teams एकीकरण स्थापित करने के लिए कहें",
       "connectAccount": "सेटअप पूरा करने के लिए अपना Microsoft खाता कनेक्ट करें",
-      "connectThenInstall": "अपना Microsoft खाता कनेक्ट करें, फिर Teams ऐप इंस्टॉल करें",
       "description": "टीम संचार और सहयोग",
       "disconnect": "Microsoft Teams को डिस्कनेक्ट करें",
       "install": "टीमों में स्थापित करें",
@@ -7245,7 +7282,7 @@
       "permissionsUpdated": "Microsoft Teams अनुमतियाँ अद्यतन कर दी गई हैं",
       "title": "Microsoft Teams",
       "uninstall": "Microsoft Teams को अनइंस्टॉल करें",
-      "uninstallDescription": "यह आपके वर्कस्पेस के लिए {{brandName}} से Microsoft Teams एकीकरण को हटा देता है। सभी कनेक्टेड उपयोगकर्ता डिस्कनेक्ट हो जाएंगे और {{displayName}} इस वर्कस्पेस के लिए टीम संदेशों का जवाब नहीं देगा जब तक कि कोई एडमिन इसे दोबारा कनेक्ट नहीं करता।",
+      "uninstallDescription": "इससे आपके {{brandName}} कार्यक्षेत्र से {{displayName}} का Microsoft Teams इंटीग्रेशन हट जाएगा। जुड़े हुए Teams खाते बने रहेंगे।",
       "uninstallTitle": "Microsoft Teams एकीकरण अनइंस्टॉल करें?"
     },
     "telegram": {

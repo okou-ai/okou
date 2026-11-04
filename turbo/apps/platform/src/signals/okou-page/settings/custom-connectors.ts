@@ -1,26 +1,30 @@
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   isIntegrationManagedCustomConnector,
-  type CreateCustomConnectorBody,
-  type CustomConnectorValueInput,
-  type UpdateCustomConnectorBody,
-  customConnectorByIdContract,
-  customConnectorOAuth2Contract,
-  customConnectorValuesContract,
-  customConnectorsContract,
   customConnectorListResponseSchema,
   customConnectorResponseSchema,
   setCustomConnectorValuesResponseSchema,
   startCustomConnectorOAuth2ResponseSchema,
-  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/validators/custom-connectors";
+import type {
+  CreateCustomConnectorBody,
+  CustomConnectorValueInput,
+  UpdateCustomConnectorBody,
+  CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrants,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
+  customConnectorByIdContract,
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/client/custom-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
+import type { AgentCustomConnectorGrants } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { IN_VITEST } from "../../../env.ts";
 import { i18n } from "../../../i18n/index.ts";
@@ -389,6 +393,7 @@ const setCustomConnectorValuesForTarget$ = command(
   ): Promise<CustomConnectorConnectionResult> => {
     const createClient = get(apiClient$);
     const hadSavedAccounts =
+      !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess] &&
       args.authorizationTarget.kind === "visible-agents" &&
       args.account.intent === "add"
         ? await hasSavedConnectorAccounts(
@@ -557,7 +562,7 @@ const startCustomConnectorAuthorization$ = command(
 
 const authorizeCompletedCustomConnectorTarget$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly connector: CustomConnectorResponse | undefined;
       readonly accountComplete: boolean;
@@ -566,7 +571,11 @@ const authorizeCompletedCustomConnectorTarget$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    if (!args.accountComplete || !args.connector) {
+    if (
+      !args.accountComplete ||
+      !args.connector ||
+      get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
+    ) {
       return false;
     }
     if (
@@ -662,6 +671,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         );
         signal.throwIfAborted();
         hadSavedAccounts =
+          !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess] &&
           args.authorizationTarget.kind === "visible-agents" &&
           account.intent === "add"
             ? await hasSavedConnectorAccounts(
@@ -888,6 +898,8 @@ const runCustomConnectorConnection$ = command(
     args: CustomConnectorConnectionInput,
     signal: AbortSignal,
   ): Promise<boolean> => {
+    const chatAccounts =
+      get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
     const finish = async (
       result: CustomConnectorConnectionResult,
       attemptSignal: AbortSignal,
@@ -896,7 +908,10 @@ const runCustomConnectorConnection$ = command(
         await args.onConnected?.(result.connectionId, attemptSignal);
         attemptSignal.throwIfAborted();
       }
-      if (result.connected && (result.targetAuthorized || args.accountMode)) {
+      if (
+        result.connected &&
+        (chatAccounts || result.targetAuthorized || args.accountMode)
+      ) {
         await args.onSuccess?.(result.connectionId, attemptSignal);
         attemptSignal.throwIfAborted();
       }

@@ -184,52 +184,12 @@
 //! recovery; host/cache-image GC has separate ownership.
 //! Idle and terminal reuse preparation also invoke the same home-cache deletion
 //! primitive once under home pressure, within their final fenced helper exec.
-//!
-//! ## `cleanup-codex-session`
-//!
-//! ### Invocation
-//!
-//! ```text
-//! guest-agent cleanup-codex-session <session-id> <fallback-relative-path>
-//! ```
-//!
-//! Exactly two UTF-8 positional arguments are required: a canonical Codex
-//! session ID and its matching canonical logical rollout path relative to the
-//! fixed Codex home. The helper consumes no protocol stdin. Input validation is
-//! owned by [`CodexSessionCleanupRequest`](guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest),
-//! including the canonical session-ID and fallback-path rules and the
-//! [`CODEX_SESSION_CLEANUP_MAX_PATH_BYTES`](guest_contracts::codex_session_cleanup::CODEX_SESSION_CLEANUP_MAX_PATH_BYTES)
-//! path limit. The fixed role owns the
-//! [`CODEX_SESSION_CLEANUP_SCAN_BUDGET`](guest_contracts::codex_session_cleanup::CODEX_SESSION_CLEANUP_SCAN_BUDGET)
-//! and
-//! [`CODEX_SESSION_CLEANUP_OUTPUT_LIMIT_BYTES`](guest_contracts::codex_session_cleanup::CODEX_SESSION_CLEANUP_OUTPUT_LIMIT_BYTES)
-//! limits; callers cannot override them.
-//!
-//! The helper performs bounded cleanup in the retained Codex sessions tree.
-//! On success, stdout is either empty or exactly one LF-terminated canonical
-//! logical path. Empty stdout means that the runner uses the fallback logical
-//! path; a returned path identifies the canonical existing path selected by
-//! cleanup. Stderr is reserved for non-protocol diagnostics. Input validation,
-//! scan, ambiguity, deletion, output, or helper failures return a nonzero exit
-//! status, and the runner does not write replacement history after such a
-//! failure.
-//!
-//! The fixed-role launcher is
-//! `crates/guest-control-server/src/agent_command.rs::spawn_codex_session_cleanup_with_pipes`.
-//! The runner invokes the operation before every actual Codex history replacement,
-//! independently of VM provenance. Serial restoration and post-storage staged destination
-//! preparation share
-//! `crates/runner-executor/src/executor/session_restore/codex.rs::cleanup_existing_codex_session_files`
-//! and independently validate the output in `parse_codex_cleanup_output`
-//! before using a returned path as the restore destination. Keep these source
-//! references in sync with the shared contract when changing this protocol.
 
 pub mod active_input;
 mod artifact;
 pub mod cli;
 mod codex_auth;
 mod codex_failure;
-pub mod codex_session_cleanup;
 pub mod complete;
 mod constants;
 mod content_hash;
@@ -270,8 +230,9 @@ static SANDBOX_OPS_TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::cons
 
 #[cfg(test)]
 pub(crate) struct SandboxOpsTestGuard {
+    // Clear the destination before releasing the test-state lock.
+    _override: Option<guest_telemetry::test_support::SandboxOpsOverrideGuard>,
     _ownership: tokio::sync::MutexGuard<'static, ()>,
-    override_installed: bool,
 }
 
 #[cfg(test)]
@@ -279,8 +240,8 @@ impl SandboxOpsTestGuard {
     pub(crate) async fn lock() -> Self {
         let ownership = SANDBOX_OPS_TEST_MUTEX.lock().await;
         Self {
+            _override: None,
             _ownership: ownership,
-            override_installed: false,
         }
     }
 
@@ -292,16 +253,9 @@ impl SandboxOpsTestGuard {
 
     pub(crate) fn install_override(&mut self, path: &std::path::Path) {
         guest_telemetry::telemetry::set_sandbox_ops_log_file(path);
-        self.override_installed = true;
-    }
-}
-
-#[cfg(test)]
-impl Drop for SandboxOpsTestGuard {
-    fn drop(&mut self) {
-        if self.override_installed {
-            guest_telemetry::telemetry::clear_sandbox_ops_log_file();
-        }
+        // A temporary guard on repeated installation would clear the new sink.
+        self._override
+            .get_or_insert_with(|| guest_telemetry::test_support::SandboxOpsOverrideGuard);
     }
 }
 

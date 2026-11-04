@@ -16,6 +16,8 @@ import {
   userPermissionGrantsContract,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -34,6 +36,7 @@ const NOW_MS = 1_893_456_000_000;
 const CREATED_AT = "2029-12-01T00:00:00.000Z";
 
 interface PermissionPageOptions {
+  readonly chatAccounts?: boolean;
   readonly userName: string;
   readonly agentName: string;
   readonly connectorSlug?: string;
@@ -173,6 +176,14 @@ function setupPermissionPage(options: PermissionPageOptions): Promise<void> {
   const permissionDefault = options.permissionDefault ?? "deny";
   const unknownPolicy = options.unknownPolicy ?? "deny";
   const connectorParam = options.connectorParam ?? "connectorSlug";
+  if (options.chatAccounts) {
+    context.mocks.api(connectorPermissionsContract.get, ({ respond }) => {
+      return respond(200, {
+        target: { kind: "builtin", connectorSlug },
+        grants: [],
+      });
+    });
+  }
 
   context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
     expect(params.id).toBe(AGENT_ID);
@@ -228,6 +239,10 @@ function setupPermissionPage(options: PermissionPageOptions): Promise<void> {
   return setupPage({
     context,
     path: `/agents/${AGENT_ID}/permissions?${params.toString()}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ConnectorChatAccountAccess]:
+        options.chatAccounts ?? false,
+    },
     auth: {
       user: {
         id: "test-user-123",
@@ -238,82 +253,108 @@ function setupPermissionPage(options: PermissionPageOptions): Promise<void> {
   });
 }
 
-test("A user grants a time-limited connector permission and resumes the chat", async () => {
-  mockNow(NOW_MS, context.signal);
-  let applied: ApplyUserPermissionGrantsRequest | null = null;
-  let resumedChat: ChatEventSendBody | null = null;
-  context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
-    applied = body;
-    return respond(200, [
-      permissionGrant({
-        connectorSlug: "slack",
-        permission: "catalog.analytics:read",
-        expiresAt: "2030-01-02T00:00:00.000Z",
-      }),
-    ]);
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    resumedChat = body;
-    return respond(201, {
-      threadId: THREAD_ID,
-    });
-  });
-
-  await setupPermissionPage({
-    userName: "Dana",
-    agentName: "Research Bot",
-    connectorLabel: "Catalog Slack",
-    permission: "catalog.analytics:read",
-    permissionDescription: "Read catalog analytics",
-    expiresIn: "24h",
-    callback: {
-      prompt: "Continue the analytics review",
-      threadId: THREAD_ID,
-    },
-  });
-
-  await expect(
-    screen.findByText(
-      "Hey Dana, you're updating your permissions for Research Bot.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Research Bot").length).toBeGreaterThan(0);
-  expect(screen.getByText("Catalog Slack")).toBeInTheDocument();
-  expect(screen.getByText("catalog.analytics:read")).toBeInTheDocument();
-  expect(screen.getByText("Read catalog analytics")).toBeInTheDocument();
-  expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
-    "24 hours",
-  );
-
-  click(buttonByText("Confirm"));
-
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Expires in 24 hours")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(resumedChat).not.toBeNull();
-  });
-  expect(applied).toStrictEqual({
-    agentId: AGENT_ID,
-    connectorSlug: "slack",
-    mode: "patch",
-    grants: [
-      {
-        permission: "catalog.analytics:read",
-        action: "allow",
-        expiresIn: "24h",
+test.each([false, true])(
+  "A user grants a time-limited connector permission and resumes the chat (Chat access: %s)",
+  async (chatAccounts) => {
+    mockNow(NOW_MS, context.signal);
+    let applied: unknown = null;
+    let resumedChat: ChatEventSendBody | null = null;
+    context.mocks.api(
+      userPermissionGrantsContract.apply,
+      ({ body, respond }) => {
+        applied = body;
+        return respond(200, [
+          permissionGrant({
+            connectorSlug: "slack",
+            permission: "catalog.analytics:read",
+            expiresAt: "2030-01-02T00:00:00.000Z",
+          }),
+        ]);
       },
-    ],
-  });
-  expect(resumedChat).toStrictEqual(
-    expect.objectContaining({
-      agentId: AGENT_ID,
-      threadId: THREAD_ID,
-      prompt: "Continue the analytics review",
-    }),
-  );
-});
+    );
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      resumedChat = body;
+      return respond(201, {
+        threadId: THREAD_ID,
+      });
+    });
+    if (chatAccounts) {
+      context.mocks.api(
+        connectorPermissionsContract.apply,
+        ({ body, respond }) => {
+          applied = body;
+          return respond(200, {
+            target: body.target,
+            grants: [
+              {
+                permission: "catalog.analytics:read",
+                action: "allow",
+                expiresAt: "2030-01-02T00:00:00.000Z",
+              },
+            ],
+          });
+        },
+      );
+    }
+
+    await setupPermissionPage({
+      chatAccounts,
+      userName: "Dana",
+      agentName: "Research Bot",
+      connectorLabel: "Catalog Slack",
+      permission: "catalog.analytics:read",
+      permissionDescription: "Read catalog analytics",
+      expiresIn: "24h",
+      callback: {
+        prompt: "Continue the analytics review",
+        threadId: THREAD_ID,
+      },
+    });
+
+    await expect(
+      screen.findByText(
+        "Hey Dana, you're updating your permissions for Research Bot.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getAllByText("Research Bot").length).toBeGreaterThan(0);
+    expect(screen.getByText("Catalog Slack")).toBeInTheDocument();
+    expect(screen.getByText("catalog.analytics:read")).toBeInTheDocument();
+    expect(screen.getByText("Read catalog analytics")).toBeInTheDocument();
+    expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
+      "24 hours",
+    );
+
+    click(buttonByText("Confirm"));
+
+    await expect(
+      screen.findByText("Permissions updated"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText("Expires in 24 hours")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(resumedChat).not.toBeNull();
+    });
+    expect(applied).toStrictEqual({
+      ...(chatAccounts
+        ? { target: { kind: "builtin", connectorSlug: "slack" } }
+        : { agentId: AGENT_ID, connectorSlug: "slack" }),
+      mode: "patch",
+      grants: [
+        {
+          permission: "catalog.analytics:read",
+          action: "allow",
+          expiresIn: "24h",
+        },
+      ],
+    });
+    expect(resumedChat).toStrictEqual(
+      expect.objectContaining({
+        agentId: AGENT_ID,
+        threadId: THREAD_ID,
+        prompt: "Continue the analytics review",
+      }),
+    );
+  },
+);
 
 async function confirmPermissionAfterGrantNotification(
   outcome: "success" | "failure",

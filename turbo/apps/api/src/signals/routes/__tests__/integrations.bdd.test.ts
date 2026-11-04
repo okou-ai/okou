@@ -28,7 +28,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
+import { seededSkillBundleArchive } from "../../../test-fixtures/seeded-skill-bundle-archive";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -575,7 +575,7 @@ function mockPiResourceArchiveDownloads(
       const bytes =
         historyObjects.get(objectKey) ??
         (objectKey.startsWith(bucketPrefix)
-          ? seededSystemSkillArchive(objectKey.slice(bucketPrefix.length))
+          ? seededSkillBundleArchive(objectKey.slice(bucketPrefix.length))
           : undefined);
       if (!bytes) {
         throw new Error(`Expected Pi resource archive ${objectKey}`);
@@ -1583,8 +1583,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     await integrations.installSlackWorkspace(other, {
       installerSlackUserId: slackUserId,
@@ -5256,7 +5257,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it("keeps the Slack Fast footer bound to the originating run", async () => {
+  it("keeps Slack reply and outbound attribution consistent across model changes", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -5316,9 +5317,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
         expect.objectContaining({ text: "standard answer" }),
       );
     });
-    const standardFooter = slackPostMessageCallsJson();
-    expect(standardFooter).toContain("GPT 6 Astra");
-    expect(standardFooter).not.toContain("GPT 6 Astra Fast");
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "standard answer",
+        blocks: [{ type: "markdown", text: "standard answer" }],
+      }),
+    );
 
     const { chatThreadId: threadId } = await ownedThreadWhere(
       actor,
@@ -5355,7 +5359,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       [200],
     );
     expect(agentSend.body).toMatchObject({ ok: true });
-    expect(slackPostMessageCallsJson()).toContain("GPT 6 Astra Fast");
+    expect(slackPostMessageCallsJson()).toContain(
+      `Triggered by <@${slackUserId}>`,
+    );
 
     await chat.updateThreadModelSelection(actor, threadId, "gpt-6-astra", {
       codexServiceTier: null,
@@ -5368,7 +5374,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       codexAgentMessageText: "fast answer",
     });
     await flushWaitUntilAndAssert(() => {
-      expect(slackPostMessageCallsJson()).toContain("GPT 6 Astra Fast");
+      expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          text: "fast answer",
+          blocks: [{ type: "markdown", text: "fast answer" }],
+        }),
+      );
     });
   });
 
@@ -5457,13 +5468,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
           channel: channelId,
           thread_ts: threadT1,
           text: "SLACK_BDD_OUTPUT",
-          blocks: [
-            { type: "markdown", text: "SLACK_BDD_OUTPUT" },
-            {
-              type: "context",
-              elements: [{ type: "mrkdwn", text: "Claude Fable 5.1" }],
-            },
-          ],
+          blocks: [{ type: "markdown", text: "SLACK_BDD_OUTPUT" }],
         }),
       );
     });
@@ -5801,7 +5806,7 @@ describe("INT-02: Telegram integration", () => {
     expect(noContentMessage.body).toBe("OK");
   });
 
-  it("keeps Telegram Fast footers bound to the originating run", async () => {
+  it("keeps Telegram reply and outbound attribution consistent across model changes", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
@@ -5899,7 +5904,9 @@ describe("INT-02: Telegram integration", () => {
       [200],
     );
     expect(agentSend.body).toMatchObject({ ok: true });
-    expect(JSON.stringify(sentMessages)).toContain("GPT 6 Astra Fast");
+    expect(sentMessages.at(-1)?.text).toBe(
+      `agent-initiated fast message\n\n<i>Sent via Okou · Triggered by <a href="tg://user?id=${telegramUserId}">BDD</a></i>`,
+    );
 
     sentMessages.length = 0;
     await integrations.updateUserModelPreference(actor, "gpt-6-astra", null);
@@ -5912,7 +5919,7 @@ describe("INT-02: Telegram integration", () => {
     await flushWaitUntilAndAssert(() => {
       expect(sentMessages).toStrictEqual([
         expect.objectContaining({
-          text: "telegram fast reply\n\n<i>GPT 6 Astra Fast</i>",
+          text: "telegram fast reply",
         }),
       ]);
     });

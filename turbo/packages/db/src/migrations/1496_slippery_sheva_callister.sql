@@ -1,0 +1,2 @@
+ALTER TABLE "custom_connector_account_oauth_bindings" ALTER COLUMN "client_id" SET DATA TYPE text;--> statement-breakpoint
+ALTER TABLE "org_custom_connector_dcr_registrations" ALTER COLUMN "client_id" SET DATA TYPE text;

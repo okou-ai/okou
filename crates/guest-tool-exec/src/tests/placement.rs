@@ -1,21 +1,12 @@
 use super::*;
+use cli_test_support::child::KillAndWaitChild as TestChild;
 use std::mem::{MaybeUninit, size_of};
 use std::os::fd::{AsFd, FromRawFd};
 use std::os::unix::net::UnixListener;
-use std::process::Child;
 use std::thread;
 use std::time::Instant;
 
 const QUEUE_TEST_CHILD_ENV: &str = "VM0_TEST_PLACEMENT_CONNECT_CHILD";
-
-struct TestChild(Child);
-
-impl Drop for TestChild {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 fn fill_accept_queue(listener: &UnixListener) -> Vec<OwnedFd> {
     // Read the bound address so fixture clients independently exercise the

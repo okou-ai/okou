@@ -47,6 +47,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   invalid_api_key: "suppress-caller-owned",
   invalid_credentials: "suppress-caller-owned",
   terms_acceptance_required: "suppress-caller-owned",
+  account_verification_required: "retain",
   context_window_exceeded: "suppress-caller-owned",
   output_token_limit: "suppress-caller-owned",
   provider_rate_limited: "suppress-caller-owned",
@@ -54,6 +55,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   provider_stream_timeout: "suppress-caller-owned",
   provider_queue_timeout: "suppress-caller-owned",
   provider_server_error: "suppress-caller-owned",
+  firewall_auth_failed: "retain",
   response_connection_lost: "suppress-caller-owned",
   reconnect_required: "suppress-caller-owned",
   usage_limit: "suppress-caller-owned",
@@ -166,6 +168,7 @@ export function logAgentRunFailure(input: LogAgentRunFailureInput): void {
     return;
   }
   if (
+    input.failureReason === "account_verification_required" ||
     input.failureReason === "guest_root_filesystem_full" ||
     input.failureReason === "guest_home_filesystem_full"
   ) {

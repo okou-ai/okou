@@ -4,6 +4,7 @@ import {
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   undefined as zUndefined,
 } from "zod";
@@ -170,31 +171,31 @@ const sharedThreadIdPathParamsSchema: ZodSchema<
   SharedThreadIdPathParams,
   SharedThreadIdPathParams
 > = object({
-  id: string().uuid(),
+  id: uuid(),
 });
 
 const createSharedThreadPathParamsSchema: ZodSchema<
   CreateSharedThreadPathParams,
   CreateSharedThreadPathParams
 > = object({
-  threadId: string().uuid(),
+  threadId: uuid(),
 });
 
 const createSharedThreadBodySchema: ZodSchema<
   CreateSharedThreadBody,
   CreateSharedThreadBody
 > = object({
-  eventIds: array(string().uuid()).min(1),
-  id: string().uuid().optional(),
+  eventIds: array(uuid()).min(1),
+  id: uuid().optional(),
 });
 
 const createSharedThreadResponseSchema: ZodLikeSchema<CreateSharedThreadResponse> =
   object({
-    id: string().uuid(),
+    id: uuid(),
   });
 
 const sharedThreadResponseSchema: ZodLikeSchema<SharedThreadResponse> = object({
-  id: string().uuid(),
+  id: uuid(),
   title: string(),
   messages: array(sharedMessageZodSchema),
 });

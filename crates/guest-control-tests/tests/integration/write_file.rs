@@ -3,7 +3,9 @@ use crate::support::{
     finish_raw_guest_connection, join_raw_guest_connection, pid_alive, read_raw_message,
     release_blocking_write, run_exec, start_raw_guest_connection, wait_for_blocking_write,
 };
-use guest_control_client::{SupervisedExecControl, SupervisedExecRequest, WriteFileEntry};
+use guest_control_client::{
+    FrameWriteObserver, SupervisedExecControl, SupervisedExecRequest, WriteFileEntry,
+};
 use guest_control_proto::{
     ExecOutputPolicy, ExecTermination, ExecTimeoutPolicy, MSG_ERROR, MSG_PING, MSG_PONG,
     MSG_SHUTDOWN, MSG_SHUTDOWN_ACK, MSG_WRITE_FILE, MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES,
@@ -12,6 +14,74 @@ use guest_control_proto::{
 use std::fs;
 use std::io::{Read, Write};
 use std::time::Duration;
+
+#[tokio::test]
+async fn independent_large_writes_publish_complete_files_concurrently() {
+    let h = Harness::new().await;
+    let bytes = vec![b'x'; 17 * 1024 * 1024 + 1];
+    let first = h.dir.join("first");
+    let second = h.dir.join("second");
+    std::fs::write(&first, b"previous").unwrap();
+    let (a, b) = tokio::join!(
+        h.host().write_file(first.to_str().unwrap(), &bytes, false),
+        h.host().write_file(second.to_str().unwrap(), &bytes, false),
+    );
+    a.unwrap();
+    b.unwrap();
+    assert_eq!(std::fs::read(first).unwrap(), bytes);
+    assert_eq!(std::fs::read(second).unwrap(), bytes);
+    assert!(std::fs::read_dir(&h.dir).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".vm0tmp-")
+    }));
+    h.finish();
+}
+
+#[tokio::test]
+async fn cancelled_write_fences_reuse_and_reaps_blocked_helper_on_close() {
+    let h = Harness::new().await;
+    let path = blocking_write_path(&h.dir, "cancel-write");
+    let mut write = Box::pin(
+        h.host()
+            .write_file(path.to_str().unwrap(), b"content", false),
+    );
+    tokio::select! {
+        result = &mut write => panic!("write completed before block: {result:?}"),
+        result = wait_for_blocking_write(&path, Duration::from_secs(5)) => result.unwrap(),
+    }
+    let pid: u32 = std::fs::read_to_string(blocking_write_pid_path(&path))
+        .unwrap()
+        .parse()
+        .unwrap();
+    drop(write);
+    h.host()
+        .write_file(h.dir.join("later").to_str().unwrap(), b"x", false)
+        .await
+        .unwrap_err();
+    h.finish_ignore_guest();
+    assert!(!pid_alive(pid));
+}
+
+#[tokio::test]
+async fn observer_failure_preserves_existing_not_parkable_contract() {
+    let h = Harness::new().await;
+    let path = h.dir.join("observer");
+    let observer = FrameWriteObserver::new(|| Err(std::io::Error::other("before-frame")));
+    h.host()
+        .write_file_with_write_observer(path.to_str().unwrap(), b"first", false, observer)
+        .await
+        .unwrap_err();
+    assert!(!path.exists());
+    h.host()
+        .write_file(path.to_str().unwrap(), b"next", false)
+        .await
+        .unwrap_err();
+    assert!(!path.exists());
+    h.finish();
+}
 
 #[tokio::test]
 async fn long_path_blocked_write_keeps_ping_responsive_and_rejects_overlap() {
@@ -314,6 +384,11 @@ async fn test_write_file() {
 
     assert_eq!(exec_exit_code(&result), Some(0));
     assert_eq!(captured_output_bytes(&result.stdout), content);
+    h.host()
+        .write_file(&file_path_str, b"", false)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&file_path).unwrap(), b"");
     h.finish();
 }
 

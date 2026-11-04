@@ -1,7 +1,8 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { command, computed } from "ccstate";
 import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
@@ -15,6 +16,7 @@ import {
   getAgentPhoneConversationParticipants,
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
+  sendAgentPhoneReaction,
 } from "../external/agentphone-client";
 import {
   agentPhoneChannelForLinkedHandle,
@@ -22,9 +24,9 @@ import {
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
 import { resolveAgentPhoneParticipantVisibilityRecipients$ } from "../services/agentphone-shared.service";
+import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 import { settle } from "../utils";
 import { optionalEnv } from "../../lib/env";
-import { nowDate } from "../../lib/time";
 
 function routeError<Status extends 400 | 401 | 403 | 404 | 502>(
   status: Status,
@@ -107,12 +109,15 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return routeError(404, "Phone agent not found", "NOT_FOUND");
   }
 
+  const footerText = await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
+  const text = appendIntegrationMessageFooter(body.text, footerText);
   const sendResult = await settle(
     sendAgentPhoneMessage(
       {
         agentphoneAgentId,
         toNumber: phoneHandle,
-        body: body.text,
+        body: text,
       },
       signal,
     ),
@@ -135,7 +140,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     phoneHandle,
     fromNumber: sent.fromNumber ?? "",
     toNumber: sent.toNumber ?? phoneHandle,
-    body: body.text,
+    body: text,
     channel: sent.channel,
     userChannel,
     visibilityRecipients: [],
@@ -159,6 +164,145 @@ const phoneWriteAuth = {
   requiredCapability: "phone:write",
 } as const;
 
+const reactionBody$ = bodyResultOf(
+  integrationsPhoneMessageContract.sendReaction,
+);
+
+const reactionTarget$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const body = await get(reactionBody$);
+  if (!body.ok) {
+    return undefined;
+  }
+  const db = get(db$);
+  const [message] = await db
+    .select({
+      messageId: agentphoneMessages.agentphoneMessageId,
+      channel: agentphoneMessages.channel,
+      groupId: agentphoneMessages.groupId,
+      conversationId: agentphoneMessages.conversationId,
+      phoneHandle: agentphoneUserLinks.phoneHandle,
+    })
+    .from(agentphoneMessages)
+    .innerJoin(
+      agentphoneUserLinks,
+      and(
+        eq(agentphoneUserLinks.orgId, auth.orgId),
+        eq(agentphoneUserLinks.userId, auth.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(agentphoneMessages.agentphoneMessageId, body.data.messageId),
+        or(
+          and(
+            isNull(agentphoneMessages.groupId),
+            eq(agentphoneMessages.agentphoneUserLinkId, agentphoneUserLinks.id),
+          ),
+          and(
+            isNotNull(agentphoneMessages.groupId),
+            agentPhoneMessageVisibleTo(auth),
+          ),
+        ),
+      ),
+    )
+    .limit(1);
+  return message;
+});
+
+const sendReaction$ = command(async ({ get }, signal: AbortSignal) => {
+  const body = await get(reactionBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const target = await get(reactionTarget$);
+  signal.throwIfAborted();
+  const notFound = () => {
+    return routeError(
+      404,
+      "Message not found for this account, or your connected phone is no longer a group member",
+      "NOT_FOUND",
+    );
+  };
+  if (!target) {
+    return notFound();
+  }
+  if (target.channel !== "imessage") {
+    return routeError(
+      400,
+      "Emoji reactions require an iMessage; SMS and MMS do not support reactions",
+      "UNSUPPORTED_CHANNEL",
+    );
+  }
+  if (target.groupId) {
+    if (!target.conversationId) {
+      return notFound();
+    }
+    const roster = await settle(
+      getAgentPhoneConversationParticipants(
+        { conversationId: target.conversationId },
+        signal,
+      ),
+      signal,
+    );
+    if (!roster.ok) {
+      if (isAgentPhoneApiError(roster.error) && roster.error.status === 404) {
+        return notFound();
+      }
+      const response = agentPhoneRouteError(roster.error);
+      if (response) {
+        return response;
+      }
+      throw roster.error;
+    }
+    if (
+      !roster.value.some((handle) => {
+        return (
+          normalizeAgentPhoneHandle(handle, "imessage") ===
+          normalizeAgentPhoneHandle(target.phoneHandle, "imessage")
+        );
+      })
+    ) {
+      return notFound();
+    }
+  }
+  const result = await settle(
+    sendAgentPhoneReaction(
+      { messageId: target.messageId, reaction: body.data.reaction },
+      signal,
+    ),
+    signal,
+  );
+  if (!result.ok) {
+    if (isAgentPhoneApiError(result.error) && result.error.status === 404) {
+      return notFound();
+    }
+    const response = agentPhoneRouteError(result.error);
+    if (response) {
+      return response;
+    }
+    if (result.error instanceof TypeError) {
+      return routeError(
+        502,
+        "Phone reaction outcome is unknown. Do not retry automatically",
+        "AGENTPHONE_OUTCOME_UNKNOWN",
+      );
+    }
+    throw result.error;
+  }
+  return {
+    status: 200 as const,
+    body: {
+      ok: true as const,
+      reactionId: result.value.id,
+      messageId: result.value.message_id,
+      reaction: result.value.reaction_type,
+      channel: result.value.channel,
+    },
+  };
+});
+
 const groupMessageBody$ = bodyResultOf(
   integrationsAgentPhoneContract.groupMessage,
 );
@@ -169,6 +313,7 @@ const groupMessageTarget$ = computed(async (get) => {
   if (!body.ok) {
     return undefined;
   }
+  // Archived messages locate the conversation; the provider roster authorizes sends.
   const [target] = await get(db$)
     .select({
       conversationId: agentphoneMessages.conversationId,
@@ -176,10 +321,6 @@ const groupMessageTarget$ = computed(async (get) => {
       phoneHandle: agentphoneUserLinks.phoneHandle,
     })
     .from(agentphoneMessages)
-    .innerJoin(
-      agentphoneMessageVisibility,
-      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-    )
     .innerJoin(
       agentphoneUserLinks,
       and(
@@ -189,8 +330,6 @@ const groupMessageTarget$ = computed(async (get) => {
     )
     .where(
       and(
-        eq(agentphoneMessageVisibility.orgId, auth.orgId),
-        eq(agentphoneMessageVisibility.userId, auth.userId),
         eq(agentphoneMessages.groupId, body.data.groupId),
         eq(agentphoneMessages.channel, "imessage"),
         isNotNull(agentphoneMessages.conversationId),
@@ -231,7 +370,6 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return groupNotFound();
   }
 
-  const asOf = nowDate();
   const roster = await settle(
     getAgentPhoneConversationParticipants(
       { conversationId: target.conversationId },
@@ -252,7 +390,6 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   const recipients = await set(
     resolveAgentPhoneParticipantVisibilityRecipients$,
     roster.value,
-    asOf,
     signal,
   );
   if (
@@ -263,13 +400,16 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return groupNotFound();
   }
 
+  const footerText = await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
+  const text = appendIntegrationMessageFooter(bodyResult.data.text, footerText);
   const sentResult = await settle(
     (async () => {
       const sent = await sendAgentPhoneMessage(
         {
           agentphoneAgentId: target.agentphoneAgentId,
           toNumber: bodyResult.data.groupId,
-          body: bodyResult.data.text,
+          body: text,
         },
         signal,
       );
@@ -281,7 +421,7 @@ const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
         phoneHandle: target.phoneHandle,
         fromNumber: sent.fromNumber ?? "",
         toNumber: bodyResult.data.groupId,
-        body: bodyResult.data.text,
+        body: text,
         channel: "imessage",
         userChannel: "imessage",
         visibilityRecipients: recipients,
@@ -318,5 +458,9 @@ export const integrationsPhoneMessageRoutes: readonly RouteEntry[] = [
   {
     route: integrationsAgentPhoneContract.groupMessage,
     handler: authRoute(phoneWriteAuth, sendGroupMessage$),
+  },
+  {
+    route: integrationsPhoneMessageContract.sendReaction,
+    handler: authRoute(phoneWriteAuth, sendReaction$),
   },
 ];

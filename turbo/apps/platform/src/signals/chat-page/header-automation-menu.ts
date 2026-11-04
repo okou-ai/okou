@@ -1,11 +1,11 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 
-import {
-  workflowAutomationsContract,
-  type ChatThreadWorkflowAutomation,
-  type GmailLabelAppliedEventConfig,
-  type GmailNewMessageEventConfig,
-  type WorkflowSchedule,
+import { workflowAutomationsContract } from "@okouai/api-contracts/client/workflows";
+import type {
+  ChatThreadWorkflowAutomation,
+  GmailLabelAppliedEventConfig,
+  GmailNewMessageEventConfig,
+  WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

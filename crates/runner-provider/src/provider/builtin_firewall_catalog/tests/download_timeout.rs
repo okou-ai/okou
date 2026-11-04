@@ -4,7 +4,7 @@ use std::task::Poll;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::*;
 use crate::test_fixtures::raw_http::{join_raw_http_task, read_http_request};
@@ -12,10 +12,11 @@ use crate::test_fixtures::raw_http::{join_raw_http_task, read_http_request};
 const PEER_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct CatalogBodyPeer {
+    // Request abort before releasing the remaining fixture fields.
+    task: Option<AbortOnDropHandle<io::Result<()>>>,
     url: String,
     prefix_sent: oneshot::Receiver<()>,
     release_tail: Option<oneshot::Sender<bool>>,
-    task: Option<JoinHandle<io::Result<()>>>,
 }
 
 impl CatalogBodyPeer {
@@ -56,7 +57,7 @@ impl CatalogBodyPeer {
             url,
             prefix_sent: prefix_received,
             release_tail: Some(release_tail),
-            task: Some(task),
+            task: Some(AbortOnDropHandle::new(task)),
         }
     }
 
@@ -97,17 +98,9 @@ impl CatalogBodyPeer {
     }
 
     async fn finish(mut self) {
-        join_raw_http_task(self.task.take().unwrap(), "catalog body peer")
+        join_raw_http_task(self.task.take().unwrap().detach(), "catalog body peer")
             .await
             .unwrap();
-    }
-}
-
-impl Drop for CatalogBodyPeer {
-    fn drop(&mut self) {
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
     }
 }
 

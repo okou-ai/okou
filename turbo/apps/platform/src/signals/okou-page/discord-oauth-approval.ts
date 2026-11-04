@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import type { infer as zInfer } from "zod";
-import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
+import { discordOauthContract } from "@okouai/api-contracts/client/discord-oauth";
+import { discordOauthApprovalBodySchema } from "@okouai/api-contracts/validators/discord-oauth";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -14,7 +15,7 @@ import {
   type DiscordOauthResult,
 } from "./discord-oauth-message.ts";
 
-type DiscordApprovalProof = zInfer<typeof discordOauthContract.approve.body>;
+type DiscordApprovalProof = zInfer<typeof discordOauthApprovalBodySchema>;
 
 // Private, ephemeral consent-browser memory. Nothing is exposed to the opener,
 // browser storage, logging, analytics, or a callback query parameter.
@@ -75,7 +76,7 @@ export const captureDiscordApprovalFragment$ = command(
       (window.location.pathname === "/works" ||
         window.location.pathname === INTEGRATION_SETTINGS_PATHS.discord) &&
       fragment.get("discord_oauth") === "approve"
-        ? discordOauthContract.approve.body.safeParse({
+        ? discordOauthApprovalBodySchema.safeParse({
             state: fragment.get("state"),
             approvalProof: fragment.get("approval_proof"),
           })

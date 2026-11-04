@@ -1,4 +1,10 @@
 import {
+  userMessageDocumentSchema,
+  userMessageInputDocumentSchema,
+  projectMentionSchema,
+  generationTemplateRequestSchema,
+} from "@okouai/api-contracts/validators/chat-threads";
+import {
   readSuggestionContext,
   suggestionContextPart,
   suggestionContextSchema,
@@ -6,17 +12,14 @@ import {
 } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { JSONContent } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import {
-  generationTemplateRequestSchema,
-  userMessageDocumentSchema,
-  userMessageInputDocumentSchema,
-  type FeedbackNotePart,
-  type GenerationTemplateRequest,
-  type ImageAnnotation,
-  type PersistedAttachment,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessagePart,
+import type {
+  FeedbackNotePart,
+  GenerationTemplateRequest,
+  ImageAnnotation,
+  PersistedAttachment,
+  UserMessageDocument,
+  UserMessageInputDocument,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { i18n } from "../../i18n/index.ts";
@@ -29,6 +32,7 @@ import {
   splitAgentMentionSegments,
 } from "./composer-agent-suggestion-domain.ts";
 
+export const PROJECT_MENTION_NODE_NAME = "projectMention";
 export const AGENT_MENTION_NODE_NAME = "agentMention";
 export const CHAT_THREAD_MENTION_NODE_NAME = "chatThreadMention";
 export const TEMPLATE_ATTACHMENT_NODE_NAME = "templateAttachment";
@@ -198,6 +202,18 @@ function appendParagraphParts(
       appendTextPart(parts, "\n");
       continue;
     }
+    if (node.type.name === PROJECT_MENTION_NODE_NAME) {
+      const parsed = projectMentionSchema.safeParse({
+        type: "project",
+        projectId: node.attrs.projectId,
+        nameSnapshot: node.attrs.name,
+      });
+      if (!parsed.success) {
+        return false;
+      }
+      parts.push(parsed.data);
+      continue;
+    }
     if (node.type.name === AGENT_MENTION_NODE_NAME) {
       const part = agentPart(node);
       if (!part) {
@@ -358,6 +374,7 @@ function feedbackPart(node: ProseMirrorNode): UserMessagePart | null {
       return (
         part.type === "text" ||
         part.type === "chat_thread" ||
+        part.type === "project" ||
         part.type === "agent" ||
         part.type === "template"
       );
@@ -624,6 +641,9 @@ function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
       if (part.type === "chat_thread") {
         return serializeChatThreadMention(part.threadId, part.titleSnapshot);
       }
+      if (part.type === "project") {
+        return `[${part.nameSnapshot}](/projects/${part.projectId})`;
+      }
       if (part.type === "agent") {
         return serializeAgentMention(part.agentId, part.nameSnapshot);
       }
@@ -647,6 +667,14 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
   };
 
   for (const part of note) {
+    if (part.type === "project") {
+      paragraphContent.push({
+        type: PROJECT_MENTION_NODE_NAME,
+        attrs: { projectId: part.projectId, name: part.nameSnapshot },
+      });
+      trailingParagraph = false;
+      continue;
+    }
     if (part.type === "template") {
       paragraphContent.push(templateNode(part));
       trailingParagraph = false;
@@ -771,6 +799,14 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
           threadId: part.threadId,
           title: part.titleSnapshot,
         },
+      });
+      state.trailingParagraph = false;
+      continue;
+    }
+    if (part.type === "project") {
+      state.paragraphContent.push({
+        type: PROJECT_MENTION_NODE_NAME,
+        attrs: { projectId: part.projectId, name: part.nameSnapshot },
       });
       state.trailingParagraph = false;
       continue;
@@ -903,6 +939,8 @@ export function messageDocumentToPrompt(value: unknown): string | null {
         part.threadId,
         part.titleSnapshot,
       );
+    } else if (part.type === "project") {
+      inlineText += `[${part.nameSnapshot}](/projects/${part.projectId})`;
     } else if (part.type === "agent") {
       inlineText += serializeAgentMention(part.agentId, part.nameSnapshot);
     } else if (part.type === "template") {
@@ -986,6 +1024,10 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
       part.type === "model" ||
       part.type === "additional_info"
     ) {
+      continue;
+    }
+    if (part.type === "project") {
+      inlineText += part.nameSnapshot;
       continue;
     }
     if (part.type === "template") {

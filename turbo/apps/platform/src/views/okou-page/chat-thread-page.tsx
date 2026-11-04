@@ -1,11 +1,19 @@
+import { ProjectReference } from "../projects/project-reference.tsx";
 import {
+  MessageShareMenu,
   SharedThreadAudiencePicker,
   SharedThreadShareMenu,
 } from "./shared-thread-share-menu.tsx";
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
+import {
+  useChatHeaderActions,
+  type ChatHeaderActionsState,
+} from "./chat-header-actions.ts";
 import { ThreadMailButton } from "./thread-mail.tsx";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -88,7 +96,6 @@ import {
   getShortcutParts,
   Button,
   CopyButton,
-  ShareLinkButton,
   Checkbox,
   Input,
   Skeleton,
@@ -151,13 +158,13 @@ import {
   thinkingSpinnerImg,
 } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  ChatThreadMutedButton,
-  ChatThreadPinButton,
-} from "./chat-thread-header-actions.tsx";
+import { ChatThreadMutedButton } from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
-import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
+import {
+  hasChatEventBodyContent,
+  isTransientOutputMessage,
+} from "../../signals/chat-page/chat-event-body-blocks.ts";
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -231,10 +238,7 @@ import {
   openVideoLightbox$ as openAttachmentVideoLightbox$,
 } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
-import {
-  writeToClipboard,
-  type ChatClipboardAttachment,
-} from "../../signals/okou-page/clipboard.ts";
+import type { ChatClipboardAttachment } from "../../signals/okou-page/clipboard.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type {
   HeaderAutomationSignals,
@@ -573,12 +577,16 @@ function ChatThreadHeaderIconButton({
   tooltip = label,
   open,
   onClick,
+  disabled = false,
+  busy = false,
 }: {
   icon: ReactNode;
   label: string;
   tooltip?: string;
   open: boolean;
   onClick: () => void;
+  disabled?: boolean;
+  busy?: boolean;
 }) {
   return (
     <TooltipProvider delay={300}>
@@ -587,6 +595,9 @@ function ChatThreadHeaderIconButton({
           render={
             <Button
               type="button"
+              disabled={disabled}
+              focusableWhenDisabled
+              aria-busy={busy}
               variant="quiet"
               size="icon-sm"
               iconSize="md"
@@ -614,25 +625,20 @@ function ChatThreadHeaderIconButton({
 export function AutomationMenuButton({
   thread,
   ariaLabel,
+  header,
 }: {
   thread: ChatPanelSignals;
   ariaLabel?: string;
+  header: ChatHeaderActionsState;
 }) {
   const { t } = useTranslation();
   const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
   const openAutomationSidebar = useSet(openThreadAutomations$);
   const sidebarTarget = useGet(thread.sidebar.target$);
-  const workflowAutomations$ = thread.headerAutomations.automations$;
-  const workflowAutomationsLoadable = useLastLoadable(workflowAutomations$);
-  const lastResolvedAutomations = useLastResolved(workflowAutomations$);
-  const workflowAutomations =
-    workflowAutomationsLoadable.state === "hasData"
-      ? workflowAutomationsLoadable.data
-      : (lastResolvedAutomations ?? []);
   const open = sidebarTarget?.type === "automations";
 
   // Show the opener when the thread has a workflow automation.
-  if (workflowAutomations.length === 0) {
+  if (!header.automations) {
     return null;
   }
 
@@ -649,6 +655,8 @@ export function AutomationMenuButton({
         return $.chat.automations.open;
       })}
       open={open}
+      disabled={header.pending}
+      busy={header.pending}
       onClick={() => {
         reloadAutomations();
         openAutomationSidebar(thread);
@@ -661,6 +669,7 @@ function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const sidebarTarget = useGet(thread.sidebar.target$);
   const openBrowserSidebar = useSet(openThreadBrowserSession$);
+  const { transitioning } = useChatHeaderActions(thread);
   return (
     <ChatThreadHeaderIconButton
       icon={<Globe size={18} />}
@@ -668,6 +677,7 @@ function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
         return $.chat.thread.openBrowser;
       })}
       open={sidebarTarget?.type === "browser"}
+      disabled={transitioning}
       onClick={() => {
         openBrowserSidebar(thread.threadId);
       }}
@@ -724,10 +734,18 @@ export function ChatThreadHeaderTitle({
 const CHAT_THREAD_HEADER_CLASS =
   "flex h-14 shrink-0 items-center justify-between bg-transparent px-6";
 
-function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadHeader({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Only mount one emoji picker for the thread's shared menu state.
-  return isDesktop ? <DesktopChatThreadHeader thread={thread} /> : null;
+  return isDesktop ? (
+    <DesktopChatThreadHeader thread={thread} header={header} />
+  ) : null;
 }
 
 export function SettledChatThreadActions({
@@ -740,13 +758,20 @@ export function SettledChatThreadActions({
   return useGet(thread.optimisticCreateUnsettled$) ? null : children;
 }
 
-function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
+function DesktopChatThreadHeader({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const startSharing = useSet(thread.sharing.start$);
   const closeSharing = useSet(thread.sharing.close$);
+  const { transitioning } = header;
   if (sharingPhase !== "idle") {
     return (
       <header className={CHAT_THREAD_HEADER_CLASS}>
@@ -782,10 +807,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       <div className="flex min-w-0 items-center gap-2 pr-3">
         <ChatThreadHeaderTitle thread={thread} />
         <SettledChatThreadActions thread={thread}>
-          <div className="flex shrink-0 items-center gap-0.5">
-            <ChatThreadPinButton thread={thread} />
-            <ChatThreadMutedButton thread={thread} />
-          </div>
+          <ChatThreadMutedButton thread={thread} />
         </SettledChatThreadActions>
       </div>
       <SettledChatThreadActions thread={thread}>
@@ -796,6 +818,8 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
                 render={
                   <Button
                     type="button"
+                    disabled={transitioning}
+                    focusableWhenDisabled
                     onClick={() => {
                       detach(
                         startSharing(pageSignal),
@@ -822,8 +846,8 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <AutomationMenuButton thread={thread} />
-          <ThreadMailButton thread={thread} />
+          <AutomationMenuButton thread={thread} header={header} />
+          <ThreadMailButton thread={thread} header={header} />
           <BrowserMenuButton thread={thread} />
           <ChatResourcesButton thread={thread} />
         </div>
@@ -2884,9 +2908,11 @@ function ChatThreadAppSkeletonHandoff({
 function ChatThread({
   isMain,
   thread,
+  header,
 }: {
   isMain?: boolean;
   thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
 }) {
   const { t } = useTranslation();
   const setContainerRef = useSet(
@@ -2903,7 +2929,7 @@ function ChatThread({
       ref={setContainerRef}
       tabIndex={-1}
     >
-      <ChatThreadContent thread={thread} />
+      <ChatThreadContent thread={thread} header={header} />
       {isMain ? <ChatThreadAppSkeletonHandoff thread={thread} /> : null}
     </section>
   );
@@ -2932,8 +2958,17 @@ function ChatThreadPane({
   isMain?: boolean;
   pane: Exclude<ChatThreadPaneState, null>;
 }) {
+  const header = useChatHeaderActions(
+    pane.kind === "thread" ? pane.thread : null,
+    !isMain,
+  );
   return pane.kind === "thread" ? (
-    <ChatThread isMain={isMain} thread={pane.thread} />
+    <ChatThread
+      key={pane.thread.threadId}
+      isMain={isMain}
+      thread={pane.thread}
+      header={header}
+    />
   ) : (
     <MissingChatThread threadId={pane.threadId} />
   );
@@ -2947,17 +2982,20 @@ function ChatThreadArea({
   rightPane: ChatThreadPaneState;
 }) {
   const setKeyboardScrollRoot = useSet(setChatKeyboardScrollRoot$);
+  const sessionKey = useGet(authenticatedSessionKey$);
 
   return (
     <div
       ref={setKeyboardScrollRoot}
       className="flex w-full flex-1 min-w-0 min-h-0 bg-transparent"
     >
-      {leftPane && <ChatThreadPane isMain pane={leftPane} />}
+      {leftPane && (
+        <ChatThreadPane key={`primary:${sessionKey}`} isMain pane={leftPane} />
+      )}
       {rightPane && (
         <>
           <div className="w-px shrink-0 bg-divider/60" aria-hidden="true" />
-          <ChatThreadPane pane={rightPane} />
+          <ChatThreadPane key={`secondary:${sessionKey}`} pane={rightPane} />
         </>
       )}
     </div>
@@ -3008,8 +3046,6 @@ function resolveSessionError(
   }
   return null;
 }
-
-const CHAT_RENDER_LOAD_MORE_TOP_THRESHOLD_PX = 100;
 
 function renderedChatEventKeys(
   groups: readonly ChatEventGroup[],
@@ -3435,28 +3471,22 @@ function ChatThreadEventGroups({
   statusRowGroupId: string | null;
 }) {
   const { i18n: translation } = useTranslation();
-  const timelineEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadTimeline];
-  const timelineEvents = timelineEnabled
-    ? groups.flatMap((group) => {
-        const section = runWorkSectionForGroup(runWorkFolding, group);
-        if (!groupRendersContent(group, section)) {
-          return [];
-        }
-        if (group.role === "user") {
-          return group.events;
-        }
-        const firstVisibleEvent =
-          group.events.find(isRenderableAssistantEvent) ?? group.events[0];
-        return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
-      })
-    : [];
-  const dateDividers = timelineEnabled
-    ? chatThreadDateDividers(
-        timelineEvents,
-        translation.resolvedLanguage ?? translation.language,
-      )
-    : undefined;
+  const timelineEvents = groups.flatMap((group) => {
+    const section = runWorkSectionForGroup(runWorkFolding, group);
+    if (!groupRendersContent(group, section)) {
+      return [];
+    }
+    if (group.role === "user") {
+      return group.events;
+    }
+    const firstVisibleEvent =
+      group.events.find(isRenderableAssistantEvent) ?? group.events[0];
+    return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
+  });
+  const dateDividers = chatThreadDateDividers(
+    timelineEvents,
+    translation.resolvedLanguage ?? translation.language,
+  );
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
@@ -3472,7 +3502,7 @@ function ChatThreadEventGroups({
           group.events.find(isRenderableAssistantEvent) ?? group.events[0];
         const assistantDate =
           group.role === "assistant" && firstAssistantEvent !== undefined
-            ? dateDividers?.get(firstAssistantEvent.id)
+            ? dateDividers.get(firstAssistantEvent.id)
             : undefined;
         const stackFirstOnPrevious =
           previousVisibleGroup !== undefined &&
@@ -3827,17 +3857,14 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
 
 function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   const scrollContainerOnRef = useSet(thread.scrollContainerOnRef$);
-  const loadMoreRenderedChatGroups = useSet(thread.loadMoreRenderedChatGroups$);
+  const loadEarlierGroupsAfterScroll = useSet(
+    thread.loadEarlierGroupsAfterScroll$,
+  );
   const pageSignal = useGet(pageSignal$);
   const standalonePwa = isStandalonePwa();
 
-  const handleScroll = (event: ReactUIEvent<HTMLDivElement>) => {
-    if (
-      event.currentTarget.scrollTop > CHAT_RENDER_LOAD_MORE_TOP_THRESHOLD_PX
-    ) {
-      return;
-    }
-    detach(loadMoreRenderedChatGroups(pageSignal), Reason.DomCallback);
+  const handleScroll = () => {
+    detach(loadEarlierGroupsAfterScroll(pageSignal), Reason.DomCallback);
   };
 
   // This scroll area isolates its local overlays. The masked viewport contains
@@ -3923,7 +3950,13 @@ function ChatThreadResourceLayout({
   );
 }
 
-function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadContent({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const exists = useGet(thread.threadExists$);
   if (!exists) {
     return <ChatThreadNotFound />;
@@ -3931,7 +3964,7 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
 
   return (
     <>
-      <ChatThreadHeader thread={thread} />
+      <ChatThreadHeader thread={thread} header={header} />
       <ChatThreadResourceLayout thread={thread}>
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />
@@ -3952,7 +3985,6 @@ function SharedThreadCreatedLink({
 }) {
   const { t } = useTranslation();
   const visibility = useGet(thread.sharing.visibility$);
-  const phase = useGet(thread.sharing.phase$);
   const close = useSet(thread.sharing.close$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -3966,43 +3998,7 @@ function SharedThreadCreatedLink({
         className="min-w-0 flex-1"
       />
       <div className="flex shrink-0 items-center gap-2">
-        {visibility ? (
-          <SharedThreadShareMenu
-            session={visibility}
-            defaultOpen={phase === "idle"}
-            showLabel
-          />
-        ) : (
-          <Button
-            onClick={() => {
-              detach(
-                (async () => {
-                  const copied = await writeToClipboard(shareUrl);
-                  if (copied) {
-                    toast.success(
-                      t(($) => {
-                        return $.chat.sharing.linkCopied;
-                      }),
-                    );
-                    return;
-                  }
-                  toast.error(
-                    t(($) => {
-                      return $.chat.sharing.copyFailed;
-                    }),
-                  );
-                })(),
-                Reason.DomCallback,
-                "copy shared thread link",
-              );
-            }}
-          >
-            <Copy size={16} />
-            {t(($) => {
-              return $.chat.sharing.copyLink;
-            })}
-          </Button>
-        )}
+        {visibility && <SharedThreadShareMenu session={visibility} showLabel />}
         <Button
           variant="outline"
           onClick={() => {
@@ -4027,15 +4023,13 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
   const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
-  const visibilityEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
   const audience = useGet(thread.sharing.audience$);
   const changeAudience = useSet(thread.sharing.changeAudience$);
   const pageSignal = useGet(pageSignal$);
   const [createLoadable, createSharedThread] = useLoadableSet(
     thread.sharing.create$,
   );
-  if (phase === "idle" && sharedThreadId === null) {
+  if (phase === "idle") {
     return withChatScrollLayout(<ChatThreadComposer thread={thread} />);
   }
 
@@ -4064,13 +4058,9 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                 )}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {visibilityEnabled
-                  ? t(($) => {
-                      return $.chat.sharing.visibilityDescription;
-                    })
-                  : t(($) => {
-                      return $.chat.sharing.publicDescription;
-                    })}
+                {t(($) => {
+                  return $.chat.sharing.visibilityDescription;
+                })}
               </p>
               {createLoadable.state === "hasError" ? (
                 <p className="mt-0.5 text-xs text-destructive">
@@ -4081,13 +4071,11 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {visibilityEnabled ? (
-                <SharedThreadAudiencePicker
-                  audience={audience}
-                  disabled={creating}
-                  onChange={changeAudience}
-                />
-              ) : null}
+              <SharedThreadAudiencePicker
+                audience={audience}
+                disabled={creating}
+                onChange={changeAudience}
+              />
               <Button
                 disabled={selectedCount === 0 || creating}
                 onClick={() => {
@@ -5598,6 +5586,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.termsTitle;
     });
   },
+  account_verification_required: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.accountVerificationTitle;
+    });
+  },
   context_window_exceeded: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.contextWindowTitle;
@@ -5641,6 +5634,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
     });
   },
   provider_bad_request: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  },
+  firewall_auth_failed: () => {
     return i18n.t(($) => {
       return $.chat.errors.genericTitle;
     });
@@ -5763,6 +5761,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   invalid_api_key: FAILURE_DESCRIPTIONS.providerConnection,
   invalid_credentials: FAILURE_DESCRIPTIONS.providerConnection,
   terms_acceptance_required: FAILURE_DESCRIPTIONS.terms,
+  account_verification_required: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.accountVerificationDescription;
+    });
+  },
   context_window_exceeded: FAILURE_DESCRIPTIONS.newChat,
   input_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
   provider_image_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
@@ -5774,6 +5777,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
   provider_bad_request: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.transient;
+    });
+  },
+  firewall_auth_failed: (t: TFunction<"common">) => {
     return t(($) => {
       return $.runErrors.transient;
     });
@@ -5816,10 +5824,12 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "invalid_credentials" ||
     reason === "reconnect_required" ||
     reason === "terms_acceptance_required" ||
+    reason === "account_verification_required" ||
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
     reason === "provider_bad_request" ||
+    reason === "firewall_auth_failed" ||
     reason === "session_history_limit"
   ) {
     return AlertCircle;
@@ -5830,8 +5840,10 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
 function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
   return (
     reason !== "insufficient_credits" &&
+    reason !== "account_verification_required" &&
     reason !== "input_too_large" &&
     reason !== "provider_bad_request" &&
+    reason !== "firewall_auth_failed" &&
     reason !== "provider_image_too_large"
   );
 }
@@ -6349,7 +6361,7 @@ function PagedGroupRow({
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
-  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
+  dateDividers: ReadonlyMap<string, ChatDateDivider>;
   runWorkSection?: RunWorkSectionControl;
   statusRow?: RunStatusRow;
   statusTailEvents?: readonly EnrichedChatEvent[];
@@ -6658,12 +6670,12 @@ function PagedUserGroup({
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
-  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
+  dateDividers: ReadonlyMap<string, ChatDateDivider>;
 }) {
   return (
     <>
       {group.events.map((event, index) => {
-        const dateDivider = dateDividers?.get(event.id);
+        const dateDivider = dateDividers.get(event.id);
         const modelChange = modelChanges.get(event.id);
         const previousEvent = group.events[index - 1];
         // Anything the user sent back to back is one thing they said, so the
@@ -7409,6 +7421,15 @@ function UserMessageFeedbackNote({
             />
           );
         }
+        if (renderPart.type === "project") {
+          return (
+            <ProjectReference
+              key={key}
+              part={renderPart.part}
+              className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
+            />
+          );
+        }
         if (renderPart.type === "agent") {
           return (
             <UserMessageAgentReference
@@ -7590,6 +7611,14 @@ function UserMessagePartView({
       <ChatThreadLinkChip
         threadId={renderPart.part.threadId}
         title={renderPart.part.titleSnapshot}
+      />
+    );
+  }
+  if (renderPart.type === "project") {
+    return (
+      <ProjectReference
+        part={renderPart.part}
+        className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
       />
     );
   }
@@ -8393,6 +8422,9 @@ function PagedAssistantEventItem({
   thread: ChatPanelSignals;
   workHistory?: boolean;
 }) {
+  const emailQuoteEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatEmailQuote] === true;
+  const sharingPhase = useGet(thread.sharing.phase$);
   const error = chatEventDisplayError(event);
   if (error) {
     return (
@@ -8437,6 +8469,12 @@ function PagedAssistantEventItem({
           }
           tree={event.tree}
           mediaPreview
+          emailQuote={
+            emailQuoteEnabled &&
+            sharingPhase === "idle" &&
+            !workHistory &&
+            !isTransientOutputMessage(event)
+          }
         />
       </ChatAssistantMessageBody>
     );
@@ -8701,72 +8739,6 @@ function RelatedArtifactsDialog({
   );
 }
 
-function MessageShareAction({
-  onShare,
-}: {
-  onShare: (revert: () => void) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <ShareLinkButton
-      onShare={onShare}
-      render={({ onClick, ref }, { copied }) => {
-        const copiedLabel = t(($) => {
-          return $.chat.sharing.shareLinkCopied;
-        });
-        if (copied) {
-          // The button itself confirms the copy; no toast or tooltip.
-          return (
-            <Button
-              ref={ref}
-              type="button"
-              variant="quiet"
-              size="xs"
-              onClick={onClick}
-              className="gap-1 px-1.5 text-muted-foreground"
-              aria-label={copiedLabel}
-              data-testid="chat-message-share"
-            >
-              <Check />
-              {copiedLabel}
-            </Button>
-          );
-        }
-        return (
-          <TooltipProvider delay={300}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    ref={ref}
-                    type="button"
-                    variant="quiet"
-                    size="icon-xs"
-                    iconSize="sm"
-                    onClick={onClick}
-                    className="text-muted-foreground/60"
-                    aria-label={t(($) => {
-                      return $.chat.actions.shareMessage;
-                    })}
-                    data-testid="chat-message-share"
-                  >
-                    <Share2 />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">
-                {t(($) => {
-                  return $.chat.actions.shareMessage;
-                })}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        );
-      }}
-    />
-  );
-}
-
 function PagedGroupPrimaryActions({
   firstRunId,
   hasContent,
@@ -8774,6 +8746,7 @@ function PagedGroupPrimaryActions({
   thread,
   onCopy,
   onShare,
+  shareCopied,
   pdfAction,
   relatedArtifacts,
 }: {
@@ -8782,7 +8755,8 @@ function PagedGroupPrimaryActions({
   showRunUsage: boolean;
   thread: ChatPanelSignals;
   onCopy: () => Promise<boolean>;
-  onShare: ((revert: () => void) => void) | undefined;
+  onShare: ((audience: SharedThreadAudience) => void) | undefined;
+  shareCopied: boolean;
   pdfAction?: ReactNode;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
@@ -8838,7 +8812,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {onShare && <MessageShareAction onShare={onShare} />}
+      {onShare && <MessageShareMenu onShare={onShare} copied={shareCopied} />}
       {pdfAction}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
@@ -8869,6 +8843,7 @@ function PagedGroupActions({
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
   const shareMessage = useSet(thread.sharing.shareMessage$);
+  const copiedMessageEventId = useGet(thread.sharing.copiedMessageEventId$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const switches = useGet(featureSwitch$);
   const pdfEnabled = switches[FeatureSwitchKey.ChatMessagePdf];
@@ -8903,13 +8878,12 @@ function PagedGroupActions({
   });
   const handleShare =
     shareEventIds.length > 0
-      ? (revert: () => void) => {
-          const share = async () => {
-            if (!(await shareMessage(shareEventIds, pageSignal))) {
-              revert();
-            }
-          };
-          detach(share(), Reason.DomCallback, "share chat message");
+      ? (audience: SharedThreadAudience) => {
+          detach(
+            shareMessage(shareEventIds, audience, pageSignal),
+            Reason.DomCallback,
+            "share chat message",
+          );
         }
       : undefined;
 
@@ -8922,6 +8896,7 @@ function PagedGroupActions({
         thread={thread}
         onCopy={handleCopy}
         onShare={handleShare}
+        shareCopied={copiedMessageEventId === shareEventIds[0]}
         pdfAction={
           pdfEnabled &&
           hasContent &&
@@ -8930,7 +8905,10 @@ function PagedGroupActions({
             return event.tree !== undefined;
           }) ? (
             <MessagePdfAction
-              key={JSON.stringify(pdfContents)}
+              key={JSON.stringify([
+                switches[FeatureSwitchKey.MarkdownCjkEmphasis],
+                pdfContents,
+              ])}
               contents={pdfContents}
               trees={persistedMessages.flatMap((event) => {
                 return event.tree ? [event.tree] : [];

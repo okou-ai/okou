@@ -1,11 +1,12 @@
 import { computed } from "ccstate";
-import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
+import { clerk$ } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import { tapError } from "../utils";
 
 const attributionRun$ = computed(async (get) => {
@@ -18,9 +19,6 @@ const attributionRun$ = computed(async (get) => {
       agentId: agentRuns.agentId,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
-      selectedModel: agentRuns.selectedModel,
-      codexServiceTier: agentRuns.codexServiceTier,
-      triggerSource: agentRuns.triggerSource,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, auth.runId))
@@ -38,52 +36,64 @@ const agentLabel$ = computed(async (get) => {
     .from(agents)
     .where(eq(agents.id, run.agentId))
     .limit(1);
-  return row ? (row.displayName ?? row.name) : undefined;
+  return (
+    (row?.displayName ?? row?.name)?.trim().replace(/\s+/gu, " ") || undefined
+  );
 });
 
-const modelLabel$ = computed(async (get) => {
+const userLabel$ = computed(async (get) => {
   const run = await get(attributionRun$);
-  if (!run || run.triggerSource === null || run.selectedModel === null) {
+  if (!run) {
     return undefined;
   }
-  // Preserve the existing attribution reader's historical tier normalization.
-  return getRunModelDisplayName(
-    run.selectedModel,
-    run.codexServiceTier === "fast" ? "fast" : null,
+  const user = await findClerkUser(get(clerk$), run.userId);
+  return (
+    [user?.firstName, user?.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim()
+      .replace(/\s+/gu, " ") || undefined
   );
 });
 
 /** Request-owned reads share Slack's independently best-effort attribution. */
 export const integrationMessageSendLabels$ = computed(async (get) => {
   const noop = (): void => {};
-  const [run, agentLabel, modelLabel] = await Promise.all([
+  const [run, agentLabel] = await Promise.all([
     tapError(get(attributionRun$), noop),
     tapError(get(agentLabel$), noop),
-    tapError(get(modelLabel$), noop),
   ]);
   return {
     agentLabel,
-    modelLabel,
     runOwner: run ? { orgId: run.orgId, userId: run.userId } : undefined,
   };
 });
 
-/** Format captured display data; the caller supplies its verified sender. */
-export function discordMessageSendFooterText(args: {
+/** Native mentions already name the sender; resolve a profile only when needed. */
+export const integrationMessageSendUserLabel$ = computed(async (get) => {
+  const noop = (): void => {};
+  return await tapError(get(userLabel$), noop);
+});
+
+/** Platform callers escape display labels and supply a verified native mention. */
+export function integrationMessageSendFooterText(args: {
   readonly agentLabel: string | undefined;
-  readonly modelLabel: string | undefined;
-  readonly discordUserId: string;
+  readonly userLabel: string | undefined;
 }) {
-  if (!args.agentLabel && !args.modelLabel) {
-    return undefined;
-  }
   const parts: string[] = [];
   if (args.agentLabel) {
     parts.push(`Sent via ${args.agentLabel}`);
   }
-  parts.push(`Triggered by <@${args.discordUserId}>`);
-  if (args.modelLabel) {
-    parts.push(args.modelLabel);
+  if (args.userLabel) {
+    parts.push(`Triggered by ${args.userLabel}`);
   }
-  return parts.join(" · ");
+  return parts.length ? parts.join(" · ") : undefined;
 }
+
+export const integrationMessageSendFooterText$ = computed(async (get) => {
+  const [labels, userLabel] = await Promise.all([
+    get(integrationMessageSendLabels$),
+    get(integrationMessageSendUserLabel$),
+  ]);
+  return integrationMessageSendFooterText({ ...labels, userLabel });
+});

@@ -1,8 +1,10 @@
 import { syncBuiltinESMExports } from "node:module";
 import { resetApiTestMocks } from "./mocks";
+import { installClerkAuthorityHttp } from "./clerk-authority-http";
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 
 import { clearMockedEnv, mockEnv } from "../lib/env";
+import { closeS3Clients } from "../lib/s3-client";
 import { setSecretKmsClientForTests } from "../lib/secret-kms-client";
 import { createApiTestKmsClient } from "./secret-kms";
 import { clearMockNow } from "../lib/time";
@@ -24,6 +26,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  installClerkAuthorityHttp();
   setSecretKmsClientForTests(createApiTestKmsClient());
   mockEnv(
     "R2_USER_STORAGES_BUCKET_NAME",
@@ -35,6 +38,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await clearAllDetached();
+  closeS3Clients();
   clearMockNow();
   clearMockedEnv();
   resetApiTestMocks();

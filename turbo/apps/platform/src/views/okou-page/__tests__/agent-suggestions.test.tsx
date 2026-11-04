@@ -1,10 +1,6 @@
-import {
-  mockTaskChipLayout,
-  taskMenuItem,
-} from "./composer-task-chip-layout.ts";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -103,8 +99,12 @@ function makeOption(
     ...overrides,
   };
 }
-function button(name: string, role: "button" | "tab" = "button") {
-  const found = queryAllByRoleFast(role).find((element) => {
+function button(
+  name: string,
+  role: "button" | "tab" = "button",
+  container: ParentNode = document.body,
+) {
+  const found = queryAllByRoleFast(role, container).find((element) => {
     return (
       element.textContent?.trim().startsWith(name) ||
       element.getAttribute("aria-label") === name
@@ -112,7 +112,10 @@ function button(name: string, role: "button" | "tab" = "button") {
   });
   if (!found) {
     throw new Error(
-      `Missing ${role}: ${name}; available: ${queryAllByRoleFast(role)
+      `Missing ${role}: ${name}; available: ${queryAllByRoleFast(
+        role,
+        container,
+      )
         .map((element) => {
           return element.textContent;
         })
@@ -130,10 +133,15 @@ function composer() {
   }
   return node;
 }
+function queryLink(href: string) {
+  return (
+    queryAllByRoleFast("link").find((element) => {
+      return element.getAttribute("href") === href;
+    }) ?? null
+  );
+}
 function link(href: string) {
-  const found = queryAllByRoleFast("link").find((element) => {
-    return element.getAttribute("href") === href;
-  });
+  const found = queryLink(href);
   if (!found) {
     throw new Error(`Missing link: ${href}`);
   }
@@ -245,6 +253,25 @@ const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
   [FeatureSwitchKey.ProactiveAgent]: false,
 } as const;
+const homePath = `/agents/${agentId}/chat`;
+const EMPTY_FEED = "You’re all caught up";
+
+async function openFeed(): Promise<void> {
+  await setupPage({ context, path: "/feed", featureSwitches: features });
+}
+// The Feed has no composer, so a home draft is written first and the Feed is
+// opened through its sidebar entry.
+async function openFeedFromHome(draft: string): Promise<void> {
+  await setupPage({ context, path: homePath, featureSwitches: features });
+  await fill(composer(), draft);
+  click(link("/feed"));
+}
+async function waitForFocusedHomeComposer(): Promise<void> {
+  await waitFor(() => {
+    expect(pathname()).toBe(homePath);
+    expect(composer()).toHaveFocus();
+  });
+}
 
 test("Selecting a cached card restores its draft after server cleanup", async () => {
   const suggestion = { ...makeSuggestion(), consumeToken: "a".repeat(64) };
@@ -261,58 +288,27 @@ test("Selecting a cached card restores its draft after server cleanup", async ()
       selectedOptionId: body.optionId,
     });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeedFromHome("My original draft");
   await screen.findByText(suggestion.title);
-  await fill(composer(), "My original draft");
   pool.withdrawAll();
   click(button(makeOption().label));
   await waitFor(() => {
+    expect(pathname()).toBe(homePath);
     expect(composer()).toHaveTextContent("Referenced decision");
     expect(composer()).toHaveTextContent("My original draft");
   });
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
 
-test("Selecting a task hides the categories, focuses the composer, and restores Suggestions when cleared", async () => {
-  const user = userEvent.setup();
+test("The Feed sidebar entry opens the suggestions on their own page", async () => {
   mockPool();
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
+  await setupPage({ context, path: homePath, featureSwitches: features });
+  await waitFor(() => {
+    expect(link("/feed")).toBeInTheDocument();
   });
+  click(link("/feed"));
   await screen.findByText(makeSuggestion().title);
-  expect(
-    screen.getByRole("tablist", { name: "Choose a task" }),
-  ).toContainElement(button("Suggestions", "tab"));
-  expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
-  await fill(composer(), "My draft stays here");
-  click(button("Image", "tab"));
-  await screen.findByText("Put my product in a new scene");
-  expect(composer()).toHaveTextContent("My draft stays here");
-  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-  expect(button("Remove Image")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(composer()).toHaveFocus();
-  });
-  click(button("Remove Image"));
-  await screen.findByText(makeSuggestion().title);
-  await user.click(button("Suggestions", "tab"));
-  await user.keyboard("{ArrowRight}");
-  await waitFor(() => {
-    return expect(button("Workflow", "tab")).toHaveFocus();
-  });
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(button("Remove Workflow")).toBeInTheDocument();
-    expect(composer()).toHaveFocus();
-  });
-  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-  expect(composer()).toHaveTextContent("My draft stays here");
+  expect(pathname()).toBe("/feed");
+  expect(link("/feed")).toHaveAttribute("aria-current", "page");
 });
 
 test.each([
@@ -321,14 +317,14 @@ test.each([
   "Document",
   "Image",
   "Website",
-  "Visualization",
+  "Chart",
 ])(
-  "Selecting %s hides the entire row with an empty suggestion pool",
+  "Selecting %s hides the Tasks row and clearing it restores the row",
   async (task) => {
     mockPool([]);
     await setupPage({
       context,
-      path: `/agents/${agentId}/chat`,
+      path: homePath,
       featureSwitches: {
         ...features,
         [FeatureSwitchKey.ProactiveAgent]: true,
@@ -363,34 +359,23 @@ test.each([
       "Document",
       "Image",
       "Website",
-      "Visualization",
+      "Chart",
     ]);
     expect(composer()).toHaveTextContent("Keep my draft");
   },
 );
 
-test("Returning to the Agent home loads new suggestions and preserves the draft", async () => {
+test("Each Feed visit loads new suggestions and an empty pool says so", async () => {
   const pool = mockPool([]);
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await waitFor(() => {
-    expect(queryTab("Workflow")).toBeInTheDocument();
-  });
-  await waitFor(() => {
-    expect(queryTab("Suggestions")).not.toBeInTheDocument();
-  });
-  await fill(composer(), "Keep my draft");
+  await openFeed();
+  await screen.findByText(EMPTY_FEED);
   click(link("/agents"));
   await screen.findByRole("heading", { name: "Agents" });
 
   pool.publish(makeSuggestion());
-  click(link(`/agents/${agentId}/chat`));
+  click(link("/feed"));
   await screen.findByText(makeSuggestion().title);
-  expect(queryTab("Suggestions")).toBeInTheDocument();
-  expect(composer()).toHaveTextContent("Keep my draft");
+  expect(screen.queryByText(EMPTY_FEED)).not.toBeInTheDocument();
 });
 test("An expanded suggestion adds the selected option to the ordinary composer without replacing its draft", async () => {
   const user = userEvent.setup();
@@ -412,17 +397,13 @@ test("An expanded suggestion adds the selected option to the ordinary composer w
     ],
   };
   const pool = mockPool([suggestion]);
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeedFromHome("My original draft");
   await screen.findByText(makeSuggestion().title);
-  await fill(composer(), "My original draft");
   expect(button("Review decision")).toBeInTheDocument();
   expect(button("Summarize the decision")).toBeInTheDocument();
   await user.click(button(selected.label));
   await waitFor(() => {
+    expect(pathname()).toBe(homePath);
     expect(composer()).toHaveTextContent("Referenced decision");
     expect(composer()).toHaveTextContent("My original draft");
   });
@@ -431,7 +412,6 @@ test("An expanded suggestion adds the selected option to the ordinary composer w
     { id: suggestion.id, optionId: selected.id },
   ]);
   expect(composer()).not.toHaveTextContent("Unselected action");
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
 test("An existing-thread suggestion merges its content and attachments with the remote draft", async () => {
   const incoming = draftAttachment("suggested.txt", {
@@ -496,11 +476,7 @@ test("An existing-thread suggestion merges its content and attachments with the 
       draftAttachments: [original],
     });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   await waitFor(() => {
@@ -512,36 +488,48 @@ test("An existing-thread suggestion merges its content and attachments with the 
   await expect(screen.findByText("original.txt")).resolves.toBeInTheDocument();
   expect(sends).toHaveLength(0);
 });
-test("A consumed suggestion reaches its saved draft before target metadata is available", async () => {
+test("A consumed suggestion is saved when target metadata is unavailable", async () => {
   const suggestion = {
     ...makeSuggestion(),
     options: [makeOption({ threadId })],
   };
   const pool = mockPool([suggestion]);
   mockChatLifecycle(context, { threadId });
+  const loadingDraft = context.mocks.deferred<void>();
+  const releaseDraft = context.mocks.deferred<void>();
   const saved: (UserMessageDocument | null | undefined)[] = [];
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Thread metadata is unavailable" },
     });
   });
+  context.mocks.api(chatThreadDraftContract.get, async ({ respond }) => {
+    loadingDraft.resolve();
+    await releaseDraft.promise;
+    return respond(200, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+  });
   context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
     saved.push(body.draftUserMessage);
     return respond(204);
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(suggestion.title);
   click(button(suggestion.options[0].label));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${threadId}`);
+    expect(composer()).toHaveTextContent("Referenced decision");
+  });
+  await loadingDraft.promise;
+  releaseDraft.resolve();
   await waitFor(() => {
     expect(saved).toContainEqual(suggestion.options[0].draft.draftUserMessage);
   });
   expect(pool.consumed).toStrictEqual([suggestion.id]);
 });
-test("A conflicting consumption does not send or change the home draft", async () => {
+test("A choice keeps the locally prepared draft when another session consumed the card", async () => {
   const pool = mockPool();
   context.mocks.api(suggestionsContract.consume, ({ respond }) => {
     // Another session consumed it first and the API announced the change.
@@ -551,19 +539,14 @@ test("A conflicting consumption does not send or change the home draft", async (
       error: { code: "CONFLICT", message: "Already consumed" },
     });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeedFromHome("Keep this draft");
   await screen.findByText(makeSuggestion().title);
-  await fill(composer(), "Keep this draft");
   click(button(makeOption().label));
   await waitFor(() => {
-    return expect(queryTab("Suggestions")).not.toBeInTheDocument();
+    expect(pathname()).toBe(homePath);
+    expect(composer()).toHaveTextContent("Keep this draft");
+    expect(composer()).toHaveTextContent("Referenced decision");
   });
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
-  expect(composer()).toHaveTextContent("Keep this draft");
 });
 test("A suggestion uses the ordinary composer to join a running target chat", async () => {
   const runId = "d0000000-0000-4000-a000-000000000821";
@@ -592,11 +575,7 @@ test("A suggestion uses the ordinary composer to join a running target chat", as
       },
     ],
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   await waitFor(() => {
@@ -617,7 +596,7 @@ test("A suggestion uses the ordinary composer to join a running target chat", as
     titleSnapshot: "Referenced decision",
   });
 });
-test("The consume response owns the message and target, including updates since the card loaded", async () => {
+test("The loaded option keeps its draft and destination when the server responds with a later version", async () => {
   mockPool();
   mockChatLifecycle(context, { threadId });
   context.mocks.api(suggestionsContract.consume, ({ respond }) => {
@@ -639,18 +618,13 @@ test("The consume response owns the message and target, including updates since 
       ],
     });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   await waitFor(() => {
-    return expect(pathname()).toBe(`/chats/${threadId}`);
+    expect(pathname()).toBe(homePath);
+    expect(composer()).toHaveTextContent("Referenced decision");
   });
-  await screen.findByText("Updated action");
-  expect(screen.queryByText("Referenced decision")).not.toBeInTheDocument();
 });
 function numberedSuggestions(count: number): Suggestion[] {
   return Array.from({ length: count }, (_, index) => {
@@ -661,66 +635,81 @@ function numberedSuggestions(count: number): Suggestion[] {
     };
   });
 }
-test("Suggestions loop in both directions without modifying the composer", async () => {
-  const user = userEvent.setup();
-  mockPool(numberedSuggestions(3));
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
+function feedItemLabels(): (string | null)[] {
+  return within(screen.getByRole("region", { name: "Suggestions" }))
+    .getAllByRole("listitem")
+    .map((row) => {
+      const content =
+        within(row).queryByRole("heading") ?? within(row).getByRole("status");
+      return content.textContent;
+    });
+}
+test("The Feed lists every suggestion card and opens the chosen card's draft", async () => {
+  const items = numberedSuggestions(3).map((item, index) => {
+    return {
+      ...item,
+      options: [
+        makeOption({
+          label: `Review option ${index + 1}`,
+          draft: {
+            draftUserMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "text",
+                  text: `Draft for suggested action ${index + 1}`,
+                },
+              ],
+            },
+            draftAttachments: null,
+          },
+        }),
+      ],
+    };
   });
-  await screen.findByText("Suggested action 1");
-  expect(screen.getByText("1 of 3")).toBeInTheDocument();
-  expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
-  await fill(composer(), "Keep this draft");
-  await user.click(button("Next suggestion"));
-  await screen.findByText("Suggested action 2");
-  expect(screen.getByText("2 of 3")).toBeInTheDocument();
-  expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
-  await user.keyboard("{Enter}");
-  await screen.findByText("Suggested action 3");
-  expect(screen.getByText("3 of 3")).toBeInTheDocument();
-  await user.keyboard("{Enter}");
-  await screen.findByText("Suggested action 1");
-  expect(screen.getByText("1 of 3")).toBeInTheDocument();
-  expect(button("Next suggestion")).toHaveFocus();
-  await user.click(button("Previous suggestion"));
-  await screen.findByText("Suggested action 3");
-  expect(screen.getByText("3 of 3")).toBeInTheDocument();
-  expect(button("Previous suggestion")).toHaveFocus();
-  await user.keyboard("{Enter}");
-  await screen.findByText("Suggested action 2");
-  expect(composer()).toHaveTextContent("Keep this draft");
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
-});
-test("Dismissing a suggestion consumes it without opening it and brings up the next one", async () => {
-  const pool = mockPool(numberedSuggestions(2));
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
+  mockPool(items);
+  await openFeed();
+  const suggestions = await screen.findByRole("region", {
+    name: "Suggestions",
   });
-  await screen.findByText("Suggested action 1");
-  await fill(composer(), "Keep this draft");
-  click(button("Dismiss"));
-  await screen.findByText("Suggested action 2");
-  expect(screen.getByText("1 of 1")).toBeInTheDocument();
-  expect(button("Previous suggestion")).toHaveAttribute(
-    "aria-disabled",
-    "true",
+  const cards = within(suggestions).getAllByRole("article");
+  expect(
+    cards.map((card) => {
+      return within(card).getByRole("heading").textContent;
+    }),
+  ).toStrictEqual(
+    items.map((item) => {
+      return item.title;
+    }),
   );
-  expect(button("Next suggestion")).toHaveAttribute("aria-disabled", "true");
+  for (const [index, card] of cards.entries()) {
+    expect(button(items[index].options[0].label, "button", card)).toBeEnabled();
+    expect(button("I’d like to…", "button", card)).toBeEnabled();
+    expect(button("Dismiss", "button", card)).toBeEnabled();
+  }
+  click(button(items[1].options[0].label, "button", cards[1]));
+  await waitForFocusedHomeComposer();
+  expect(composer()).toHaveTextContent("Draft for suggested action 2");
+});
+test("Dismissing a suggestion removes only its card and keeps the remaining suggestion available", async () => {
+  const pool = mockPool(numberedSuggestions(2));
+  await openFeed();
+  await screen.findByText("Suggested action 1");
+  click(button("Dismiss"));
+  await screen.findByText("Suggestion dismissed");
+  expect(
+    screen.getByRole("article", { name: "Suggested action 2" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
   await waitFor(() => {
     expect(pool.consumed).toStrictEqual([
       "a0000000-0000-4000-a000-000000000001",
     ]);
   });
-  expect(composer()).toHaveTextContent("Keep this draft");
-  expect(composer()).not.toHaveTextContent("Referenced decision");
   expect(pool.selections).toStrictEqual([
     { id: makeSuggestion().id, optionId: null },
   ]);
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+  expect(pathname()).toBe("/feed");
   click(button("Dismiss"));
   await waitFor(() => {
     expect(pool.consumed).toStrictEqual([
@@ -728,16 +717,19 @@ test("Dismissing a suggestion consumes it without opening it and brings up the n
       "a0000000-0000-4000-a000-000000000002",
     ]);
   });
-  expect(queryTab("Suggestions")).toBeInTheDocument();
+  expect(screen.getByText("Suggestion dismissed")).toBeInTheDocument();
+  expect(screen.queryByText(EMPTY_FEED)).not.toBeInTheDocument();
   await userEvent.setup().click(button("Close feedback"));
-  await waitFor(() => {
-    expect(queryTab("Suggestions")).not.toBeInTheDocument();
-  });
-  expect(composer()).toHaveTextContent("Keep this draft");
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+  await screen.findByText(EMPTY_FEED);
+  expect(pathname()).toBe("/feed");
 });
-test("A deleted suggestion target leaves the current draft in place", async () => {
+test("A deleted target shows its unavailable page and preserves the home draft", async () => {
   mockPool([{ ...makeSuggestion(), options: [makeOption({ threadId })] }]);
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Chat thread not found" },
+    });
+  });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Chat thread not found" },
@@ -748,29 +740,29 @@ test("A deleted suggestion target leaves the current draft in place", async () =
       error: { code: "NOT_FOUND", message: "Chat thread not found" },
     });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeedFromHome("Keep my home draft");
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
+  await screen.findByRole("heading", { name: "Chat thread not found" });
+  expect(pathname()).toBe(`/chats/${threadId}`);
+  click(link(homePath));
   await waitFor(() => {
-    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+    expect(composer()).toHaveTextContent("Keep my home draft");
   });
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
-test("The switch-off and secondary-Agent home retain their ordinary starting points", async () => {
-  mockPool();
-  await setupPage({ context, path: `/agents/${agentId}/chat` });
-  expect(
-    queryAllByRoleFast("tab").some((entry) => {
-      return entry.textContent?.trim() === "Suggestions";
-    }),
-  ).toBeFalsy();
+
+test("With the switch off, the sidebar has no Feed entry", async () => {
+  await setupPage({ context, path: homePath });
   expect(button("Workflow")).toBeInTheDocument();
+  expect(queryLink("/feed")).toBeNull();
 });
-test("An enabled secondary Agent does not display the user's suggestions", async () => {
+test("With the switch off, the Feed route is not found", async () => {
+  await setupPage({ context, path: "/feed" });
+  await expect(
+    screen.findByRole("heading", { name: "That page isn't here." }),
+  ).resolves.toBeInTheDocument();
+});
+test("Feed options continue in the default Agent after visiting a secondary Agent", async () => {
   const secondary = "c0000000-0000-4000-a000-000000000002";
   const agents: AgentResponse[] = [agentId, secondary].map((id) => {
     return {
@@ -803,15 +795,16 @@ test("An enabled secondary Agent does not display the user's suggestions", async
     featureSwitches: features,
   });
   expect(button("Workflow")).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("tab").some((entry) => {
-      return entry.textContent?.trim() === "Suggestions";
-    }),
-  ).toBeFalsy();
-  expect(screen.queryByText(makeSuggestion().title)).not.toBeInTheDocument();
+  click(link("/feed"));
+  await screen.findByText(makeSuggestion().title);
+  click(button(makeOption().label));
+  await waitFor(() => {
+    expect(pathname()).toBe(homePath);
+    expect(composer()).toHaveTextContent("Referenced decision");
+  });
 });
 
-test("Custom direction stays expanded above the feedback actions and only prepares the saved composer", async () => {
+test("Custom direction stays expanded above the feedback actions and only prepares the default Agent's composer", async () => {
   const pool = mockPool();
   const saved: UserMessageDocument[] = [];
   context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
@@ -820,11 +813,7 @@ test("Custom direction stays expanded above the feedback actions and only prepar
     }
     return respond(204);
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeedFromHome("Keep my original draft");
   await screen.findByText(makeSuggestion().title);
   const custom = button("I’d like to…");
   expect(custom).toHaveTextContent(
@@ -834,14 +823,8 @@ test("Custom direction stays expanded above the feedback actions and only prepar
     custom.compareDocumentPosition(button("Dismiss")) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  await fill(composer(), "Keep my original draft");
   await userEvent.setup().click(custom);
-  await waitFor(() => {
-    return expect(button("Go on…")).toHaveAttribute("aria-pressed", "true");
-  });
-  expect(button("Go on…")).toHaveTextContent(
-    "Add your message above, then send.",
-  );
+  await waitForFocusedHomeComposer();
   expect(
     screen.getByRole("textbox", { name: "What do you have in mind?" }),
   ).toBeInTheDocument();
@@ -849,7 +832,6 @@ test("Custom direction stays expanded above the feedback actions and only prepar
   expect(composer()).toHaveTextContent(makeSuggestion().title);
   expect(composer()).not.toHaveTextContent("launch-plan-v2");
   expect(button("Send")).toBeDisabled();
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
   expect(pool.consumed).toStrictEqual([]);
   await waitFor(() => {
     return expect(saved.length).toBeGreaterThan(0);
@@ -870,7 +852,7 @@ test("Custom direction stays expanded above the feedback actions and only prepar
   expect(pool.consumed).toStrictEqual([]);
 });
 
-test("Browsing preserves prepared context; explicitly choosing another card replaces it and keeps the note", async () => {
+test("Choosing another card's custom direction replaces the prepared context and keeps the note", async () => {
   const first = makeSuggestion();
   const second: Suggestion = {
     ...makeSuggestion(),
@@ -901,24 +883,26 @@ test("Browsing preserves prepared context; explicitly choosing another card repl
     }
     return respond(204);
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(first.title);
   await userEvent.setup().click(button("I’d like to…"));
-  await waitFor(() => {
-    return expect(button("Go on…")).not.toBeDisabled();
-  });
-  await userEvent.setup().keyboard("Assess the risks first");
-  await userEvent.setup().click(button("Next suggestion"));
+  await waitForFocusedHomeComposer();
   expect(composer()).toHaveTextContent(first.title);
-  expect(composer()).not.toHaveTextContent(second.title);
-  await userEvent.setup().click(button("I’d like to…"));
+  await userEvent.setup().keyboard("Assess the risks first");
+  click(link("/feed"));
+  await screen.findByText(first.title);
+  click(
+    button(
+      "I’d like to…",
+      "button",
+      screen.getByRole("article", { name: second.title }),
+    ),
+  );
   await waitFor(() => {
-    return expect(composer()).toHaveTextContent(second.title);
+    expect(pathname()).toBe(homePath);
+    expect(composer()).toHaveTextContent(second.title);
   });
+  expect(composer()).not.toHaveTextContent(first.title);
   expect(composer()).toHaveTextContent("Assess the risks first");
   await waitFor(() => {
     return expect(
@@ -967,23 +951,17 @@ test("A custom follow-up retains its draft on failure and reuses its identities 
       createdAt: "2026-10-27T00:00:00Z",
     });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(makeSuggestion().title);
   await userEvent.setup().click(button("I’d like to…"));
-  await waitFor(() => {
-    return expect(button("Go on…")).not.toBeDisabled();
-  });
+  await waitForFocusedHomeComposer();
   await userEvent.setup().keyboard("Assess the budget risk first");
   await waitFor(() => {
     return expect(button("Send")).not.toBeDisabled();
   });
   await userEvent.setup().click(button("Send"));
   await screen.findByText("Follow-up temporarily unavailable");
-  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+  expect(pathname()).toBe(homePath);
   expect(composer()).toHaveTextContent("Assess the budget risk first");
   expect(composer()).toHaveTextContent(makeSuggestion().title);
   expect(pool.consumed).toStrictEqual([]);
@@ -1053,18 +1031,12 @@ test("Removing custom context preserves the member's original draft and files", 
       draftAttachments: [original],
     });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(suggestion.title);
-  await screen.findByText("my-original.txt");
   await userEvent.setup().click(button("I’d like to…"));
+  await waitForFocusedHomeComposer();
   await screen.findByText("suggestion-background.txt");
-  await waitFor(() => {
-    return expect(button("Go on…")).not.toBeDisabled();
-  });
+  await screen.findByText("my-original.txt");
   await userEvent.setup().keyboard("Keep my own requirements");
   await userEvent.setup().click(button("Remove feedback"));
   await waitFor(() => {
@@ -1077,37 +1049,9 @@ test("Removing custom context preserves the member's original draft and files", 
   expect(composer()).toHaveTextContent("Keep my own requirements");
 });
 
-test("Suggestions stays outside More when Tasks and the creation categories overflow", async () => {
-  mockTaskChipLayout(280);
-  mockPool();
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: { ...features, [FeatureSwitchKey.ProactiveAgent]: true },
-  });
-  await screen.findByText(makeSuggestion().title);
-  expect(
-    queryAllByRoleFast("tab").map((tab) => {
-      return tab.textContent?.trim();
-    }),
-  ).toStrictEqual(["Suggestions"]);
-  await user.click(button("More"));
-  expect(taskMenuItem("Tasks")).toBeInTheDocument();
-  await user.click(taskMenuItem("Image"));
-  await waitFor(() => {
-    expect(button("Remove Image")).toBeInTheDocument();
-    expect(composer()).toHaveFocus();
-  });
-});
-
 test("Feedback stays available after the last card, accepts an optional reason, and undo restores the card", async () => {
   mockPool([{ ...makeSuggestion(), consumeToken: "a".repeat(64) }]);
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(makeSuggestion().title);
   const actions = ["Dismiss", "Already done", "Not planned", "Less like this"];
   const suggestion = screen.getByRole("region", { name: "Suggestions" });
@@ -1142,16 +1086,44 @@ test("Feedback stays available after the last card, accepts an optional reason, 
   await userEvent.setup().click(button("Not planned"));
   await screen.findByText("Noted — this is not planned");
   await userEvent.setup().click(button("Close feedback"));
-  await waitFor(() => {
-    expect(queryTab("Suggestions")).toBeNull();
-  });
+  await screen.findByText(EMPTY_FEED);
 });
 
-test("Failed feedback keeps the card and a later attempt records it", async () => {
+test("Not planned replaces its card in the Feed and Undo restores it in place", async () => {
+  const items = numberedSuggestions(3);
+  mockPool(items);
+  await openFeed();
+  await screen.findByText(items[1].title);
+  click(
+    button(
+      "Not planned",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  );
+  await screen.findByText("Noted — this is not planned");
+  expect(feedItemLabels()).toStrictEqual([
+    items[0].title,
+    "Noted — this is not planned",
+    items[2].title,
+  ]);
+  click(button("Undo"));
+  await screen.findByText(items[1].title);
+  expect(feedItemLabels()).toStrictEqual(
+    items.map((item) => {
+      return item.title;
+    }),
+  );
+});
+
+test("Failed feedback keeps the local choice and can retry the same feedback identity", async () => {
   const item = makeSuggestion();
   mockPool([item]);
+  const attemptedIds: string[] = [];
+  const retried = context.mocks.deferred<void>();
   let failing = true;
-  context.mocks.api(suggestionsContract.feedback, ({ respond }) => {
+  context.mocks.api(suggestionsContract.feedback, ({ body, respond }) => {
+    attemptedIds.push(body.id);
     if (failing) {
       return respond(500, {
         error: {
@@ -1160,58 +1132,284 @@ test("Failed feedback keeps the card and a later attempt records it", async () =
         },
       });
     }
-    notifySuggestionsChanged();
+    retried.resolve();
     return respond(200, { restored: false });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
+  await openFeed();
   await screen.findByText(item.title);
-  await userEvent.setup().click(button("Already done"));
-  await screen.findByText("Feedback could not be saved");
-  expect(screen.getByText(item.title)).toBeInTheDocument();
-  await waitFor(() => {
-    expect(button("Already done")).not.toBeDisabled();
-  });
+  click(button("Already done"));
+  const error = await screen.findByRole("alert");
+  expect(
+    within(error).getByText(/Feedback could not be saved/),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Noted — this is already done")).toBeInTheDocument();
+  expect(screen.queryByText(item.title)).not.toBeInTheDocument();
+  click(button("Close feedback"));
+  await screen.findByText(EMPTY_FEED);
+  expect(screen.getByRole("alert")).toBeInTheDocument();
   failing = false;
-  await userEvent.setup().click(button("Already done"));
-  await screen.findByText("Noted — this is already done");
+  click(button("Try again"));
+  await retried.promise;
+  await waitFor(() => {
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  expect(attemptedIds[1]).toBe(attemptedIds[0]);
 });
 
-test("A card stays disabled while feedback saves and Undo follows acknowledgment", async () => {
-  const item = makeSuggestion();
-  const pool = mockPool([item]);
+test("Slow feedback leaves other cards usable and Undo restores the original card in order", async () => {
+  const items = numberedSuggestions(3);
+  mockPool(items);
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
-  context.mocks.api(suggestionsContract.feedback, async ({ respond }) => {
+  const undone = context.mocks.deferred<void>();
+  const otherCardSaved = context.mocks.deferred<void>();
+  const requests: { id: string; kind: string; targetId: string | null }[] = [];
+  context.mocks.api(
+    suggestionsContract.feedback,
+    async ({ params, body, respond }) => {
+      requests.push(body);
+      if (params.id === items[1].id) {
+        otherCardSaved.resolve();
+      }
+      if (params.id === items[0].id && body.kind !== "undo") {
+        requested.resolve();
+        await release.promise;
+      }
+      if (body.kind === "undo") {
+        undone.resolve();
+      }
+      return respond(200, { restored: body.kind === "undo" });
+    },
+  );
+  await openFeed();
+  await screen.findByText(items[0].title);
+  click(button("Already done"));
+  await requested.promise;
+  await screen.findByText("Noted — this is already done");
+  expect(feedItemLabels()).toStrictEqual([
+    "Noted — this is already done",
+    items[1].title,
+    items[2].title,
+  ]);
+  expect(
+    button(
+      "Not planned",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  ).toBeEnabled();
+  click(button("Undo"));
+  await screen.findByText(items[0].title);
+  expect(
+    within(screen.getByRole("region", { name: "Suggestions" }))
+      .getAllByRole("heading")
+      .map((heading) => {
+        return heading.textContent;
+      }),
+  ).toStrictEqual(
+    items.map((item) => {
+      return item.title;
+    }),
+  );
+  // Another card stays interactive while the restored card's feedback waits.
+  click(
+    button(
+      "Not planned",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  );
+  await screen.findByText("Noted — this is not planned");
+  await otherCardSaved.promise;
+  release.resolve();
+  await undone.promise;
+  expect(screen.getByText(items[2].title)).toBeInTheDocument();
+  expect(screen.getByText("Noted — this is not planned")).toBeInTheDocument();
+  const feedback = requests.find((request) => {
+    return request.kind === "already_done";
+  });
+  const undo = requests.find((request) => {
+    return request.kind === "undo";
+  });
+  expect(undo?.targetId).toBe(feedback?.id);
+});
+
+test("Reason edits and Undo are local while their writes follow the original feedback", async () => {
+  const item = { ...makeSuggestion(), consumeToken: "a".repeat(64) };
+  mockPool([item]);
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const reasonRequested = context.mocks.deferred<void>();
+  const releaseReason = context.mocks.deferred<void>();
+  const undone = context.mocks.deferred<void>();
+  let feedbackSaved = false;
+  let reasonSaved = false;
+  context.mocks.api(suggestionsContract.feedback, async ({ body, respond }) => {
+    if (body.kind === "less_like_this") {
+      requested.resolve();
+      await release.promise;
+      feedbackSaved = true;
+    }
+    if (body.kind === "reason") {
+      if (!feedbackSaved) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Feedback is not saved" },
+        });
+      }
+      reasonRequested.resolve();
+      await releaseReason.promise;
+      reasonSaved = true;
+    }
+    if (body.kind === "undo") {
+      if (!reasonSaved) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Reason is not saved" },
+        });
+      }
+      undone.resolve();
+    }
+    return respond(200, { restored: body.kind === "undo" });
+  });
+  await openFeed();
+  await screen.findByText(item.title);
+  click(button("Less like this"));
+  await requested.promise;
+  click(button("Add a reason"));
+  await fill(
+    screen.getByLabelText("Add a reason (optional)"),
+    "Handled by my teammate",
+  );
+  click(button("Save"));
+  await screen.findByText("Edit reason");
+  click(button("Edit reason"));
+  expect(screen.getByLabelText("Add a reason (optional)")).toHaveValue(
+    "Handled by my teammate",
+  );
+  click(button("Undo"));
+  await screen.findByText(item.title);
+  release.resolve();
+  await reasonRequested.promise;
+  expect(screen.getByText(item.title)).toBeInTheDocument();
+  releaseReason.resolve();
+  await undone.promise;
+  expect(screen.getByText(item.title)).toBeInTheDocument();
+});
+
+test("Choosing an option opens the focused default Agent composer while consumption and draft saving wait", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const saving = context.mocks.deferred<void>();
+  const releaseSave = context.mocks.deferred<void>();
+  context.mocks.api(suggestionsContract.consume, async ({ body, respond }) => {
     requested.resolve();
     await release.promise;
-    pool.withdrawAll();
-    notifySuggestionsChanged();
-    return respond(200, { restored: false });
+    return respond(200, {
+      ...items[0],
+      status: "consumed",
+      selectedOptionId: body.optionId,
+    });
   });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
+  context.mocks.api(agentDraftContract.patch, async ({ respond }) => {
+    saving.resolve();
+    await releaseSave.promise;
+    return respond(204);
   });
-  await screen.findByText(item.title);
-  await userEvent.setup().click(button("Already done"));
+  await openFeed();
+  await screen.findByText(items[0].title);
+  click(button(makeOption().label));
   await requested.promise;
-  try {
-    expect(screen.getByText(item.title)).toBeInTheDocument();
-    expect(button("Not planned")).toBeDisabled();
-    expect(
-      queryAllByRoleFast("button").some((node) => {
-        return node.textContent?.trim() === "Undo";
-      }),
-    ).toBeFalsy();
-  } finally {
-    release.resolve();
-  }
-  await screen.findByText("Noted — this is already done");
-  expect(screen.queryByText(item.title)).not.toBeInTheDocument();
-  expect(button("Undo")).not.toBeDisabled();
+  await waitForFocusedHomeComposer();
+  expect(composer()).toHaveTextContent("Referenced decision");
+  await saving.promise;
+  expect(pathname()).toBe(homePath);
+  releaseSave.resolve();
+  release.resolve();
+});
+
+test("Custom direction opens the focused composer before its draft saving finishes", async () => {
+  const items = numberedSuggestions(2);
+  const pool = mockPool(items);
+  const saving = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(agentDraftContract.patch, async ({ respond }) => {
+    saving.resolve();
+    await release.promise;
+    return respond(204);
+  });
+  await openFeed();
+  await screen.findByText(items[0].title);
+  click(button("I’d like to…"));
+  await waitForFocusedHomeComposer();
+  expect(composer()).toHaveTextContent(items[0].title);
+  await saving.promise;
+  expect(pool.consumed).toStrictEqual([]);
+  release.resolve();
+});
+
+test("An existing conversation opens before consumption and its remote draft finish", async () => {
+  const item = { ...makeSuggestion(), options: [makeOption({ threadId })] };
+  mockPool([item]);
+  mockChatLifecycle(context, { threadId });
+  const consuming = context.mocks.deferred<void>();
+  const releaseConsumption = context.mocks.deferred<void>();
+  const loadingDraft = context.mocks.deferred<void>();
+  const releaseDraft = context.mocks.deferred<void>();
+  context.mocks.api(suggestionsContract.consume, async ({ body, respond }) => {
+    consuming.resolve();
+    await releaseConsumption.promise;
+    return respond(200, {
+      ...item,
+      status: "consumed",
+      selectedOptionId: body.optionId,
+    });
+  });
+  context.mocks.api(chatThreadDraftContract.get, async ({ respond }) => {
+    loadingDraft.resolve();
+    await releaseDraft.promise;
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "My saved target draft" }],
+      },
+      draftAttachments: null,
+    });
+  });
+  await openFeed();
+  await screen.findByText(item.title);
+  click(button(makeOption().label));
+  await consuming.promise;
+  await loadingDraft.promise;
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${threadId}`);
+    expect(composer()).toHaveTextContent("Referenced decision");
+  });
+  releaseDraft.resolve();
+  await waitFor(() => {
+    expect(composer()).toHaveTextContent("My saved target draft");
+  });
+  releaseConsumption.resolve();
+});
+
+test("An immediate option choice supersedes custom preparation before it can change the composer", async () => {
+  mockPool();
+  const saved = context.mocks.deferred<UserMessageDocument>();
+  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+    if (body.draftUserMessage) {
+      saved.resolve(body.draftUserMessage);
+    }
+    return respond(204);
+  });
+  await openFeed();
+  await screen.findByText(makeSuggestion().title);
+  click(button("I’d like to…"));
+  click(button(makeOption().label));
+  await waitFor(() => {
+    expect(pathname()).toBe(homePath);
+    expect(composer()).toHaveTextContent("Referenced decision");
+  });
+  const document = await saved.promise;
+  expect(suggestionFeedbacks(document)).toHaveLength(0);
+  expect(button("Send")).toBeEnabled();
 });

@@ -38,10 +38,10 @@ disk pressure, miss, preparation fallback and hit.
 ## History transfer measurements
 
 `session_history_transfer` measures a complete actual restore attempt, including
-framework validation and requested-session Codex cleanup before replacement,
-independent of VM provenance. Its duration overlaps `session_restore`; do not add
-those intervals. `downloaded` identifies the remote-reference materializer's
-result, including ordinary download caches, not proof that HTTP was used.
+framework validation, independent of VM provenance. Its duration overlaps
+`session_restore`; do not add those intervals. `downloaded` identifies the
+remote-reference materializer's result, including ordinary download caches, not
+proof that HTTP was used.
 `inline` identifies captured inline history. A home verification miss followed by
 remote restoration is not a successful home-cache transfer.
 

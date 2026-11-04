@@ -6,6 +6,8 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import {
   workflowAutomationsContract,
   type WorkflowAutomationSummary,
@@ -1254,164 +1256,342 @@ describe("POST /api/webhooks/gmail", () => {
     expect(startHistoryIds.sort()).toStrictEqual(["202", "300"]);
   });
 
-  it("dispatches matching new inbound messages and de-duplicates retries", async () => {
-    configureGmailEnv();
-    const runnerGroup = runsApi.configureRunnerGroup();
-    configureGmailWatchMock();
+  it.each([
+    {
+      name: "transport failure",
+      failure: () => {
+        return HttpResponse.error();
+      },
+    },
+    {
+      name: "rate limiting",
+      failure: () => {
+        return HttpResponse.json({ error: {} }, { status: 429 });
+      },
+    },
+    {
+      name: "server failure",
+      failure: () => {
+        return HttpResponse.json({ error: {} }, { status: 503 });
+      },
+    },
+    {
+      name: "Gmail's HTTP 403 user rate limit",
+      failure: () => {
+        return HttpResponse.json(
+          { error: { errors: [{ reason: "userRateLimitExceeded" }] } },
+          { status: 403 },
+        );
+      },
+    },
+  ])(
+    "retries history pagination after $name without losing or duplicating events",
+    async ({ failure }) => {
+      configureGmailEnv();
+      runsApi.configureRunnerGroup();
+      configureGmailWatchMock();
+      const { actor, workflowId } = await setupFixture();
+      const gmailEmail = uniqueGmailEmail();
+      await connectGmail(actor, gmailEmail);
+      configureGmailMessageMocks(gmailEmail);
+      await configureWorkspaceModelProvider(actor);
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: { provider: "gmail", event: "new_message" },
+          },
+        }),
+        [201],
+      );
+      const chatThreadId = requireAutomationChatThreadId(created.body);
+      await configureAutomationThreadModel(actor, chatThreadId);
 
-    const { actor, workflowId, firstEmail, secondEmail, secondConnectorId } =
-      await setupMultiAccountGmailFixture();
-    configureGmailMessageMocks(secondEmail, "gmail-second-access-token");
-    await configureWorkspaceModelProvider(actor);
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: {
-            provider: "gmail",
-            event: "new_message",
-            threadId: "gmail-thread-1",
-            match: { subject: { contains: "invoice" } },
+      let historyAvailable = false;
+      server.use(
+        http.get(
+          "https://gmail.googleapis.com/gmail/v1/users/me/history",
+          ({ request }) => {
+            const query = new URL(request.url).searchParams;
+            if (query.get("startHistoryId") !== "100") {
+              return HttpResponse.json({ history: [], historyId: "101" });
+            }
+            if (query.has("pageToken")) {
+              return historyAvailable
+                ? HttpResponse.json({ historyId: "101" })
+                : failure();
+            }
+            return HttpResponse.json({
+              history: [
+                {
+                  id: "101",
+                  messagesAdded: [
+                    { message: { id: "msg-1", labelIds: ["INBOX"] } },
+                  ],
+                },
+              ],
+              nextPageToken: "remaining-history",
+            });
           },
-        },
-      }),
-      [201],
-    );
-    const unrelatedThread = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: {
-            provider: "gmail",
-            event: "new_message",
-            threadId: "gmail-thread-2",
-            match: { subject: { contains: "invoice" } },
+        ),
+      );
+      const body = gmailPushBody({
+        emailAddress: gmailEmail,
+        historyId: "101",
+        messageId: "pubsub-history-retry",
+      });
+
+      const failed = await postGmailWebhook(body);
+      expectResponseStatus(failed, 503);
+      expect(failed.body).toStrictEqual({
+        error:
+          "Gmail history is temporarily unavailable; retry this notification",
+      });
+      await expect(
+        readAutomation(actor, created.body.id),
+      ).resolves.toMatchObject({
+        lastRunAt: null,
+      });
+
+      historyAvailable = true;
+      const retried = await postGmailWebhook(body);
+      expectResponseStatus(retried, 200);
+      expect(retried.body).toMatchObject({ dispatched: 1, duplicates: 0 });
+      await flushWaitUntilForTest();
+      await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(
+        1,
+      );
+
+      // A duplicate provider delivery can overlap the previous cursor snapshot.
+      configureGmailMessageMocks(gmailEmail);
+      const duplicate = await postGmailWebhook(body);
+      expectResponseStatus(duplicate, 200);
+      expect(duplicate.body).toMatchObject({ dispatched: 0, duplicates: 1 });
+      await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it.each([
+    { status: 401, reason: "authError" },
+    { status: 403, reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" },
+  ])(
+    "acknowledges permanent Gmail HTTP $status authorization failures",
+    async ({ status, reason }) => {
+      configureGmailEnv();
+      configureGmailWatchMock();
+      const { actor, workflowId } = await setupFixture();
+      const gmailEmail = uniqueGmailEmail();
+      await connectGmail(actor, gmailEmail);
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: { provider: "gmail", event: "new_message" },
           },
-        },
-      }),
-      [201],
-    );
-    const chatThreadId = requireAutomationChatThreadId(created.body);
-    await configureAutomationThreadModel(actor, chatThreadId);
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: chatThreadId },
-        body: {
+        }),
+        [201],
+      );
+      server.use(
+        http.get(
+          "https://gmail.googleapis.com/gmail/v1/users/me/history",
+          () => {
+            return HttpResponse.json(
+              { error: { details: [{ domain: "googleapis.com", reason }] } },
+              { status },
+            );
+          },
+        ),
+      );
+
+      const response = await postGmailWebhook(
+        gmailPushBody({
+          emailAddress: gmailEmail,
+          historyId: "101",
+          messageId: "pubsub-history-authorization",
+        }),
+      );
+      expectResponseStatus(response, 200);
+      expect(response.body).toMatchObject({ dispatched: 0, duplicates: 0 });
+      await expect(
+        readAutomation(actor, created.body.id),
+      ).resolves.toMatchObject({
+        lastRunAt: null,
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "dispatches matching new inbound messages and de-duplicates retries (Chat access: %s)",
+    async (chatAccountAccess) => {
+      configureGmailEnv();
+      const runnerGroup = runsApi.configureRunnerGroup();
+      configureGmailWatchMock();
+
+      const { actor, workflowId, firstEmail, secondEmail, secondConnectorId } =
+        await setupMultiAccountGmailFixture();
+      await updateFeatureSwitchesForUser(context, actor, {
+        connectorChatAccountAccess: chatAccountAccess,
+      });
+      configureGmailMessageMocks(secondEmail, "gmail-second-access-token");
+      await configureWorkspaceModelProvider(actor);
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: {
+              provider: "gmail",
+              event: "new_message",
+              threadId: "gmail-thread-1",
+              match: { subject: { contains: "invoice" } },
+            },
+          },
+        }),
+        [201],
+      );
+      const unrelatedThread = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: {
+              provider: "gmail",
+              event: "new_message",
+              threadId: "gmail-thread-2",
+              match: { subject: { contains: "invoice" } },
+            },
+          },
+        }),
+        [201],
+      );
+      const chatThreadId = requireAutomationChatThreadId(created.body);
+      await configureAutomationThreadModel(actor, chatThreadId);
+      await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: authHeaders(actor),
+          params: { id: chatThreadId },
+          body: {
+            connectionId: secondConnectorId,
+            target: { kind: "builtin", connectorSlug: "gmail" },
+          },
+        }),
+        [200],
+      );
+
+      const oldSource = await postGmailWebhook(
+        gmailPushBody({
+          emailAddress: firstEmail,
+          historyId: 101,
+          messageId: "pubsub-old-account",
+        }),
+      );
+      expectResponseStatus(oldSource, 200);
+      expect(oldSource.body).toMatchObject({
+        success: true,
+        dispatched: 0,
+        duplicates: 0,
+      });
+
+      const body = gmailPushBody({
+        emailAddress: secondEmail,
+        historyId: 101,
+        messageId: "pubsub-1",
+      });
+      const first = await postGmailWebhook(body);
+
+      expectResponseStatus(first, 200);
+      expect(first.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+      await flushWaitUntilForTest();
+      const expectedDisplayMessage =
+        'A new email arrived from Customer Example <customer@example.com> with subject "Invoice needs a reply".';
+
+      await expect(
+        workflowAutomationDisplayTexts(actor, chatThreadId),
+      ).resolves.toContain(expectedDisplayMessage);
+      const selections = await accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: authHeaders(actor),
+          params: { id: chatThreadId },
+        }),
+        [200],
+      );
+      expect(selections.body.selections).toStrictEqual([
+        {
           connectionId: secondConnectorId,
           target: { kind: "builtin", connectorSlug: "gmail" },
         },
-      }),
-      [200],
-    );
-
-    const oldSource = await postGmailWebhook(
-      gmailPushBody({
-        emailAddress: firstEmail,
-        historyId: 101,
-        messageId: "pubsub-old-account",
-      }),
-    );
-    expectResponseStatus(oldSource, 200);
-    expect(oldSource.body).toMatchObject({
-      success: true,
-      dispatched: 0,
-      duplicates: 0,
-    });
-
-    const body = gmailPushBody({
-      emailAddress: secondEmail,
-      historyId: 101,
-      messageId: "pubsub-1",
-    });
-    const first = await postGmailWebhook(body);
-
-    expectResponseStatus(first, 200);
-    expect(first.body).toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 1,
-      duplicates: 0,
-    });
-    await flushWaitUntilForTest();
-    const expectedDisplayMessage =
-      'A new email arrived from Customer Example <customer@example.com> with subject "Invoice needs a reply".';
-
-    await expect(
-      workflowAutomationDisplayTexts(actor, chatThreadId),
-    ).resolves.toContain(expectedDisplayMessage);
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: authHeaders(actor),
-        params: { id: chatThreadId },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([
-      {
-        connectionId: secondConnectorId,
-        target: { kind: "builtin", connectorSlug: "gmail" },
-      },
-    ]);
-    await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
-      {
+      ]);
+      await expect(
+        readAutomation(actor, created.body.id),
+      ).resolves.toMatchObject({
         lastRunAt: expect.any(String),
-      },
-    );
-    await expect(
-      readAutomation(actor, unrelatedThread.body.id),
-    ).resolves.toMatchObject({
-      lastRunAt: null,
-    });
-    const [runId] = await workflowRunIds(actor, chatThreadId);
-    if (!runId) {
-      throw new Error("Expected a dispatched Gmail workflow run");
-    }
-    await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
-    expect(claim.prompt).toContain("Not included below: the email body.");
-    expect(claim.prompt).not.toContain("Please draft a helpful reply.");
-    expectGmailEventContextInPrompt(claim.prompt, {
-      automationId: created.body.id,
-      event: "new_message",
-      emailAddress: secondEmail,
-      messageId: "msg-1",
-      threadId: "gmail-thread-1",
-      from: "Customer Example <customer@example.com>",
-      to: [secondEmail],
-      cc: [],
-      subject: "Invoice needs a reply",
-    });
-    expect(claim.appendSystemPrompt).toContain("# Agent Identity");
-    expect(
-      Object.values(claim.secretConnectorMetadataMap ?? {}),
-    ).toContainEqual(expect.objectContaining({ sourceId: secondConnectorId }));
+      });
+      await expect(
+        readAutomation(actor, unrelatedThread.body.id),
+      ).resolves.toMatchObject({
+        lastRunAt: null,
+      });
+      const [runId] = await workflowRunIds(actor, chatThreadId);
+      if (!runId) {
+        throw new Error("Expected a dispatched Gmail workflow run");
+      }
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(runId);
+      expect(claim.prompt).toContain("Not included below: the email body.");
+      expect(claim.prompt).not.toContain("Please draft a helpful reply.");
+      expectGmailEventContextInPrompt(claim.prompt, {
+        automationId: created.body.id,
+        event: "new_message",
+        emailAddress: secondEmail,
+        messageId: "msg-1",
+        threadId: "gmail-thread-1",
+        from: "Customer Example <customer@example.com>",
+        to: [secondEmail],
+        cc: [],
+        subject: "Invoice needs a reply",
+      });
+      expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+      expect(
+        Object.values(claim.secretConnectorMetadataMap ?? {}),
+      ).toContainEqual(
+        expect.objectContaining({ sourceId: secondConnectorId }),
+      );
 
-    const second = await postGmailWebhook(body);
+      const second = await postGmailWebhook(body);
 
-    expectResponseStatus(second, 200);
-    expect(second.body).toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 0,
-      duplicates: 1,
-    });
-    const displayMessagesAfterDuplicate = await workflowAutomationDisplayTexts(
-      actor,
-      chatThreadId,
-    );
-    expect(
-      displayMessagesAfterDuplicate.filter((message) => {
-        return message === expectedDisplayMessage;
-      }),
-    ).toHaveLength(1);
-  });
+      expectResponseStatus(second, 200);
+      expect(second.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 0,
+        duplicates: 1,
+      });
+      const displayMessagesAfterDuplicate =
+        await workflowAutomationDisplayTexts(actor, chatThreadId);
+      expect(
+        displayMessagesAfterDuplicate.filter((message) => {
+          return message === expectedDisplayMessage;
+        }),
+      ).toHaveLength(1);
+    },
+  );
 
   it("reprojects Gmail labels when the workflow thread account changes", async () => {
     configureGmailEnv();
@@ -1534,6 +1714,87 @@ describe("POST /api/webhooks/gmail", () => {
     expect(labelAuthorizations).toStrictEqual([
       "Bearer gmail-second-access-token",
     ]);
+  });
+
+  it("does not restore a denied Gmail default after deleting the last allowed account", async () => {
+    configureGmailEnv();
+    configureGmailWatchLifecycleMock();
+    const {
+      actor,
+      workflowId,
+      firstEmail,
+      firstConnectorId,
+      secondConnectorId,
+    } = await setupMultiAccountGmailFixture();
+    await updateFeatureSwitchesForUser(context, actor, {
+      connectorChatAccountAccess: true,
+    });
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(actor),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-new-message",
+          eventConfig: { provider: "gmail", event: "new_message" },
+        },
+      }),
+      [201],
+    );
+    const threadId = requireAutomationChatThreadId(created.body);
+    const target = { kind: "builtin", connectorSlug: "gmail" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const selected = await accept(
+      access.setThreadOverride({
+        headers: authHeaders(actor),
+        params: { threadId, connectionId: firstConnectorId },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    expect(selected.body.currentConnectionId).toBe(secondConnectorId);
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      actor,
+      "gmail",
+      secondConnectorId,
+    );
+    const current = await accept(
+      access.getThread({
+        headers: authHeaders(actor),
+        params: { threadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      currentConnectionId: null,
+      available: false,
+    });
+    const oldSource = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: firstEmail,
+        historyId: 101,
+        messageId: "pubsub-denied-default-after-deletion",
+      }),
+    );
+    expectResponseStatus(oldSource, 200);
+    expect(oldSource.body).toMatchObject({ dispatched: 0 });
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(actor),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(actor),
+        params: { id: created.body.id },
+      }),
+      [400],
+    );
   });
 
   it("reconciles Gmail watches when selection and default account change", async () => {

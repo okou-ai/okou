@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::io::Write as _;
-use std::os::unix::io::{FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::io::{FromRawFd, OwnedFd};
 use std::path::Path;
 use std::time::Duration;
 
@@ -257,8 +257,7 @@ pub async fn spawn_dispatch_with_shutdown(
 ) -> TestResult<(DispatchClient, JoinHandle<NbdResult<()>>)> {
     let (client_fd, server_fd) = socketpair()?;
 
-    let client_std =
-        unsafe { std::os::unix::net::UnixStream::from_raw_fd(client_fd.into_raw_fd()) };
+    let client_std = std::os::unix::net::UnixStream::from(client_fd);
     client_std.set_nonblocking(true)?;
     let client_stream = UnixStream::from_std(client_std)?;
     let (reader, writer) = client_stream.into_split();

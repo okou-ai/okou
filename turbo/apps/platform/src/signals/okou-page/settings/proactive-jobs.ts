@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
+import { proactiveJobsContract } from "@okouai/api-contracts/client/proactive-jobs";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";

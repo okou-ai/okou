@@ -10,7 +10,7 @@ import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 
 import { nowDate } from "../../lib/time";
@@ -26,11 +26,26 @@ export function agentPhoneRouteLinkColumn(channel?: AgentPhoneChannel) {
     : agentphoneChatThreadRoutes.agentphoneUserLinkId;
 }
 
+export function agentPhoneGroupRouteKey(conversationId: string): string {
+  return `group:${createHash("sha256")
+    .update(JSON.stringify([conversationId]))
+    .digest("hex")}`;
+}
+
 export function agentPhoneGroupMessageRouteKey(
   conversationId: string,
   messageId: string,
 ): string {
   return `group:${createHash("sha256")
+    .update(JSON.stringify([conversationId, messageId]))
+    .digest("hex")}`;
+}
+
+export function agentPhoneGroupReplyRouteKey(
+  conversationId: string,
+  messageId: string,
+): string {
+  return `group-reply:${createHash("sha256")
     .update(JSON.stringify([conversationId, messageId]))
     .digest("hex")}`;
 }
@@ -44,8 +59,13 @@ export const recordAgentPhoneGroupReplyRoute$ = command(
       readonly conversationId: string;
       readonly messageId: string;
       readonly chatThreadId: string;
+      readonly rootMessageId: string;
     },
   ): Promise<void> => {
+    // Replies to the group's main conversation start a separate thread.
+    if (args.rootMessageId === agentPhoneGroupRouteKey(args.conversationId)) {
+      return;
+    }
     await set(writeDb$)
       .insert(agentphoneChatThreadRoutes)
       .values({
@@ -179,16 +199,17 @@ export function describeAgentPhoneHandleShape(
   return "other";
 }
 
+/** Keep the phone recipient even when no Okou account is linked at send time. */
 export interface AgentPhoneMessageVisibilityRecipient {
-  readonly orgId: string;
-  readonly userId: string;
+  readonly phoneHandle: string;
+  readonly orgId: string | null;
+  readonly userId: string | null;
 }
 
 export const resolveAgentPhoneParticipantVisibilityRecipients$ = command(
   async (
     { get },
     participants: readonly string[],
-    asOf: Date,
     signal: AbortSignal,
   ): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> => {
     const normalizedHandles = [
@@ -208,26 +229,24 @@ export const resolveAgentPhoneParticipantVisibilityRecipients$ = command(
 
     const links = await get(db$)
       .select({
+        phoneHandle: agentphoneUserLinks.phoneHandle,
         orgId: agentphoneUserLinks.orgId,
         userId: agentphoneUserLinks.userId,
       })
       .from(agentphoneUserLinks)
-      .where(
-        and(
-          inArray(agentphoneUserLinks.phoneHandle, normalizedHandles),
-          lte(agentphoneUserLinks.createdAt, asOf),
-        ),
-      );
+      .where(inArray(agentphoneUserLinks.phoneHandle, normalizedHandles));
 
     signal.throwIfAborted();
-    const recipients = [
-      ...new Map(
-        links.map((link) => {
-          return [`${link.orgId}:${link.userId}`, link] as const;
-        }),
-      ).values(),
-    ];
-    return recipients;
+    const byHandle = new Map(
+      links.map((link) => {
+        return [link.phoneHandle, link] as const;
+      }),
+    );
+    return normalizedHandles.map((phoneHandle) => {
+      return (
+        byHandle.get(phoneHandle) ?? { phoneHandle, orgId: null, userId: null }
+      );
+    });
   },
 );
 
@@ -235,7 +254,6 @@ export const resolveAgentPhoneConversationVisibilityRecipients$ = command(
   async (
     { set },
     conversationId: string,
-    asOf: Date,
     signal: AbortSignal,
   ): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> => {
     const result = await settle(
@@ -255,7 +273,6 @@ export const resolveAgentPhoneConversationVisibilityRecipients$ = command(
     return await set(
       resolveAgentPhoneParticipantVisibilityRecipients$,
       result.value,
-      asOf,
       signal,
     );
   },
@@ -317,6 +334,11 @@ export const storeOutboundAgentPhoneMessage$ = command(
         mediaUrl: params.mediaUrl ?? null,
         isBot: true,
         receivedAt: nowDate(),
+        participantHandles: isGroup
+          ? visibilityRecipients.map((recipient) => {
+              return recipient.phoneHandle;
+            })
+          : [],
       })
       .onConflictDoNothing();
     if (!isGroup) {
@@ -324,15 +346,19 @@ export const storeOutboundAgentPhoneMessage$ = command(
       return;
     }
 
+    const linkedRecipients = visibilityRecipients.flatMap((recipient) => {
+      return recipient.orgId !== null && recipient.userId !== null
+        ? [sql`(${recipient.orgId}, ${recipient.userId})`]
+        : [];
+    });
+    if (linkedRecipients.length === 0) {
+      await insert;
+      return;
+    }
     const message = db
       .$with("inserted_message")
       .as(insert.returning({ id: agentphoneMessages.id }));
-    const recipients = sql.join(
-      visibilityRecipients.map((recipient) => {
-        return sql`(${recipient.orgId}, ${recipient.userId})`;
-      }),
-      sql`, `,
-    );
+    const recipients = sql.join(linkedRecipients, sql`, `);
     // Only this statement's inserted message grants access. A duplicate provider
     // id produces no rows, and a visibility failure rolls back the message too.
     await db

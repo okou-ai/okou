@@ -2,6 +2,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneGroupHistoryQuery,
+  type AgentPhoneGroupListQuery,
   type SendAgentPhoneGroupMessageBody,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import {
@@ -14,6 +15,7 @@ import {
   type PhoneUploadInitResponse,
   type SendPhoneMessageBody,
   type SendPhoneMessageResponse,
+  type SendPhoneReactionBody,
 } from "@okouai/api-contracts/contracts/integrations";
 import {
   getBaseUrl,
@@ -26,6 +28,16 @@ interface DownloadPhoneFileResult {
   path: string;
   mimetype: string;
   size: number;
+}
+
+export async function listAgentPhoneGroups(query: AgentPhoneGroupListQuery) {
+  const config = await getClientConfig();
+  const client = initClient(integrationsAgentPhoneContract, config);
+  const result = await client.listGroups({ query, headers: {} });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handleError(result, "Failed to list iMessage groups");
 }
 
 export async function readAgentPhoneGroupHistory(
@@ -67,6 +79,16 @@ export async function sendAgentPhoneGroupMessage(
     return result.body;
   }
   handleError(result, "Failed to send iMessage group message");
+}
+
+export async function sendPhoneReaction(body: SendPhoneReactionBody) {
+  const config = await getClientConfig();
+  const client = initClient(integrationsPhoneMessageContract, config);
+  const result = await client.sendReaction({ body, headers: {} });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handleError(result, "Failed to add iMessage reaction");
 }
 
 export async function initPhoneFileUpload(

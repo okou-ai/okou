@@ -37,9 +37,11 @@ import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   array,
+  iso,
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -55,7 +57,10 @@ import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import {
+  loadWorkflowAutomationAccountMode$,
+  workflowAutomationConnectorSelectionSql,
+} from "./workflow-automation-account.service";
 import type {
   AutomationRow,
   RunWorkflowAutomationResult,
@@ -110,7 +115,7 @@ const notionAuthorSchema = object({
 }).passthrough();
 
 const notionEntitySchema = object({
-  id: string().uuid(),
+  id: uuid(),
   type: string(),
 }).passthrough();
 
@@ -149,12 +154,12 @@ const notionWebhookLogMetadataSchema = object({
   });
 
 const notionWebhookEventSchema = object({
-  id: string().uuid(),
-  timestamp: string().datetime(),
-  workspace_id: string().uuid(),
+  id: uuid(),
+  timestamp: iso.datetime(),
+  workspace_id: uuid(),
   workspace_name: string().optional(),
-  subscription_id: string().uuid(),
-  integration_id: string().uuid(),
+  subscription_id: uuid(),
+  integration_id: uuid(),
   type: notionWebhookEventTypeSchema,
   authors: array(notionAuthorSchema).default([]),
   attempt_number: number().int().positive().optional(),
@@ -505,8 +510,13 @@ const repairNotionAutomationProjection$ = command(
     const selectionSql = workflowAutomationConnectorSelectionSql({
       orgId: args.orgId,
       userId: args.userId,
-      workflowId: automation.workflowId,
+      workflowId: sql`${automation.workflowId}`,
       connectorSlug: "notion",
+      chatAccountAccess: await set(
+        loadWorkflowAutomationAccountMode$,
+        args,
+        signal,
+      ),
     });
     const [selection] = parseRawRows(
       object({ connectorId: string().nullable() }),
@@ -574,6 +584,40 @@ const repairNotionAutomationProjection$ = command(
   },
 );
 
+export const repairNotionAutomationAccountProjectionsForOwner$ = command(
+  async (
+    { set },
+    owner: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, owner.orgId),
+          eq(workflowAutomations.ownerUserId, owner.userId),
+          eq(workflowAutomations.kind, "event"),
+          inArray(workflowAutomations.eventType, [
+            "notion-child-page-created",
+            "notion-database-item-created",
+            "notion-page-content-updated",
+          ]),
+        ),
+      )
+      .orderBy(asc(workflowAutomations.id));
+    signal.throwIfAborted();
+    for (const row of rows) {
+      await set(
+        repairNotionAutomationProjection$,
+        { ...owner, automationId: row.id },
+        signal,
+      );
+    }
+  },
+);
+
 const repairNotionAutomationProjections$ = command(
   async (
     { set },
@@ -603,32 +647,12 @@ const repairNotionAutomationProjections$ = command(
         left.userId.localeCompare(right.userId)
       );
     });
-    const db = set(writeDb$);
     for (const owner of orderedOwners) {
-      const rows = await db
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.orgId, owner.orgId),
-            eq(workflowAutomations.ownerUserId, owner.userId),
-            eq(workflowAutomations.kind, "event"),
-            inArray(workflowAutomations.eventType, [
-              "notion-child-page-created",
-              "notion-database-item-created",
-              "notion-page-content-updated",
-            ]),
-          ),
-        )
-        .orderBy(asc(workflowAutomations.id));
-      signal.throwIfAborted();
-      for (const row of rows) {
-        await set(
-          repairNotionAutomationProjection$,
-          { ...owner, automationId: row.id },
-          signal,
-        );
-      }
+      await set(
+        repairNotionAutomationAccountProjectionsForOwner$,
+        owner,
+        signal,
+      );
     }
     return orderedOwners.length > 0;
   },

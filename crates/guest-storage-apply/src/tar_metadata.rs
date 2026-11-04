@@ -68,6 +68,10 @@ impl<'a, R: Read> MetadataReader<'a, R> {
     pub(crate) fn new(reader: R, budget: &'a MetadataBudget) -> Self {
         Self { reader, budget }
     }
+
+    pub(crate) fn into_inner(self) -> R {
+        self.reader
+    }
 }
 
 impl<R: Read> Read for MetadataReader<'_, R> {

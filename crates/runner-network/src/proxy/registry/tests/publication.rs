@@ -3,21 +3,14 @@ use std::sync::mpsc;
 use std::task::Poll;
 use std::time::Duration;
 
+use runner_host::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseBlockingWorker;
+
 use super::*;
-
-struct ReleaseBlockingWorker(mpsc::Sender<()>);
-
-impl Drop for ReleaseBlockingWorker {
-    fn drop(&mut self) {
-        // A failed assertion must still release the worker before runtime Drop.
-        let _ = self.0.send(());
-    }
-}
 
 async fn occupy_blocking_worker() -> (ReleaseBlockingWorker, tokio::task::JoinHandle<()>) {
     let (entered, started) = tokio::sync::oneshot::channel();
     let (release, wait) = mpsc::channel();
-    let release = ReleaseBlockingWorker(release);
+    let release = ReleaseBlockingWorker::new(release);
     let task = tokio::task::spawn_blocking(move || {
         entered.send(()).unwrap();
         wait.recv_timeout(Duration::from_secs(5))

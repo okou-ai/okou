@@ -1,5 +1,100 @@
 # Changelog
 
+## [0.8.25](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.24...runner-storage-v0.8.25) (2026-11-04)
+
+
+### Refactoring
+
+* **test:** share the s3 partial-body error fixture ([#45118](https://github.com/okou-ai/okou/issues/45118)) ([413a9a3](https://github.com/okou-ai/okou/commit/413a9a3f1b856a77ffd86ddbe6a728913285a46f))
+
+## [0.8.24](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.23...runner-storage-v0.8.24) (2026-11-04)
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.8.23](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.22...runner-storage-v0.8.23) (2026-11-03)
+
+## [0.8.22](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.21...runner-storage-v0.8.22) (2026-11-03)
+
+## [0.8.21](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.20...runner-storage-v0.8.21) (2026-11-03)
+
+## [0.8.20](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.19...runner-storage-v0.8.20) (2026-11-03)
+
+## [0.8.19](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.18...runner-storage-v0.8.19) (2026-11-03)
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+* **rust:** type single-task abort ownership ([#44786](https://github.com/okou-ai/okou/issues/44786)) ([7883190](https://github.com/okou-ai/okou/commit/78831900d6af8fc1f0958b02e93052f8578c18bf))
+
+## [0.8.18](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.17...runner-storage-v0.8.18) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** retire orphaned guest file compression transport ([#44713](https://github.com/okou-ai/okou/issues/44713)) ([5dc1d17](https://github.com/okou-ai/okou/commit/5dc1d17b797535c5e154a6cf5960534363966fe0))
+
+## [0.8.17](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.16...runner-storage-v0.8.17) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
+## [0.8.16](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.15...runner-storage-v0.8.16) (2026-11-02)
+
+## [0.8.15](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.14...runner-storage-v0.8.15) (2026-11-02)
+
+## [0.8.14](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.13...runner-storage-v0.8.14) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.8.13](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.12...runner-storage-v0.8.13) (2026-11-01)
+
+## [0.8.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.11...runner-storage-v0.8.12) (2026-11-01)
+
+## [0.8.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.10...runner-storage-v0.8.11) (2026-10-31)
+
+## [0.8.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.9...runner-storage-v0.8.10) (2026-10-31)
+
+## [0.8.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.8...runner-storage-v0.8.9) (2026-10-31)
+
+## [0.8.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.7...runner-storage-v0.8.8) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.8.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.6...runner-storage-v0.8.7) (2026-10-31)
+
+## [0.8.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.5...runner-storage-v0.8.6) (2026-10-30)
+
+## [0.8.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.4...runner-storage-v0.8.5) (2026-10-30)
+
+## [0.8.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.3...runner-storage-v0.8.4) (2026-10-30)
+
+## [0.8.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.2...runner-storage-v0.8.3) (2026-10-30)
+
+## [0.8.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.1...runner-storage-v0.8.2) (2026-10-30)
+
+## [0.8.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.0...runner-storage-v0.8.1) (2026-10-30)
+
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.7...runner-storage-v0.8.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.7.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.6...runner-storage-v0.7.7) (2026-10-30)
+
 ## [0.7.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.5...runner-storage-v0.7.6) (2026-10-29)
 
 ## [0.7.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.4...runner-storage-v0.7.5) (2026-10-29)

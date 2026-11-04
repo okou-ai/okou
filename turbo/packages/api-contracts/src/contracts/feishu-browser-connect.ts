@@ -1,4 +1,4 @@
-import { boolean, coerce, literal, object, string, url } from "zod";
+import { boolean, coerce, literal, object, string, url, uuid } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -6,7 +6,7 @@ import { apiErrorSchema } from "./errors";
 const c = initContract();
 
 const feishuConnectTokenSchema = object({
-  installationId: string().uuid(),
+  installationId: uuid(),
   openId: string().min(1),
   chatId: string().min(1),
   ts: coerce.number().int(),

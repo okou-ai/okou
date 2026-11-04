@@ -1,32 +1,18 @@
 import type { RunnerSshObservationRequest } from "@okouai/api-contracts/contracts/runner-ssh";
-import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
-import {
-  and,
-  eq,
-  exists,
-  inArray,
-  lt,
-  ne,
-  not,
-  or,
-  sql,
-  type SQLWrapper,
-} from "drizzle-orm";
+import { and, eq, lt, ne, or, sql, type SQLWrapper } from "drizzle-orm";
 import { command } from "ccstate";
-import {
-  nullableDriverValueDecoder,
-  pgBooleanDecoder,
-} from "../../lib/db-structured-result";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import {
   createRunnerSshMutationReads,
   type RunnerSshHostIdentity,
 } from "./runner-ssh-mutation-query";
 import { availableRunnerMutationAuthority } from "./runner-ssh-mutation-result";
 
-interface ObservationAttempt {
-  readonly retry: boolean;
+interface ObservationResult {
   readonly outcome: "recorded" | "ignored" | "unavailable";
   readonly notify: boolean;
 }
@@ -66,127 +52,100 @@ export const commitRunnerSshObservationAttempt$ = command(
     initial: RunnerSshHostIdentity,
     observedAt: Date,
     signal: AbortSignal,
-  ): Promise<ObservationAttempt> => {
+  ): Promise<ObservationResult> => {
     const db = set(writeDb$);
     const reads = createRunnerSshMutationReads(input, initial);
-    const { observed, host, current, eligible } = reads;
-    const previous = db.$with("previous_runner_ssh_observation").as(
-      db
-        .select({
-          id: sshConnectionObservations.connectionId,
-          observedAt: sshConnectionObservations.observedAt,
-          failureReason: sshConnectionObservations.failureReason,
-        })
-        .from(sshConnectionObservations)
-        .innerJoin(
-          eligible,
-          and(
-            eq(sshConnectionObservations.connectionId, eligible.id),
-            eq(
-              sshConnectionObservations.connectionCreatedAt,
-              eligible.createdAt,
-            ),
-            eq(sshConnectionObservations.generation, eligible.generation),
-          ),
-        ),
-    );
-    // A successful observation republishes the Host tuple without changing logical
-    // metadata. A waiting observation then cannot use an obsolete prior-failure read.
-    const stamped = db.$with("stamped_runner_observation_host").as(
-      db
-        .update(sshConnections)
-        .set({ displayName: sql`${sshConnections.displayName}` })
-        .where(
-          inArray(
-            sshConnections.id,
-            db
-              .select({ id: eligible.id })
-              .from(eligible)
-              .where(
-                and(
-                  eq(eligible.generation, input.expectedGeneration),
-                  eq(
-                    eligible.createdAt,
-                    sql`${input.expectedCreatedAt}::timestamp`,
-                  ),
-                  or(
-                    not(exists(db.select({ id: previous.id }).from(previous))),
-                    exists(
-                      db
-                        .select({ id: previous.id })
-                        .from(previous)
-                        .where(lt(previous.observedAt, observedAt)),
-                    ),
-                  ),
-                ),
-              ),
-          ),
-        )
-        .returning({
-          id: sshConnections.id,
-          generation: sshConnections.generation,
-          createdAt: sshConnections.createdAt,
-        }),
-    );
-    const values = {
-      connectionCreatedAt: input.expectedCreatedAt,
-      generation: input.expectedGeneration,
-      observedAt,
-      failureReason: input.failureReason,
-    };
+    const { host, current, eligible } = reads;
     const written = db.$with("written_runner_ssh_observation").as(
       db
         .insert(sshConnectionObservations)
         .select(
           db
-            .select(observationSelection(stamped, input, observedAt))
-            .from(stamped),
+            .select(observationSelection(eligible, input, observedAt))
+            .from(eligible)
+            .where(
+              and(
+                eq(eligible.generation, input.expectedGeneration),
+                eq(
+                  eligible.createdAt,
+                  sql`${input.expectedCreatedAt}::timestamp`,
+                ),
+              ),
+            ),
         )
         .onConflictDoUpdate({
           target: sshConnectionObservations.connectionId,
-          set: values,
+          set: {
+            connectionCreatedAt: input.expectedCreatedAt,
+            generation: input.expectedGeneration,
+            observedAt,
+            failureReason: input.failureReason,
+          },
+          // The incarnation FK rejects reports for a deleted/recreated Host.
+          // For the same Host, generation takes precedence over report time.
           setWhere: or(
             ne(
               sshConnectionObservations.connectionCreatedAt,
               input.expectedCreatedAt,
             ),
-            ne(sshConnectionObservations.generation, input.expectedGeneration),
-            lt(sshConnectionObservations.observedAt, observedAt),
+            and(
+              eq(
+                sshConnectionObservations.connectionCreatedAt,
+                input.expectedCreatedAt,
+              ),
+              or(
+                lt(
+                  sshConnectionObservations.generation,
+                  input.expectedGeneration,
+                ),
+                and(
+                  eq(
+                    sshConnectionObservations.generation,
+                    input.expectedGeneration,
+                  ),
+                  lt(sshConnectionObservations.observedAt, observedAt),
+                ),
+              ),
+            ),
           ),
         })
         .returning({ id: sshConnectionObservations.connectionId }),
     );
-    const [row] = await db
-      .with(...reads.ctes, previous, stamped, written)
-      .select({
-        retry:
-          sql`coalesce(${ne(host.version, observed.version)}, false)`.mapWith(
-            pgBooleanDecoder,
-          ),
-        current: reads.fields,
-        eligibleId: eligible.id,
-        writtenId: written.id,
-        previousFailure: previous.failureReason,
-      })
-      .from(observed)
-      .leftJoin(host, eq(host.id, observed.id))
-      .leftJoin(current, eq(current.id, host.id))
-      .leftJoin(eligible, eq(eligible.id, current.id))
-      .leftJoin(previous, eq(previous.id, current.id))
-      .leftJoin(written, eq(written.id, current.id));
+    const result = await settle(
+      db
+        .with(...reads.ctes, written)
+        .select({
+          current: reads.fields,
+          eligibleId: eligible.id,
+          writtenId: written.id,
+        })
+        .from(host)
+        .leftJoin(current, eq(current.id, host.id))
+        .leftJoin(eligible, eq(eligible.id, current.id))
+        .leftJoin(written, eq(written.id, current.id)),
+    );
     signal.throwIfAborted();
-    if (row?.retry) {
-      return { retry: true, outcome: "unavailable", notify: false };
+    if (!result.ok) {
+      const error = result.error;
+      if (
+        isForeignKeyViolation(error) &&
+        error instanceof Error &&
+        typeof error.cause === "object" &&
+        error.cause !== null &&
+        "constraint" in error.cause &&
+        error.cause.constraint === "ssh_observation_incarnation_fk"
+      ) {
+        return { outcome: "unavailable", notify: false };
+      }
+      throw error;
     }
+    const [row] = result.value;
     if (!row || !availableRunnerMutationAuthority(row)) {
-      return { retry: false, outcome: "unavailable", notify: false };
+      return { outcome: "unavailable", notify: false };
     }
     return {
-      retry: false,
       outcome: row.writtenId === null ? "ignored" : "recorded",
-      notify:
-        row.writtenId !== null &&
-        (input.failureReason !== null || row.previousFailure !== null),
+      notify: row.writtenId !== null,
     };
   },
 );

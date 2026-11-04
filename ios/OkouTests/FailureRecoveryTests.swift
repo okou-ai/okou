@@ -54,6 +54,25 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
   }
 
+  func testRunRecoveryContinuesWhenOnlyTheAutomaticReadReceiptFails() async throws {
+    let fixture = FailureRecoveryFixture()
+    fixture.state.value.withLock { $0.markReadStatus = 503 }
+    let (conversation, models) = await fixture.conversation(isVisible: { true })
+    defer {
+      conversation.close()
+      models.close()
+    }
+
+    await conversation.recoverFailure(FailureRecoveryFixture.failureID)
+
+    let sends = fixture.state.value.withLock { $0.sends }
+    XCTAssertEqual(sends.count, 1)
+    let body = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: try XCTUnwrap(sends.first)) as? [String: Any])
+    XCTAssertEqual(body["prompt"] as? String, "continue")
+    XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
+  }
+
   func testOneRetrySendsWhileBackgroundModelReadIsStillPending() async throws {
     let fixture = FailureRecoveryFixture(
       reason: "provider_server_error", error: "Provider unavailable")
@@ -140,10 +159,8 @@ final class FailureRecoveryTests: XCTestCase {
 
     gate.open()
     await saving.value
-    await conversation.recoverFailure(failure.id)
+    XCTAssertEqual(conversation.modelSelection?.selection.model, "claude-model")
     XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
-
-    await conversation.modelSelection?.refresh()
     oldReadGate.open()
     await oldRead.value
     // An unrelated list update must not replace the acknowledged local choice
@@ -445,6 +462,66 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertEqual(fixture.state.value.withLock { $0.sends.count }, 1)
   }
 
+  func testUncertainStopChecksHistoryWithoutReplayingTheCommand() async throws {
+    let fixture = FailureRecoveryFixture()
+    fixture.state.value.withLock {
+      $0.rows.removeLast()
+      $0.lastID = FailureRecoveryFixture.id(2)
+    }
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    XCTAssertEqual(conversation.history?.canStop, true)
+    await conversation.stop()
+    XCTAssertNotNil(conversation.stopIssue)
+    XCTAssertNil(conversation.error)
+    XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
+    await conversation.refresh()
+    XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
+    fixture.state.value.withLock {
+      $0.rows.append(FailureRecoveryFixture.row(3, type: "run.cancelled", payload: "null"))
+      $0.lastID = FailureRecoveryFixture.id(3)
+    }
+    await conversation.refresh()
+    XCTAssertNil(conversation.stopIssue)
+    XCTAssertEqual(conversation.history?.canStop, false)
+    XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
+  }
+
+  func testRejectedSendRetainsItsMessageAndIdentityForExplicitRecovery() async throws {
+    let fixture = FailureRecoveryFixture()
+    fixture.state.value.withLock {
+      $0.sendStatus = 403
+      $0.persistSend = false
+    }
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    conversation.draft = "Keep this message"
+    await conversation.send()
+    let pending = try XCTUnwrap(conversation.pending.first)
+    XCTAssertEqual(pending.text, "Keep this message")
+    XCTAssertTrue(conversation.deliveryFailureText(pending.id).hasPrefix("Message not sent."))
+    XCTAssertNil(conversation.error, "The failed message owns its recovery")
+    conversation.draft = "A separate unsent draft"
+    fixture.state.value.withLock {
+      $0.sendStatus = 200
+      $0.persistSend = true
+    }
+    await conversation.retry(pending)
+    XCTAssertTrue(conversation.pending.isEmpty)
+    XCTAssertEqual(conversation.draft, "A separate unsent draft")
+    let bodies = try fixture.state.value.withLock { $0.sends }.map {
+      try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+    }
+    XCTAssertEqual(bodies.count, 2)
+    XCTAssertEqual(bodies[0]["clientEventId"] as? String, bodies[1]["clientEventId"] as? String)
+  }
+
   func testUncertainContinueReconcilesBeforeReusingItsClientIdentity() async throws {
     let fixture = FailureRecoveryFixture()
     fixture.state.value.withLock {
@@ -461,6 +538,7 @@ final class FailureRecoveryTests: XCTestCase {
     let pending = try XCTUnwrap(conversation.pending.first)
     XCTAssertEqual(pending.text, "continue")
     XCTAssertTrue(pending.needsRetry)
+    XCTAssertEqual(conversation.deliveryFailureText(pending.id), "Delivery not confirmed")
     let failure = try XCTUnwrap(
       conversation.messages.first { $0.id == FailureRecoveryFixture.failureID }?.failure)
     XCTAssertFalse(conversation.failureState(failure).isCurrent)

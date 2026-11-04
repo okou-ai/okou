@@ -1,5 +1,5 @@
 import { computed } from "ccstate";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/validators/custom-connectors";
 import { connectorsSearch$ } from "./connectors.ts";
 import { customConnectors$ } from "./custom-connectors.ts";
 

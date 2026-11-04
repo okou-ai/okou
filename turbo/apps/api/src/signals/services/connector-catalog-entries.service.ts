@@ -153,18 +153,12 @@ function capturedEntries(
   });
 }
 
-export function immutableConnectorRuntimeSelection(
-  input: SelectionInput,
-): Computed<Promise<ImmutableConnectorRuntimeSelection>> {
-  const input$ = computed(() => {
-    return Promise.resolve(input);
-  });
-  const source$ = capturedEntries(input$);
-  return computed(async (get) => {
-    return materializeImmutableSelection(input, await get(source$));
-  });
-}
-
+export function createImmutableConnectorRuntimeSelection(
+  input$: Computed<Promise<SelectionInput>>,
+): Computed<Promise<ImmutableConnectorRuntimeSelection>>;
+export function createImmutableConnectorRuntimeSelection(
+  input$: Computed<Promise<SelectionInput | null>>,
+): Computed<Promise<ImmutableConnectorRuntimeSelection | null>>;
 export function createImmutableConnectorRuntimeSelection(
   input$: Computed<Promise<SelectionInput | null>>,
 ): Computed<Promise<ImmutableConnectorRuntimeSelection | null>> {

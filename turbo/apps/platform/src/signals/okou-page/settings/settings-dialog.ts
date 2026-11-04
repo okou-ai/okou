@@ -10,6 +10,7 @@ import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts"
 import { resetSignal } from "../../utils.ts";
 import { usagePackManagementAsync$ } from "../billing.ts";
 import { invalidateEmailSubscription$ } from "./email-subscription.ts";
+import { reloadConnectorCatalogRelease$ } from "./connector-catalog-release.ts";
 import { startPaidToolsCatalogDiscovery$ } from "./paid-tools-catalog.ts";
 import {
   managedUsagePackSelection,
@@ -113,6 +114,7 @@ export const setSettingsActiveSection$ = command(
     signal.throwIfAborted();
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
       set(reloadIndexedDbDiagnosticsFromWorker$);
+      set(reloadConnectorCatalogRelease$);
     }
     set(internalActiveSection$, section);
     if (section !== "billing") {
@@ -248,6 +250,9 @@ export const setSettingsDialogOpen$ = command(
     set(invalidateEmailSubscription$);
     set(refreshWalletConnection$);
     if (!get(internalSettingsDialogOpen$)) {
+      if (get(internalActiveSection$) === "debug") {
+        set(reloadConnectorCatalogRelease$);
+      }
       set(internalSettingsVisit$, (visit) => {
         return visit + 1;
       });

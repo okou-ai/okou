@@ -20,10 +20,7 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  installResourceGeometry,
-  resourceButton,
-} from "./chat-resources-test-helpers.ts";
+import { installResourceGeometry } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
 
@@ -43,7 +40,7 @@ async function setupHostedSite(
   context.mocks.data.userPreferences({
     timezone: "Etc/UTC",
     locale: "en-US",
-    chatResourcesEnabledByDefault: false,
+    chatResourcesEnabledByDefault: true,
   });
   const summary = {
     ...artifactSummary(artifactId, "hosted-site", siteTitle),
@@ -176,23 +173,18 @@ async function setupHostedSite(
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
-  const link = await waitFor(() => {
-    const link = queryAllByRoleFast("link").find((element) => {
-      return element.textContent === "Open website";
-    });
-    if (!link) {
-      throw new Error("Expected the hosted website message link");
-    }
-    return link;
+  await screen.findByText("Open website");
+  const link = queryAllByRoleFast("link").find((element) => {
+    return element.textContent === "Open website";
   });
-  click(link);
+  expect(link).toBeDefined();
+  click(link!);
   return await screen.findByTestId(
     sidebar ? "artifact-sidebar" : "attachment-lightbox",
   );
 }
 
 async function copyFromResources() {
-  click(resourceButton());
   const resources = await screen.findByRole("region", {
     name: "Artifacts and chats",
   });
@@ -238,8 +230,9 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
 }
 
 test.each([false, true])(
-  "consecutive site renames preserve the title, link and Share copy address (sidebar=%s)",
+  "consecutive site renames preserve the title, link and Share/Resources copy addresses (sidebar=%s)",
   async (sidebar) => {
+    installResourceGeometry(480);
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent(siteTitle);
@@ -258,30 +251,24 @@ test.each([false, true])(
       "https://renamed-site.okou.app",
       "https://final-site.okou.app",
     ]);
-  },
-);
-
-test.each([false, true])(
-  "Resources copies the final address after consecutive site renames (sidebar=%s)",
-  async (sidebar) => {
-    installResourceGeometry(480);
-    const preview = await setupHostedSite(sidebar);
-    const title = await within(preview).findByTestId("artifact-title-link");
-    expect(title).toHaveTextContent(siteTitle);
-    const shareMenu = await openHostedSiteShare(preview, sidebar);
-    for (const slug of ["renamed-site", "final-site"]) {
-      await renameHostedSite(shareMenu, slug);
-    }
-    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{Escape}", { delay: null });
+    await waitFor(() => {
+      expect(shareMenu).not.toBeInTheDocument();
+    });
     click(buttonNamed(sidebar ? "Close artifact" : "Close", preview));
     await waitFor(() => {
       expect(title).not.toBeInTheDocument();
     });
-    const clipboard = context.mocks.browser.clipboardWriteText();
+    const resourceClipboard = context.mocks.browser.clipboardWriteText();
     await copyFromResources();
     await waitFor(() => {
-      expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app");
+      expect(resourceClipboard.writes.at(-1)).toBe(
+        "https://final-site.okou.app",
+      );
     });
+    expect(resourceClipboard.writes).toStrictEqual([
+      "https://final-site.okou.app",
+    ]);
   },
 );
 

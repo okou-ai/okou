@@ -3500,6 +3500,9 @@ pub mod webhooks {
                 /// The provider requires acceptance of updated terms.
                 #[serde(rename = "terms_acceptance_required")]
                 TermsAcceptanceRequired,
+                /// The provider requires account verification before replying.
+                #[serde(rename = "account_verification_required")]
+                AccountVerificationRequired,
                 /// The model context window was exceeded.
                 #[serde(rename = "context_window_exceeded")]
                 ContextWindowExceeded,
@@ -3527,6 +3530,9 @@ pub mod webhooks {
                 /// The provider returned a server error.
                 #[serde(rename = "provider_server_error")]
                 ProviderServerError,
+                /// Local firewall authentication resolution failed.
+                #[serde(rename = "firewall_auth_failed")]
+                FirewallAuthFailed,
                 /// Codex returned an opaque HTTP 400 with no more specific cause.
                 #[serde(rename = "provider_bad_request")]
                 ProviderBadRequest,

@@ -152,12 +152,14 @@ test("owners can change three access levels separately from copying the stable a
   });
   await openArtifact();
   await openShareMenu();
+  await waitFor(() => {
+    expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
+  });
   expect(
     queryAllByRoleFast("radio").map((element) => {
       return element.textContent;
     }),
   ).toStrictEqual(["Only me", "Anyone at Acme", "Anyone with the link"]);
-  expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([]);
@@ -170,14 +172,15 @@ test("owners can change three access levels separately from copying the stable a
     await waitFor(() => {
       return expect(permission(name)).toHaveAttribute("aria-checked", "true");
     });
-    expect(clipboard.writes).toHaveLength(changes.length - 1);
     await waitFor(() => {
-      return expect(action("button", "Copy link")).not.toBeDisabled();
+      expect(action("button", "Copy link")).toBeEnabled();
     });
+    expect(clipboard.writes).toHaveLength(changes.length - 1);
     click(action("button", "Copy link"));
     await waitFor(() => {
       return expect(clipboard.writes).toHaveLength(changes.length);
     });
+    expect(action("button", "Copied")).toBeEnabled();
     expect(changes.at(-1)).toBe(audience);
   }
   expect(clipboard.writes).toStrictEqual(

@@ -7,7 +7,6 @@ import {
   FileText,
   Globe,
   Image,
-  Lightbulb,
   ListTodo,
   Presentation,
   Route,
@@ -38,7 +37,6 @@ import {
 const TASK_CHIP = "shrink-0 px-3";
 const TASK_ICONS = {
   jobs: ListTodo,
-  suggestions: Lightbulb,
   workflow: Route,
   presentation: Presentation,
   document: FileText,
@@ -96,7 +94,6 @@ function TaskChipSizing({
             <span
               key={task}
               data-task-sizing-item=""
-              data-priority={task === "suggestions" ? "" : undefined}
               className={cn(buttonVariants({ variant: "outline" }), TASK_CHIP)}
             >
               <Icon size={16} aria-hidden />
@@ -275,7 +272,7 @@ export function ComposerTaskChipRow({
   ]);
 
   const select = (task: ComposerTask) => {
-    if (task === "suggestions" || task === "jobs") {
+    if (task === "jobs") {
       browseTask(task);
     } else {
       selectTask(task);
@@ -292,7 +289,8 @@ export function ComposerTaskChipRow({
       <div ref={bindRoot} className="relative min-w-0" data-task-choices="">
         {/* Inert spans share button geometry, including choices inside More. */}
         <TaskChipSizing tasks={tasks} labels={labels} />
-        <div className="mx-auto flex w-max max-w-full items-center gap-2 overflow-hidden p-1">
+        {/* Keep SVG pixel snapping stable when Safari composites nearby animations. */}
+        <div className="mx-auto flex w-max max-w-full transform-gpu items-center gap-2 overflow-hidden p-1">
           <Row
             {...(tabs ? {} : { role: "group" })}
             aria-label={t(($) => {

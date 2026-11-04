@@ -284,11 +284,11 @@ async fn active_check_timeout_retains_physical_dns_capacity_and_does_not_publish
         .await;
     let gate = Arc::new(Semaphore::new(0));
     *h.network.resolve_gate.lock().unwrap() = Some(Arc::clone(&gate));
-    for _ in 0..2 {
-        let result = h
+    for query_count in 1..=2 {
+        let request = h
             .run
-            .active_check_budget(json!({"connectionId":CONNECTION,"mode":"shared"}), 2000)
-            .await;
+            .active_check_budget(json!({"connectionId":CONNECTION,"mode":"shared"}), 2000);
+        let result = h.finish_dns_timeout(query_count, request).await;
         assert_eq!(result["status"], "failed", "{result}");
         assert!(diagnostic_text(&result).contains("timed out"));
         assert!(diagnostic_text(&result).contains("Check-owned cleanup: unknown."));

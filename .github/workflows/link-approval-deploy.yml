@@ -35,6 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
@@ -46,13 +49,21 @@ jobs:
       - name: Build without deployment
         working-directory: turbo
         run: pnpm --filter @okouai/link-approval-worker run build
+      - name: Fetch integration configuration from Doppler
+        id: doppler
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vm0
+          doppler-config: ${{ inputs.environment == 'production' && 'prd' || 'dev' }}
       - name: Deploy with private bindings
         env:
           APPROVAL_ENVIRONMENT: ${{ inputs.environment }}
           APPROVAL_ENABLED: ${{ inputs.enable_approval }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
-          LINK_APPROVAL_WORKER_SECRET: ${{ secrets.LINK_APPROVAL_WORKER_SECRET }}
-          LINK_APPROVAL_CONTROL_SECRET: ${{ secrets.LINK_APPROVAL_CONTROL_SECRET }}
-          LINK_APPROVAL_API_ORIGIN: ${{ vars.LINK_APPROVAL_API_ORIGIN }}
+          LINK_APPROVAL_WORKER_SECRET: ${{ steps.doppler.outputs.LINK_APPROVAL_WORKER_SECRET }}
+          LINK_APPROVAL_CONTROL_SECRET: ${{ steps.doppler.outputs.LINK_APPROVAL_CONTROL_SECRET }}
+          LINK_APPROVAL_API_ORIGIN: ${{ steps.doppler.outputs.LINK_APPROVAL_API_ORIGIN }}
         run: bash .github/scripts/deploy-link-approval.sh "$APPROVAL_ENVIRONMENT" "$APPROVAL_ENABLED"

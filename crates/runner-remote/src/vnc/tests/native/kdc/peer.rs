@@ -6,7 +6,6 @@ use std::sync::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
-    task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -21,10 +20,11 @@ pub(crate) enum Reply {
 }
 
 pub(crate) struct Peer {
+    // Request abort before releasing the remaining fixture fields.
+    _task: tokio_util::task::AbortOnDropHandle<()>,
     pub(crate) address: std::net::SocketAddr,
     pub(crate) requests: Arc<AtomicUsize>,
     pub(crate) received: Arc<tokio::sync::Notify>,
-    task: JoinHandle<()>,
 }
 
 impl Peer {
@@ -66,12 +66,7 @@ impl Peer {
             address,
             requests,
             received,
-            task,
+            _task: tokio_util::task::AbortOnDropHandle::new(task),
         }
-    }
-}
-impl Drop for Peer {
-    fn drop(&mut self) {
-        self.task.abort();
     }
 }

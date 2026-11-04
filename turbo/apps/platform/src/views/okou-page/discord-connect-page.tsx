@@ -1,5 +1,5 @@
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
-import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
+import { discordSnowflakeSchema } from "@okouai/api-contracts/validators/integrations-discord-read";
 import { buttonVariants, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";

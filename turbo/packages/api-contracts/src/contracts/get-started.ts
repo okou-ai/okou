@@ -1,15 +1,17 @@
 import {
   array,
   boolean,
+  iso,
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
-
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+export { GET_STARTED_REWARDS_CHANGED_EVENT } from "../validators/get-started";
 
 const c = initContract();
 
@@ -33,7 +35,6 @@ export const getStartedClaimStatusSchema = zEnum([
 export type GetStartedClaimStatus = zInfer<typeof getStartedClaimStatusSchema>;
 
 export const GET_STARTED_REWARD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export const GET_STARTED_REWARDS_CHANGED_EVENT = "getStartedRewardsChanged";
 export const GET_STARTED_REWARDS = {
   connector: { amount: 100, limit: null, target: "user" },
   slack: { amount: 2000, limit: 1, target: "org" },
@@ -44,21 +45,21 @@ export const GET_STARTED_REWARDS = {
 } as const;
 
 export const getStartedClaimSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   questKey: getStartedQuestKeySchema,
   status: getStartedClaimStatusSchema,
   rewardAmount: number().int().nonnegative(),
   rewardTarget: zEnum(["user", "org"]),
   reason: string().nullable(),
-  submittedAt: string().datetime(),
-  grantedAt: string().datetime().nullable(),
-  expiresAt: string().datetime().nullable(),
+  submittedAt: iso.datetime(),
+  grantedAt: iso.datetime().nullable(),
+  expiresAt: iso.datetime().nullable(),
 });
 export type GetStartedClaim = zInfer<typeof getStartedClaimSchema>;
 
 export const getStartedStatusSchema = object({
-  serverNow: string().datetime(),
-  nextResetAt: string().datetime(),
+  serverNow: iso.datetime(),
+  nextResetAt: iso.datetime(),
   claimedToday: boolean(),
   /** Consecutive UTC days the user has checked in, counting back from today. */
   checkinStreak: number().int().nonnegative(),

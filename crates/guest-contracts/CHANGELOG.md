@@ -1,5 +1,100 @@
 # Changelog
 
+## [0.30.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.2...guest-contracts-v0.30.3) (2026-11-04)
+
+
+### Refactoring
+
+* **storage:** share canonical mount-path uniqueness validation ([#45042](https://github.com/okou-ai/okou/issues/45042)) ([893d967](https://github.com/okou-ai/okou/commit/893d967b6c850f220a45e8f011822a1fdf0340a1))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.30.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.1...guest-contracts-v0.30.2) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
+## [0.30.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.0...guest-contracts-v0.30.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* attribute local firewall auth failures through run completion ([#44847](https://github.com/okou-ai/okou/issues/44847)) ([d672c61](https://github.com/okou-ai/okou/commit/d672c6141ad26b6f19522363841b7659a7c38673))
+
+## [0.30.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.6...guest-contracts-v0.30.0) (2026-11-03)
+
+
+### Features
+
+* **runner:** support connector account binding replacement ([#44759](https://github.com/okou-ai/okou/issues/44759)) ([559aa9f](https://github.com/okou-ai/okou/commit/559aa9f92e275444ae31a317a656e95bc2db2910))
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+
+## [0.29.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.5...guest-contracts-v0.29.6) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
+## [0.29.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.4...guest-contracts-v0.29.5) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** share guest cgroup populated-state parsing ([#44583](https://github.com/okou-ai/okou/issues/44583)) ([f06f9c1](https://github.com/okou-ai/okou/commit/f06f9c1ddc0986c80cfdf807f30b81d076e28cc7))
+
+## [0.29.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.3...guest-contracts-v0.29.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.29.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.2...guest-contracts-v0.29.3) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.29.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.1...guest-contracts-v0.29.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
+## [0.29.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.0...guest-contracts-v0.29.1) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
+## [0.29.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.5...guest-contracts-v0.29.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.28.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.4...guest-contracts-v0.28.5) (2026-10-30)
+
+
+### Bug Fixes
+
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+* **runner:** clean terminal homes without initialized runtime directories ([#44163](https://github.com/okou-ai/okou/issues/44163)) ([486040f](https://github.com/okou-ai/okou/commit/486040fb0979e385ecc3b165206cbebf996f3e28))
+
 ## [0.28.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.3...guest-contracts-v0.28.4) (2026-10-29)
 
 ## [0.28.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.2...guest-contracts-v0.28.3) (2026-10-29)

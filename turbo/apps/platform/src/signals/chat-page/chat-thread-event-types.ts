@@ -9,11 +9,18 @@ export type UnsequencedChatThreadEvent = WithoutSeqId<ChatThreadEvent>;
 export type OptimisticChatThreadEvent = UnsequencedChatThreadEvent;
 
 /** Placeholder fields default inside `registerOptimisticChatThreadEvent$`. */
-export type OptimisticChatThreadEventInput = Pick<
-  OptimisticChatThreadEvent,
-  "id" | "kind" | "chatThreadId" | "agentId"
-> &
-  Partial<OptimisticChatThreadEvent>;
+type DefaultedEventField =
+  | "title"
+  | "selectedModel"
+  | "serviceTier"
+  | "computerUseHostId"
+  | "cloudBrowserEnabled"
+  | "createdAt";
+type EventInput<T extends OptimisticChatThreadEvent> = T extends unknown
+  ? Omit<T, DefaultedEventField> & Partial<Pick<T, DefaultedEventField>>
+  : never;
+export type OptimisticChatThreadEventInput =
+  EventInput<OptimisticChatThreadEvent>;
 
 export type CompatibleChatThreadEvent =
   ChatThreadEvent | UnsequencedChatThreadEvent;

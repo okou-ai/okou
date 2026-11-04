@@ -162,46 +162,6 @@ pub struct ExecCaptureRequest<'a> {
     pub wait_timeout: Duration,
 }
 
-/// Fixed-purpose live session-history identity verifier request.
-///
-/// The host selects the executable, process role, label, output bounds, and
-/// one-shot lifecycle. Callers can supply only values consumed by the verifier.
-pub struct SessionHistoryIdentityVerifyRequest<'a> {
-    /// Absolute final identity metadata path inside the guest.
-    pub metadata_path: &'a str,
-    /// Absolute canonical guest runtime directory.
-    pub runtime_dir: &'a str,
-    /// Stable CLI framework spelling.
-    pub framework: &'a str,
-    /// Expected normalized session-id SHA-256.
-    pub session_id_hash: &'a str,
-    /// Stable history-reference-kind spelling.
-    pub history_ref_kind: &'a str,
-    /// Expected final history SHA-256.
-    pub history_hash: &'a str,
-    /// Expected final history byte length.
-    pub history_size_bytes: u64,
-    /// Positive guest-side process timeout in milliseconds.
-    pub timeout_ms: u32,
-    /// Total host-side request deadline.
-    pub wait_timeout: Duration,
-}
-
-/// Fixed-purpose reused-Codex session cleanup request.
-///
-/// The host selects the executable, process role, label, output bounds, and
-/// one-shot lifecycle. Callers can supply only validated cleanup inputs.
-pub struct CodexSessionCleanupRequest<'a> {
-    /// Canonical lowercase hyphenated Codex thread identifier.
-    pub session_id: &'a str,
-    /// Canonical logical rollout path relative to the fixed Codex home.
-    pub fallback_relative_path: &'a str,
-    /// Positive guest-side process timeout in milliseconds.
-    pub timeout_ms: u32,
-    /// Total host-side request deadline.
-    pub wait_timeout: Duration,
-}
-
 /// Request parameters for a streaming exec operation helper.
 pub struct ExecStreamRequest<'a> {
     /// Positive guest-side process timeout in milliseconds.

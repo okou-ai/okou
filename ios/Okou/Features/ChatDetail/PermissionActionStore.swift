@@ -11,6 +11,7 @@ final class PermissionActionRegistry {
   private let didFail: @MainActor (Error) -> Void
   private let didContinue: @MainActor () async -> Void
   private var cards: [ChatPermissionAction: PermissionActionStore] = [:]
+  private var batches: [ChatPermissionBatchAction: PermissionBatchStore] = [:]
   private var owner: UUID?
   private var closed = false
 
@@ -24,7 +25,22 @@ final class PermissionActionRegistry {
     self.didContinue = didContinue
   }
 
-  var isBusy: Bool { cards.values.contains { $0.isSaving } }
+  var isBusy: Bool {
+    cards.values.contains { $0.isSaving } || batches.values.contains { $0.isSaving }
+  }
+
+  func card(_ action: ChatPermissionBatchAction) -> PermissionBatchStore {
+    if let existing = batches[action] { return existing }
+    let card = PermissionBatchStore(
+      action: action, commands: commands, sync: sync, didFail: didFail, didContinue: didContinue)
+    if closed {
+      card.close()
+    } else if owner != nil {
+      card.activate()
+    }
+    batches[action] = card
+    return card
+  }
 
   func card(_ action: ChatPermissionAction) -> PermissionActionStore {
     if let existing = cards[action] { return existing }
@@ -45,15 +61,18 @@ final class PermissionActionRegistry {
     if self.owner != nil { deactivate() }
     self.owner = owner
     for card in cards.values { card.activate() }
+    for card in batches.values { card.activate() }
   }
 
   func deactivate() {
     owner = nil
     for card in cards.values { card.deactivate() }
+    for card in batches.values { card.deactivate() }
   }
   func close() {
     closed = true
     for card in cards.values { card.close() }
+    for card in batches.values { card.close() }
   }
 }
 
@@ -99,7 +118,7 @@ final class PermissionActionStore {
     return metadata.policy(for: action.permission, grants: snapshot.grants, at: .now).rawValue
       == action.action.rawValue
   }
-  var grant: ChatPermissionGrant? {
+  var grant: ChatPermissionRule? {
     snapshot?.grants.last {
       $0.connectorSlug == action.connectorSlug && $0.permission == action.permission
         && $0.action == action.action
@@ -148,7 +167,7 @@ final class PermissionActionStore {
       } catch {
         guard !closed, self.generation == generation else { return }
         snapshot = nil
-        self.error = error.localizedDescription
+        self.error = ChatRequestFailure.message(for: error)
         didFail(error)
       }
     }
@@ -206,7 +225,7 @@ final class PermissionActionStore {
       } catch is CancellationError {
       } catch {
         guard !closed, self.generation == generation else { return }
-        self.error = error.localizedDescription
+        self.error = ChatRequestFailure.message(for: error)
         didFail(error)
         // Read back an uncertain write without repeating it or sending a callback.
         if let updated = try? await commands.permissions.load(action),

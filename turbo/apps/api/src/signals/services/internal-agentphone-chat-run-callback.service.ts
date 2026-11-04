@@ -8,6 +8,11 @@ import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
+import {
+  loadWhatsappCompletedTask$,
+  sendWhatsappTextWithTaskFallback,
+  type WhatsappCompletedTask,
+} from "./whatsapp-task-notification.service";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
@@ -29,6 +34,7 @@ import {
   resolveAgentPhoneConversationVisibilityRecipients$,
   resolveAgentPhoneReplyFooterText$,
   storeOutboundAgentPhoneMessage$,
+  type AgentPhoneMessageVisibilityRecipient,
 } from "./agentphone-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
@@ -306,10 +312,7 @@ interface AgentPhoneChatSendResult {
     readonly message: AgentPhoneSendResult;
     readonly body: string;
   }[];
-  readonly visibilityRecipients: readonly {
-    readonly orgId: string;
-    readonly userId: string;
-  }[];
+  readonly visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[];
 }
 
 const sendAgentPhoneReply$ = command(
@@ -319,6 +322,7 @@ const sendAgentPhoneReply$ = command(
       readonly target: AgentPhoneDeliveryTarget;
       readonly body: string;
       readonly chatThreadId: string;
+      readonly completedTask?: WhatsappCompletedTask;
     },
     signal: AbortSignal,
   ): Promise<AgentPhoneChatSendResult> => {
@@ -334,7 +338,6 @@ const sendAgentPhoneReply$ = command(
       ? await set(
           resolveAgentPhoneConversationVisibilityRecipients$,
           args.target.conversationId!,
-          nowDate(),
           signal,
         )
       : [];
@@ -342,21 +345,35 @@ const sendAgentPhoneReply$ = command(
 
     const messages: { message: AgentPhoneSendResult; body: string }[] = [];
     for (const body of agentPhoneReplyChunks(args.body, args.target.channel)) {
-      const message = await sendAgentPhoneMessage(
-        {
-          ...(args.target.channel === "whatsapp"
-            ? { channel: "whatsapp" as const }
-            : {}),
-          agentphoneAgentId: args.target.agentphoneAgentId,
-          toNumber,
-          ...(args.target.channel === "imessage" ||
-          args.target.channel === "whatsapp"
-            ? { replyToMessageId: args.target.messageId }
-            : {}),
-          body,
-        },
-        signal,
-      );
+      const part =
+        args.target.channel === "whatsapp"
+          ? await sendWhatsappTextWithTaskFallback(
+              {
+                agentphoneAgentId: args.target.agentphoneAgentId,
+                toNumber,
+                replyToMessageId: args.target.messageId,
+                body,
+                completedTask:
+                  messages.length === 0 ? args.completedTask : undefined,
+              },
+              signal,
+            )
+          : {
+              message: await sendAgentPhoneMessage(
+                {
+                  agentphoneAgentId: args.target.agentphoneAgentId,
+                  toNumber,
+                  ...(args.target.channel === "imessage"
+                    ? { replyToMessageId: args.target.messageId }
+                    : {}),
+                  body,
+                },
+                signal,
+              ),
+              body,
+              template: undefined,
+            };
+      const { message } = part;
       // Preserve each accepted part before attempting the next one; failures do
       // not erase earlier receipts or trigger an automatic resend.
       if (args.target.channel === "imessage" && args.target.isGroup) {
@@ -365,6 +382,7 @@ const sendAgentPhoneReply$ = command(
           conversationId: args.target.conversationId!,
           messageId: message.id,
           chatThreadId: args.chatThreadId,
+          rootMessageId: args.target.rootMessageId,
         });
       }
       if (args.target.channel === "whatsapp") {
@@ -373,12 +391,15 @@ const sendAgentPhoneReply$ = command(
           outboundAgentPhoneDeliveryValues({
             target: args.target,
             sent: { message, visibilityRecipients },
-            body,
+            body: part.body,
           }),
         );
       }
-      messages.push({ message, body });
+      messages.push({ message, body: part.body });
       signal.throwIfAborted();
+      if (part.template) {
+        break;
+      }
     }
     return { messages, visibilityRecipients };
   },
@@ -461,12 +482,28 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
       mainText,
       footerText,
     });
+    const completedTask =
+      payload.channel === "whatsapp" &&
+      !payload.isGroup &&
+      args.status === "completed" &&
+      !messageError
+        ? await set(
+            loadWhatsappCompletedTask$,
+            {
+              runId: args.callback.runId,
+              userId: run.userId,
+              orgId: run.orgId,
+            },
+            signal,
+          )
+        : undefined;
     const sent = await set(
       sendAgentPhoneReply$,
       {
         target: payload,
         body,
         chatThreadId: run.chatThreadId,
+        completedTask,
       },
       signal,
     );

@@ -25,7 +25,11 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  alias,
+  QueryBuilder,
+  type SubqueryWithSelection,
+} from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 
 import {
@@ -34,6 +38,10 @@ import {
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
+import {
+  withPgPoolAcquisitionCapture,
+  withPgQueryExecutionCapture,
+} from "../../lib/db-instrumentation";
 import { db$, writeDb$ } from "../external/db";
 import type { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
 
@@ -56,17 +64,27 @@ const predecessorHomeEvidenceKindSchema = zEnum([
   "location",
 ]);
 
+type RunnerThreadPredecessor = SubqueryWithSelection<
+  { id: typeof chatThreads.frameworkSessionRunId },
+  "reuse_pred"
+>;
+
 /**
  * Pending discovery reads the owned Thread's durable predecessor, independently
  * of its native readiness or a retained producer row. The first claim advances
  * the Thread to this Run; discovery must stop treating it as the predecessor.
  * Native intent is already frozen in the job's execution context before claim.
+ *
+ * Callers left-join the result laterally `ON true` and every reuse condition
+ * reads its `id` column. Primary-key joins yield at most one row, so a missing
+ * predecessor is NULL, as with a scalar subquery, while PostgreSQL plans the
+ * lookup once instead of once per referencing condition.
  */
-function runnerThreadPredecessorRunId(args: {
+function runnerThreadPredecessor(args: {
   readonly runId: SQLWrapper;
   readonly reuseKey: SQLWrapper;
-}): SQL {
-  const predecessorQuery = new QueryBuilder()
+}): RunnerThreadPredecessor {
+  return new QueryBuilder()
     .select({ id: chatThreads.frameworkSessionRunId })
     .from(currentRun)
     .innerJoin(
@@ -93,8 +111,8 @@ function runnerThreadPredecessorRunId(args: {
           sql`'thread:' || cast(${currentRun.chatThreadId} as text)`,
         ),
       ),
-    );
-  return sql`(${predecessorQuery})`;
+    )
+    .as("reuse_pred");
 }
 
 function runnerReuseStateFreshAfter(currentDate: Date): Date {
@@ -384,7 +402,7 @@ function discoveryWindowCondition(after: Date): SQL | undefined {
 function finalizingPollCandidates(args: {
   readonly runnerId: string;
   readonly runnerGroup: string;
-  readonly predecessorRunId: SQL;
+  readonly predecessorRunId: SQLWrapper;
   readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
   readonly freshAfter: Date;
@@ -462,13 +480,17 @@ function advertisedReusePollCandidates(args: {
 /**
  * Poll ordering runs before a job is selected, so any runner with qualifying
  * local reuse may prioritize the job independently of the globally selected
- * preference identity.
+ * preference identity. `priority` reads each job's Thread predecessor from
+ * `predecessor`, which the caller left-joins laterally after the job queue.
  */
 export function runnerReusePreferencePollPriority(args: {
   readonly runnerId: string;
   readonly runnerGroup: string;
   readonly currentDate: Date;
-}): SQL {
+}): {
+  readonly predecessor: RunnerThreadPredecessor;
+  readonly priority: SQL;
+} {
   const reuseRoutingAfter = new Date(
     args.currentDate.getTime() - RUNNER_REUSE_ROUTING_WINDOW_MS,
   );
@@ -483,10 +505,11 @@ export function runnerReusePreferencePollPriority(args: {
   );
   const freshAfter = runnerReuseStateFreshAfter(args.currentDate);
   const { reuseKey, profile } = runnerJobQueue;
-  const predecessorRunId = runnerThreadPredecessorRunId({
+  const predecessor = runnerThreadPredecessor({
     runId: runnerJobQueue.runId,
     reuseKey,
   });
+  const predecessorRunId = predecessor.id;
   const advertised = advertisedReusePollCandidates({
     runnerId: args.runnerId,
     runnerGroup: args.runnerGroup,
@@ -514,7 +537,7 @@ export function runnerReusePreferencePollPriority(args: {
     completedAfter: finalizingCompletedAfter,
     protectedAfter: finalizingWaitAfter,
   });
-  return sql`CASE
+  const priority = sql`CASE
     WHEN ${and(
       discoveryWindowCondition(exactSandboxRoutingAfter),
       isNotNull(runnerJobQueue.reuseKey),
@@ -577,6 +600,7 @@ export function runnerReusePreferencePollPriority(args: {
     THEN CASE WHEN ${predecessorHome.hostLocation.local} THEN 1 ELSE 0 END
     ELSE 0
   END`;
+  return { predecessor, priority };
 }
 
 type PositiveRunnerPreference = Extract<
@@ -673,7 +697,7 @@ function advertisedReuseConditions(
     readonly shouldLookUpExactSandbox: boolean;
     readonly shouldLookUpGenericReuse: boolean;
   },
-  predecessorRunId: SQL,
+  predecessorRunId: SQLWrapper,
 ) {
   const identity = {
     reuseKey: sql.param(args.reuseKey),
@@ -709,10 +733,11 @@ function runnerReuseCandidatePlan(args: {
   readonly finalizingCompletedAfter: Date;
   readonly shouldLookUpFinalizingProducer: boolean;
 }) {
-  const predecessorRunId = runnerThreadPredecessorRunId({
+  const predecessor = runnerThreadPredecessor({
     runId: sql.param(args.runId),
     reuseKey: sql.param(args.reuseKey),
   });
+  const predecessorRunId = predecessor.id;
   const {
     reusableCondition,
     homeCondition,
@@ -791,10 +816,9 @@ function runnerReuseCandidatePlan(args: {
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
       predecessorCompletedAt: predecessorRun.completedAt,
       // Ready sandbox/home provenance survives deletion of the settled Run.
-      predecessorRunId: predecessorRunId.mapWith(
-        nullableDriverValueDecoder(chatThreads.frameworkSessionRunId),
-      ),
+      predecessorRunId,
     },
+    predecessor,
     // Only unsettled finalization needs the producer's completion/process facts.
     joinCondition: eq(predecessorRun.id, predecessorRunId),
     where: and(
@@ -883,6 +907,16 @@ function runnerReuseLookupStages(
   };
 }
 
+function runnerReuseLookupExpired(
+  stages: ReturnType<typeof runnerReuseLookupStages>,
+): boolean {
+  return (
+    !stages.shouldLookUpGenericReuse &&
+    !stages.shouldLookUpFinalizingProducer &&
+    !stages.shouldLookUpExactSandbox
+  );
+}
+
 const findRunnerReuseCandidate$ = command(
   async (
     { get },
@@ -907,6 +941,7 @@ const findRunnerReuseCandidate$ = command(
     const [row] = await get(db$)
       .select(plan.fields)
       .from(runnerState)
+      .leftJoinLateral(plan.predecessor, sql`true`)
       .leftJoin(predecessorRun, plan.joinCondition)
       .leftJoin(
         predecessorRunnerState,
@@ -948,11 +983,7 @@ export const resolveRunnerReusePreference$ = command(
       };
     }
     const lookupStages = runnerReuseLookupStages(args, nowDate());
-    if (
-      !lookupStages.shouldLookUpGenericReuse &&
-      !lookupStages.shouldLookUpFinalizingProducer &&
-      !lookupStages.shouldLookUpExactSandbox
-    ) {
+    if (runnerReuseLookupExpired(lookupStages)) {
       return {
         preference: { kind: "noPreference", reason: "expired" },
       };
@@ -969,8 +1000,19 @@ export const resolveRunnerReusePreference$ = command(
         ...lookupStages,
       });
     };
-    let candidate = await (timing?.measure("holder_select", selectCandidate) ??
-      selectCandidate());
+    const selectionCapture = timing?.start();
+    let candidate = await (selectionCapture
+      ? withPgPoolAcquisitionCapture(selectionCapture.pool, async () => {
+          const result = await withPgQueryExecutionCapture(
+            selectionCapture.queries,
+            selectCandidate,
+          );
+          selectionCapture.success = true;
+          return result;
+        }).finally(() => {
+          timing?.record("holder_select", selectionCapture);
+        })
+      : selectCandidate());
 
     // Prepare the candidate before starting a new window. Both delivery paths
     // await this write before returning a poll result or publishing to Ably.
@@ -979,8 +1021,21 @@ export const resolveRunnerReusePreference$ = command(
     };
     const discoveryStartedAt =
       args.discoveryStartedAt ??
-      (await (timing?.measure("discovery_persist", startDiscovery) ??
-        startDiscovery()));
+      (await (async () => {
+        const discoveryCapture = timing?.start();
+        return await (discoveryCapture
+          ? withPgPoolAcquisitionCapture(discoveryCapture.pool, async () => {
+              const result = await withPgQueryExecutionCapture(
+                discoveryCapture.queries,
+                startDiscovery,
+              );
+              discoveryCapture.success = true;
+              return result;
+            }).finally(() => {
+              timing?.record("discovery_persist", discoveryCapture);
+            })
+          : startDiscovery());
+      })());
     if (discoveryStartedAt === null) {
       return {
         preference: { kind: "noPreference", reason: "noViableHolder" },
@@ -992,11 +1047,7 @@ export const resolveRunnerReusePreference$ = command(
       },
       nowDate(),
     );
-    if (
-      !savedStages.shouldLookUpGenericReuse &&
-      !savedStages.shouldLookUpFinalizingProducer &&
-      !savedStages.shouldLookUpExactSandbox
-    ) {
+    if (runnerReuseLookupExpired(savedStages)) {
       return {
         preference: { kind: "noPreference", reason: "expired" },
       };
@@ -1017,23 +1068,23 @@ export const resolveRunnerReusePreference$ = command(
           ...savedStages,
         });
       };
-      candidate = await (timing?.measure(
-        "holder_reselect",
-        reselectCandidate,
-      ) ?? reselectCandidate());
+      const reselectionCapture = timing?.start();
+      candidate = await (reselectionCapture
+        ? withPgPoolAcquisitionCapture(reselectionCapture.pool, async () => {
+            const result = await withPgQueryExecutionCapture(
+              reselectionCapture.queries,
+              reselectCandidate,
+            );
+            reselectionCapture.success = true;
+            return result;
+          }).finally(() => {
+            timing?.record("holder_reselect", reselectionCapture);
+          })
+        : reselectCandidate());
     }
     return runnerReusePreferenceResult({
       candidate,
-      reuseRoutingExpiresAt: new Date(
-        discoveryStartedAt.getTime() + RUNNER_REUSE_ROUTING_WINDOW_MS,
-      ),
-      predecessorWaitUntil: new Date(
-        discoveryStartedAt.getTime() +
-          RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
-      ),
-      exactSandboxRoutingExpiresAt: new Date(
-        discoveryStartedAt.getTime() + RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS,
-      ),
+      discoveryStartedAt,
       shouldLookUpGenericReuse: savedStages.shouldLookUpGenericReuse,
     });
   },
@@ -1041,18 +1092,19 @@ export const resolveRunnerReusePreference$ = command(
 
 function runnerReusePreferenceResult(args: {
   readonly candidate: RunnerReuseCandidate | null;
-  readonly reuseRoutingExpiresAt: Date;
-  readonly predecessorWaitUntil: Date;
-  readonly exactSandboxRoutingExpiresAt: Date;
+  readonly discoveryStartedAt: Date;
   readonly shouldLookUpGenericReuse: boolean;
 }): RunnerReusePreferenceResolution {
-  const {
-    candidate,
-    reuseRoutingExpiresAt,
-    predecessorWaitUntil,
-    exactSandboxRoutingExpiresAt,
-    shouldLookUpGenericReuse,
-  } = args;
+  const { candidate, discoveryStartedAt, shouldLookUpGenericReuse } = args;
+  const reuseRoutingExpiresAt = new Date(
+    discoveryStartedAt.getTime() + RUNNER_REUSE_ROUTING_WINDOW_MS,
+  );
+  const predecessorWaitUntil = new Date(
+    discoveryStartedAt.getTime() + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+  );
+  const exactSandboxRoutingExpiresAt = new Date(
+    discoveryStartedAt.getTime() + RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS,
+  );
 
   if (!candidate) {
     return {

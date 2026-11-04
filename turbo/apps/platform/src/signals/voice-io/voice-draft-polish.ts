@@ -1,9 +1,7 @@
 import { command } from "ccstate";
-import {
-  voiceIoPolishSegmentsContract,
-  VOICE_IO_POLISH_MAX_SEGMENTS,
-  type VoiceIoPolishSegmentsRequest,
-} from "@okouai/api-contracts/contracts/voice-io-polish";
+import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/client/voice-io-polish";
+import { VOICE_IO_POLISH_MAX_SEGMENTS } from "@okouai/api-contracts/validators/voice-io-polish";
+import type { VoiceIoPolishSegmentsRequest } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import {

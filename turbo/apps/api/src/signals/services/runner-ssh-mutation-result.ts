@@ -31,13 +31,13 @@ export function availableRunnerMutationAuthority(
       current.connectionMode === "tailscale_ssh") &&
     (current.tailscaleId === null || current.tailscaleConfigId === null)
   ) {
-    throw new Error("SSH Tailscale configuration is missing");
+    return null;
   }
   if (
     current.connectionMode === "cloudflare_access" &&
     (current.accessId === null || current.accessConfigId === null)
   ) {
-    throw new Error("SSH Cloudflare Access is missing");
+    return null;
   }
   return row?.eligibleId === null ? null : current;
 }

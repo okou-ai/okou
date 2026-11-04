@@ -444,10 +444,7 @@ pub(in crate::exec_operation) fn exec_operation_label_log(label: &str) -> String
         return label.to_string();
     }
 
-    let mut end = EXEC_OPERATION_LABEL_LOG_PREFIX_MAX_BYTES;
-    while !label.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = label.floor_char_boundary(EXEC_OPERATION_LABEL_LOG_PREFIX_MAX_BYTES);
     format!("{}...", &label[..end])
 }
 

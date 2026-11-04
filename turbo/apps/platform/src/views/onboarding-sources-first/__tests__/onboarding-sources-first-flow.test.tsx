@@ -36,15 +36,16 @@ const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
-const READY_TITLE = "Start with a task that matters";
-const START_ACTION = "Start with Okou";
+const READY_TITLE = "Let’s start your first task";
+const START_ACTION = "Start my first task";
 /** The preset request for a marketer with Gmail connected. */
 const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
-const PROMPT_TITLE = "Try this prompt";
+const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`;
+const PROMPT_TITLE = "Make this task your own";
 const PROMPT_INTRO =
-  "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud.";
+  "Connect your apps for better results and choose a format.";
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {
@@ -145,6 +146,10 @@ async function leaveSlackStepWithNotNow(): Promise<void> {
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
   click(getButtonByName("Not now"));
+  await screen.findByRole("heading", {
+    name: "More ways to get your work done",
+  });
+  click(getButtonByName("Continue"));
 }
 
 /** One catalog entry, so the source step has a grid to render. */
@@ -305,7 +310,7 @@ test("The first step introduces Okou and its compliance progress", async () => {
   ).resolves.toBeInTheDocument();
   expect(
     screen.getByText(
-      "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
+      "Tell us what you do. We’ll suggest a first task that fits your work.",
     ),
   ).toBeInTheDocument();
   const badges = Array.from(
@@ -379,7 +384,7 @@ test.each([false, true])(
     click(getButtonByName("Skip"));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Okou works better with your tools",
+      name: "Start without connecting a tool?",
     });
     expect(pathname()).toBe(ROUTES.onboardingSources);
     click(getButtonByName("Connect a tool", dialog));
@@ -391,16 +396,16 @@ test.each([false, true])(
 
     click(getButtonByName("Skip"));
     const confirmation = await screen.findByRole("dialog", {
-      name: "Okou works better with your tools",
+      name: "Start without connecting a tool?",
     });
     click(getButtonByName("Skip for now", confirmation));
 
     await screen.findByRole("heading", {
       name: mobile
-        ? "Invite a teammate"
-        : "Make Okou useful to your whole team",
+        ? "Choose how to start"
+        : "How would you like to start with Okou?",
     });
-    expect(pathname()).toBe(ROUTES.onboardingTeam);
+    expect(pathname()).toBe(ROUTES.onboardingExperience);
     expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
 
     click(getButtonByName("Back"));
@@ -491,7 +496,7 @@ test("Connected account context replaces the static starting prompt", async () =
       name: "How would you like to start with Okou?",
     }),
   ).resolves.toBeInTheDocument();
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
   await leaveSlackStepWithNotNow();
 
@@ -560,7 +565,7 @@ test("The ready step shows the generated request once the shared context result 
   await screen.findByRole("heading", {
     name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
   await leaveSlackStepWithNotNow();
 
@@ -600,7 +605,7 @@ test("A failed recommendation leaves the preset request on the ready step", asyn
   await screen.findByRole("heading", {
     name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
   await leaveSlackStepWithNotNow();
 
@@ -703,7 +708,7 @@ test("A refreshed ready step keeps the industry and edited request", async () =>
   await expect(
     screen.findByRole("heading", { name: READY_TITLE }),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Draft my launch plan",
   );
 
@@ -751,7 +756,7 @@ test("The ready step keeps the request on screen until the first chat opens", as
   click(getButtonByName(START_ACTION));
   await handoff.handoffPending;
 
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Draft my launch plan",
   );
 
@@ -796,7 +801,7 @@ test("A member skips sources, completes their own onboarding and enters chat", a
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
   click(getButtonByName("Skip"));
   const confirmation = await screen.findByRole("dialog", {
-    name: "Okou works better with your tools",
+    name: "Start without connecting a tool?",
   });
   click(getButtonByName("Skip for now", confirmation));
 
@@ -805,20 +810,17 @@ test("A member skips sources, completes their own onboarding and enters chat", a
     name: "How would you like to start with Okou?",
   });
   expect(pathname()).toBe(ROUTES.onboardingExperience);
-  expect(
-    screen.queryByLabelText("Team member’s email"),
-  ).not.toBeInTheDocument();
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
 
   await leaveSlackStepWithNotNow();
 
   await screen.findByRole("heading", { name: READY_TITLE });
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Compare the public content of three competitors and suggest three angles for my brand. Ask me which brand and audience to focus on.",
   );
   await fill(
-    screen.getByLabelText("Your starting prompt"),
+    screen.getByLabelText("Your first task"),
     "Draft my meeting agenda",
   );
   click(getButtonByName(START_ACTION));
@@ -874,7 +876,7 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
     HANDOFF_PROMPT,
   );
-  // The first question's introduction and compliance beside the prompt.
+  // Task guidance and compliance sit beside the prompt.
   expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
   expect(
     screen.getByRole("region", { name: COMPLIANCE_TITLE }),
@@ -992,7 +994,7 @@ test("A prompt with a showcase carries the showcase into the chat", async () => 
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(HANDOFF_PROMPT);
+    expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(new URLSearchParams(search()).get("showcase")).toBe(showcase);
@@ -1035,7 +1037,9 @@ test("The prompt step completes onboarding, then runs the prompt as edited", asy
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(
+      `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
+    );
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
@@ -1068,7 +1072,9 @@ test("The prompt step keeps the edited prompt on screen until the first chat ope
 
   handoff.release();
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(
+      `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
+    );
     expect(pathname()).toMatch(/^\/chats\//u);
   });
 });
@@ -1148,7 +1154,7 @@ test("A prompt link's redeem code is redeemed before completion and left out of 
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(HANDOFF_PROMPT);
+    expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(requests).toStrictEqual(["redeem:LAUNCH50", "complete"]);

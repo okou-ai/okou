@@ -427,6 +427,9 @@ function runtimeMethod(
           ...(method.grant.scopes === undefined
             ? {}
             : { scopes: [...method.grant.scopes] }),
+          ...(method.grant.authorizationPrompt === undefined
+            ? {}
+            : { authorizationPrompt: method.grant.authorizationPrompt }),
           outputs: outputBindings(method.grant.outputs),
         },
         access,

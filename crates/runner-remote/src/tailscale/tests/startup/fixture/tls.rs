@@ -15,6 +15,8 @@ pub(in crate::tailscale::tests::startup) async fn accept_tls(
             _ = stopped.cancelled() => return None,
             socket = listener.accept() => socket.unwrap(),
         };
+        // Keep small fixture TLS/Noise writes free of Nagle waits.
+        socket.set_nodelay(true).unwrap();
         let handshake = tokio::select! { biased;
             _ = stopped.cancelled() => return None,
             handshake = acceptor.accept(socket) => handshake,

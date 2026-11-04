@@ -138,7 +138,7 @@ describe("workflow skill storage presigned URL cache", () => {
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("signs each claim's immutable attachment independently of the Storage URL cache", async () => {
+  it("signs each claim's complete Workflow bundle independently of the Storage URL cache", async () => {
     const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
     const misc = createMiscRoutesApi(context);
     installWorkflowVolumeS3Fixture(context);
@@ -167,23 +167,19 @@ describe("workflow skill storage presigned URL cache", () => {
         runnerGroup,
         run.runId,
       );
-      const download = await createRunsApi(context).downloadWorkflow(
-        run.runId,
-        workflow.body.id,
-        claim.sandboxToken,
-      );
-      if (!download.attachments) {
-        throw new Error("Expected Workflow attachments");
+      const bundle = claim.contentBundles.skills[0];
+      if (!bundle) {
+        throw new Error("Expected a Workflow content bundle");
       }
       await cancelChatRun(actor, run.runId, sandboxHeaders);
-      return download.attachments;
+      return bundle;
     };
     const first = await claimWorkflow();
     const second = await claimWorkflow();
-    expect(second.archiveSha256).toBe(first.archiveSha256);
-    expect(new URL(second.archiveUrl).pathname).toBe(
-      new URL(first.archiveUrl).pathname,
+    expect(second.sha256).toBe(first.sha256);
+    expect(new URL(second.downloadUrl).pathname).toBe(
+      new URL(first.downloadUrl).pathname,
     );
-    expect(second.archiveUrl).not.toBe(first.archiveUrl);
+    expect(second.downloadUrl).not.toBe(first.downloadUrl);
   });
 });

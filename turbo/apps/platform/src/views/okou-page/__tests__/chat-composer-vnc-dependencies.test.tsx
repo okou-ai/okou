@@ -9,6 +9,7 @@ import {
   type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -41,6 +42,9 @@ function installDependencyFixture({
   kdcSshId,
   configurationReady,
   failAccessAfterVncEnabled = false,
+  saveReady,
+  refreshReady,
+  failSave = false,
 }: {
   newChat?: boolean;
   sshDefaultEnabled?: boolean;
@@ -50,6 +54,9 @@ function installDependencyFixture({
   kdcSshId?: string;
   configurationReady?: Promise<void>;
   failAccessAfterVncEnabled?: boolean;
+  saveReady?: Promise<void>;
+  refreshReady?: Promise<void>;
+  failSave?: boolean;
 } = {}) {
   installComposerConnectorFixture(newChat ? {} : { threadId: SCOUT_THREAD_ID });
   const settings = [
@@ -95,6 +102,7 @@ function installDependencyFixture({
   };
   const sshIds = [SSH_ID, OTHER_SSH_ID, KDC_SSH_ID];
   let failAccessRead = false;
+  let saved = false;
   context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
       computerUseHosts: [],
@@ -110,7 +118,10 @@ function installDependencyFixture({
   });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
-    ({ respond }) => {
+    async ({ respond }) => {
+      if (saved) {
+        await refreshReady;
+      }
       if (failAccessRead) {
         return respond(500, {
           error: {
@@ -124,8 +135,15 @@ function installDependencyFixture({
   );
   context.mocks.api(
     chatRemoteAccessContract.setThreadOverride,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond }) => {
+      await saveReady;
+      if (failSave) {
+        return respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Save failed" },
+        });
+      }
       overrides.set(params.connectionId, body.enabled);
+      saved = true;
       if (
         failAccessAfterVncEnabled &&
         params.protocol === "vnc" &&
@@ -204,6 +222,207 @@ async function chooseHost(name: string, option: string) {
   click(screen.getByRole("combobox", { name }));
   click(await screen.findByRole("option", { name: option }));
 }
+
+test.each([
+  {
+    protocol: "SSH",
+    name: "SSH MacinCloud",
+    option: "On",
+    keys: "{ArrowDown}{Enter}",
+    dependency: SSH_ENABLED_NOTE,
+    headings: ["SSH", "Enabled", "Disabled"],
+  },
+  {
+    protocol: "VNC",
+    name: "VNC MacinCloud",
+    option: "Off",
+    keys: "{End}{Enter}",
+    dependency: SSH_NOTE,
+    headings: ["VNC", "Disabled"],
+  },
+])(
+  "New-chat $protocol regrouping preserves keyboard focus and VNC dependency feedback",
+  async ({ protocol, name, option, keys, dependency, headings }) => {
+    installDependencyFixture({ newChat: true });
+    const menu = await openRemoteAccess(true);
+    await within(menu).findByText(SSH_WARNING);
+    const user = userEvent.setup({ delay: null });
+    within(menu).getByRole("combobox", { name }).focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", { name: option });
+    await user.keyboard(keys);
+    await within(menu).findByText(dependency);
+    await waitFor(() => {
+      const control = within(menu).getByRole("combobox", { name });
+      expect(control).toHaveTextContent(option);
+      expect(control).toHaveFocus();
+    });
+    const section = within(menu).getByRole("region", { name: protocol });
+    expect(
+      within(section)
+        .getAllByRole("heading")
+        .map((heading) => {
+          return heading.textContent;
+        }),
+    ).toStrictEqual(headings);
+  },
+);
+
+test.each([
+  {
+    protocol: "SSH",
+    defaultEnabled: true,
+    option: "On",
+    keys: "{ArrowDown}{Enter}",
+  },
+  {
+    protocol: "SSH",
+    defaultEnabled: false,
+    option: "On",
+    keys: "{ArrowDown}{Enter}",
+  },
+  {
+    protocol: "VNC",
+    defaultEnabled: true,
+    option: "On",
+    keys: "{ArrowDown}{Enter}",
+  },
+  {
+    protocol: "VNC",
+    defaultEnabled: true,
+    option: "Off",
+    keys: "{End}{Enter}",
+  },
+])(
+  "Saved-chat $protocol keeps keyboard focus through a slow $option save from default $defaultEnabled",
+  async ({ protocol, defaultEnabled, option, keys }) => {
+    const save = context.mocks.deferred<void>();
+    const refresh = context.mocks.deferred<void>();
+    installDependencyFixture({
+      sshDefaultEnabled: protocol === "SSH" ? defaultEnabled : false,
+      vncDefaultEnabled: protocol === "VNC" ? defaultEnabled : true,
+      saveReady: save.promise,
+      refreshReady: refresh.promise,
+    });
+    const menu = await openRemoteAccess();
+    const name = `${protocol} MacinCloud`;
+    const control = within(menu).getByRole("combobox", { name });
+    const user = userEvent.setup({ delay: null });
+    control.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", { name: option });
+    await user.keyboard(keys);
+    await waitFor(() => {
+      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(control).toHaveFocus();
+    });
+    expect(control).toHaveAttribute("aria-readonly", "true");
+    expect(control).toHaveAttribute("aria-busy", "true");
+    await user.keyboard("{Enter}{End}{Enter}");
+    expect(screen.queryByRole("listbox")).toBeNull();
+
+    save.resolve();
+    await waitFor(() => {
+      expect(control).not.toHaveAttribute("aria-busy", "true");
+    });
+    expect(control).toHaveFocus();
+    refresh.resolve();
+    await waitFor(() => {
+      const savedControl = within(menu).getByRole("combobox", { name });
+      expect(savedControl.textContent?.trim()).toBe(option);
+      expect(savedControl).toHaveFocus();
+    });
+  },
+);
+
+test.each([false, true])(
+  "A completed save preserves the user's new keyboard destination (failure: %s)",
+  async (failSave) => {
+    const save = context.mocks.deferred<void>();
+    installDependencyFixture({
+      sshDefaultEnabled: true,
+      saveReady: save.promise,
+      failSave,
+    });
+    const menu = await openRemoteAccess();
+    const control = within(menu).getByRole("combobox", {
+      name: "SSH MacinCloud",
+    });
+    const user = userEvent.setup({ delay: null });
+    control.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", { name: "On" });
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => {
+      expect(control).toHaveFocus();
+    });
+    await user.keyboard("{Tab}");
+    const destination = within(menu).getByRole("combobox", {
+      name: "SSH Directory tunnel",
+    });
+    expect(destination).toHaveFocus();
+    await user.keyboard("{Enter}{ArrowDown}{Enter}");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    save.resolve();
+    await waitFor(() => {
+      expect(control).not.toHaveAttribute("aria-busy", "true");
+      expect(control).toHaveTextContent(failSave ? "Default (On)" : /^On$/);
+    });
+    expect(destination).toHaveFocus();
+    await chooseHost("SSH Directory tunnel", "On");
+    await waitFor(() => {
+      expect(destination).not.toHaveAttribute("aria-busy", "true");
+      expect(destination).toHaveTextContent(
+        failSave ? "Default (Off)" : /^On$/,
+      );
+    });
+  },
+);
+
+test("Dismissing Remote access during a save retains the connector trigger focus", async () => {
+  const save = context.mocks.deferred<void>();
+  const refresh = context.mocks.deferred<void>();
+  installDependencyFixture({
+    sshDefaultEnabled: true,
+    saveReady: save.promise,
+    refreshReady: refresh.promise,
+  });
+  const menu = await openRemoteAccess();
+  const control = within(menu).getByRole("combobox", {
+    name: "SSH MacinCloud",
+  });
+  await chooseHost("SSH MacinCloud", "On");
+  await waitFor(() => {
+    expect(control).toHaveFocus();
+  });
+  click(await findFastControl("button", "Close", menu));
+  const trigger = await findFastControl("button", "Connectors");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole("dialog", { name: "Remote access" })).toBeNull();
+  });
+  save.resolve();
+  refresh.resolve();
+  click(trigger);
+  const entry = await screen.findByText("Remote access");
+  click(entry);
+  const reopened = await screen.findByRole("combobox", {
+    name: "SSH MacinCloud",
+  });
+  await waitFor(() => {
+    expect(reopened).toHaveTextContent(/^On$/);
+  });
+  click(
+    await findFastControl(
+      "button",
+      "Close",
+      screen.getByRole("dialog", { name: "Remote access" }),
+    ),
+  );
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+});
 
 test("An unrelated SSH host does not satisfy an enabled VNC host's dependency", async () => {
   installDependencyFixture();

@@ -276,16 +276,6 @@ fn process_contract_strategy()
                 sink: true,
             },
         )),
-        Just((
-            ExecProcessRole::SessionHistoryIdentityVerifier,
-            ExecLifecyclePolicy::OneShot,
-            ExecControlPolicy::Disabled,
-        )),
-        Just((
-            ExecProcessRole::CodexSessionCleanup,
-            ExecLifecyclePolicy::OneShot,
-            ExecControlPolicy::Disabled,
-        )),
     ]
 }
 

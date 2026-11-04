@@ -71,6 +71,17 @@ async function fixture(enforced = true) {
   return { root, write, git, check, baseline, marked };
 }
 
+test("the CLI permits deployment migration atomicity outside the application inventory", async () => {
+  const f = await fixture();
+  f.write(
+    "turbo/packages/db/scripts/migration-runner.ts",
+    "export async function applyPendingMigrations(sql) { await sql.begin(work); }",
+  );
+  const result = f.check();
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain("1 legacy sites");
+});
+
 test("the CLI accepts registered legacy transactions after formatting-only edits", async () => {
   const f = await fixture();
   f.write(

@@ -14,12 +14,11 @@ import {
 } from "./chat-thread-request-facts";
 
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
-import {
-  chatEventsContract,
-  resolveChatEventRecommendedFollowups,
-  type CodexServiceTier,
-  type UserMessageDocument,
+import type {
+  CodexServiceTier,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   modelSettingsSchema,
@@ -51,8 +50,8 @@ import {
   sql,
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { literal, object, string, type infer as zInfer } from "zod";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { literal, object, uuid, type infer as zInfer } from "zod";
+import { alias, PgDialect } from "drizzle-orm/pg-core";
 import {
   normalChatInputConditionalValues,
   normalChatInputUpdateSet,
@@ -77,7 +76,13 @@ import {
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { bestEffort, safeSync, settle, settleIncludingAbort } from "../utils";
+import {
+  bestEffort,
+  joinAll,
+  safeSync,
+  settle,
+  settleIncludingAbort,
+} from "../utils";
 import {
   createAgentRunContextSignals,
   preloadAgentRunContext$,
@@ -171,7 +176,8 @@ import {
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
-type SendBody = zInfer<typeof chatEventsContract.send.body>;
+type SendBody =
+  import("@okouai/api-contracts/contracts/chat-event-send").ChatEventSendBody;
 interface NormalSendBody {
   readonly agentId: string;
   readonly prompt: string;
@@ -246,7 +252,7 @@ type NormalSendFailure =
  * The run, or an `input.rejected` explaining why none started, appears in the
  * thread's event stream.
  */
-interface CreatedChatEventResponse {
+export interface CreatedChatEventResponse {
   /** Server-side only: whether an earlier send already stored this input. */
   readonly replayed?: boolean;
   readonly status: 201;
@@ -427,6 +433,12 @@ const resolveNormalSendAgentRunSource$ = command(
     return { source: resolved.annotation };
   },
 );
+/** A started source resolution; its outcome is observed after authorization. */
+type NormalSendAgentRunSourceRead = ReturnType<
+  typeof settle<
+    Awaited<ReturnType<(typeof resolveNormalSendAgentRunSource$)["write"]>>
+  >
+>;
 /**
  * Reject a template selection that can never resolve. Only the selection's
  * own syntax is checked here; whether the caller may use an uploaded
@@ -654,14 +666,15 @@ const loadExistingSendThreadRow$ = command(
     return thread;
   },
 );
-type ExistingSendThreadRow = NonNullable<
-  Awaited<ReturnType<(typeof loadExistingSendThreadRow$)["write"]>>
+type ExistingSendThreadRowRead = ReturnType<
+  (typeof loadExistingSendThreadRow$)["write"]
 >;
+type ExistingSendThreadRow = NonNullable<Awaited<ExistingSendThreadRowRead>>;
 const loadAuthorizedExistingSendThread$ = command(
   async (
-    { get, set },
+    { get },
     args: NormalSendArgs & { readonly context: AgentRunContextSignals },
-    threadId: string,
+    threadRow: ExistingSendThreadRowRead,
     signal: AbortSignal,
   ): Promise<
     | {
@@ -671,7 +684,7 @@ const loadAuthorizedExistingSendThread$ = command(
     | NormalSendFailure
   > => {
     const [thread, loadedAgent] = await Promise.all([
-      set(loadExistingSendThreadRow$, args, threadId, signal),
+      threadRow,
       get(args.context.agent$),
     ]);
     signal.throwIfAborted();
@@ -839,7 +852,12 @@ function normalSendRequestFacts(
   previousBinding:
     | Pick<
         ChatThreadRequestFacts["thread"],
-        "framework" | "frameworkSessionId" | "frameworkSessionRunId"
+        | "framework"
+        | "frameworkSessionId"
+        | "frameworkSessionRunId"
+        | "projectId"
+        | "title"
+        | "renamedAt"
       >
     | undefined,
   event: Pick<
@@ -851,6 +869,7 @@ function normalSendRequestFacts(
     orgId: args.orgId,
     thread: {
       id: thread.threadId,
+      projectId: previousBinding?.projectId ?? null,
       userId: args.userId,
       agentId: args.body.agentId,
       ...thread.runSettings,
@@ -858,6 +877,9 @@ function normalSendRequestFacts(
       framework: previousBinding?.framework ?? null,
       frameworkSessionId: previousBinding?.frameworkSessionId ?? null,
       frameworkSessionRunId: previousBinding?.frameworkSessionRunId ?? null,
+      // A new thread's row is inserted untitled and unrenamed.
+      title: previousBinding?.title ?? null,
+      renamedAt: previousBinding?.renamedAt ?? null,
     },
     input: {
       id: event.id,
@@ -1374,6 +1396,8 @@ interface NormalSendInput {
   readonly thread: SendThread;
   readonly event: ReturnType<typeof normalSendEvent>;
   readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
+  /** The follow-up captured by an existing thread's revocation check. */
+  readonly replacementTarget: NormalReplacementTarget | undefined;
 }
 
 /** Prepare ordinary write facts without capturing the transaction owner. */
@@ -1390,6 +1414,7 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
     relationSource:
       args.auth.tokenType === "agent" ? input.agentRunSource : null,
     queueInput: { chatThreadId: thread.threadId, orgId: args.orgId },
+    replacementTarget: input.replacementTarget,
     existingPlan: existing && {
       ...existing,
       where: threadCondition,
@@ -1420,7 +1445,7 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
 }
 
 const normalSendPublicationRowSchema = object({
-  id: string().uuid().nullable(),
+  id: uuid().nullable(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   seqId: pgInt8ToSafeIntegerSchema.nullable(),
   atomicGuard: literal(0),
@@ -1923,14 +1948,19 @@ const appendNormalSendInput$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const target = args.body.revokesEventId
-      ? parseRawRows(
-          chatEventReplacementTargetSchema,
-          await db.execute(
-            chatEventReplacementTargetSql(args.body.revokesEventId),
-          ),
-        )
-      : null;
+    // An existing thread's follow-up was captured by its revocation check and
+    // chat events are immutable, so only a new thread's revocation reads here.
+    const target =
+      input.replacementTarget === undefined
+        ? args.body.revokesEventId
+          ? parseRawRows(
+              chatEventReplacementTargetSchema,
+              await db.execute(
+                chatEventReplacementTargetSql(args.body.revokesEventId),
+              ),
+            )
+          : null
+        : [input.replacementTarget];
     signal.throwIfAborted();
     const snapshots: NormalInputAssetSnapshot[] = [];
     for (const [index, asset] of input.attachments.entries()) {
@@ -2008,7 +2038,12 @@ const appendNormalSendInput$ = command(
 const prepareNormalSend$ = command(
   async (
     { get, set },
-    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
+    args: NormalSendArgs & {
+      readonly context: AgentRunContextSignals;
+      /** The existing thread's row read, started before the preload. */
+      readonly existingThreadRow: ExistingSendThreadRowRead | undefined;
+      readonly agentRunSource: NormalSendAgentRunSourceRead;
+    },
     signal: AbortSignal,
   ): Promise<
     | {
@@ -2023,25 +2058,20 @@ const prepareNormalSend$ = command(
     | NormalSendFailure
     | CreatedChatEventResponse
   > => {
-    // MCP attribution is server-owned. Reject a forged source even on an
-    // idempotent retry.
-    if (
-      args.body.userMessage.parts.some((part) => {
-        return part.type === "source" && part.kind === "mcp";
-      })
-    ) {
-      return badRequestMessage("MCP source annotations are server-managed");
-    }
-    const existingThreadId = args.body.threadId;
-    const authorized =
-      existingThreadId === undefined
-        ? await set(loadAuthorizedAgent$, args, signal)
-        : await set(
+    // Join the source resolution even when authorization fails, so the
+    // started read stays owned. Its outcome, including a failure, is used only
+    // once authorization has succeeded.
+    const [authorized, resolvedSource] = await joinAll([
+      args.existingThreadRow === undefined
+        ? set(loadAuthorizedAgent$, args, signal)
+        : set(
             loadAuthorizedExistingSendThread$,
             args,
-            existingThreadId,
+            args.existingThreadRow,
             signal,
-          );
+          ),
+      args.agentRunSource,
+    ]);
     signal.throwIfAborted();
     if ("status" in authorized) {
       return authorized;
@@ -2049,16 +2079,10 @@ const prepareNormalSend$ = command(
     if ("thread" in authorized && authorized.thread.isOfficialWorkflowThread) {
       return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
     }
-    const source = await set(
-      resolveNormalSendAgentRunSource$,
-      {
-        auth: args.auth,
-        userMessage: args.body.userMessage,
-        sourceRunId: args.body.sourceRunId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
+    if (!resolvedSource.ok) {
+      throw resolvedSource.error;
+    }
+    const source = resolvedSource.value;
     if ("response" in source) {
       return source.response;
     }
@@ -2156,6 +2180,17 @@ const publishEnqueuedNormalSend$ = command(
       ),
     );
     signal.throwIfAborted();
+    // A claimed lease proves the thread had no active run, so no running run
+    // can steer this input: a launch consumes it and a full organization
+    // leaves it queued. Otherwise a running run may hold the lease.
+    const claimed =
+      picked.ok &&
+      (picked.value.kind === "launched" || picked.value.kind === "org-full");
+    if (!claimed) {
+      waitUntil(
+        set(notifyRunningChatRunOfPendingInput$, thread.threadId, signal),
+      );
+    }
     await set(normalSendThreadTouch$, args, thread, touchedAt, signal);
     signal.throwIfAborted();
     await publishChatEventCreated({
@@ -2327,17 +2362,48 @@ const prepareNormalSendModels$ = command(
 
 const prepareNormalSendContext$ = command(
   async ({ set }, args: NormalSendArgs, signal: AbortSignal) => {
+    // MCP attribution is server-owned. Reject a forged source even on an
+    // idempotent retry, before any read starts.
+    if (
+      args.body.userMessage.parts.some((part) => {
+        return part.type === "source" && part.kind === "mcp";
+      })
+    ) {
+      return badRequestMessage("MCP source annotations are server-managed");
+    }
     const context = createAgentRunContextSignals(
       args.userId,
       args.orgId,
       args.body.agentId,
+    );
+    // The pool serves checkouts in dispatch order. Issue the request-critical
+    // thread row before the preload's roots, several of which this request
+    // never awaits, so it takes a warm connection instead of opening one.
+    // Authorization joins it with the Agent read in this same turn.
+    const existingThreadRow =
+      args.body.threadId === undefined
+        ? undefined
+        : set(loadExistingSendThreadRow$, args, args.body.threadId, signal);
+    // A forwarded or agent-token send also awaits its source Run. The read is
+    // scoped to the caller's user and organization, and its outcome is used
+    // only after authorization, so it runs alongside the thread row.
+    const agentRunSource = settle(
+      set(
+        resolveNormalSendAgentRunSource$,
+        {
+          auth: args.auth,
+          userMessage: args.body.userMessage,
+          sourceRunId: args.body.sourceRunId,
+        },
+        signal,
+      ),
     );
     // Start authenticated org/member reads immediately; authorization consumes
     // the same promises. Settled waitUntil work stays owned on rejection/abort.
     set(preloadAgentRunContext$, context, signal);
     const prepared = await set(
       prepareNormalSend$,
-      { ...args, context },
+      { ...args, context, existingThreadRow, agentRunSource },
       signal,
     );
     if ("status" in prepared) {
@@ -2387,7 +2453,7 @@ export const sendNormalEvent$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (revocation) {
+    if (revocation && "status" in revocation) {
       return revocation;
     }
     const input = await set(
@@ -2421,6 +2487,7 @@ export const sendNormalEvent$ = command(
             event,
             attachFileMetadata,
             agentRunSource: prepared.agentRunSource,
+            replacementTarget: revocation?.replacementTarget,
           }),
           signal,
         );
@@ -2431,7 +2498,8 @@ export const sendNormalEvent$ = command(
           inserted: { createdAt },
           enqueueCommit,
         } = committed;
-        // Schedule before observing abort; touch/realtime follow this pick's outcome.
+        // Schedule before observing abort; touch, realtime and the running-run
+        // notice follow this pick's outcome.
         waitUntil(
           set(
             publishEnqueuedNormalSend$,
@@ -2450,9 +2518,6 @@ export const sendNormalEvent$ = command(
             },
             signal,
           ),
-        );
-        waitUntil(
-          set(notifyRunningChatRunOfPendingInput$, thread.threadId, signal),
         );
         return createdAt;
       })(),
@@ -2636,6 +2701,11 @@ export const appendRecallChatEvent$ = command(
     return { ok: true, createdAt: resolved.createdAt };
   },
 );
+type NormalReplacementTarget = zInfer<typeof chatEventReplacementTargetSchema>;
+/** An unused follow-up, reused by the publication instead of re-read. */
+interface NormalRevocationTarget {
+  readonly replacementTarget: NormalReplacementTarget;
+}
 const validateNormalRevocationTarget$ = command(
   async (
     { get },
@@ -2645,17 +2715,47 @@ const validateNormalRevocationTarget$ = command(
       readonly clientEventId: string | undefined;
     },
     signal: AbortSignal,
-  ): Promise<NormalSendFailure | CreatedChatEventResponse | undefined> => {
+  ): Promise<
+    | NormalSendFailure
+    | CreatedChatEventResponse
+    | NormalRevocationTarget
+    | undefined
+  > => {
     const db = get(db$);
     if (!params.revokesEventId) {
       return undefined;
     }
+    // One statement reads the follow-up, its replacement projection and any
+    // input that already revoked it.
+    const revoker = alias(chatEvents, "followup_revoker");
+    const existingRevoker = db
+      .select({ id: revoker.id, createdAt: revoker.createdAt })
+      .from(revoker)
+      .where(
+        and(
+          eq(revoker.chatThreadId, params.threadId),
+          eq(revoker.revokesEventId, params.revokesEventId),
+        ),
+      )
+      .limit(1)
+      .as("followup_existing_revoker");
     const [target] = await db
       .select({
         id: chatEvents.id,
+        chatThreadId: chatEvents.chatThreadId,
+        createdAt: chatEvents.createdAt,
+        eventType: chatEvents.eventType,
+        contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        modelSelection: canonicalChatInputModelSelection(),
         content: canonicalChatEventContent(),
+        existingRevoker: {
+          id: existingRevoker.id,
+          createdAt: existingRevoker.createdAt,
+        },
       })
       .from(chatEvents)
+      .leftJoinLateral(existingRevoker, sql`true`)
       .where(
         and(
           eq(chatEvents.id, params.revokesEventId),
@@ -2668,24 +2768,28 @@ const validateNormalRevocationTarget$ = command(
     if (!target || resolveChatEventRecommendedFollowups(target).length === 0) {
       return badRequestMessage("Recommended follow-up is no longer available");
     }
-    const [existingRevoker] = await db
-      .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, params.threadId),
-          eq(chatEvents.revokesEventId, params.revokesEventId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (existingRevoker) {
+    if (target.existingRevoker) {
       // Postgres returns the uuid lowercase; the request may use any case.
-      return existingRevoker.id === params.clientEventId?.toLowerCase()
-        ? acceptedSendResponse(params.threadId, existingRevoker.createdAt, true)
+      return target.existingRevoker.id === params.clientEventId?.toLowerCase()
+        ? acceptedSendResponse(
+            params.threadId,
+            target.existingRevoker.createdAt,
+            true,
+          )
         : conflict("Recommended follow-up has already been used");
     }
-    return undefined;
+    // The publication's unique revokes index still guards single use.
+    return {
+      replacementTarget: {
+        id: target.id,
+        chatThreadId: target.chatThreadId,
+        createdAt: target.createdAt,
+        eventType: target.eventType,
+        contextType: target.contextType,
+        contextId: target.contextId,
+        modelSelection: target.modelSelection,
+      },
+    };
   },
 );
 export const appendInterruptUserMessage$ = command(

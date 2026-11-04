@@ -14,6 +14,10 @@ import {
 import { preserveProviderErrorStatus } from "./provider-error-body";
 import { guardPiUpstreamErrorBody } from "./upstream-error-body";
 import {
+  applyFirewallAuthFailure,
+  parseFirewallAuthFailure,
+} from "./firewall-auth-failure";
+import {
   modelTransportFailure,
   observeModelResponseBody,
   parseModelTransportFailure,
@@ -25,6 +29,7 @@ export type ModelRequestObservation = {
   transportAttempts: number;
   failureReason?: KnownRunFailureReason;
   transportFailure?: PiModelTransportFailure;
+  firewallAuthFailure?: ReturnType<typeof parseFirewallAuthFailure>;
 };
 
 /** Inspect the actual response before SDKs can turn a nested message into prose. */
@@ -105,6 +110,7 @@ export class ModelRequestEventStream extends AssistantMessageEventStream {
         message.api === "openai-codex-responses"
           ? responseReason
           : undefined);
+      applyFirewallAuthFailure(message, this.observation.firewallAuthFailure);
       message.diagnostics = [
         ...(message.diagnostics ?? []),
         {
@@ -150,6 +156,7 @@ export function streamWithModelRequestDiagnostics(
     observation.httpStatus = undefined;
     observation.failureReason = undefined;
     observation.transportFailure = undefined;
+    observation.firewallAuthFailure = undefined;
     let response: Response;
     try {
       response = await fetchImpl(input, init);
@@ -175,9 +182,14 @@ export function streamWithModelRequestDiagnostics(
     preserveProviderErrorStatus(
       guardPiUpstreamErrorBody(observedFetch),
       (status, body) => {
-        observation.failureReason =
-          classifyProviderFailure(body, status) ??
-          opaqueBadRequestReason(body, status);
+        observation.firewallAuthFailure = parseFirewallAuthFailure(
+          status,
+          body,
+        );
+        observation.failureReason = observation.firewallAuthFailure
+          ? "firewall_auth_failed"
+          : (classifyProviderFailure(body, status) ??
+            opaqueBadRequestReason(body, status));
       },
     ),
   );

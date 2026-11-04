@@ -5,7 +5,7 @@ import {
   getEmailEnabledFeatureStates,
   isFeatureSwitchAvailable,
 } from "@okouai/core/feature-switch";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { featureSwitchesContract } from "@okouai/api-contracts/client/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$, clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
@@ -21,11 +21,6 @@ interface FeatureSwitchIdentity {
   readonly email: string | undefined;
   readonly orgId: string;
   readonly userId: string;
-}
-
-interface FeatureSwitchSnapshot {
-  readonly owner: string | null;
-  readonly switches: Record<FeatureSwitchKey, boolean>;
 }
 
 function readFeatureSwitchIdentity(
@@ -59,7 +54,6 @@ function applySwitches(
 }
 
 const internalReloadFeatureSwitches$ = state(0);
-const remoteUiOwner$ = state<string | null>(null);
 
 export const availableFeatureSwitchKeys$ = computed(async (get) => {
   get(authenticatedSessionKey$);
@@ -74,10 +68,9 @@ export const featureSwitches$ = computed(async (get) => {
   get(internalReloadFeatureSwitches$);
   const createClient = get(apiClient$);
   const clerk = await get(clerk$);
-  const owner = get(authenticatedSessionKey$);
   const identity = readFeatureSwitchIdentity(clerk);
   if (!identity) {
-    return { owner: null, switches: getAllFeatureStates({}) };
+    return getAllFeatureStates({});
   }
 
   const client = createClient(featureSwitchesContract, {
@@ -95,36 +88,16 @@ export const featureSwitches$ = computed(async (get) => {
   );
   applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
   applySwitches(combined, result.body.switches);
-  // An older API does not have folder routes. Its missing key must not opt
-  // staff into a frontend-only default during rollout or a supported rollback.
-  if (
-    result.body.effectiveSwitches?.[FeatureSwitchKey.ChatThreadFolders] ===
-    undefined
-  ) {
-    combined[FeatureSwitchKey.ChatThreadFolders] = false;
-  }
   // Reapply audience restrictions after both server and stored overrides.
-  return {
-    owner,
-    switches: getAllFeatureStates({ ...identity, overrides: combined }),
-  };
+  return getAllFeatureStates({ ...identity, overrides: combined });
 });
 
 export const featureSwitch$ = computed((get) => {
-  const switches = get(featureSwitchState$);
-  const owner = get(remoteUiOwner$);
-  return owner && owner === get(authenticatedSessionKey$)
-    ? switches
-    : {
-        ...switches,
-        [FeatureSwitchKey.RemoteControlGuidedSetup]: false,
-        [FeatureSwitchKey.ChatThreadFolders]: false,
-      };
+  return get(featureSwitchState$);
 });
 
 export const applyFeatureSwitches$ = command(
-  ({ set }, { owner, switches }: FeatureSwitchSnapshot) => {
-    set(remoteUiOwner$, owner);
+  ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);
   },
 );

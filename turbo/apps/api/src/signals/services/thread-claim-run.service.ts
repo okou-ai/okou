@@ -1,5 +1,4 @@
 import { performance } from "node:perf_hooks";
-import { captureInvokedWorkflow$ } from "./execution-agent-workflows.service";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
@@ -64,7 +63,9 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import {
+  withPgPoolAcquisitionCapture,
   withPgQueryExecutionCapture,
+  type PgPoolAcquisitionCapture,
   type PgQueryExecutionCapture,
 } from "../../lib/db-instrumentation";
 import { env, optionalEnv } from "../../lib/env";
@@ -154,6 +155,7 @@ import {
 import type { ModelCatalog } from "./model-catalog.service";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
+  pinnedOfficialWorkflowBundles,
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowRunObservation,
@@ -185,10 +187,8 @@ import { agentphoneDeliveryTargetSchema } from "./agentphone-chat-callback-paylo
 
 import {
   ApiDispatchPhaseCollector,
-  type ApiDispatchTimingActionType,
   ApiDispatchTimingCollector,
   type ApiDispatchTimingDimensions,
-  type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
@@ -343,7 +343,6 @@ import {
   type AdditionalVolumeSources,
   type AgentRunCreateAdditionalVolume,
   type MaterializedAgentRunStorage,
-  OfficialWorkflowArtifactResolutionError,
   type PreparedAgentRunStorage,
   prepareRunOutputMetadata,
   type ResolvedAgentExecution,
@@ -1150,6 +1149,24 @@ function claimRejectionContext(
     },
   };
 }
+
+/**
+ * Generation writes a title only over NULL title and renamed_at, and a rename
+ * sets both, so a titled or renamed claim snapshot never needs another read.
+ */
+function threadTitled(
+  thread:
+    | { readonly title: string | null; readonly renamedAt: Date | null }
+    | null
+    | undefined,
+) {
+  return (
+    thread !== null &&
+    thread !== undefined &&
+    (thread.title !== null || thread.renamedAt !== null)
+  );
+}
+
 function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
   if (record.kind === "automation") {
     return record;
@@ -1160,6 +1177,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
     timing: record.timing,
     context: {
       userId: record.context.userId,
+      titled: record.context.titled,
       runInput: {
         orgId: input.orgId,
         threadId: input.threadId,
@@ -1783,7 +1801,11 @@ export function createThreadClaimRunObjects(
         launchRecord: {
           kind: "prompt",
           timing,
-          context: { userId: head.userId, runInput },
+          context: {
+            userId: head.userId,
+            titled: threadTitled((await get(pickedEvent$))?.thread),
+            runInput,
+          },
         },
       };
     },
@@ -2308,14 +2330,18 @@ export function createThreadClaimRunObjects(
       if (!args) {
         return;
       }
-      await measureApiDispatchTiming(
-        get(timing$),
-        "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
-        "nested",
-        async () => {
-          await get(workflowAutomationLaunchModel$);
-        },
-      );
+      const timing = get(timing$);
+      const startedAt = performance.now();
+      await (async () => {
+        await get(workflowAutomationLaunchModel$);
+      })().finally(() => {
+        timing.recordDuration(
+          "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
       signal.throwIfAborted();
     },
   );
@@ -2452,13 +2478,19 @@ export function createThreadClaimRunObjects(
       selectedIdentityInputIdentityInput$,
     );
     // A Thread run always names its queue head's Agent.
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_resolve_agent_id",
-      () => {
-        return Promise.resolve(args.body.agentId);
-      },
-    );
+    const startedAt = timing ? performance.now() : undefined;
+    return await (async () => {
+      return await Promise.resolve(args.body.agentId);
+    })().finally(() => {
+      if (startedAt !== undefined) {
+        timing?.recordDuration(
+          "api_dispatch_pre_create_agent_resolve_agent_id",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      }
+    });
   });
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
@@ -2467,14 +2499,20 @@ export function createThreadClaimRunObjects(
       if (!agentId) {
         return null;
       }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_load_agent",
-        async () => {
-          // Authorization waits only for the context's Agent snapshot.
-          return await get(bootstrap.agent$);
-        },
-      );
+      const startedAt = timing ? performance.now() : undefined;
+      return await (async () => {
+        // Authorization waits only for the context's Agent snapshot.
+        return await get(bootstrap.agent$);
+      })().finally(() => {
+        if (startedAt !== undefined) {
+          timing?.recordDuration(
+            "api_dispatch_pre_create_agent_load_agent",
+            "nested",
+            performance.now() - startedAt,
+            now(),
+          );
+        }
+      });
     },
   );
   const preCreateSubscriptionAccountSubscriptionAccount$ = computed(
@@ -2504,13 +2542,18 @@ export function createThreadClaimRunObjects(
   );
   const preCreatePermissionPoliciesPermissionPolicies$ = computed(
     async (get) => {
-      return await get(threadContext.dispatchTiming$).measure(
-        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-        "nested",
-        async () => {
-          return await get(bootstrap.permissionPolicies$);
-        },
-      );
+      const timing = get(threadContext.dispatchTiming$);
+      const startedAt = performance.now();
+      return await (async () => {
+        return await get(bootstrap.permissionPolicies$);
+      })().finally(() => {
+        timing.recordDuration(
+          "api_dispatch_pre_create_agent_resolve_firewall_metadata",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
     },
   );
   const preCreatePostAuthorizationPostAuthorization$ = computed(
@@ -3776,24 +3819,7 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const invokedWorkflowId =
-        runnerInput && !isRouteError(runnerInput)
-          ? await set(
-              captureInvokedWorkflow$,
-              {
-                agentId: runnerInput.args.resolved.agentId,
-                userId: runnerInput.args.userId,
-                orgId: runnerInput.args.orgId,
-                prompt: runnerInput.body.prompt,
-              },
-              signal,
-            )
-          : null;
-      const contextDraft = claimRunStoredContextDraft(
-        runnerInput,
-        encrypted,
-        invokedWorkflowId,
-      );
+      const contextDraft = claimRunStoredContextDraft(runnerInput, encrypted);
       return {
         kind: "prepared" as const,
         resources: [
@@ -3806,36 +3832,6 @@ export function createThreadClaimRunObjects(
           admission,
         ] as const,
       };
-    },
-  );
-  /**
-   * An unresolvable Official Workflow artifact is a business rejection of the
-   * head; any other preparation error propagates.
-   */
-  const rejectUnresolvedOfficialArtifact$ = command(
-    async (
-      { get, set },
-      head: ChatQueueHeadContext,
-      error: unknown,
-      signal: AbortSignal,
-    ): Promise<{ readonly kind: "passed" }> => {
-      if (!(error instanceof OfficialWorkflowArtifactResolutionError)) {
-        throw error;
-      }
-      const assembly = await get(assembly$);
-      signal.throwIfAborted();
-      await set(
-        rejectChatQueueHead$,
-        {
-          head,
-          rejection: claimAssemblyRejection(assembly, head, {
-            code: "CONFLICT",
-            message: OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-          }),
-        },
-        signal,
-      );
-      return { kind: "passed" };
     },
   );
   const claimAdmissionFacts$ = computed(async (get) => {
@@ -3857,21 +3853,10 @@ export function createThreadClaimRunObjects(
       if (!head) {
         return { kind: "passed" };
       }
-      const resources = await settle(
-        set(prepareClaimResources$, head, signal),
-        signal,
-      );
-      if (!resources.ok) {
-        return await set(
-          rejectUnresolvedOfficialArtifact$,
-          head,
-          resources.error,
-          signal,
-        );
-      }
+      const resources = await set(prepareClaimResources$, head, signal);
       signal.throwIfAborted();
-      if (resources.value.kind === "rejected") {
-        const early = resources.value.assembly;
+      if (resources.kind === "rejected") {
+        const early = resources.assembly;
         await set(
           rejectChatQueueHead$,
           {
@@ -3893,7 +3878,7 @@ export function createThreadClaimRunObjects(
         assembly,
         identity,
         admission,
-      ] = resources.value.resources;
+      ] = resources.resources;
       if (assembly.kind !== "assembled") {
         await set(
           rejectChatQueueHead$,
@@ -4065,7 +4050,9 @@ export function createThreadClaimRunObjects(
         launch,
         timing: timing.run,
       };
+      const poolCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
       const admissionTiming = new AdmissionAttemptTiming({
+        poolCapture,
         runId: identity.runId,
         runnerGroup: launch.runnerJobPayload.runnerGroup,
         profile: launch.runnerJobPayload.profile,
@@ -4081,33 +4068,39 @@ export function createThreadClaimRunObjects(
         featureSwitchContext: context.featureSwitchContext,
         admissionTiming,
       };
-      const committed: AtomicLaunchCommitCompletion = await timing.run.measure(
-        "api_dispatch_insert_run_with_concurrency",
-        "top_level",
-        async () => {
-          const result = await admissionTiming.capturePoolAcquisition(
-            async () => {
-              return await set(
-                commitPreparedPendingLaunch$,
-                preparedCommit,
-                {
-                  orgId: claim.orgId,
-                  chatThreadId: claim.chatThreadId,
-                  claimId: claim.claimId,
-                  producer: context.producerBinding,
-                },
-                signal,
-              );
-            },
-          );
-          if ("kind" in result && result.kind === "pending") {
-            set(internalCommittedRunId$, result.run.id);
-          }
-          const transactionReturnedAt = now();
-          await admissionTiming.finish(admissionAttemptOutcome(result));
-          return { result, transactionReturnedAt };
-        },
-      );
+      const commitTiming = timing.run;
+      const commitStartedAt = performance.now();
+      const committed: AtomicLaunchCommitCompletion = await (async () => {
+        const result = await withPgPoolAcquisitionCapture(
+          poolCapture,
+          async () => {
+            return await set(
+              commitPreparedPendingLaunch$,
+              preparedCommit,
+              {
+                orgId: claim.orgId,
+                chatThreadId: claim.chatThreadId,
+                claimId: claim.claimId,
+                producer: context.producerBinding,
+              },
+              signal,
+            );
+          },
+        );
+        if ("kind" in result && result.kind === "pending") {
+          set(internalCommittedRunId$, result.run.id);
+        }
+        const transactionReturnedAt = now();
+        await admissionTiming.finish(admissionAttemptOutcome(result));
+        return { result, transactionReturnedAt };
+      })().finally(() => {
+        commitTiming.recordDuration(
+          "api_dispatch_insert_run_with_concurrency",
+          "top_level",
+          performance.now() - commitStartedAt,
+          now(),
+        );
+      });
       signal.throwIfAborted();
       return set(recordRunCommit$, context, committed, timing, signal);
     },
@@ -4589,9 +4582,27 @@ function bestEffortTelemetry(record: () => unknown): void {
   safeSync(record);
 }
 
-function ingestRunContextSnapshot(snapshot: RunContextAxiomSnapshot): void {
+function ingestRunContextSnapshot(
+  snapshot: RunContextAxiomSnapshot,
+  officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
+  seedSkillBundles: StoredExecutionContext["seedSkillBundles"],
+): void {
   bestEffortTelemetry(() => {
-    return ingestToAxiom(getDatasetName("run-context"), [snapshot]);
+    return ingestToAxiom(getDatasetName("run-context"), [
+      {
+        ...snapshot,
+        officialWorkflowBundles: (officialWorkflowBundles ?? []).map(
+          (bundle) => {
+            return {
+              sha256: bundle.sha256,
+              archiveBytes: bundle.archiveBytes,
+              mountPath: bundle.mountPath,
+            };
+          },
+        ),
+        seedSkillBundles,
+      },
+    ]);
   });
 }
 
@@ -4647,6 +4658,16 @@ function prepareAtomicLaunchPersistence(
 ): PreparedAtomicLaunchPersistence {
   const payload = runnerJobPayload({
     ...commit.launch.runnerJobPayload,
+    executionContext: {
+      ...commit.launch.runnerJobPayload.executionContext,
+      ...(commit.context.officialWorkflowRun?.provenance.schemaVersion === 2
+        ? {
+            officialWorkflowBundles: pinnedOfficialWorkflowBundles(
+              commit.context.officialWorkflowRun,
+            ),
+          }
+        : {}),
+    },
     reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
   });
   const rowsArgs = preparedLaunchRowsArgs({
@@ -4858,7 +4879,11 @@ function committedAtomicLaunchResponse(args: {
     args.transactionReturnedAt,
   );
   args.phaseTiming.appendTo(args.timing);
-  ingestRunContextSnapshot(args.committed.runContextSnapshot);
+  ingestRunContextSnapshot(
+    args.committed.runContextSnapshot,
+    args.committed.runnerJobPayload.executionContext.officialWorkflowBundles,
+    args.committed.runnerJobPayload.executionContext.seedSkillBundles,
+  );
   const runContextRegisteredAt = now();
   const dispatchedProfile = args.committed.runnerJobPayload.profile;
   args.timing.flush({
@@ -5148,7 +5173,6 @@ function claimRunStoredContextDraft<
 >(
   input: RunnerInputResult,
   encrypted: TEncrypted | CreateRunErrorResult | null | undefined,
-  invokedWorkflowId: string | null,
 ) {
   if (!input || isRouteError(input)) {
     return input;
@@ -5164,7 +5188,6 @@ function claimRunStoredContextDraft<
       platformEnvironment,
       runId: args.run.id,
       workflowAutomationId: args.workflowAutomationId,
-      invokedWorkflowId,
     },
     encrypted.encryptedSecrets,
   );
@@ -5176,9 +5199,7 @@ function protectedWorkflowMountPaths(
 ) {
   return (volumes ?? []).flatMap((volume, index) => {
     const source = sources?.[index];
-    return source === "official_workflow" ||
-      source === "request_additional_volume" ||
-      source === "unknown"
+    return source === "request_additional_volume" || source === "unknown"
       ? [volume.mountPath]
       : [];
   });
@@ -5188,7 +5209,6 @@ function buildStoredExecutionContextDraft(
   args: {
     readonly runId: string;
     readonly workflowAutomationId: string | null;
-    readonly invokedWorkflowId: string | null;
     readonly userId: string;
     readonly orgId: string;
     readonly chatThreadId: string | undefined;
@@ -5205,6 +5225,7 @@ function buildStoredExecutionContextDraft(
     readonly additionalVolumes:
       readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly additionalVolumeSources: AdditionalVolumeSources;
+    readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
     readonly platformEnvironment: Record<string, string> | undefined;
     readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
@@ -5264,12 +5285,12 @@ function buildStoredExecutionContextDraft(
   return {
     context: {
       environment,
-      // Capture invocation identity and mount precedence, never Workflow content.
+      seedSkillBundles: args.seedSkillBundles,
+      // Capture Agent identity and mount precedence, never Workflow content.
       ...(args.resolved.agentId !== null
         ? {
             customWorkflowSelection: {
               agentId: args.resolved.agentId,
-              invokedWorkflowId: args.invokedWorkflowId,
               ...(args.workflowAutomationId === null
                 ? {}
                 : { automationId: args.workflowAutomationId }),
@@ -5366,6 +5387,7 @@ interface BuildRunnerJobPayloadInput {
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
+  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
   readonly userTimezone: string | undefined;
@@ -5673,21 +5695,6 @@ function createRunBody(args: {
     appendSystemPrompt: args.prompt.appendedSystemPrompt,
     disallowedTools: [...DISALLOWED_TOOLS],
   };
-}
-
-function measureAgentRunPreCreate<T>(
-  timing: ApiDispatchTimingCollector | undefined,
-  actionType: ApiDispatchTimingActionType,
-  operation: () => T | Promise<T>,
-  dimensions?: ApiDispatchTimingDimensionsInput,
-): Promise<T> {
-  return measureApiDispatchTiming(
-    timing,
-    actionType,
-    "nested",
-    operation,
-    dimensions,
-  );
 }
 
 interface AgentRunAfterBootstrap extends AgentConnectorScopeSnapshot {

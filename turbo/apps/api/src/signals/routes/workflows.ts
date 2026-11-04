@@ -1,3 +1,4 @@
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import {
   workflowVisibilityPublicationSql,
   workflowVisibilityGenerationChanged,
@@ -87,6 +88,7 @@ import { updateWorkflow$ } from "../services/workflow-update.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
 import {
   prepareWorkflowAttachments$,
+  publishWorkflowContentBundle$,
   workflowAttachmentFiles,
   type PreparedWorkflowAttachments,
 } from "../services/workflow-attachments.service";
@@ -361,6 +363,7 @@ const validateWorkflowCreation$ = command(
 interface PreparedWorkflowCreation
   extends WorkflowCreationInput, PreparedWorkflowAttachments {
   readonly workflowId: string;
+  readonly contentBundle: ContentBundle;
 }
 
 /** Statement data only; execution and every write belong to the creation owner. */
@@ -512,6 +515,10 @@ function workflowCreationSource(
       attachments: sql`${sql.param(args.attachments, workflows.attachments)}`
         .mapWith(nullableDriverValueDecoder(workflows.attachments))
         .as("attachments"),
+      contentBundle:
+        sql`${sql.param(args.contentBundle, workflows.contentBundle)}`
+          .mapWith(nullableDriverValueDecoder(workflows.contentBundle))
+          .as("content_bundle"),
       ownerUserId: sql`${sql.param(v.ownerUserId, workflows.ownerUserId)}`
         .mapWith(workflows.ownerUserId)
         .as("owner_user_id"),
@@ -651,9 +658,22 @@ const prepareAndCreateWorkflow$ = command(
       },
       signal,
     );
+    const contentBundle = await set(
+      publishWorkflowContentBundle$,
+      {
+        orgId: args.orgId,
+        workflowId,
+        name: args.body.name,
+        description: args.body.description ?? null,
+        instruction: args.body.instruction ?? null,
+        attachments: prepared.attachments,
+        files: args.body.files ?? [],
+      },
+      signal,
+    );
     const pendingPublication = set(
       commitPreparedWorkflow$,
-      { ...args, workflowId, ...prepared },
+      { ...args, workflowId, ...prepared, contentBundle },
       signal,
     );
     // Import observation follows the committed outcome even after request abort.
@@ -1143,7 +1163,7 @@ const prepareCopiedWorkflowContent$ = command(
     if (args.source.files === null) {
       throw new Error("Workflow attachment source is unavailable");
     }
-    return await set(
+    const prepared = await set(
       prepareWorkflowAttachments$,
       {
         orgId: args.orgId,
@@ -1153,6 +1173,20 @@ const prepareCopiedWorkflowContent$ = command(
       },
       signal,
     );
+    const contentBundle = await set(
+      publishWorkflowContentBundle$,
+      {
+        orgId: args.orgId,
+        workflowId: args.workflowId,
+        name: args.source.sourceWorkflow.name,
+        description: args.source.sourceWorkflow.description,
+        instruction: args.source.sourceWorkflow.instruction,
+        attachments: prepared.attachments,
+        files: args.source.files,
+      },
+      signal,
+    );
+    return { ...prepared, contentBundle };
   },
 );
 

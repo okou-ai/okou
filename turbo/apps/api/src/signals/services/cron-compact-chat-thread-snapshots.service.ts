@@ -1,3 +1,4 @@
+import { projectSnapshots } from "@okouai/db/schema/project-snapshot";
 import { command } from "ccstate";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
@@ -405,6 +406,18 @@ function chatThreadSnapshotGcPrefixes(now: Date): readonly string[] {
   });
 }
 
+function metadataSnapshotGcPrefixes(now: Date) {
+  return chatThreadSnapshotGcPrefixes(now).flatMap((prefix) => {
+    const project = prefix.replace(
+      "chat-thread-snapshots/v1/",
+      "project-snapshots/v1/",
+    );
+    return Math.floor(now.getTime() / (10 * 60 * 1000)) % 2 === 0
+      ? [prefix, project]
+      : [project, prefix];
+  });
+}
+
 const findChatThreadSnapshotGarbage$ = command(
   async (
     { get },
@@ -424,21 +437,28 @@ const findChatThreadSnapshotGarbage$ = command(
       return [];
     }
     const db = get(db$);
-    const [snapshotReferences, exportReferences] = await Promise.all([
-      db
-        .select({ objectKey: chatThreadSnapshots.objectKey })
-        .from(chatThreadSnapshots)
-        .where(inArray(chatThreadSnapshots.objectKey, keys)),
-      db
-        .selectDistinct({ objectKey: userExportEntries.sourceKey })
-        .from(userExportEntries)
-        .where(inArray(userExportEntries.sourceKey, keys)),
-    ]);
+    const [snapshotReferences, exportReferences, projectReferences] =
+      await Promise.all([
+        db
+          .select({ objectKey: chatThreadSnapshots.objectKey })
+          .from(chatThreadSnapshots)
+          .where(inArray(chatThreadSnapshots.objectKey, keys)),
+        db
+          .selectDistinct({ objectKey: userExportEntries.sourceKey })
+          .from(userExportEntries)
+          .where(inArray(userExportEntries.sourceKey, keys)),
+        db
+          .select({ objectKey: projectSnapshots.objectKey })
+          .from(projectSnapshots)
+          .where(inArray(projectSnapshots.objectKey, keys)),
+      ]);
     signal.throwIfAborted();
     const referenced = new Set(
-      [...snapshotReferences, ...exportReferences].map((row) => {
-        return row.objectKey;
-      }),
+      [...snapshotReferences, ...exportReferences, ...projectReferences].map(
+        (row) => {
+          return row.objectKey;
+        },
+      ),
     );
     return keys.filter((key) => {
       return !referenced.has(key);
@@ -468,7 +488,7 @@ const collectChatThreadSnapshotGarbage$ = command(
       signal,
       AbortSignal.timeout(SNAPSHOT_GC_WORK_BUDGET_MS),
     ]);
-    for (const prefix of chatThreadSnapshotGcPrefixes(now)) {
+    for (const prefix of metadataSnapshotGcPrefixes(now)) {
       signal.throwIfAborted();
       const remaining = SNAPSHOT_GC_DELETE_QUOTA - stats.deleteAttempts;
       if (remaining === 0 || workSignal.aborted) {

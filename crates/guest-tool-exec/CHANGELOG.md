@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.3.55](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.54...guest-tool-exec-v0.3.55) (2026-11-04)
+
+## [0.3.54](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.53...guest-tool-exec-v0.3.54) (2026-11-04)
+
+## [0.3.53](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.52...guest-tool-exec-v0.3.53) (2026-11-03)
+
+## [0.3.52](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.51...guest-tool-exec-v0.3.52) (2026-11-03)
+
+## [0.3.51](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.50...guest-tool-exec-v0.3.51) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
+## [0.3.50](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.49...guest-tool-exec-v0.3.50) (2026-11-02)
+
+## [0.3.49](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.48...guest-tool-exec-v0.3.49) (2026-11-02)
+
+## [0.3.48](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.47...guest-tool-exec-v0.3.48) (2026-11-02)
+
+## [0.3.47](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.46...guest-tool-exec-v0.3.47) (2026-11-02)
+
+## [0.3.46](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.45...guest-tool-exec-v0.3.46) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.3.45](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.44...guest-tool-exec-v0.3.45) (2026-10-31)
+
+## [0.3.44](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.43...guest-tool-exec-v0.3.44) (2026-10-30)
+
+## [0.3.43](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.42...guest-tool-exec-v0.3.43) (2026-10-30)
+
+## [0.3.42](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.41...guest-tool-exec-v0.3.42) (2026-10-30)
+
+## [0.3.41](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.40...guest-tool-exec-v0.3.41) (2026-10-30)
+
 ## [0.3.40](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.39...guest-tool-exec-v0.3.40) (2026-10-29)
 
 ## [0.3.39](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.38...guest-tool-exec-v0.3.39) (2026-10-29)

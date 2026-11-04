@@ -1,12 +1,14 @@
 import {
   agentPhoneRouteLinkColumn,
+  agentPhoneGroupRouteKey,
   agentPhoneGroupMessageRouteKey,
+  agentPhoneGroupReplyRouteKey,
   type AgentPhoneChannel,
 } from "./agentphone-shared.service";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { object, string, uuid } from "zod";
 
 import { db$, writeDb$ } from "../external/db";
@@ -41,17 +43,14 @@ export const resolveAgentPhoneGroupChatRoot$ = command(
     args: {
       readonly userLinkId: string;
       readonly conversationId: string;
-      readonly messageId: string;
       readonly replyToMessageId: string | null;
     },
     signal: AbortSignal,
   ): Promise<string> => {
     const replyToMessageId = args.replyToMessageId;
+    const groupRoot = agentPhoneGroupRouteKey(args.conversationId);
     if (!replyToMessageId) {
-      return agentPhoneGroupMessageRouteKey(
-        args.conversationId,
-        args.messageId,
-      );
+      return groupRoot;
     }
     // Input contexts retain the route used by every prompt, including replies
     // to replies and messages accepted before per-message group routing.
@@ -84,12 +83,50 @@ export const resolveAgentPhoneGroupChatRoot$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    // A reply to an unprocessed message starts a thread anchored to that
-    // provider ID. Sent answers have their own persisted route.
-    return (
-      parent?.rootMessageId ??
-      agentPhoneGroupMessageRouteKey(args.conversationId, replyToMessageId)
-    );
+    // Only replies already inside a branch reuse it. Replies to the main
+    // conversation or an ambient message fork at the quoted provider message.
+    if (parent && parent.rootMessageId !== groupRoot) {
+      return parent.rootMessageId;
+    }
+    if (!parent) {
+      const sentReplyRoot = agentPhoneGroupMessageRouteKey(
+        args.conversationId,
+        replyToMessageId,
+      );
+      const routes = await get(db$)
+        .select({
+          rootMessageId: agentphoneChatThreadRoutes.rootMessageId,
+          chatThreadId: agentphoneChatThreadRoutes.chatThreadId,
+        })
+        .from(agentphoneChatThreadRoutes)
+        .where(
+          and(
+            eq(
+              agentphoneChatThreadRoutes.agentphoneUserLinkId,
+              args.userLinkId,
+            ),
+            eq(agentphoneChatThreadRoutes.conversationId, args.conversationId),
+            inArray(agentphoneChatThreadRoutes.rootMessageId, [
+              groupRoot,
+              sentReplyRoot,
+            ]),
+          ),
+        );
+      signal.throwIfAborted();
+      const main = routes.find((route) => {
+        return route.rootMessageId === groupRoot;
+      });
+      const sent = routes.find((route) => {
+        return route.rootMessageId === sentReplyRoot;
+      });
+      // Keep sent branch answers and historical routes usable. An older API
+      // callback may have aliased a main-thread answer during request drain;
+      // its reply must still fork instead of following that alias to the main.
+      if (sent && sent.chatThreadId !== main?.chatThreadId) {
+        return sent.rootMessageId;
+      }
+    }
+    return agentPhoneGroupReplyRouteKey(args.conversationId, replyToMessageId);
   },
 );
 

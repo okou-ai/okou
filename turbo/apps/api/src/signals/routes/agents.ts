@@ -1,7 +1,9 @@
+import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, lt, or, sql } from "drizzle-orm";
+import { enum as zodEnum, int, object, string } from "zod";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
@@ -10,10 +12,18 @@ import {
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
+import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -26,21 +36,30 @@ import {
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { deleteAgentById$ } from "../services/agent-deletion.service";
 import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
 import {
   agentResponse,
-  agentDetail,
-  agentEnabledConnectorSlugs,
-  agentCustomConnectorGrants,
-  agentExists,
+  agentEnabledConnectorSlugsCondition,
+  agentCustomConnectorGrantJoinCondition,
+  agentCustomConnectorGrantsCondition,
+  visibleAgentIdentityCondition,
   agentList,
   visibleJoinedAgentCondition,
   nonDefaultAgentCondition,
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
-import { connectorActionResolver } from "../services/connector-action-resolver.service";
+import {
+  createConnectorActionResolver,
+  readConnectorResolver$,
+} from "../services/connector-action-resolver.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "../services/connector-catalog-slug-source.service";
 
 import {
   updateUserBuiltinConnectors$,
@@ -102,17 +121,6 @@ function publicAgentCreateLimitError() {
   return conflict(
     "This organization has reached the maximum number of agents (7). Delete an existing agent before creating a new one.",
   );
-}
-
-function buildAgentUpsertConflictSet(body: AgentUpdateBody, updatedAt: Date) {
-  return {
-    updatedAt,
-    ...(body.displayName !== undefined && { displayName: body.displayName }),
-    ...(body.description !== undefined && { description: body.description }),
-    ...(body.sound !== undefined && { sound: body.sound }),
-    ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),
-    ...(body.visibility !== undefined && { visibility: body.visibility }),
-  };
 }
 
 function deferredAgentUpdateText(value: string | null) {
@@ -301,6 +309,10 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
     instructions: sql`${sql.param(values.instructions, agents.instructions)}`
       .mapWith(agents.instructions)
       .as("instructions"),
+    instructionsBundle:
+      sql`${sql.param(values.instructionsBundle, agents.instructionsBundle)}`
+        .mapWith(nullableDriverValueDecoder(agents.instructionsBundle))
+        .as("instructions_bundle"),
     sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.sound))
       .as("sound"),
@@ -318,6 +330,40 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
 
 const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 
+function createdAgentSelection() {
+  return {
+    agentId: agents.id,
+    defaultAgentId: orgMetadata.defaultAgentId,
+    owner: agents.owner,
+    displayName: agents.displayName,
+    description: agents.description,
+    sound: agents.sound,
+    avatarUrl: agents.avatarUrl,
+    visibility: agents.visibility,
+  };
+}
+
+const committedClientAgent$ = computed(async (get) => {
+  const body = await get(createAgentBody$);
+  if (!body.ok || body.data.clientAgentId === undefined) {
+    return undefined;
+  }
+  const auth = get(organizationAuthContext$);
+  const [agent] = await get(db$)
+    .select(createdAgentSelection())
+    .from(agents)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .where(
+      and(
+        eq(agents.id, body.data.clientAgentId),
+        eq(agents.orgId, auth.orgId),
+        eq(agents.owner, auth.userId),
+      ),
+    )
+    .limit(1);
+  return agent ? agentResponse(agent) : undefined;
+});
+
 const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const body = await get(createAgentBody$);
@@ -326,10 +372,18 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
+  const committed = await get(committedClientAgent$);
+  signal.throwIfAborted();
+  if (committed) {
+    return { status: 201 as const, body: committed };
+  }
+
   const writeDb = set(writeDb$);
   const visibility = body.data.visibility ?? "private";
 
-  if (visibility === "public") {
+  // A client-identified replay may commit after the read above. Let its
+  // conditional insert and final read resolve that race, even at the limit.
+  if (visibility === "public" && body.data.clientAgentId === undefined) {
     const countPlan = publicAgentCountReadPlan(auth.orgId);
     const [publicAgentCount] = await writeDb
       .select(countPlan.selection)
@@ -341,7 +395,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
   }
 
-  const agentId = randomUUID();
+  const agentId = body.data.clientAgentId ?? randomUUID();
   const avatarUrl =
     body.data.avatarUrl === undefined ? randomAvatarUrl() : body.data.avatarUrl;
 
@@ -361,6 +415,11 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     owner: auth.userId,
     name: agentId,
     instructions: "",
+    instructionsBundle: await set(
+      publishContentBundle$,
+      [{ path: "instructions.md", content: Buffer.alloc(0) }],
+      signal,
+    ),
     ...metadata,
     createdAt,
     updatedAt: createdAt,
@@ -381,36 +440,42 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           .from(publicAgentCount)
           .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
       )
+      .onConflictDoNothing({ target: agents.id })
       .returning({ id: agents.id });
     signal.throwIfAborted();
     blocked = inserted.length === 0;
   } else {
-    await writeDb.insert(agents).values(values);
+    await writeDb
+      .insert(agents)
+      .values(values)
+      .onConflictDoNothing({ target: agents.id });
   }
   signal.throwIfAborted();
 
-  if (blocked) {
-    return publicAgentCreateLimitError();
-  }
-
   const [agent] = await writeDb
-    .select({
-      agentId: agents.id,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      owner: agents.owner,
-      displayName: agents.displayName,
-      description: agents.description,
-      sound: agents.sound,
-      avatarUrl: agents.avatarUrl,
-      visibility: agents.visibility,
-    })
+    .select(createdAgentSelection())
     .from(agents)
     .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-    .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, agentId)))
+    .where(
+      and(
+        eq(agents.orgId, auth.orgId),
+        eq(agents.owner, auth.userId),
+        eq(agents.id, agentId),
+      ),
+    )
     .limit(1);
   signal.throwIfAborted();
 
   if (!agent) {
+    if (body.data.clientAgentId !== undefined) {
+      // A conflicting identity must not disclose another owner's Agent.
+      return conflict(
+        "Cannot create an agent with this identity or visibility",
+      );
+    }
+    if (blocked) {
+      return publicAgentCreateLimitError();
+    }
     throw new Error(`Created Agent not found: ${agentId}`);
   }
 
@@ -430,13 +495,27 @@ const agentListResponse$ = computed(
 const getAgentInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(agentsByIdContract.get));
-  const agent = await get(
-    agentDetail({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const agentScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const [row] = await get(db$)
+    .select({
+      agentId: agents.id,
+      defaultAgentId: orgMetadata.defaultAgentId,
+      owner: agents.owner,
+      displayName: agents.displayName,
+      description: agents.description,
+      sound: agents.sound,
+      avatarUrl: agents.avatarUrl,
+      visibility: agents.visibility,
+    })
+    .from(agents)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .where(visibleAgentIdentityCondition(agentScope))
+    .limit(1);
+  const agent = row ? agentResponse(row) : null;
   if (!agent) {
     return agentNotFound(params.id);
   }
@@ -446,25 +525,48 @@ const getAgentInner$ = computed(async (get) => {
 const getAgentUserConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(userBuiltinConnectorsContract.get));
-  const exists = await get(
-    agentExists({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const agentScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const [visibleAgent] = await get(db$)
+    .select({ id: agents.id })
+    .from(agents)
+    .where(visibleAgentIdentityCondition(agentScope))
+    .limit(1);
+  const exists = Boolean(visibleAgent);
   if (!exists) {
     return agentNotFound(params.id);
   }
 
-  const enabledConnectorSlugs = await get(
-    agentEnabledConnectorSlugs({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
+  const connectorScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const rows = await get(db$)
+    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+    .from(userBuiltinConnectors)
+    .where(agentEnabledConnectorSlugsCondition(connectorScope))
+    .orderBy(asc(userBuiltinConnectors.connectorSlug));
+  const enabledConnectorSlugs = rows.map((row) => {
+    return connectorSlugSchema.parse(row.connectorSlug);
+  });
+  const connectorSlugs = enabledConnectorSlugs;
+  const catalogDb = get(db$);
+  const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+    connectorSlugs,
+  });
+  const snapshot = connectorRuntimeSlugSelectionFromRows(
+    catalogPlan.selection,
+    await catalogDb
+      .select(catalogPlan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, catalogPlan.join)
+      .where(connectorCatalogCurrentWhere()),
   );
-  const resolver = await get(connectorActionResolver(enabledConnectorSlugs));
+  const resolver = createConnectorActionResolver(snapshot);
   const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
     [];
   for (const connectorSlug of enabledConnectorSlugs) {
@@ -487,24 +589,41 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
 const getAgentCustomConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(agentCustomConnectorsContract.get));
-  const exists = await get(
-    agentExists({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const agentScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const [visibleAgent] = await get(db$)
+    .select({ id: agents.id })
+    .from(agents)
+    .where(visibleAgentIdentityCondition(agentScope))
+    .limit(1);
+  const exists = Boolean(visibleAgent);
   if (!exists) {
     return agentNotFound(params.id);
   }
 
-  const grants = await get(
-    agentCustomConnectorGrants({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const connectorScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const rows = await get(db$)
+    .select({
+      customConnectorId: userCustomConnectors.customConnectorId,
+      permissionNames: userCustomConnectors.permissionNames,
+    })
+    .from(userCustomConnectors)
+    .innerJoin(orgCustomConnectors, agentCustomConnectorGrantJoinCondition())
+    .where(agentCustomConnectorGrantsCondition(connectorScope))
+    .orderBy(asc(userCustomConnectors.customConnectorId));
+  const grants = rows.map((row) => {
+    return {
+      customConnectorId: row.customConnectorId,
+      permissionNames: [...row.permissionNames],
+    };
+  });
   return {
     status: 200 as const,
     body: {
@@ -654,6 +773,50 @@ const updateAgentMetadataBody$ = bodyResultOf(
   agentsByIdContract.updateMetadata,
 );
 
+function encodeAgentMetadataText(value: string | null) {
+  return value === null ? null : Buffer.from(value, "utf8").toString("base64");
+}
+
+function encodedAgentMetadataBody(body: AgentUpdateBody) {
+  return Buffer.from(
+    JSON.stringify({
+      ...(body.displayName !== undefined && {
+        displayName: encodeAgentMetadataText(body.displayName),
+      }),
+      ...(body.description !== undefined && {
+        description: encodeAgentMetadataText(body.description),
+      }),
+      ...(body.sound !== undefined && {
+        sound: encodeAgentMetadataText(body.sound),
+      }),
+      ...(body.avatarUrl !== undefined && {
+        avatarUrl: encodeAgentMetadataText(body.avatarUrl),
+      }),
+    }),
+    "utf8",
+  );
+}
+
+const agentMetadataUpdateRow = object({
+  existing: object({
+    id: string(),
+    owner: string(),
+    visibility: zodEnum(["public", "private"]),
+    defaultAgentId: string().nullable(),
+    publicAgentCount: int(),
+  }),
+  agent: object({
+    agentId: string(),
+    defaultAgentId: string().nullable(),
+    owner: string(),
+    displayName: string().nullable(),
+    description: string().nullable(),
+    sound: string().nullable(),
+    avatarUrl: string().nullable(),
+    visibility: zodEnum(["public", "private"]),
+  }).nullable(),
+});
+
 const updateAgentMetadataInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -665,106 +828,50 @@ const updateAgentMetadataInner$ = command(
       return body.response;
     }
 
+    const updateBody = body.data;
     const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0012; new non-billing transactions are prohibited.
-    const result = await writeDb.transaction(async (tx) => {
-      await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-        .for("update");
-
-      const [existing] = await tx
-        .select({
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          defaultAgentId: orgMetadata.defaultAgentId,
-        })
-        .from(agents)
-        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-        .limit(1);
-      if (!existing) {
-        return { response: agentNotFound(params.id) };
-      }
-      const updateBody = body.data;
-
-      const rejection = agentMetadataUpdateRejection(
-        existing,
-        member,
-        updateBody,
-      );
-      if (rejection) {
-        return { response: rejection };
-      }
-
-      if (updateBody.visibility !== undefined) {
-        const visibilityError = await (() => {
-          const ownerError = visibilityOwnerError(
-            existing,
-            member,
-            updateBody.visibility,
-          );
-          if (ownerError) {
-            return ownerError;
-          }
-
-          return (async () => {
-            if (
-              updateBody.visibility !== "public" ||
-              existing.visibility === "public"
-            ) {
-              return null;
-            }
-
-            const countPlan = publicAgentCountReadPlan(auth.orgId);
-            const [publicAgentCount] = await tx
-              .select(countPlan.selection)
-              .from(agents)
-              .where(countPlan.condition);
-            signal.throwIfAborted();
-
-            return (publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT
-              ? publicAgentLimitError()
-              : null;
-          })();
-        })();
-        if (visibilityError) {
-          return { response: visibilityError };
-        }
-      }
-
-      await tx
-        .update(agents)
-        .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
-        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
-      const responseDb = tx;
-      const responseOrgId = auth.orgId;
-      const responseAgentId = params.id;
-      const agent = await (async () => {
-        const rows = await responseDb
-          .select(agentUpdateResponseSelection())
-          .from(agents)
-          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-          .where(
-            and(
-              eq(agents.orgId, responseOrgId),
-              eq(agents.id, responseAgentId),
-            ),
-          )
-          .limit(1);
-        return rows[0] ?? null;
-      })();
-      if (!agent) {
-        throw new Error(`Canonical Agent missing after update: ${params.id}`);
-      }
-      return { agent };
-    });
+    // The VOLATILE routine retains fresh reads after the existing Agent lock,
+    // including default publication by a supported outgoing writer.
+    const [result] = parseRawRows(
+      agentMetadataUpdateRow,
+      await writeDb.execute(sql`SELECT * FROM public.update_agent_metadata(
+        ${auth.orgId}::text, ${params.id}::uuid, ${member.userId}::text,
+        ${member.role === "admin"}::boolean,
+        ${agentIdentityUpdateError(true, updateBody) !== null}::boolean,
+        ${updateBody.visibility ?? null}::text, ${PUBLIC_AGENT_LIMIT}::integer,
+        ${sql.param(encodedAgentMetadataBody(updateBody))}::bytea,
+        ${nowDateSql(sql`NULL::timestamp`)}
+      )`),
+    );
     signal.throwIfAborted();
-
-    if ("response" in result) {
-      return result.response;
+    if (!result) {
+      return agentNotFound(params.id);
+    }
+    const rejection = agentMetadataUpdateRejection(
+      result.existing,
+      member,
+      updateBody,
+    );
+    if (rejection) {
+      return rejection;
+    }
+    const ownerError = visibilityOwnerError(
+      result.existing,
+      member,
+      updateBody.visibility,
+    );
+    if (ownerError) {
+      return ownerError;
+    }
+    if (
+      updateBody.visibility === "public" &&
+      result.existing.visibility !== "public" &&
+      result.existing.publicAgentCount >= PUBLIC_AGENT_LIMIT
+    ) {
+      return publicAgentLimitError();
+    }
+    if (!result.agent) {
+      throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
 
     if (body.data.visibility === "private") {
@@ -849,14 +956,18 @@ const updateAgentCustomConnectorsInner$ = command(
       return body.response;
     }
 
-    const exists = await get(
-      agentExists({
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: params.id,
-      }),
-    );
+    const agentScope = {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      agentId: params.id,
+    };
+    const [visibleAgent] = await get(db$)
+      .select({ id: agents.id })
+      .from(agents)
+      .where(visibleAgentIdentityCondition(agentScope))
+      .limit(1);
     signal.throwIfAborted();
+    const exists = Boolean(visibleAgent);
     if (!exists) {
       return agentNotFound(params.id);
     }
@@ -947,7 +1058,7 @@ const updateAgentUserConnectorsInner$ = command(
       // discovery surface. Validate that each connector can execute, but do
       // not consult feature switches or authored visibility: rollout changes
       // must not invalidate direct API updates or an existing agent config.
-      const resolver = await get(connectorActionResolver(uniqueConnectorSlugs));
+      const resolver = await set(readConnectorResolver$, uniqueConnectorSlugs);
       signal.throwIfAborted();
       const resolved = await resolver.resolveSlugs({
         connectorSlugs: uniqueConnectorSlugs,

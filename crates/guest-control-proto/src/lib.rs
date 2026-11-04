@@ -20,8 +20,9 @@
 //!
 //! ## Message Types
 //!
-//! Non-error message types currently occupy the contiguous range `0x00..=0x25`
-//! in allocation order; `0x26` is the next available non-error assignment.
+//! Active non-error message types occupy `0x00..=0x21` and `0x26..=0x27`. The retired compressed
+//! file-stream assignments `0x22..=0x25` must not be reused; `0x28` is the next
+//! available non-error assignment.
 //! Existing values are stable wire assignments: do not renumber or reuse them.
 //! Allocate new non-error messages at the next unused value below `0xFF`, even
 //! when related operations are not adjacent. `0xFF` is
@@ -64,36 +65,17 @@
 //! | 0x1F | G→H       | home_drive_mount_result | same payload as `exec_result`, with both streams captured and bounded to 64 KiB each |
 //! | 0x20 | H→G       | file_write_status | (empty); read-only, available while quiescing |
 //! | 0x21 | G→H       | file_write_status_result | `[4B latest_write_seq][1B stage]`; see [`FileWriteStatus`] |
-//! | 0x22 | H→G       | write_file_stream_begin | `[1B codec=1][4B raw_len][2B path_len][path][1B flags][4B content_len=0]` |
-//! | 0x23 | H→G       | write_file_stream_data | `[1..=65536B encoded_chunk]` |
-//! | 0x24 | H→G       | write_file_stream_end | (empty) |
-//! | 0x25 | G→H       | write_file_stream_credit | `[1B data_frame_count=1..=4]` |
+//! | 0x26 | H→G       | guest_agent_instructions | `[1B action][guest_storage_manifest context]`; action 0=check, 1=apply; metadata bounded to 64/4 KiB respectively |
+//! | 0x27 | G→H       | guest_agent_instructions_result | same payload as `exec_result`, both streams captured and bounded to 64 KiB each |
 //! | 0xFF | G→H       | error             | `[2B error_len][error]` |
 //!
 //! Request-scoped operation messages must use non-zero sequence numbers. This
 //! covers `write_file`, `write_files`, `write_private_files`, `exec_start`, `exec_cancel`,
 //! `exec_control`, `guest_dns_readiness`, `guest_storage_manifest`, and
-//! `guest_state_restore`, `home_drive_mount`, `file_write_status`, and
-//! `write_file_stream_begin`; replies reuse the original non-zero request sequence.
-//! `write_file_stream_begin`, `write_file_stream_data`, `write_file_stream_end`, and
-//! `write_file_stream_credit` share that sequence. Credits count DATA frames, not bytes;
-//! each DATA payload is non-empty and at most 64 KiB.
-//!
-//! `codec=2` instead carries an existing zstd source: `[1B codec=2][4B raw_len]
-//! [4B encoded_len][4B encoded CRC32][write_file metadata with empty content]`.
-//! Both lengths are bounded by [`MAX_ZSTD_SOURCE_BYTES`], independently of DATA
-//! frame and credit limits. The Host must first verify the source's decoded SHA
-//! and size. The Guest checks encoded CRC and decoded size before publication;
-//! the source need not carry a zstd checksum. The whole encoded frame is one
-//! request, not independently decoded fragments.
-//!
-//! Stream completion reuses
-//! `write_file_result` with the same sequence. See the [guest file compression guide]
-//! for the full lifecycle and resource bounds. `exec_output.output_seq` is per exec
+//! `guest_state_restore`, `home_drive_mount`, `guest_agent_instructions`, and `file_write_status`;
+//! replies reuse the original non-zero request sequence. `exec_output.output_seq` is per exec
 //! operation and starts at 0, incrementing by 1 for each output frame across stdout
 //! and stderr.
-//!
-//! [guest file compression guide]: https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/guest-file-compression.md
 //!
 //! `write_file_result.success` / `write_files_result.success` use 0=false and
 //! 1=true.
@@ -132,7 +114,6 @@
 //! - `0x00`: ordinary contained workload.
 //! - `0x01`: controlled Agent operation.
 //! - `0x02`: fixed one-shot session-history identity verifier with disabled control.
-//! - `0x03`: fixed one-shot reused-Codex session cleanup helper with disabled control.
 //!
 //! `lifecycle`, `process_role`, and `control_policy` are validated as one
 //! process contract. See [`ExecStartEncodeRequest`] for the complete matrix;
@@ -257,6 +238,12 @@ pub use payloads::exec_operation::{
     validate_exec_control, validate_exec_process_contract,
 };
 pub use payloads::file_write_status::{FileWriteStage, FileWriteStatus};
+pub use payloads::guest_agent_instructions::{
+    DecodedGuestAgentInstructionsRequest, GUEST_AGENT_INSTRUCTIONS_OUTPUT_LIMIT_BYTES,
+    decode_guest_agent_instructions_request, decode_guest_agent_instructions_result,
+    encode_guest_agent_instructions_request_frame_into,
+    encode_guest_agent_instructions_result_frame_into,
+};
 pub use payloads::guest_dns_readiness::{
     DecodedGuestDnsReadinessRequest, DecodedGuestDnsReadinessResult,
     GUEST_DNS_READINESS_MAX_ANSWER_BYTES, GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES,
@@ -265,9 +252,6 @@ pub use payloads::guest_dns_readiness::{
     encode_guest_dns_readiness_request, encode_guest_dns_readiness_request_frame_into,
     encode_guest_dns_readiness_result,
 };
-/// Whole encoded/decoded source bound; DATA buffers remain credit-bounded.
-pub const MAX_ZSTD_SOURCE_BYTES: usize = 128 * 1024 * 1024;
-
 pub use payloads::guest_state_restore::{
     DecodedGuestStateRestoreRequest, GUEST_STATE_RESTORE_ENTROPY_BYTES,
     GUEST_STATE_RESTORE_MAX_TIMEZONE_BYTES, GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES,
@@ -304,14 +288,13 @@ pub use wire::{
     EXEC_CAPTURED_OUTPUT_FLAG_TRUNCATED, EXEC_FLAG_SUDO, EXEC_OUTPUT_FLAG_TRUNCATED, HEADER_SIZE,
     MAX_MESSAGE_SIZE, MIN_BODY_SIZE, MSG_ERROR, MSG_EXEC_AGENT_READY, MSG_EXEC_CANCEL,
     MSG_EXEC_CONTROL, MSG_EXEC_CONTROL_RESULT, MSG_EXEC_OUTPUT, MSG_EXEC_RESULT, MSG_EXEC_START,
-    MSG_EXEC_STARTED, MSG_FILE_WRITE_STATUS, MSG_FILE_WRITE_STATUS_RESULT, MSG_GUEST_DNS_READINESS,
+    MSG_EXEC_STARTED, MSG_FILE_WRITE_STATUS, MSG_FILE_WRITE_STATUS_RESULT,
+    MSG_GUEST_AGENT_INSTRUCTIONS, MSG_GUEST_AGENT_INSTRUCTIONS_RESULT, MSG_GUEST_DNS_READINESS,
     MSG_GUEST_DNS_READINESS_RESULT, MSG_GUEST_STATE_RESTORE, MSG_GUEST_STATE_RESTORE_RESULT,
     MSG_GUEST_STORAGE_MANIFEST, MSG_GUEST_STORAGE_MANIFEST_RESULT, MSG_HOME_DRIVE_MOUNT,
     MSG_HOME_DRIVE_MOUNT_RESULT, MSG_MEMORY_SNAPSHOT, MSG_MEMORY_SNAPSHOT_RESULT,
     MSG_OPERATIONS_QUIESCED, MSG_OPERATIONS_RESUMED, MSG_PING, MSG_PONG, MSG_QUIESCE_OPERATIONS,
     MSG_READY, MSG_RESUME_OPERATIONS, MSG_SHUTDOWN, MSG_SHUTDOWN_ACK, MSG_WRITE_FILE,
-    MSG_WRITE_FILE_RESULT, MSG_WRITE_FILE_STREAM_BEGIN, MSG_WRITE_FILE_STREAM_CREDIT,
-    MSG_WRITE_FILE_STREAM_DATA, MSG_WRITE_FILE_STREAM_END, MSG_WRITE_FILES, MSG_WRITE_FILES_RESULT,
-    MSG_WRITE_PRIVATE_FILES, VSOCK_PORT, WRITE_FILE_FLAG_APPEND, WRITE_FILE_FLAG_PRIVATE,
-    WRITE_FILE_FLAG_SUDO,
+    MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES, MSG_WRITE_FILES_RESULT, MSG_WRITE_PRIVATE_FILES,
+    VSOCK_PORT, WRITE_FILE_FLAG_APPEND, WRITE_FILE_FLAG_PRIVATE, WRITE_FILE_FLAG_SUDO,
 };

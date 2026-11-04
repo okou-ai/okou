@@ -29,6 +29,7 @@ import {
   requireNoPendingOrgCreditExpiration,
 } from "./org-credit-expiration";
 import { grantPurchasedOrgCredits$ } from "./org-credit-grant.service";
+import { grantPaidFriendReferralRewards$ } from "./friend-referrals.service";
 import {
   orgTierSchema,
   type OrgTier,
@@ -168,6 +169,9 @@ interface CheckoutSessionInput {
 
 interface InvoiceInput {
   readonly billing_reason?: string | null;
+  readonly status?: StripeInvoice["status"];
+  readonly currency?: string;
+  readonly paid_out_of_band?: boolean;
   readonly id: string;
   readonly amount_paid: number;
   readonly customer: string | { readonly id: string } | null;
@@ -3671,6 +3675,18 @@ const handleInvoicePaid$ = command(
   },
 );
 
+/** Only the verified invoice.paid webhook can confirm a referral reward. */
+const handlePaidInvoiceWebhook$ = command(
+  async ({ set }, invoice: InvoiceInput, signal: AbortSignal) => {
+    const orgId = await set(handleInvoicePaid$, invoice, signal);
+    signal.throwIfAborted();
+    if (orgId) {
+      await set(grantPaidFriendReferralRewards$, invoice, orgId, signal);
+    }
+    return orgId;
+  },
+);
+
 const publishConcurrencySubscription$ = command(
   async (
     { set },
@@ -4657,7 +4673,7 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "invoice.paid": {
-        drainOrgId = await set(handleInvoicePaid$, event.object, signal);
+        drainOrgId = await set(handlePaidInvoiceWebhook$, event.object, signal);
         if (drainOrgId) {
           billingChangedOrgIds.add(drainOrgId);
         }

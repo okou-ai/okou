@@ -1,16 +1,12 @@
 import { command, computed, state } from "ccstate";
-import {
-  sharedThreadVisibilityContract,
-  type SharedThreadAudience,
-} from "@okouai/api-contracts/contracts/shared-thread-visibility";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { sharedThreadVisibilityContract } from "@okouai/api-contracts/client/shared-thread-visibility";
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { currentUserInfo$ } from "./auth.ts";
 import { throttleCommand } from "./command-scheduling.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
 
 export function createSharedThreadVisibilitySignals(id: string) {
@@ -18,9 +14,6 @@ export function createSharedThreadVisibilitySignals(id: string) {
   const saveError$ = state<string | null>(null);
   const status$ = computed(async (get) => {
     get(reload$);
-    if (!get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]) {
-      return null;
-    }
     const user = await get(currentUserInfo$);
     if (!user) {
       return null;

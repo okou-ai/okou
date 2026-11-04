@@ -11,6 +11,7 @@ final class ComposerConnectorStore {
   let threadID: String?
   private(set) var agentID: String?
   private(set) var connectors: [ChatComposerConnector] = []
+  private(set) var chatAccountAccess = false
   private(set) var remotes: ChatRemotesOverview?
   private(set) var threadAccess: ChatThreadRemoteAccess?
   private(set) var currentComputerAccess: ChatComputerAccess?
@@ -21,11 +22,15 @@ final class ComposerConnectorStore {
   private(set) var isLoading = false
   private(set) var isSaving = false
   private(set) var uncertain = false
+  private(set) var notice: String?
+  private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private(set) var pendingOptions = ChatComposerOptions()
   private var pendingByAgent: [String: ChatComposerOptions] = [:]
   private let authorizationService: ChatConnectorService
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
+  private var refreshAgain = false
+  private var confirmationRevision = 0
   private var closed = false
 
   struct WebDestination: Identifiable {
@@ -39,8 +44,13 @@ final class ComposerConnectorStore {
 
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
-    thread: ChatThread? = nil, didFail: @escaping @MainActor (Error) -> Void
+    thread: ChatThread? = nil,
+    readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    },
+    didFail: @escaping @MainActor (Error) -> Void
   ) {
+    self.readRetrySleep = readRetrySleep
     self.service = service
     self.authorizationService = authorizationService
     self.webURL = webURL
@@ -50,6 +60,13 @@ final class ComposerConnectorStore {
   }
 
   var canSend: Bool { !isSaving && !uncertain }
+
+  func canConfigurePermissions(slug: String?) -> Bool {
+    guard let slug, let connector = connectors.first(where: { $0.target == .builtin(slug) }),
+      connector.hasPermissions
+    else { return false }
+    return !chatAccountAccess || connector.access?.accounts.isEmpty == false
+  }
 
   func configure(agentID: String?) {
     guard !closed, self.agentID != agentID else { return }
@@ -61,6 +78,7 @@ final class ComposerConnectorStore {
     self.agentID = agentID
     pendingOptions = agentID.flatMap { pendingByAgent[$0] } ?? ChatComposerOptions()
     connectors = []
+    chatAccountAccess = false
     remotes = nil
     threadAccess = nil
     currentComputerAccess = nil
@@ -68,40 +86,65 @@ final class ComposerConnectorStore {
     connectorError = nil
     remoteError = nil
     error = nil
+    notice = nil
     uncertain = false
     isSaving = false
     isLoading = false
+    refreshAgain = false
   }
 
   func refresh() async {
-    guard !closed, !Task.isCancelled, let agentID, !isLoading else { return }
+    guard !closed, !Task.isCancelled, let agentID else { return }
+    if isLoading {
+      refreshAgain = true
+      return
+    }
     let request = generation
     isLoading = true
     defer { if request == generation { isLoading = false } }
-    async let connected = loadConnectors(agentID: agentID, request: request)
-    async let remote = loadRemotes(request: request)
-    let (connectorsLoaded, remotesLoaded) = await (connected, remote)
-    guard !closed, !Task.isCancelled, request == generation, connectorsLoaded, remotesLoaded else {
-      return
-    }
-    uncertain = false
-    error = nil
+    repeat {
+      refreshAgain = false
+      let readRevision = confirmationRevision
+      async let connected = loadConnectors(agentID: agentID, request: request)
+      async let remote = loadRemotes(request: request)
+      let (connectorsLoaded, remotesLoaded) = await (connected, remote)
+      guard !closed, !Task.isCancelled, request == generation else { return }
+      // A write requested another read; this older snapshot cannot confirm it.
+      if refreshAgain { continue }
+      guard readRevision == confirmationRevision, connectorsLoaded, remotesLoaded else { return }
+      uncertain = false
+      error = nil
+    } while refreshAgain
   }
 
   private func loadConnectors(agentID: String, request: UUID) async -> Bool {
     do {
-      let values = try await read(request: request) {
+      let (enabled, values) = try await read(request: request) {
         try await service.validate(agentID: agentID, threadID: threadID)
-        return try await service.connectors(agentID: agentID)
+        let enabled = try await service.chatAccountAccessEnabled()
+        let values = try await service.connectors(
+          agentID: agentID, chatAccountAccess: enabled, threadID: threadID, options: pendingOptions)
+        return (enabled, values)
       }
       guard !closed, !Task.isCancelled, request == generation else { return false }
       connectors = values
+      chatAccountAccess = enabled
+      pendingOptions.chatAccountAccess = enabled
+      if enabled, threadID == nil {
+        let touched = Set(
+          pendingOptions.connectorSelections.map { $0.target.key }
+            + pendingOptions.initialConnectorAccessOverrides.map { $0.target.key })
+        for connector in values where touched.contains(connector.target.key) {
+          updatePendingAccess(target: connector.target)
+        }
+      }
       connectorError = nil
       return true
     } catch {
       guard !closed, !Task.isCancelled, request == generation else { return false }
       connectorError =
-        isCancellation(error) ? "Could not load connectors. Try again." : error.localizedDescription
+        isCancellation(error)
+        ? "Could not load connectors. Try again." : ChatRequestFailure.message(for: error)
       didFail(error)
       return false
     }
@@ -132,7 +175,7 @@ final class ComposerConnectorStore {
       guard !closed, !Task.isCancelled, request == generation else { return false }
       remoteError =
         isCancellation(error)
-        ? "Could not load remote access. Try again." : error.localizedDescription
+        ? "Could not load remote access. Try again." : ChatRequestFailure.message(for: error)
       didFail(error)
       return false
     }
@@ -142,13 +185,16 @@ final class ComposerConnectorStore {
   private func read<Value: Sendable>(
     request: UUID, _ body: @MainActor () async throws -> Value
   ) async throws -> Value {
-    do {
-      return try await body()
-    } catch {
-      guard !closed, !Task.isCancelled, request == generation, isCancellation(error) else {
-        throw error
+    return try await ChatReadRecovery.read("connector settings", sleep: readRetrySleep) {
+      guard !closed, !Task.isCancelled, request == generation else { throw CancellationError() }
+      do {
+        return try await body()
+      } catch {
+        guard !closed, !Task.isCancelled, request == generation, isCancellation(error) else {
+          throw error
+        }
+        return try await body()
       }
-      return try await body()
     }
   }
 
@@ -157,27 +203,41 @@ final class ComposerConnectorStore {
   }
 
   func perform(_ operation: @MainActor () async throws -> Void) async {
-    guard !closed, !isSaving, let agentID else { return }
+    guard !closed, !isSaving, !uncertain, let agentID else { return }
     let request = generation
     isSaving = true
+    notice = nil
+    var submitted = false
     defer { if request == generation { isSaving = false } }
     do {
       try await service.validate(agentID: agentID, threadID: threadID)
       guard !closed, !Task.isCancelled, request == generation else { return }
+      submitted = true
       try await operation()
       guard !closed, !Task.isCancelled, request == generation else { return }
+      confirmationRevision += 1
+      uncertain = true
       await refresh()
       if connectorError != nil || remoteError != nil { uncertain = true }
     } catch {
       guard !closed, request == generation else { return }
+      confirmationRevision += 1
       uncertain = true
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
       didFail(error)
+      if submitted && ChatRequestFailure.isTransient(error) {
+        await refresh()
+        guard !closed, !Task.isCancelled, request == generation else { return }
+        if !uncertain {
+          notice = String(
+            localized: "Settings checked. Review the current choices before continuing.")
+        }
+      }
     }
   }
 
   func setAuthorized(_ connector: ChatComposerConnector, enabled: Bool) async {
-    guard let agentID else { return }
+    guard !chatAccountAccess, let agentID else { return }
     await perform { try await service.setAuthorized(connector, agentID: agentID, enabled: enabled) }
   }
 
@@ -235,9 +295,17 @@ final class ComposerConnectorStore {
   func selectAccount(target: ChatConnectorTarget, connectionID: String?) async {
     guard !closed, !isSaving else { return }
     if let threadID {
-      await perform {
-        try await service.selectAccount(
-          target: target, connectionID: connectionID, threadID: threadID)
+      if chatAccountAccess {
+        guard let connectionID else { return }
+        await perform {
+          try await service.setCurrentAccount(
+            target: target, connectionID: connectionID, threadID: threadID)
+        }
+      } else {
+        await perform {
+          try await service.selectAccount(
+            target: target, connectionID: connectionID, threadID: threadID)
+        }
       }
     } else {
       pendingOptions.connectorSelections.removeAll { $0.target == target }
@@ -245,6 +313,56 @@ final class ComposerConnectorStore {
         pendingOptions.connectorSelections.append(
           ChatConnectorSelection(target: target, connectionId: connectionID))
       }
+      if chatAccountAccess {
+        updatePendingAccess(target: target)
+        await refresh()
+      }
+    }
+  }
+
+  func setAccountAccess(
+    target: ChatConnectorTarget, connectionID: String, enabled: Bool?
+  ) async {
+    guard chatAccountAccess, !closed, !isSaving else { return }
+    if let threadID {
+      await perform {
+        try await service.setConnectorAccess(
+          target: target, connectionID: connectionID, threadID: threadID, enabled: enabled)
+      }
+      return
+    }
+    if !pendingOptions.connectorSelections.contains(where: { $0.target == target }),
+      let current = connectors.first(where: { $0.target == target })?.access?.currentConnectionId
+    {
+      pendingOptions.connectorSelections.append(
+        ChatConnectorSelection(target: target, connectionId: current))
+    }
+    pendingOptions.initialConnectorAccessOverrides.removeAll {
+      $0.target == target && $0.connectionId == connectionID
+    }
+    if let enabled {
+      pendingOptions.initialConnectorAccessOverrides.append(
+        ChatConnectorAccessOverride(target: target, connectionId: connectionID, enabled: enabled))
+    }
+    updatePendingAccess(target: target)
+    await refresh()
+  }
+
+  private func updatePendingAccess(target: ChatConnectorTarget) {
+    guard let index = connectors.firstIndex(where: { $0.target == target }),
+      let previous = connectors[index].access
+    else { return }
+    let next = previous.pending(
+      overrides: pendingOptions.initialConnectorAccessOverrides,
+      selections: pendingOptions.connectorSelections)
+    pendingOptions.connectorSelections.removeAll { $0.target == target }
+    if let id = next.currentConnectionId {
+      pendingOptions.connectorSelections.append(
+        ChatConnectorSelection(target: target, connectionId: id))
+    }
+    connectors[index].access = next
+    if connectors[index].currentAccount?.id != next.currentConnectionId {
+      connectors[index].currentAccount = nil
     }
   }
   func connect(target: ChatConnectorTarget, accountID: String? = nil) {

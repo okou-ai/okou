@@ -1,7 +1,7 @@
-import {
-  codexDeviceAuthContract,
-  type CodexDeviceAuthMode,
-  type CodexDeviceAuthScope,
+import { codexDeviceAuthContract } from "@okouai/api-contracts/client/codex-device-auth";
+import type {
+  CodexDeviceAuthMode,
+  CodexDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { command, computed, state, type Command, type State } from "ccstate";

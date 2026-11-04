@@ -1,4 +1,4 @@
-import { sessionOutputChannelName } from "@okouai/api-contracts/contracts/realtime";
+import { sessionOutputChannelName } from "@okouai/api-contracts/validators/realtime";
 import { command, type Store } from "ccstate";
 
 import {

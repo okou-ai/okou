@@ -9,14 +9,17 @@ use sandbox::{
 use sandbox_mock::MockLifecycleGate;
 use tokio::sync::Notify;
 
-use crate::executor::EXIT_SIGKILL;
 use crate::executor::agent_run::{RunControls, RunStart, run_in_sandbox};
 use crate::executor::codex_model_catalog_prefetch::{
     CodexModelCatalogPrefetchStart, PREFETCH_HOST_START_TIMEOUT, StartedCodexModelCatalogPrefetch,
 };
 use crate::executor::tests::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox, minimal_context, sandbox_exec_error,
-    sandbox_write_file_error, spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
+    sandbox_write_file_error, spawn_run_in_sandbox_test,
+    spawn_run_in_sandbox_test_with_cancellation, test_executor_config, test_telemetry,
+};
+use crate::executor::{
+    EXIT_SIGKILL, PROCESS_CANCEL_TIMEOUTS, SandboxReuseDisposition, SandboxReuseRejection,
 };
 use runner_types::types::{ExecutionContext, Firewall, FirewallEntry, SandboxReuseResult};
 
@@ -1042,6 +1045,12 @@ async fn disk_recovery_retires_prefetch_before_cleanup_and_agent_start() {
 
 #[tokio::test]
 async fn cancellation_between_disk_cleanups_prevents_second_helper_and_agent_start() {
+    for cooperative in [false, true] {
+        assert_cancelled_disk_cleanup(cooperative).await;
+    }
+}
+
+async fn assert_cancelled_disk_cleanup(cooperative: bool) {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let write_gate = MockLifecycleGate::new();
@@ -1072,8 +1081,14 @@ async fn cancellation_between_disk_cleanups_prevents_second_helper_and_agent_sta
         stderr: Vec::new(),
     });
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let task = spawn_run_in_sandbox_test(sandbox, minimal_context(), config, cancel.clone());
+    let cancel = runner_provider::RunCancellationHandle::new();
+    let task = spawn_run_in_sandbox_test_with_cancellation(
+        sandbox,
+        minimal_context(),
+        config,
+        cancel.signals(),
+        PROCESS_CANCEL_TIMEOUTS,
+    );
     write_gate
         .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
         .await
@@ -1097,15 +1112,33 @@ async fn cancellation_between_disk_cleanups_prevents_second_helper_and_agent_sta
             .cmd
             .contains("recover-disk-space")
     );
-    cancel.cancel();
+    if cooperative {
+        assert!(cancel.request_cooperative_user_cancellation().await);
+    } else {
+        assert!(cancel.request_hard_cancellation().await);
+    }
     exec_gate.release_one();
 
     let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, task)
         .await
         .unwrap()
-        .unwrap()
         .unwrap();
-    assert_eq!(result.failure.unwrap().exit_code, EXIT_SIGKILL);
+    if cooperative {
+        let result = result.unwrap();
+        let failure = result.failure.unwrap();
+        assert!(
+            failure.error.contains("No space left on device"),
+            "the original disk failure must remain authoritative: {}",
+            failure.error,
+        );
+        assert_eq!(failure.exit_code, 1);
+        assert_eq!(
+            result.sandbox_reuse_disposition,
+            SandboxReuseDisposition::Ineligible(SandboxReuseRejection::ResourceFailure)
+        );
+    } else {
+        assert_eq!(result.unwrap().failure.unwrap().exit_code, EXIT_SIGKILL);
+    }
     assert_eq!(overrides.private_write_files_calls().len(), 1);
     assert!(overrides.start_agent_process_calls().is_empty());
     let cleanup_calls = overrides

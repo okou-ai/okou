@@ -3,10 +3,8 @@ import { useGet, useLoadable, useSet, type LoadableState } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/validators/custom-connectors";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 
 import {
   Dialog,
@@ -1079,6 +1077,9 @@ function DirectoryDetailSlot({
 }
 
 interface ConnectorDirectoryDialogProps {
+  readonly finalFocus?: React.ComponentProps<
+    typeof DialogContent
+  >["finalFocus"];
   readonly state: ComposerConnectorUiState;
   readonly onUpdateState: UpdateDirectoryState;
   /** Category totals from discovery; a shelf's closing cell stands for these. */
@@ -1119,6 +1120,7 @@ function useDirectoryDialogOpenChange(
 }
 
 export function ConnectorDirectoryDialog({
+  finalFocus,
   state,
   onUpdateState,
   categoryCounts,
@@ -1199,6 +1201,7 @@ export function ConnectorDirectoryDialog({
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent
+        finalFocus={finalFocus}
         maxWidth="2xl"
         height={600}
         contentClassName="flex flex-col gap-0 p-0"

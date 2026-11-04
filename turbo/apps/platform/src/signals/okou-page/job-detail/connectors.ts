@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import { apiClient$ } from "../../api-client.ts";
 import { withCleanup } from "../../utils.ts";
 import { accept } from "../../../lib/accept.ts";

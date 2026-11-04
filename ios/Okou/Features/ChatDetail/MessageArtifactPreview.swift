@@ -19,10 +19,10 @@ struct MessageArtifactPreview: View {
             Text(error).font(.caption).foregroundStyle(.secondary).padding(12)
           }
           if let warning = viewer.catalogWarning {
-            HStack {
+            DisclosureGroup("File details unavailable") {
               Text(warning).font(.caption)
-              Button("Retry") { viewer.retry() }
-            }.foregroundStyle(.secondary).padding(12)
+              Button("Refresh file details") { Task { await viewer.refreshDetails() } }
+            }.font(.caption).foregroundStyle(.secondary).padding(12)
           }
         }
         .navigationTitle(preview.artifact.filename)
@@ -93,16 +93,26 @@ struct MessageArtifactPreview: View {
       } description: {
         Text(error)
       } actions: {
-        Button("Retry") { viewer.retry() }.buttonStyle(NeutralProminentButtonStyle())
+        if preview.canRetry {
+          Button("Retry") { viewer.retry() }.buttonStyle(NeutralProminentButtonStyle())
+        }
+        if case .hostedSite(let url) = preview.artifact.source {
+          Link("Open in browser", destination: url)
+        }
       }
     } else if let url = preview.contentURL {
       VStack(spacing: 0) {
         if let webError {
-          HStack {
+          VStack(alignment: .leading, spacing: 8) {
             Text(webError).font(.caption)
-            Button("Retry") {
-              self.webError = nil
-              viewer.retry()
+            HStack {
+              Button("Retry") {
+                self.webError = nil
+                viewer.retry()
+              }
+              if case .hostedSite(let url) = preview.artifact.source {
+                Link("Open in browser", destination: url)
+              }
             }
           }.padding(12)
         }

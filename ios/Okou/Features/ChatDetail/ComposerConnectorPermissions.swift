@@ -15,8 +15,12 @@ struct ComposerConnectorPermissions: View {
 
   var body: some View {
     List {
-      if let error { ConnectorLoadError(error: error) { await load() } }
-      if loading { ProgressView("Loading permissions…") }
+      if let error {
+        ConnectorLoadError(error: error, isLoading: loading || store.isLoading) {
+          await store.refresh()
+          await load()
+        }
+      }
       if let state {
         Section {
           Picker("Allow for", selection: $duration) {
@@ -48,9 +52,13 @@ struct ComposerConnectorPermissions: View {
                   })
               }
             }
-          }.disabled(store.isSaving || filteredPermissions(state.metadata).isEmpty)
+          }.disabled(
+            store.isSaving || store.uncertain || filteredPermissions(state.metadata).isEmpty)
         } footer: {
-          Text("These permissions apply to this Agent across its conversations.")
+          Text(
+            state.connectorScoped
+              ? "These permissions apply to this connector across your chats and accounts."
+              : "These permissions apply to this Agent across its chats.")
         }
         Section("Permissions") {
           ForEach(
@@ -65,7 +73,7 @@ struct ComposerConnectorPermissions: View {
         }
         Section {
           Button("Reset to defaults", role: .destructive) { confirmsReset = true }.disabled(
-            store.isSaving)
+            store.isSaving || store.uncertain)
         } footer: {
           Text(
             "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
@@ -73,14 +81,23 @@ struct ComposerConnectorPermissions: View {
         }
       }
     }
+    .listSectionSpacing(16)
+    .overlay {
+      if loading && state == nil && error == nil {
+        ChatSettingsLoadingView(title: "Loading permissions…")
+      }
+    }
     .navigationTitle(label + " permissions")
     .navigationBarTitleDisplayMode(.inline)
     .searchable(text: $search, prompt: "Find permissions")
     .task { await load() }
     .confirmationDialog(
-      "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
+      state?.connectorScoped == true
+        ? "Reset this connector's permissions?"
+        : "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
     ) {
       Button("Reset to defaults", role: .destructive) { Task { await save([], reset: true) } }
+        .disabled(store.isSaving || store.uncertain)
     }
   }
   private func filteredPermissions(_ metadata: ChatPermissionMetadata)
@@ -118,7 +135,7 @@ struct ComposerConnectorPermissions: View {
         }
       } label: {
         Text(policy.rawValue.capitalized).frame(minHeight: 44)
-      }.disabled(store.isSaving || loading)
+      }.disabled(store.isSaving || store.uncertain || loading)
     }
   }
   private func load() async {
@@ -131,7 +148,7 @@ struct ComposerConnectorPermissions: View {
       state = result
       error = nil
     } catch is CancellationError {
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = ChatRequestFailure.message(for: error) }
   }
   private func save(_ edits: [ChatPermissionEdit], reset: Bool = false) async {
     guard let agentID = store.agentID else { return }

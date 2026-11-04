@@ -18,8 +18,23 @@ function pgErrorCode(error: unknown): unknown {
   return cause.code;
 }
 
-export function isForeignKeyViolation(error: unknown): boolean {
-  return pgErrorCode(error) === PG_FOREIGN_KEY_VIOLATION;
+export function isForeignKeyViolation(
+  error: unknown,
+  constraint?: string,
+): boolean {
+  if (pgErrorCode(error) !== PG_FOREIGN_KEY_VIOLATION) {
+    return false;
+  }
+  if (constraint === undefined) {
+    return true;
+  }
+  return (
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === constraint
+  );
 }
 
 export function isLockNotAvailable(error: unknown): boolean {

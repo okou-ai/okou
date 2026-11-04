@@ -3,7 +3,6 @@ import type {
   OfficialWorkflowAcceptedDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { agents } from "@okouai/db/schema/agent";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
@@ -14,7 +13,7 @@ import {
   workflowWebhookAutomations,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, eq, inArray, or, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, getTableColumns, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isDeepStrictEqual } from "node:util";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
@@ -189,9 +188,7 @@ export function copyRevisionQuery(identity: {
   return new QueryBuilder()
     .select(plan.columns)
     .from(officialWorkflowDefinitionRevisions)
-    .innerJoin(storages, plan.storageJoin)
-    .innerJoin(storageVersions, plan.storageVersionJoin)
-    .where(or(plan.condition))
+    .where(and(plan.condition, plan.deliveryCondition))
     .orderBy(
       asc(officialWorkflowDefinitionRevisions.definitionName),
       asc(officialWorkflowDefinitionRevisions.revision),

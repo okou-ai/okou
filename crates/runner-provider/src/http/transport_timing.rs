@@ -19,7 +19,7 @@ use tower_layer::Layer;
 use tower_service::Service;
 use tracing::{Dispatch, info};
 
-use super::{PreparedApiRequest, ProviderResult, Response, api_transport_error};
+use super::{PreparedApiRequest, ProviderResult, Response};
 use crate::error::ApiRequestContext;
 
 tokio::task_local! {
@@ -329,26 +329,19 @@ pub(super) async fn send_claim(
     run_id: RunId,
     execution_started_at: Instant,
 ) -> ProviderResult<Response> {
-    let PreparedApiRequest {
-        client,
-        request,
-        context,
-    } = prepared;
-    let observer = Observer::new(execution_started_at, run_id, context.clone());
+    let observer = Observer::new(execution_started_at, run_id, prepared.context().clone());
     // A dropped client future does not establish the server's claim outcome.
     let mut observation = ClaimObservation {
         observer: observer.clone(),
         outcome: "dropped",
     };
-    let result = observer
-        .scope(async { client.execute(request).await })
-        .await;
+    let result = observer.scope(prepared.send()).await;
     observation.outcome = if result.is_ok() {
         "response_headers"
     } else {
         "request_failed"
     };
-    result.map_err(|error| api_transport_error(context, error))
+    result
 }
 
 #[cfg(test)]

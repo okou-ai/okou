@@ -6,7 +6,6 @@ import {
   logsListContract,
   type LogEntry,
 } from "@okouai/api-contracts/contracts/logs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -78,7 +77,6 @@ function mockTaskHistory(runIds: readonly string[]) {
 async function loadUpgradeChat(
   tier = "limited-free-1",
   history: readonly string[] = [FIRST_CAPABILITY_RUN_ID],
-  enabled = true,
 ) {
   mockBilling(tier);
   const historyRead = mockTaskHistory(history);
@@ -108,7 +106,6 @@ async function loadUpgradeChat(
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: enabled },
   });
   await readyChat();
   return { historyRead };
@@ -169,22 +166,21 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
   expect(
     within(completion).getByRole("group", { name: "Keep going" }),
   ).toBeInTheDocument();
-  await expect(within(card).findByText("$18")).resolves.toBeVisible();
+  const upgrade = await findEnabledButton("Upgrade from $18/month", card);
+  expect(upgrade).toHaveAccessibleName("Upgrade from $18/month");
   expect(within(card).queryByText("$0")).toBeNull();
   expect(within(card).getByText("About 5 tasks left")).toBeInTheDocument();
   expect(
-    within(card).getByText(
-      "Additional credits · Advanced features · 3 cloud computers",
-    ),
+    within(card).getByText("Advanced features · 3 cloud computers"),
   ).toBeInTheDocument();
   expect(within(card).getByText("20,000")).toBeInTheDocument();
   expect(within(card).getByText("+2,000")).toBeInTheDocument();
   expect(
     within(card).getByText(/credits · Just now/u, {
-      ignore: '[aria-hidden="true"]',
+      ignore: '[aria-hidden="true"], [aria-hidden="true"] *',
     }),
   ).toBeInTheDocument();
-  click(await findEnabledButton("Upgrade now", card));
+  click(upgrade);
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeVisible();
@@ -217,13 +213,16 @@ test("Keep the offer usable while the catalog loads and then show its credits", 
       ignore: '[aria-hidden="true"]',
     }),
   ).toBeInTheDocument();
-  await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
+  const upgrade = await findEnabledButton("Upgrade now", card);
+  expect(upgrade).toHaveAccessibleName("Upgrade now");
 
   catalogReady.resolve();
 
   await expect(within(card).findByText("+400")).resolves.toBeInTheDocument();
   expect(within(card).getByText("20,000")).toBeInTheDocument();
-  expect(within(card).getByText("$20")).toBeInTheDocument();
+  await expect(
+    findEnabledButton("Upgrade from $20/month", card),
+  ).resolves.toBeEnabled();
 });
 
 test("Keep the upgrade action usable when the price catalog is unavailable", async () => {
@@ -239,11 +238,15 @@ test("Keep the upgrade action usable when the price catalog is unavailable", asy
       ignore: '[aria-hidden="true"]',
     }),
   ).resolves.toBeVisible();
-  expect(within(card).queryByText(/\$/u)).toBeNull();
+  expect(
+    within(card).queryByText(/\$/u, {
+      ignore: '[aria-hidden="true"], [aria-hidden="true"] *',
+    }),
+  ).toBeNull();
   expect(within(card).queryByText("20,000")).toBeNull();
   expect(
     within(card).queryByText(/credits · Just now/u, {
-      ignore: '[aria-hidden="true"]',
+      ignore: '[aria-hidden="true"], [aria-hidden="true"] *',
     }),
   ).toBeNull();
   await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
@@ -255,34 +258,6 @@ test("Keep the general plans action for an existing paid workspace", async () =>
     within(card).findByText("Upgrade your workspace"),
   ).resolves.toBeVisible();
   expect(within(card).queryByText("+400")).toBeNull();
-  click(await findEnabledButton("Compare plans", card));
-  await expect(
-    screen.findByRole("dialog", { name: "Choose a plan" }),
-  ).resolves.toBeVisible();
-});
-
-test("Keep the free workspace plans action when the first-task rollout is disabled", async () => {
-  mockBilling();
-  installRunChat({
-    chatEvents: [
-      ...completedConversation(`Your report is ready.\n\n${UPGRADE_LINK}`),
-      completedEvent({
-        id: "upgrade-completed",
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 3,
-      }),
-    ],
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: false },
-  });
-  await readyChat();
-
-  const card = await screen.findByTestId("plan-upgrade-card");
-  expect(within(card).getByText("Upgrade your workspace")).toBeInTheDocument();
   click(await findEnabledButton("Compare plans", card));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
@@ -302,7 +277,6 @@ test("Wait for successful completion, show one trailing card, and retire it on t
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: true },
   });
   await readyChat();
   await findButton("Stop");
@@ -346,7 +320,6 @@ test("Do not promote an upgrade link from an unsuccessful response", async () =>
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: true },
   });
   await readyChat();
   await screen.findByText("The report could not be completed.");
@@ -361,12 +334,6 @@ test("Do not repeat the offer in another chat when the user already has task his
   await act(async () => {
     await historyRead.promise;
   });
-  expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
-  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
-});
-
-test("Keep the automatic offer hidden when its rollout switch is disabled", async () => {
-  await loadUpgradeChat("limited-free-1", [FIRST_CAPABILITY_RUN_ID], false);
   expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
   expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
 });

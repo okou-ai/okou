@@ -1,4 +1,4 @@
-import { object, string, unknown as zUnknown } from "zod";
+import { object, string, uuid, unknown as zUnknown } from "zod";
 
 import { initContract } from "./base";
 
@@ -8,7 +8,7 @@ export const feishuEventsContract = c.router({
   post: {
     method: "POST",
     path: "/api/webhooks/feishu/events/:installationId",
-    pathParams: object({ installationId: string().uuid() }),
+    pathParams: object({ installationId: uuid() }),
     body: c.type<string>(),
     responses: {
       200: zUnknown(),

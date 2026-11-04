@@ -24,6 +24,7 @@ final class AuthenticationHTTPFixture: Sendable {
   let state = Mutex(State())
   let memberships = AuthenticationRequestGate()
   let activation = AuthenticationRequestGate()
+  let clientReads = AuthenticationRequestGate()
   let api = ChatHTTPFixture { request in
     switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
     case ("GET", "/api/agents"):
@@ -226,8 +227,10 @@ final class AuthenticationHTTPFixture: Sendable {
   func close() async {
     await memberships.releaseAll()
     await activation.releaseAll()
+    await clientReads.releaseAll()
     await memberships.finishObservations()
     await activation.finishObservations()
+    await clientReads.finishObservations()
     listener.cancel()
     connections.withLock {
       for connection in $0 { connection.cancel() }
@@ -254,6 +257,7 @@ final class AuthenticationHTTPFixture: Sendable {
       signIn.createdSessionId = state.withLock { $0.sessionID }
       return try json(SignInEnvelope(response: signIn, client: client()))
     case "/v1/client":
+      await clientReads.enter()
       return try json(ClientEnvelope(response: client()))
     case "/v1/me/organization_memberships":
       let snapshot = state.withLock { $0 }

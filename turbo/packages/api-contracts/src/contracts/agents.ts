@@ -1,12 +1,9 @@
-import {
-  array,
-  boolean,
-  object,
-  string,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
+import {
+  agentResponseSchema,
+  agentVisibilitySchema,
+} from "../validators/agents";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { CANONICAL_WORKING_DIR } from "./runner-primitives";
@@ -32,22 +29,8 @@ export const agentNameSchema = string()
     "Agent name must start and end with letter or number, and contain only letters, numbers, and hyphens",
   );
 
-export const agentVisibilitySchema = zEnum(["public", "private"]);
+export { agentResponseSchema, agentVisibilitySchema };
 export type AgentVisibility = zInfer<typeof agentVisibilitySchema>;
-
-/**
- * Agent response schema
- */
-export const agentResponseSchema = object({
-  agentId: string(),
-  isDefaultAgent: boolean(),
-  ownerId: string(),
-  description: string().nullable(),
-  displayName: string().nullable(),
-  sound: string().nullable(),
-  avatarUrl: string().nullable(),
-  visibility: agentVisibilitySchema,
-});
 
 /**
  * Create/update agent request schema
@@ -96,7 +79,11 @@ export const agentsMainContract = c.router({
     method: "POST",
     path: "/api/agents",
     headers: authHeadersSchema,
-    body: agentRequestSchema,
+    body: agentRequestSchema.extend({
+      // Reusing a client identity returns the owner's current Agent without
+      // applying the repeated request's metadata.
+      clientAgentId: uuid().optional(),
+    }),
     responses: {
       201: agentResponseSchema,
       400: apiErrorSchema,
@@ -128,7 +115,7 @@ export const agentsByIdContract = c.router({
     method: "GET",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: agentResponseSchema,
       400: apiErrorSchema,
@@ -142,7 +129,7 @@ export const agentsByIdContract = c.router({
     method: "PUT",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentRequestSchema,
     responses: {
       200: agentResponseSchema,
@@ -159,7 +146,7 @@ export const agentsByIdContract = c.router({
     method: "PATCH",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentMetadataRequestSchema,
     responses: {
       200: agentResponseSchema,
@@ -175,7 +162,7 @@ export const agentsByIdContract = c.router({
     method: "DELETE",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: c.noBody(),
     responses: {
       204: c.noBody(),
@@ -197,7 +184,7 @@ export const agentInstructionsContract = c.router({
     method: "GET",
     path: "/api/agents/:id/instructions",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: agentInstructionsResponseSchema,
       400: apiErrorSchema,
@@ -211,7 +198,7 @@ export const agentInstructionsContract = c.router({
     method: "PUT",
     path: "/api/agents/:id/instructions",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentInstructionsRequestSchema,
     responses: {
       200: agentResponseSchema,

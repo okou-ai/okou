@@ -60,7 +60,6 @@ trait ServiceStopOps: ActiveJobsGateOps {
     where
         Self::LockGuard: 'a;
 
-    fn is_active<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool>;
     fn stop<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()>;
     fn stop_bounded<'a>(
         &'a mut self,
@@ -155,10 +154,6 @@ impl ServiceStopOps for RealServiceStopOps {
                 acquire_service_lock(unit, home).await
             }
         })
-    }
-
-    fn is_active<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool> {
-        Box::pin(async move { is_unit_active(unit).await.map_err(Into::into) })
     }
 
     fn stop<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()> {
@@ -332,18 +327,26 @@ async fn stop_default_with_ops(
 ) -> RunnerResult<()> {
     let svc = unit.service_name();
 
-    if ops.is_active(unit).await? {
-        // Active unit: stop must succeed; otherwise the runner process and sandboxes
-        // can keep running.
-        ops.stop(unit).await?;
-        info!(unit = %unit.unit_name(), "stopped");
-    } else {
-        // Unit may be loaded but inactive (residual transient unit).
-        // Try stop to trigger systemd GC. Ignore errors because the unit may
-        // not exist at all on a first run.
-        let _ = ops.stop(unit).await;
-        info!(unit = %unit.unit_name(), "no active service found");
+    if let Err(stop_error) = ops.stop(unit).await {
+        // A failed client does not prove systemd finished stopping the unit.
+        // Only a lifecycle query can authorize best-effort cleanup, including
+        // for an already-stopped or missing unit.
+        match ops.cleanup_active_state(unit).await {
+            Ok(state) if !state.is_active_like() => {}
+            Ok(state) => {
+                return Err(RunnerError::Internal(format!(
+                    "failed to stop {svc}: {stop_error}; service remains {}; refusing drain restart override cleanup",
+                    state.active_state()
+                )));
+            }
+            Err(state_error) => {
+                return Err(RunnerError::Internal(format!(
+                    "failed to stop {svc}: {stop_error}; could not verify it is inactive: {state_error}; refusing drain restart override cleanup"
+                )));
+            }
+        }
     }
+    info!(unit = %unit.unit_name(), "stopped");
 
     // Clear "failed" latch so systemd fully unloads the transient unit.
     let _ = ops.reset_failed(unit).await;

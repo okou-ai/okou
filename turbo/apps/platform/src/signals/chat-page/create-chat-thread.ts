@@ -1,3 +1,7 @@
+import {
+  userMessageDocumentSchema,
+  resolveChatEventRecommendedFollowups,
+} from "@okouai/api-contracts/validators/chat-threads";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -11,19 +15,18 @@ import {
   isChatRunTerminalEventType,
   revokedChatEventIds,
 } from "@okouai/api-contracts/contracts/chat-events";
-import {
-  chatThreadArtifactsContract,
-  resolveChatEventRecommendedFollowups,
-  type ChatRunOptionsRequest,
-  type ChatThreadArtifactRun,
-  type ChatThreadDraft,
-  type FeedbackNotePart,
-  type GenerationTemplateRequest,
-  type ChatEvent as PersistedChatEvent,
-  type ResolvedAttachFile,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessagePart,
+import { chatThreadArtifactsContract } from "@okouai/api-contracts/client/chat-threads";
+import type {
+  ChatRunOptionsRequest,
+  ChatThreadArtifactRun,
+  ChatThreadDraft,
+  FeedbackNotePart,
+  GenerationTemplateRequest,
+  ChatEvent as PersistedChatEvent,
+  ResolvedAttachFile,
+  UserMessageDocument,
+  UserMessageInputDocument,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -1023,6 +1026,9 @@ const registerFeedbackNoteRenderPart$ = command(
       case "text": {
         return { type: "text", part };
       }
+      case "project": {
+        return { type: "project", part };
+      }
       case "chat_thread": {
         return { type: "chat_thread", part };
       }
@@ -1055,6 +1061,9 @@ const registerUserMessageRenderPart$ = command(
     switch (part.type) {
       case "text": {
         return { type: "text", part };
+      }
+      case "project": {
+        return { type: "project", part };
       }
       case "chat_thread": {
         return { type: "chat_thread", part };
@@ -1137,14 +1146,18 @@ const registerUserMessageRenderDocument$ = command(
     document: UserMessageDocument,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderDocument => {
+    const readableDocument = userMessageDocumentSchema.parse(document);
     return {
+      // Registration uses the raw document identity across window updates.
       document,
-      parts: document.parts.flatMap((part, index) => {
+      parts: readableDocument.parts.flatMap((part, index) => {
         if (part.type === "additional_info") {
           return [];
         }
         const rendered = set(registerUserMessageRenderPart$, part, registries);
-        const context = readSuggestionContext(document.parts[index - 1]);
+        const context = readSuggestionContext(
+          readableDocument.parts[index - 1],
+        );
         return [
           rendered.type === "feedback" && context
             ? { ...rendered, suggestionContext: context }
@@ -1693,6 +1706,7 @@ interface EventTree {
   readonly requireUrlTerminator: boolean;
   readonly tree: Root | undefined;
   readonly batchConnectorPermissions: boolean;
+  readonly cjkEmphasis: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
   readonly diagramCodes?: readonly string[];
 }
@@ -1704,6 +1718,7 @@ interface RichEventTreePlan {
   readonly descriptors: readonly CardDescriptorBlock[];
   readonly requireUrlTerminator: boolean;
   readonly batchConnectorPermissions: boolean;
+  readonly cjkEmphasis: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1731,6 +1746,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         math: true,
         mermaid: true,
         cards,
+        cjkEmphasis: plan.cjkEmphasis,
       });
       const diagramCodes: string[] = [];
       embedMermaidSignals(tree, (code) => {
@@ -1757,6 +1773,7 @@ function planEventTreeUpdates(
   current: ReadonlyMap<string, EventTree>,
   chatActionContext: ChatActionContext,
   batchConnectorPermissions: boolean,
+  cjkEmphasis: boolean,
 ): {
   readonly next: Map<string, EventTree> | undefined;
   readonly richPlans: RichEventTreePlan[];
@@ -1773,7 +1790,8 @@ function planEventTreeUpdates(
     if (
       cached?.content === content &&
       cached.requireUrlTerminator === requireUrlTerminator &&
-      cached.batchConnectorPermissions === batchConnectorPermissions
+      cached.batchConnectorPermissions === batchConnectorPermissions &&
+      cached.cjkEmphasis === cjkEmphasis
     ) {
       continue;
     }
@@ -1794,6 +1812,7 @@ function planEventTreeUpdates(
         content: plan.content,
         requireUrlTerminator: plan.requireUrlTerminator,
         batchConnectorPermissions,
+        cjkEmphasis,
         tree: plainTree,
       });
       continue;
@@ -1804,9 +1823,15 @@ function planEventTreeUpdates(
       content: plan.content,
       requireUrlTerminator: plan.requireUrlTerminator,
       batchConnectorPermissions,
+      cjkEmphasis,
       tree: undefined,
     });
-    richPlans.push({ eventId: event.id, ...plan, batchConnectorPermissions });
+    richPlans.push({
+      eventId: event.id,
+      ...plan,
+      batchConnectorPermissions,
+      cjkEmphasis,
+    });
   }
   return { next, richPlans };
 }
@@ -1862,6 +1887,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
           pendingEntry.requireUrlTerminator !== plan.requireUrlTerminator ||
           pendingEntry.batchConnectorPermissions !==
             plan.batchConnectorPermissions ||
+          pendingEntry.cjkEmphasis !== plan.cjkEmphasis ||
           pendingEntry.tree !== undefined
         ) {
           continue;
@@ -1872,6 +1898,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
           content: plan.content,
           requireUrlTerminator: plan.requireUrlTerminator,
           batchConnectorPermissions: plan.batchConnectorPermissions,
+          cjkEmphasis: plan.cjkEmphasis,
           tree,
           diagramCodes,
         });
@@ -1898,12 +1925,13 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
     ): Promise<void> => {
       signal.throwIfAborted();
       const current = get(internalEventTrees$);
+      const features = get(featureSwitch$);
       const { next, richPlans } = planEventTreeUpdates(
         events,
         current,
         chatActionContext,
-        get(featureSwitch$)[FeatureSwitchKey.BatchConnectorPermissions] ===
-          true,
+        features[FeatureSwitchKey.BatchConnectorPermissions] === true,
+        features[FeatureSwitchKey.MarkdownCjkEmphasis] === true,
       );
       if (next) {
         set(internalEventTrees$, next);
@@ -1941,13 +1969,18 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
 function createPagedEventResources({
   chatActionContext,
   connector,
+  onBrowserPageInput$,
 }: {
   readonly chatActionContext: ChatActionContext;
   readonly connector: ComposerConnectorSignals;
+  readonly onBrowserPageInput$: Command<void, []>;
 }) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
-  const browserSessionSignals = createBrowserSessionSignals(threadId);
+  const browserSessionSignals = createBrowserSessionSignals(
+    threadId,
+    onBrowserPageInput$,
+  );
   const artifactCardSignals = createArtifactCardSignalsRegistry();
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
@@ -2303,23 +2336,48 @@ function createReadyScrollAfterRenderRequest(
   });
 }
 
-function createLoadMoreRenderedChatGroups(
+const EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX = 100;
+// Safari reverts a scrollTop write made while its scrolling thread still
+// animates a gesture, momentum, or smooth scroll. Every animated frame delivers
+// a scroll event, so a quiet interval means the compensation write will stick.
+const EARLIER_GROUPS_LOAD_SCROLL_SETTLE_MS = 150;
+
+/**
+ * Loads earlier groups once scrolling settles near the top. Every scroll
+ * restarts the wait, so the prepend and its scroll compensation never land
+ * while the browser is still moving the viewport.
+ */
+function createLoadEarlierGroupsAfterScroll(
   scroll: ChatThreadScrollSignals,
   loadMoreGroups$: Command<Promise<boolean>, [AbortSignal]>,
 ) {
-  return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
-    const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
-    const didPrepend = await set(loadMoreGroups$, signal);
-    signal.throwIfAborted();
-    if (didPrepend) {
-      await set(scroll.autoScroll$, scrollPosition, signal);
+  const loadEarlierGroupsNearTop$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+      const container = get(scroll.scrollContainer$);
+      if (
+        !container ||
+        container.scrollTop > EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX
+      ) {
+        return false;
+      }
+      const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
+      const didPrepend = await set(loadMoreGroups$, signal);
       signal.throwIfAborted();
-    }
-    return didPrepend;
-  });
+      if (didPrepend) {
+        await set(scroll.autoScroll$, scrollPosition, signal);
+        signal.throwIfAborted();
+      }
+      return didPrepend;
+    },
+  );
+  return debounceCommand(
+    loadEarlierGroupsNearTop$,
+    EARLIER_GROUPS_LOAD_SCROLL_SETTLE_MS,
+  );
 }
 
 interface ChatThreadMessagePipelineOptions {
+  onBrowserPageInput$: Command<void, []>;
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
   connector: ComposerConnectorSignals;
@@ -2331,6 +2389,7 @@ function createChatThreadMessagePipeline({
   chatEvents,
   connector,
   thinkingSummaries$,
+  onBrowserPageInput$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
   // Position is created before scroll writers are wired to the render window.
@@ -2338,6 +2397,7 @@ function createChatThreadMessagePipeline({
   const resources = createPagedEventResources({
     chatActionContext,
     connector,
+    onBrowserPageInput$,
   });
   const usage = createChatRunUsageSignals(
     threadId,
@@ -2408,7 +2468,7 @@ function createChatThreadMessagePipeline({
     scroll.pendingScrollAfterRenderRequest$,
     renderWindow.visibleRenderedChatGroups$,
   );
-  const loadMoreRenderedChatGroups$ = createLoadMoreRenderedChatGroups(
+  const loadEarlierGroupsAfterScroll$ = createLoadEarlierGroupsAfterScroll(
     scroll,
     renderWindow.loadMoreRenderedChatGroups$,
   );
@@ -2426,7 +2486,7 @@ function createChatThreadMessagePipeline({
     visibleRunUsageSignals$: usage.visibleRunUsageSignals$,
     ...renderWindow,
     readyScrollAfterRenderRequest$,
-    loadMoreRenderedChatGroups$,
+    loadEarlierGroupsAfterScroll$,
   };
 }
 
@@ -3547,7 +3607,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     runFinished$: events.runFinished$,
     recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,
-    loadMoreRenderedChatGroups$: events.loadMoreRenderedChatGroups$,
+    loadEarlierGroupsAfterScroll$: events.loadEarlierGroupsAfterScroll$,
     resetRenderedChatGroupsIfAtBottom$:
       events.resetRenderedChatGroupsIfAtBottom$,
   };
@@ -3846,16 +3906,24 @@ export function createChatPanelSignals(
     draft,
     persistence,
   );
+  // The native input graph invokes this only after admitting page input.
+  const onPageInput$ = command(({ set }) => {
+    set(browserPresence.pageInput$);
+  });
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },
     chatEvents,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
+    onBrowserPageInput$: onPageInput$,
   });
-  const messages: MessageListSignals = {
-    ...messagePipeline,
-    ...artifact,
-  };
+  const browserPresence = createBrowserPresenceSignals({
+    agentId,
+    latestRunId$: messagePipeline.latestRunId$,
+    liveRunId$: messagePipeline.liveRunId$,
+    sendEvent$: chatEvents.sendEvent$,
+  });
+  const messages: MessageListSignals = { ...messagePipeline, ...artifact };
   const feedback = createChatThreadFeedbackSignals(
     threadId,
     composer.feedback,
@@ -3881,7 +3949,7 @@ export function createChatPanelSignals(
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$:
-      composer.connector.accounts.reloadPreference$,
+      composer.connector.reloadAccountPreference$,
     resourceCatalog: artifact.resourceCatalog,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
@@ -3923,11 +3991,7 @@ export function createChatPanelSignals(
       relations,
     ),
     relations,
-    browserPresence: createBrowserPresenceSignals({
-      latestRunId$: messages.latestRunId$,
-      liveRunId$: messages.liveRunId$,
-      composer,
-    }),
+    browserPresence,
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

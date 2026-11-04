@@ -45,6 +45,8 @@ export interface MessageSendOutput {
   readonly file?: UploadedFile;
   /** Present for uploads whose delivery is asynchronous or can fail. */
   readonly delivery?: MessageDelivery;
+  /** Present when an approved WhatsApp template was accepted instead of the text. */
+  readonly template?: "okou_task_completed";
 }
 
 export const JSON_OPTION_FLAGS = "--json";
@@ -60,10 +62,19 @@ function formatHumanOutput(output: MessageSendOutput): string[] {
         ? ` (${output.messages.length} messages)`
         : "";
   const lines = [
-    chalk.green(`✓ ${output.file ? "File uploaded" : "Message sent"}${ids}`),
+    chalk.green(
+      `✓ ${output.file ? "File uploaded" : output.template ? "Task notification accepted" : "Message sent"}${ids}`,
+    ),
   ];
   if (output.chatId) {
     lines.push(chalk.dim(`  chat: ${output.chatId}`));
+  }
+  if (output.template) {
+    lines.push(
+      chalk.dim(
+        `  template: ${output.template} (result link notification; original text was not sent)`,
+      ),
+    );
   }
   if (output.messages.length === 1 && first?.url) {
     lines.push(chalk.dim(`  permalink: ${first.url}`));

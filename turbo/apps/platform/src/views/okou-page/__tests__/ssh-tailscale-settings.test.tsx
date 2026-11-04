@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   tailscaleContract,
   type TailscaleConfig,
@@ -96,112 +95,46 @@ async function page(path = "/connectors?scope=remote-control&type=ssh") {
   });
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     auth,
     path,
   });
 }
 
-async function openAddHost() {
-  click(
-    await waitFor(() => {
-      return getAction("button", "Add host");
-    }),
-  );
-  return await screen.findByRole("dialog");
+async function editHost(connection = host) {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [connection] });
+  });
+  await page(`/connectors?scope=remote-control&remoteResource=ssh:${host.id}`);
+  await screen.findByRole("heading", { name: host.displayName });
+  click(getAction("button", "Edit connection"));
+  const username = await screen.findByLabelText("SSH username");
+  const form = username.closest("form");
+  if (!form) {
+    throw new Error("Missing SSH edit form");
+  }
+  click(within(form).getByText("Connection settings"));
+  return form;
 }
 
 async function addHost() {
-  const dialog = await openAddHost();
-  await chooseSshConnectionType(dialog, "Tailscale");
-  await within(dialog).findByLabelText("Tailscale");
-  await fill(within(dialog).getByLabelText("Display name"), "New private host");
-  await fill(
-    within(dialog).getByLabelText("Tailnet hostname or IP address"),
-    "100.64.0.2",
+  await page("/connectors?scope=remote-control&setup=ssh&step=login");
+  const username = await screen.findByLabelText("SSH username");
+  const form = username.closest("form");
+  if (!form) {
+    throw new Error("Missing SSH connection form");
+  }
+  click(within(form).getByLabelText("Connection method"));
+  click(
+    await screen.findByRole("option", { name: `${config.name} · Tailscale` }),
   );
-  await fill(within(dialog).getByLabelText("Port"), "2022");
-  return dialog;
+  await fill(within(form).getByLabelText("Device address"), "100.64.0.2");
+  click(within(form).getByText("More settings"));
+  await fill(within(form).getByLabelText("Port"), "2022");
+  return form;
 }
 
-test("Tailscale SSH reuses the selected network without a credential selector", async () => {
-  await page();
-  const dialog = await openAddHost();
-  await chooseSshConnectionType(dialog, "Tailscale");
-  await chooseSshConnectionType(dialog, "Tailscale SSH");
-  expect(within(dialog).getByLabelText("Tailscale")).toHaveTextContent(
-    config.name,
-  );
-  expect(
-    within(dialog).queryByRole("combobox", { name: "Credential" }),
-  ).toBeNull();
-});
-
-test("Switching Tailscale SSH modes preserves each carrier's draft", async () => {
-  await page();
-  const dialog = await openAddHost();
-  await chooseSshConnectionType(dialog, "Tailscale");
-  await fill(within(dialog).getByLabelText("Port"), "2022");
-  await chooseSshConnectionType(dialog, "Tailscale SSH");
-  const username = within(dialog).getByRole("textbox", {
-    name: "System username",
-  });
-  await fill(username, "ubuntu");
-  await chooseSshConnectionType(dialog, "Tailscale");
-  expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
-  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
-    "SSH login",
-  );
-  await chooseSshConnectionType(dialog, "Tailscale SSH");
-  expect(
-    within(dialog).getByRole("textbox", { name: "System username" }),
-  ).toHaveValue("ubuntu");
-});
-
-test("Saving Tailscale SSH sends only its OS username and selected network", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    requests.push(body);
-    return respond(201, {
-      id: body.id,
-      displayName: body.displayName,
-      host: body.host,
-      port: 22,
-      username: "ubuntu",
-      transport: { type: "tailscale_ssh", configId: config.id },
-      generation: 1,
-      learnedHostKey: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-  });
-  await page();
-  const dialog = await addHost();
-  await chooseSshConnectionType(dialog, "Tailscale SSH");
-  await fill(
-    within(dialog).getByRole("textbox", { name: "System username" }),
-    "ubuntu",
-  );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    {
-      id: expect.any(String),
-      displayName: "New private host",
-      host: "100.64.0.2",
-      port: 22,
-      username: "ubuntu",
-      transport: { type: "tailscale_ssh", configId: config.id },
-    },
-  ]);
-});
-
 test("The connection selector supports keyboard selection and Escape returns focus", async () => {
-  await page();
-  click(getAction("button", "Add host"));
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await editHost();
   const mode = within(dialog).getByRole("combobox", { name: "Connection" });
   await userEvent.click(mode);
   await screen.findByRole("option", { name: "Tailscale SSH" });
@@ -263,7 +196,9 @@ test.each(["tailscale_ssh", "tailscale"] as const)(
         ],
       });
     });
-    await page();
+    await page(
+      `/connectors?scope=remote-control&remoteResource=ssh:${host.id}`,
+    );
     const expected =
       type === "tailscale_ssh"
         ? "Tailscale SSH authentication failed. Check the system username, enable Tailscale SSH on the tagged destination and allow this login in the tailnet's SSH accept policy."
@@ -272,14 +207,9 @@ test.each(["tailscale_ssh", "tailscale"] as const)(
   },
 );
 
-test.each([
-  { inlineNetwork: false, newCredential: false },
-  { inlineNetwork: true, newCredential: false },
-  { inlineNetwork: false, newCredential: true },
-  { inlineNetwork: true, newCredential: true },
-])(
-  "Tailscale host creation supports inline=$inlineNetwork and new credential=$newCredential independently",
-  async ({ inlineNetwork, newCredential }) => {
+test.each(["saved", "new"] as const)(
+  "Tailscale host creation uses %s login details with a saved network",
+  async (login) => {
     const requests: unknown[] = [];
     context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
       requests.push(body);
@@ -291,138 +221,47 @@ test.each([
         port: body.port,
       });
     });
-    await page();
-    const dialog = await addHost();
-    await waitFor(() => {
-      return expect(
-        within(dialog).getByLabelText("Tailscale"),
-      ).toHaveTextContent(config.name);
-    });
-    if (inlineNetwork) {
-      await userEvent.click(within(dialog).getByLabelText("Tailscale"));
-      await userEvent.click(
-        await screen.findByRole("option", {
-          name: "Create new Tailscale network",
-        }),
-      );
-      await fill(within(dialog).getByLabelText("Name"), "Inline network");
-      await fill(
-        within(dialog).getByLabelText("Registration tags"),
-        "tag:okou",
-      );
-      await fill(
-        within(dialog).getByLabelText("OAuth client ID"),
-        "client-id-canary",
-      );
-      await fill(
-        within(dialog).getByLabelText("OAuth client secret"),
-        "oauth-secret-canary",
-      );
+    const form = await addHost();
+    if (login === "saved") {
+      click(getAction("button", "Choose saved login details", form));
+      const picker = await screen.findByRole("dialog", {
+        name: "Choose saved login details",
+      });
+      click(within(picker).getByText(credential.name));
+    } else {
+      await fill(within(form).getByLabelText("SSH username"), "operator");
+      await fill(within(form).getByLabelText("Password"), "ssh-secret-canary");
     }
-    if (newCredential) {
-      await userEvent.click(within(dialog).getByLabelText("Credential"));
-      await userEvent.click(
-        await screen.findByRole("option", { name: "Create new credential" }),
-      );
-      await fill(within(dialog).getByLabelText("Credential name"), "New login");
-      await fill(within(dialog).getByLabelText("SSH username"), "operator");
-      click(getAction("radio", "Password", dialog));
-      await fill(
-        within(dialog).getByLabelText("Password"),
-        "ssh-secret-canary",
-      );
-    }
-    click(getAction("button", "Save", dialog));
     await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
+    click(getAction("button", "Add connection", form));
+    await screen.findByRole("heading", { name: "Connection added" });
     expect(requests).toStrictEqual([
       {
         id: expect.any(String),
-        displayName: "New private host",
+        displayName: "100.64.0.2",
         host: "100.64.0.2",
         port: 2022,
-        credential: newCredential
-          ? {
-              create: {
-                name: "New login",
-                username: "operator",
-                authentication: {
-                  method: "password",
-                  password: "ssh-secret-canary",
-                },
-              },
-            }
-          : { id: credential.id },
-        transport: {
-          type: "tailscale",
-          ...(inlineNetwork
-            ? {
+        transport: { type: "tailscale", configId: config.id },
+        credential:
+          login === "saved"
+            ? { id: credential.id }
+            : {
                 create: {
-                  name: "Inline network",
-                  tags: ["tag:okou"],
-                  credentials: {
-                    clientId: "client-id-canary",
-                    clientSecret: "oauth-secret-canary",
+                  name: "100.64.0.2",
+                  username: "operator",
+                  authentication: {
+                    method: "password",
+                    password: "ssh-secret-canary",
                   },
                 },
-              }
-            : { configId: config.id }),
-        },
+              },
       },
     ]);
     expect(document.body.textContent).not.toContain("secret-canary");
   },
 );
-
-test("Keyboard guidance preserves the inline network draft without submitting the SSH host", async () => {
-  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    return respond(201, { ...host, id: body.id });
-  });
-  await page();
-  const dialog = await addHost();
-  await userEvent.click(within(dialog).getByLabelText("Tailscale"));
-  await userEvent.click(
-    await screen.findByRole("option", { name: "Create new Tailscale network" }),
-  );
-  await fill(within(dialog).getByLabelText("Name"), "Inline network");
-  await fill(within(dialog).getByLabelText("Registration tags"), "tag:okou");
-  await fill(
-    within(dialog).getByLabelText("OAuth client ID"),
-    "client-id-canary",
-  );
-  const secret = within(dialog).getByLabelText("OAuth client secret");
-  await fill(secret, "oauth-secret-canary");
-  const guide = within(dialog).getByRole("region", {
-    name: "How do I configure Tailscale?",
-  });
-  const steps = within(guide).getByRole("tablist", { hidden: true });
-  expect(steps).not.toBeVisible();
-  click(within(guide).getByText("How do I configure Tailscale?"));
-  expect(steps).toBeVisible();
-  await userEvent.click(getAction("tab", "Tags", guide));
-  await userEvent.keyboard("{ArrowRight}{ArrowRight}{Enter}");
-  expect(
-    within(guide).getByRole("tabpanel", { name: "General access rules" }),
-  ).toBeVisible();
-  expect(within(dialog).getByLabelText("Name")).toHaveValue("Inline network");
-  expect(within(dialog).getByLabelText("Registration tags")).toHaveValue(
-    "tag:okou",
-  );
-  expect(within(dialog).getByLabelText("OAuth client ID")).toHaveValue(
-    "client-id-canary",
-  );
-  expect(secret).toHaveValue("oauth-secret-canary");
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "New private host",
-  );
-  expect(getAction("button", "Save", dialog)).toBeEnabled();
-  click(getAction("button", "Cancel", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(secret).toHaveValue("");
-});
 
 test("A saved Tailscale host retains its port, credential and learned key during editing", async () => {
   const requests: unknown[] = [];
@@ -437,27 +276,19 @@ test("A saved Tailscale host retains its port, credential and learned key during
       generation: 4,
     });
   });
-  await page();
-  await screen.findByRole("heading", { name: host.displayName });
-  await screen.findByText("Tailscale · Development network");
-  click(getAction("button", "Edit host"));
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await editHost();
   expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
-  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
-    "SSH login · deploy",
-  );
-  expect(within(dialog).getByLabelText("Tailscale")).toHaveTextContent(
+  expect(within(dialog).getByLabelText("SSH username")).toHaveValue("deploy");
+  expect(within(dialog).getByLabelText("Saved network")).toHaveTextContent(
     config.name,
   );
   expect(within(dialog).queryByLabelText("OAuth client secret")).toBeNull();
   await fill(
-    within(dialog).getByLabelText("Display name"),
+    within(dialog).getByLabelText(/Connection name/u),
     "Renamed private host",
   );
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  await screen.findByRole("heading", { name: host.displayName });
   expect(requests).toStrictEqual([
     {
       expectedGeneration: 3,
@@ -468,24 +299,18 @@ test("A saved Tailscale host retains its port, credential and learned key during
       transport: { type: "tailscale", configId: config.id },
     },
   ]);
+  click(screen.getByText("Server identity and chat permissions"));
   expect(document.body.textContent).toContain("SHA256:preserved");
 });
 
 test("A retained Tailscale host requires an explicit network selection to rebind", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, {
-      connections: [
-        { ...host, transport: { type: "tailscale", needsRebind: true } },
-      ],
-    });
+  const dialog = await editHost({
+    ...host,
+    transport: { type: "tailscale", needsRebind: true },
   });
-  await page();
-  await screen.findByRole("heading", { name: host.displayName });
-  click(getAction("button", "Edit host"));
-  const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
   expect(getAction("button", "Save", dialog)).toBeDisabled();
-  await userEvent.click(within(dialog).getByLabelText("Tailscale"));
+  await userEvent.click(within(dialog).getByLabelText("Saved network"));
   await userEvent.click(
     await screen.findByRole("option", { name: config.name }),
   );
@@ -496,27 +321,21 @@ test("A retained Tailscale host requires an explicit network selection to rebind
 });
 
 test("Changing carriers preserves endpoint drafts and the independently selected network", async () => {
-  await page();
-  const dialog = await addHost();
-  await waitFor(() => {
-    return expect(within(dialog).getByLabelText("Tailscale")).toHaveTextContent(
-      config.name,
-    );
-  });
+  const dialog = await editHost();
   await chooseSshConnectionType(dialog, "Direct");
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "New private host",
+  expect(within(dialog).getByLabelText(/Connection name/u)).toHaveValue(
+    host.displayName,
   );
   expect(
     within(dialog).getByLabelText("Public hostname or IP address"),
-  ).toHaveValue("100.64.0.2");
+  ).toHaveValue(host.host);
   await chooseSshConnectionType(dialog, "Tailscale");
-  await expect(
-    within(dialog).findByLabelText("Tailnet hostname or IP address"),
-  ).resolves.toHaveValue("100.64.0.2");
+  expect(
+    within(dialog).getByLabelText("Tailnet hostname or IP address"),
+  ).toHaveValue(host.host);
   expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
   await expect(
-    within(dialog).findByLabelText("Tailscale"),
+    within(dialog).findByLabelText("Saved network"),
   ).resolves.toHaveTextContent(config.name);
 });
 
@@ -542,11 +361,12 @@ test("An unconfirmed SSH creation keeps its draft frozen", async () => {
       error: { code: "INTERNAL_ERROR", message: "provider-secret-canary" },
     });
   });
-  await page();
   const dialog = await addHost();
-  click(getAction("button", "Save", dialog));
+  await fill(within(dialog).getByLabelText("SSH username"), "operator");
+  await fill(within(dialog).getByLabelText("Password"), "ssh-secret-canary");
+  click(getAction("button", "Add connection", dialog));
   await within(dialog).findByRole("alert");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(getAction("button", "Add connection", dialog)).toBeDisabled();
 });
 
 test.each(["tailscale", "cloudflare_access"] as const)(
@@ -597,20 +417,23 @@ test.each(["tailscale", "cloudflare_access"] as const)(
     context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
       return respond(200, { credentials: [] });
     });
-    await page("/connectors?scope=remote-control&type=vnc");
+    await page(
+      "/connectors?scope=remote-control&remoteResource=vnc:d0000000-0000-4000-8000-000000000001",
+    );
     const heading = await screen.findByRole("heading", {
       name: "Private desktop",
     });
     const card = heading.closest("article");
     expect(card).not.toBeNull();
     click(getAction("button", "Rebind SSH host", card!));
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-      host.displayName,
-    );
-    expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
-      "SSH login · deploy",
-    );
+    const name = await screen.findByLabelText(/Connection name/u);
+    const dialog = name.closest("form");
+    if (!dialog) {
+      throw new Error("Missing SSH rebind form");
+    }
+    expect(name).toHaveValue(host.displayName);
+    click(within(dialog).getByText("Connection settings"));
+    expect(within(dialog).getByLabelText("SSH username")).toHaveValue("deploy");
     expect(
       within(dialog).getByLabelText(
         type === "tailscale"

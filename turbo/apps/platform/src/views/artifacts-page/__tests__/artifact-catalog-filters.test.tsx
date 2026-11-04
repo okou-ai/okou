@@ -53,7 +53,7 @@ test("Artifact kind filters remain available while switching catalogs", async ()
     "Images",
     "Videos",
     "Avatars",
-    "Shared conversations",
+    "Shared chats",
     "Files",
   ]);
   expect(
@@ -120,7 +120,7 @@ test.each([false, true])(
       findArtifactAction("launch-deck"),
     ).resolves.toBeInTheDocument();
     const filters = screen.getByLabelText("Artifact kind filters");
-    click(getButtonByName("Show shared conversation artifacts", filters));
+    click(getButtonByName("Show shared chat artifacts", filters));
     await sharedRequestStarted.promise;
 
     await expect(
@@ -147,12 +147,14 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "An older API retains catalog deep links with sidebar preview %s",
+  "A routed shared conversation opens its shared thread with sidebar preview %s",
   async (sidebarPreview) => {
     const locationAssign = context.mocks.browser.locationAssign();
+    const sharedThreadId = "b0000000-0000-4000-a000-000000000001";
     const conversation = artifact({
       kind: "shared-thread",
       title: "Weekly launch review",
+      sharedThreadId,
     });
     context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
       return respond(200, { artifacts: [conversation], nextCursor: null });
@@ -161,9 +163,10 @@ test.each([false, true])(
       return respond(200, {
         ...conversation,
         kind: "shared-thread",
-        sharedThread: { id: "b0000000-0000-4000-a000-000000000001" },
+        sharedThread: { id: sharedThreadId },
       });
     });
+    // Global search opens a shared conversation through this catalog route.
     await setupPage({
       context,
       path: `/artifacts?tab=shared-thread&artifact=${conversation.id}`,
@@ -171,15 +174,9 @@ test.each([false, true])(
         [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreview,
       },
     });
-    await expect(
-      findArtifactAction(conversation.title),
-    ).resolves.toHaveAttribute(
-      "href",
-      `/artifacts?tab=shared-thread&artifact=${conversation.id}`,
-    );
     await waitFor(() => {
       expect(locationAssign.calls).toStrictEqual([
-        "/share/threads/b0000000-0000-4000-a000-000000000001",
+        `/share/threads/${sharedThreadId}`,
       ]);
     });
   },

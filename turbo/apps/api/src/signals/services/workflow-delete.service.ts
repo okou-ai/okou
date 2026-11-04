@@ -1,15 +1,18 @@
-import { retireWorkflowAttachmentSql } from "./workflow-attachment-cleanup.service";
-import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
-import { agents } from "@okouai/db/schema/agent";
-import {
-  officialWorkflowAutomationIdentities,
-  workflows,
-} from "@okouai/db/schema/workflow";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  unknown as zUnknown,
+} from "zod";
 
 import { writeDb$ } from "../external/db";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { safeSqlStateCode } from "../../lib/pg-errors";
+import { settle } from "../utils";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 
 interface DeleteWorkflowInput {
@@ -19,138 +22,68 @@ interface DeleteWorkflowInput {
   readonly requiredOfficialInstallationState?: "installing";
 }
 
-function workflowDeletionColumns() {
-  return {
-    id: workflows.id,
-    orgId: workflows.orgId,
-    attachments: workflows.attachments,
-    agentId: workflows.agentId,
-    name: workflows.name,
-    ownerUserId: workflows.ownerUserId,
-    officialDefinitionName: workflows.officialDefinitionName,
-    officialInstallationState: workflows.officialInstallationState,
-  };
+const deletionResultSchema = discriminatedUnion("deleted", [
+  object({ deleted: literal(false) }),
+  object({
+    deleted: literal(true),
+    automations: array(
+      object({
+        orgId: string(),
+        ownerUserId: string(),
+        eventType: string().nullable(),
+        eventConfig: zUnknown(),
+        eventConnectorId: string().nullable(),
+      }),
+    ),
+  }),
+]);
+const deletionRowSchema = object({ result: deletionResultSchema });
+
+function workflowDeletionDatabaseError(error: unknown): Error {
+  if (
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause
+  ) {
+    if (error.cause.constraint === "workflow_deletion_official_protected") {
+      return new Error(
+        "Uninstall Official Workflows through the Official installation endpoint",
+      );
+    }
+    if (error.cause.constraint === "workflow_deletion_attachment_owner") {
+      return new Error("Workflow attachment package has a foreign owner");
+    }
+  }
+  return new Error(
+    `Workflow deletion SQL execution failed (${safeSqlStateCode(error) ?? "unknown"})`,
+  );
 }
 
 const deleteWorkflowRows$ = command(
   async ({ set }, args: DeleteWorkflowInput, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0342; new non-billing transactions are prohibited.
-    const result = await writeDb.transaction(async (tx) => {
-      const [observed] = await tx
-        .select({ agentId: workflows.agentId })
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, args.orgId),
-            eq(workflows.id, args.workflowId),
-          ),
-        )
-        .limit(1);
-      if (!observed) {
-        return { deleted: false as const };
-      }
-
-      const [agent] = await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(eq(agents.id, observed.agentId), eq(agents.orgId, args.orgId)),
-        )
-        .for("key share")
-        .limit(1);
-      if (!agent) {
-        return { deleted: false as const };
-      }
-      const [workflow] = await tx
-        .select(workflowDeletionColumns())
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, args.orgId),
-            eq(workflows.id, args.workflowId),
-          ),
-        )
-        .for("update")
-        .limit(1);
-
-      if (!workflow) {
-        return { deleted: false as const };
-      }
-      if (
-        args.requiredOfficialInstallationState !== undefined &&
-        workflow.officialInstallationState !==
-          args.requiredOfficialInstallationState
-      ) {
-        return { deleted: false as const };
-      }
-      if (
-        workflow.officialDefinitionName !== null &&
-        args.allowOfficialInstallationDeletion !== true
-      ) {
-        throw new Error(
-          "Uninstall Official Workflows through the Official installation endpoint",
-        );
-      }
-      const automations = await tx
-        .select({
-          orgId: workflowAutomations.orgId,
-          ownerUserId: workflowAutomations.ownerUserId,
-          eventType: workflowAutomations.eventType,
-          eventConfig: workflowAutomations.eventConfig,
-          eventConnectorId: workflowAutomations.eventConnectorId,
-        })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.workflowId, workflow.id));
-      // Active identities cannot survive their Automation's SET NULL action.
-      // The Workflow cascade owns these rows, so remove them before its children.
-      await tx
-        .delete(officialWorkflowAutomationIdentities)
-        .where(
-          eq(officialWorkflowAutomationIdentities.workflowId, workflow.id),
-        );
-      // Preserve the observed watch targets and capture the rows actually removed
-      // before the Workflow cascade can discard their cleanup identities.
-      const removedAutomations = await tx
-        .delete(workflowAutomations)
-        .where(eq(workflowAutomations.workflowId, workflow.id))
-        .returning({
-          orgId: workflowAutomations.orgId,
-          ownerUserId: workflowAutomations.ownerUserId,
-          eventType: workflowAutomations.eventType,
-          eventConfig: workflowAutomations.eventConfig,
-          eventConnectorId: workflowAutomations.eventConnectorId,
-        });
-      await tx.delete(workflows).where(eq(workflows.id, workflow.id));
-      await tx.execute(
-        retireWorkflowAttachmentSql(
-          {
-            orgId: workflow.orgId,
-            userId: workflow.ownerUserId,
-            workflowId: workflow.id,
-          },
-          workflow.attachments,
-          sql`true`,
-        ),
+    const query = sql`SELECT public.delete_workflow_rows(
+      ${args.orgId}, ${args.workflowId}::uuid,
+      ${args.allowOfficialInstallationDeletion === true},
+      ${args.requiredOfficialInstallationState ?? null}
+    ) AS result`;
+    const rowSchema = deletionRowSchema;
+    const result = await (async () => {
+      const deletion = await settle(
+        (async () => {
+          return parseRawRows(rowSchema, await writeDb.execute(query));
+        })(),
       );
-      // An outgoing Stage 1 upload takes the Workflow row before this token.
-      await tx
-        .delete(storagePublicationTokens)
-        .where(
-          and(
-            eq(storagePublicationTokens.orgId, args.orgId),
-            eq(storagePublicationTokens.agentId, workflow.agentId),
-            eq(
-              storagePublicationTokens.publicationKey,
-              `workflow:${workflow.id}`,
-            ),
-          ),
-        );
-      return {
-        deleted: true as const,
-        automations: [...automations, ...removedAutomations],
-      };
-    });
+      if (!deletion.ok) {
+        throw workflowDeletionDatabaseError(deletion.error);
+      }
+      const [row] = deletion.value;
+      if (!row) {
+        throw new Error("Workflow deletion returned no outcome");
+      }
+      return row.result;
+    })();
     signal.throwIfAborted();
     return result;
   },

@@ -1,9 +1,7 @@
 import { runContextArchiveSchema } from "@okouai/api-contracts/contracts/run-context-archive";
 import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
-import {
-  networkLogEntrySchema,
-  type NetworkLogEntry,
-} from "@okouai/api-contracts/contracts/runs";
+import { networkLogEntrySchema } from "@okouai/api-contracts/validators/runs";
+import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import type { AgentEvent, LogDetail } from "../okou-page/log-types.ts";
 import { isNonArrayRecord, jsonParseOr } from "../utils.ts";
 

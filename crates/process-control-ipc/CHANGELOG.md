@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.5.56](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.55...process-control-ipc-v0.5.56) (2026-11-04)
+
+## [0.5.55](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.54...process-control-ipc-v0.5.55) (2026-11-03)
+
+## [0.5.54](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.53...process-control-ipc-v0.5.54) (2026-11-03)
+
+## [0.5.53](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.52...process-control-ipc-v0.5.53) (2026-11-03)
+
+## [0.5.52](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.51...process-control-ipc-v0.5.52) (2026-11-02)
+
+
+### Refactoring
+
+* **ipc:** own received placement descriptors during validation ([#44750](https://github.com/okou-ai/okou/issues/44750)) ([79e4945](https://github.com/okou-ai/okou/commit/79e4945dd4b1dd21134ae2b2c4b9675f39d7d60e))
+
+## [0.5.51](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.50...process-control-ipc-v0.5.51) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** use owned unix socket conversions ([#44612](https://github.com/okou-ai/okou/issues/44612)) ([dd36385](https://github.com/okou-ai/okou/commit/dd363859e034973698d1567bab3b676b61c54f8d))
+
+## [0.5.50](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.49...process-control-ipc-v0.5.50) (2026-11-02)
+
+## [0.5.49](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.48...process-control-ipc-v0.5.49) (2026-11-02)
+
+## [0.5.48](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.47...process-control-ipc-v0.5.48) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.5.47](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.46...process-control-ipc-v0.5.47) (2026-10-31)
+
+## [0.5.46](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.45...process-control-ipc-v0.5.46) (2026-10-30)
+
+## [0.5.45](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.44...process-control-ipc-v0.5.45) (2026-10-30)
+
+## [0.5.44](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.43...process-control-ipc-v0.5.44) (2026-10-30)
+
+## [0.5.43](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.42...process-control-ipc-v0.5.43) (2026-10-30)
+
 ## [0.5.42](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.41...process-control-ipc-v0.5.42) (2026-10-29)
 
 ## [0.5.41](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.40...process-control-ipc-v0.5.41) (2026-10-29)

@@ -8,6 +8,7 @@ import {
   boolean,
   object,
   string,
+  uuid,
   enum as zEnum,
   unknown as zUnknown,
 } from "zod";
@@ -467,8 +468,8 @@ const commitMetadata$ = command(
 
 // Preserve real column decoding; annotations do not decode driver values.
 const metadataCommitRowSchema = object({
-  threadId: string().uuid(),
-  agentId: string().uuid().nullable(),
+  threadId: uuid(),
+  agentId: uuid().nullable(),
   title: string().nullable(),
   titleTruncated: boolean(),
   selectedModel: string().nullable(),
@@ -492,7 +493,7 @@ const metadataCommitRowSchema = object({
 });
 
 const titleMetadataStateSchema = object({
-  threadId: string().uuid(),
+  threadId: uuid(),
   title: string().nullable(),
   titleTruncated: boolean(),
   selectedModel: string().nullable(),

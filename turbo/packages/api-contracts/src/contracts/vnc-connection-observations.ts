@@ -1,5 +1,6 @@
 import {
   int,
+  iso,
   object,
   string,
   uuid,
@@ -37,9 +38,9 @@ export const vncConnectionFailureReasonSchema = zEnum([
 
 export const vncConnectionObservationSchema = object({
   connectionId: uuid(),
-  connectionCreatedAt: string().datetime(),
+  connectionCreatedAt: iso.datetime(),
   generation: int().positive().max(2_147_483_647),
-  observedAt: string().datetime(),
+  observedAt: iso.datetime(),
   failureReason: vncConnectionFailureReasonSchema.nullable(),
 }).strict();
 

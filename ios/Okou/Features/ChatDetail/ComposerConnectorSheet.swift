@@ -13,6 +13,13 @@ struct ComposerConnectorButton: View {
     }
     .accessibilityLabel("Connectors")
     .accessibilityIdentifier("composer-connectors")
+    .accessibilityValue(store.uncertain ? "Confirm settings before sending" : "")
+    .overlay(alignment: .topTrailing) {
+      if store.uncertain {
+        Image(systemName: "exclamationmark.circle.fill").font(.caption2).foregroundStyle(.orange)
+          .accessibilityHidden(true)
+      }
+    }
     .disabled(store.agentID == nil)
     .sheet(isPresented: $presented) {
       ComposerConnectorSheet(store: store)
@@ -27,6 +34,7 @@ struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
   @State private var destination: ConnectorDestination?
+  @State private var savingConnectorID: String?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
 
@@ -36,6 +44,9 @@ struct ComposerConnectorSheet: View {
         if let error = store.error {
           ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
         }
+        if let notice = store.notice {
+          Text(notice).font(.footnote).foregroundStyle(.secondary)
+        }
         Section {
           NavigationLink {
             ComposerRemoteControls(store: store)
@@ -44,9 +55,9 @@ struct ComposerConnectorSheet: View {
           }
         }
         Section {
-          if let error = store.connectorError {
+          if let error = store.connectorError, store.error == nil {
             ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
-          } else if store.isLoading && store.connectors.isEmpty {
+          } else if store.isLoading && store.connectors.isEmpty && store.error == nil {
             ProgressView("Loading connectors…")
           } else {
             ForEach(
@@ -57,21 +68,29 @@ struct ComposerConnectorSheet: View {
               connectorRow(connector)
             }
             if store.connectors.isEmpty && !store.isLoading {
-              Text("Connect a service to make it available to this Agent.").foregroundStyle(
+              Text(
+                store.chatAccountAccess
+                  ? "Connect a service to use it in this chat."
+                  : "Connect a service to make it available to this Agent."
+              ).foregroundStyle(
                 .secondary)
             }
           }
           NavigationLink {
             ComposerConnectorDirectory(store: store)
           } label: {
-            Label("Add connectors", systemImage: "plus")
+            Label("Add connectors", systemImage: "plus").foregroundStyle(.primary)
           }
         } header: {
-          Text("Services")
+          Text("Services").font(.subheadline).fontWeight(.regular).textCase(nil)
         } footer: {
-          Text("Service access applies to this Agent. Account choices apply to this conversation.")
+          Text(
+            store.chatAccountAccess
+              ? "Account choices apply to this chat."
+              : "Service access applies to this Agent. Account choices apply to this chat.")
         }
       }
+      .listSectionSpacing(16)
       .searchable(text: $search, prompt: "Find connectors")
       .navigationTitle("Connectors")
       .navigationBarTitleDisplayMode(.inline)
@@ -108,7 +127,37 @@ struct ComposerConnectorSheet: View {
     .onDisappear { store.authorization.cancel() }
   }
 
+  @ViewBuilder
   private func connectorRow(_ connector: ChatComposerConnector) -> some View {
+    if store.chatAccountAccess {
+      NavigationLink {
+        ComposerChatConnectorAccounts(store: store, connector: connector)
+      } label: {
+        Label {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(connector.label).foregroundStyle(.primary).lineLimit(1)
+            if let access = connector.access {
+              if let account = connector.currentAccount {
+                Text("\(account.label) · \(access.enabledCount) enabled")
+                  .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+              } else {
+                Text(access.available ? "Account unavailable" : "Off")
+                  .font(.caption).foregroundStyle(.secondary)
+              }
+            }
+          }
+        } icon: {
+          Image(
+            systemName: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug"
+          ).foregroundStyle(.secondary)
+        }
+      }.disabled(store.isSaving)
+    } else {
+      legacyConnectorRow(connector)
+    }
+  }
+
+  private func legacyConnectorRow(_ connector: ChatComposerConnector) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
         Label(
@@ -119,6 +168,9 @@ struct ComposerConnectorSheet: View {
         .truncationMode(.tail)
         .layoutPriority(1)
         Spacer(minLength: 8)
+        if store.isSaving && savingConnectorID == connector.id {
+          ProgressView().controlSize(.small)
+        }
         Toggle(
           connector.label,
           isOn: Binding(
@@ -127,14 +179,19 @@ struct ComposerConnectorSheet: View {
               if enabled && connector.permissionBundleRef != nil {
                 store.openWeb(path: "connectors")
               } else {
-                Task { await store.setAuthorized(connector, enabled: enabled) }
+                Task {
+                  guard !store.isSaving, !store.uncertain else { return }
+                  savingConnectorID = connector.id
+                  defer { savingConnectorID = nil }
+                  await store.setAuthorized(connector, enabled: enabled)
+                }
               }
             })
         )
         .toggleStyle(.switch)
         .tint(.green)
         .fixedSize(horizontal: true, vertical: false)
-        .labelsHidden().disabled(store.isSaving)
+        .labelsHidden().disabled(store.isSaving || store.uncertain)
         .accessibilityLabel("Allow \(connector.label) for this Agent")
       }
       .frame(minHeight: 44)
@@ -144,9 +201,12 @@ struct ComposerConnectorSheet: View {
             Button {
               destination = .accounts(connector.id)
             } label: {
-              Label("Account", systemImage: "person.crop.circle")
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+              HStack(spacing: 4) {
+                Text("Account")
+                Image(systemName: "chevron.right").font(.caption2)
+              }
+              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+              .contentShape(Rectangle())
             }
             .accessibilityLabel("Account for \(connector.label)")
           }
@@ -154,18 +214,23 @@ struct ComposerConnectorSheet: View {
             Button {
               destination = .permissions(connector.id)
             } label: {
-              Label("Permissions", systemImage: "slider.horizontal.3")
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+              HStack(spacing: 4) {
+                Text("Permissions")
+                Image(systemName: "chevron.right").font(.caption2)
+              }
+              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+              .contentShape(Rectangle())
             }
             .accessibilityLabel("Permissions for \(connector.label)")
           }
         }
         .font(.subheadline)
+        .foregroundStyle(.secondary)
         .buttonStyle(.borderless)
         .padding(.leading, 32)
       }
     }
+    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
   }
 
   @ViewBuilder
@@ -234,7 +299,7 @@ private struct ComposerRemoteControls: View {
           )
           .toggleStyle(.switch)
           .tint(.green)
-          .disabled(store.isSaving || !remotes.cloudBrowserAvailable)
+          .disabled(store.isSaving || store.uncertain || !remotes.cloudBrowserAvailable)
           if !remotes.cloudBrowserAvailable {
             Text("Cloud Browser is not available for this workspace.").font(.footnote)
               .foregroundStyle(.secondary)
@@ -261,7 +326,7 @@ private struct ComposerRemoteControls: View {
             }
             .toggleStyle(.switch)
             .tint(.green)
-            .disabled(store.isSaving)
+            .disabled(store.isSaving || store.uncertain)
           }
           if store.visibleComputerUseHosts.isEmpty {
             Text("No online computers").foregroundStyle(.secondary)
@@ -270,7 +335,7 @@ private struct ComposerRemoteControls: View {
         } header: {
           Text("Your computer")
         } footer: {
-          Text("Choose Cloud Browser or one computer for this conversation.")
+          Text("Choose Cloud Browser or one computer for this chat.")
         }
         ForEach(ChatRemoteProtocol.allCases, id: \.rawValue) { proto in
           Section(proto.rawValue.uppercased()) {
@@ -289,7 +354,7 @@ private struct ComposerRemoteControls: View {
                 Text(host.defaultEnabled ? "Default (on)" : "Default (off)").tag("default")
                 Text("On").tag("on")
                 Text("Off").tag("off")
-              }.disabled(store.isSaving)
+              }.disabled(store.isSaving || store.uncertain)
               if proto == .vnc { dependencies(host) }
             }
             Button("Configure \(proto.rawValue.uppercased()) hosts") { store.setupRemote(proto) }

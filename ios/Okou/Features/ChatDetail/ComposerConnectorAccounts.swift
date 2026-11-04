@@ -4,6 +4,18 @@ import SwiftUI
 struct ComposerConnectorAccounts: View {
   let store: ComposerConnectorStore
   let connector: ChatComposerConnector
+  var body: some View {
+    if store.chatAccountAccess {
+      ComposerChatConnectorAccounts(store: store, connector: connector)
+    } else {
+      LegacyComposerConnectorAccounts(store: store, connector: connector)
+    }
+  }
+}
+
+private struct LegacyComposerConnectorAccounts: View {
+  let store: ComposerConnectorStore
+  let connector: ChatComposerConnector
   @State private var accounts: [ChatConnectorAccount] = []
   @State private var defaultAccount: ChatConnectorAccount?
   @State private var selection: String?
@@ -15,7 +27,12 @@ struct ComposerConnectorAccounts: View {
 
   var body: some View {
     List {
-      if let error { ConnectorLoadError(error: error) { await load() } }
+      if let error {
+        ConnectorLoadError(error: error, isLoading: loading || store.isLoading) {
+          await store.refresh()
+          await load()
+        }
+      }
       Section {
         Button {
           Task { await choose(nil) }
@@ -23,7 +40,7 @@ struct ComposerConnectorAccounts: View {
           accountLabel(
             "Use default", detail: defaultAccount?.label ?? "No usable default account",
             checked: selection == nil)
-        }.disabled(store.isSaving || loading)
+        }.disabled(store.isSaving || store.uncertain || loading)
         ForEach(accounts) { account in
           VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -33,7 +50,7 @@ struct ComposerConnectorAccounts: View {
                 account.label,
                 detail: account.ready ? "Connected" : "Reconnect required",
                 checked: selection == account.id)
-            }.disabled(store.isSaving || loading)
+            }.disabled(store.isSaving || store.uncertain || loading)
             if !account.ready {
               Button("Reconnect this account") {
                 store.connect(target: connector.target, accountID: account.id)
@@ -42,7 +59,6 @@ struct ComposerConnectorAccounts: View {
             }
           }
         }
-        if loading { ProgressView("Loading accounts…") }
         if !loading, selection != nil, !accounts.contains(where: { $0.id == selection }) {
           Text("The selected account is unavailable. Choose an account or use default.")
             .font(.footnote).foregroundStyle(.secondary)
@@ -56,8 +72,12 @@ struct ComposerConnectorAccounts: View {
         }
         Button("Add account") { store.connect(target: connector.target) }.disabled(store.isSaving)
       } footer: {
-        Text(
-          "This account choice applies to this conversation. The default account stays unchanged.")
+        Text("This account choice applies to this chat. The default account stays unchanged.")
+      }
+    }
+    .overlay {
+      if loading && accounts.isEmpty && defaultAccount == nil && error == nil {
+        ChatSettingsLoadingView(title: "Loading accounts…")
       }
     }
     .searchable(text: $search, prompt: "Find accounts")
@@ -112,7 +132,7 @@ struct ComposerConnectorAccounts: View {
     } catch is CancellationError {
     } catch {
       guard requestID == request else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
     }
   }
   private func choose(_ id: String?) async {

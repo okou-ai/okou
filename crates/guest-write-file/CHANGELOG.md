@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.1.274](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.273...guest-write-file-v0.1.274) (2026-11-04)
+
+
+### Refactoring
+
+* **test:** share synchronous child output capture ([#45088](https://github.com/okou-ai/okou/issues/45088)) ([b73eac3](https://github.com/okou-ai/okou/commit/b73eac3fb31c9416315cabf05813ffd41b9420a6))
+
+## [0.1.273](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.272...guest-write-file-v0.1.273) (2026-11-04)
+
+## [0.1.272](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.271...guest-write-file-v0.1.272) (2026-11-03)
+
+## [0.1.271](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.270...guest-write-file-v0.1.271) (2026-11-03)
+
+## [0.1.270](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.269...guest-write-file-v0.1.270) (2026-11-03)
+
+## [0.1.269](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.268...guest-write-file-v0.1.269) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** retire orphaned guest file compression transport ([#44713](https://github.com/okou-ai/okou/issues/44713)) ([5dc1d17](https://github.com/okou-ai/okou/commit/5dc1d17b797535c5e154a6cf5960534363966fe0))
+
+## [0.1.268](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.267...guest-write-file-v0.1.268) (2026-11-02)
+
+## [0.1.267](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.266...guest-write-file-v0.1.267) (2026-11-02)
+
+## [0.1.266](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.265...guest-write-file-v0.1.266) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.1.265](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.264...guest-write-file-v0.1.265) (2026-10-31)
+
+## [0.1.264](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.263...guest-write-file-v0.1.264) (2026-10-30)
+
+## [0.1.263](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.262...guest-write-file-v0.1.263) (2026-10-30)
+
+## [0.1.262](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.261...guest-write-file-v0.1.262) (2026-10-30)
+
+## [0.1.261](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.260...guest-write-file-v0.1.261) (2026-10-30)
+
 ## [0.1.260](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.259...guest-write-file-v0.1.260) (2026-10-29)
 
 ## [0.1.259](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.258...guest-write-file-v0.1.259) (2026-10-29)

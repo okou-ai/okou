@@ -3,7 +3,6 @@ import {
   isMorningBriefDefinitionName,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   userLocaleSchema,
   type UserLocale,
@@ -13,8 +12,7 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import { object, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 
@@ -218,34 +216,6 @@ export const loadWorkflowUserAutomationThreadId$ = command(
     return binding?.chatThreadId ?? null;
   },
 );
-
-/**
- * Pause every enabled automation that shares a workflow-user chat thread.
- * The caller deletes the thread in the same transaction, so the binding still
- * identifies the affected workflows while this update runs.
- */
-/** Pure predicate for the deletion owner's conditional automation UPDATE. */
-export function threadBoundWorkflowAutomationsPredicate(args: {
-  readonly userId: string;
-  readonly chatThreadId: string;
-}) {
-  return and(
-    eq(workflowAutomations.ownerUserId, args.userId),
-    eq(workflowAutomations.enabled, true),
-    inArray(
-      workflowAutomations.workflowId,
-      new QueryBuilder()
-        .select({ workflowId: workflowUserAutomationThreads.workflowId })
-        .from(workflowUserAutomationThreads)
-        .where(
-          and(
-            eq(workflowUserAutomationThreads.userId, args.userId),
-            eq(workflowUserAutomationThreads.chatThreadId, args.chatThreadId),
-          ),
-        ),
-    ),
-  );
-}
 
 interface WorkflowThreadOwner extends WorkflowUserAutomationThreadOwner {
   readonly agentId: string;

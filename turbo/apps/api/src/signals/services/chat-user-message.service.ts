@@ -3,16 +3,16 @@ import {
   suggestionFeedbacks,
   type SuggestionContext,
 } from "@okouai/api-contracts/contracts/suggestion-context";
-import {
-  annotatedImageFilename,
-  type ChatThreadServiceTier,
-  type FeedbackNotePart,
-  type GenerationTemplateRequest,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessageInputPart,
-  type UserMessagePart,
+import type {
+  ChatThreadServiceTier,
+  FeedbackNotePart,
+  GenerationTemplateRequest,
+  UserMessageDocument,
+  UserMessageInputDocument,
+  UserMessageInputPart,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { annotatedImageFilename } from "@okouai/api-contracts/validators/chat-threads";
 import {
   isChatUserMessageEventType,
   type ChatEventType,
@@ -96,6 +96,10 @@ export function agentRunSourceAnnotation(
 }
 
 export interface UserMessageReferences {
+  readonly projects: readonly {
+    readonly projectId: string;
+    readonly nameSnapshot: string;
+  }[];
   readonly agents: readonly {
     readonly agentId: string;
     readonly nameSnapshot: string;
@@ -115,7 +119,11 @@ export function userMessageReferences(
 ): UserMessageReferences {
   const agents = new Map<string, string>();
   const chatThreads = new Map<string, string>();
+  const projects = new Map<string, string>();
   const collect = (part: UserMessagePart | FeedbackNotePart) => {
+    if (part.type === "project") {
+      projects.set(part.projectId, part.nameSnapshot);
+    }
     if (part.type === "agent" && !agents.has(part.agentId)) {
       agents.set(part.agentId, part.nameSnapshot);
     }
@@ -133,6 +141,9 @@ export function userMessageReferences(
     }
   }
   return {
+    projects: [...projects].map(([projectId, nameSnapshot]) => {
+      return { projectId, nameSnapshot };
+    }),
     agents: [...agents].map(([agentId, nameSnapshot]) => {
       return { agentId, nameSnapshot };
     }),
@@ -275,6 +286,9 @@ function serializeFeedbackNote(
       }
       if (part.type === "agent") {
         return serializeAgentMention(part.agentId, part.nameSnapshot);
+      }
+      if (part.type === "project") {
+        return `[${part.nameSnapshot}](/projects/${part.projectId})`;
       }
       return serializeTemplate(part);
     })
@@ -598,6 +612,12 @@ export function projectUserMessage(
     ) {
       continue;
     }
+    if (part.type === "project") {
+      inlinePrompt += `[${part.nameSnapshot}](/projects/${part.projectId})`;
+      inlineDisplayText += `[Project: ${part.nameSnapshot}]`;
+      hasTextContent = true;
+      continue;
+    }
     const marker = registerInlineTemplate(part);
     droppedTemplate = marker === "";
     inlinePrompt += marker;
@@ -653,6 +673,12 @@ export function projectUserMessageForPublicShare(
               return {
                 type: "text",
                 text: `[Agent: ${notePart.nameSnapshot}]`,
+              };
+            }
+            if (notePart.type === "project") {
+              return {
+                type: "text",
+                text: `[Project: ${notePart.nameSnapshot}]`,
               };
             }
             return {

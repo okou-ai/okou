@@ -6084,7 +6084,6 @@ export function registerFeishuIntegrationTests(
         expect(history).toContain(`[${provider.name} file] source.pptx`);
         expect(history).toContain("- RELATIVE_INDEX: -4");
         expect(history).toContain("- RELATIVE_INDEX: -1");
-        expect(history).not.toContain("[interactive message]");
         await expectFeishuResourceDownloads({
           actor,
           chatId: "oc_feishu_dm",
@@ -6399,8 +6398,8 @@ export function registerFeishuIntegrationTests(
             [400],
           );
         });
-        expect(genericCreate.body.error.message).toBe(
-          "Connector account is unavailable for thread selection",
+        expect(genericCreate.body.error.code).toBe(
+          "CONNECTOR_ACCOUNT_UNAVAILABLE",
         );
         expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
           `chatThreadDetailChanged:${created.chatThreadId}`,
@@ -6738,8 +6737,7 @@ export function registerFeishuIntegrationTests(
             elements: expect.arrayContaining([
               {
                 tag: "markdown",
-                content: "*Claude Fable 5.1*",
-                text_size: "notation",
+                content: "Canonical Feishu answer",
               },
             ]),
           },

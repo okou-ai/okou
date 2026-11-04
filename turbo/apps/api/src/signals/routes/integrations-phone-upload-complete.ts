@@ -1,11 +1,12 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
 import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
+import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { command } from "ccstate";
 import { optionalEnv } from "../../lib/env";
-import { nowDate } from "../../lib/time";
 import {
   integrationsPhoneUploadCompleteContract,
   type PhoneUploadCompleteBody,
@@ -128,17 +129,12 @@ const resolvePhoneFileGroup$ = command(
         agentphoneAgentId: agentphoneMessages.agentphoneAgentId,
       })
       .from(agentphoneMessages)
-      .innerJoin(
-        agentphoneMessageVisibility,
-        eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-      )
       .where(
         and(
           eq(agentphoneMessages.groupId, args.groupId),
           eq(agentphoneMessages.channel, "imessage"),
           isNotNull(agentphoneMessages.conversationId),
-          eq(agentphoneMessageVisibility.orgId, args.orgId),
-          eq(agentphoneMessageVisibility.userId, args.userId),
+          agentPhoneMessageVisibleTo(args),
           args.agentphoneAgentId
             ? eq(agentphoneMessages.agentphoneAgentId, args.agentphoneAgentId)
             : undefined,
@@ -190,7 +186,6 @@ const resolvePhoneFileGroup$ = command(
     const visibilityRecipients = await set(
       resolveAgentPhoneParticipantVisibilityRecipients$,
       roster.value,
-      nowDate(),
       signal,
     );
     if (
@@ -409,12 +404,15 @@ const complete$ = command(
     const mimetype = body.contentType ?? object.contentType;
     const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
     signal.throwIfAborted();
+    const footerText = await get(integrationMessageSendFooterText$);
+    signal.throwIfAborted();
+    const caption = appendIntegrationMessageFooter(body.caption, footerText);
     const sendResult = await settle(
       sendAgentPhoneMessage(
         {
           agentphoneAgentId: destination.agentphoneAgentId,
           toNumber: destination.toNumber,
-          body: body.caption ?? "",
+          body: caption,
           mediaUrl: fetchUrl,
         },
         signal,
@@ -435,7 +433,7 @@ const complete$ = command(
       auth,
       ...destination,
       mimetype,
-      body,
+      body: { ...body, caption },
       uploadedFile,
       layout: object.layout,
       sent,

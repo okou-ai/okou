@@ -87,6 +87,9 @@ impl crate::tailscale::producer::ControlSockets for Sockets {
         let control = tokio::net::TcpStream::connect(self.control)
             .await
             .map_err(|_| Failure::DomainFailed)?;
+        // The injected loopback clients must not add Nagle waits either.
+        key.set_nodelay(true).unwrap();
+        control.set_nodelay(true).unwrap();
         *self.control_socket.lock().unwrap() = Some(SocketIdentity::record(&control));
         Ok((key, control))
     }

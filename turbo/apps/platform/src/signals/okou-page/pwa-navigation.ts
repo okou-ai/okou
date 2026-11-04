@@ -6,6 +6,10 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 const mobileViewport$ = state(false);
 const agentComposeRequested$ = state(false);
 
+export const mobileChatViewport$ = computed((get) => {
+  return get(mobileViewport$);
+});
+
 export const pwaNavigationEnabled$ = computed((get) => {
   return (
     get(featureSwitch$)[FeatureSwitchKey.PwaNavigation] === true &&
@@ -24,6 +28,7 @@ export function isPwaAgentComposeRequested(
 ): boolean {
   return Boolean(
     searchParams.get("prompt") ||
+    searchParams.get("handoff") ||
     searchParams.get("templatePicker") ||
     searchParams.get("compose") === "1",
   );

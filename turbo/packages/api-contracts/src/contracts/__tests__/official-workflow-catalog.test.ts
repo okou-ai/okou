@@ -36,19 +36,15 @@ function revisionPayload(schemaVersion: number, blueprints: unknown[]) {
   };
 }
 
-function catalogPayload(schemaVersion: number, blueprints: unknown[]) {
+function catalogPayload(blueprints: unknown[]) {
   return {
-    schemaVersion,
+    schemaVersion: 4,
     definitions: [
       {
         name: "morning-brief",
         lifecycle: "active",
         revision: REVISION,
-        artifact: {
-          storageName: "official-workflow-morning-brief",
-          storageId: "00000000-0000-4000-8000-000000000000",
-          storageVersion: FINGERPRINT,
-        },
+        contentBundle: { sha256: "c".repeat(64), archiveBytes: 200 },
         blueprints,
         releasedBlueprintKeys: ["daily-delivery"],
         presentation: { category: "productivity" },
@@ -75,22 +71,27 @@ describe("persisted Official Workflow catalog payloads", () => {
       false,
     );
   });
+});
 
-  it("reads accepted catalogs strictly by their own schema version", () => {
-    const v2 = catalogPayload(2, [v2Blueprint]);
-    const v3 = catalogPayload(3, [v3Blueprint]);
-    const schema = officialWorkflowCatalogReleasePayloadSchema;
-
-    expect(schema.parse(v2)).toStrictEqual(v2);
-    expect(schema.parse(v3)).toStrictEqual(v3);
-    expect(schema.safeParse(catalogPayload(2, [v3Blueprint])).success).toBe(
-      false,
-    );
-    expect(schema.safeParse(catalogPayload(3, [v2Blueprint])).success).toBe(
-      false,
-    );
-    expect(schema.safeParse(catalogPayload(4, [v3Blueprint])).success).toBe(
-      false,
-    );
-  });
+describe("bundle-backed Official catalogs", () => {
+  it.each([
+    { lifecycle: "active", blueprint: v3Blueprint },
+    { lifecycle: "retired", blueprint: v2Blueprint },
+  ])(
+    "reads v4 $lifecycle delivery without changing business identity",
+    ({ lifecycle, blueprint }) => {
+      const current = catalogPayload([blueprint]);
+      const original = current.definitions[0];
+      if (!original) {
+        throw new Error("Expected a definition");
+      }
+      const catalog = {
+        ...current,
+        definitions: [{ ...original, lifecycle }],
+      };
+      expect(
+        officialWorkflowCatalogReleasePayloadSchema.parse(catalog),
+      ).toStrictEqual(catalog);
+    },
+  );
 });

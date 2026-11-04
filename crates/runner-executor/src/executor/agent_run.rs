@@ -893,7 +893,7 @@ impl PreparedGuestRuntime {
         context: &ExecutionContext,
         restore_guest_state: bool,
         reuse_result: SandboxReuseResult,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Option<Self> {
         if !is_codex_model_catalog_prefetch_eligible(context, reuse_result) {
@@ -906,7 +906,7 @@ impl PreparedGuestRuntime {
                 context,
                 restore_guest_state,
                 reuse_result,
-                cancel,
+                cancellation,
                 telemetry,
             )
             .await,
@@ -917,14 +917,14 @@ impl PreparedGuestRuntime {
         sandbox: &dyn Sandbox,
         context: &ExecutionContext,
         restore_guest_state: bool,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Self {
         match prepare_guest_runtime_state_phase(
             sandbox,
             context,
             restore_guest_state,
-            cancel,
+            cancellation,
             telemetry,
         )
         .await
@@ -942,14 +942,14 @@ impl PreparedGuestRuntime {
         context: &ExecutionContext,
         restore_guest_state: bool,
         reuse_result: SandboxReuseResult,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Self {
         match prepare_guest_runtime_state_phase(
             sandbox,
             context,
             restore_guest_state,
-            cancel,
+            cancellation,
             telemetry,
         )
         .await
@@ -959,7 +959,7 @@ impl PreparedGuestRuntime {
                     sandbox,
                     context,
                     reuse_result,
-                    cancel,
+                    cancellation.any,
                     telemetry,
                 )
                 .await
@@ -1004,7 +1004,7 @@ impl RunControls {
                 context,
                 start.restore_guest_state,
                 start.reuse_result,
-                &self.cancel,
+                PreparationCancellation::new(&self.cancel, &self.hard_cancel),
                 telemetry,
             )
             .await
@@ -1076,6 +1076,45 @@ struct AgentBootstrapInputs {
     env_map: HashMap<String, String>,
     run_payload: guest_contracts::env::RunPayload,
     original_native_continuation: Option<String>,
+    apply_instructions: bool,
+}
+
+// This subscription reports a published binding; it never authorizes one.
+async fn report_connector_account_context(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+) -> ! {
+    if let Some(runtime_sync) = &config.connector_runtime_sync
+        && let Some(mut receiver) = runtime_sync.subscribe_account_context(context.run_id).await
+    {
+        let mut last = super::env::build_connector_account_context(context);
+        loop {
+            let current = receiver.borrow_and_update().clone();
+            if current != last {
+                let result = async {
+                    let path =
+                        super::env::guest_connector_account_context_file_path(context.run_id)?;
+                    let bytes = serde_json::to_vec(&current).map_err(|error| {
+                        RunnerError::Internal(format!(
+                            "serialize connector account context: {error}"
+                        ))
+                    })?;
+                    sandbox.write_private_file(&path, &bytes).await?;
+                    RunnerResult::Ok(())
+                }
+                .await;
+                if let Err(error) = result {
+                    warn!(run_id = %context.run_id, error = %error, "connector account context publication failed");
+                }
+                last = current;
+            }
+            if receiver.changed().await.is_err() {
+                break;
+            }
+        }
+    }
+    std::future::pending().await
 }
 
 struct BootstrapFileFailure {
@@ -1090,70 +1129,42 @@ impl AgentBootstrapInputs {
         sandbox: &'a dyn Sandbox,
         context: &ExecutionContext,
         reuse_result: SandboxReuseResult,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
         prefetch: &mut CodexModelCatalogPrefetch<'a>,
     ) -> Result<RequiredAgentFiles, BootstrapFileFailure> {
+        let cancel = cancellation.any;
         let owner = OperationCancellationContext::new(
             &context.run_id.to_string(),
             sandbox.id(),
             "guest_agent_bootstrap_files",
         );
-        let mut recovery_attempted = false;
+        let mut recovery_error = None;
         let mut resource_diagnostics = None;
         loop {
             let started = Instant::now();
             let result = prefetch
-                .race(run_pre_spawn_phase(cancel, &owner, async {
+                .race(run_pre_spawn_phase(cancellation, &owner, async {
                     // Storage reconciliation already finished. Prepare from
                     // captured inputs within this timed, cancellable owner.
                     let preparation_started = Instant::now();
-                    let prepared = (|| {
-                        let files = prepare_required_agent_files(
-                            context,
-                            &mut self.user_env_map,
-                            &self.run_payload,
-                        )?;
-                        let instructions =
-                            super::storage::AgentInstructionSource::prepare(context)?;
-                        RunnerResult::Ok((files, instructions))
-                    })();
+                    let prepared = prepare_required_agent_files(
+                        context,
+                        &mut self.user_env_map,
+                        &self.run_payload,
+                    );
                     telemetry.record(
                         "runner_bootstrap_file_prepare",
                         preparation_started.elapsed(),
                         prepared.is_ok(),
                         None,
                     );
-                    let (files, instructions) = prepared?;
-                    let batch = instructions
-                        .as_ref()
-                        .and_then(|source| files.batch_with(source.entry()));
-                    if let Some(batch) = batch {
-                        // Bootstrap files now exist before required helpers.
-                        // A failed batch can leave a prefix, but never applies
-                        // its source or crosses the Agent spawn boundary.
-                        super::storage::publish_bootstrap_files(sandbox, &batch, telemetry).await?;
-                        if let Some(source) = &instructions {
-                            source.apply(sandbox, context, telemetry).await?;
-                        }
-                        super::storage::apply_workflow_skill_documents(sandbox, context, telemetry)
-                            .await?;
-                    } else {
-                        // Retain the original grouping outside batch admission;
-                        // never retry an uncertain combined mutation separately.
-                        if let Some(source) = &instructions {
-                            source
-                                .publish_and_apply(sandbox, context, telemetry)
-                                .await?;
-                        }
-                        super::storage::apply_workflow_skill_documents(sandbox, context, telemetry)
-                            .await?;
-                        super::storage::publish_bootstrap_files(
-                            sandbox,
-                            &files.entries(),
-                            telemetry,
-                        )
+                    let files = prepared?;
+                    super::storage::publish_bootstrap_files(sandbox, &files.entries(), telemetry)
                         .await?;
+                    if self.apply_instructions {
+                        super::storage::apply_agent_instructions(sandbox, context, telemetry)
+                            .await?;
                     }
                     RunnerResult::Ok(files.into_paths())
                 }))
@@ -1171,7 +1182,11 @@ impl AgentBootstrapInputs {
                 Some(Err(error)) => error,
                 None => {
                     return Err(BootstrapFileFailure {
-                        error: RunnerError::Cancelled,
+                        error: if cancellation.hard.is_cancelled() {
+                            RunnerError::Cancelled
+                        } else {
+                            recovery_error.take().unwrap_or(RunnerError::Cancelled)
+                        },
                         replace: false,
                         resource_diagnostics,
                     });
@@ -1184,15 +1199,17 @@ impl AgentBootstrapInputs {
                 None,
                 private_write_timeout_stage(&error),
             );
-            if recovery_attempted || !super::disk_cleanup::is_disk_write_error(&error) {
+            if cancel.is_cancelled()
+                || recovery_error.is_some()
+                || !super::disk_cleanup::is_disk_write_error(&error)
+            {
                 return Err(BootstrapFileFailure {
-                    replace: recovery_attempted && super::disk_cleanup::is_disk_write_error(&error),
+                    replace: recovery_error.is_some()
+                        && super::disk_cleanup::is_disk_write_error(&error),
                     error,
                     resource_diagnostics,
                 });
             }
-            recovery_attempted = true;
-
             // Cleanup must be the sole supervised workload. Finish ownership of
             // optional prefetch before asking the guest to prove containment.
             let old_prefetch = std::mem::replace(
@@ -1201,16 +1218,23 @@ impl AgentBootstrapInputs {
             );
             old_prefetch.finish(telemetry).await;
             let recovered = run_pre_spawn_phase(
-                cancel,
+                cancellation,
                 &owner,
                 super::disk_cleanup::recover(sandbox, context, reuse_result, cancel, telemetry),
             )
             .await;
             let recovered = match recovered {
                 Some(recovered) if !cancel.is_cancelled() => recovered,
-                _ => {
+                settled => {
+                    if let Some(settled) = settled {
+                        resource_diagnostics = settled.diagnostics.map(Box::new);
+                    }
                     return Err(BootstrapFileFailure {
-                        error: RunnerError::Cancelled,
+                        error: if cancellation.hard.is_cancelled() {
+                            RunnerError::Cancelled
+                        } else {
+                            error
+                        },
                         replace: false,
                         resource_diagnostics,
                     });
@@ -1227,27 +1251,45 @@ impl AgentBootstrapInputs {
                     resource_diagnostics,
                 });
             }
+            // Keep the failure until the replacement write actually succeeds,
+            // including cancellation before the retry's admission boundary.
+            recovery_error = Some(error);
         }
     }
 }
 
+/// Admission observes every cancellation; accepted preparation only yields to a hard stop.
+#[derive(Clone, Copy)]
+pub(super) struct PreparationCancellation<'a> {
+    any: &'a CancellationToken,
+    hard: &'a CancellationToken,
+}
+
+impl<'a> PreparationCancellation<'a> {
+    pub(super) fn new(any: &'a CancellationToken, hard: &'a CancellationToken) -> Self {
+        Self { any, hard }
+    }
+}
+
 async fn run_pre_spawn_phase<T>(
-    cancel: &CancellationToken,
+    cancellation: PreparationCancellation<'_>,
     owner: &OperationCancellationContext,
     phase: impl Future<Output = T>,
 ) -> Option<T> {
-    if cancel.is_cancelled() {
+    if cancellation.any.is_cancelled() {
         return None;
     }
 
-    // Select on a borrow: the owned future must outlive branch selection so
-    // its guards see the selected cancellation before they are destroyed.
+    // Ordinary user cancellation must not abandon accepted guest writes or
+    // process starts. Keep their result/ownership; the next phase checks cancel
+    // before starting. Existing provider deadlines still bound this work.
+    // Hard cancellation can still interrupt the accepted phase.
     let phase = owner.scope(phase);
     tokio::pin!(phase);
     tokio::select! {
         biased;
         result = &mut phase => Some(result),
-        () = cancel.cancelled() => {
+        () = cancellation.hard.cancelled() => {
             owner.mark_cancelled();
             None
         },
@@ -1350,11 +1392,11 @@ async fn prepare_guest_runtime_state_phase(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     restore_guest_state_required: bool,
-    cancel: &CancellationToken,
+    cancellation: PreparationCancellation<'_>,
     telemetry: &mut JobTelemetry,
 ) -> GuestRuntimeStatePreparation {
     match run_pre_spawn_phase(
-        cancel,
+        cancellation,
         &OperationCancellationContext::new(
             &context.run_id.to_string(),
             sandbox.id(),
@@ -1364,10 +1406,16 @@ async fn prepare_guest_runtime_state_phase(
     )
     .await
     {
+        Some(Ok(())) if cancellation.any.is_cancelled() => GuestRuntimeStatePreparation::Cancelled,
         Some(Ok(())) => GuestRuntimeStatePreparation::Ready,
         Some(Err(error)) => GuestRuntimeStatePreparation::Failed(error),
         None => GuestRuntimeStatePreparation::Cancelled,
     }
+}
+
+struct GuestStoragePreparation {
+    background_fill: Option<crate::storage_cache::DeferredBackgroundFill>,
+    apply_instructions: bool,
 }
 
 async fn prepare_guest_storage(
@@ -1377,10 +1425,30 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
-) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
-    let Some(manifest) = &context.storage_manifest else {
-        return Ok(None);
+) -> RunnerResult<GuestStoragePreparation> {
+    let reuse = super::storage::check_instruction_reuse(
+        sandbox,
+        context,
+        start.prev_storage,
+        prepared_storage.as_ref().map(|prepared| &prepared.plan),
+        telemetry,
+    )
+    .await?;
+    let apply_instructions = context.instruction_file.is_some()
+        && !matches!(&reuse, super::storage::InstructionReuse::Reused);
+    let previous = match &reuse {
+        super::storage::InstructionReuse::Repair(previous) => {
+            // Early candidate groups predate the instruction reuse decision.
+            // Retire their IO before ordinary planning/classification repairs it.
+            if let Some(mut prepared) = prepared_storage.take() {
+                prepared.delivery.cancel_and_drain(telemetry).await;
+            }
+            Some(previous)
+        }
+        _ => start.prev_storage,
     };
+    let empty_manifest = runner_types::storage_manifest::StorageManifest::default();
+    let manifest = context.storage_manifest.as_ref().unwrap_or(&empty_manifest);
     let apply_started = Instant::now();
     let planning_started = Instant::now();
 
@@ -1438,7 +1506,7 @@ async fn prepare_guest_storage(
                 download_result.map(|_| deferred)
             }
         } else {
-            let mut plan = build_storage_plan(manifest, start.prev_storage)?;
+            let mut plan = build_storage_plan(manifest, previous)?;
             record_storage_plan_state(
                 &plan,
                 start.prev_storage.is_some(),
@@ -1488,19 +1556,31 @@ async fn prepare_guest_storage(
         result.is_ok(),
         error.as_deref(),
     );
-    result
+    result.map(|background_fill| GuestStoragePreparation {
+        background_fill,
+        apply_instructions,
+    })
 }
 
 fn pre_spawn_cancelled(
     run_id: RunId,
     pre_spawn_started: Instant,
     telemetry: &mut JobTelemetry,
+    cooperative_cancel: &CancellationToken,
+    hard_cancel: &CancellationToken,
 ) -> AgentExecutionResult {
     info!(
         run_id = %run_id,
         "cancel received before guest process started"
     );
-    let result = AgentExecutionResult::cancelled();
+    let mut result = AgentExecutionResult::cancelled();
+    // This return is before accepting an Agent start. Accepted preparation has
+    // settled, or cancellation was observed before starting it. Finalization
+    // must still prove normal-operation quiescence and clean reuse preparation.
+    if cooperative_cancel.is_cancelled() && !hard_cancel.is_cancelled() {
+        result.sandbox_reuse_disposition =
+            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation);
+    }
     telemetry.record(
         "agent_execute",
         pre_spawn_started.elapsed(),
@@ -1535,8 +1615,10 @@ pub(super) async fn run_in_sandbox(
     .await
 }
 
-/// Owned startup delivery and cancellation policy for one Agent attempt.
+/// Preparation progress, owned startup delivery and cancellation policy for one Agent attempt.
 pub(super) struct AgentRunLifecycle {
+    pub(super) storage_preparation_complete: bool,
+    pub(super) instruction_preparation_complete: bool,
     pub(super) startup_report: Option<super::StartupReport>,
     process_cancel_timeouts: ProcessCancelTimeouts,
 }
@@ -1572,6 +1654,8 @@ fn pre_agent_preparation_failure(
 impl AgentRunLifecycle {
     pub(super) fn new(process_cancel_timeouts: ProcessCancelTimeouts) -> Self {
         Self {
+            storage_preparation_complete: false,
+            instruction_preparation_complete: false,
             startup_report: None,
             process_cancel_timeouts,
         }
@@ -1634,7 +1718,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 start.restore_guest_state,
                 start.reuse_result,
-                &controls.cancel,
+                PreparationCancellation::new(&controls.cancel, &controls.hard_cancel),
                 telemetry,
             )
             .await
@@ -1657,7 +1741,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let result = match error {
                 Some(error) => pre_agent_preparation_failure(error, controls, prepared_run_payload),
                 None => {
-                    let result = pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
+                    let result = pre_spawn_cancelled(
+                        context.run_id,
+                        pre_spawn_started,
+                        telemetry,
+                        &controls.cooperative_user_cancel,
+                        &controls.hard_cancel,
+                    );
                     Ok(result)
                 }
             };
@@ -1665,10 +1755,10 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         }
     };
     model_catalog_prefetch.record_outcome(telemetry);
-    let deferred_background_fill = {
+    let (deferred_background_fill, apply_instructions) = {
         let storage_result = model_catalog_prefetch
             .race(run_pre_spawn_phase(
-                &controls.cancel,
+                PreparationCancellation::new(&controls.cancel, &controls.hard_cancel),
                 &OperationCancellationContext::new(
                     &context.run_id.to_string(),
                     sandbox.id(),
@@ -1691,7 +1781,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             None => Err(None),
         };
         match storage_preparation {
-            Ok(deferred) => deferred,
+            Ok(prepared) => (prepared.background_fill, prepared.apply_instructions),
             Err(error) => {
                 if let Some(prepared) = controls.prepared_storage.as_mut() {
                     prepared.delivery.cancel_and_drain(telemetry).await;
@@ -1702,8 +1792,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         pre_agent_preparation_failure(error, controls, prepared_run_payload)
                     }
                     None => {
-                        let result =
-                            pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
+                        let result = pre_spawn_cancelled(
+                            context.run_id,
+                            pre_spawn_started,
+                            telemetry,
+                            &controls.cooperative_user_cancel,
+                            &controls.hard_cancel,
+                        );
                         Ok(result)
                     }
                 };
@@ -1711,6 +1806,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             }
         }
     };
+    lifecycle.storage_preparation_complete = true;
+    lifecycle.instruction_preparation_complete = !apply_instructions;
     let RunControls {
         sandbox_recovery,
         disk_recovery,
@@ -1729,119 +1826,127 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
     let startup_report_cancel = cancel.clone();
+    let cancellation = PreparationCancellation::new(&cancel, &hard_cancel);
     let pre_spawn_owner = OperationCancellationContext::new(
         &context.run_id.to_string(),
         sandbox.id(),
         "guest_agent_preparation",
     );
     let bootstrap = model_catalog_prefetch
-        .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
-            let cancel = pre_spawn_cancel;
-            let start = pre_spawn_start;
-            let telemetry = pre_spawn_telemetry;
+        .race(run_pre_spawn_phase(
+            cancellation,
+            &pre_spawn_owner,
+            async move {
+                let cancel = pre_spawn_cancel;
+                let start = pre_spawn_start;
+                let telemetry = pre_spawn_telemetry;
 
-            // Check the selected home image before crossing the process-spawn boundary.
-            let native_home_proof_failed = if let Some(binding) = home_history_proof {
-                let started = Instant::now();
-                let verified =
-                    super::home_history::verify_home_candidate(sandbox, context, binding, &cancel)
-                        .await?;
-                telemetry.record(
-                    "session_history_home_cache_verify",
-                    started.elapsed(),
-                    verified,
-                    None,
+                // Check the selected home image before crossing the process-spawn boundary.
+                let native_home_proof_failed = if let Some(binding) = home_history_proof {
+                    let started = Instant::now();
+                    let verified = super::home_history::verify_home_candidate(
+                        sandbox, context, binding, &cancel,
+                    )
+                    .await?;
+                    telemetry.record(
+                        "session_history_home_cache_verify",
+                        started.elapsed(),
+                        verified,
+                        None,
+                    );
+                    telemetry.record(
+                        if verified {
+                            "session_history_home_cache_hit"
+                        } else {
+                            "session_history_home_cache_miss"
+                        },
+                        Duration::ZERO,
+                        true,
+                        None,
+                    );
+                    !verified && context.native_continuation.is_some()
+                } else {
+                    false
+                };
+
+                // Finalize the prepared private run payload and build the environment used
+                // to bootstrap guest-agent. User-provided env is passed through a private
+                // guest file and injected into the CLI child after guest-agent has started.
+                let user_env_map = build_user_env_json(context);
+                let env_build_started = Instant::now();
+                let mut run_payload = match prepared_run_payload.into_run_payload(context) {
+                    Ok(run_payload) => run_payload,
+                    Err(error) => {
+                        telemetry.record(
+                            "runner_agent_env_build",
+                            env_build_started.elapsed(),
+                            false,
+                            None,
+                        );
+                        return Err(error);
+                    }
+                };
+                let original_native_continuation = if native_home_proof_failed {
+                    let mut native = context.native_continuation.clone().ok_or_else(|| {
+                        RunnerError::Internal("native home proof lost its intent".into())
+                    })?;
+                    native.session_id = None;
+                    native.generation_run_id = None;
+                    let fresh_native = serde_json::to_string(&native).map_err(|error| {
+                        RunnerError::Internal(format!("serialize fresh native intent: {error}"))
+                    })?;
+                    Some(std::mem::replace(
+                        &mut run_payload.native_continuation,
+                        fresh_native,
+                    ))
+                } else {
+                    None
+                };
+                info!(
+                    run_id = %context.run_id,
+                    prompt_bytes = run_payload.prompt.len(),
+                    append_system_prompt_bytes = run_payload.append_system_prompt.len(),
+                    secret_values_present = !run_payload.secret_values.is_empty(),
+                    disallowed_tools_bytes = run_payload.disallowed_tools.len(),
+                    tools_bytes = run_payload.tools.len(),
+                    settings_bytes = run_payload.settings.len(),
+                    artifacts_bytes = run_payload.artifacts.len(),
+                    feature_flags_bytes = run_payload.feature_flags.len(),
+                    "guest-agent run payload prepared"
+                );
+                let mut env_map =
+                    match build_env_json_for_run(context, &config.api_url, sandbox.id()) {
+                        Ok(env_map) => env_map,
+                        Err(error) => {
+                            telemetry.record(
+                                "runner_agent_env_build",
+                                env_build_started.elapsed(),
+                                false,
+                                None,
+                            );
+                            return Err(error);
+                        }
+                    };
+                env_map.insert(
+                    guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
+                    guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
                 );
                 telemetry.record(
-                    if verified {
-                        "session_history_home_cache_hit"
-                    } else {
-                        "session_history_home_cache_miss"
-                    },
-                    Duration::ZERO,
+                    "runner_agent_env_build",
+                    env_build_started.elapsed(),
                     true,
                     None,
                 );
-                !verified && context.native_continuation.is_some()
-            } else {
-                false
-            };
 
-            // Finalize the prepared private run payload and build the environment used
-            // to bootstrap guest-agent. User-provided env is passed through a private
-            // guest file and injected into the CLI child after guest-agent has started.
-            let user_env_map = build_user_env_json(context);
-            let env_build_started = Instant::now();
-            let mut run_payload = match prepared_run_payload.into_run_payload(context) {
-                Ok(run_payload) => run_payload,
-                Err(error) => {
-                    telemetry.record(
-                        "runner_agent_env_build",
-                        env_build_started.elapsed(),
-                        false,
-                        None,
-                    );
-                    return Err(error);
-                }
-            };
-            let original_native_continuation = if native_home_proof_failed {
-                let mut native = context.native_continuation.clone().ok_or_else(|| {
-                    RunnerError::Internal("native home proof lost its intent".into())
-                })?;
-                native.session_id = None;
-                native.generation_run_id = None;
-                let fresh_native = serde_json::to_string(&native).map_err(|error| {
-                    RunnerError::Internal(format!("serialize fresh native intent: {error}"))
-                })?;
-                Some(std::mem::replace(
-                    &mut run_payload.native_continuation,
-                    fresh_native,
-                ))
-            } else {
-                None
-            };
-            info!(
-                run_id = %context.run_id,
-                prompt_bytes = run_payload.prompt.len(),
-                append_system_prompt_bytes = run_payload.append_system_prompt.len(),
-                secret_values_present = !run_payload.secret_values.is_empty(),
-                disallowed_tools_bytes = run_payload.disallowed_tools.len(),
-                tools_bytes = run_payload.tools.len(),
-                settings_bytes = run_payload.settings.len(),
-                artifacts_bytes = run_payload.artifacts.len(),
-                feature_flags_bytes = run_payload.feature_flags.len(),
-                "guest-agent run payload prepared"
-            );
-            let mut env_map = match build_env_json_for_run(context, &config.api_url, sandbox.id()) {
-                Ok(env_map) => env_map,
-                Err(error) => {
-                    telemetry.record(
-                        "runner_agent_env_build",
-                        env_build_started.elapsed(),
-                        false,
-                        None,
-                    );
-                    return Err(error);
-                }
-            };
-            env_map.insert(
-                guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
-                guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
-            );
-            telemetry.record(
-                "runner_agent_env_build",
-                env_build_started.elapsed(),
-                true,
-                None,
-            );
-
-            RunnerResult::Ok(AgentBootstrapInputs {
-                user_env_map,
-                env_map,
-                run_payload,
-                original_native_continuation,
-            })
-        }))
+                RunnerResult::Ok(AgentBootstrapInputs {
+                    user_env_map,
+                    env_map,
+                    run_payload,
+                    original_native_continuation,
+                    apply_instructions,
+                })
+            },
+        ))
         .await;
     model_catalog_prefetch.record_outcome(telemetry);
     let mut bootstrap = 'bootstrap: {
@@ -1856,6 +1961,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context.run_id,
                 pre_spawn_started,
                 telemetry,
+                &cooperative_user_cancel,
+                &hard_cancel,
             )),
             Some(error) => Err(error),
         };
@@ -1865,7 +1972,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             sandbox,
             context,
             start.reuse_result,
-            &cancel,
+            cancellation,
             telemetry,
             &mut model_catalog_prefetch,
         )
@@ -1884,6 +1991,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     context.run_id,
                     pre_spawn_started,
                     telemetry,
+                    &cooperative_user_cancel,
+                    &hard_cancel,
                 )),
                 error
                     if replace
@@ -1922,6 +2031,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             };
         }
     };
+    lifecycle.instruction_preparation_complete = true;
     let AgentBootstrapInputs {
         user_env_map,
         mut env_map,
@@ -1930,7 +2040,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
     let prepared_agent = model_catalog_prefetch
-        .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
+        .race(run_pre_spawn_phase(cancellation, &pre_spawn_owner, async move {
             let start = pre_spawn_start;
             let telemetry = pre_spawn_telemetry;
             let user_env_file = required_files.user_env_file;
@@ -2088,8 +2198,14 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         };
         model_catalog_prefetch.finish(telemetry).await;
         match preparation_error {
-            Some(RunnerError::Cancelled) | None => {
-                let result = pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
+            None => {
+                let result = pre_spawn_cancelled(
+                    context.run_id,
+                    pre_spawn_started,
+                    telemetry,
+                    &cooperative_user_cancel,
+                    &hard_cancel,
+                );
                 return Ok(result);
             }
             Some(error) => return Err(error),
@@ -2135,6 +2251,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let mut process_cancel = handle.take_cancel_handle();
     let wait_process = sandbox.wait_process(handle, job_terminal_wait_timeout());
     tokio::pin!(wait_process);
+    let account_context_reporter = report_connector_account_context(sandbox, context, config);
+    tokio::pin!(account_context_reporter);
     let wait_outcome = model_catalog_prefetch
         .race(async {
             tokio::select! {
@@ -2169,6 +2287,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     )
                     .await
                 }
+                never = account_context_reporter.as_mut() => never,
             }
         })
         .await;
@@ -2517,381 +2636,4 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
 }
 
 #[cfg(test)]
-mod tests {
-    mod cancellation;
-
-    use super::*;
-    use guest_contracts::diagnostics::{
-        AgentFramework, CliTerminationDiagnostic, FailureClass, PromptMetadata,
-    };
-
-    fn control_path_failure(reason: CliTerminationReason) -> ExecutionFailure {
-        let diagnostic = FailureDiagnostic::new(
-            FailureClass::CliExecutionError,
-            AgentFramework::Codex,
-            PromptMetadata::from_prompt("continue"),
-        )
-        .with_cli_exit_code(1)
-        .with_cli_termination(CliTerminationDiagnostic::new(reason));
-        ExecutionFailure::new(1, "heartbeat failed", Some(diagnostic))
-    }
-
-    fn nonzero_process_exit() -> sandbox::ProcessExit {
-        sandbox::ProcessExit::new(42, 1, Vec::new(), Vec::new())
-    }
-
-    const TEST_WORKLOAD_CGROUP: &str = "/vm0-exec/exec-281-10-3/workload";
-    const TEST_OPERATION_STARTED_US: u64 = 1_000_000;
-
-    fn test_memory_snapshot(
-        role: &str,
-        cgroup: &str,
-    ) -> guest_contracts::oom_evidence::MemorySnapshot {
-        guest_contracts::oom_evidence::MemorySnapshot {
-            role: role.to_string(),
-            cgroup: cgroup.to_string(),
-            inode: None,
-            status: guest_contracts::oom_evidence::EvidenceStatus::Available,
-            current: None,
-            peak: None,
-            limit: None,
-            initial_limit: None,
-            anon: None,
-            file: None,
-            kernel: None,
-            baseline: guest_contracts::oom_evidence::MemoryEvents::default(),
-            events: guest_contracts::oom_evidence::MemoryEvents::default(),
-            delta: guest_contracts::oom_evidence::MemoryEvents::default(),
-            local_baseline: guest_contracts::oom_evidence::MemoryEvents::default(),
-            local_events: guest_contracts::oom_evidence::MemoryEvents::default(),
-            local_delta: guest_contracts::oom_evidence::MemoryEvents::default(),
-        }
-    }
-
-    fn test_memory_groups() -> [guest_contracts::oom_evidence::MemorySnapshot; 3] {
-        [
-            test_memory_snapshot("workload", TEST_WORKLOAD_CGROUP),
-            test_memory_snapshot("runtime", &format!("{TEST_WORKLOAD_CGROUP}/runtime")),
-            test_memory_snapshot("tools", &format!("{TEST_WORKLOAD_CGROUP}/tools")),
-        ]
-    }
-
-    fn test_kernel_event(
-        task_cgroup: &str,
-        boottime_us: u64,
-    ) -> guest_contracts::oom_evidence::KernelOomEvent {
-        guest_contracts::oom_evidence::KernelOomEvent {
-            source: "guest".to_string(),
-            sequence: 7,
-            boottime_us,
-            constraint: "CONSTRAINT_NONE".to_string(),
-            oom_cgroup: None,
-            victim_pid: 4242,
-            victim_comm: "tsc".to_string(),
-            task_cgroup: task_cgroup.to_string(),
-        }
-    }
-
-    fn test_oom_evidence(
-        kernel_status: guest_contracts::oom_evidence::EvidenceStatus,
-        kernel_events: Vec<guest_contracts::oom_evidence::KernelOomEvent>,
-    ) -> guest_contracts::oom_evidence::OomEvidence {
-        guest_contracts::oom_evidence::OomEvidence {
-            operation_id: "1e1e1e1e-1e1e-4e1e-8e1e-1e1e1e1e1e1e".to_string(),
-            guest_boot_id: None,
-            started_boottime_us: TEST_OPERATION_STARTED_US,
-            sampled_at: "2026-09-09T10:34:57.253Z".to_string(),
-            kernel_cursor: None,
-            kernel_status,
-            groups: test_memory_groups(),
-            incidents: vec![guest_contracts::oom_evidence::OomIncident {
-                id: "1e1e1e1e-1e1e-4e1e-8e1e-1e1e1e1e1e1e:1".to_string(),
-                captured_at: "2026-09-09T10:34:57.253Z".to_string(),
-                reason: guest_contracts::oom_evidence::CaptureReason::Cleanup,
-                after_observation: true,
-                before_cleanup: true,
-                kernel_status,
-                kernel_events,
-                groups: test_memory_groups(),
-            }],
-            dropped_incidents: 0,
-        }
-    }
-
-    fn sigkill_process_exit() -> sandbox::ProcessExit {
-        // Production observes the launcher's 137 exit translation, not a
-        // signal field, so the exit shape here matches the recorded incident.
-        sandbox::ProcessExit::new(42, EXIT_SIGKILL, Vec::new(), Vec::new())
-    }
-
-    #[test]
-    fn user_visible_oom_failure_follows_the_shared_agent_domain_predicate() {
-        // Attribution itself is owned and tested by `guest-contracts`; this
-        // pins the user-facing failure to that predicate's verdict.
-        let agent_domain = test_oom_evidence(
-            guest_contracts::oom_evidence::EvidenceStatus::Available,
-            vec![test_kernel_event(
-                TEST_WORKLOAD_CGROUP,
-                TEST_OPERATION_STARTED_US,
-            )],
-        );
-        // A reclaimed shell tool is the ordinary case in production and must
-        // keep the run's original terminal outcome.
-        let tool_leaf = test_oom_evidence(
-            guest_contracts::oom_evidence::EvidenceStatus::Available,
-            vec![test_kernel_event(
-                &format!("{TEST_WORKLOAD_CGROUP}/tools/tool-281-10-3-1"),
-                TEST_OPERATION_STARTED_US + 10,
-            )],
-        );
-
-        assert!(agent_domain.agent_domain_oom_kill());
-        assert!(guest_memory_oom_killed_agent(
-            agent_domain.agent_domain_oom_kill(),
-            &sigkill_process_exit(),
-            None,
-        ));
-        assert!(!tool_leaf.agent_domain_oom_kill());
-        assert!(!guest_memory_oom_killed_agent(
-            tool_leaf.agent_domain_oom_kill(),
-            &sigkill_process_exit(),
-            None,
-        ));
-    }
-
-    #[test]
-    fn guest_memory_oom_attribution_requires_a_kill_shaped_exit() {
-        assert!(guest_memory_oom_killed_agent(
-            true,
-            &sigkill_process_exit(),
-            None
-        ));
-        assert!(!guest_memory_oom_killed_agent(
-            true,
-            &nonzero_process_exit(),
-            None,
-        ));
-        assert!(!guest_memory_oom_killed_agent(
-            false,
-            &sigkill_process_exit(),
-            None,
-        ));
-        assert!(!guest_memory_oom_killed_agent(
-            true,
-            &sandbox::ProcessExit {
-                termination: ExecTermination::TimedOut,
-                ..sigkill_process_exit()
-            },
-            None,
-        ));
-    }
-
-    #[test]
-    fn oom_killed_agent_reports_the_termination_reason_over_captured_stderr() {
-        let error = agent_failure_error(
-            true,
-            "{\"type\":\"pi_preparation_timing\",\"phase\":\"model_runtime\"} Killed".to_string(),
-            Some("guest error file".to_string()),
-            EXIT_SIGKILL,
-        );
-
-        assert_eq!(error, GUEST_MEMORY_OOM_KILLED_ERROR);
-        assert!(!error.contains("pi_preparation_timing"));
-    }
-
-    #[test]
-    fn ordinary_failures_keep_their_existing_error_selection() {
-        assert_eq!(
-            agent_failure_error(false, "boom".to_string(), None, 1),
-            "boom"
-        );
-        assert_eq!(
-            agent_failure_error(
-                false,
-                String::new(),
-                Some("guest error file".to_string()),
-                1
-            ),
-            "guest error file"
-        );
-        assert_eq!(
-            agent_failure_error(false, String::new(), None, EXIT_SIGKILL),
-            agent_exit_failure_message(EXIT_SIGKILL)
-        );
-    }
-
-    #[test]
-    fn heartbeat_control_failures_reject_sandbox_reuse() {
-        for reason in [
-            CliTerminationReason::HeartbeatError,
-            CliTerminationReason::HeartbeatPanic,
-        ] {
-            let failure = control_path_failure(reason);
-            let disposition = sandbox_reuse_disposition_for_process_exit(
-                &nonzero_process_exit(),
-                CancellationDisposition::None,
-                Some(&failure),
-            );
-
-            assert_eq!(
-                disposition,
-                SandboxReuseDisposition::Ineligible(SandboxReuseRejection::ControlPathFailure)
-            );
-            assert_eq!(disposition.as_str(), "control_path_failure");
-            assert_eq!(
-                disposition.telemetry_action(),
-                "runner_terminal_sandbox_reuse_rejected_control_path_failure"
-            );
-        }
-    }
-
-    #[test]
-    fn ordinary_nonzero_exit_remains_reusable() {
-        let failure = ExecutionFailure::new(1, "ordinary failure", None);
-
-        assert_eq!(
-            sandbox_reuse_disposition_for_process_exit(
-                &nonzero_process_exit(),
-                CancellationDisposition::None,
-                Some(&failure),
-            ),
-            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit)
-        );
-    }
-
-    #[test]
-    fn codex_state_backfill_timeout_rejects_sandbox_reuse() {
-        let failure = ExecutionFailure::new(
-            1,
-            "execution: codex app-server child exited while waiting for initialize: exit status: 1; stderr tail: Error: failed to initialize sqlite state runtime under /home/user/.codex: timed out waiting for state db backfill at /home/user/.codex after 30s (status: running)",
-            None,
-        );
-
-        let disposition = sandbox_reuse_disposition_for_process_exit(
-            &nonzero_process_exit(),
-            CancellationDisposition::None,
-            Some(&failure),
-        );
-        assert_eq!(
-            disposition,
-            SandboxReuseDisposition::Ineligible(SandboxReuseRejection::CodexStateBackfillTimeout)
-        );
-        assert_eq!(disposition.as_str(), "codex_state_backfill_timeout");
-    }
-
-    #[test]
-    fn unrelated_initialize_and_backfill_errors_remain_reusable() {
-        for error in [
-            "execution: codex app-server child exited while waiting for initialize: exit status: 1; stderr tail: provider unavailable",
-            "execution: another child exited; stderr tail: timed out waiting for state db backfill",
-        ] {
-            let failure = ExecutionFailure::new(1, error, None);
-            assert_eq!(
-                sandbox_reuse_disposition_for_process_exit(
-                    &nonzero_process_exit(),
-                    CancellationDisposition::None,
-                    Some(&failure),
-                ),
-                SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit)
-            );
-        }
-    }
-
-    #[test]
-    fn hard_cancellation_and_resource_failure_precede_control_path_rejection() {
-        let failure = control_path_failure(CliTerminationReason::HeartbeatError);
-        assert_eq!(
-            sandbox_reuse_disposition_for_process_exit(
-                &nonzero_process_exit(),
-                CancellationDisposition::HardFallback,
-                Some(&failure),
-            ),
-            SandboxReuseDisposition::Ineligible(SandboxReuseRejection::HardCancellation)
-        );
-
-        let failure =
-            failure.with_resource_diagnostics(Some(ResourceFailureDiagnostics::from_failure_kind(
-                ResourceFailureKind::GuestMemoryOomKilled,
-            )));
-        assert_eq!(
-            sandbox_reuse_disposition_for_process_exit(
-                &nonzero_process_exit(),
-                CancellationDisposition::None,
-                Some(&failure),
-            ),
-            SandboxReuseDisposition::Ineligible(SandboxReuseRejection::ResourceFailure)
-        );
-    }
-
-    fn exec_arg_aggregate_bytes(value: &str) -> usize {
-        value.len() + 1
-    }
-
-    fn env_pairs_for_aggregate_bytes(target_bytes: usize) -> Vec<(String, String)> {
-        let mut pairs: Vec<(String, String)> = Vec::new();
-        let mut remaining = target_bytes;
-        let mut index = 0;
-
-        while remaining > 0 {
-            let key = format!("TEST_FILL_{index}");
-            let overhead = key.len() + 2;
-            if remaining <= overhead {
-                pairs
-                    .last_mut()
-                    .expect("aggregate target must require at least one env pair")
-                    .1
-                    .push_str(&"x".repeat(remaining));
-                break;
-            }
-
-            let value_len = (64 * 1024).min(remaining - overhead);
-            pairs.push((key, "x".repeat(value_len)));
-            remaining -= overhead + value_len;
-            index += 1;
-        }
-
-        pairs
-    }
-
-    #[test]
-    fn bootstrap_exec_boundary_rejects_oversized_env_value_without_value_leak() {
-        let secret = "x".repeat(guest_contracts::exec_limits::EXECVE_STRING_MAX_BYTES + 1);
-        let env_pairs = vec![("TEST_OVERSIZED".to_string(), secret.clone())];
-
-        let error = validate_agent_bootstrap_exec_boundary(&env_pairs)
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("guest-agent bootstrap argv/env too large"));
-        assert!(error.contains("TEST_OVERSIZED"));
-        assert!(!error.contains(&secret));
-    }
-
-    #[test]
-    fn bootstrap_exec_boundary_rejects_aggregate_overflow() {
-        let value = "x".repeat(guest_contracts::exec_limits::EXECVE_STRING_MAX_BYTES - 16);
-        let env_pairs: Vec<(String, String)> = (0..20)
-            .map(|index| (format!("TEST_CHUNK_{index}"), value.clone()))
-            .collect();
-
-        let error = validate_agent_bootstrap_exec_boundary(&env_pairs)
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("argv/env aggregate too large"));
-    }
-
-    #[test]
-    fn bootstrap_exec_boundary_counts_fixed_agent_executable_arg() {
-        let executable_arg_bytes = exec_arg_aggregate_bytes(AGENT_PATH);
-        let env_pairs = env_pairs_for_aggregate_bytes(
-            guest_contracts::exec_limits::EXECVE_ARG_ENV_MAX_BYTES + 1 - executable_arg_bytes,
-        );
-
-        let error = validate_agent_bootstrap_exec_boundary(&env_pairs)
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("argv/env aggregate too large"));
-    }
-}
+mod tests;

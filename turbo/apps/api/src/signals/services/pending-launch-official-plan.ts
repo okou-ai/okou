@@ -5,7 +5,8 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { OFFICIAL_WORKFLOW_CATALOG_AUTHORITY } from "./official-workflow-catalog-read.service";
 import {
-  artifactMatches,
+  observedDeliveryMatches,
+  pinnedOfficialWorkflowBundles,
   blueprintIdentities,
   blueprintIdentitiesMatch,
   acceptedDefinitionForName,
@@ -36,7 +37,7 @@ function capturedOfficialDefinitions(
     if (
       !definition ||
       definition.revision !== expected.revision ||
-      !artifactMatches(expected.artifact, definition.artifact) ||
+      !observedDeliveryMatches(expected, definition) ||
       !blueprintIdentitiesMatch(
         expected.blueprints,
         blueprintIdentities(definition),
@@ -45,6 +46,23 @@ function capturedOfficialDefinitions(
       return null;
     }
     accepted.push(definition);
+  }
+  const expectedBundles = pinnedOfficialWorkflowBundles(observation);
+  const capturedBundles =
+    args.persistence.payload.executionContext.officialWorkflowBundles ?? [];
+  if (
+    expectedBundles.length !== capturedBundles.length ||
+    expectedBundles.some((bundle) => {
+      return !capturedBundles.some((captured) => {
+        return (
+          captured.sha256 === bundle.sha256 &&
+          captured.archiveBytes === bundle.archiveBytes &&
+          captured.mountPath === bundle.mountPath
+        );
+      });
+    })
+  ) {
+    return null;
   }
   const revisions = accepted.map((definition) => {
     return (

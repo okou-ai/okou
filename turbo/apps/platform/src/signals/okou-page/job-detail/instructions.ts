@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
+import { agentInstructionsContract } from "@okouai/api-contracts/client/agents";
 import { apiClient$ } from "../../api-client.ts";
 import { accept } from "../../../lib/accept.ts";
 import type { AgentInstructions } from "../agent-types.ts";

@@ -33,8 +33,17 @@ verification rejects a missing DSN so error reporting cannot silently disappear.
 ### Error diagnostics
 
 Host heartbeat failures upload a correlated episode to the Desktop Sentry project.
-The first failed attempt emits an error immediately; recovery, stopping the host,
-or rejection of its authority emits one summary with the same `episodeId`.
+The first retryable failed attempt emits an info event; recovery, stopping the host,
+or rejection of its authority emits an info summary with the same `episodeId`.
+Transient HTTP 408/429/5xx, ordinary network failures (including TLS connection
+failure), deadlines, and cancellation stay at info during normal retry/recovery.
+Unexpected failures, including malformed successful responses and other HTTP
+errors, emit an error immediately. An episode with at least 90 seconds of awake
+failure emits one error when a subsequent failure or terminal outcome observes
+that threshold, even if it ultimately recovers. Further retries do not repeat
+the error. System suspension does not count toward this threshold, and the
+threshold does not establish lease loss or command impact. Server-side errors
+remain independently reported by the API.
 Filter by `heartbeatOutcome` (`failed`, `recovered`, `stopped`, or
 `authority_rejected`) or `heartbeatEpisodeId` and inspect `contexts.heartbeat`.
 Normal heartbeats do not emit events, and the SDK's automatic heartbeat
@@ -43,12 +52,33 @@ capture for other routes is unchanged.
 
 Each episode retains its first failure and its ten most recent failed attempts,
 the total failure count, omitted-history count, retry delays, and observed duration.
+Episode `durationMs`, `awakeElapsedMs`, and `systemSuspendedMs` include the first
+failed operation when its timing is available, plus subsequent request/backoff
+time. `observedDurationMs` retains its original meaning: time since the first
+failure was captured, excluding that operation. The initial info event preserves
+correlation evidence when a process exits without delivering a terminal summary.
 Request diagnostics include client request/session IDs, HTTP status, response byte
 count, duration, and bounded response headers (`cf-ray`, `x-vercel-id`,
 `x-vercel-cache`, `x-request-id`, `server`, `content-type`, and `retry-after`).
 A forced 401 refresh retains both wire attempts with distinct request IDs.
 HTTP metadata is recorded before JSON decoding, so HTML edge errors remain
-attributable. Transport failures retain their error type and URL error code.
+attributable. Non-2xx responses with non-JSON bodies retain their HTTP status,
+raw bytes, and `Retry-After`; their dynamic JSON view is `.null`. Structured JSON
+errors remain readable, and nonempty successful responses still require valid
+JSON. Transport failures retain their error type and URL error code.
+Each failed attempt also identifies token lookup, forced token refresh, or HTTP
+as its last operation phase. `operation.phaseTimings` retains bounded token-read
+timings, and `operation.budgetScope` identifies the expired `operation` or
+`http_request` budget using fixed labels that do not match credential scrubbing.
+The full operation (including token reads and a forced refresh), each token-read
+phase, and each wire request report `durationMs`, `awakeElapsedMs`, and
+`systemSuspendedMs` from continuous and suspending clocks. Operation timing starts
+when the API call begins, excluding heartbeat interval/backoff waits, and ends
+on success or failure before its snapshot is read. An inner cancellation after a
+total deadline is not evidence of a user cancellation. Opt-in HTTP task metrics retain bounded
+DNS, connection, TLS, response timing, connection reuse/proxy flags, and protocol
+information. HTTP status and allowlisted headers survive a response-body failure
+when URLSession's task metrics retain them. Missing metrics remain unavailable.
 Raw URLs, host IDs/names, request/response bodies, credentials, cookies, and error
 descriptions are excluded. Events use an event-local context, not shared breadcrumbs.
 Retry, authentication, command execution, and cancellation behavior are unchanged.
@@ -60,10 +90,10 @@ Malformed native helper responses and responses without a numeric request ID
 automatically attach `native-helper-response.bin` and
 `native-helper-diagnostics.txt` to their Sentry error event. The binary file
 preserves the exact bytes passed to the decoder, excluding the terminating
-newline, up to 4 MiB. The report includes the original byte count and SHA-256,
-explicit truncation flags, the decoder error, decode duration, and up to 256
-read fragments with their read sequence and offsets in parser order. This can
-identify framing boundaries without treating them as the established cause.
+newline, up to 4 MiB. The report includes the failure category, helper generation,
+pending request IDs, original/captured byte counts, explicit truncation flags,
+and a bounded decoder error. Successful reads do not accumulate diagnostic
+fragment histories or decoding timings.
 The transport sequences reads before parsing and bounds queued plus partial
 output to 32 MiB before decoding, including when a read contains a newline.
 Framing scans only newly received bytes for delimiters.
@@ -80,6 +110,12 @@ Each native transport allows three diagnostic bundles per one-hour window,
 including across helper restarts. Further protocol errors still emit their
 summary events with `diagnosticAttachments=rate_limited`. Restarting the app
 starts a new window. The SDK's per-attachment limit is 5 MiB.
+
+Helper timeout events retain the allowlisted operation, caller intent, original
+budget, total elapsed time, awake time, and system-suspended time. Exit events
+retain Foundation's termination reason and status. Deadline enforcement and
+sleep-interrupted permission handling belong to the transport; telemetry only
+formats the resulting summary.
 
 `--auth-smoke-test` separately initializes the real Clerk SDK and reports its
 Keychain namespace and whether a session was restored, without opening a login

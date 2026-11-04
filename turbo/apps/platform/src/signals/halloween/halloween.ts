@@ -1,17 +1,21 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { delay } from "signal-timers";
-import {
-  halloweenContract,
-  type HalloweenRound,
-  type HalloweenPhase,
+import { halloweenContract } from "@okouai/api-contracts/client/halloween";
+import type {
+  HalloweenRound,
+  HalloweenPhase,
 } from "@okouai/api-contracts/contracts/halloween";
 import { accept } from "../../lib/accept.ts";
 import { ensureHalloweenI18nResources } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { locale$ } from "../locale.ts";
+import {
+  hash$,
+  historyState$,
+  replaceSearchParams$,
+  searchParams$,
+} from "../route.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
 
 const soundStorage = localStorageSignals("halloween_2026_sound");
@@ -268,29 +272,6 @@ export const nextHalloween$ = command(
   },
 );
 
-export const leaveHalloween$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(resetHalloweenAction$);
-    const round = get(roundState$);
-    if (round?.outcome === "playing") {
-      await accept(
-        get(apiClient$)(halloweenContract).leave({
-          body: {
-            id: round.id,
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-      signal.throwIfAborted();
-    }
-    set(screenState$, "start");
-    set(roundState$, null);
-    await set(refreshHalloweenPhase$, signal);
-  },
-);
-
 export const replayHalloween$ = command(
   async ({ set }, signal: AbortSignal) => {
     await set(requestHalloweenRound$, true, signal);
@@ -309,16 +290,21 @@ export const initializeHalloweenHome$ = command(
     set(bubbleTransitionState$, null);
     set(ghostExpandedState$, false);
     set(ghostGreetingLocked$, false);
-    const { switches } = await get(featureSwitches$);
     signal.throwIfAborted();
-    if (!switches[FeatureSwitchKey.HalloweenQuiz]) {
-      return;
-    }
     await set(watchHalloweenPhase$, signal);
     if (get(phaseState$) !== "open") {
       return;
     }
     await set(loadCurrentHalloweenRound$, signal);
+    const params = new URLSearchParams(get(searchParams$));
+    if (params.get("halloween") === "1") {
+      params.delete("halloween");
+      set(replaceSearchParams$, params, get(historyState$), get(hash$));
+      set(homeAnimationStorage.set$, "seen");
+      set(modalAnchorState$, null);
+      set(openHalloweenModal$);
+      return;
+    }
     const first = set(homeAnimationStorage.readFresh$) === null;
     set(homeAnimationStorage.set$, "seen");
     set(homeAnimationVisibleState$, first);

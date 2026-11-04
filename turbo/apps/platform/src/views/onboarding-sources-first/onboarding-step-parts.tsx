@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check } from "lucide-react";
-import { Card, Radio, surfaceVariants, cn } from "@okouai/ui";
+import { Radio, surfaceVariants, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "../okou-page/components/settings/settings-icon-assets.ts";
 import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 
@@ -187,30 +187,5 @@ export function OnboardingChoiceCard({
         {description}
       </span>
     </label>
-  );
-}
-
-/** The panel a step acts in: a header row, then the step's own controls. */
-export function OnboardingPanel({
-  title,
-  description,
-  children,
-}: {
-  readonly title: string;
-  readonly description: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <Card className="flex min-h-[300px] flex-col max-sm:min-h-0 max-sm:rounded-none max-sm:border-0 max-sm:shadow-none">
-      <div className="px-5 py-4 max-sm:hidden">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-          {description}
-        </p>
-      </div>
-      <div className="flex flex-1 flex-col border-t border-border/60 max-sm:border-0">
-        {children}
-      </div>
-    </Card>
   );
 }

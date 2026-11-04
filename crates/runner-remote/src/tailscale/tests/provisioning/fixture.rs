@@ -77,6 +77,7 @@ impl Dial for Secure {
         let io = tokio::net::TcpStream::connect(self.address)
             .await
             .map_err(|_| Failure::DomainFailed)?;
+        io.set_nodelay(true).unwrap();
         let fd = io.as_raw_fd();
         let inode =
             std::fs::read_link(format!("/proc/self/fd/{fd}")).map_err(|_| Failure::DomainFailed)?;
@@ -195,6 +196,8 @@ impl Service {
                     _ = stopped.cancelled() => break,
                     accepted = listener.accept() => {
                         let socket = accepted.unwrap().0;
+                        // Keep the fixture's split HTTP writes free of Nagle waits.
+                        socket.set_nodelay(true).unwrap();
                         let received = Arc::clone(&received);
                         let send = send.clone();
                         let gates = gates.clone();

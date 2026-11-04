@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sharedThreadVisibilityContract,
   type SharedThreadAudience,
@@ -32,7 +31,7 @@ test.each([403, 404] as const)(
 
     await expect(
       screen.findByRole("heading", {
-        name: "You can’t view this conversation",
+        name: "You can’t view this chat",
       }),
     ).resolves.toBeInTheDocument();
     expect(
@@ -77,7 +76,7 @@ test("A visitor can continue a shared idea in Platform", async () => {
   await setupSharedThreadPage(context, { host: "app.okou.ai" });
 
   await expect(
-    screen.findByText("Make this conversation yours"),
+    screen.findByText("Make this chat yours"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Try it yourself")).toBeInTheDocument();
 
@@ -118,7 +117,7 @@ test("A signed-in viewer is not asked to sign in or sign up", async () => {
   });
 
   await expect(
-    screen.findByText("Make this conversation yours"),
+    screen.findByText("Make this chat yours"),
   ).resolves.toBeInTheDocument();
   // The handoff itself stays: it carries this conversation into a new chat,
   // which is exactly what an account holder can act on.
@@ -216,13 +215,17 @@ test("A visitor can copy the public conversation link", async () => {
   const shareButton = getButtonByName("Share");
 
   click(shareButton);
+  await screen.findByText("Copy link");
+  click(getButtonByName("Copy link"));
 
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([
       `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
     ]);
   });
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getButtonByName("Copied")).toBeInTheDocument();
+  });
 });
 
 test("The creator can manage visibility after reopening a shared conversation", async () => {
@@ -267,7 +270,6 @@ test("The creator can manage visibility after reopening a shared conversation", 
   await setupSharedThreadPage(context, {
     host: "app.okou.ai",
     auth: { user: { id: "user_owner", fullName: "Owner" } },
-    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   click(getButtonByName("Share"));
   await waitFor(() => {
@@ -318,7 +320,6 @@ test("An unavailable conversation permission read keeps access unknown", async (
   await setupSharedThreadPage(context, {
     host: "app.okou.ai",
     auth: { user: { id: "user_owner", fullName: "Owner" } },
-    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   click(getButtonByName("Share"));
   await screen.findByText("Unable to load permissions");
@@ -345,7 +346,6 @@ test("A signed-in recipient can copy the shared link without access controls", a
   await setupSharedThreadPage(context, {
     host: "app.okou.ai",
     auth: { user: { id: "user_recipient", fullName: "Recipient" } },
-    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   click(getButtonByName("Share"));
   await screen.findByText("Copy link");

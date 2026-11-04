@@ -271,7 +271,8 @@ impl JobProvider for LocalProvider {
             reuse_key: req.reuse_key,
             prompt: req.prompt,
             append_system_prompt: None,
-            agent_instructions: None,
+
+            instruction_file: None,
             vars: req.vars,
             sandbox_token: String::new(),
             storage_manifest: None,

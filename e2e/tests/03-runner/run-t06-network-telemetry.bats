@@ -23,8 +23,11 @@ teardown() {
     local prompt
     prompt=$(cat <<'EOF'
 python3 - <<'PY'
+import smtplib
 import socket
 import struct
+import sys
+import time
 
 
 def dns_query(transaction_id, name):
@@ -42,21 +45,20 @@ def read_exact(connection, size):
     return bytes(data)
 
 
-with socket.create_connection(("ssh.github.com", 443), timeout=5) as connection:
-    connection.settimeout(5)
-    banner = bytearray()
-    while b"\n" not in banner:
-        chunk = connection.recv(4096)
-        if not chunk:
-            raise RuntimeError("ssh.github.com:443 closed before the SSH banner")
-        banner.extend(chunk)
-    assert bytes(banner).startswith(b"SSH-2.0-")
-    connection.shutdown(socket.SHUT_WR)
+smtp_attempts = 3
+for attempt in range(1, smtp_attempts + 1):
     try:
-        while connection.recv(4096):
-            pass
-    except ConnectionResetError:
-        pass
+        with smtplib.SMTP(timeout=5) as connection:
+            status, _ = connection.connect("smtp.gmail.com", 587)
+            assert status == 220, status
+            status, _ = connection.quit()
+            assert status == 221, status
+        break
+    except (TimeoutError, ConnectionError, smtplib.SMTPServerDisconnected) as error:
+        print(f"SMTP probe attempt {attempt}/{smtp_attempts} failed: {error}", file=sys.stderr)
+        if attempt == smtp_attempts:
+            raise
+        time.sleep(1)
 print("RAW_TCP_PROBE_DONE")
 
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as connection:
@@ -140,7 +142,8 @@ EOF
             jq -e '
                 any(.[];
                     .type == "tcp" and
-                    .port == 443 and
+                    .port == 587 and
+                    .request_size > 0 and
                     .response_size > 0) and
                 any(.[];
                     .type == "udp" and
@@ -183,7 +186,7 @@ EOF
         if telemetry_summary=$(jq -c '
             {
                 tcp: [.[] |
-                    select(.type == "tcp" and .port == 443) |
+                    select(.type == "tcp" and .port == 587) |
                     {host, port, request_size, response_size, error}],
                 udp: [.[] |
                     select(.type == "udp" and .port == 9999) |

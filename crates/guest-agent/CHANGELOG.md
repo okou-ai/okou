@@ -1,5 +1,94 @@
 # Changelog
 
+## [0.109.38](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.37...guest-agent-v0.109.38) (2026-11-04)
+
+## [0.109.37](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.36...guest-agent-v0.109.37) (2026-11-04)
+
+## [0.109.36](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.35...guest-agent-v0.109.36) (2026-11-03)
+
+
+### Performance Improvements
+
+* **guest-agent:** wake event retry backoff on close ([#44991](https://github.com/okou-ai/okou/issues/44991)) ([223ec53](https://github.com/okou-ai/okou/commit/223ec5304cb8bb2b52abaf48611876d35487ca42))
+
+## [0.109.35](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.34...guest-agent-v0.109.35) (2026-11-03)
+
+
+### Performance Improvements
+
+* **guest-agent:** bound encoded session history reads ([#44944](https://github.com/okou-ai/okou/issues/44944)) ([345c6d2](https://github.com/okou-ai/okou/commit/345c6d253e5128e170cbb16b76a7a90a0af07014))
+
+## [0.109.34](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.33...guest-agent-v0.109.34) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share telemetry destination cleanup ownership ([#44860](https://github.com/okou-ai/okou/issues/44860)) ([27e972b](https://github.com/okou-ai/okou/commit/27e972ba025e79d7d7f1c67d004e9963459867f4))
+
+## [0.109.33](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.32...guest-agent-v0.109.33) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-agent:** unify heartbeat task cancellation ownership ([#44780](https://github.com/okou-ai/okou/issues/44780)) ([70f9370](https://github.com/okou-ai/okou/commit/70f9370e0a6171952985fdd6b44919b76185a8ef))
+
+## [0.109.32](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.31...guest-agent-v0.109.32) (2026-11-02)
+
+## [0.109.31](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.30...guest-agent-v0.109.31) (2026-11-02)
+
+## [0.109.30](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.29...guest-agent-v0.109.30) (2026-11-02)
+
+## [0.109.29](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.28...guest-agent-v0.109.29) (2026-11-02)
+
+## [0.109.28](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.27...guest-agent-v0.109.28) (2026-11-02)
+
+## [0.109.27](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.26...guest-agent-v0.109.27) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** share guest cgroup populated-state parsing ([#44583](https://github.com/okou-ai/okou/issues/44583)) ([f06f9c1](https://github.com/okou-ai/okou/commit/f06f9c1ddc0986c80cfdf807f30b81d076e28cc7))
+
+## [0.109.26](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.25...guest-agent-v0.109.26) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.109.25](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.24...guest-agent-v0.109.25) (2026-10-31)
+
+## [0.109.24](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.23...guest-agent-v0.109.24) (2026-10-30)
+
+## [0.109.23](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.22...guest-agent-v0.109.23) (2026-10-30)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify unwrapped codex output token limits ([#44234](https://github.com/okou-ai/okou/issues/44234)) ([deaa4ce](https://github.com/okou-ai/okou/commit/deaa4ced7f2f82b3fa081c275c88980b83f2db93))
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
+
+### Performance Improvements
+
+* **guest-agent:** bound native history json allocation ([#44231](https://github.com/okou-ai/okou/issues/44231)) ([0d49b01](https://github.com/okou-ai/okou/commit/0d49b01042899e9b1019ea47493082891c97680c))
+
+## [0.109.22](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.21...guest-agent-v0.109.22) (2026-10-30)
+
+## [0.109.21](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.20...guest-agent-v0.109.21) (2026-10-30)
+
+
+### Bug Fixes
+
+* classify claude five-hour limits as usage limits ([#44162](https://github.com/okou-ai/okou/issues/44162)) ([45f1cf7](https://github.com/okou-ai/okou/commit/45f1cf7d3de049882434435f0616afb6f46689a7))
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+* **runner:** clean terminal homes without initialized runtime directories ([#44163](https://github.com/okou-ai/okou/issues/44163)) ([486040f](https://github.com/okou-ai/okou/commit/486040fb0979e385ecc3b165206cbebf996f3e28))
+
 ## [0.109.20](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.19...guest-agent-v0.109.20) (2026-10-29)
 
 

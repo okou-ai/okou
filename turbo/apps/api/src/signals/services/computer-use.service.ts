@@ -60,11 +60,10 @@ import {
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { settle } from "../utils";
-import { clerk$ } from "../external/clerk";
+import { verifyClerkComputerUseSession } from "../external/clerk";
 import {
   computerUseHostAuthorityCondition,
   resolveComputerUseHost$,
-  verifyComputerUseSession,
   type ComputerUseHostAuthority,
   type ComputerUseSessionIdentity,
 } from "./computer-use-host-auth.service";
@@ -915,7 +914,7 @@ function resolveComputerUseCommandTargets(params: {
  */
 export const startComputerUseHost$ = command(
   async (
-    { get, set },
+    { set },
     params: ComputerUseSessionIdentity & {
       readonly installationId: string;
       readonly hostName: string;
@@ -939,7 +938,7 @@ export const startComputerUseHost$ = command(
       params.supportedCapabilities,
     );
     const now = nowDate();
-    if (!(await verifyComputerUseSession(get(clerk$), params, signal))) {
+    if (!(await verifyClerkComputerUseSession(params, signal))) {
       return { status: "invalid_session" };
     }
     const minimum = desktopMinimumSupportedVersion();

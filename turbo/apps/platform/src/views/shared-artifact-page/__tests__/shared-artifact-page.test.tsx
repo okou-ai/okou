@@ -3,6 +3,7 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -54,11 +55,13 @@ async function openViewer({
   filename = "launch.png",
   contentType = "image/png",
   url = imageUrl,
+  cjkEmphasis = false,
 }: {
   path?: string;
   filename?: string;
   contentType?: string;
   url?: string;
+  cjkEmphasis?: boolean;
 } = {}) {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
@@ -77,6 +80,7 @@ async function openViewer({
     context,
     path,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: cjkEmphasis },
   });
 }
 
@@ -293,7 +297,7 @@ test("A shared Markdown artifact displays its diagram", async () => {
   const url = "https://artifacts.example.com/plan.md";
   context.mocks.http.get(url, () => {
     return HttpResponse.text(
-      "# Shared plan\n\n```mermaid\nflowchart LR\n  Shared --> Preview\n```",
+      "# Shared plan\n\n**阶段：**共享*说明：*预览\n\n```mermaid\nflowchart LR\n  Shared --> Preview\n```",
     );
   });
   await openViewer({
@@ -301,9 +305,12 @@ test("A shared Markdown artifact displays its diagram", async () => {
     filename: "plan.md",
     contentType: "text/markdown",
     url,
+    cjkEmphasis: true,
   });
 
   await expect(screen.findByText("Shared plan")).resolves.toBeInTheDocument();
+  expect((await screen.findByText("阶段：")).tagName).toBe("STRONG");
+  expect(screen.getByText("说明：").tagName).toBe("EM");
   const image = await screen.findByRole("img", { name: "Diagram" });
   const imageUrl = image.getAttribute("src");
   if (!imageUrl) {

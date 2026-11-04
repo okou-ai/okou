@@ -93,6 +93,7 @@ struct ChatDetailView: View {
         scrolling.rowsPresented(firstItemID: id)
         if let id { onFirstMessagePresented?(id) }
       },
+      earlierMessages: conversation.earlierWindowMessages,
       quote: conversation.quote,
       refresh: {
         await conversation.refresh()
@@ -103,6 +104,13 @@ struct ChatDetailView: View {
         .environment(\.openChatSource, openChatSource)
     }
     .ignoresSafeArea(.container, edges: .vertical)
+    .overlay {
+      if conversation.history == nil && conversation.historySyncError != nil {
+        ContentUnavailableView(
+          "Unable to load chat", systemImage: "bubble.left.and.exclamationmark.bubble.right",
+          description: Text("Try updating chats again. Your draft is still available."))
+      }
+    }
     .onAppear {
       scrolling.activate(reduceMotion: reduceMotion)
       conversation.setDetailVisible(true, owner: activityOwner)
@@ -182,31 +190,56 @@ struct ChatDetailView: View {
     ) { flow in
       ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
     }
+    .alert(
+      "Unable to open connection",
+      isPresented: Binding(
+        get: { conversation.connectorActions.activationError != nil },
+        set: { if !$0 { conversation.connectorActions.activationError = nil } })
+    ) {
+      Button("OK") { conversation.connectorActions.activationError = nil }
+    } message: {
+      Text(conversation.connectorActions.activationError ?? "")
+    }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
-      ChatComposerView(
-        draft: $conversation.draft,
-        isBusy: conversation.isSending || conversation.isStopping
-          || conversation.isRecoveringFailure,
-        showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
-        error: conversation.error,
-        attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-        attachments: conversation.attachmentDraft,
-        draftState: conversation.composer,
-        submit: {
-          if history.canStop && !conversation.composer.hasContent {
-            await conversation.stop()
-          } else {
-            await scrolling.send()
+      VStack(alignment: .leading, spacing: 0) {
+        if let issue = conversation.stopIssue {
+          HStack {
+            Text(issue).font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("Check status") { Task { await conversation.refresh() } }
+              .disabled(conversation.isLoading)
+            if conversation.historySyncError == nil && history.canStop {
+              Button("Stop again") { Task { await conversation.stop() } }
+                .disabled(conversation.isStopping)
+            }
           }
-        }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
-        connectorSelection: conversation.modelSelection?.connectors,
-        mentionSource: mentionSource,
-        workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
-        sendTransition: scrolling.sendTransition
-      )
+          .font(.caption).padding(.horizontal, 16).frame(minHeight: 44)
+        }
+        ChatComposerView(
+          draft: $conversation.draft,
+          isBusy: conversation.isSending || conversation.isStopping
+            || conversation.isRecoveringFailure,
+          showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
+          error: conversation.error,
+          attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+          attachments: conversation.attachmentDraft,
+          draftState: conversation.composer,
+          submit: {
+            if history.canStop && !conversation.composer.hasContent {
+              await conversation.stop()
+            } else {
+              await scrolling.send()
+            }
+          }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
+          connectorSelection: conversation.modelSelection?.connectors,
+          mentionSource: mentionSource,
+          workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
+          sendTransition: scrolling.sendTransition
+        )
+      }
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
       } action: {
@@ -258,7 +291,10 @@ struct ChatDetailView: View {
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
       }
-      .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
+      .padding(
+        EdgeInsets(
+          top: topSpacing, leading: ConversationCollectionRow.messageHorizontalInset,
+          bottom: 0, trailing: ConversationCollectionRow.messageHorizontalInset))
     case .footer(let executionState, let showsAvatar):
       VStack(alignment: .leading, spacing: 24) {
         if executionState.isActive {
@@ -355,7 +391,9 @@ struct ChatDetailView: View {
         .foregroundStyle(
           message.isError ? Color.red : (isWorkHistory ? Color.secondary : Color.primary)
         )
-        .padding(.leading, message.role == .assistant ? 6 : 0)
+        .padding(
+          .leading, message.role == .assistant ? ConversationCollectionRow.assistantLeadingInset : 0
+        )
       }
       ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, attachment in
         MessageAttachmentView(
@@ -372,7 +410,7 @@ struct ChatDetailView: View {
   {
     if let pendingRetry {
       HStack {
-        Text(pendingRetry ? "Delivery not confirmed" : "Sending…")
+        Text(pendingRetry ? conversation.deliveryFailureText(message.id) : "Sending…")
           .font(.caption).foregroundStyle(.secondary)
         if pendingRetry {
           Button("Check and retry") {

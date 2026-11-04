@@ -8,6 +8,33 @@ private let replayAgent = "10000000-0000-4000-8000-000000000103"
 
 final class ChatThreadReplayTests: XCTestCase {
 
+  func testProjectMembershipMovesAndLeavesWithoutChangingAgentOrActivity() throws {
+    let original = try XCTUnwrap(
+      ChatThreadReplay.replay(
+        snapshot: [], events: [event(.created, at: 1, title: "Planning")]
+      ).first)
+    let project = "10000000-0000-4000-8000-000000000071"
+    let moved = ChatThreadChange(
+      kind: .projectUpdated, chatThreadId: replayThread, agentId: replayAgent,
+      projectId: project, createdAt: date(10))
+    let member = try XCTUnwrap(ChatThreadReplay.replay(snapshot: [original], events: [moved]).first)
+    XCTAssertEqual(member.projectId, project)
+    XCTAssertEqual(member.agentID, original.agentID)
+    XCTAssertEqual(member.sortAt, original.sortAt)
+    XCTAssertEqual(member.title, original.title)
+    let leave = ChatThreadChange(
+      kind: .projectUpdated, chatThreadId: replayThread, agentId: replayAgent,
+      projectId: nil, createdAt: date(11))
+    XCTAssertNil(ChatThreadReplay.replay(snapshot: [member], events: [leave]).first?.projectId)
+    XCTAssertEqual(
+      ChatThreadReplay.replay(snapshot: [member], events: []).first?.projectId, project)
+    XCTAssertEqual(
+      ChatThreadReplay.replay(
+        snapshot: [], events: [moved, event(.created, at: 1)]
+      ).first?.projectId,
+      project)
+  }
+
   func testPrependingPinsMatchesPWAFractionalKeysAndLegacyRanking() throws {
     XCTAssertEqual(try ChatThreadReplay.firstPinOrder([]), "a0")
     let smallest = "A" + String(repeating: "0", count: 26)

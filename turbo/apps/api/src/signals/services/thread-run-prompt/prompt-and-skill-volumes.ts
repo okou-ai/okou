@@ -1,5 +1,7 @@
 import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
 import {
@@ -98,7 +100,10 @@ function createIntegrationPrompts(
   };
 }
 
-function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
+function createExecutionPromptSources(
+  bootstrap: AgentRunContextSignals,
+  threadContext: ThreadContext,
+) {
   const agent$ = computed((get) => {
     return get(bootstrap.agent$);
   });
@@ -111,14 +116,35 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
   const memberRoutes$ = computed((get) => {
     return get(bootstrap.memberRoutes$);
   });
-  const authorizedConnectors$ = computed((get) => {
-    return get(bootstrap.authorizedConnectors$);
+  const authorizedConnectors$ = computed(async (get) => {
+    const [connectors, features] = await Promise.all([
+      get(bootstrap.authorizedConnectors$),
+      get(bootstrap.featureSwitches$),
+    ]);
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
+    ) {
+      return connectors;
+    }
+    const selection = await get(threadContext.connectorSelection$);
+    if ("status" in selection) {
+      throw new Error("Connector prompt requires an available Chat");
+    }
+    const scope = selection.connectorScope;
+    return connectors.filter((connector) => {
+      return connector.kind === "builtin"
+        ? scope.allowedConnectorSlugs.includes(connector.connectorSlug)
+        : scope.allowedCustomConnectorIds.includes(connector.customConnectorId);
+    });
   });
   const selectedImageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
   const disabledPaidTools$ = computed((get) => {
     return get(bootstrap.disabledPaidTools$);
+  });
+  const seedSkills$ = computed((get) => {
+    return get(bootstrap.seedSkills$);
   });
   return {
     agent$,
@@ -128,6 +154,7 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
     authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
+    seedSkills$,
   };
 }
 
@@ -137,7 +164,7 @@ export function createPromptAndSkillVolumesSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ): Computed<Promise<PromptAndSkillVolumes>> {
-  const sources = createExecutionPromptSources(bootstrap);
+  const sources = createExecutionPromptSources(bootstrap, threadContext);
   const {
     agent$,
     memberMetadata$,
@@ -145,11 +172,8 @@ export function createPromptAndSkillVolumesSignals(
     authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
+    seedSkills$,
   } = sources;
-  const workflowSkills$ = computed((get) => {
-    return get(threadContext.workflowSkills$);
-  });
-
   const cloudBrowserEnabled$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;
     if (!thread) {
@@ -180,7 +204,10 @@ export function createPromptAndSkillVolumesSignals(
     selectedImageModel$,
     disabledPaidTools$,
   );
-  const systemSkills$ = createSystemSkillsContext(disabledPaidTools$);
+  const systemSkills$ = createSystemSkillsContext(
+    disabledPaidTools$,
+    seedSkills$,
+  );
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
     const contextType = (await get(pickedEvent$))?.contextType;
@@ -199,7 +226,6 @@ export function createPromptAndSkillVolumesSignals(
       user,
       computerUse,
       connectors,
-      workflows,
       systemSkills,
       runtime,
     ] = await Promise.all([
@@ -210,7 +236,6 @@ export function createPromptAndSkillVolumesSignals(
       get(userPrompt$),
       get(computerUsePrompt$),
       get(connectors$),
-      get(workflowSkills$),
       get(systemSkills$),
       get(runtimePrompt$),
     ]);
@@ -236,7 +261,6 @@ export function createPromptAndSkillVolumesSignals(
       user,
       computerUse,
       connectors,
-      workflows,
       systemSkills,
       runtime,
     ]);

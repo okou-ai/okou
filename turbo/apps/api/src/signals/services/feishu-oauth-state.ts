@@ -7,6 +7,7 @@ import {
   object,
   string,
   url,
+  uuid,
   type infer as zInfer,
 } from "zod";
 
@@ -21,7 +22,7 @@ import {
 const FEISHU_OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60;
 
 const feishuOAuthStateSchema = object({
-  installationId: string().uuid(),
+  installationId: uuid(),
   orgId: string().min(1),
   userId: string().min(1),
   callbackTarget: literal("app").optional(),

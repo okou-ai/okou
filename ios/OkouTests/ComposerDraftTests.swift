@@ -565,7 +565,29 @@ final class ComposerDraftTests: XCTestCase {
     }
   }
 
-  func testHTTPRejectionsRemainVisibleAndRecoverOnExplicitRetry() async {
+  func testDraftSyncRecoversFromATemporaryServerFailureAndPersistsAcrossReopen() async {
+    let server = DraftServer()
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    composer.text = "Keep this draft through a server outage"
+    server.state.value.withLock {
+      $0.remainingRejections = 1
+      $0.rejection = ChatHTTPResponse(
+        status: 503, body: #"{"error":{"message":"Temporarily unavailable"}}"#)
+    }
+
+    await composer.synchronize()
+
+    XCTAssertEqual(
+      server.state.value.withLock { $0.remote.draftUserMessage?.text }, composer.text)
+    composer.close()
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.text, "Keep this draft through a server outage")
+  }
+
+  func testCloudRejectionsRetainInputAndRecoverOnExplicitRetry() async {
     for status in [403, 500] {
       let server = DraftServer()
       let composer = server.composer()
@@ -576,11 +598,11 @@ final class ComposerDraftTests: XCTestCase {
           status: status, body: "{\"error\":{\"message\":\"Draft rejected\"}}")
       }
       await composer.synchronize()
-      XCTAssertTrue(composer.error?.contains("Draft rejected") == true)
+      XCTAssertTrue(composer.syncWarning?.contains("has not synced") == true)
       XCTAssertEqual(composer.text, "Retain the rejected draft")
       server.state.value.withLock { $0.rejection = nil }
       await composer.synchronize()
-      XCTAssertNil(composer.error)
+      XCTAssertNil(composer.syncWarning)
       XCTAssertEqual(
         server.state.value.withLock { $0.remote.draftUserMessage?.text },
         "Retain the rejected draft")
@@ -682,6 +704,7 @@ private final class DraftServer: Sendable {
     var remote = ComposerDraft()
     var networkError: URLError.Code?
     var rejection: ChatHTTPResponse?
+    var remainingRejections: Int?
     var missingFile = false
     var paths: [String] = []
     var writes = 0
@@ -704,7 +727,14 @@ private final class DraftServer: Sendable {
         return value.networkError
       }
       if let failure { throw URLError(failure) }
-      if let rejection = state.value.withLock({ $0.rejection }) { return rejection }
+      let rejection = state.value.withLock { value -> ChatHTTPResponse? in
+        if let remaining = value.remainingRejections {
+          guard remaining > 0 else { return nil }
+          value.remainingRejections = remaining - 1
+        }
+        return value.rejection
+      }
+      if let rejection { return rejection }
       if path == "/api/web/file-url" {
         return ChatHTTPResponse(
           status: state.value.withLock { $0.missingFile } ? 404 : 200, body: "{}")
@@ -741,7 +771,8 @@ private final class DraftServer: Sendable {
     ComposerDraftStore(
       target: .agent(draftAgentID),
       commands: ChatCommands(client: http.client, sync: ChatSync(client: http.client)),
-      repository: ChatDraftRepository(client: http.client), storage: storage, didFail: { _ in })
+      repository: ChatDraftRepository(client: http.client), storage: storage, didFail: { _ in },
+      syncSleep: { _ in })
   }
 }
 

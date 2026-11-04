@@ -40,7 +40,7 @@ async fn claude_code_event_delivery_byte_overload_keeps_recent_events()
     let prompt = String::from_utf8(prompt)?;
 
     unsafe {
-        common::setup_env(&mock_cli, tmp.path(), &prompt, 1, 1)?;
+        common::setup_env_with_owned_prompt(&mock_cli, tmp.path(), prompt, 1, 1)?;
         std::env::set_var(
             guest_contracts::env::CANONICAL_API_URL_ENV,
             &server.base_url,

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import { orgMembersContract } from "@okouai/api-contracts/client/org-member-routes";
 import type {
   OrgMember,
   OrgPendingInvitation,

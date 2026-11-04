@@ -111,6 +111,71 @@ describe("run connector account inspection", () => {
     );
   }
 
+  it("reflects a runtime account replacement in later list and status commands", async () => {
+    const target = { kind: "builtin" as const, connectorSlug: "github" };
+    server.use(
+      stubConnectorCatalog([catalogItem({ connectorSlug: "github" })]),
+      stubCustomConnectors([]),
+      http.post(
+        "http://localhost:3000/api/connector-accounts/inspect",
+        async ({ request }) => {
+          const body = connectorAccountsContract.inspect.body.parse(
+            await request.json(),
+          );
+          return HttpResponse.json({
+            results: body.selections.map((selection) => {
+              return accountMetadata(selection.connectionId, target);
+            }),
+          });
+        },
+      ),
+    );
+
+    for (const connectionId of [
+      PINNED_CONNECTION_ID,
+      "33333333-3333-4333-8333-333333333333",
+    ]) {
+      writeContext([{ ...target, connectionId }]);
+      mockConsoleLog.mockClear();
+      await listCommand.parseAsync(["node", "cli", "--json"]);
+      const list: unknown = JSON.parse(
+        String(mockConsoleLog.mock.calls[0]?.[0]),
+      );
+      expect(list).toEqual(
+        expect.objectContaining({
+          context: "run",
+          state: "available",
+          connectors: [
+            expect.objectContaining({
+              account: expect.objectContaining({
+                state: "available",
+                connectionId,
+              }),
+            }),
+          ],
+        }),
+      );
+
+      mockConsoleLog.mockClear();
+      await statusCommand.parseAsync(["node", "cli", "github", "--json"]);
+      const status: unknown = JSON.parse(
+        String(mockConsoleLog.mock.calls[0]?.[0]),
+      );
+      expect(status).toEqual(
+        expect.objectContaining({
+          context: "run",
+          state: "available",
+          connector: expect.objectContaining({
+            account: expect.objectContaining({
+              state: "available",
+              connectionId,
+            }),
+          }),
+        }),
+      );
+    }
+  });
+
   it.each([
     { selector: "omitted", args: [], setup: {} },
     { selector: "matching", args: ["--agent", AGENT_ID], setup: {} },

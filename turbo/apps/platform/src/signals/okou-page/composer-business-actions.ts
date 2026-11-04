@@ -17,6 +17,8 @@ import type { ComposerConnectorSignals } from "./connectors.ts";
 import { loadCustomTemplateCatalog$ } from "./custom-template-library.ts";
 import { invalidateAgentConnectorAccess$ } from "./composer-agent-connectors.ts";
 import { withCleanup } from "../utils.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 export function createComposerTemplateSelection(
   taskChips: ComposerTaskChipsSignals,
@@ -148,13 +150,15 @@ export function createComposerConnectorCompletion(
 ) {
   const completeConnectorAddition$ = command(
     async (
-      { set },
+      { get, set },
       connectorSlug: ConnectorSlug,
       alreadyAuthorized: boolean,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
-      if (!alreadyAuthorized) {
+      const chatAccounts =
+        get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+      if (!chatAccounts && !alreadyAuthorized) {
         await set(
           connector.setConnectorAuthorization$,
           { kind: "builtin", connectorSlug },
@@ -164,12 +168,19 @@ export function createComposerConnectorCompletion(
       }
       signal.throwIfAborted();
       set(connector.resources.reloadConnected$);
-      return !alreadyAuthorized;
+      if (chatAccounts) {
+        set(connector.chatAccess.reload$);
+      }
+      return !chatAccounts && !alreadyAuthorized;
     },
   );
-  const completeCustomConnectorAddition$ = command(({ set }) => {
+  const completeCustomConnectorAddition$ = command(({ get, set }) => {
     set(connector.resources.reloadConnected$);
-    set(invalidateAgentConnectorAccess$, agentId);
+    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      set(connector.chatAccess.reload$);
+    } else {
+      set(invalidateAgentConnectorAccess$, agentId);
+    }
   });
   return { completeConnectorAddition$, completeCustomConnectorAddition$ };
 }

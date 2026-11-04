@@ -5,8 +5,9 @@ import { useTranslation } from "react-i18next";
 import { runPromptOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import { onboardingMakeConnectorSlugs$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import {
+  editOnboardingPrompt$,
   onboardingDraft$,
-  updateOnboardingDraft$,
+  selectOnboardingPromptOutput$,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -19,6 +20,7 @@ import {
 } from "./onboarding-industry-parts.tsx";
 import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
+import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
 
 /**
  * What the prompt handoff does: the prompt the visitor brought stays editable,
@@ -27,7 +29,8 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
  */
 function usePromptOnboarding() {
   const draft = useGet(onboardingDraft$);
-  const setDraft = useSet(updateOnboardingDraft$);
+  const setPrompt = useSet(editOnboardingPrompt$);
+  const selectOutput = useSet(selectOnboardingPromptOutput$);
   const [runLoadable, runPrompt] = useLoadableSet(runPromptOnboarding$);
   const pageSignal = useGet(pageSignal$);
   const connectorSlugs = useGet(onboardingMakeConnectorSlugs$);
@@ -38,9 +41,10 @@ function usePromptOnboarding() {
 
   return {
     prompt: draft.prompt,
-    setPrompt: (prompt: string) => {
-      setDraft({ prompt });
-    },
+    output: draft.output,
+    files: draft.files,
+    setPrompt,
+    selectOutput,
     connectorSlugs,
     run,
     busy: runLoadable.state === "loading",
@@ -50,15 +54,30 @@ function usePromptOnboarding() {
 /**
  * The prompt handoff in the source-first flow's look. A visitor who brings a
  * prompt skips that flow's questions, so this is their whole onboarding: one
- * step that introduces Okou as the first question does, the prompt they
- * brought on the sheet, and recommended connections below it.
+ * step that explains how to tailor the task, connect relevant tools, and
+ * choose an output format beside the editable prompt and its controls.
  */
 export function OnboardingSourcesFirstPromptPage() {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
-  const { prompt, setPrompt, connectorSlugs, run, busy } =
-    usePromptOnboarding();
+  const {
+    prompt,
+    output,
+    files,
+    setPrompt,
+    selectOutput,
+    connectorSlugs,
+    run,
+    busy,
+  } = usePromptOnboarding();
 
+  const fileLabels = [
+    ...new Map(
+      files.map((file) => {
+        return [`${file.hash}:${file.filename}`, file] as const;
+      }),
+    ).values(),
+  ];
   const promptInput = (
     <Textarea
       id="onboarding-prompt"
@@ -91,11 +110,6 @@ export function OnboardingSourcesFirstPromptPage() {
       })}
       mobileDescription=""
       mobileFooter={<OnboardingSecurityLink />}
-      trustPoints={[
-        t(($) => {
-          return $.onboarding.make.promptDescription;
-        }),
-      ]}
       supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
         return mobile
@@ -103,7 +117,7 @@ export function OnboardingSourcesFirstPromptPage() {
           : $.onboarding.common.next;
       })}
       onPrimary={run}
-      primaryDisabled={!prompt.trim()}
+      primaryDisabled={!prompt.trim() && files.length === 0}
       primaryBusy={busy}
     >
       <div className="mx-auto flex w-full max-w-[520px] flex-col gap-3">
@@ -113,6 +127,15 @@ export function OnboardingSourcesFirstPromptPage() {
           <ProductBrandMark decorative size="hero" />
         </div>
         {promptInput}
+        {files.length > 0 && (
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {fileLabels.map((file) => {
+              return (
+                <li key={`${file.hash}:${file.filename}`}>{file.filename}</li>
+              );
+            })}
+          </ul>
+        )}
         <section
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"
@@ -126,7 +149,7 @@ export function OnboardingSourcesFirstPromptPage() {
                 return $.onboarding.sourcesFirst.prompt.connectorsTitle;
               })}
             </h2>
-            <p className="text-sm leading-6 text-muted-foreground">
+            <p className="text-sm leading-relaxed text-muted-foreground">
               {t(($) => {
                 return $.onboarding.sourcesFirst.prompt.connectorsDescription;
               })}
@@ -137,6 +160,11 @@ export function OnboardingSourcesFirstPromptPage() {
             variant="sheet"
           />
         </section>
+        <OnboardingOutputFormats
+          output={output}
+          onSelect={selectOutput}
+          disabled={busy}
+        />
       </div>
     </OnboardingStepLayout>
   );

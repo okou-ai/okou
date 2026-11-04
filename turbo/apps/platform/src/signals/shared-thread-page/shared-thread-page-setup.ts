@@ -1,10 +1,6 @@
 import { createSharedThreadVisibilitySignals } from "../shared-thread-visibility.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  sharedThreadsContract,
-  type SharedThreadResponse,
-} from "@okouai/api-contracts/contracts/shared-threads";
+import { sharedThreadsContract } from "@okouai/api-contracts/client/shared-threads";
+import type { SharedThreadResponse } from "@okouai/api-contracts/contracts/shared-threads";
 import { command, computed, state } from "ccstate";
 import { createElement } from "react";
 
@@ -75,9 +71,7 @@ const sharedThread$ = computed((get) => {
     messages,
     richContent,
     artifactPreview,
-    visibility: get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
-      ? createSharedThreadVisibilitySignals(response.id)
-      : undefined,
+    visibility: createSharedThreadVisibilitySignals(response.id),
   };
 });
 

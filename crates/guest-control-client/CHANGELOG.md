@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.23.74](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.73...guest-control-client-v0.23.74) (2026-11-04)
+
+
+### Refactoring
+
+* **sandbox:** retire orphaned staged-file finalization ([#45133](https://github.com/okou-ai/okou/issues/45133)) ([e397ac6](https://github.com/okou-ai/okou/commit/e397ac62f05a037478f6135ecb231f665ab76afe))
+
+## [0.23.73](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.72...guest-control-client-v0.23.73) (2026-11-04)
+
+
+### Refactoring
+
+* **guest-control:** share fixed-helper response validation ([#45033](https://github.com/okou-ai/okou/issues/45033)) ([8ad4db9](https://github.com/okou-ai/okou/commit/8ad4db93f2a6f537b6d1a4617074ae2ac608ac79))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.23.72](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.71...guest-control-client-v0.23.72) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
+## [0.23.71](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.70...guest-control-client-v0.23.71) (2026-11-03)
+
+## [0.23.70](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.69...guest-control-client-v0.23.70) (2026-11-03)
+
+## [0.23.69](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.68...guest-control-client-v0.23.69) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** retire orphaned guest file compression transport ([#44713](https://github.com/okou-ai/okou/issues/44713)) ([5dc1d17](https://github.com/okou-ai/okou/commit/5dc1d17b797535c5e154a6cf5960534363966fe0))
+
+## [0.23.68](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.67...guest-control-client-v0.23.68) (2026-11-02)
+
+## [0.23.67](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.66...guest-control-client-v0.23.67) (2026-11-02)
+
+## [0.23.66](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.65...guest-control-client-v0.23.66) (2026-11-01)
+
+
+### Refactoring
+
+* **guest-control-client:** share request write progress ([#44534](https://github.com/okou-ai/okou/issues/44534)) ([68434aa](https://github.com/okou-ai/okou/commit/68434aa23a706284279c921991cdc1791ad576de))
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.23.65](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.64...guest-control-client-v0.23.65) (2026-10-31)
+
+## [0.23.64](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.63...guest-control-client-v0.23.64) (2026-10-30)
+
+## [0.23.63](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.62...guest-control-client-v0.23.63) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
+## [0.23.62](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.61...guest-control-client-v0.23.62) (2026-10-30)
+
+## [0.23.61](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.60...guest-control-client-v0.23.61) (2026-10-30)
+
 ## [0.23.60](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.59...guest-control-client-v0.23.60) (2026-10-29)
 
 ## [0.23.59](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.58...guest-control-client-v0.23.59) (2026-10-29)

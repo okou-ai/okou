@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import type { Root } from "hast";
 import { visit } from "unist-util-visit";
@@ -7,6 +8,7 @@ import { createObjectUrlResource } from "../object-url-resource.ts";
 import { attachmentDownloadSource$ } from "../attachment-download-source.ts";
 import { eventBodyPlan } from "./parse-body-blocks.ts";
 import { onRef } from "../utils.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 /** Pass the committed DOM owner's lifetime directly to the click action. */
 export class GenerateMessagePdfEvent extends Event {
@@ -43,11 +45,13 @@ interface MessagePdfDownload {
 /** Generate bytes only; the user downloads them with a second, native click. */
 export const generateMessagePdf$ = command(
   async (
-    { set },
+    { get, set },
     input: MessagePdfInput,
     signal: AbortSignal,
   ): Promise<MessagePdfDownload> => {
     signal.throwIfAborted();
+    const cjkEmphasis =
+      get(featureSwitch$)[FeatureSwitchKey.MarkdownCjkEmphasis] === true;
     const imageSources = new Set<string>();
     for (const tree of input.trees) {
       visit(tree, "element", (node) => {
@@ -66,7 +70,12 @@ export const generateMessagePdf$ = command(
     const sources = input.contents.map((content) => {
       return eventBodyPlan(content).treeSource;
     });
-    const blob = await generateMessagePdfBlob(sources, imageUrls, signal);
+    const blob = await generateMessagePdfBlob(
+      sources,
+      imageUrls,
+      cjkEmphasis,
+      signal,
+    );
     signal.throwIfAborted();
     const transferFocus = document.activeElement === input.trigger;
     return {

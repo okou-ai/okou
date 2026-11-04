@@ -201,6 +201,12 @@ export const mobileBreadcrumb$ = computed(
         }),
         path: ROUTES.connectors,
       },
+      feed: {
+        label: i18n.t(($) => {
+          return $.appShell.sidebar.navigation.feed;
+        }),
+        path: ROUTES.feed,
+      },
     };
     if (route) {
       const nonChatSection = nonChatSections[route];

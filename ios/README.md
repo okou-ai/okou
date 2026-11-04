@@ -36,8 +36,8 @@ chat-specific choices and personal subscription account management.
 Workspace setup and Okou account management remain on the web.
 
 Conversation history renders durable user messages and assistant results using
-Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
-links, images, and code blocks, with text selection, code copying, and horizontal
+a pinned Okou fork of Textual 0.5.0. The renderer supports Markdown headings, lists,
+quotes, tables, links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output is not rendered. The native composer Connector sheet supports
 service access, conversation account choices, permission grants, discovery and
@@ -64,10 +64,17 @@ control can stop active work.
 
 Sending preserves the conversation's confirmed connector account choices and
 Cloud Browser / Computer Use selection. The same conversation shares these
-settings with the PWA. Service access belongs to the current user and Agent;
-account preferences and remote host overrides belong to the conversation.
+settings with the PWA. When `connectorChatAccountAccess` is enabled, each account
+inherits its saved default enablement or has an explicit conversation override;
+the conversation selects one enabled current account. Connector permissions belong
+to the current user and connector across conversations and accounts. Supported
+connectors expose permissions even when all saved accounts are disabled. The
+ordinary feature-off service authorization remains Agent-scoped. Remote host
+overrides belong to the conversation.
 New-chat account and host choices remain with their Agent composer until the
-first message creates a conversation. An uncertain settings write requires fresh
+first message creates a conversation. New-mode account overrides and current
+choices are saved before the first message; a failed initialization retains the
+draft for ordinary retry. An uncertain settings write requires fresh
 readback before another message can be sent.
 
 ## Local setup

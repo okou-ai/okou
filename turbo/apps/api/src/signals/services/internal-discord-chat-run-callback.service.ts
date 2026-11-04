@@ -2,8 +2,6 @@ import { command } from "ccstate";
 import { and, countDistinct, eq, isNull, or } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
@@ -23,11 +21,6 @@ import {
   integrationAdmissionFailurePresentation,
   integrationAgentResponsePresentation,
 } from "./integration-agent-response-presentation.service";
-import {
-  runModelSelectionColumns,
-  runModelSelectionCondition,
-  runModelSelectionFromRow,
-} from "./run-model-selection.service";
 
 const L = logger("DiscordChatDelivery");
 
@@ -179,40 +172,26 @@ const readDiscordResponsePresentation$ = command(
     signal: AbortSignal,
   ) => {
     const db = get(db$);
-    const [agentLabel, runModel] = await Promise.all([
-      (async () => {
-        const [org] = await db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, args.orgId))
-          .limit(1);
-        signal.throwIfAborted();
-        if (args.agentId === org?.defaultAgentId) {
-          return undefined;
-        }
-        const [agent] = await db
-          .select({ displayName: agents.displayName, name: agents.name })
-          .from(agents)
-          .where(eq(agents.id, args.agentId))
-          .limit(1);
-        signal.throwIfAborted();
-        return agent?.displayName ?? agent?.name;
-      })(),
-      (async () => {
-        if (args.runId === null) {
-          return undefined;
-        }
-        const [row] = await db
-          .select(runModelSelectionColumns())
-          .from(agentRuns)
-          .where(runModelSelectionCondition(args.runId))
-          .limit(1);
-        signal.throwIfAborted();
-        return runModelSelectionFromRow(row);
-      })(),
-    ]);
+    const agentLabel = await (async () => {
+      const [org] = await db
+        .select({ defaultAgentId: orgMetadata.defaultAgentId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, args.orgId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (args.agentId === org?.defaultAgentId) {
+        return undefined;
+      }
+      const [agent] = await db
+        .select({ displayName: agents.displayName, name: agents.name })
+        .from(agents)
+        .where(eq(agents.id, args.agentId))
+        .limit(1);
+      signal.throwIfAborted();
+      return agent?.displayName ?? agent?.name;
+    })();
     signal.throwIfAborted();
-    // Admission failures have no run and omit the model label.
+    // Admission notices keep their existing sender-attribution wording.
     if (args.runId === null) {
       return integrationAdmissionFailurePresentation({
         agentLabel,
@@ -221,12 +200,6 @@ const readDiscordResponsePresentation$ = command(
     }
     return integrationAgentResponsePresentation({
       agentLabel,
-      modelLabel: runModel?.selectedModel
-        ? getRunModelDisplayName(
-            runModel.selectedModel,
-            runModel.codexServiceTier,
-          )
-        : undefined,
       replyToMention: args.replyToMention,
     });
   },

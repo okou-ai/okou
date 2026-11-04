@@ -387,6 +387,12 @@ struct ObservedStartSandbox {
 
 #[async_trait]
 impl Sandbox for ObservedStartSandbox {
+    async fn run_agent_instructions(
+        &self,
+        request: &sandbox::AgentInstructionsRequest<'_>,
+    ) -> sandbox::Result<sandbox::ExecResult> {
+        self.inner.run_agent_instructions(request).await
+    }
     fn id(&self) -> &str {
         self.inner.id()
     }
@@ -527,17 +533,6 @@ impl Sandbox for ObservedStartSandbox {
 
     async fn write_file(&self, path: &str, content: &[u8]) -> sandbox::Result<()> {
         self.inner.write_file(path, content).await
-    }
-
-    async fn write_file_with_compression(
-        &self,
-        path: &str,
-        content: &[u8],
-        compression: sandbox::FileCompression,
-    ) -> sandbox::Result<Option<sandbox::FileWriteMeasurements>> {
-        self.inner
-            .write_file_with_compression(path, content, compression)
-            .await
     }
 
     async fn write_private_file(&self, path: &str, content: &[u8]) -> sandbox::Result<()> {

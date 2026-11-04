@@ -351,7 +351,13 @@ async fn codex_app_server_preserves_large_notification_before_response() -> Resu
         .and_then(|params| params["message"].as_str())
         .ok_or("large notification omitted its message")?;
     assert_eq!(message.len(), 17 * 1024 * 1024);
-    assert!(message.bytes().all(|byte| byte == b'x'));
+    const EXPECTED_CHUNK: [u8; 8192] = [b'x'; 8192];
+    assert!(
+        message
+            .as_bytes()
+            .chunks(EXPECTED_CHUNK.len())
+            .all(|chunk| chunk == &EXPECTED_CHUNK[..chunk.len()])
+    );
     assert!(client.pop_notification().is_none());
 
     let state = wait_result(client.request_value("mock/state", json!({})), "mock/state").await?;
@@ -495,10 +501,11 @@ async fn codex_app_server_accepts_response_above_former_stdout_limit() -> Result
     assert_eq!(padding.len(), 65 * 1024 * 1024 + 22);
     assert!(padding.starts_with("large-head-"));
     assert!(padding.ends_with("-large-tail"));
+    const EXPECTED_CHUNK: [u8; 8192] = [b'x'; 8192];
     assert!(
-        padding[11..padding.len() - 11]
-            .bytes()
-            .all(|byte| byte == b'x')
+        padding.as_bytes()[11..padding.len() - 11]
+            .chunks(EXPECTED_CHUNK.len())
+            .all(|chunk| chunk == &EXPECTED_CHUNK[..chunk.len()])
     );
     drop(response);
 

@@ -233,7 +233,7 @@ describe("release-please API deployment graph", () => {
     );
 
     expect(promoteApiProductionHeader).toContain(
-      "needs: [release-please, builds-complete]",
+      "needs: [release-please, builds-complete, publish-browser-extension]",
     );
     expect(promoteApiProductionJob).toContain("always() &&");
     expect(promoteApiProductionJob).toContain(

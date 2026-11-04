@@ -6,7 +6,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenuItem,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -108,65 +107,6 @@ export function CodexResetCreditsButton({
             <RotateCcw size={14} className="shrink-0" aria-hidden />
             <span className="truncate">{displayLabel}</span>
           </Button>
-        }
-      />
-      <TooltipContent
-        side="bottom"
-        align="end"
-        sideOffset={8}
-        className="border shadow-md"
-        style={{
-          backgroundColor: "hsl(var(--popover))",
-          color: "hsl(var(--popover-foreground))",
-        }}
-      >
-        {formatCodexResetCredits(resetCredits, resetCreditsNextExpiresAt)}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-export function CodexResetCreditsMenuItem({
-  className,
-  resetCredits,
-  resetCreditsNextExpiresAt,
-  resetPending,
-  onReset,
-}: {
-  readonly className?: string;
-  readonly resetCredits: number | null;
-  readonly resetCreditsNextExpiresAt?: string | null;
-  readonly resetPending: boolean;
-  readonly onReset?: () => void;
-}) {
-  const label = formatCodexResetCredits(resetCredits);
-  const displayLabel = formatCodexResetCreditsDisplay(resetCredits);
-  const resetDisabled =
-    resetPending || resetCredits === 0 || onReset === undefined;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <DropdownMenuItem
-            aria-label={label}
-            aria-disabled={resetDisabled || undefined}
-            className={cn(
-              "shrink-0 gap-1.5 px-1 text-[10px] leading-4 tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground [&_svg]:size-3",
-              className,
-              resetDisabled &&
-                "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
-            )}
-            closeOnClick={!resetDisabled}
-            onClick={() => {
-              if (!resetDisabled) {
-                onReset?.();
-              }
-            }}
-          >
-            <RotateCcw size={12} className="shrink-0" aria-hidden />
-            <span className="truncate">{displayLabel}</span>
-          </DropdownMenuItem>
         }
       />
       <TooltipContent

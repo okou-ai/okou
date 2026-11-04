@@ -1,9 +1,7 @@
 import { now as currentTimeMs } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
-import {
-  voiceIoQuotaContract,
-  type AudioInputQuotaResponse,
-} from "@okouai/api-contracts/contracts/voice-io-quota";
+import { voiceIoQuotaContract } from "@okouai/api-contracts/client/voice-io-quota";
+import type { AudioInputQuotaResponse } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { pageSignal$ } from "../page-signal.ts";
 import { isOrgAdmin$ } from "../org.ts";
 import { apiClient$ } from "../api-client.ts";

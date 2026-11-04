@@ -36,13 +36,51 @@ final class NativeProcessTests: XCTestCase {
     return (CommandExecutor(helper: helper), directory)
   }
 
+  private func permissionFixture(
+    awakeAdvance: Duration = .milliseconds(200), responds: Bool = true,
+    requestsBeforeSuspension: Int = 1
+  ) throws -> (helper: NativeProcess, directory: URL, marker: URL) {
+    let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    addTeardownBlock { try? FileManager.default.removeItem(at: marker) }
+    let awakeStarted = SuspendingClock.now
+    let (helper, directory) = try nativeFixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, pathlib, sys, tempfile
+      root = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY'])
+      marker = pathlib.Path(tempfile.gettempdir()) / "\#(marker.lastPathComponent)"
+      first_request = None
+      for line in sys.stdin:
+          request = json.loads(line)
+          if first_request is None:
+              first_request = request
+          with (root / 'attempts').open('a') as stream:
+              stream.write(request['kind'] + '\n')
+          if len((root / 'attempts').read_text().splitlines()) >= \#(requestsBeforeSuspension):
+              marker.write_text(str(os.getpid()))
+              if \#(responds ? "True" : "False"):
+                  print(json.dumps({'id': first_request['id'], 'status': 'succeeded',
+                                    'result': {'accessibility': True, 'screenRecording': True,
+                                               'pid': os.getpid()}}), flush=True)
+      """#,
+      now: {
+        ContinuousClock.now.advanced(
+          by: .seconds(FileManager.default.fileExists(atPath: marker.path) ? 120 : 0))
+      },
+      awakeNow: {
+        FileManager.default.fileExists(atPath: marker.path)
+          ? awakeStarted.advanced(by: awakeAdvance) : awakeStarted
+      })
+    return (helper, directory, marker)
+  }
+
   private func listApps(_ executor: CommandExecutor, timeoutMs: Int = 5000) async -> JSONValue {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let timestamp = formatter.string(from: Date())
     let command = ComputerUseCommandClaim.Command(
       id: UUID().uuidString, kind: .appsList, status: .running, hostId: "computer", hostName: "Mac",
-      payload: [:], result: nil, error: nil, timeoutMs: timeoutMs, createdAt: timestamp,
+      payload: .init(), result: nil, error: nil, timeoutMs: timeoutMs, createdAt: timestamp,
       claimedAt: timestamp, completedAt: nil)
     return await executor.execute(command, claimStarted: .now)
   }
@@ -110,7 +148,6 @@ final class NativeProcessTests: XCTestCase {
       decoding: try XCTUnwrap(attachments["native-helper-diagnostics.txt"]), as: UTF8.self)
     XCTAssertTrue(details.contains("failure=invalid_json"))
     XCTAssertTrue(details.contains("decoderError="))
-    XCTAssertTrue(details.contains("readSequence="))
 
     DesktopTelemetry.captureStartupFailure()
     let startup = try XCTUnwrap(
@@ -186,8 +223,6 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertTrue(details.contains("responseBytes=\(expected.count)"))
     XCTAssertTrue(details.contains("responseTruncated=false"))
     XCTAssertTrue(details.contains("DecodingError"))
-    XCTAssertTrue(details.contains("readTraceComplete="))
-    XCTAssertTrue(details.contains("readSequence="))
   }
 
   func testProtocolAttachmentsAreBoundedAcrossHelperRestartsWithoutDroppingErrorEvents()
@@ -236,8 +271,6 @@ final class NativeProcessTests: XCTestCase {
         let report = try XCTUnwrap(attachments["native-helper-diagnostics.txt"])
         XCTAssertLessThan(report.count, 65_536)
         let details = String(decoding: report, as: UTF8.self)
-        XCTAssertLessThanOrEqual(
-          details.components(separatedBy: "\n").filter { $0.hasPrefix("readSequence=") }.count, 256)
         if event["contexts"]["nativeHelper"]["responseBytes"].number
           == Double(4 * 1024 * 1024 + 4096)
         {
@@ -368,21 +401,151 @@ final class NativeProcessTests: XCTestCase {
       XCTAssertEqual(diagnostics["operation"].string, operation)
       XCTAssertEqual(diagnostics["timeoutMs"].number, 100)
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["elapsedMs"].number), 100)
-      XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "timer")
-      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["deadlineOverrunMs"].number), 0)
-      XCTAssertGreaterThanOrEqual(
-        try XCTUnwrap(diagnostics["deadlineDetectedElapsedMs"].number), 100)
-      XCTAssertGreaterThanOrEqual(
-        try XCTUnwrap(diagnostics["helperRetiredElapsedMs"].number),
-        try XCTUnwrap(diagnostics["deadlineDetectedElapsedMs"].number))
-      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["timeoutSettlementDelayMs"].number), 0)
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["awakeElapsedMs"].number), 0)
-      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["writeElapsedMs"].number), 0)
-      XCTAssertEqual(diagnostics["stdoutBytesRead"].number, 0)
-      XCTAssertEqual(diagnostics["stdoutBytesProcessed"].number, 0)
       XCTAssertFalse(event.formatted.contains("private-operation-content"))
       XCTAssertFalse(event.formatted.contains("private-input-content"))
     }
+  }
+
+  func testSuspendedPermissionRefreshReturnsNoStateAndRecoversOnlyForTheNextRefresh() async throws {
+    let collector = try telemetry()
+    let fixture = try permissionFixture()
+    let executor = CommandExecutor(helper: fixture.helper)
+
+    let interrupted = try await executor.permissions()
+    XCTAssertNil(interrupted)
+    let retiredPID = try XCTUnwrap(
+      Int32(String(contentsOf: fixture.marker, encoding: .utf8)))
+    XCTAssertEqual(kill(retiredPID, 0), -1)
+    XCTAssertEqual(errno, ESRCH)
+    let firstAttempts = try String(
+      contentsOf: fixture.directory.appendingPathComponent("attempts"), encoding: .utf8)
+    XCTAssertEqual(firstAttempts.split(separator: "\n"), ["permissions.state"])
+
+    let refreshed = try await executor.permissions()
+    let state = try XCTUnwrap(refreshed)
+    XCTAssertEqual(state["accessibility"].bool, true)
+    XCTAssertEqual(state["screenRecording"].bool, true)
+    XCTAssertNotEqual(state["pid"].number, Double(retiredPID))
+    let attempts = try String(
+      contentsOf: fixture.directory.appendingPathComponent("attempts"), encoding: .utf8)
+    XCTAssertEqual(attempts.split(separator: "\n"), ["permissions.state", "permissions.state"])
+
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 1)
+    let event = try XCTUnwrap(events.first)
+    XCTAssertEqual(event["level"].string, "info")
+    XCTAssertEqual(
+      event["fingerprint"],
+      .array([.string("desktop-native-helper"), .string("permission-check-system-suspension")]))
+    let diagnostics = event["contexts"]["nativeHelper"]
+    XCTAssertEqual(diagnostics["requestIntent"].string, "permission_refresh")
+    XCTAssertEqual(diagnostics["outcome"].string, "expired_during_system_suspension")
+    XCTAssertEqual(diagnostics["timeoutMs"].number, 10000)
+    XCTAssertLessThan(try XCTUnwrap(diagnostics["awakeElapsedMs"].number), 10000)
+    XCTAssertGreaterThan(try XCTUnwrap(diagnostics["systemSuspendedMs"].number), 100000)
+  }
+
+  func testSuspendedPermissionRefreshTimerStillReturnsTheFailedDeadlineOutcome() async throws {
+    let collector = try telemetry()
+    let fixture = try permissionFixture(responds: false)
+    do {
+      _ = try await fixture.helper.request(
+        .object(["kind": .string("permissions.state")]), timeout: 1, intent: .permissionRefresh)
+      XCTFail("A suspended permission request must still expire")
+    } catch let failure as DesktopFailure {
+      XCTAssertEqual(failure.code, "command_timeout")
+      XCTAssertEqual(failure.response["status"].string, "failed")
+      XCTAssertEqual(failure.interruption, .suspendedPermissionRefresh)
+    }
+    let retiredPID = try XCTUnwrap(
+      Int32(String(contentsOf: fixture.marker, encoding: .utf8)))
+    XCTAssertEqual(kill(retiredPID, 0), -1)
+    XCTAssertEqual(errno, ESRCH)
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["level"].string, "info")
+  }
+
+  func testAwakePermissionRefreshTimeoutStillPropagatesAnError() async throws {
+    let collector = try telemetry()
+    let fixture = try permissionFixture(awakeAdvance: .seconds(11))
+    let executor = CommandExecutor(helper: fixture.helper)
+    do {
+      _ = try await executor.permissions()
+      XCTFail("A genuinely awake overrun must remain a failure")
+    } catch let failure as DesktopFailure {
+      XCTAssertEqual(failure.code, "command_timeout")
+      XCTAssertNil(failure.interruption)
+    }
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["level"].string, "error")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["requestIntent"].string, "permission_refresh")
+  }
+
+  func testSuspendedCommandPreflightStillFailsBeforeDispatchingTheCommand() async throws {
+    let collector = try telemetry()
+    let fixture = try permissionFixture()
+    let result = await listApps(CommandExecutor(helper: fixture.helper))
+    XCTAssertEqual(result["status"].string, "failed")
+    XCTAssertEqual(result["error"]["code"].string, "command_timeout")
+    XCTAssertTrue(try XCTUnwrap(result["error"]["message"].string).contains("asleep"))
+    let attempts = try String(
+      contentsOf: fixture.directory.appendingPathComponent("attempts"), encoding: .utf8)
+    XCTAssertEqual(attempts.split(separator: "\n"), ["permissions.state"])
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["level"].string, "info")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["requestIntent"].string, "command_preflight")
+    XCTAssertEqual(
+      event["contexts"]["nativeHelper"]["outcome"].string, "expired_during_system_suspension")
+    XCTAssertEqual(
+      event["fingerprint"],
+      .array([.string("desktop-native-helper"), .string("permission-check-system-suspension")]))
+  }
+
+  func testSuspendedPermissionReadWithUnspecifiedIntentRemainsAnError() async throws {
+    let collector = try telemetry()
+    let fixture = try permissionFixture()
+    do {
+      _ = try await fixture.helper.request(.object(["kind": .string("permissions.state")]))
+      XCTFail("An unowned suspended read must remain a failure")
+    } catch let failure as DesktopFailure {
+      XCTAssertEqual(failure.code, "command_timeout")
+      XCTAssertNil(failure.interruption)
+    }
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["level"].string, "error")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["requestIntent"].string, "unspecified")
+  }
+
+  func testSuspendedPermissionRefreshDoesNotHideAnotherPendingRequest() async throws {
+    let collector = try telemetry()
+    let fixture = try permissionFixture(requestsBeforeSuspension: 2)
+    let first = Task {
+      try await fixture.helper.request(
+        .object(["kind": .string("permissions.state")]), intent: .permissionRefresh)
+    }
+    let attemptsURL = fixture.directory.appendingPathComponent("attempts")
+    let received = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: attemptsURL.path) },
+      object: nil)
+    await fulfillment(of: [received], timeout: 5)
+    let second = Task {
+      try await fixture.helper.request(
+        .object(["kind": .string("keyboard.type_text"), "text": .string("test-input")]))
+    }
+    for result in [await first.result, await second.result] {
+      switch result {
+      case .success: XCTFail("Retiring this generation must fail both pending requests")
+      case .failure(let error):
+        let failure = try XCTUnwrap(error as? DesktopFailure)
+        XCTAssertEqual(failure.code, "command_timeout")
+        XCTAssertNil(failure.interruption)
+      }
+    }
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["level"].string, "error")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["pendingRequests"].number, 2)
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["operation"].string, "permissions.state")
   }
 
   func testBlockedStdinWriteExpiresAndReapsTheHelperBeforeRecovery() async throws {
@@ -427,9 +590,7 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(events.count, 1)
     let event = try XCTUnwrap(events.first)
     XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "timeout")
-    XCTAssertEqual(event["contexts"]["nativeHelper"]["timeoutDetectedBy"].string, "timer")
     XCTAssertEqual(event["contexts"]["nativeHelper"]["operation"].string, "keyboard.type_text")
-    XCTAssertNil(event["contexts"]["nativeHelper"]["writeElapsedMs"].number)
   }
 
   func testReadyResponseCannotSucceedAfterDeadlineAndOnlyANewCommandRestartsHelper() async throws {
@@ -490,19 +651,11 @@ final class NativeProcessTests: XCTestCase {
     let event = try XCTUnwrap(events.first)
     let diagnostics = event["contexts"]["nativeHelper"]
     XCTAssertEqual(diagnostics["operation"].string, "keyboard.type_text")
-    XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "response")
+    XCTAssertEqual(event["level"].string, "error")
     XCTAssertEqual(diagnostics["timeoutMs"].number, 30000)
     XCTAssertEqual(diagnostics["elapsedMs"].number, 31000)
-    XCTAssertEqual(diagnostics["deadlineOverrunMs"].number, 1000)
-    XCTAssertEqual(diagnostics["deadlineDetectedElapsedMs"].number, 31000)
-    XCTAssertEqual(diagnostics["deadlineDetectionOverrunMs"].number, 1000)
     XCTAssertEqual(diagnostics["awakeElapsedMs"].number, 1000)
     XCTAssertEqual(diagnostics["systemSuspendedMs"].number, 30000)
-    XCTAssertEqual(diagnostics["timeoutSettlementDelayMs"].number, 0)
-    XCTAssertGreaterThan(try XCTUnwrap(diagnostics["stdoutBytesRead"].number), 0)
-    XCTAssertEqual(diagnostics["stdoutBytesRead"], diagnostics["stdoutBytesProcessed"])
-    XCTAssertEqual(diagnostics["lastStdoutReadElapsedMs"].number, 31000)
-    XCTAssertEqual(diagnostics["lastStdoutProcessedElapsedMs"].number, 31000)
     XCTAssertFalse(event.formatted.contains("private-input-content"))
     XCTAssertFalse(event.formatted.contains(marker.path))
     XCTAssertTrue(try collector.attachments(for: event).isEmpty)

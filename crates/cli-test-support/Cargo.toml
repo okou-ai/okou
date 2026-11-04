@@ -1,6 +1,6 @@
 [package]
 name = "cli-test-support"
-version = "0.1.0"
+version = "0.1.4"
 edition.workspace = true
 description = "Shared CLI process, HTTP and mock-build fixtures for Rust tests"
 publish = false
@@ -17,6 +17,7 @@ test-support = [
     "dep:serde_json",
     "dep:shell-quote",
     "dep:tokio",
+    "dep:tokio-util",
 ]
 
 [dependencies]
@@ -30,6 +31,7 @@ serde = { workspace = true, optional = true, features = ["derive", "std"] }
 serde_json = { workspace = true, optional = true, features = ["raw_value", "std"] }
 shell-quote = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tokio-util = { workspace = true, optional = true, features = ["rt"] }
 
 [lints]
 workspace = true

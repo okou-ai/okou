@@ -1,5 +1,3 @@
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sharedThreadVisibilityContract,
   type SharedThreadAudience,
@@ -29,7 +27,6 @@ import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const device = createAuthDeviceSupportApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const mocks = createRouteMocks(context);
@@ -367,9 +364,6 @@ test.each(["private", "public"] as const)(
       scope,
     );
     const message = await f.send([file.part]);
-    await device.updateFeatureSwitches(f.actor, {
-      [FeatureSwitchKey.SharedThreadVisibility]: true,
-    });
     const created = await accept(f.share(message, "private"), [201]);
     const id = created.body.id;
     const owner = await accept(
@@ -489,9 +483,6 @@ test.each(["https://a.okou.io", "https://cdn.okou.io", "https://cdn.vm7.io"])(
       throw new Error("Expected the public attachment copy");
     }
     expect(new URL(attachment.url).origin).toBe(baseUrl);
-    await device.updateFeatureSwitches(f.actor, {
-      [FeatureSwitchKey.SharedThreadVisibility]: true,
-    });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
         data: [

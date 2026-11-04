@@ -1,4 +1,8 @@
 import {
+  createProjectMentionNode,
+  projectMentionText,
+} from "./composer-project-mention-node.ts";
+import {
   suggestionContextSchema,
   type SuggestionContext,
 } from "@okouai/api-contracts/contracts/suggestion-context";
@@ -33,16 +37,14 @@ import {
   inlineReferenceVariants,
   type CompositionGate,
 } from "@okouai/ui";
-import {
-  generationTemplateRequestSchema,
-  type GenerationTemplateRequest,
-  type UserMessageDocument,
+import { generationTemplateRequestSchema } from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  GenerationTemplateRequest,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-import {
-  VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
-  type VoiceIoEditorContext,
-} from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS } from "@okouai/api-contracts/validators/voice-io-transcribe";
+import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
@@ -86,6 +88,7 @@ import {
   type SlashWorkflowRange,
 } from "./workflow-composer-domain.ts";
 import {
+  PROJECT_MENTION_NODE_NAME,
   AGENT_MENTION_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
@@ -1447,6 +1450,9 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 }
 
 function composerLeafText(node: ProseMirrorNode): string {
+  if (node.type.name === PROJECT_MENTION_NODE_NAME) {
+    return projectMentionText(node);
+  }
   if (node.type.name === AGENT_MENTION_NODE_NAME) {
     return agentMentionText(node);
   }
@@ -1828,6 +1834,7 @@ function createWorkflowEditor(
       createTemplateAttachmentNode(runtime),
       createInlineTemplateNode(runtime),
       createFeedbackItemNode(runtime),
+      createProjectMentionNode(),
       createAgentMentionNode(
         COMPOSER_INLINE_REFERENCE_CLASS,
         agentMentionAvatarRuntime,
@@ -2505,6 +2512,12 @@ function createMountEditorCommand({
           editorDocument: set(draft.readEditorDocument$),
         }),
       );
+      // A draft prepared or restored while no editor was mounted can carry
+      // feedback, including suggestion context that requires a note.
+      set(
+        feedback.replaceFromEditor$,
+        feedbackItemsFromWorkflowComposer(editor),
+      );
       set(
         draft.setEditorDocument$,
         createEditorDocumentSnapshot(editor.state.doc),
@@ -2658,8 +2671,12 @@ function createInsertChatThreadCommand(
     const from = head - (range.end - range.start);
     const content: JSONContent[] = [
       {
-        type: CHAT_THREAD_MENTION_NODE_NAME,
-        attrs: { threadId: chatThread.id, title: chatThread.title },
+        type: chatThread.project
+          ? PROJECT_MENTION_NODE_NAME
+          : CHAT_THREAD_MENTION_NODE_NAME,
+        attrs: chatThread.project
+          ? { projectId: chatThread.id, name: chatThread.title }
+          : { threadId: chatThread.id, title: chatThread.title },
       },
     ];
     if (!textblock.value.slice(range.end).startsWith(" ")) {

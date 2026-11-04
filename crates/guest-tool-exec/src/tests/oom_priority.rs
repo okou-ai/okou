@@ -1,17 +1,8 @@
 use super::*;
-use std::process::Child;
+use cli_test_support::child::KillAndWaitChild as TestChild;
 use std::time::Instant;
 
 const CHILD_ENV: &str = "VM0_TEST_TOOL_OOM_PRIORITY_CHILD";
-
-struct TestChild(Child);
-
-impl Drop for TestChild {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 #[test]
 fn tool_priority_survives_exec_and_descendants_without_changing_parent() {

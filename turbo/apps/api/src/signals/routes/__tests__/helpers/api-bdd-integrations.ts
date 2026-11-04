@@ -7,7 +7,6 @@ import { mockClerkUsers } from "./clerk-users";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import {
-  integrationsTelegramBotListContract,
   integrationsTelegramMessageContract,
   integrationsTelegramUploadInitContract,
   integrationsGithubUploadCompleteContract,
@@ -26,6 +25,7 @@ import {
   type SendSlackMessageBody,
   type SendTelegramMessageBody,
   type SendPhoneMessageBody,
+  type SendPhoneReactionBody,
   type SlackUploadCompleteBody,
   type SlackUploadInitBody,
   type TelegramUploadInitBody,
@@ -41,6 +41,7 @@ import {
   integrationsAgentPhoneContract,
   type AgentPhoneConnectRequest,
   type AgentPhoneGroupHistoryQuery,
+  type AgentPhoneGroupListQuery,
   type SendAgentPhoneGroupMessageBody,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
@@ -1467,22 +1468,6 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async requestListTelegramBots(
-      actor: ApiTestUser | null,
-      statuses: readonly (200 | 401 | 403)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramBotListContract);
-      return await accept(
-        client.listBots({
-          headers: authenticate(context, routeMocks, actor),
-        }),
-        statuses,
-      );
-    },
-
     async readTelegramLinkStatus(actor: ApiTestUser, botId: string) {
       const client = setupApp({
         context,
@@ -1696,6 +1681,26 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
+    async requestAgentPhoneGroupList<
+      Status extends 200 | 400 | 401 | 404 | 502,
+    >(
+      actor: ApiTestUser | null,
+      query: AgentPhoneGroupListQuery,
+      statuses: readonly Status[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsAgentPhoneRoutes,
+      })(integrationsAgentPhoneContract);
+      return await accept(
+        client.listGroups({
+          headers: authenticate(context, routeMocks, actor),
+          query,
+        }),
+        statuses,
+      );
+    },
+
     async requestAgentPhoneGroupHistory(
       actor: ApiTestUser | null,
       query: AgentPhoneGroupHistoryQuery,
@@ -1878,6 +1883,24 @@ export function createBddIntegrationApi(context: TestContext) {
       })(integrationsAgentPhoneContract);
       return await accept(
         client.groupMessage({
+          headers: authenticate(context, routeMocks, actor),
+          body,
+        }),
+        statuses,
+      );
+    },
+
+    async requestSendPhoneReaction(
+      actor: ApiTestUser | null,
+      body: SendPhoneReactionBody,
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 502)[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsPhoneMessageRoutes,
+      })(integrationsPhoneMessageContract);
+      return await accept(
+        client.sendReaction({
           headers: authenticate(context, routeMocks, actor),
           body,
         }),

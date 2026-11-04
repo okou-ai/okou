@@ -1,3 +1,5 @@
+import { OnboardingCapabilitiesPage } from "../../views/onboarding-sources-first/onboarding-capabilities-page.tsx";
+import { startOnboardingCapabilitiesDiscovery$ } from "./onboarding-capabilities.ts";
 import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
 import { OnboardingSkillsPage } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
@@ -6,7 +8,6 @@ import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboar
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
-  OnboardingTeamPage,
 } from "../../views/onboarding-sources-first/onboarding-setup-pages.tsx";
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
@@ -68,17 +69,15 @@ interface SourcesFirstPageConfig {
   readonly enter?: Command<Promise<void>, [AbortSignal]>;
 }
 
-/**
- * A visitor who brings a `prompt` (every Marketing "try it" link does) gets
- * the prompt handoff: the source-first flow ends on its own recommended
- * request and would drop theirs. Only an admin runs the handoff, so an invited
- * member stays in the source-first flow either way.
- */
+/** Preserve a hash handoff's task for every member; legacy prompt links keep their admin-only flow. */
 function hasPromptHandoff(
   searchParams: URLSearchParams,
   status: { readonly isAdmin: boolean },
 ): boolean {
-  return Boolean(searchParams.get("prompt")?.trim()) && status.isAdmin;
+  return (
+    Boolean(searchParams.get("handoff")) ||
+    (Boolean(searchParams.get("prompt")?.trim()) && status.isAdmin)
+  );
 }
 
 /**
@@ -99,7 +98,8 @@ const redirectTo$ = command(({ get, set }, path: RoutePath) => {
  */
 const forwardOnboardedVisitor$ = command(({ get, set }) => {
   const searchParams = get(searchParams$);
-  const prompt = searchParams.get("prompt")?.trim();
+  const prompt =
+    searchParams.get("handoff") || searchParams.get("prompt")?.trim();
   set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
     searchParams: prompt
       ? promptHandoffParams(searchParams)
@@ -145,8 +145,7 @@ function createSourcesFirstPageSetup(
       set(sendEvent$, "onboarding-start");
     }
 
-    // A member invited into an existing org runs the flow without the invite
-    // step.
+    // Retain the role for funnel telemetry.
     const flow = status.isAdmin ? "owner" : "member";
     set(setSourcesFirstFlow$, flow);
 
@@ -155,13 +154,15 @@ function createSourcesFirstPageSetup(
     }
 
     const draft = get(sourcesFirstDraft$);
-    if (!sourcesFirstSteps(flow, draft.provider).includes(config.step)) {
-      // The step is not part of this run's branch, for example a member
-      // opening the invite step or a new user opening the skills step.
+    if (!sourcesFirstSteps(draft.provider).includes(config.step)) {
+      // The optional skills step requires a selected subscription provider.
       set(redirectTo$, ROUTES.onboardingExperience);
       return;
     }
 
+    if (config.step === "capabilities") {
+      set(startOnboardingCapabilitiesDiscovery$, signal);
+    }
     set(saveSourcesFirstStep$, config.step);
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
@@ -208,7 +209,7 @@ const setupOnboardingIndustryEntryPage$ = createSourcesFirstPageSetup({
 export const setupOnboardingEntryPage$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const searchParams = get(searchParams$);
-    if (searchParams.get("prompt")?.trim()) {
+    if (searchParams.get("handoff") || searchParams.get("prompt")?.trim()) {
       const status = await get(onboardingStatus$);
       signal.throwIfAborted();
       if (hasPromptHandoff(searchParams, status)) {
@@ -220,14 +221,19 @@ export const setupOnboardingEntryPage$ = command(
   },
 );
 
-export const setupOnboardingTeamPage$ = createSourcesFirstPageSetup({
-  step: "team",
+/** Existing bookmarks continue after the removed invitation page. */
+export const setupOnboardingTeamPage$ = command(({ set }) => {
+  set(redirectTo$, ROUTES.onboardingExperience);
+});
+
+export const setupOnboardingCapabilitiesPage$ = createSourcesFirstPageSetup({
+  step: "capabilities",
   title: () => {
     return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.team;
+      return $.onboarding.sourcesFirst.capabilities.title;
     });
   },
-  Page: OnboardingTeamPage,
+  Page: OnboardingCapabilitiesPage,
 });
 
 export const setupOnboardingExperiencePage$ = createSourcesFirstPageSetup({

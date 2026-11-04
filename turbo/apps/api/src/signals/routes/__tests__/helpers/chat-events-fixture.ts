@@ -1,3 +1,4 @@
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { randomUUID } from "node:crypto";
 
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
@@ -26,7 +27,7 @@ import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
-import { seededSystemSkillArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
+import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-skill-bundle-archive";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
@@ -854,12 +855,12 @@ export function createChatEventsFixture(context: TestContext) {
         body: {
           ...body,
           hasTextContent: true,
-          userMessage:
-            body.userMessage ??
-            ({
+          userMessage: userMessageDocumentSchema.parse(
+            body.userMessage ?? {
               version: 1,
               parts: [{ type: "text", text: body.prompt }],
-            } satisfies UserMessageInputDocument),
+            },
+          ),
         },
       }),
       statuses,
@@ -1015,7 +1016,7 @@ export function createChatEventsFixture(context: TestContext) {
     }
     const bucketPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/`;
     const seeded = objectKey.startsWith(bucketPrefix)
-      ? seededSystemSkillArchive(objectKey.slice(bucketPrefix.length))
+      ? seededSkillBundleArchive(objectKey.slice(bucketPrefix.length))
       : undefined;
     if (seeded) {
       return seeded;
@@ -1105,7 +1106,6 @@ export function createChatEventsFixture(context: TestContext) {
       user: bdd.user,
     },
     api: {
-      downloadWorkflow: api.downloadWorkflow,
       acceptStorageDownloads: api.acceptStorageDownloads,
       acceptTelemetryIngest: api.acceptTelemetryIngest,
       claimRunnerJob: api.claimRunnerJob,

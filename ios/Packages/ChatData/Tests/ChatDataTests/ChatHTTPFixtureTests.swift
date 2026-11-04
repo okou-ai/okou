@@ -78,8 +78,8 @@ final class ChatHTTPFixtureTests: XCTestCase {
   func testFixtureSessionCanReadFilesFromItsLoopbackServer() async throws {
     let body = Data("Fixture-owned file".utf8)
     let server = try ChatFileHTTPServer { _ in .init(body: body) }
+    addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    defer { server.stop() }
     let fixture = ChatHTTPFixture { _ in
       XCTFail("Loopback file requests belong to the real fixture server")
       return ChatHTTPResponse(body: "{}")
@@ -87,6 +87,52 @@ final class ChatHTTPFixtureTests: XCTestCase {
     let (data, response) = try await fixture.session.data(from: origin)
     XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
     XCTAssertEqual(data, body)
+  }
+
+  func testStoppingTheFileServerWaitsForItsCancelledHandlerToFinish() async throws {
+    let gate = FileServerResponseGate()
+    let started = expectation(description: "The owned file handler started")
+    let cancelled = expectation(description: "Server shutdown cancelled its handler")
+    let finished = Mutex(false)
+    let server = try ChatFileHTTPServer { _ in
+      await withTaskCancellationHandler {
+        started.fulfill()
+        await gate.wait()
+      } onCancel: {
+        cancelled.fulfill()
+      }
+      finished.withLock { $0 = true }
+      return .init(body: Data("Completed handler".utf8))
+    }
+    addTeardownBlock {
+      await gate.release()
+      await server.stop()
+    }
+    let origin = try await server.start()
+    let fixture = ChatHTTPFixture { _ in
+      throw URLError(.unsupportedURL)
+    }
+    let request = Task { try await fixture.session.data(from: origin) }
+    addTeardownBlock {
+      request.cancel()
+      await gate.release()
+      _ = await request.result
+    }
+    await fulfillment(of: [started], timeout: 3)
+    let stopping = Task {
+      await server.stop()
+      return finished.withLock { $0 }
+    }
+    addTeardownBlock {
+      await gate.release()
+      stopping.cancel()
+      _ = await stopping.result
+    }
+    await fulfillment(of: [cancelled], timeout: 3)
+    await gate.release()
+    let handlerFinishedAtShutdown = await stopping.value
+    XCTAssertTrue(handlerFinishedAtShutdown)
+    _ = await request.result
   }
 
   func testRetiringStartedRequestsCannotReportToAnotherLiveFixture() async throws {
@@ -128,5 +174,21 @@ final class ChatHTTPFixtureTests: XCTestCase {
     let (data, _) = try await active.session.data(from: active.baseURL)
     XCTAssertEqual(data, Data("Active fixture".utf8))
     XCTAssertEqual(reports.withLock { $0 }, [])
+  }
+}
+
+private actor FileServerResponseGate {
+  private var open = false
+  private var response: CheckedContinuation<Void, Never>?
+
+  func wait() async {
+    guard !open else { return }
+    await withCheckedContinuation { response = $0 }
+  }
+
+  func release() {
+    open = true
+    response?.resume()
+    response = nil
   }
 }

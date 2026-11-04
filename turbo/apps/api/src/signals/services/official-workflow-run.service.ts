@@ -1,13 +1,13 @@
 import type {
   OfficialWorkflowAcceptedDefinition,
   OfficialWorkflowAcceptedRevision,
-  OfficialWorkflowArtifactReference,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import type {
   AgentRunOfficialWorkflowDefinitionProvenance,
+  AgentRunOfficialWorkflowBundleDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
+import type { StoredExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import type { AcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 
@@ -35,47 +35,49 @@ interface OfficialWorkflowRunBlueprintIdentity {
   readonly fingerprint: string;
 }
 
-interface ResolvedOfficialWorkflowDefinition extends AgentRunOfficialWorkflowDefinitionProvenance {
-  readonly workflowId: string;
-  readonly workflowName: string;
-  readonly blueprints: readonly OfficialWorkflowRunBlueprintIdentity[];
-}
+type ResolvedOfficialWorkflowDefinition =
+  AgentRunOfficialWorkflowBundleDefinitionProvenance & {
+    readonly workflowId: string;
+    readonly workflowName: string;
+    readonly blueprints: readonly OfficialWorkflowRunBlueprintIdentity[];
+  };
 
 export interface OfficialWorkflowObservation {
   readonly releaseId: string;
   readonly definitions: readonly ResolvedOfficialWorkflowDefinition[];
-  readonly provenance: AgentRunOfficialWorkflowProvenance;
+  readonly provenance: Extract<
+    AgentRunOfficialWorkflowProvenance,
+    { readonly schemaVersion: 2 }
+  >;
 }
 
-export interface ResolvedOfficialWorkflowRunDefinition extends ResolvedOfficialWorkflowDefinition {
-  readonly mountPath: string;
-}
+export type ResolvedOfficialWorkflowRunDefinition =
+  ResolvedOfficialWorkflowDefinition & {
+    readonly mountPath: string;
+  };
 
 export interface OfficialWorkflowRunObservation extends OfficialWorkflowObservation {
   readonly definitions: readonly ResolvedOfficialWorkflowRunDefinition[];
 }
 
-export function artifactMatches(
-  provenance: AgentRunOfficialWorkflowDefinitionProvenance["artifact"],
-  artifact: OfficialWorkflowArtifactReference,
+function acceptedDeliveryMatches(
+  left: Pick<OfficialWorkflowAcceptedRevision, "contentBundle">,
+  right: Pick<OfficialWorkflowAcceptedDefinition, "contentBundle">,
 ): boolean {
   return (
-    provenance.orgId === SYSTEM_ORG_ID &&
-    provenance.userId === VOLUME_ORG_USER_ID &&
-    provenance.storageName === artifact.storageName &&
-    provenance.storageId === artifact.storageId &&
-    provenance.storageVersion === artifact.storageVersion
+    left.contentBundle.sha256 === right.contentBundle.sha256 &&
+    left.contentBundle.archiveBytes === right.contentBundle.archiveBytes
   );
 }
 
-function acceptedArtifactsMatch(
-  left: OfficialWorkflowArtifactReference,
-  right: OfficialWorkflowArtifactReference,
+export function observedDeliveryMatches(
+  observed: AgentRunOfficialWorkflowDefinitionProvenance,
+  definition: OfficialWorkflowAcceptedDefinition,
 ): boolean {
   return (
-    left.storageName === right.storageName &&
-    left.storageId === right.storageId &&
-    left.storageVersion === right.storageVersion
+    observed.contentBundle?.sha256 === definition.contentBundle.sha256 &&
+    observed.contentBundle.archiveBytes ===
+      definition.contentBundle.archiveBytes
   );
 }
 
@@ -111,7 +113,7 @@ function acceptedRevisionMatchesDefinition(
   return (
     revision.definition.name === definition.name &&
     revision.definition.revision === definition.revision &&
-    acceptedArtifactsMatch(revision.artifact, definition.artifact) &&
+    acceptedDeliveryMatches(revision, definition) &&
     blueprintIdentitiesMatch(
       blueprintIdentities(definition),
       revision.definition.blueprints.map((blueprint) => {
@@ -143,16 +145,6 @@ export function acceptedDefinitionForName(
     return definition.name === name;
   });
   return matches.length === 1 ? (matches[0] ?? null) : null;
-}
-
-function provenanceDefinition(
-  definition: ResolvedOfficialWorkflowDefinition,
-): AgentRunOfficialWorkflowDefinitionProvenance {
-  return {
-    name: definition.name,
-    revision: definition.revision,
-    artifact: definition.artifact,
-  };
 }
 
 interface AcceptedWorkflowCandidate {
@@ -212,13 +204,7 @@ export function assembleWorkflowObservation(
         workflowName: candidate.workflowName,
         name: accepted.name,
         revision: accepted.revision,
-        artifact: {
-          orgId: SYSTEM_ORG_ID,
-          userId: VOLUME_ORG_USER_ID,
-          storageName: accepted.artifact.storageName,
-          storageId: accepted.artifact.storageId,
-          storageVersion: accepted.artifact.storageVersion,
-        },
+        contentBundle: accepted.contentBundle,
         blueprints: blueprintIdentities(accepted),
       };
     },
@@ -228,8 +214,14 @@ export function assembleWorkflowObservation(
     releaseId: catalog.releaseId,
     definitions,
     provenance: {
-      schemaVersion: 1,
-      definitions: definitions.map(provenanceDefinition),
+      schemaVersion: 2,
+      definitions: definitions.map((definition) => {
+        return {
+          name: definition.name,
+          revision: definition.revision,
+          contentBundle: definition.contentBundle,
+        };
+      }),
     },
   };
 }
@@ -242,20 +234,18 @@ export function exactMountsMatch(
     return false;
   }
   return observation.definitions.every((definition) => {
-    const matches = mounts.filter((mount) => {
+    return !mounts.some((mount) => {
       return mount.mountPath === definition.mountPath;
     });
-    if (matches.length !== 1) {
-      return false;
-    }
-    const [mount] = matches;
-    return (
-      mount?.orgId === SYSTEM_ORG_ID &&
-      mount.userId === VOLUME_ORG_USER_ID &&
-      mount.name === definition.artifact.storageName &&
-      mount.storageId === definition.artifact.storageId &&
-      mount.version === definition.artifact.storageVersion &&
-      mount.writeback !== true
-    );
   });
+}
+
+export function pinnedOfficialWorkflowBundles(
+  observation: OfficialWorkflowRunObservation | undefined,
+): NonNullable<StoredExecutionContext["officialWorkflowBundles"]> {
+  return (
+    observation?.definitions.map((definition) => {
+      return { ...definition.contentBundle, mountPath: definition.mountPath };
+    }) ?? []
+  );
 }

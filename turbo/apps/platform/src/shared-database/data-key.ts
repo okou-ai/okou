@@ -1,17 +1,20 @@
+import { projectEventQueryResultSchema } from "@okouai/api-contracts/validators/projects";
 import {
   chatThreadEventSchema,
   chatThreadSnapshotProjectionSchema,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+  indicatorsSchema,
+} from "@okouai/api-contracts/validators/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
   array,
   discriminatedUnion,
+  iso,
   literal,
   number,
   object,
   record,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -37,12 +40,14 @@ export const chatThreadEventDataKeySchema = object({
 export const sharedDatabaseDataKeySchema = discriminatedUnion("kind", [
   chatEventDataKeySchema,
   chatThreadEventDataKeySchema,
+  object({ kind: literal("project-event") }).strict(),
 ]);
 
 export type ChatEventDataKey = zInfer<typeof chatEventDataKeySchema>;
 export type ChatThreadEventDataKey = zInfer<
   typeof chatThreadEventDataKeySchema
 >;
+export type ProjectEventDataKey = { readonly kind: "project-event" };
 export type SharedDatabaseDataKey = zInfer<typeof sharedDatabaseDataKeySchema>;
 
 export type ScopedChatEventDataKey = ChatEventDataKey &
@@ -50,7 +55,9 @@ export type ScopedChatEventDataKey = ChatEventDataKey &
 export type ScopedChatThreadEventDataKey = ChatThreadEventDataKey &
   Pick<SharedDatabaseIdentity, "userId" | "orgId">;
 export type ScopedSharedDatabaseDataKey =
-  ScopedChatEventDataKey | ScopedChatThreadEventDataKey;
+  | ScopedChatEventDataKey
+  | ScopedChatThreadEventDataKey
+  | (ProjectEventDataKey & SharedDatabaseIdentity);
 
 const sharedDatabaseConsistencySchema = zEnum(["cache-only", "catch-up"]);
 
@@ -74,13 +81,12 @@ export interface SharedDatabaseQuery<TKey extends SharedDatabaseDataKey> {
 // expires independently of their cache lifetime.
 const chatThreadSnapshotSchema = object({
   chatThreads: array(chatThreadSnapshotProjectionSchema),
-  latestEventId: string().uuid().nullable(),
+  latestEventId: uuid().nullable(),
   latestSeqId: number().int().positive().nullable(),
 });
-export const chatThreadIndicatorsSchema =
-  chatThreadsContract.indicators.responses[200].extend({
-    unreadAt: record(string().uuid(), string().datetime()),
-  });
+export const chatThreadIndicatorsSchema = indicatorsSchema.extend({
+  unreadAt: record(uuid(), iso.datetime()),
+});
 export type ChatThreadIndicators = zInfer<typeof chatThreadIndicatorsSchema>;
 
 export const chatThreadEventQueryResultSchema = object({
@@ -93,6 +99,10 @@ export type ChatThreadEventQueryResult = zInfer<
 >;
 
 interface SharedDatabaseDatasetMap {
+  readonly "project-event": {
+    readonly dataKey: ProjectEventDataKey;
+    readonly result: zInfer<typeof projectEventQueryResultSchema>;
+  };
   readonly "chat-event": {
     readonly dataKey: ChatEventDataKey;
     readonly result: ChatEventRow[];
@@ -109,6 +119,11 @@ export type SharedDatabaseQueryResult<TKey extends SharedDatabaseDataKey> =
 export function parseSharedDatabaseQueryResult<
   TKey extends SharedDatabaseDataKey,
 >(dataKey: TKey, value: unknown): SharedDatabaseQueryResult<TKey> {
+  if (dataKey.kind === "project-event") {
+    return projectEventQueryResultSchema.parse(
+      value,
+    ) as SharedDatabaseQueryResult<TKey>;
+  }
   if (dataKey.kind === "chat-event") {
     // The same-build Worker decodes cached, snapshot, and row-page rows before
     // returning them; the port only clones them.

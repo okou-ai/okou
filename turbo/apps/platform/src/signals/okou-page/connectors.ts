@@ -6,8 +6,8 @@ import type {
   ConnectedConnectors,
   BuiltinConnectorBrief,
 } from "@okouai/api-contracts/contracts/connected-connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pageSignal$ } from "../page-signal.ts";
@@ -40,6 +40,9 @@ import {
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
+import { createChatConnectorAccessSignals } from "./chat-connector-access.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -111,6 +114,8 @@ export interface ComposerConnectorSignals {
   >;
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
   readonly openAddConnectorsDialog$: Command<void, []>;
+  readonly openConnectorPermissions$: Command<void, [BuiltinConnectorBrief]>;
+  readonly directoryFinalFocus$: Command<HTMLElement | boolean, []>;
   readonly setPopoverOpen$: Command<void, [boolean]>;
   readonly openRemoteAccessDialog$: Command<void, []>;
   readonly closeRemoteAccessDialog$: Command<void, []>;
@@ -130,6 +135,8 @@ export interface ComposerConnectorSignals {
     Promise<readonly PlatformUserPermissionGrant[]>
   >;
   readonly accounts: ComposerConnectorAccountSignals;
+  readonly chatAccess: ReturnType<typeof createChatConnectorAccessSignals>;
+  readonly reloadAccountPreference$: Command<void, []>;
 }
 
 /** Browse reads ask for no keyword; the category, when set, scopes them. */
@@ -285,14 +292,56 @@ function createConnectorAuthorizationCommand(
   );
 }
 
+function createConnectorDialogNavigation(
+  chatAccess: ReturnType<typeof createChatConnectorAccessSignals>,
+  ui: Pick<
+    ComposerConnectorSignals,
+    "connectorUiState$" | "updateConnectorUiState$" | "triggerElement$"
+  >,
+) {
+  const openConnectorPermissions$ = command(
+    ({ get, set }, connector: BuiltinConnectorBrief) => {
+      const chatAccounts =
+        get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+      if (chatAccounts) {
+        set(chatAccess.setPermissions$, {
+          target: { kind: "builtin", connectorSlug: connector.slug },
+          label: connector.label,
+        });
+      }
+      set(ui.updateConnectorUiState$, {
+        showAddDialog: false,
+        permissionConnectorSlug: chatAccounts ? null : connector.slug,
+        permissionConnector: chatAccounts ? null : connector,
+      });
+    },
+  );
+  const directoryFinalFocus$ = command(({ get }) => {
+    const state = get(ui.connectorUiState$);
+    if (
+      get(chatAccess.permissions$) ||
+      state.permissionConnectorSlug ||
+      state.selectedConnectorSlug ||
+      state.selectedCustomConnectorId
+    ) {
+      return false;
+    }
+    return get(ui.triggerElement$) ?? true;
+  });
+  return { openConnectorPermissions$, directoryFinalFocus$ };
+}
+
 function createConnectorUiSignals(
   resources: ReturnType<typeof createConnectorResourceSignals>,
   accounts: ComposerConnectorAccountSignals,
+  chatAccess: ReturnType<typeof createChatConnectorAccessSignals>,
 ): Pick<
   ComposerConnectorSignals,
   | "connectorUiState$"
   | "updateConnectorUiState$"
   | "openAddConnectorsDialog$"
+  | "openConnectorPermissions$"
+  | "directoryFinalFocus$"
   | "setPopoverOpen$"
   | "openRemoteAccessDialog$"
   | "closeRemoteAccessDialog$"
@@ -362,11 +411,13 @@ function createConnectorUiSignals(
       directoryDetailSlug: null,
     });
   });
-  const setPopoverOpen$ = command(({ set }, open: boolean): void => {
+  const setPopoverOpen$ = command(({ get, set }, open: boolean): void => {
     if (open) {
       set(updateConnectorUiState$, { popoverOpen: true });
+      set(chatAccess.open$, get(pageSignal$));
     } else {
       set(accounts.closeMenu$);
+      set(chatAccess.close$);
       set(updateConnectorUiState$, {
         popoverOpen: false,
         popoverSearch: "",
@@ -376,6 +427,7 @@ function createConnectorUiSignals(
   });
   const openRemoteAccessDialog$ = command(({ set }): void => {
     set(accounts.closeMenu$);
+    set(chatAccess.close$);
     set(updateConnectorUiState$, {
       popoverOpen: false,
       popoverSearch: "",
@@ -390,6 +442,11 @@ function createConnectorUiSignals(
     connectorUiState$,
     updateConnectorUiState$,
     openAddConnectorsDialog$,
+    ...createConnectorDialogNavigation(chatAccess, {
+      connectorUiState$,
+      updateConnectorUiState$,
+      triggerElement$,
+    }),
     setPopoverOpen$,
     openRemoteAccessDialog$,
     closeRemoteAccessDialog$,
@@ -404,9 +461,23 @@ export function createComposerConnectorSignals(
 ): ComposerConnectorSignals {
   const resources = createConnectorResourceSignals();
   const accounts = createComposerConnectorAccountSignals(threadId);
-  const ui = createConnectorUiSignals(resources, accounts);
+  const chatAccess = createChatConnectorAccessSignals(
+    resources.connected$,
+    threadId,
+  );
+  const ui = createConnectorUiSignals(resources, accounts, chatAccess);
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
+    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      return {
+        overview: await get(resources.connected$),
+        authorization: {
+          agentId,
+          enabledConnectorSlugs: [],
+          customConnectorIds: [],
+        },
+      };
+    }
     const [overview, authorization] = await Promise.all([
       get(resources.connected$),
       get(authorization$),
@@ -489,5 +560,10 @@ export function createComposerConnectorSignals(
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
     accounts,
+    chatAccess,
+    reloadAccountPreference$: command(({ set }) => {
+      set(accounts.reloadPreference$);
+      set(chatAccess.reload$);
+    }),
   };
 }

@@ -1,6 +1,6 @@
 [package]
 name = "nbd-cow"
-version = "0.5.7"
+version = "0.5.12"
 edition.workspace = true
 
 [[bin]]
@@ -25,6 +25,7 @@ uuid = { workspace = true, features = ["std", "v4"] }
 which = { workspace = true, features = ["real-sys"], optional = true }
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 nix = { workspace = true, features = ["user"] }
 tempfile = { workspace = true, features = ["getrandom"] }

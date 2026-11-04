@@ -37,6 +37,8 @@ public struct ChatRemoteOverride: Codable, Equatable, Sendable {
 /// New-chat choices are carried by the owning composer until its first send.
 public struct ChatComposerOptions: Codable, Equatable, Sendable {
   public var connectorSelections: [ChatConnectorSelection] = []
+  public var chatAccountAccess = false
+  public var initialConnectorAccessOverrides: [ChatConnectorAccessOverride] = []
   public var initialRemoteAccessOverrides: [ChatRemoteOverride] = []
   public var computerAccess: ChatComputerAccess?
   public init() {}
@@ -49,6 +51,8 @@ public struct ChatComposerConnector: Identifiable, Sendable {
   public let permissionBundleRef: String?
   public let managed: Bool
   public let authorized: Bool
+  public var access: ChatConnectorAccess?
+  public var currentAccount: ChatConnectorAccount?
   public var id: String { target.key }
 }
 
@@ -131,7 +135,10 @@ public struct ChatComposerAccess: Sendable {
   let client: APIClient
   public init(client: APIClient) { self.client = client }
 
-  public func connectors(agentID: String) async throws -> [ChatComposerConnector] {
+  public func connectors(
+    agentID: String, chatAccountAccess: Bool = false, threadID: String? = nil,
+    options: ChatComposerOptions = .init()
+  ) async throws -> [ChatComposerConnector] {
     struct Builtin: Decodable, Sendable {
       let slug: String
       let label: String
@@ -152,20 +159,51 @@ public struct ChatComposerAccess: Sendable {
       let customConnectorIds: [String]
     }
     async let connected: Connected = client.request("/api/connectors/connected")
-    async let access: Access = client.request("/api/agents/\(agentID)/connector-access")
-    let (list, grants) = try await (connected, access)
-    return list.builtinConnectors.map {
-      ChatComposerConnector(
-        target: .builtin($0.slug), label: $0.label, hasPermissions: $0.hasPermissions,
-        permissionBundleRef: nil, managed: false,
-        authorized: grants.enabledConnectorSlugs.contains($0.slug))
+    let grants: Access?
+    if chatAccountAccess {
+      grants = nil
+    } else {
+      grants = try await client.request("/api/agents/\(agentID)/connector-access")
     }
+    let list = try await connected
+    let values =
+      list.builtinConnectors.map {
+        ChatComposerConnector(
+          target: .builtin($0.slug), label: $0.label, hasPermissions: $0.hasPermissions,
+          permissionBundleRef: nil, managed: false,
+          authorized: grants?.enabledConnectorSlugs.contains($0.slug) == true,
+          access: nil, currentAccount: nil)
+      }
       + list.customConnectors.map {
         ChatComposerConnector(
           target: .custom($0.id), label: $0.displayName, hasPermissions: false,
           permissionBundleRef: $0.permissionBundleRef, managed: $0.integrationManaged,
-          authorized: grants.customConnectorIds.contains($0.id))
+          authorized: grants?.customConnectorIds.contains($0.id) == true,
+          access: nil, currentAccount: nil)
       }
+    guard chatAccountAccess else { return values }
+    return try await withThrowingTaskGroup(of: (Int, ChatComposerConnector).self) { group in
+      for (index, connector) in values.enumerated() {
+        group.addTask {
+          var entry = connector
+          let access = try await self.connectorAccess(
+            target: connector.target, threadID: threadID, options: options)
+          entry.access = access
+          if let id = access.currentConnectionId {
+            do {
+              entry.currentAccount = try await ChatConnectorService(client: self.client).account(
+                id: id, target: connector.target)
+            } catch let error as APIClientError where error.statusCode == 404 {
+              entry.currentAccount = nil
+            }
+          }
+          return (index, entry)
+        }
+      }
+      var result: [(Int, ChatComposerConnector)] = []
+      for try await value in group { result.append(value) }
+      return result.sorted { $0.0 < $1.0 }.map { $0.1 }
+    }
   }
 
   public func setAuthorized(
@@ -217,10 +255,15 @@ public struct ChatComposerAccess: Sendable {
     threadID: String, protocol: ChatRemoteProtocol, connectionID: String, enabled: Bool?
   ) async throws {
     struct Body: Encodable { let enabled: Bool }
-    try await client.data(
-      "/api/chat-threads/\(threadID)/remote-access/\(`protocol`.rawValue)/\(connectionID)",
-      method: enabled == nil ? "DELETE" : "PUT",
-      body: try enabled.map { try JSONEncoder().encode(Body(enabled: $0)) })
+    if let enabled {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/remote-access/\(`protocol`.rawValue)/\(connectionID)",
+        method: "PUT", body: JSONEncoder().encode(Body(enabled: enabled)))
+    } else {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/remote-access/\(`protocol`.rawValue)/\(connectionID)",
+        method: "DELETE")
+    }
   }
   public func computerAccess(threadID: String) async throws -> ChatComputerAccess {
     let metadata: ThreadMetadata = try await client.request(
@@ -274,8 +317,12 @@ public struct ChatComposerAccess: Sendable {
       try connectionID.map {
         try JSONEncoder().encode(ChatConnectorSelection(target: target, connectionId: $0))
       } ?? JSONEncoder().encode(target)
-    try await client.data(
-      "/api/chat-threads/\(threadID)/connector-selections",
-      method: connectionID == nil ? "DELETE" : "PUT", body: body)
+    if connectionID == nil {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/connector-selections", method: "DELETE", body: body)
+    } else {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/connector-selections", method: "PUT", body: body)
+    }
   }
 }

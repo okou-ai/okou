@@ -19,11 +19,14 @@ import {
   createCustomConnectorValueMarkers,
 } from "./custom-connector-credential-access.service";
 
-export function customConnectorList(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<readonly CustomConnectorResponse[]>> {
+export function createCustomConnectorList(
+  scope$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+  }>,
+): Computed<Promise<readonly CustomConnectorResponse[]>> {
   const definitions$ = computed(async (get) => {
+    const args = get(scope$);
     const db = get(db$);
     const connectorRows = await db
       .select({
@@ -59,6 +62,7 @@ export function customConnectorList(args: {
     });
   });
   const managedOwner$ = computed(async (get) => {
+    const args = get(scope$);
     const definitions = await get(definitions$);
     return {
       orgId: args.orgId,

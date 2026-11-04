@@ -16,6 +16,9 @@ import {
   timestampQueryNumberSchema,
 } from "./base";
 import { apiErrorSchema } from "./errors";
+import { triggerSourceSchema } from "../validators/logs";
+
+export { triggerSourceSchema } from "../validators/logs";
 
 /**
  * Cursor-based pagination schema with total pages
@@ -49,28 +52,6 @@ const logStatusSchema = zEnum([
   "failed",
   "timeout",
   "cancelled",
-]);
-
-/**
- * Trigger source enum — how the run was initiated
- */
-export const triggerSourceSchema = zEnum([
-  "web",
-  "slack",
-  "discord",
-  "wechat",
-  "teams",
-  "feishu",
-  "lark",
-  "email",
-  "telegram",
-  "agentphone",
-  "github",
-  "test",
-  "agent",
-  "webhook",
-  "automation-schedule",
-  "automation-event",
 ]);
 
 export type TriggerSource = zInfer<typeof triggerSourceSchema>;
@@ -148,7 +129,7 @@ export const logsListContract = c.router({
     headers: authHeadersSchema,
     query: listQuerySchema.extend({
       search: string().optional(),
-      agentId: string().uuid().optional(),
+      agentId: uuid().optional(),
       name: string().optional(),
       since: timestampQueryNumberSchema.optional(),
 
@@ -175,7 +156,7 @@ export const logsByIdContract = c.router({
     path: "/api/logs/:id",
     headers: authHeadersSchema,
     pathParams: object({
-      id: string().uuid("Invalid log ID"),
+      id: string().check(uuid("Invalid log ID")),
     }),
     responses: {
       200: logDetailSchema,

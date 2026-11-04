@@ -53,7 +53,8 @@ final class ConversationStore {
   @ObservationIgnored lazy var connectorActions = ConnectorActionStore(
     service: commands.connectorActions, commands: commands, thread: thread,
     didContinue: { [weak self] in
-      guard let self else { return }
+      guard let self, !closed else { return }
+      await modelSelection?.connectors.refresh()
       didSend()
       await refresh()
     }, didFail: didFail)
@@ -79,6 +80,17 @@ final class ConversationStore {
   }
   private(set) var isLoading = false
   private(set) var isSending = false
+  enum DeliveryFailure {
+    case notSent(String)
+    case unconfirmed
+  }
+  private(set) var deliveryFailures: [String: DeliveryFailure] = [:]
+  private(set) var stopIssue: String?
+
+  func deliveryFailureText(_ id: String) -> String {
+    if case .notSent(let reason) = deliveryFailures[id] { return reason }
+    return String(localized: "Delivery not confirmed")
+  }
   private(set) var isRecoveringFailure = false
   private var failureAccountsReadyID: String?
   private var failureAccountBaseline: Int?
@@ -91,10 +103,13 @@ final class ConversationStore {
   private let didRequestNewChat: @MainActor () -> Void
   private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
   private(set) var error: String?
+  private(set) var readSyncError: String?
+  private(set) var historySyncError: String?
+  var syncError: String? { historySyncError ?? readSyncError }
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
-  let measurements = ConversationMeasurementCache()
+  let measurements: ConversationMeasurementCache
   let activitySummary: ConversationActivitySummary
   let runUsage: ConversationRunUsageStore
   private var detailOwner: UUID?
@@ -143,6 +158,7 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
+    measurementScope: ChatCacheScope? = nil,
     didRequestNewChat: @escaping @MainActor () -> Void = {},
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -156,11 +172,16 @@ final class ConversationStore {
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
+    measurements = ConversationMeasurementCache(
+      namespace: measurementScope.map {
+        [$0.apiBaseURL.absoluteString, $0.userID, $0.workspaceID, thread.id]
+      })
     self.draftStorage = draftStorage
     draftTarget = .thread(thread.id)
     composer = ComposerDraftStore(
       target: draftTarget, commands: commands,
-      repository: draftRepository, storage: draftStorage, didFail: didFail)
+      repository: draftRepository, storage: draftStorage, didFail: didFail,
+      syncSleep: readRetrySleep)
     self.sync = sync
     self.commands = commands
     self.webURL = webURL
@@ -241,7 +262,8 @@ final class ConversationStore {
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
-          if !pending.contains(where: \.needsRetry) { error = nil }
+          historySyncError = nil
+          if !result.canStop { stopIssue = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
           if suppressAutomaticRead, let unreadThrough {
             if let manualUnreadThrough {
@@ -254,21 +276,31 @@ final class ConversationStore {
           if isVisible(), !suppressAutomaticRead, let unreadThrough,
             locallyReadThrough.map({ $0 < unreadThrough }) ?? true
           {
-            let watermark = try await commands.markRead(threadID: thread.id)
-            guard !closed, !Task.isCancelled else { return }
-            if let watermark {
-              locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
-              if suppressAutomaticRead {
-                manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
+            do {
+              let watermark = try await commands.markRead(threadID: thread.id)
+              guard !closed, !Task.isCancelled else { return }
+              readSyncError = nil
+              if let watermark {
+                locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
+                if suppressAutomaticRead {
+                  manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
+                }
               }
+              if !suppressAutomaticRead { didMarkRead(watermark) }
+            } catch {
+              guard !closed, !Task.isCancelled, !(error is CancellationError) else { return }
+              readSyncError = error.localizedDescription
+              report(error)
             }
-            if !suppressAutomaticRead { didMarkRead(watermark) }
+          } else {
+            readSyncError = nil
           }
         } catch is CancellationError {
           return
         } catch {
           guard !Task.isCancelled, refreshGeneration == generation else { return }
-          show(error)
+          historySyncError = error.localizedDescription
+          report(error)
         }
       } while refreshAgain && !closed && !needsUpgrade && !Task.isCancelled
     }
@@ -339,7 +371,7 @@ final class ConversationStore {
     await refresh()
     // An existing refresh must finish reconciliation before an explicit resubmission.
     if let refreshTask { await refreshTask.value }
-    guard pending.contains(where: { $0.id == message.id }) else { return }
+    guard historySyncError == nil, pending.contains(where: { $0.id == message.id }) else { return }
     await submit(message)
   }
 
@@ -387,7 +419,7 @@ final class ConversationStore {
           failureContextRevision == request
         else { return }
         failureBillingError = error.localizedDescription
-        show(error)
+        report(error)
       }
       return
     }
@@ -424,7 +456,7 @@ final class ConversationStore {
       await refresh()
       if let refreshTask { await refreshTask.value }
       guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
-        history?.latestFailureID == id, pending.isEmpty, error == nil,
+        history?.latestFailureID == id, pending.isEmpty, historySyncError == nil, error == nil,
         failureState(failure).recovery.canRetry,
         modelSelection?.canSendConfirmedSelection != false
       else { return }
@@ -469,10 +501,12 @@ final class ConversationStore {
         sendTask = nil
         didSettle()
       }
+      var submitted = false
       do {
         let workflowIDs =
           try await workflowSource?.prepareUse(
             in: message.text, document: message.document, agentID: thread.agentID) ?? []
+        submitted = true
         _ = try await commands.send(
           thread: thread, text: message.text, attachments: message.attachments,
           document: message.document,
@@ -484,6 +518,7 @@ final class ConversationStore {
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }
+        deliveryFailures[message.id] = nil
         error = nil
         return true
       } catch {
@@ -491,7 +526,16 @@ final class ConversationStore {
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = true
         }
-        show(error)
+        let status = (error as? APIClientError)?.statusCode
+        if !submitted
+          || status.map({ (400..<500).contains($0) && ![408, 409].contains($0) }) == true
+        {
+          deliveryFailures[message.id] = .notSent(
+            String(localized: "Message not sent. ") + ChatRequestFailure.message(for: error))
+        } else {
+          deliveryFailures[message.id] = .unconfirmed
+        }
+        report(error)
         return false
       }
     }
@@ -506,6 +550,7 @@ final class ConversationStore {
   func stop() async {
     guard !isStopping, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isStopping = true
+    stopIssue = nil
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
@@ -519,7 +564,12 @@ final class ConversationStore {
         guard !closed else { return }
         await refresh()
       } catch is CancellationError {
-      } catch { show(error) }
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        stopIssue = String(localized: "Stopping has not been confirmed.")
+        report(error)
+        await refresh()
+      }
     }
     stopTask = task
     await task.value
@@ -625,6 +675,12 @@ final class ConversationStore {
     return true
   }
 
+  func earlierWindowMessages() -> [ChatMessage] {
+    var expanded = renderWindow
+    expanded.expand()
+    return items[expanded.range.lowerBound..<renderWindow.range.lowerBound].compactMap(\.message)
+  }
+
   func loadEarlierMessages() async {
     guard !closed, !needsUpgrade, !Task.isCancelled, hasEarlierMessages, expansionTask == nil else {
       return
@@ -675,6 +731,8 @@ final class ConversationStore {
 
   private func rebuildMessages() {
     let persisted = history?.persistedEventIDs ?? []
+    let pendingIDs = Set(pending.map(\.id))
+    deliveryFailures = deliveryFailures.filter { pendingIDs.contains($0.key) }
     let next =
       (history?.messages ?? []) + pending.filter { !persisted.contains($0.id) }.map(\.message)
     if messages != next { messages = next }
@@ -761,6 +819,11 @@ final class ConversationStore {
   private func show(_ failure: Error) {
     guard !closed else { return }
     error = failure.localizedDescription
+    report(failure)
+  }
+
+  private func report(_ failure: Error) {
+    guard !closed else { return }
     needsUpgrade = (failure as? APIClientError)?.statusCode == 426
     didFail(failure)
   }

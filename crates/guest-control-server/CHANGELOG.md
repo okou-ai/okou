@@ -1,5 +1,82 @@
 # Changelog
 
+## [0.24.73](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.72...guest-control-server-v0.24.73) (2026-11-04)
+
+## [0.24.72](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.71...guest-control-server-v0.24.72) (2026-11-04)
+
+
+### Refactoring
+
+* **guest-control:** share helper diagnostic byte bounds ([#45065](https://github.com/okou-ai/okou/issues/45065)) ([952833e](https://github.com/okou-ai/okou/commit/952833e7630ac4170dd99d842c68cc717a059930))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.24.71](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.70...guest-control-server-v0.24.71) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
+## [0.24.70](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.69...guest-control-server-v0.24.70) (2026-11-03)
+
+## [0.24.69](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.68...guest-control-server-v0.24.69) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** encapsulate exec stdin worker ownership ([#44766](https://github.com/okou-ai/okou/issues/44766)) ([3227ed7](https://github.com/okou-ai/okou/commit/3227ed7c8e055d4584b43c23e99216448c7ca16f))
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
+## [0.24.68](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.67...guest-control-server-v0.24.68) (2026-11-02)
+
+
+### Refactoring
+
+* **guest-control:** own vsock during connection setup ([#44735](https://github.com/okou-ai/okou/issues/44735)) ([90425c1](https://github.com/okou-ai/okou/commit/90425c1dcd2aabf529054b1a6da8846ef08c962b))
+
+## [0.24.67](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.66...guest-control-server-v0.24.67) (2026-11-02)
+
+## [0.24.66](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.65...guest-control-server-v0.24.66) (2026-11-02)
+
+## [0.24.65](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.64...guest-control-server-v0.24.65) (2026-11-02)
+
+## [0.24.64](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.63...guest-control-server-v0.24.64) (2026-11-02)
+
+## [0.24.63](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.62...guest-control-server-v0.24.63) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** share guest cgroup populated-state parsing ([#44583](https://github.com/okou-ai/okou/issues/44583)) ([f06f9c1](https://github.com/okou-ai/okou/commit/f06f9c1ddc0986c80cfdf807f30b81d076e28cc7))
+
+## [0.24.62](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.61...guest-control-server-v0.24.62) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native owned blocking pipes ([#44536](https://github.com/okou-ai/okou/issues/44536)) ([a6c71bd](https://github.com/okou-ai/okou/commit/a6c71bd5e2ac41228ab4d704a43de9715bfbb67d))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.24.61](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.60...guest-control-server-v0.24.61) (2026-10-31)
+
+## [0.24.60](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.59...guest-control-server-v0.24.60) (2026-10-30)
+
+## [0.24.59](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.58...guest-control-server-v0.24.59) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
+## [0.24.58](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.57...guest-control-server-v0.24.58) (2026-10-30)
+
+## [0.24.57](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.56...guest-control-server-v0.24.57) (2026-10-30)
+
 ## [0.24.56](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.55...guest-control-server-v0.24.56) (2026-10-29)
 
 ## [0.24.55](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.54...guest-control-server-v0.24.55) (2026-10-29)

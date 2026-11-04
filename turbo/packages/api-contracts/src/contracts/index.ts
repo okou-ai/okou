@@ -165,6 +165,15 @@ export {
   type ThreadRemoteHostAccess,
 } from "./chat-remote-access";
 export {
+  chatConnectorAccessContract,
+  type ChatConnectorAccess,
+} from "./chat-connector-access";
+export {
+  connectorPermissionsContract,
+  type ConnectorPermissions,
+  type ApplyConnectorPermissions,
+} from "./connector-permissions";
+export {
   userModelPreferenceResponseSchema,
   updateUserModelPreferenceRequestSchema,
   userModelPreferenceContract,
@@ -452,7 +461,6 @@ export {
   type RunnerCancellationMode,
   type RunnerCancellationResponse,
   runnersJobClaimContract,
-  runnersWorkflowDownloadContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
@@ -1068,10 +1076,6 @@ export {
   type IntegrationsTeamsDownloadFileContract,
   integrationsTelegramDownloadFileContract,
   type IntegrationsTelegramDownloadFileContract,
-  integrationsTelegramBotListContract,
-  type IntegrationsTelegramBotListContract,
-  type TelegramBotListItem,
-  type ListTelegramBotsResponse,
   integrationsSlackUploadInitContract,
   type SlackUploadInitBody,
   type SlackUploadInitResponse,
@@ -1468,3 +1472,4 @@ export {
 
 export { iosPushRegistrationsContract } from "./ios-push-registrations";
 export { iosNotificationsContract } from "./ios-notifications";
+export { runConnectorAccountsContract } from "./run-connector-accounts";

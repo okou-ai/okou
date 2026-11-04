@@ -77,6 +77,10 @@ pub enum AgentError {
     #[error("finalization: Session history exceeds maximum size of {max_bytes} bytes")]
     SessionHistoryTooLarge { max_bytes: u64 },
 
+    /// Encoded session history exceeded the independent decoder input budget.
+    #[error("finalization: Encoded session history exceeds maximum size of {max_bytes} bytes")]
+    SessionHistoryEncodedTooLarge { max_bytes: u64 },
+
     /// Pi H2 needs a bounded native history; an unavailable hash cannot complete it.
     #[error("finalization: Pi history has no safe bounded compact generation ({reason})")]
     PiCompactGenerationUnavailable { reason: &'static str },

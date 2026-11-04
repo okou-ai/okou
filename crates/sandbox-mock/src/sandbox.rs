@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{Read, Write};
+use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -10,10 +10,10 @@ use ::sandbox::*;
 use async_trait::async_trait;
 
 use crate::call_records::{
-    CodexSessionCleanupCall, CopyFileCall, ExecCall, FinalizeStagedFileCall, GuestStateRestoreCall,
+    AgentInstructionsCall, CopyFileCall, ExecCall, GuestStateRestoreCall,
     GuestStateRestoreTimezoneCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
-    SessionHistoryIdentityVerifyCall, StagedFileDispositionCall, StartAgentProcessCall,
-    StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
+    StartAgentProcessCall, StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall,
+    WriteFilesCall,
 };
 use crate::lifecycle::{MockLifecycleGate, wait_lifecycle_gate};
 use crate::overrides::{ExecMatcherOutcome, GuestStateRestoreBehavior, MockSandboxOverrides};
@@ -32,6 +32,7 @@ use crate::support::{
 /// Sandboxes created by an override-enabled factory also record selected calls
 /// in the shared [`MockSandboxOverrides`] observations.
 pub struct MockSandbox {
+    agent_instructions_calls: Mutex<Vec<AgentInstructionsCall>>,
     id: String,
     source_ip: String,
     run_control_id: Option<String>,
@@ -42,8 +43,6 @@ pub struct MockSandbox {
     storage_manifest_calls: Mutex<Vec<StorageManifestCall>>,
     home_drive_mount_results: Mutex<VecDeque<Result<ExecResult>>>,
     home_drive_mount_calls: Mutex<u32>,
-    session_history_identity_verify_calls: Mutex<Vec<SessionHistoryIdentityVerifyCall>>,
-    codex_session_cleanup_calls: Mutex<Vec<CodexSessionCleanupCall>>,
     guest_state_restore_calls: Mutex<Vec<GuestStateRestoreCall>>,
     read_file_results: Mutex<VecDeque<Result<Option<Vec<u8>>>>>,
     read_file_calls: Mutex<Vec<ReadFileCall>>,
@@ -52,9 +51,6 @@ pub struct MockSandbox {
     copy_file_gate: Mutex<Option<MockLifecycleGate>>,
     write_file_results: Mutex<VecDeque<Result<()>>>,
     write_file_calls: Mutex<Vec<WriteFileCall>>,
-    finalize_staged_file_results: Mutex<VecDeque<Result<StagedFileFinalizeOutcome>>>,
-    finalize_staged_file_calls: Mutex<Vec<FinalizeStagedFileCall>>,
-    finalize_staged_file_gate: Mutex<Option<MockLifecycleGate>>,
     write_files_calls: Mutex<Vec<WriteFilesCall>>,
     private_write_file_results: Mutex<VecDeque<Result<()>>>,
     private_write_file_calls: Mutex<Vec<WriteFileCall>>,
@@ -86,6 +82,7 @@ impl MockSandbox {
 
     fn build(id: impl Into<String>, overrides: Option<Arc<MockSandboxOverrides>>) -> Self {
         Self {
+            agent_instructions_calls: Mutex::new(Vec::new()),
             id: id.into(),
             source_ip: "10.0.0.1".into(),
             run_control_id: None,
@@ -96,8 +93,6 @@ impl MockSandbox {
             storage_manifest_calls: Mutex::new(Vec::new()),
             home_drive_mount_results: Mutex::new(VecDeque::new()),
             home_drive_mount_calls: Mutex::new(0),
-            session_history_identity_verify_calls: Mutex::new(Vec::new()),
-            codex_session_cleanup_calls: Mutex::new(Vec::new()),
             guest_state_restore_calls: Mutex::new(Vec::new()),
             read_file_results: Mutex::new(VecDeque::new()),
             read_file_calls: Mutex::new(Vec::new()),
@@ -106,9 +101,6 @@ impl MockSandbox {
             copy_file_gate: Mutex::new(None),
             write_file_results: Mutex::new(VecDeque::new()),
             write_file_calls: Mutex::new(Vec::new()),
-            finalize_staged_file_results: Mutex::new(VecDeque::new()),
-            finalize_staged_file_calls: Mutex::new(Vec::new()),
-            finalize_staged_file_gate: Mutex::new(None),
             write_files_calls: Mutex::new(Vec::new()),
             private_write_file_results: Mutex::new(VecDeque::new()),
             private_write_file_calls: Mutex::new(Vec::new()),
@@ -298,6 +290,54 @@ impl MockSandbox {
         self.storage_manifest_calls.lock_ignoring_poison().clone()
     }
 
+    /// Return typed instruction requests, separate from generic exec calls.
+    pub fn agent_instructions_calls(&self) -> Vec<AgentInstructionsCall> {
+        self.agent_instructions_calls.lock_ignoring_poison().clone()
+    }
+
+    fn next_exec_result(&self, command: &str, limits: ExecOutputLimits) -> Result<ExecResult> {
+        // Fixed instruction helpers share the existing canonical-command matcher
+        // fixture API, but keep their actual typed call records separate.
+        let result = if let Some(overrides) = &self.overrides {
+            let matched = {
+                let mut matchers = overrides.exec.matchers.lock_ignoring_poison();
+                matchers
+                    .iter()
+                    .position(|matcher| command.contains(&matcher.pattern))
+                    .map(|index| matchers.remove(index).outcome)
+            };
+            match matched {
+                Some(ExecMatcherOutcome::Return(result)) => Ok(result),
+                Some(ExecMatcherOutcome::Error(error)) => Err(error),
+                Some(ExecMatcherOutcome::Panic(message)) => {
+                    std::panic::resume_unwind(Box::new(message))
+                }
+                None => {
+                    if let Some(matcher) = overrides
+                        .exec
+                        .persistent_matchers
+                        .lock_ignoring_poison()
+                        .iter()
+                        .find(|matcher| command.contains(&matcher.pattern))
+                    {
+                        Ok(clone_exec_result(&matcher.result))
+                    } else {
+                        self.exec_results
+                            .lock_ignoring_poison()
+                            .pop_front()
+                            .unwrap_or_else(|| Ok(default_exec_result()))
+                    }
+                }
+            }
+        } else {
+            self.exec_results
+                .lock_ignoring_poison()
+                .pop_front()
+                .unwrap_or_else(|| Ok(default_exec_result()))
+        }?;
+        Ok(apply_exec_output_limits(result, limits))
+    }
+
     /// Queue a fixed home-drive mount result. Results are consumed in FIFO order.
     ///
     /// Local results, including errors, take precedence over shared overrides.
@@ -311,20 +351,6 @@ impl MockSandbox {
     /// Return the total fixed home-drive mount calls.
     pub fn home_drive_mount_calls(&self) -> u32 {
         *self.home_drive_mount_calls.lock_ignoring_poison()
-    }
-
-    /// Return this sandbox's recorded fixed live identity verifier calls.
-    pub fn session_history_identity_verify_calls(&self) -> Vec<SessionHistoryIdentityVerifyCall> {
-        self.session_history_identity_verify_calls
-            .lock_ignoring_poison()
-            .clone()
-    }
-
-    /// Return this sandbox's recorded fixed reused-Codex cleanup calls.
-    pub fn codex_session_cleanup_calls(&self) -> Vec<CodexSessionCleanupCall> {
-        self.codex_session_cleanup_calls
-            .lock_ignoring_poison()
-            .clone()
     }
 
     /// Return this sandbox's recorded fixed guest-state restore calls.
@@ -400,25 +426,6 @@ impl MockSandbox {
     /// [`MockSandboxOverrides::write_file_calls`].
     pub fn write_file_calls(&self) -> Vec<WriteFileCall> {
         self.write_file_calls.lock_ignoring_poison().clone()
-    }
-
-    /// Queue one staged-file finalizer result.
-    pub fn push_finalize_staged_file_result(&self, result: Result<StagedFileFinalizeOutcome>) {
-        self.finalize_staged_file_results
-            .lock_ignoring_poison()
-            .push_back(result);
-    }
-
-    /// Return recorded staged-file finalizer calls.
-    pub fn finalize_staged_file_calls(&self) -> Vec<FinalizeStagedFileCall> {
-        self.finalize_staged_file_calls
-            .lock_ignoring_poison()
-            .clone()
-    }
-
-    /// Block staged-file finalization after call recording.
-    pub fn set_finalize_staged_file_lifecycle_gate(&self, gate: MockLifecycleGate) {
-        *self.finalize_staged_file_gate.lock_ignoring_poison() = Some(gate);
     }
 
     /// Return this sandbox's recorded write-files batch calls.
@@ -914,45 +921,36 @@ impl Sandbox for MockSandbox {
             overrides.exec.call_notify.notify_waiters();
             wait_lifecycle_gate(&overrides.exec.lifecycle_gate).await;
         }
-        // Check pattern matchers before the FIFO queue.
-        let result = if let Some(overrides) = &self.overrides {
-            let matched = {
-                let mut matchers = overrides.exec.matchers.lock_ignoring_poison();
-                matchers
-                    .iter()
-                    .position(|matcher| request.cmd.contains(&matcher.pattern))
-                    .map(|index| matchers.remove(index).outcome)
-            };
-            match matched {
-                Some(ExecMatcherOutcome::Return(result)) => Ok(result),
-                Some(ExecMatcherOutcome::Error(error)) => Err(error),
-                Some(ExecMatcherOutcome::Panic(message)) => {
-                    std::panic::resume_unwind(Box::new(message))
-                }
-                None => {
-                    if let Some(matcher) = overrides
-                        .exec
-                        .persistent_matchers
-                        .lock_ignoring_poison()
-                        .iter()
-                        .find(|matcher| request.cmd.contains(&matcher.pattern))
-                    {
-                        Ok(clone_exec_result(&matcher.result))
-                    } else {
-                        self.exec_results
-                            .lock_ignoring_poison()
-                            .pop_front()
-                            .unwrap_or_else(|| Ok(default_exec_result()))
-                    }
-                }
-            }
-        } else {
-            self.exec_results
+        self.next_exec_result(request.cmd, request.output_limits)
+    }
+
+    async fn run_agent_instructions(
+        &self,
+        request: &AgentInstructionsRequest<'_>,
+    ) -> Result<ExecResult> {
+        let call = AgentInstructionsCall {
+            operation: request.operation,
+            metadata: request.metadata.to_vec(),
+            run_id: request.run_id.into(),
+            runtime_dir: request.runtime_dir.into(),
+            timeout: request.timeout,
+        };
+        self.agent_instructions_calls
+            .lock_ignoring_poison()
+            .push(call.clone());
+        if let Some(overrides) = &self.overrides {
+            overrides
+                .exec
+                .agent_instructions_calls
                 .lock_ignoring_poison()
-                .pop_front()
-                .unwrap_or_else(|| Ok(default_exec_result()))
-        }?;
-        Ok(apply_exec_output_limits(result, request.output_limits))
+                .push(call);
+        }
+        let command = format!(
+            "{} {}",
+            guest_contracts::guest_binary::STORAGE_APPLY_PATH,
+            request.operation.helper_argument()
+        );
+        self.next_exec_result(&command, EXEC_OUTPUT_LIMIT_64_KIB)
     }
 
     async fn apply_storage_manifest(
@@ -1014,74 +1012,6 @@ impl Sandbox for MockSandbox {
                         .pop_front()
                 })
             })
-            .unwrap_or_else(|| Ok(default_exec_result()))?;
-        Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_64_KIB))
-    }
-
-    async fn verify_session_history_identity(
-        &self,
-        request: &SessionHistoryIdentityVerifyRequest<'_>,
-    ) -> Result<ExecResult> {
-        let call = SessionHistoryIdentityVerifyCall {
-            metadata_path: request.metadata_path.to_owned(),
-            runtime_dir: request.runtime_dir.to_owned(),
-            framework: request.framework.to_owned(),
-            session_id_hash: request.session_id_hash.to_owned(),
-            history_ref_kind: request.history_ref_kind.to_owned(),
-            history_hash: request.history_hash.to_owned(),
-            history_size_bytes: request.history_size_bytes,
-            timeout: request.timeout,
-        };
-        self.session_history_identity_verify_calls
-            .lock_ignoring_poison()
-            .push(call.clone());
-        if let Some(overrides) = &self.overrides {
-            overrides
-                .exec
-                .session_history_identity_verify_calls
-                .lock_ignoring_poison()
-                .push(call);
-        }
-        let result = self
-            .exec_results
-            .lock_ignoring_poison()
-            .pop_front()
-            .unwrap_or_else(|| Ok(default_exec_result()))?;
-        Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_64_KIB))
-    }
-
-    async fn cleanup_codex_session(
-        &self,
-        request: &CodexSessionCleanupRequest<'_>,
-    ) -> Result<ExecResult> {
-        let call = CodexSessionCleanupCall {
-            session_id: request.session_id.to_owned(),
-            fallback_relative_path: request.fallback_relative_path.to_owned(),
-            timeout: request.timeout,
-        };
-        self.codex_session_cleanup_calls
-            .lock_ignoring_poison()
-            .push(call.clone());
-        if let Some(overrides) = &self.overrides {
-            overrides
-                .exec
-                .codex_session_cleanup_calls
-                .lock_ignoring_poison()
-                .push(call);
-            wait_lifecycle_gate(&overrides.exec.codex_session_cleanup_gate).await;
-            if let Some(result) = overrides
-                .exec
-                .codex_session_cleanup_results
-                .lock_ignoring_poison()
-                .pop_front()
-            {
-                return Ok(apply_exec_output_limits(result?, EXEC_OUTPUT_LIMIT_64_KIB));
-            }
-        }
-        let result = self
-            .exec_results
-            .lock_ignoring_poison()
-            .pop_front()
             .unwrap_or_else(|| Ok(default_exec_result()))?;
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_64_KIB))
     }
@@ -1314,51 +1244,7 @@ impl Sandbox for MockSandbox {
     }
 
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
-        self.write_file_with_compression(path, content, sandbox::FileCompression::None)
-            .await
-            .map(|_| ())
-    }
-
-    async fn write_file_with_compression(
-        &self,
-        path: &str,
-        content: &[u8],
-        compression: sandbox::FileCompression,
-    ) -> Result<Option<sandbox::FileWriteMeasurements>> {
-        let decoded;
-        let content = if let sandbox::FileCompression::ZstdSource { raw_size, crc32 } = compression
-        {
-            let decode = || -> std::io::Result<Vec<u8>> {
-                if raw_size as usize > 128 * 1024 * 1024 || content.len() > 128 * 1024 * 1024 {
-                    return Err(std::io::Error::other("zstd source exceeds size bound"));
-                }
-                let mut input = std::io::Cursor::new(content);
-                let mut decoder =
-                    zstd::stream::read::Decoder::with_buffer(&mut input)?.single_frame();
-                decoder.window_log_max(27)?;
-                let mut output = Vec::new();
-                decoder
-                    .take(u64::from(raw_size) + 1)
-                    .read_to_end(&mut output)?;
-                if output.len() != raw_size as usize
-                    || input.position() != content.len() as u64
-                    || crc32fast::hash(content) != crc32
-                {
-                    return Err(std::io::Error::other("decoded source integrity mismatch"));
-                }
-                Ok(output)
-            };
-            decoded = decode().map_err(|error| SandboxError::Operation {
-                operation: SandboxOperation::WriteFile,
-                reason: SandboxOperationReason::Other,
-                message: error.to_string(),
-            })?;
-            decoded.as_slice()
-        } else {
-            content
-        };
         let call = WriteFileCall {
-            compression,
             path: path.to_string(),
             content: content.to_vec(),
         };
@@ -1373,86 +1259,13 @@ impl Sandbox for MockSandbox {
                 .push(call);
         }
         validate_mock_guest_file_path(SandboxOperation::WriteFile, "write_file", path)?;
-        self.ordinary_write_result().await.map(|()| None)
-    }
-
-    async fn finalize_staged_file(
-        &self,
-        request: &StagedFileFinalizeRequest<'_>,
-    ) -> Result<StagedFileFinalizeOutcome> {
-        let disposition = match request.disposition {
-            StagedFileDisposition::Publish { destination } => StagedFileDispositionCall::Publish {
-                destination: destination.to_string(),
-            },
-            StagedFileDisposition::Discard => StagedFileDispositionCall::Discard,
-        };
-        let call = FinalizeStagedFileCall {
-            staging_path: request.staging_path.to_string(),
-            disposition,
-        };
-        self.finalize_staged_file_calls
-            .lock_ignoring_poison()
-            .push(call.clone());
-        if let Some(overrides) = &self.overrides {
-            overrides
-                .file
-                .finalize_staged_file_calls
-                .lock_ignoring_poison()
-                .push(call);
-        }
-        validate_mock_guest_file_path(
-            SandboxOperation::FinalizeStagedFile,
-            "finalize_staged_file",
-            request.staging_path,
-        )?;
-        if let StagedFileDisposition::Publish { destination } = request.disposition {
-            validate_mock_guest_file_path(
-                SandboxOperation::FinalizeStagedFile,
-                "finalize_staged_file",
-                destination,
-            )?;
-        }
-        let gate = self
-            .finalize_staged_file_gate
-            .lock_ignoring_poison()
-            .clone();
-        if let Some(gate) = gate {
-            gate.enter_and_wait().await;
-        }
-        if let Some(overrides) = &self.overrides {
-            wait_lifecycle_gate(&overrides.file.finalize_staged_file_gate).await;
-        }
-        if let Some(result) = self
-            .finalize_staged_file_results
-            .lock_ignoring_poison()
-            .pop_front()
-        {
-            return result;
-        }
-        if let Some(overrides) = &self.overrides
-            && let Some(result) = overrides
-                .file
-                .finalize_staged_file_results
-                .lock_ignoring_poison()
-                .pop_front()
-        {
-            return result;
-        }
-        let measurements = StagedFileFinalizeMeasurements::default();
-        Ok(match request.disposition {
-            StagedFileDisposition::Publish { .. } => StagedFileFinalizeOutcome::Published {
-                mode: StagedFilePublicationMode::SameDeviceRename,
-                measurements,
-            },
-            StagedFileDisposition::Discard => StagedFileFinalizeOutcome::Discarded { measurements },
-        })
+        self.ordinary_write_result().await
     }
 
     async fn write_files(&self, files: &[WriteFileEntry<'_>]) -> Result<()> {
         let calls = files
             .iter()
             .map(|file| WriteFileCall {
-                compression: sandbox::FileCompression::None,
                 path: file.path.to_string(),
                 content: file.content.to_vec(),
             })
@@ -1492,7 +1305,6 @@ impl Sandbox for MockSandbox {
             wait_lifecycle_gate(&overrides.file.private_write_file_gate).await;
         }
         let call = WriteFileCall {
-            compression: sandbox::FileCompression::None,
             path: path.to_string(),
             content: content.to_vec(),
         };
@@ -1537,7 +1349,6 @@ impl Sandbox for MockSandbox {
             files: files
                 .iter()
                 .map(|file| WriteFileCall {
-                    compression: sandbox::FileCompression::None,
                     path: file.path.to_string(),
                     content: file.content.to_vec(),
                 })

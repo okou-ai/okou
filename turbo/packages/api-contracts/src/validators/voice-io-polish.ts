@@ -1,0 +1,1 @@
+export const VOICE_IO_POLISH_MAX_SEGMENTS = 128;

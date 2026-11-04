@@ -1,5 +1,146 @@
 # Changelog
 
+## [0.10.25](https://github.com/okou-ai/okou/compare/runner-host-v0.10.24...runner-host-v0.10.25) (2026-11-04)
+
+## [0.10.24](https://github.com/okou-ai/okou/compare/runner-host-v0.10.23...runner-host-v0.10.24) (2026-11-04)
+
+## [0.10.23](https://github.com/okou-ai/okou/compare/runner-host-v0.10.22...runner-host-v0.10.23) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** retain service artifacts until shutdown is confirmed ([#44990](https://github.com/okou-ai/okou/issues/44990)) ([73f9c29](https://github.com/okou-ai/okou/commit/73f9c29a1b9378daad63d5b4c425240051afd7c4))
+
+## [0.10.22](https://github.com/okou-ai/okou/compare/runner-host-v0.10.21...runner-host-v0.10.22) (2026-11-03)
+
+## [0.10.21](https://github.com/okou-ai/okou/compare/runner-host-v0.10.20...runner-host-v0.10.21) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share blocking-worker release ownership in tests ([#44912](https://github.com/okou-ai/okou/issues/44912)) ([0c873d8](https://github.com/okou-ai/okou/commit/0c873d8254326de823cf8d42f5fe06489e555299))
+
+## [0.10.20](https://github.com/okou-ai/okou/compare/runner-host-v0.10.19...runner-host-v0.10.20) (2026-11-03)
+
+## [0.10.19](https://github.com/okou-ai/okou/compare/runner-host-v0.10.18...runner-host-v0.10.19) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
+## [0.10.18](https://github.com/okou-ai/okou/compare/runner-host-v0.10.17...runner-host-v0.10.18) (2026-11-02)
+
+## [0.10.17](https://github.com/okou-ai/okou/compare/runner-host-v0.10.16...runner-host-v0.10.17) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
+## [0.10.16](https://github.com/okou-ai/okou/compare/runner-host-v0.10.15...runner-host-v0.10.16) (2026-11-02)
+
+## [0.10.15](https://github.com/okou-ai/okou/compare/runner-host-v0.10.14...runner-host-v0.10.15) (2026-11-02)
+
+## [0.10.14](https://github.com/okou-ai/okou/compare/runner-host-v0.10.13...runner-host-v0.10.14) (2026-11-01)
+
+
+### Refactoring
+
+* **runner-host:** separate service primitive test sources ([#44499](https://github.com/okou-ai/okou/issues/44499)) ([e59ce5b](https://github.com/okou-ai/okou/commit/e59ce5b89057ae8a3962b36a35812dbe77372a4a))
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.10.13](https://github.com/okou-ai/okou/compare/runner-host-v0.10.12...runner-host-v0.10.13) (2026-11-01)
+
+
+### Refactoring
+
+* **runner-host:** separate host resource observation test sources ([#44484](https://github.com/okou-ai/okou/issues/44484)) ([bca8616](https://github.com/okou-ai/okou/commit/bca8616607bb8aedea885c246474526795fb4c75))
+
+## [0.10.12](https://github.com/okou-ai/okou/compare/runner-host-v0.10.11...runner-host-v0.10.12) (2026-11-01)
+
+
+### Refactoring
+
+* **runner-host:** separate gc primitive test source ownership ([#44464](https://github.com/okou-ai/okou/issues/44464)) ([a3dc599](https://github.com/okou-ai/okou/commit/a3dc5999a216bc0c4c7cf5a453dd936aa757ef57))
+* **runner-host:** separate host file test source ownership ([#44444](https://github.com/okou-ai/okou/issues/44444)) ([16eef7e](https://github.com/okou-ai/okou/commit/16eef7ef910de13525f39738710cfa46f6e0c086))
+* **runner-host:** separate service unit config test source ownership ([#44455](https://github.com/okou-ai/okou/issues/44455)) ([80e7521](https://github.com/okou-ai/okou/commit/80e752145536fad6fb416c9e0e952ba3c9ec92ac))
+
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-host-v0.10.10...runner-host-v0.10.11) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate bounded command test source ownership ([#44436](https://github.com/okou-ai/okou/issues/44436)) ([71c7638](https://github.com/okou-ai/okou/commit/71c763839ef67e45520e0ca5e3a8573d04f582ba))
+
+## [0.10.10](https://github.com/okou-ai/okou/compare/runner-host-v0.10.9...runner-host-v0.10.10) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate process ancestry test source ownership ([#44410](https://github.com/okou-ai/okou/issues/44410)) ([6842db7](https://github.com/okou-ai/okou/commit/6842db7e0cde9801d9e953bcb64c7fa0a4e20371))
+
+## [0.10.9](https://github.com/okou-ai/okou/compare/runner-host-v0.10.8...runner-host-v0.10.9) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate process discovery test source ownership ([#44393](https://github.com/okou-ai/okou/issues/44393)) ([93bb0f7](https://github.com/okou-ai/okou/commit/93bb0f782ef320e03576475df691c5f42dfa1c1d))
+
+## [0.10.8](https://github.com/okou-ai/okou/compare/runner-host-v0.10.7...runner-host-v0.10.8) (2026-10-31)
+
+## [0.10.7](https://github.com/okou-ai/okou/compare/runner-host-v0.10.6...runner-host-v0.10.7) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate log file test source ownership ([#44365](https://github.com/okou-ai/okou/issues/44365)) ([2cbcfc5](https://github.com/okou-ai/okou/commit/2cbcfc594acacee115255664de8c61d1f0ce6d34))
+* **runner-host:** separate process identity test source ownership ([#44371](https://github.com/okou-ai/okou/issues/44371)) ([8ca1dda](https://github.com/okou-ai/okou/commit/8ca1ddaf96642cd8ff8f050fa1b77d0b648dee69))
+
+## [0.10.6](https://github.com/okou-ai/okou/compare/runner-host-v0.10.5...runner-host-v0.10.6) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate dirname test source ownership ([#44357](https://github.com/okou-ai/okou/issues/44357)) ([c6483c2](https://github.com/okou-ai/okou/commit/c6483c2f715f333f87dca123422308b12ba486ae))
+* **runner-host:** separate paths test source ownership ([#44335](https://github.com/okou-ai/okou/issues/44335)) ([62e4452](https://github.com/okou-ai/okou/commit/62e44520960011fef215716b41fc87ac8d56be01))
+
+## [0.10.5](https://github.com/okou-ai/okou/compare/runner-host-v0.10.4...runner-host-v0.10.5) (2026-10-30)
+
+## [0.10.4](https://github.com/okou-ai/okou/compare/runner-host-v0.10.3...runner-host-v0.10.4) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate lock test source ownership ([#44314](https://github.com/okou-ai/okou/issues/44314)) ([f55ee85](https://github.com/okou-ai/okou/commit/f55ee85ef306cbd1a461902583d9d76e73fc2ff2))
+* **runner-host:** separate procfs test source ownership ([#44301](https://github.com/okou-ai/okou/issues/44301)) ([e1be9c9](https://github.com/okou-ai/okou/commit/e1be9c9a4323f6dda94b5137a41376967dc6b5e5))
+
+## [0.10.3](https://github.com/okou-ai/okou/compare/runner-host-v0.10.2...runner-host-v0.10.3) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate live instance test source ownership ([#44287](https://github.com/okou-ai/okou/issues/44287)) ([5cdaca5](https://github.com/okou-ai/okou/commit/5cdaca53aaa59824ae3d6136c2914645c439ffb9))
+
+## [0.10.2](https://github.com/okou-ai/okou/compare/runner-host-v0.10.1...runner-host-v0.10.2) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate systemctl test source ownership ([#44265](https://github.com/okou-ai/okou/issues/44265)) ([ea3d7f5](https://github.com/okou-ai/okou/commit/ea3d7f5c6f147601b9d3c11db5f38d92874457bc))
+
+## [0.10.1](https://github.com/okou-ai/okou/compare/runner-host-v0.10.0...runner-host-v0.10.1) (2026-10-30)
+
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-host-v0.9.48...runner-host-v0.10.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.9.48](https://github.com/okou-ai/okou/compare/runner-host-v0.9.47...runner-host-v0.9.48) (2026-10-30)
+
 ## [0.9.47](https://github.com/okou-ai/okou/compare/runner-host-v0.9.46...runner-host-v0.9.47) (2026-10-29)
 
 ## [0.9.46](https://github.com/okou-ai/okou/compare/runner-host-v0.9.45...runner-host-v0.9.46) (2026-10-29)

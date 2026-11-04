@@ -13,10 +13,8 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { AlertTriangle, EllipsisVertical, Download } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
-import {
-  OFFICIAL_TELEGRAM_BOT_ID,
-  type TelegramBot,
-} from "@okouai/api-contracts/contracts/integrations-telegram";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/validators/integrations-telegram";
+import type { TelegramBot } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,
@@ -64,7 +62,6 @@ import {
 } from "../../signals/okou-page/telegram.ts";
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
@@ -553,22 +550,8 @@ function DiscordCard() {
   );
 }
 
-function teamsCardDescription(args: {
-  isInstalled: boolean;
-  isConnected: boolean;
-  isAdmin: boolean;
-}): string {
-  if (!args.isInstalled && !args.isAdmin) {
-    return i18n.t(($) => {
-      return $.works.teams.adminInstall;
-    });
-  }
-  if (!args.isInstalled && args.isAdmin) {
-    return i18n.t(($) => {
-      return $.works.teams.connectThenInstall;
-    });
-  }
-  if (args.isInstalled && !args.isConnected) {
+function teamsCardDescription(isConnected: boolean): string {
+  if (!isConnected) {
     return i18n.t(($) => {
       return $.works.teams.connectAccount;
     });
@@ -585,33 +568,22 @@ function teamsCardConnection(data: TeamsConnectStatus | null) {
       isInstalled: false,
       isAdmin: false,
       connectedDetail: null,
-      independentIdentity: false,
-      descriptionInstalled: false,
       installUrl: null,
       connectUrl: null,
     };
   }
-  const independentIdentity = data.workspaceIdentity === true;
-  const isConnected =
-    data.isConnected === true &&
-    (data.workspaceIdentity === true ||
-      (data.isInstalled && data.pendingInstallation !== true));
+  const isConnected = data.isConnected;
   const isInstalled = data.isInstalled;
   const isAdmin = data.isAdmin;
-  const connectedDetail = independentIdentity
-    ? (data.linkedAccounts[0]?.displayName ?? data.tenantName)
-    : (data.teamName ?? data.tenantName);
-
-  const entryUrl = teamsEntryUrl(data);
+  const connectedDetail =
+    data.linkedAccounts[0]?.displayName ?? data.tenantName;
   return {
     isConnected,
     isInstalled,
     isAdmin,
     connectedDetail,
-    independentIdentity: independentIdentity,
-    descriptionInstalled: independentIdentity || isInstalled,
-    installUrl: independentIdentity ? data.installUrl : entryUrl,
-    connectUrl: independentIdentity ? data.connectUrl : entryUrl,
+    installUrl: data.installUrl,
+    connectUrl: data.connectUrl,
   };
 }
 
@@ -632,11 +604,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
   const { isConnected, isInstalled, isAdmin, connectedDetail } = connection;
   const permissionMismatch = teamsData?.permissionMismatch === true;
   const description = teamsData
-    ? teamsCardDescription({
-        isInstalled: connection.descriptionInstalled,
-        isConnected,
-        isAdmin,
-      })
+    ? teamsCardDescription(isConnected)
     : teamsDataLoadable.state === "hasError"
       ? t(($) => {
           return $.connectors.providerConnect.teams.statusFailed;
@@ -664,7 +632,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
             <div className="text-sm text-muted-foreground">{description}</div>
           </div>
           <ProviderCardActions
-            independentIdentity={connection.independentIdentity}
+            independentIdentity
             isConnected={isConnected}
             isInstalled={isInstalled}
             isAdmin={isAdmin}

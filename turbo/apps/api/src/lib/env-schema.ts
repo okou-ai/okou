@@ -54,19 +54,7 @@ function coreEnvSchema() {
     OKOU_DATA_ROUTER_URL: url().optional(),
     OKOU_DATA_TOKEN: string().min(1).optional(),
     OKOU_BROWSER_USE_API_KEY: string().min(1).optional(),
-    OKOU_BROWSER_USE_EXTENSION_IDS: string()
-      .transform((value) => {
-        return value
-          .split(",")
-          .map((id) => {
-            return id.trim();
-          })
-          .filter((id) => {
-            return id.length > 0;
-          });
-      })
-      .pipe(array(uuid()).max(3))
-      .optional(),
+    OKOU_BROWSER_USE_EXTENSION_ID: string().trim().pipe(uuid()),
     STEAM_WEB_API_KEY: string().min(1).optional(),
     LINK_OAUTH_CLIENT_ID: string().min(1).optional(),
     LINK_OAUTH_CLIENT_SECRET: string().min(1).optional(),
@@ -117,6 +105,10 @@ function serviceEnvSchema() {
     R2_ACCOUNT_ID: string().min(1),
     R2_SECRET_ACCESS_KEY: string().min(1),
     R2_USER_STORAGES_BUCKET_NAME: string().min(1),
+    R2_MARKETING_HANDOFF_BUCKET_NAME: string().min(1).optional(),
+    R2_MARKETING_HANDOFF_ACCESS_KEY_ID: string().min(1).optional(),
+    R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY: string().min(1).optional(),
+    MARKETING_HANDOFF_PUBLISH_TOKEN: string().min(32).optional(),
     R2_PRIVATE_ARTIFACTS_BUCKET_NAME: string().min(1).optional(),
     R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID: string().min(1).optional(),
     R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY: string().min(1).optional(),
@@ -215,10 +207,10 @@ function billingAndMessagingEnvSchema() {
     DISCORD_PUBLIC_KEY: string()
       .regex(/^[a-fA-F0-9]{64}$/)
       .optional(),
-    LINK_APPROVAL_WORKER_URL: string().url().optional(),
+    LINK_APPROVAL_WORKER_URL: url().optional(),
     LINK_APPROVAL_WORKER_SECRET: string().optional(),
     LINK_APPROVAL_CONTROL_SECRET: string().optional(),
-    WECHAT_GATEWAY_URL: string().url().optional(),
+    WECHAT_GATEWAY_URL: url().optional(),
     WECHAT_GATEWAY_SECRET: string().optional(),
     WECHAT_GATEWAY_CONTROL_SECRET: string().optional(),
     DISCORD_GATEWAY_SECRET: string().min(32).optional(),

@@ -10,6 +10,10 @@ const tester = new RuleTester();
 
 tester.run("no-db-transaction", noDbTransaction, {
   valid: [
+    {
+      filename: "/repo/turbo/packages/db/scripts/migration-runner.ts",
+      code: "export async function applyPendingMigrations(sql) { await sql.begin(work); }",
+    },
     "const transaction = { amount: 10 }; receipt.transaction = transaction;",
     "const { transaction } = receipt; JSON.stringify(transaction);",
     "const amount = payment.transaction.amount;",
@@ -23,6 +27,11 @@ tester.run("no-db-transaction", noDbTransaction, {
     "const sql = `SELECT ${'BEGIN'}`;",
   ],
   invalid: [
+    {
+      filename: "/repo/turbo/apps/api/src/signals/services/migration-runner.ts",
+      code: "sql.begin(work);",
+      errors: [{ messageId: "transaction" }],
+    },
     ...[
       "db.transaction(async (tx) => tx.insert(items));",
       "tx.transaction(async (nested) => nested.update(items));",

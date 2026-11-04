@@ -2,18 +2,17 @@
 """Validate original accepted-resume/public-API-wait custody and required saving."""
 
 import argparse
-import hashlib
 import json
 import pathlib
 
 import batch_aba_report as batch
-import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
 import speculative_fault_report as saving
 import status_failure_report as failure
 from cleanup_report import supplied_policy
+from native_transition_report import wait_progress, wire
 from snapshot_report import exact
 
 PREFIX = "NATIVE_UNPARK_WITNESS "
@@ -25,36 +24,6 @@ PHASES = ("inputs_verified", "resume_captured", "resume_accepted_waiting", "prep
           "producers_joined")
 
 
-def wire(value, response=False, state="Resumed"):
-    if not isinstance(value, str) or len(value) > 1024*1024:
-        raise ValueError("missing bounded original HTTP bytes")
-    raw = value.encode("ascii")
-    head, body = raw.split(b"\r\n\r\n", 1)
-    lines = head.split(b"\r\n")
-    valid = (lines[0].split(b" ",2)[:2] == [b"HTTP/1.1",b"204"] if response
-             else lines[0] == b"PATCH /vm HTTP/1.1")
-    if not valid:
-        raise ValueError("wrong native request or successful backend response")
-    headers = {}
-    for line in lines[1:]:
-        name, val = line.split(b":", 1)
-        name = name.strip().lower()
-        if name in headers:
-            raise ValueError("duplicate HTTP evidence header")
-        headers[name] = val.strip()
-    if b"transfer-encoding" in headers:
-        raise ValueError("unsupported native HTTP transfer encoding")
-    length = headers.get(b"content-length", b"0" if response else b"")
-    if not length.isdigit() or int(length) != len(body):
-        raise ValueError("incomplete native HTTP evidence")
-    if response:
-        if body:
-            raise ValueError("204 response contains a body")
-    elif json.loads(body, object_pairs_hook=pressure.unique_object) != {"state": state}:
-        raise ValueError("native transition evidence names another operation")
-    return hashlib.sha256(raw).hexdigest()
-
-
 def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
@@ -64,12 +33,7 @@ def validate(directory):
         if not line.startswith(PREFIX):
             continue
         event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if (not isinstance(event, dict) or set(event) != {"version", "case", "phase", "monotonic_ns",
-                "unix_ns", "sandbox_id", "backing_generation", "evidence"}
-                or type(event["version"]) is not int or event["version"] != 1
-                or event["case"] not in CASES or not isinstance(event["evidence"], dict)
-                or not report.positive_integer(event["monotonic_ns"])
-                or not report.positive_integer(event["unix_ns"])):
+        if not report.valid_witness_envelope(event, lambda value: value in CASES):
             raise ValueError("invalid native unpark witness")
         witnesses[event["case"]].append(event)
     identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}
@@ -129,15 +93,7 @@ def validate(directory):
             "repark_refused":True,"incoming_refused":True,"original_metadata_preserved":True,
             "original_full_lease_active":True,"original_exit_polled_pending":True,"pool_empty":True,
             "allocated":[2,4096,1]}, "native cancellation lost original uncertain custody")
-        held = batch.clock(progress.get("pool_held_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
-        polled = batch.clock(progress.get("heartbeat_pending_ns"), held, events[4]["monotonic_ns"])
-        released = batch.clock(progress.get("pool_released_ns"), polled, events[4]["monotonic_ns"])
-        foreground.observer(progress.get("observer"), polled, released)
-        runner = foreground.heartbeat(progress.get("heartbeat"),1,released,events[4]["monotonic_ns"],(2,4096))
-        exact(progress, {"pool_held_ns":held,"heartbeat_pending_ns":polled,"pool_released_ns":released,
-            "observer":progress["observer"],"heartbeat":progress["heartbeat"],"terminal_unpark_polled_pending":True,
-            "response_delivery_withheld":True,"additional_full_profile_refused":True,
-            "original_full_lease_active":True,"allocated":[2,4096,1]}, "native wait lost independent progress or no-headroom custody")
+        runner = wait_progress(progress, events[3], events[4])
         released = batch.clock(joined.get("response_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
         finished = batch.clock(joined.get("producer_joined_ns"), released, events[5]["monotonic_ns"])
         exact(joined, {"response_released_ns":released,"producer_joined_ns":finished,"producer_joined":True,

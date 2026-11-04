@@ -1,3 +1,5 @@
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+
 export interface SystemPromptVariables {
   readonly agentIdentity?: string;
   readonly executionLimit?: string;
@@ -22,7 +24,6 @@ type SkillVolumeSource =
   | "system_skill"
   | "connector_skill"
   | "custom_connector_skill"
-  | "official_workflow"
   | "workflow_skill"
   // Template guidance packages keep their existing storage provenance.
   | "request_additional_volume";
@@ -31,23 +32,28 @@ interface SkillVolumeStorage {
   readonly name: string;
   readonly version?: string;
   readonly system?: boolean;
-  readonly expectedStorageId?: string;
 }
 
-export type SkillVolume = SkillVolumeStorage &
-  (
-    | {
-        readonly source: Exclude<
-          SkillVolumeSource,
-          "request_additional_volume"
-        >;
-        readonly skillName: string;
-      }
-    | {
-        readonly source: "request_additional_volume";
-        readonly mountPath: string;
-      }
-  );
+export type SkillVolume =
+  | {
+      readonly source: "system_skill";
+      readonly skillName: string;
+      readonly contentBundle: ContentBundle;
+    }
+  | (SkillVolumeStorage &
+      (
+        | {
+            readonly source: Exclude<
+              SkillVolumeSource,
+              "request_additional_volume" | "system_skill"
+            >;
+            readonly skillName: string;
+          }
+        | {
+            readonly source: "request_additional_volume";
+            readonly mountPath: string;
+          }
+      ));
 
 /** Prompt text and skill or template guidance packages for one run. */
 export interface RunPromptAndSkills {
@@ -60,7 +66,6 @@ const VOLUME_SOURCE_ORDER = {
   custom_connector_skill: 0,
   system_skill: 1,
   connector_skill: 2,
-  official_workflow: 3,
   workflow_skill: 3,
   request_additional_volume: 4,
 } as const satisfies Readonly<Record<SkillVolumeSource, number>>;
@@ -103,38 +108,38 @@ export function mergeRunPromptAndSkills(
   };
 }
 
-interface ResolvedSkillVolume extends SkillVolumeStorage {
-  readonly mountPath: string;
-}
+type ResolvedSkillVolume =
+  | (SkillVolumeStorage & {
+      readonly source: Exclude<SkillVolumeSource, "system_skill">;
+      readonly mountPath: string;
+    })
+  | {
+      readonly source: "system_skill";
+      readonly contentBundle: ContentBundle;
+      readonly mountPath: string;
+    };
 
 /** Bind runtime skill paths at run assembly; template paths are already fixed. */
 export function resolveRunSkillVolumes(
   volumes: readonly SkillVolume[],
   skillsRoot?: string,
-): {
-  readonly skillVolumes: readonly ResolvedSkillVolume[];
-  readonly skillVolumeSources: readonly SkillVolumeSource[];
-} {
+): readonly ResolvedSkillVolume[] {
   const skillVolumes: ResolvedSkillVolume[] = [];
-  const skillVolumeSources: SkillVolumeSource[] = [];
   for (const volume of volumes) {
     if (volume.source === "request_additional_volume") {
-      const { source, ...fixedVolume } = volume;
-      skillVolumes.push(fixedVolume);
-      skillVolumeSources.push(source);
+      skillVolumes.push(volume);
     } else {
       if (skillsRoot === undefined) {
         throw new Error("Runtime skills require a mount root at run assembly");
       }
-      const { source, skillName, ...storage } = volume;
+      const { skillName, ...storage } = volume;
       skillVolumes.push({
         ...storage,
         mountPath: `${skillsRoot}/${skillName}`,
       });
-      skillVolumeSources.push(source);
     }
   }
-  return { skillVolumes, skillVolumeSources };
+  return skillVolumes;
 }
 
 interface RenderedRunPrompts {

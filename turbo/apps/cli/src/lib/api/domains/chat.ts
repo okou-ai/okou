@@ -1,12 +1,12 @@
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   type ChatEventSendBody,
+  type ChatThreadEvent,
   chatEventsContract,
   chatThreadArchiveContract,
   chatThreadEventsContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
-  type ChatThreadEvent as ApiChatThreadEvent,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
@@ -27,8 +27,6 @@ export interface ChatThreadSnapshot {
   readonly latestEventId: string | null;
   readonly latestSeqId: number | null;
 }
-
-export type ChatThreadEvent = ApiChatThreadEvent;
 
 type ChatEventSnapshotResult =
   | {
@@ -147,6 +145,7 @@ export async function getChatIndicators(): Promise<Indicators> {
 }
 
 export async function createChatThread(options: {
+  projectId?: string;
   agentId: string;
   title: string;
   /** Null selects Auto; omit to use the member default. */
@@ -159,6 +158,7 @@ export async function createChatThread(options: {
   const result = await client.create({
     body: {
       agentId: options.agentId,
+      projectId: options.projectId,
       title: options.title,
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.serviceTier === undefined

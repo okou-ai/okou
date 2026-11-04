@@ -320,22 +320,29 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     }
     async function seedWithInstallation() {
       const base = await seedBaseContext();
-      const installerOrgId = base.orgId;
       const installed = await scenario.run(() => {
         return slackOrgs.installForOrg({
-          orgId: installerOrgId,
-          installer: scenario.user({
-            orgId: installerOrgId,
-            orgRole: "org:admin",
-          }),
+          orgId: base.orgId,
+          installer: actorFor(base),
           run: scenario.run,
         });
       });
-      await connectMember({
-        ...base,
-        slackWorkspaceId: installed.slackWorkspaceId,
+      const connection = { slackUserId: installed.installerSlackUserId };
+      connections.set(
+        `${base.orgId}:${installed.slackWorkspaceId}:${base.userId}`,
+        connection,
+      );
+      context.mocks.slack.users.info.mockResolvedValue({
+        ok: true,
+        user: {
+          id: connection.slackUserId,
+          team_id: installed.slackWorkspaceId,
+          deleted: false,
+          is_bot: false,
+        },
       });
       await restoreMembership(base);
+      mockSharedSlackConversations(undefined, connection.slackUserId);
       return { ...base, slackWorkspaceId: installed.slackWorkspaceId };
     }
     async function rememberClaim(actor: ApiTestUser, runId: string) {
@@ -559,7 +566,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       files: [{ id: "F-MATERIALIZED", title: undefined }],
       channel_id: "C123",
       thread_ts: undefined,
-      initial_comment: undefined,
+      initial_comment: expect.stringMatching(
+        /^Sent via .+ · Triggered by <@[^>]+>$/u,
+      ),
     });
     expect(context.mocks.slack.files.info).toHaveBeenCalledTimes(1);
     expect(
@@ -1242,7 +1251,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             files: [{ id: fileId, title: undefined }],
             channel_id: channel,
             thread_ts: undefined,
-            initial_comment: undefined,
+            initial_comment: expect.stringMatching(
+              /^Sent via .+ · Triggered by <@[^>]+>$/u,
+            ),
           },
         ],
       ]);
@@ -1608,7 +1619,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         files: [{ id: fileId, title: "Quarterly report" }],
         channel_id: "C123",
         thread_ts: "123.456",
-        initial_comment: "Uploaded from a run",
+        initial_comment: expect.stringMatching(
+          /^Uploaded from a run\n\nSent via Computer Use public authorization · Triggered by <@[^>]+>$/u,
+        ),
       });
 
       const files = await fixture.run(() => {
@@ -1689,6 +1702,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ).toHaveBeenLastCalledWith({
           files: [{ id: fileId, title: "Self report" }],
           channel_id: "D-SELF",
+          thread_ts: undefined,
+          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
         });
       });
     },
@@ -1814,8 +1829,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         expect(
           context.mocks.slack.files.completeUploadExternal,
         ).toHaveBeenLastCalledWith({
-          files: [{ id: "F-SELF" }],
+          files: [{ id: "F-SELF", title: undefined }],
           channel_id: "D-SELF",
+          thread_ts: undefined,
+          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
         });
         expect(context.mocks.slack.conversations.open).toHaveBeenCalledTimes(1);
       });
@@ -2502,6 +2519,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         const site = await fixture.run(() => {
           return chatApi.prepareHostedSiteWithBearer(hostBearer, {
             site: siteName,
+            title: siteName,
             artifactKind: "hosted-site",
             spaFallback: false,
             files: [

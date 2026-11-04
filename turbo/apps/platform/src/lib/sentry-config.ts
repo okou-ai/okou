@@ -2,6 +2,8 @@ import * as Sentry from "@sentry/browser";
 import type { BrowserOptions, Contexts, User } from "@sentry/browser";
 
 import { setLogErrorHandler } from "../signals/log.ts";
+import { CdpFault } from "../signals/browser/cdp/errors.ts";
+import { NativeNavigationFault } from "../signals/browser/navigation/rejection.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { SENTRY_APPLICATION_KEY } from "./sentry-application-key.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
@@ -96,7 +98,20 @@ export function createPlatformSentryOptions(
     // Preserve native fetch errors for application-level error handling.
     enhanceFetchErrorMessages: false,
 
-    beforeSend(event) {
+    beforeSend(event, hint) {
+      const error = hint.originalException;
+      if (error instanceof CdpFault && error.request) {
+        event.contexts = {
+          ...event.contexts,
+          browser_cdp: {
+            kind: error.kind,
+            method: error.request.method,
+            ...(error.request.code !== undefined
+              ? { code: error.request.code }
+              : {}),
+          },
+        };
+      }
       if (event.request?.url) {
         event.request.url = redactProofUrl(event.request.url);
       }
@@ -135,13 +150,57 @@ export function captureSentryLogError(
     return arg instanceof Error || arg instanceof DOMException;
   });
   if (error) {
-    Sentry.captureException(error, captureContext);
+    const faults = claimCdpReport(error);
+    if (!faults) {
+      return;
+    }
+    const navigation = faults.find((fault) => {
+      return fault instanceof NativeNavigationFault;
+    });
+    Sentry.captureException(error, {
+      ...captureContext,
+      ...(navigation
+        ? {
+            contexts: {
+              ...captureContext.contexts,
+              browser_navigation: {
+                method: "Page.navigate",
+                reason: navigation.reason,
+              },
+            },
+          }
+        : {}),
+    });
     return;
   }
   Sentry.captureMessage(capturedArgs.map(String).join(" "), {
     ...captureContext,
     level: "error",
   });
+}
+
+/** Keep native refusals local; deduplicate captured faults through wrappers. */
+function claimCdpReport(error: Error): readonly CdpFault[] | null {
+  const visited = new Set<Error>();
+  const faults: CdpFault[] = [];
+  let current: unknown = error;
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    if (current instanceof CdpFault) {
+      if (
+        current.reported ||
+        (current instanceof NativeNavigationFault && current.expected)
+      ) {
+        return null;
+      }
+      faults.push(current);
+    }
+    current = current.cause;
+  }
+  for (const fault of faults) {
+    fault.reported = true;
+  }
+  return faults;
 }
 
 export function setupSentryLogger(): void {

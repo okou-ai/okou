@@ -4,10 +4,12 @@ import {
   array,
   boolean,
   email,
+  iso,
   number,
   object,
   string,
   enum as zEnum,
+  url as zUrl,
   type infer as zInfer,
 } from "zod";
 import type { MailDraftValue } from "./mail-details";
@@ -27,13 +29,12 @@ const messageSchema = object({
   replyTo: array(addressSchema).default([]),
   subject: string().default(""),
   body: object({ contentType: zEnum(["text", "html"]), content: string() }),
-  webLink: string()
-    .url()
+  webLink: zUrl()
     .refine((value) => {
       return new URL(value).protocol === "https:";
     })
     .optional(),
-  sentDateTime: string().datetime().nullable().optional(),
+  sentDateTime: iso.datetime().nullable().optional(),
   internetMessageHeaders: array(
     object({ name: string(), value: string() }),
   ).default([]),
@@ -52,7 +53,7 @@ const fileAttachmentSchema = attachmentSchema.extend({
 });
 const attachmentPageSchema = object({
   value: array(attachmentSchema),
-  "@odata.nextLink": string().url().optional(),
+  "@odata.nextLink": zUrl().optional(),
 });
 
 export class OutlookAuthorizationError extends Error {

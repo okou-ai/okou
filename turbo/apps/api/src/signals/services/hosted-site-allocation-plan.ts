@@ -174,7 +174,7 @@ function buildManifest(args: {
   readonly siteId: string;
   readonly site: string;
   readonly publicSlug: string;
-  readonly title?: string;
+  readonly title: string;
   readonly deploymentVersion: number | null;
   readonly artifactKind: HostedArtifactKind;
   readonly spaFallback: boolean;
@@ -201,7 +201,7 @@ function buildManifest(args: {
     deploymentId: args.deploymentId,
     siteId: args.siteId,
     site: args.site,
-    ...(args.title === undefined ? {} : { title: args.title }),
+    title: args.title,
     publicSlug: args.publicSlug,
     ...(args.deploymentVersion === null
       ? {}

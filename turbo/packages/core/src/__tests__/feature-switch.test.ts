@@ -27,6 +27,70 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("defaults home task discovery to staff and honors explicit overrides", () => {
+    const key = FeatureSwitchKey.HomeTaskDiscovery;
+    for (const [context, enabledByDefault] of [
+      [{}, false],
+      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
+      [{ email: "BINGJIE@OKOU.AI" }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabledByDefault);
+      expect(getAllFeatureStates(context)[key]).toBe(enabledByDefault);
+      for (const enabled of [true, false]) {
+        const overridden = { ...context, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, overridden)).toBe(enabled);
+        expect(getAllFeatureStates(overridden)[key]).toBe(enabled);
+      }
+    }
+  });
+
+  it("defaults CJK emphasis on for everyone and honors explicit overrides", () => {
+    const key = FeatureSwitchKey.MarkdownCjkEmphasis;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, true],
+      [{ userId: "external-user" }, true],
+      [{ orgId: "external-org" }, true],
+      [{ userId: "external-user", orgId: "external-org" }, true],
+      [staff, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
+      [{ orgId: "external-org", overrides: { [key]: false } }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, true],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("defaults chat email quoting to staff and honors Lab overrides", () => {
+    const key = FeatureSwitchKey.ChatEmailQuote;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ userId: "external-user" }, false],
+      [{ orgId: "external-org" }, false],
+      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, true],
+      [staff, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("keeps chat email quoting available in Lab for explicit rollout overrides", () => {
+    const key = FeatureSwitchKey.ChatEmailQuote;
+    expect(isFeatureSwitchAvailable(key, {})).toBe(true);
+    expect(isFeatureSwitchAvailable(key, { orgId: "external-org" })).toBe(true);
+    expect(
+      isFeatureSwitchAvailable(key, {
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      }),
+    ).toBe(true);
+  });
+
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
@@ -353,6 +417,9 @@ describe("getFeatureSwitchMetadata", () => {
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
     ).toBe("beta");
+    expect(metadata[FeatureSwitchKey.HomeTaskDiscovery].rolloutStage).toBe(
+      "beta",
+    );
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );
@@ -390,64 +457,5 @@ describe("overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Dummy, { userId: "any-user" }),
     ).toBe(true);
-  });
-});
-
-describe("remote UI rollout", () => {
-  it.each([
-    "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
-    "user_3G9pYGWE2oaAQAUfb8wIwcLxwiy",
-  ])("enables remote setup for Bingjie's verified identity %s", (userId) => {
-    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
-    for (const orgId of [
-      undefined,
-      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      "external-org",
-    ]) {
-      expect(isFeatureEnabled(key, { userId, orgId })).toBe(true);
-      expect(getAllFeatureStates({ userId, orgId })[key]).toBe(true);
-      expect(isFeatureSwitchAvailable(key, { userId, orgId })).toBe(true);
-      expect(
-        getAllFeatureStates({ userId, orgId, overrides: { [key]: false } })[
-          key
-        ],
-      ).toBe(false);
-    }
-  });
-
-  it("enables remote setup for the staff organization with an opt-out", () => {
-    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
-    const context = {
-      userId: "staff-colleague",
-      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-    };
-    expect(isFeatureEnabled(key, context)).toBe(true);
-    expect(getAllFeatureStates(context)[key]).toBe(true);
-    expect(isFeatureSwitchAvailable(key, context)).toBe(true);
-    const disabled = { ...context, overrides: { [key]: false } };
-    expect(isFeatureEnabled(key, disabled)).toBe(false);
-    expect(getAllFeatureStates(disabled)[key]).toBe(false);
-  });
-
-  it("defaults remote setup on for everyone and allows opting out", () => {
-    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
-    for (const context of [
-      {},
-      { email: "bingjie@okou.ai" },
-      { email: "bingjie@vm0.ai" },
-      {
-        userId: "staff-colleague",
-        email: "ethan@okou.ai",
-        orgId: "external-org",
-      },
-      { userId: "external-user", orgId: "external-org" },
-    ]) {
-      expect(isFeatureEnabled(key, context)).toBe(true);
-      expect(getAllFeatureStates(context)[key]).toBe(true);
-      expect(isFeatureSwitchAvailable(key, context)).toBe(true);
-      const overridden = { ...context, overrides: { [key]: false } };
-      expect(isFeatureEnabled(key, overridden)).toBe(false);
-      expect(getAllFeatureStates(overridden)[key]).toBe(false);
-    }
   });
 });

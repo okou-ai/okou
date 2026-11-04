@@ -162,6 +162,10 @@ export interface AgentRunContextSignals {
   readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
   /** The accepted global Official Workflow catalog, shared across contexts. */
   readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
+  /** Seed Skill rows read with the model catalog; shared across contexts. */
+  readonly seedSkills$: ReturnType<
+    typeof createGlobalModelContext
+  >["seedSkills$"];
   readonly storage$: Computed<Promise<AgentStorageContext>>;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
@@ -246,6 +250,8 @@ function catalogMetadataSlugs(selection: AgentConnectorSelection) {
 export interface BootstrapConnectorAccount extends ConnectorSourceRow {
   readonly connectorId: string;
   readonly isDefault: boolean;
+  readonly defaultEnabledForChats: boolean;
+  readonly createdAt: Date;
   readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorStateRevision: bigint;
   readonly orgId: string;
@@ -358,6 +364,7 @@ function createOrgContextReferences(
           managedModelKeys$: supplied.managedModelKeys$,
           modelPricing$: supplied.modelPricing$,
           catalog$: supplied[globalModelOwner],
+          seedSkills$: supplied.seedSkills$,
         }
       : undefined
     : createGlobalModelContext();
@@ -502,24 +509,34 @@ function createIdentityContext(
       ]);
       return executionCreditBalance(org, executionExpiredCredits(rows), pack);
     });
-  const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
-  const { workflows$ } = connectorContext.signals;
+  const featureSwitchContext$ =
+    sharedMember?.featureSwitches$ ??
+    computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
+      const [member, overrides] = await Promise.all([
+        get(memberMetadata$),
+        get(memberContext.overrides$),
+      ]);
+      return capturedFeatureSwitchContext(scope, member, overrides);
+    });
+  const connectorContext = createConnectorContextGroups(
+    userId,
+    orgId,
+    agentId,
+    featureSwitchContext$,
+  );
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
-    const plan = agentStorageReadPlan(
+    const requests = agentStorageReadPlan(
       scope,
       await Promise.all([
-        get(agent$),
-        get(workflows$),
         get(connectorContext.signals.connectorSelection$),
         get(connectorContext.signals.catalog$),
-        null,
       ]),
     );
     const db = get(db$);
     return captureAgentStorageContext(
-      plan,
+      requests,
       await (async () => {
-        const readPlan = storageBaseIndexReadPlan(plan.ownedRequests);
+        const readPlan = storageBaseIndexReadPlan(requests);
         if (readPlan === null) {
           return new Map();
         }
@@ -536,15 +553,6 @@ function createIdentityContext(
   });
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
-  const featureSwitchContext$ =
-    sharedMember?.featureSwitches$ ??
-    computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
-      const [member, overrides] = await Promise.all([
-        get(memberMetadata$),
-        get(memberContext.overrides$),
-      ]);
-      return capturedFeatureSwitchContext(scope, member, overrides);
-    });
   const environment$ = computed(async (get) => {
     requirePreparedContextAgent(await get(agent$));
     const snapshot = await get(connectorContext.environmentSnapshot$);
@@ -568,6 +576,7 @@ function createIdentityContext(
       createSelectedImageModel(memberMetadata$),
     ...connectorContext.signals,
     officialCatalog$: reusedOfficialCatalog(supplied),
+    seedSkills$: globalReferences.seedSkills$,
     storage$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
@@ -706,15 +715,20 @@ export interface EagerConnectorCredentialContext {
   >;
 }
 
-/** Own decryption only after the run's eager plan selects captured values. */
+/** Connect the lazy credential read while constructing its owning graph. */
 export function createEagerConnectorCredentialContext(
-  credentials: readonly {
-    readonly id: string;
-    readonly encryptedValue: string;
-  }[],
-  resolveStartedAt: number,
+  input$: Computed<
+    Promise<{
+      readonly credentials: readonly {
+        readonly id: string;
+        readonly encryptedValue: string;
+      }[];
+      readonly resolveStartedAt: number;
+    }>
+  >,
 ): EagerConnectorCredentialContext {
-  const credentials$ = computed(async () => {
+  const credentials$ = computed(async (get) => {
+    const { credentials, resolveStartedAt } = await get(input$);
     const decryptStartedAt = performance.now();
     const decrypted = await mapConcurrent(
       credentials,
@@ -765,6 +779,27 @@ const bootstrapCredentialsDecoder = zodDriverValueDecoder(
   ),
 );
 
+const bootstrapConnectorAccountColumns = Object.freeze({
+  id: connectors.id,
+  connectorSlug: connectors.connectorSlug,
+  customConnectorId: connectors.customConnectorId,
+  isDefault: connectors.isDefault,
+  defaultEnabledForChats: connectors.defaultEnabledForChats,
+  createdAt: connectors.createdAt,
+  automaticAuthType: connectors.automaticAuthType,
+  connectorStateRevision:
+    sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
+      pgInt8ToBigIntDecoder,
+    ),
+  needsReconnect: connectors.needsReconnect,
+  authMethod: connectors.authMethod,
+  storageVersion: connectors.storageVersion,
+  tokenExpiresAt: connectors.tokenExpiresAt,
+  updatedAt: connectors.updatedAt,
+  orgId: connectors.orgId,
+  userId: connectors.userId,
+});
+
 type BootstrapEnvironmentSnapshot =
   ReturnType<typeof createAgentEnvironment> extends Computed<Promise<infer T>>
     ? T
@@ -788,24 +823,7 @@ function createAgentEnvironment(userId: string, orgId: string) {
         credentialSnapshot,
       )
       .select({
-        account: {
-          id: connectors.id,
-          connectorSlug: connectors.connectorSlug,
-          customConnectorId: connectors.customConnectorId,
-          isDefault: connectors.isDefault,
-          automaticAuthType: connectors.automaticAuthType,
-          connectorStateRevision:
-            sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
-              pgInt8ToBigIntDecoder,
-            ),
-          needsReconnect: connectors.needsReconnect,
-          authMethod: connectors.authMethod,
-          storageVersion: connectors.storageVersion,
-          tokenExpiresAt: connectors.tokenExpiresAt,
-          updatedAt: connectors.updatedAt,
-          orgId: connectors.orgId,
-          userId: connectors.userId,
-        },
+        account: bootstrapConnectorAccountColumns,
         variableValues: variableSnapshot.values,
         connectorVariables: connectorVariableSnapshot.values,
         credentials: credentialSnapshot.values,
@@ -998,13 +1016,17 @@ function createConnectorContextGroups(
   userId: string,
   orgId: string,
   agentId: string,
+  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
   const { connectorSelection$, permissionGrants$, workflows$ } =
-    createAgentSelectionContext({
-      userId,
-      orgId,
-      agentId,
-    });
+    createAgentSelectionContext(
+      {
+        userId,
+        orgId,
+        agentId,
+      },
+      featureSwitches$,
+    );
   const environmentSnapshot$ = createAgentEnvironment(userId, orgId);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;

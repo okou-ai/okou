@@ -83,9 +83,11 @@ function normalizePlanType(value: string): string {
   return value.replace(/^claude_/, "").replaceAll("_", " ");
 }
 
-function maxTierSuffix(rateLimitTier: string | null): string | null {
-  const match = rateLimitTier?.match(/(\d+x)$/);
-  return match?.[1] ?? null;
+// Anthropic renamed Max 5x to Max and Max 20x to Ultra, but the profile API
+// still reports both as `claude_max` and only the rate-limit tier tells them
+// apart.
+function maxPlanType(rateLimitTier: string | null): string {
+  return rateLimitTier?.endsWith("20x") ? "ultra" : "max";
 }
 
 function planTypeFromProfile(profile: ProfileResponse): string | null {
@@ -95,15 +97,13 @@ function planTypeFromProfile(profile: ProfileResponse): string | null {
   const rateLimitTier = nonEmptyString(profile.organization?.rate_limit_tier);
 
   if (organizationType === "claude_max") {
-    const tierSuffix = maxTierSuffix(rateLimitTier);
-    return tierSuffix ? `max ${tierSuffix}` : "max";
+    return maxPlanType(rateLimitTier);
   }
   if (organizationType) {
     return normalizePlanType(organizationType);
   }
   if (profile.account?.has_claude_max) {
-    const tierSuffix = maxTierSuffix(rateLimitTier);
-    return tierSuffix ? `max ${tierSuffix}` : "max";
+    return maxPlanType(rateLimitTier);
   }
   if (profile.account?.has_claude_pro) {
     return "pro";

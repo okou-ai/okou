@@ -36,6 +36,7 @@ struct ThreadSnapshotArchive: Codable, Sendable {
 struct ThreadProjection: Codable, Sendable {
   let id: String
   let agentId: String
+  let projectId: String?
   let title: String?
   let selectedModel: String?
   let createdAt: Date
@@ -54,7 +55,8 @@ struct ThreadProjection: Codable, Sendable {
 
   var thread: ChatThread {
     ChatThread(
-      id: id, agentID: agentId, title: title ?? "", selectedModel: selectedModel,
+      id: id, agentID: agentId, title: title ?? "", projectId: projectId,
+      selectedModel: selectedModel,
       createdAt: createdAt, updatedAt: updatedAt, sortAt: sortAt,
       pinnedAt: pinnedAt, pinOrder: pinOrder, renamedAt: renamedAt,
       modelSettings: modelSettings ?? [:], serviceTier: serviceTier,
@@ -76,6 +78,7 @@ struct ThreadEvent: Codable, Sendable {
   let chatThreadId: String
   let agentId: String
   let reassignedAgentId: String?
+  let projectId: String?
   let title: String?
   let selectedModel: String?
   let pinOrder: String?
@@ -89,8 +92,10 @@ struct ThreadEvent: Codable, Sendable {
   let createdAt: Date
   var change: ChatThreadChange {
     ChatThreadChange(
-      kind: kind, chatThreadId: chatThreadId, agentId: agentId,
-      reassignedAgentId: reassignedAgentId, title: title, selectedModel: selectedModel,
+      kind: kind,
+      chatThreadId: chatThreadId, agentId: agentId,
+      reassignedAgentId: reassignedAgentId, projectId: projectId, title: title,
+      selectedModel: selectedModel,
       pinOrder: pinOrder, hidden: hidden, muted: muted, modelSettings: modelSettings,
       modelSettingsPatch: modelSettingsPatch,
       serviceTier: serviceTier, computerUseHostId: computerUseHostId,

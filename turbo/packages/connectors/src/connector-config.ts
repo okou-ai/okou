@@ -101,6 +101,8 @@ export interface ConnectorAutomaticGrantConfig {
   readonly callbackOrigin: "api";
   /** Additional OAuth scopes required alongside provider discovery. */
   readonly scopes?: readonly string[];
+  /** Omit for SDK defaults, null for provider defaults, or set an OAuth prompt. */
+  readonly authorizationPrompt?: string | null;
   readonly outputs: ConnectorGrantOutputBindings;
 }
 

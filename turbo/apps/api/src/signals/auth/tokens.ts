@@ -47,6 +47,9 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["connector-account:switch", FeatureSwitchKey.ConnectorChatAccountAccess],
+  ["project:read", FeatureSwitchKey.Projects],
+  ["project:write", FeatureSwitchKey.Projects],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
@@ -57,7 +60,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
   ["whatsapp:write", FeatureSwitchKey.WhatsappIntegration],
-  ["whatsapp:file:write", FeatureSwitchKey.WhatsappFileUpload],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
@@ -106,13 +108,10 @@ const okouTokenPayloadSchema = jwtBaseSchema.extend({
   runId: string().min(1),
   orgId: string().min(1),
   capabilities: agentCapabilitiesSchema,
-  computerUseHostId: string().uuid().optional(),
+  computerUseHostId: uuid().optional(),
   cloudBrowserEnabled: literal(true).optional(),
-  customConnectorSourceIds: record(string().uuid(), string().uuid()).optional(),
-  builtinConnectorSourceIds: record(
-    connectorSlugSchema,
-    string().uuid(),
-  ).optional(),
+  customConnectorSourceIds: record(uuid(), uuid()).optional(),
+  builtinConnectorSourceIds: record(connectorSlugSchema, uuid()).optional(),
 });
 
 type OkouTokenClaims = Omit<zInfer<typeof okouTokenPayloadSchema>, "scope">;

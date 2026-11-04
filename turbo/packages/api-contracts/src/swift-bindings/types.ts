@@ -5,6 +5,7 @@ import {
   desktopUpdatesContract,
   desktopUpgradeRequiredSchema,
 } from "../contracts/desktop-updates";
+import { desktopShellResultSchema } from "../contracts/desktop-shell-schemas";
 import { apiErrorSchema } from "../contracts/errors";
 import { featureSwitchesResponseSchema } from "../contracts/feature-switches";
 import { orgResponseSchema } from "../contracts/orgs";
@@ -16,9 +17,8 @@ export interface SwiftTypeBinding {
 }
 
 /**
- * Response bodies the Desktop app decodes. Request bodies, command results,
- * and the realtime token stay `JSONValue` because the native helper or Ably,
- * not the app, authors or consumes them.
+ * Bodies the Desktop app decodes or authors. GUI helper data and the realtime
+ * token remain opaque; Shell fields are shared with the actual queue contracts.
  */
 export const swiftTypeBindings = [
   {
@@ -38,6 +38,11 @@ export const swiftTypeBindings = [
       "`POST /api/computer-use/hosts/:hostId/commands/next` success body: an",
       "idle queue or one claimed command.",
     ],
+  },
+  {
+    schema: desktopShellResultSchema,
+    swiftTypeName: "ComputerUseShellResult",
+    doc: ["Shell result sent in the command-completion request."],
   },
   {
     schema: desktopUpgradeRequiredSchema,

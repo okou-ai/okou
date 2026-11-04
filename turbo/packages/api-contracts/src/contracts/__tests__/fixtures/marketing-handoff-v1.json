@@ -1,0 +1,32 @@
+[
+  {
+    "hash": "754998abda2bcf859f36c4562e74bcf817d95d612769de5a9eaea605e571fad7",
+    "manifest": {
+      "version": 1,
+      "prompt": "Prepare a business report",
+      "options": {},
+      "files": []
+    }
+  },
+  {
+    "hash": "cfade25f6166931dc3dc837e953022d5e7a52d61abf05bddcd5df10891586b2c",
+    "manifest": {
+      "version": 1,
+      "prompt": "分析收入\n保留引用 🧾",
+      "options": {
+        "template": "report",
+        "model": "example-model",
+        "connector": "google-sheets",
+        "showcase": "https://example.com/report.html"
+      },
+      "files": [
+        {
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "filename": "sales.xlsx",
+          "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "size": 3
+        }
+      ]
+    }
+  }
+]

@@ -122,7 +122,7 @@ final class ConnectorActionStore {
     } catch is CancellationError {
     } catch {
       guard !closed else { return }
-      states[action.id] = .failed(error.localizedDescription)
+      states[action.id] = .failed(ChatRequestFailure.message(for: error))
       didFail(error)
     }
   }
@@ -186,7 +186,9 @@ final class ConnectorActionStore {
         default: reconnect = false
         }
         if current.connected && !reconnect && flow.session == nil {
-          if !current.authorized { try await service.authorize(flow.action, status: current) }
+          if current.requiresAgentAuthorization {
+            try await service.authorize(flow.action, status: current)
+          }
           try await finish(flow, status: current)
           return
         }
@@ -235,7 +237,7 @@ final class ConnectorActionStore {
       } catch is CancellationError {
       } catch {
         guard active === flow, !closed else { return }
-        flow.error = error.localizedDescription
+        flow.error = ChatRequestFailure.message(for: error)
         didFail(error)
       }
     }
@@ -265,7 +267,7 @@ final class ConnectorActionStore {
           }
         } catch is CancellationError { return } catch {
           guard active === flow, !closed else { return }
-          flow.error = error.localizedDescription
+          flow.error = ChatRequestFailure.message(for: error)
           flow.session = nil
           flow.browserURL = nil
           didFail(error)
@@ -326,7 +328,9 @@ final class ConnectorActionStore {
       throw APIClientError.invalidResponse
     }
     try check(flow)
-    if !current.authorized { try await service.authorize(flow.action, status: current) }
+    if current.requiresAgentAuthorization {
+      try await service.authorize(flow.action, status: current)
+    }
     try await finish(flow, status: current)
   }
   private func finish(_ flow: ConnectorAuthorizationFlow, status: ChatConnectorStatus) async throws
@@ -338,7 +342,9 @@ final class ConnectorActionStore {
       throw APIClientError.invalidResponse
     }
     if case .select = flow.action.kind {
-      guard verified.selected && verified.authorized else { throw APIClientError.invalidResponse }
+      guard verified.selected && !verified.requiresAgentAuthorization else {
+        throw APIClientError.invalidResponse
+      }
     } else {
       guard verified.complete else { throw APIClientError.invalidResponse }
     }
@@ -365,8 +371,10 @@ final class ConnectorActionStore {
     states[flow.action.id] = .ready(verified)
     notices[flow.action.id] =
       flow.action.callbackPrompt == nil
-      ? String(localized: "Connected and authorized for this Agent.")
-      : String(localized: "Connected. Conversation continued.")
+      ? (verified.chatAccountAccess
+        ? String(localized: "Account connected.")
+        : String(localized: "Connected and authorized for this Agent."))
+      : String(localized: "Connected. Chat continued.")
     flow.browserURL = nil
     flow.session = nil
     flow.values = [:]

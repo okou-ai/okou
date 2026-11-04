@@ -2,12 +2,12 @@ import {
   array,
   boolean,
   discriminatedUnion,
-  union,
   email,
   literal,
   number,
   object,
   string,
+  union,
   url,
   uuid,
   enum as zEnum,
@@ -103,7 +103,7 @@ export const linkMailDraftInputSchema = union([
 ]);
 
 const mailDraftResponseSchema = object({
-  mailDraftId: string().uuid(),
+  mailDraftId: uuid(),
   mailDraftUrl: url(),
   mailDraft: mailDraftSchema,
 });
@@ -114,7 +114,7 @@ const mailLinkResponseSchema = mailDraftResponseSchema.pick({
 });
 
 const mailDraftPathParamsSchema = object({
-  mailDraftId: string().uuid(),
+  mailDraftId: uuid(),
 });
 
 const mailDraftAttachmentPathParamsSchema = mailDraftPathParamsSchema.extend({

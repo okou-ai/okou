@@ -1,7 +1,7 @@
 import {
   int,
+  iso,
   object,
-  string,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -26,9 +26,9 @@ export const sshConnectionFailureReasonSchema = zEnum([
 
 export const sshConnectionObservationSchema = object({
   connectionId: uuid(),
-  connectionCreatedAt: string().datetime(),
+  connectionCreatedAt: iso.datetime(),
   generation: int().positive().max(2_147_483_647),
-  observedAt: string().datetime(),
+  observedAt: iso.datetime(),
   failureReason: sshConnectionFailureReasonSchema.nullable(),
 }).strict();
 

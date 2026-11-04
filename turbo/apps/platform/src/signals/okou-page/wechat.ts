@@ -1,10 +1,10 @@
 import { now } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  integrationsWechatContract,
-  type WechatAttempt,
-  type WechatPollStatus,
+import { integrationsWechatContract } from "@okouai/api-contracts/client/integrations-wechat";
+import type {
+  WechatAttempt,
+  WechatPollStatus,
 } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";

@@ -6,6 +6,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -201,17 +202,17 @@ function resolvedDuringRefresh<T>(
   return loadable.state === "loading" ? (previous ?? null) : null;
 }
 
-function HostChoiceSelect({
-  protocol,
-  host,
+export function AccessChoiceSelect({
+  ariaLabel,
+  defaultEnabled,
   value,
-  disabled,
+  readOnly,
   onChange,
 }: {
-  protocol: RemoteAccessProtocol;
-  host: ThreadRemoteHostAccess;
+  ariaLabel: string;
+  defaultEnabled: boolean;
   value: "default" | "on" | "off";
-  disabled: boolean;
+  readOnly: boolean;
   onChange: (enabled: boolean | null) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -229,12 +230,89 @@ function HostChoiceSelect({
   const items = [
     {
       value: "default",
-      label: host.defaultEnabled ? defaultOnLabel : defaultOffLabel,
+      label: defaultEnabled ? defaultOnLabel : defaultOffLabel,
     },
     { value: "on", label: onLabel },
     { value: "off", label: offLabel },
   ];
   const sizingLabels = [defaultOnLabel, defaultOffLabel, onLabel, offLabel];
+  return (
+    <Select
+      items={items}
+      value={value}
+      readOnly={readOnly}
+      onValueChange={(next, details) => {
+        if (next !== "default" && next !== "on" && next !== "off") {
+          details.cancel();
+          return;
+        }
+        detach(
+          onChange(next === "default" ? null : next === "on"),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]">
+        {sizingLabels.map((label) => {
+          return (
+            <span
+              key={label}
+              aria-hidden="true"
+              className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 pr-3.5 text-sm"
+            >
+              {label}
+              <span className="h-4 w-4 shrink-0" />
+            </span>
+          );
+        })}
+        <SelectTrigger
+          variant="neutral"
+          className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm aria-readonly:cursor-wait aria-readonly:opacity-50"
+          aria-label={ariaLabel}
+          aria-busy={readOnly || undefined}
+        >
+          <SelectValue className="min-w-0">
+            {value === "default" ? (
+              <span className="flex min-w-0 w-full items-center">
+                <span className="min-w-0 truncate">{defaultLabel}</span>
+                <span className="shrink-0 whitespace-pre">
+                  {` (${defaultEnabled ? onLabel : offLabel})`}
+                </span>
+              </span>
+            ) : value === "on" ? (
+              onLabel
+            ) : (
+              offLabel
+            )}
+          </SelectValue>
+        </SelectTrigger>
+      </div>
+      <SelectContent align="start" className="w-max max-w-[calc(100vw-2rem)]">
+        {items.map((item) => {
+          return (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function HostChoiceSelect({
+  protocol,
+  host,
+  value,
+  readOnly,
+  onChange,
+}: {
+  protocol: RemoteAccessProtocol;
+  host: ThreadRemoteHostAccess;
+  value: "default" | "on" | "off";
+  readOnly: boolean;
+  onChange: (enabled: boolean | null) => void | Promise<void>;
+}) {
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
       {protocol === "ssh" ? (
@@ -243,71 +321,19 @@ function HostChoiceSelect({
         <Monitor size={15} className="shrink-0 text-muted-foreground" />
       )}
       <span className="min-w-0 flex-1 truncate">{host.displayName}</span>
-      <Select
-        items={items}
+      <AccessChoiceSelect
+        ariaLabel={`${protocol.toUpperCase()} ${host.displayName}`}
+        defaultEnabled={host.defaultEnabled}
         value={value}
-        disabled={disabled}
-        onValueChange={(next, details) => {
-          if (next !== "default" && next !== "on" && next !== "off") {
-            details.cancel();
-            return;
-          }
-          detach(
-            onChange(next === "default" ? null : next === "on"),
-            Reason.DomCallback,
-          );
-        }}
-      >
-        <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]">
-          {sizingLabels.map((label) => {
-            return (
-              <span
-                key={label}
-                aria-hidden="true"
-                className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 pr-3.5 text-sm"
-              >
-                {label}
-                <span className="h-4 w-4 shrink-0" />
-              </span>
-            );
-          })}
-          <SelectTrigger
-            variant="neutral"
-            className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm"
-            aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
-          >
-            <SelectValue className="min-w-0">
-              {value === "default" ? (
-                <span className="flex min-w-0 w-full items-center">
-                  <span className="min-w-0 truncate">{defaultLabel}</span>
-                  <span className="shrink-0 whitespace-pre">
-                    {` (${host.defaultEnabled ? onLabel : offLabel})`}
-                  </span>
-                </span>
-              ) : value === "on" ? (
-                onLabel
-              ) : (
-                offLabel
-              )}
-            </SelectValue>
-          </SelectTrigger>
-        </div>
-        <SelectContent align="start" className="w-max max-w-[calc(100vw-2rem)]">
-          {items.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
+        readOnly={readOnly}
+        onChange={onChange}
+      />
     </div>
   );
 }
 
 interface RemoteHostChoiceActions {
-  disabled: boolean;
+  readOnly: boolean;
   onChange: (
     protocol: RemoteAccessProtocol,
     connectionId: string,
@@ -335,7 +361,7 @@ function RemoteHostChoiceRow({
             ? "on"
             : "off"
       }
-      disabled={choiceActions.disabled}
+      readOnly={choiceActions.readOnly}
       onChange={(enabled) => {
         return choiceActions.onChange(protocol, host.connectionId, enabled);
       }}
@@ -551,7 +577,7 @@ function OwnerThreadRemoteAccessDialog({
   const [saving, update] = useLoadableSet(setThreadRemoteAccess$);
   const updatePending = useSet(signals.pendingRemoteAccess.setOverride$);
   const choiceActions: RemoteHostChoiceActions = {
-    disabled: saving.state === "loading",
+    readOnly: saving.state === "loading",
     onChange: async (protocol, connectionId, enabled) => {
       if (signals.threadId) {
         await update(
@@ -641,6 +667,67 @@ function RemoteHostLoadError() {
   );
 }
 
+function RemoteHostProtocolSection({
+  protocol,
+  hosts,
+  renderHost,
+}: {
+  protocol: RemoteAccessProtocol;
+  hosts: readonly ThreadRemoteHostAccess[];
+  renderHost: (host: ThreadRemoteHostAccess) => ReactNode;
+}) {
+  const { t } = useTranslation();
+  if (hosts.length === 0) {
+    return null;
+  }
+  const label =
+    protocol === "ssh"
+      ? t(($) => {
+          return $.ssh.label;
+        })
+      : t(($) => {
+          return $.vnc.label;
+        });
+  const groups = [
+    {
+      key: "enabled",
+      label: t(($) => {
+        return $.chat.remoteAccess.enabled;
+      }),
+      hosts: hosts.filter((host) => {
+        return host.enabled;
+      }),
+    },
+    {
+      key: "disabled",
+      label: t(($) => {
+        return $.chat.remoteAccess.disabled;
+      }),
+      hosts: hosts.filter((host) => {
+        return !host.enabled;
+      }),
+    },
+  ];
+  return (
+    <section aria-label={label} className="py-1 text-foreground">
+      <h3 className="px-2 pt-1 text-sm font-medium">{label}</h3>
+      <div className="pl-3">
+        {/* Keep rows under one parent so regrouping preserves each Select. */}
+        {groups.flatMap((group) => {
+          return group.hosts.length === 0
+            ? []
+            : [
+                <h4 key={group.key} className="px-2 pt-2 pb-1 text-xs">
+                  {group.label}
+                </h4>,
+                ...group.hosts.map(renderHost),
+              ];
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ThreadRemoteHostChoices({
   threadId,
   remoteAccess$,
@@ -693,64 +780,58 @@ function ThreadRemoteHostChoices({
           })}
         </p>
       ) : threadId && accessFailed ? null : (
-        <>
-          {sshHosts.length > 0 && (
-            <p className="px-2 pt-1 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.ssh.label;
-              })}
-            </p>
-          )}
-          {sshHosts.map((host) => {
-            return (
-              <RemoteHostChoiceRow
-                key={host.connectionId}
-                protocol="ssh"
-                host={host}
-                choiceActions={choiceActions}
-              />
-            );
-          })}
-          {vncHostChoices.length > 0 && (
-            <p className="px-2 pt-1 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.vnc.label;
-              })}
-            </p>
-          )}
-          {vncHostChoices.map((host) => {
-            const configured =
-              vncHosts.state === "hasData"
-                ? vncHosts.data?.find((item) => {
-                    return item.id === host.connectionId;
-                  })
-                : undefined;
-            const sshConnectionId = configured
-              ? vncSshConnectionId(configured)
-              : null;
-            const sshConnectionIds = new Set<string>();
-            if (sshConnectionId) {
-              sshConnectionIds.add(sshConnectionId);
-            }
-            if (
-              configured?.security.type === "qemu_x509_gssapi" &&
-              configured.security.kdc?.transport.type === "ssh"
-            ) {
-              sshConnectionIds.add(
-                configured.security.kdc.transport.connectionId,
+        <div className="divide-y">
+          <RemoteHostProtocolSection
+            protocol="ssh"
+            hosts={sshHosts}
+            renderHost={(host) => {
+              return (
+                <RemoteHostChoiceRow
+                  key={host.connectionId}
+                  protocol="ssh"
+                  host={host}
+                  choiceActions={choiceActions}
+                />
               );
-            }
-            return (
-              <VncHostChoiceRow
-                key={host.connectionId}
-                host={host}
-                choiceActions={choiceActions}
-                sshConnectionIds={[...sshConnectionIds]}
-                sshHosts={sshHosts}
-              />
-            );
-          })}
-        </>
+            }}
+          />
+          <RemoteHostProtocolSection
+            protocol="vnc"
+            hosts={vncHostChoices}
+            renderHost={(host) => {
+              const configured =
+                vncHosts.state === "hasData"
+                  ? vncHosts.data?.find((item) => {
+                      return item.id === host.connectionId;
+                    })
+                  : undefined;
+              const sshConnectionId = configured
+                ? vncSshConnectionId(configured)
+                : null;
+              const sshConnectionIds = new Set<string>();
+              if (sshConnectionId) {
+                sshConnectionIds.add(sshConnectionId);
+              }
+              if (
+                configured?.security.type === "qemu_x509_gssapi" &&
+                configured.security.kdc?.transport.type === "ssh"
+              ) {
+                sshConnectionIds.add(
+                  configured.security.kdc.transport.connectionId,
+                );
+              }
+              return (
+                <VncHostChoiceRow
+                  key={host.connectionId}
+                  host={host}
+                  choiceActions={choiceActions}
+                  sshConnectionIds={[...sshConnectionIds]}
+                  sshHosts={sshHosts}
+                />
+              );
+            }}
+          />
+        </div>
       )}
     </DialogBody>
   );

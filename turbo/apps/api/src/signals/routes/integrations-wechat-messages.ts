@@ -1,3 +1,4 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
@@ -16,7 +17,7 @@ import {
 } from "../services/wechat-config";
 import { requireWechatConnection$ } from "../services/wechat-access.service";
 import { sendArchivedWechatText$ } from "../services/wechat-message-send.service";
-import { integrationMessageSendLabels$ } from "../services/integration-message-context.service";
+import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
 import { notFound, resourceUnavailable } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
@@ -172,15 +173,9 @@ const send$ = command(async ({ get, set }, signal: AbortSignal) => {
     return parsed.response;
   }
   const body = parsed.data;
-  const labels = await get(integrationMessageSendLabels$);
+  const footer = await get(integrationMessageSendFooterText$);
   signal.throwIfAborted();
-  const footer = [
-    labels.agentLabel ? `Sent via ${labels.agentLabel}` : undefined,
-    labels.modelLabel,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const text = footer ? `${body.text}\n\n${footer}` : body.text;
+  const text = appendIntegrationMessageFooter(body.text, footer);
   const requestHash = createHash("sha256").update(text).digest("hex");
   const points = Array.from(text);
   const messages: WechatReceipt[] = [];

@@ -1,10 +1,8 @@
 import { command, computed, state, type Computed, type State } from "ccstate";
 import type { infer as zInfer } from "zod";
-import {
-  hostContract,
-  hostedSiteUrlSlugSchema,
-  type hostedSiteUrlSchema,
-} from "@okouai/api-contracts/contracts/host";
+import { hostContract } from "@okouai/api-contracts/client/host";
+import { hostedSiteUrlSlugSchema } from "@okouai/api-contracts/validators/host";
+import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilitySchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
@@ -220,7 +218,6 @@ function createSiteUrlEditorSignals(
       }),
     );
   });
-  const save$ = throttleCommand(persist$, 0);
   return {
     draft$,
     editing$,
@@ -230,12 +227,11 @@ function createSiteUrlEditorSignals(
     edit$,
     change$,
     cancel$,
-    save$,
+    save$: persist$,
   };
 }
 
-function createHostedSiteShareSession(sourceUrl: string) {
-  const signal$ = state<AbortSignal | null>(null);
+function createSiteUrlSignals(sourceUrl: string) {
   const saved$ = state<SiteUrl | null>(null);
   const currentUrl$ = computed((get) => {
     return currentHostedSiteUrl(
@@ -270,6 +266,12 @@ function createHostedSiteShareSession(sourceUrl: string) {
       ? details.url
       : currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
   });
+  return { saved$, details$, copyUrl$ };
+}
+
+function createHostedSiteShareSession(sourceUrl: string) {
+  const signal$ = state<AbortSignal | null>(null);
+  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(sourceUrl);
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
   const visibility = createSiteVisibilitySignals(sourceUrl);
@@ -289,12 +291,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
   });
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
-  const changeVisibility$ = command(
-    ({ set }, choice: Visibility, signal: AbortSignal) => {
-      set(linkCopy.clear$);
-      return set(visibility.changeVisibility$, choice, signal);
-    },
-  );
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
@@ -321,6 +317,20 @@ function createHostedSiteShareSession(sourceUrl: string) {
     signal.throwIfAborted();
     await set(linkCopy.copy$, url, signal);
   });
+  const changeVisibility$ = throttleCommand(
+    command(({ set }, choice: Visibility, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      return set(visibility.changeVisibility$, choice, signal);
+    }),
+    0,
+  );
+  const save$ = throttleCommand(
+    command(({ set }, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      return set(editor.save$, signal);
+    }),
+    0,
+  );
   return {
     signal$,
     details$,
@@ -331,6 +341,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     changeVisibility$,
     open$,
     ...editor,
+    save$,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
     setOpen$,
     show$,

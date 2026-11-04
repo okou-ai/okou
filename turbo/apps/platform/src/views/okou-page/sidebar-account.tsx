@@ -67,6 +67,7 @@ import {
 import { ThumbnailPlaceholder, UserAvatar } from "../components/avatar.tsx";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
+import { SidebarSubscriptionUsage } from "./sidebar-subscription-entry.tsx";
 import { SubscriptionLinkingMenuItem } from "./subscription-linking.tsx";
 import { subscriptionLinkingEnabled$ } from "../../signals/okou-page/subscription-linking.ts";
 import { refreshThirdPartySubscriptionsIfStale$ } from "../../signals/external/third-party-subscriptions.ts";
@@ -258,12 +259,14 @@ function CurrentAccountHeader({
 
 function AccountUsageGroup({
   onOpenCreditBalance,
+  onOpenModel,
   onResetCodexUsage,
   resetPending,
   subscriptionRowsCacheKey,
   subscriptionsEnabled,
 }: {
   onOpenCreditBalance: () => void;
+  onOpenModel: () => void;
   onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
@@ -278,6 +281,7 @@ function AccountUsageGroup({
       <AccountUsageGroupWithSubscriptions
         combinedCredit={isAdmin}
         onOpenCreditBalance={onOpenCreditBalance}
+        onOpenModel={onOpenModel}
         onResetCodexUsage={onResetCodexUsage}
         resetPending={resetPending}
         subscriptionRowsCacheKey={subscriptionRowsCacheKey}
@@ -330,12 +334,14 @@ export function useCreditBalance(combined: boolean): {
 function AccountUsageGroupWithSubscriptions({
   combinedCredit,
   onOpenCreditBalance,
+  onOpenModel,
   onResetCodexUsage,
   resetPending,
   subscriptionRowsCacheKey,
 }: {
   combinedCredit: boolean;
   onOpenCreditBalance: () => void;
+  onOpenModel: () => void;
   onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
@@ -366,6 +372,7 @@ function AccountUsageGroupWithSubscriptions({
       {showSubscriptions ? (
         <AccountMenuSubscriptionsPanel
           loading={subscriptionsLoading}
+          onOpenUsage={onOpenModel}
           onResetCodexUsage={onResetCodexUsage}
           resetPending={resetPending}
           rows={rows}
@@ -691,12 +698,17 @@ export function useAccountActions(
     openSettingsSection("usage");
   };
 
+  const handleOpenModel = () => {
+    openSettingsSection("model");
+  };
+
   return {
     handleAccountAction,
     handleSwitchSession,
     handleAddAccount,
     handleOpenSettings,
     handleOpenCreditBalance,
+    handleOpenModel,
   };
 }
 
@@ -772,11 +784,13 @@ export function AccountDropdown({
   collapsed = false,
   hidePreferences = false,
   renderCodexResetDialog = true,
+  showSubscriptionEntry = false,
 }: {
   onAccountAction?: (action: AccountAction) => void;
   collapsed?: boolean;
   hidePreferences?: boolean;
   renderCodexResetDialog?: boolean;
+  showSubscriptionEntry?: boolean;
 }) {
   const profile = useAccountProfile();
   const linkingEnabled = useGet(subscriptionLinkingEnabled$);
@@ -797,6 +811,7 @@ export function AccountDropdown({
     handleAddAccount,
     handleOpenSettings,
     handleOpenCreditBalance,
+    handleOpenModel,
   } = useAccountActions(profile, onAccountAction);
   // Keep the single action owner outside popup presence so closing a menu or
   // dialog cannot reset its busy/error state while the operation is in flight.
@@ -828,7 +843,7 @@ export function AccountDropdown({
       Reason.DomCallback,
       "reload account menu credit balances",
     );
-    if (!subscriptionsEnabled) {
+    if (!subscriptionsEnabled || showSubscriptionEntry) {
       return;
     }
 
@@ -841,6 +856,9 @@ export function AccountDropdown({
 
   return (
     <>
+      {!hidePreferences && showSubscriptionEntry && subscriptionsEnabled && (
+        <SidebarSubscriptionUsage resetPending={resetAction.actionPending} />
+      )}
       <DropdownMenu onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger
           render={renderAccountTrigger(
@@ -864,10 +882,13 @@ export function AccountDropdown({
           {!hidePreferences && (
             <AccountUsageGroup
               onOpenCreditBalance={handleOpenCreditBalance}
+              onOpenModel={handleOpenModel}
               onResetCodexUsage={handleOpenCodexReset}
               resetPending={resetAction.actionPending}
               subscriptionRowsCacheKey={subscriptionRowsCacheKey}
-              subscriptionsEnabled={subscriptionsEnabled}
+              subscriptionsEnabled={
+                subscriptionsEnabled && !showSubscriptionEntry
+              }
             />
           )}
           {!hidePreferences && (

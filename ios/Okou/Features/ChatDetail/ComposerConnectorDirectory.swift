@@ -28,7 +28,6 @@ struct ComposerConnectorDirectory: View {
         }
       }
       if let error { ConnectorLoadError(error: error) { await load() } }
-      if loading { ProgressView("Loading connectors…") }
       if tab == "discover" {
         ForEach(catalog) { connector in
           NavigationLink {
@@ -71,6 +70,12 @@ struct ComposerConnectorDirectory: View {
         Button("Set up VNC") { store.setupRemote(.vnc) }
       }
     }
+    .listSectionSpacing(16)
+    .overlay {
+      if loading && error == nil && (tab == "discover" ? catalog.isEmpty : custom.isEmpty) {
+        ChatSettingsLoadingView(title: "Loading connectors…")
+      }
+    }
     .navigationTitle("Add connectors")
     .navigationBarTitleDisplayMode(.inline)
     .searchable(text: $search, prompt: "Find connectors")
@@ -106,7 +111,7 @@ struct ComposerConnectorDirectory: View {
     } catch is CancellationError {
     } catch {
       guard requestID == request else { return }
-      self.error = error.localizedDescription
+      self.error = ChatRequestFailure.message(for: error)
     }
   }
 }
@@ -137,7 +142,9 @@ private struct ComposerConnectorDetail: View {
               query: [URLQueryItem(name: "agentId", value: agentID)])
           }
         }
-        if connector.permissionSummary.hasPermissions {
+        if connector.permissionSummary.hasPermissions
+          && (!store.chatAccountAccess || store.canConfigurePermissions(slug: connector.slug))
+        {
           NavigationLink("Configure permissions") {
             ComposerConnectorPermissions(store: store, slug: connector.slug, label: connector.label)
           }

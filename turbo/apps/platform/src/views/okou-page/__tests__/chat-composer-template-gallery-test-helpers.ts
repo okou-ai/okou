@@ -109,6 +109,10 @@ export function createTemplateGalleryHelpers(context: TestContext) {
   function mockTemplateChat(options?: {
     readonly threadId?: string;
     readonly tier?: string;
+    readonly onThreadCreate?: (body: {
+      readonly clientThreadId?: string;
+      readonly eventId?: string;
+    }) => void;
   }): TemplateChatCapture {
     const sentMessages: UserMessageDocument[] = [];
     const selectedTemplates: GenerationTemplateRequest[] = [];
@@ -135,6 +139,7 @@ export function createTemplateGalleryHelpers(context: TestContext) {
       selectedModel: "claude-sonnet-5",
       onThreadCreate(body) {
         threadCreates.push(body.clientThreadId ?? "server-selected");
+        options?.onThreadCreate?.(body);
       },
       onRunCreate(body) {
         runPrompts.push(body.prompt ?? "");

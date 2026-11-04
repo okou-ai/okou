@@ -1,13 +1,16 @@
-import { command } from "ccstate";
-import { onRef } from "../../utils.ts";
+import { command, computed, state } from "ccstate";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { onRef, resetSignal } from "../../utils.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
-import {
-  connectorAccountsContract,
-  connectorAccountConnectionSchema,
-  type ConnectorAccountConnection,
-  type ConnectorAccountMutationIntent,
-  type ConnectorAccountTarget,
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
+import { connectorAccountConnectionSchema } from "@okouai/api-contracts/validators/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountMutationIntent,
+  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { accept } from "../../../lib/accept.ts";
@@ -179,6 +182,76 @@ export async function readConnectorOAuthCompletion(
 export const settingsConnectorAccounts = createConnectorAccountListSignals({
   includeBuiltinScopeMismatch: true,
 });
+
+function accountDefaultsRequest(
+  target: ConnectorAccountTarget,
+  signal: AbortSignal,
+) {
+  return {
+    read: (client: ApiClientFactory) => {
+      return accept(
+        client(chatConnectorAccessContract).accountDefaults({
+          query: target,
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+    },
+  };
+}
+
+export function createConnectorAccountDefaultSignals(
+  target: ConnectorAccountTarget,
+) {
+  const request$ = state<ReturnType<typeof accountDefaultsRequest> | null>(
+    null,
+  );
+  const resetOwner$ = resetSignal();
+  const resetSave$ = resetSignal();
+  const defaults$ = computed(async (get) => {
+    const request = get(request$);
+    if (!request) {
+      return null;
+    }
+    await get(settingsConnectorAccounts.accounts$);
+    const result = await request.read(get(apiClient$));
+    return result.body;
+  });
+  const open$ = command(({ get, set }, signal: AbortSignal) => {
+    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      set(request$, accountDefaultsRequest(target, set(resetOwner$, signal)));
+    }
+  });
+  const close$ = command(({ set }) => {
+    set(resetOwner$);
+    set(resetSave$);
+    set(request$, null);
+  });
+  const update$ = command(
+    async (
+      { get, set },
+      connectionId: string,
+      defaultEnabled: boolean,
+      parentSignal: AbortSignal,
+    ) => {
+      const signal = set(resetSave$, parentSignal);
+      await accept(
+        get(apiClient$)(chatConnectorAccessContract).updateAccountDefault({
+          params: { connectionId },
+          body: { target, enabled: defaultEnabled },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+      set(settingsConnectorAccounts.reload$, parentSignal);
+      set(invalidateConnectorAccountProjection$, target);
+      set(reloadUserConnectedConnectors$);
+    },
+  );
+  return { defaults$, open$, close$, update$ };
+}
 
 const invalidateConnectorAccounts$ = command(({ set }, signal: AbortSignal) => {
   set(settingsConnectorAccounts.reload$, signal);

@@ -17,7 +17,7 @@ import {
   type ConnectorRuntimeBindingEntry,
 } from "@okouai/connectors/connector-auth-method";
 import {
-  matchFirewallBaseUrl,
+  matchFirewallBaseAuthority,
   matchFirewallRequestDecision,
   type FirewallRequestDecisionOptions,
   type FirewallRequestDecision,
@@ -562,6 +562,7 @@ function configFromCustomRuntime(
 }
 
 interface RunDiagnosticRegistration {
+  readonly runId: string;
   readonly agentId: string;
   readonly targets: readonly ConnectorRuntimeTargetRegistration[];
 }
@@ -617,7 +618,11 @@ const readRunDiagnosticRegistration$ = command(
     );
     return {
       kind: "available",
-      registration: { agentId: row.agentId, targets: payload.targets },
+      registration: {
+        runId: args.runId,
+        agentId: row.agentId,
+        targets: payload.targets,
+      },
     };
   },
 );
@@ -725,7 +730,9 @@ async function loadRunDiagnosticState(args: {
       configFromCatalogView(
         view,
         registration.kind === "builtin"
-          ? (registration.baseUrlVars ?? null)
+          ? runtime.state === "available" && runtime.baseUrlVars !== undefined
+            ? runtime.baseUrlVars
+            : (registration.baseUrlVars ?? null)
           : null,
         false,
         networkPolicy,
@@ -773,8 +780,8 @@ async function loadGlobalCatalogConfigs(
   state: StoredRuntimeState,
   snapshot: ConnectorRuntimeSnapshot,
 ): Promise<ConnectorCheckRoutingConfig[]> {
-  let bestScore: number | null = null;
-  const ownerSlugs = new Set<ConnectorSlug>();
+  const candidateSlugs = new Set<ConnectorSlug>();
+  const authorityUrl = new URL(request.url).origin;
 
   for (const connectorSlug of snapshot.serverFirewalls.connectorSlugs) {
     const metadata =
@@ -797,24 +804,18 @@ async function loadGlobalCatalogConfigs(
       if (!resolution.candidate) {
         continue;
       }
-      const match = matchFirewallBaseUrl(
-        request.url,
-        resolution.candidate.decisionBase,
-      );
-      if (!match) {
-        continue;
-      }
-      if (bestScore === null || match.score > bestScore) {
-        bestScore = match.score;
-        ownerSlugs.clear();
-      }
-      if (match.score === bestScore) {
-        ownerSlugs.add(connectorSlug);
+      if (
+        matchFirewallBaseAuthority(
+          authorityUrl,
+          resolution.candidate.decisionBase,
+        )
+      ) {
+        candidateSlugs.add(connectorSlug);
       }
     }
   }
 
-  if (ownerSlugs.size === 0 && requestedConnectorSlug) {
+  if (candidateSlugs.size === 0 && requestedConnectorSlug) {
     const selected = await catalogConfig(
       requestedConnectorSlug,
       state,
@@ -824,7 +825,7 @@ async function loadGlobalCatalogConfigs(
   }
 
   const configs = await Promise.all(
-    [...ownerSlugs].sort().map(async (connectorSlug) => {
+    [...candidateSlugs].sort().map(async (connectorSlug) => {
       const config = await catalogConfig(connectorSlug, state, snapshot);
       if (!config) {
         throw new Error(
@@ -1081,7 +1082,7 @@ function decisionPermissionResult(
   config: ConnectorCheckRoutingConfig,
   decision: Exclude<
     FirewallRequestDecision,
-    { readonly kind: "no_match" | "ambiguous" }
+    { readonly kind: "no_match" | "ambiguous" | "invalid_input" }
   >,
   timeline: ConnectorCheckTimeline,
 ) {
@@ -1349,7 +1350,7 @@ interface ResolvedUrlDiagnosticArgs {
   readonly parsed: ParsedConnectorDiagnosticRequest;
   readonly decision: Exclude<
     FirewallRequestDecision,
-    { readonly kind: "no_match" | "ambiguous" }
+    { readonly kind: "no_match" | "ambiguous" | "invalid_input" }
   >;
   readonly configs: readonly ConnectorCheckRoutingConfig[];
   readonly timeline: ConnectorCheckTimeline;
@@ -1497,6 +1498,9 @@ async function resolveUrlMode(
     awsDiagnosticDecisionOptions(request.aws),
   );
 
+  if (decision.kind === "invalid_input") {
+    return { diagnostic: { outcome: "unsafe-input", reason: "unsafe-path" } };
+  }
   if (decision.kind === "no_match") {
     return {
       diagnostic: noMatchDiagnostic(
@@ -1588,6 +1592,7 @@ function runDiagnosticRuntimeArgs(
       orgId: args.orgId,
       userId: args.userId,
       agentId: registration.agentId,
+      runId: registration.runId,
     },
     targets: runtimeTargetsForRequest(registration, args.request),
   };

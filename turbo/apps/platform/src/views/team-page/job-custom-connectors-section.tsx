@@ -10,9 +10,9 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+} from "@okouai/api-contracts/validators/custom-connectors";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { customConnectors$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";

@@ -280,6 +280,7 @@ const emptySections = Object.freeze({
 });
 
 interface CustomRuntimeSnapshotInput {
+  readonly memberPermissions?: boolean;
   readonly scope: {
     readonly orgId: string;
     readonly userId: string;
@@ -625,18 +626,17 @@ export function customRuntimeSnapshotReadQuery(
     })
     .from(definitions)
     .where(sql`false`);
-  const sections = queryBuilder
-    .$with("custom_runtime_sections")
-    .as(
-      emptyRows
-        .unionAll(customRuntimeDefinitionRows(definitions))
-        .unionAll(customRuntimeCatalogRows(dependencies))
-        .unionAll(customRuntimeAccountRows(args.scope, sourceIds))
-        .unionAll(customRuntimeStorageRows(storage))
-        .unionAll(customRuntimeValueRows(storedValues))
-        .unionAll(customRuntimeFeatureRows(args.scope))
-        .unionAll(customRuntimeGrantRows(args.scope, customConnectorIds)),
-    );
+  const rows = emptyRows
+    .unionAll(customRuntimeDefinitionRows(definitions))
+    .unionAll(customRuntimeCatalogRows(dependencies))
+    .unionAll(customRuntimeAccountRows(args.scope, sourceIds))
+    .unionAll(customRuntimeStorageRows(storage))
+    .unionAll(customRuntimeValueRows(storedValues))
+    .unionAll(customRuntimeFeatureRows(args.scope));
+  if (!args.memberPermissions) {
+    rows.unionAll(customRuntimeGrantRows(args.scope, customConnectorIds));
+  }
+  const sections = queryBuilder.$with("custom_runtime_sections").as(rows);
   return queryBuilder
     .with(
       definitions,

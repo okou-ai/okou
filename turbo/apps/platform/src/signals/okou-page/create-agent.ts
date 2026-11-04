@@ -1,8 +1,8 @@
 import {
   agentsMainContract,
   agentInstructionsContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
+} from "@okouai/api-contracts/client/agents";
+import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import type { ApiClientFactory } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";

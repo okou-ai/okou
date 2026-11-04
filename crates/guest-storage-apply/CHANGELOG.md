@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.28.11](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.10...guest-storage-apply-v0.28.11) (2026-11-04)
+
+## [0.28.10](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.9...guest-storage-apply-v0.28.10) (2026-11-04)
+
+
+### Performance Improvements
+
+* **guest-storage:** buffer large archive file copies ([#45070](https://github.com/okou-ai/okou/issues/45070)) ([e1a05bb](https://github.com/okou-ai/okou/commit/e1a05bbfbcf40173b10a56bd171b11e61b177afb))
+
+## [0.28.9](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.8...guest-storage-apply-v0.28.9) (2026-11-03)
+
+## [0.28.8](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.7...guest-storage-apply-v0.28.8) (2026-11-03)
+
+## [0.28.7](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.6...guest-storage-apply-v0.28.7) (2026-11-03)
+
+
+### Refactoring
+
+* **runner:** reuse applied instructions and normalize claim storage ([#44702](https://github.com/okou-ai/okou/issues/44702)) ([0265020](https://github.com/okou-ai/okou/commit/0265020ba6235f07e0a03027826c336cceeee4eb))
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
+## [0.28.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.5...guest-storage-apply-v0.28.6) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
+## [0.28.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.4...guest-storage-apply-v0.28.5) (2026-11-02)
+
+## [0.28.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.3...guest-storage-apply-v0.28.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+## [0.28.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.2...guest-storage-apply-v0.28.3) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.28.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.1...guest-storage-apply-v0.28.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
+## [0.28.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.0...guest-storage-apply-v0.28.1) (2026-10-30)
+
+## [0.28.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.5...guest-storage-apply-v0.28.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.27.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.4...guest-storage-apply-v0.27.5) (2026-10-30)
+
 ## [0.27.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.3...guest-storage-apply-v0.27.4) (2026-10-29)
 
 ## [0.27.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.2...guest-storage-apply-v0.27.3) (2026-10-29)

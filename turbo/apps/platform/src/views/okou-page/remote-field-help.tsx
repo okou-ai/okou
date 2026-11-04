@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   IconButton,
@@ -8,7 +7,6 @@ import {
   PopoverTrigger,
 } from "@okouai/ui";
 import { CircleHelp } from "lucide-react";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 
 export function RemoteFieldHelp({
   title,
@@ -17,10 +15,6 @@ export function RemoteFieldHelp({
   readonly title: string;
   readonly children: ReactNode;
 }) {
-  const enabled = useGet(remoteControlGuidedEnabled$);
-  if (!enabled) {
-    return null;
-  }
   return (
     <Popover>
       <PopoverTrigger

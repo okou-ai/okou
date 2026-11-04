@@ -1,7 +1,5 @@
-import {
-  orgOpenrouterPresetContract,
-  type OrgOpenrouterPreset,
-} from "@okouai/api-contracts/contracts/org-openrouter-preset";
+import { orgOpenrouterPresetContract } from "@okouai/api-contracts/client/org-openrouter-preset";
+import type { OrgOpenrouterPreset } from "@okouai/api-contracts/contracts/org-openrouter-preset";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 

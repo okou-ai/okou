@@ -3,28 +3,29 @@ import { command, computed, state } from "ccstate";
 import type {
   InitClientReturn,
   InitClientArgs,
-} from "@okouai/api-contracts/contracts/trpc-contract";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+} from "@okouai/api-contracts/client/types";
+import { vncConnectionsContract } from "@okouai/api-contracts/client/vnc-connections";
 import {
-  vncConnectionsContract,
   createVncConnectionRequestSchema,
   updateVncConnectionRequestSchema,
-  type VncConnectionResponse,
-  type VncSecurity,
-  type VncTransport,
+} from "@okouai/api-contracts/validators/vnc-connections";
+import type {
+  VncConnectionResponse,
+  VncSecurity,
+  VncTransport,
 } from "@okouai/api-contracts/contracts/vnc-connections";
+import { vncCredentialsContract } from "@okouai/api-contracts/client/vnc-credentials";
 import {
-  vncCredentialsContract,
   createVncCredentialRequestSchema,
   updateVncCredentialRequestSchema,
-  type VncCredentialResponse,
-} from "@okouai/api-contracts/contracts/vnc-credentials";
+} from "@okouai/api-contracts/validators/vnc-credentials";
+import type { VncCredentialResponse } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { VNC_ERROR_CODES } from "@okouai/api-contracts/contracts/vnc-errors";
 import {
   isVncKerberosMethod,
-  type VncKerberosMethod,
   kerberosPrincipalSchema,
   kerberosServicePrincipalSchema,
+  type VncKerberosMethod,
 } from "@okouai/api-contracts/contracts/vnc-kerberos";
 import {
   encodeAndClearKerberosMaterial,
@@ -55,7 +56,6 @@ import {
 } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
   invalidateRemoteAccess$,
   invalidateVncObservationConfiguration$,
@@ -573,11 +573,7 @@ export const chooseVncProfile$ = command(
           : {
               ...current,
               profile,
-              selection: get(featureSwitch$)[
-                FeatureSwitchKey.RemoteControlGuidedSetup
-              ]
-                ? "new"
-                : "",
+              selection: "new",
               transport:
                 requiresVncProtectiveRoute(profile) &&
                 current.transport === "direct"
@@ -1108,10 +1104,7 @@ const readVncConnectionLogin$ = command(
     signal: AbortSignal,
   ) => {
     const loginCredential =
-      kind === "edit" &&
-      connection &&
-      "credentialId" in connection &&
-      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+      kind === "edit" && connection && "credentialId" in connection
         ? (await get(vncCredentials$))?.find((candidate) => {
             return candidate.id === connection.credentialId;
           })
@@ -1175,18 +1168,10 @@ export const openVncDialog$ = command(
         return;
       }
       // Leave explicit user choices alone while the metadata request settles.
-      const compatible = credentials.value.filter((credential) => {
-        return vncCredentialMatchesProfile(credential, get(editor$).profile);
-      });
-      const selection =
-        get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] ||
-        compatible.length === 0
-          ? "new"
-          : compatible.length === 1
-            ? compatible[0]!.id
-            : "";
       set(editor$, (current) => {
-        return current.selection === "" ? { ...current, selection } : current;
+        return current.selection === ""
+          ? { ...current, selection: "new" }
+          : current;
       });
     }
   },
@@ -1660,10 +1645,7 @@ const prepareVncFormSave$ = command(
       return;
     }
     const editor = get(editor$);
-    const guided =
-      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
     if (
-      guided &&
       (dialog.kind === "create" || dialog.kind === "edit") &&
       editor.selection === "new"
     ) {
@@ -1673,7 +1655,6 @@ const prepareVncFormSave$ = command(
       }
     }
     const login =
-      guided &&
       dialog.kind === "edit" &&
       dialog.loginCredential &&
       editor.selection === dialog.loginCredential.id &&

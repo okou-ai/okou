@@ -938,18 +938,103 @@ async fn prepare_for_cache_removes_completed_private_state_and_preserves_user_hi
 }
 
 #[tokio::test]
-async fn terminal_history_proof_survives_real_cleanup_and_verifies_only_current_live_bytes()
+async fn prepare_for_cache_scrubs_private_state_when_current_runtime_was_never_created()
 -> TestResult {
-    assert_terminal_history_proof_survives_cleanup(false).await
+    for existing_runtime_parent in [true, false] {
+        let home = tempfile::tempdir()?;
+        let runs = guest_contracts::runtime_paths::runtime_parent_for_home(home.path());
+        let current = runs.join("unstarted");
+        if existing_runtime_parent {
+            let stale = runs.join("previous/user-env/env.json");
+            std::fs::create_dir_all(stale.parent().ok_or("missing stale parent")?)?;
+            std::fs::write(stale, b"old private environment")?;
+        }
+        let codex_home = home.path().join(".codex");
+        std::fs::create_dir_all(codex_home.join("sessions"))?;
+        std::fs::write(codex_home.join("auth.json"), b"managed synthetic auth")?;
+        std::fs::write(codex_home.join("sessions/keep.jsonl"), b"native history")?;
+        let user_file = home.path().join("workspace/user-file");
+        std::fs::create_dir_all(user_file.parent().ok_or("missing workspace parent")?)?;
+        std::fs::write(&user_file, b"ordinary user bytes")?;
+        let proof_path = runs
+            .parent()
+            .ok_or("missing proof anchor")?
+            .join("home-cache/session-history-proof.json");
+        guest_contracts::runtime_paths::write_private(&proof_path, b"old proof")?;
+        assert!(!current.exists());
+
+        let output = run_cache_helper(
+            &ReusePreparationRequest {
+                current_runtime_dir: path_string(&current),
+                retained_runtime_dir: None,
+            },
+            &runs,
+            &codex_home,
+            None,
+        )
+        .await?;
+        assert!(
+            output.status.success(),
+            "existing runtime parent: {existing_runtime_parent}; {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: TerminalHomeCachePreparationReport = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(
+            report.cleanup.removed_entries,
+            u64::from(existing_runtime_parent)
+        );
+        assert!(report.cleanup.home.available_bytes > 0);
+        assert!(report.cleanup.home.available_inodes > 0);
+        assert!(report.history_proof.is_none());
+        assert!(!current.exists());
+        if existing_runtime_parent {
+            assert_eq!(std::fs::read_dir(&runs)?.count(), 0);
+        } else {
+            assert!(!runs.exists());
+        }
+        assert!(!codex_home.join("auth.json").exists());
+        assert!(!proof_path.exists());
+        assert_eq!(
+            std::fs::read(codex_home.join("sessions/keep.jsonl"))?,
+            b"native history"
+        );
+        assert_eq!(std::fs::read(&user_file)?, b"ordinary user bytes");
+    }
+    Ok(())
 }
 
 #[tokio::test]
-async fn terminal_history_proof_uses_retained_identity_when_current_metadata_is_missing()
+async fn terminal_history_proof_survives_real_cleanup_and_verifies_only_current_live_bytes()
 -> TestResult {
-    assert_terminal_history_proof_survives_cleanup(true).await
+    assert_terminal_history_proof_survives_cleanup(TerminalHistorySource::Current).await
 }
 
-async fn assert_terminal_history_proof_survives_cleanup(use_retained_runtime: bool) -> TestResult {
+#[tokio::test]
+async fn terminal_history_proof_uses_retained_identity_without_current_finalization() -> TestResult
+{
+    for source in [
+        TerminalHistorySource::RetainedWithCurrentRuntime,
+        TerminalHistorySource::RetainedWithoutCurrentRuntime,
+    ] {
+        assert_terminal_history_proof_survives_cleanup(source).await?;
+    }
+    Ok(())
+}
+
+enum TerminalHistorySource {
+    Current,
+    RetainedWithCurrentRuntime,
+    RetainedWithoutCurrentRuntime,
+}
+
+async fn assert_terminal_history_proof_survives_cleanup(
+    source: TerminalHistorySource,
+) -> TestResult {
+    let (use_retained_runtime, create_current_runtime) = match source {
+        TerminalHistorySource::Current => (false, true),
+        TerminalHistorySource::RetainedWithCurrentRuntime => (true, true),
+        TerminalHistorySource::RetainedWithoutCurrentRuntime => (true, false),
+    };
     // Host/CI containers may not have the fixed Guest home. Keep the shared
     // parent and remove only this test's isolated child via TempDir ownership.
     std::fs::create_dir_all("/home/user")?;
@@ -960,7 +1045,10 @@ async fn assert_terminal_history_proof_survives_cleanup(use_retained_runtime: bo
     let config_dir = home.path().join("claude");
     let (identity, history_path) =
         write_claude_history(&config_dir, "session-proof", b"actual history")?;
-    std::fs::create_dir_all(&current)?;
+    if create_current_runtime {
+        std::fs::create_dir_all(&current)?;
+        std::fs::write(current.join("prompt-private"), b"private input")?;
+    }
     let identity_runtime = if use_retained_runtime {
         &retained
     } else {
@@ -970,12 +1058,9 @@ async fn assert_terminal_history_proof_survives_cleanup(use_retained_runtime: bo
         guest_contracts::runtime_paths::final_session_history_identity_file(identity_runtime),
         identity.to_json_vec()?,
     )?;
-    if use_retained_runtime {
-        assert!(
-            !guest_contracts::runtime_paths::final_session_history_identity_file(&current).exists()
-        );
+    if !create_current_runtime {
+        assert!(!current.exists());
     }
-    std::fs::write(current.join("prompt-private"), b"private input")?;
     let codex_home = home.path().join("codex");
     std::fs::create_dir_all(&codex_home)?;
     std::fs::write(codex_home.join("auth.json"), b"managed synthetic auth")?;
@@ -1221,6 +1306,8 @@ async fn prepare_for_cache_rejects_arbitrary_parent_and_missing_retained_anchor_
     std::fs::create_dir_all(&codex_home)?;
     std::fs::write(current.join("keep"), b"private")?;
     std::fs::write(codex_home.join("auth.json"), b"auth")?;
+    let unsafe_current = runs.join("unsafe-current");
+    symlink(home.path().join("missing-target"), &unsafe_current)?;
     for (request, code) in [
         (
             ReusePreparationRequest {
@@ -1236,12 +1323,43 @@ async fn prepare_for_cache_rejects_arbitrary_parent_and_missing_retained_anchor_
             },
             REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
         ),
+        (
+            ReusePreparationRequest {
+                current_runtime_dir: path_string(&runs.join("unstarted")),
+                retained_runtime_dir: Some(path_string(&runs.join("missing"))),
+            },
+            REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
+        ),
+        (
+            ReusePreparationRequest {
+                current_runtime_dir: path_string(&unsafe_current),
+                retained_runtime_dir: None,
+            },
+            REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
+        ),
     ] {
         let output = run_cache_helper(&request, &runs, &codex_home, None).await?;
         assert_eq!(output.status.code(), Some(code));
         assert_eq!(std::fs::read(current.join("keep"))?, b"private");
         assert_eq!(std::fs::read(codex_home.join("auth.json"))?, b"auth");
     }
+    std::fs::remove_dir_all(&runs)?;
+    let output = run_cache_helper(
+        &ReusePreparationRequest {
+            current_runtime_dir: path_string(&current),
+            retained_runtime_dir: Some(path_string(&runs.join("missing"))),
+        },
+        &runs,
+        &codex_home,
+        None,
+    )
+    .await?;
+    assert_eq!(
+        output.status.code(),
+        Some(REUSE_PREPARATION_EXIT_CLEANUP_FAILED)
+    );
+    assert!(!runs.exists());
+    assert_eq!(std::fs::read(codex_home.join("auth.json"))?, b"auth");
     Ok(())
 }
 
@@ -1301,7 +1419,12 @@ async fn run_cache_helper(
         )
         .env("OKOU_TEST_CODEX_HOME_DIR", codex_home)
         .env("OKOU_TEST_CACHE_RUNTIME_PARENT", runtime_parent)
-        .env("OKOU_TEST_HOME_CAPACITY_ROOT", runtime_parent)
+        .env(
+            "OKOU_TEST_HOME_CAPACITY_ROOT",
+            codex_home
+                .parent()
+                .ok_or("fixture Codex home has no parent")?,
+        )
         .env(
             "OKOU_TEST_HOME_CACHE_HISTORY_PROOF_PATH",
             runtime_parent

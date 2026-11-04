@@ -211,12 +211,22 @@ export const setSidebarExpanded$ = command(({ set }, expanded: boolean) => {
   set(internalSidebarExpanded$, expanded);
 });
 
+export const showChatSidebar$ = command(({ get, set }) => {
+  if (get(unifiedChatWorkspace$)) {
+    set(setStoredChatListHidden$, false);
+  } else {
+    set(internalSidebarOff$, false);
+  }
+  set(internalSidebarExpanded$, true);
+});
+
 export function isChatRoute(key: RouteKey | null): boolean {
   return (
     key === "home" ||
     key === "agentChat" ||
     key === "agentIdeas" ||
-    key === "chat"
+    key === "chat" ||
+    key === "project"
   );
 }
 

@@ -8,15 +8,22 @@ import {
   object,
   string,
   union,
+  url,
   uuid,
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
-  type ZodType,
 } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { usagePackUsdSchema } from "../validators/billing";
+
+export {
+  USAGE_PACKS_USD,
+  type UsagePackUsd,
+  usagePackUsdSchema,
+} from "../validators/billing";
 
 const c = initContract();
 
@@ -28,6 +35,7 @@ const autoRechargeSchema = object({
   enabled: boolean(),
   threshold: number().nullable(),
   amount: number().nullable(),
+  disabledReason: literal("consecutive_failures").optional(),
 });
 
 const creditExpirySchema = object({
@@ -139,11 +147,11 @@ const billingPurchaseConfirmResponseSchema = discriminatedUnion("status", [
   }),
   object({
     status: literal("pending_payment"),
-    hostedInvoiceUrl: string().url(),
+    hostedInvoiceUrl: url(),
   }),
   object({
     status: literal("checkout_required"),
-    checkoutUrl: string().url(),
+    checkoutUrl: url(),
   }),
 ]);
 
@@ -162,7 +170,7 @@ const portalResponseSchema = object({
 const redeemResponseSchema = discriminatedUnion("status", [
   object({
     status: literal("ready"),
-    checkoutUrl: string().url(),
+    checkoutUrl: url(),
   }),
   object({
     status: literal("already_granted"),
@@ -184,7 +192,7 @@ const redeemResponseSchema = discriminatedUnion("status", [
 // Request schemas
 // ---------------------------------------------------------------------------
 
-const stripeRedirectUrlSchema = string().url().max(5000);
+const stripeRedirectUrlSchema = url().max(5000);
 
 const checkoutRequestSchema = object({
   tier: zEnum(["pro", "team"]),
@@ -194,16 +202,6 @@ const checkoutRequestSchema = object({
   cancelUrl: stripeRedirectUrlSchema,
   trialDays: literal(7).optional(),
 });
-
-export const USAGE_PACKS_USD = [20, 50, 100, 200] as const;
-export type UsagePackUsd = (typeof USAGE_PACKS_USD)[number];
-
-export const usagePackUsdSchema: ZodType<UsagePackUsd> = union([
-  literal(20),
-  literal(50),
-  literal(100),
-  literal(200),
-]);
 
 const usagePackCatalogItemSchema = object({
   usagePackUsd: usagePackUsdSchema,
@@ -256,8 +254,8 @@ const usagePackCheckoutRequestSchema = object({
   supportsInAppPreview: boolean().optional(),
   previewToken: string().min(1).optional(),
   memberUsagePacks: array(memberUsagePackSchema).min(1).max(1000),
-  successUrl: string().url(),
-  cancelUrl: string().url(),
+  successUrl: url(),
+  cancelUrl: url(),
 });
 
 const usagePackChangeStatusSchema = zEnum([
@@ -311,18 +309,18 @@ const usagePackChangePreviewResponseSchema = object({
   prorationDate: iso.datetime(),
   expiresAt: iso.datetime(),
   paymentMethodPreviewToken: string().min(1).optional(),
-  checkoutUrl: string().url().optional(),
+  checkoutUrl: url().optional(),
 });
 
 const usagePackChangeConfirmResponseSchema = union([
   object({
     status: zEnum(["processing", "pending_payment", "scheduled", "completed"]),
     effectiveAt: iso.datetime().nullable(),
-    hostedInvoiceUrl: string().url().nullable(),
+    hostedInvoiceUrl: url().nullable(),
   }),
   object({
     status: literal("checkout_required"),
-    checkoutUrl: string().url(),
+    checkoutUrl: url(),
   }),
 ]);
 
@@ -350,7 +348,7 @@ const usagePackSubscriptionChangePreviewResponseSchema = object({
   prorationDate: iso.datetime(),
   expiresAt: iso.datetime(),
   paymentMethodPreviewToken: string().min(1).optional(),
-  checkoutUrl: string().url().optional(),
+  checkoutUrl: url().optional(),
 });
 
 const usagePackSubscriptionChangeConfirmRequestSchema = object({
@@ -388,7 +386,7 @@ const usagePackMigrationStateResponseSchema = object({
   status: zEnum(["eligible", "previewed", "applying", "scheduled"]),
   migrationId: uuid().nullable(),
   effectiveAt: iso.datetime().nullable(),
-  hostedInvoiceUrl: string().url().nullable(),
+  hostedInvoiceUrl: url().nullable(),
   configuration: usagePackMigrationConfigurationSchema.optional(),
 });
 
@@ -415,7 +413,7 @@ const usagePackMigrationPreviewResponseSchema = object({
 const usagePackMigrationConfirmResponseSchema = object({
   status: zEnum(["scheduled", "completed"]),
   effectiveAt: iso.datetime(),
-  hostedInvoiceUrl: string().url().nullable(),
+  hostedInvoiceUrl: url().nullable(),
 });
 
 const usagePackMigrationRevisionPreviewResponseSchema =
@@ -477,7 +475,7 @@ const concurrencySubscriptionChangePreviewResponseSchema = object({
   currency: string().length(3),
   effectiveAt: iso.datetime().optional(),
   paymentMethodPreviewToken: string().min(1).optional(),
-  checkoutUrl: string().url().optional(),
+  checkoutUrl: url().optional(),
 });
 
 const concurrencySubscriptionChangeResponseSchema = discriminatedUnion(
@@ -490,7 +488,7 @@ const concurrencySubscriptionChangeResponseSchema = discriminatedUnion(
     }),
     object({
       status: literal("pending_payment"),
-      hostedInvoiceUrl: string().url(),
+      hostedInvoiceUrl: url(),
       effectiveAt: iso.datetime().optional(),
     }),
     object({
@@ -500,7 +498,7 @@ const concurrencySubscriptionChangeResponseSchema = discriminatedUnion(
     }),
     object({
       status: literal("checkout_required"),
-      checkoutUrl: string().url(),
+      checkoutUrl: url(),
     }),
   ],
 );
@@ -1218,7 +1216,7 @@ const downgradeResponseSchema = union([
   }),
   object({
     status: literal("payment_method_required"),
-    checkoutUrl: string().url(),
+    checkoutUrl: url(),
   }),
 ]);
 
@@ -1232,7 +1230,7 @@ const restoreResponseSchema = discriminatedUnion("status", [
   }),
   object({
     status: literal("payment_method_required"),
-    checkoutUrl: string().url(),
+    checkoutUrl: url(),
   }),
 ]);
 

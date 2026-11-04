@@ -1,3 +1,4 @@
+import type { ContentBundle } from "../jsonb-contracts/content-bundle";
 import {
   pgTable,
   uuid,
@@ -62,6 +63,8 @@ export const workflows = pgTable(
     // Additive preparation: NULL means unconverted, never an empty file set.
     // Published with the legacy HEAD until claim-time distribution is activated.
     attachments: jsonb("attachments").$type<WorkflowAttachments>(),
+    // Complete SKILL.md + attachments; inactive until reference-only claims activate.
+    contentBundle: jsonb("content_bundle").$type<ContentBundle>(),
     ownerUserId: text("owner_user_id").notNull(),
     displayName: varchar("display_name", { length: 256 }),
     description: text("description"),

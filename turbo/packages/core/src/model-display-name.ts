@@ -1,6 +1,3 @@
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-
-import { isAutoSelectedModel } from "./auto-run-model";
 import { IMAGE_MODEL_CONFIGS, resolveImageModel } from "./image-model-catalog";
 
 /**
@@ -82,18 +79,4 @@ export function getModelDisplayName(model: string): string {
     return IMAGE_MODEL_CONFIGS[imageModel].label;
   }
   return MODEL_DISPLAY_NAMES[model] ?? model;
-}
-
-/**
- * Get an integration footer's model label, omitting Auto and including the tier.
- */
-export function getRunModelDisplayName(
-  model: string,
-  codexServiceTier: CodexServiceTier | null | undefined,
-): string | undefined {
-  if (isAutoSelectedModel(model)) {
-    return undefined;
-  }
-  const modelName = getModelDisplayName(model);
-  return codexServiceTier === "fast" ? `${modelName} Fast` : modelName;
 }

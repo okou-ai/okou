@@ -18,7 +18,6 @@ interface IntegrationNotePromptInputs {
   readonly triggerSource: TriggerSource;
   readonly larkEnabled: boolean;
   readonly whatsappEnabled: boolean;
-  readonly whatsappFileUploadEnabled: boolean;
   readonly agentPhoneChannel?: string | null;
 }
 
@@ -44,8 +43,8 @@ function integrationNoteLines(
     case "agent": {
       return [
         "- Web chat files: use `okou web download-file -h` when a web chat message includes a `[Web file]` block. `okou web upload-file -h` can share a local file back to the web chat user when file delivery is needed.",
-        `- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: \`okou feishu message send --help\` for chats, DMs, and replies.${args.larkEnabled ? " Lark: `okou lark message send --help` for chats, DMs, and replies." : ""} Microsoft Teams: \`okou teams message send --help\` for conversations and thread replies. Telegram: \`okou telegram message send --help\` for chats, replies, and forum topics through the official Okou bot. Phone/SMS: \`okou phone message --help\`.${args.whatsappEnabled ? " WhatsApp: `okou whatsapp message send --help`; sends only to your independently verified WhatsApp account within the 24-hour service window." : ""}`,
-        ...(args.whatsappEnabled && args.whatsappFileUploadEnabled
+        `- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: \`okou feishu message send --help\` for chats, DMs, and replies.${args.larkEnabled ? " Lark: `okou lark message send --help` for chats, DMs, and replies." : ""} Microsoft Teams: \`okou teams message send --help\` for conversations and thread replies. Telegram: \`okou telegram message send --help\` for chats, replies, and forum topics through the official Okou bot. iMessage groups: \`okou imessage group list --help\` to discover shared groups and \`okou imessage message send --help\` to send to a discovered groupId. Phone/SMS to the connected user: \`okou phone message --help\`.${args.whatsappEnabled ? " WhatsApp: `okou whatsapp message send --help`; sends only to your independently verified WhatsApp account. Free-form text requires the 24-hour service window. For a completed-task notification from the current run, add `--task-completed` to allow the approved en_US result-link template if Meta explicitly rejects the first part because the window is closed. Ordinary reminders cannot use this template, and unknown or partial sends must not be retried." : ""}`,
+        ...(args.whatsappEnabled
           ? [
               "- Files explicitly requested in WhatsApp: use `okou whatsapp upload-file -h` to send a local file to your independently verified WhatsApp account within its 24-hour service window. The original artifact remains private. Retain the upload receipt if delivery fails and never automatically repeat an uncertain send.",
             ]
@@ -132,22 +131,21 @@ function integrationNoteLines(
     case "agentphone": {
       if (args.agentPhoneChannel === "whatsapp") {
         return [
-          "- WhatsApp messaging: only your final reply is automatically delivered to this WhatsApp conversation; nothing produced while the run is in progress is sent on its own. Do not duplicate the final reply with a message command. Use concise plain text. Use `okou whatsapp message send --help` for an explicitly requested extra message; it sends only to this user's independently verified WhatsApp account. Free-form sends require the customer's 24-hour service window. Preserve accepted part receipts and delivery outcomes; never fall back to SMS/iMessage or retry an uncertain or partial send.",
-          args.whatsappFileUploadEnabled
-            ? "- WhatsApp files: incoming `[Web file]` blocks use `okou web download-file -h`. Historical `[Phone file]` attachments use `okou phone download-file -h`. Use `okou whatsapp upload-file -f <path>` to send a local file to this verified conversation; the artifact remains private. WhatsApp accepts one attachment per message within the 24-hour service window. Audio files cannot carry a caption; send any requested text separately. Preserve the uploaded artifact and delivery outcome when a send fails; never repeat an uncertain send."
-            : "- WhatsApp files: incoming `[Web file]` blocks use `okou web download-file -h`. Historical `[Phone file]` attachments use `okou phone download-file -h`. Outbound file upload is not available on WhatsApp in this Run. A private `/artifacts/...` address requires the owner to sign in on the web and does not deliver a WhatsApp attachment. Keep the original private address for the owner and explain how to open it; do not claim a file was sent or change its visibility just to deliver it.",
-          ...(args.whatsappFileUploadEnabled
-            ? [
-                privateArtifactFinalReplyLine({
-                  surface: "WhatsApp",
-                  uploadCommand: "okou whatsapp upload-file",
-                }),
-              ]
-            : []),
+          "- WhatsApp messaging: only your final reply is automatically delivered to this WhatsApp conversation; nothing produced while the run is in progress is sent on its own. Do not duplicate the final reply with a message command. Use concise plain text. Use `okou whatsapp message send --help` for an explicitly requested extra message; it sends only to this user's independently verified WhatsApp account. Free-form sends require the customer's 24-hour service window. Successful final replies can fall back to the approved en_US task-completion template linking to this chat when Meta explicitly rejects the first part because the window is closed. For an explicitly requested task-completion notification through the CLI, use `--task-completed`; ordinary reminders cannot use that template. A template receipt confirms the result-link notification was accepted, not that the original answer was sent or the free-form window reopened. Preserve accepted part receipts and delivery outcomes; never fall back to SMS/iMessage or retry an uncertain or partial send.",
+          "- WhatsApp files: incoming `[Web file]` blocks use `okou web download-file -h`. Historical `[Phone file]` attachments use `okou phone download-file -h`. Use `okou whatsapp upload-file -f <path>` to send a local file to this verified conversation; the artifact remains private. WhatsApp accepts one attachment per message within the 24-hour service window. Audio files cannot carry a caption; send any requested text separately. Preserve the uploaded artifact and delivery outcome when a send fails; never repeat an uncertain send.",
+          privateArtifactFinalReplyLine({
+            surface: "WhatsApp",
+            uploadCommand: "okou whatsapp upload-file",
+          }),
         ];
       }
       return [
-        "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.",
+        "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so message commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.",
+        ...(args.agentPhoneChannel === "imessage"
+          ? [
+              '- iMessage reactions: you may use `okou phone reaction <message-id> --emoji "👍"` to acknowledge a message, celebrate progress, or add warmth when it helps the conversation. A lightweight reaction in the current conversation does not require a separate user request. Use the Message ID above or a known message ID from this conversation, react sparingly, and do not use reactions in place of doing the work or answering a substantive question. Standard tapback names (love, like, dislike, laugh, emphasize, question) work across iMessage lines; custom emoji depend on line support. Use `okou phone reaction --help` for details. Do not automatically repeat a failed or uncertain reaction. SMS and MMS do not support reactions.',
+            ]
+          : []),
         privateArtifactFinalReplyLine({
           surface: "the phone channel",
           uploadCommand: "okou phone upload-file",
@@ -176,10 +174,6 @@ export function resolveIntegrationNotePrompt(args: {
   return buildIntegrationNotePrompt({
     triggerSource: args.triggerSource,
     agentPhoneChannel: args.agentPhoneChannel,
-    whatsappFileUploadEnabled: isFeatureEnabled(
-      FeatureSwitchKey.WhatsappFileUpload,
-      args.featureSwitchContext,
-    ),
     whatsappEnabled: isFeatureEnabled(
       FeatureSwitchKey.WhatsappIntegration,
       args.featureSwitchContext,

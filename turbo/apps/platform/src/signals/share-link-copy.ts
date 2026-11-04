@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { delay } from "signal-timers";
+import { timeout } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
@@ -40,9 +40,14 @@ export function createShareLinkCopy() {
         return;
       }
       set(internalCopiedUrl$, url);
-      await delay(COPIED_CONFIRMATION_MS, { signal });
-      signal.throwIfAborted();
-      set(internalCopiedUrl$, null);
+      // Expire the confirmation without holding the copy command open.
+      timeout(
+        () => {
+          set(internalCopiedUrl$, null);
+        },
+        COPIED_CONFIRMATION_MS,
+        { signal },
+      );
     },
   );
   // A second copy restarts the confirmation instead of racing the first one.

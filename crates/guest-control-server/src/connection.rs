@@ -142,12 +142,12 @@ fn is_real_host_work_message(msg_type: u8) -> bool {
             | MSG_EXEC_CANCEL
             | MSG_EXEC_CONTROL
             | MSG_WRITE_FILE
-            | guest_control_proto::MSG_WRITE_FILE_STREAM_BEGIN
             | MSG_WRITE_FILES
             | MSG_WRITE_PRIVATE_FILES
             | MSG_GUEST_DNS_READINESS
             | MSG_GUEST_STATE_RESTORE
             | MSG_GUEST_STORAGE_MANIFEST
+            | guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS
             | MSG_HOME_DRIVE_MOUNT
             | MSG_QUIESCE_OPERATIONS
             | MSG_RESUME_OPERATIONS
@@ -400,13 +400,6 @@ impl ConnectionDispatcher {
 
     fn dispatch(&self, msg: BorrowedRawMessage<'_>) -> io::Result<DispatchOutcome> {
         match msg.msg_type {
-            guest_control_proto::MSG_WRITE_FILE_STREAM_BEGIN => {
-                self.handle_file_write(msg, FileWriteKind::Stream)?
-            }
-            guest_control_proto::MSG_WRITE_FILE_STREAM_DATA
-            | guest_control_proto::MSG_WRITE_FILE_STREAM_END => {
-                self.file_write_worker.stream_data(msg)?;
-            }
             MSG_EXEC_START => self.handle_exec_start(msg)?,
             MSG_EXEC_CANCEL => self.handle_exec_cancel(msg)?,
             MSG_EXEC_CONTROL => self.handle_exec_control(msg)?,
@@ -415,7 +408,9 @@ impl ConnectionDispatcher {
             MSG_WRITE_PRIVATE_FILES => self.handle_file_write(msg, FileWriteKind::PrivateFiles)?,
             MSG_GUEST_DNS_READINESS => self.handle_guest_dns_readiness(msg)?,
             MSG_GUEST_STATE_RESTORE => self.handle_guest_state_restore(msg)?,
-            MSG_GUEST_STORAGE_MANIFEST => self.handle_guest_storage_manifest(msg)?,
+            MSG_GUEST_STORAGE_MANIFEST | guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS => {
+                self.handle_guest_storage_manifest(msg)?
+            }
             MSG_HOME_DRIVE_MOUNT => self.handle_home_drive_mount(msg)?,
             MSG_QUIESCE_OPERATIONS => self.handle_quiesce_operations(msg)?,
             MSG_RESUME_OPERATIONS => self.handle_resume_operations(msg)?,
@@ -650,8 +645,14 @@ impl ConnectionDispatcher {
         if reject_operation_if_quiescing(&self.operation_state, msg.seq, &self.writer)? {
             return Ok(());
         }
-        let decoded = match guest_control_proto::decode_guest_storage_manifest_request(msg.payload)
-        {
+        let decoded = if msg.msg_type == guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS {
+            guest_control_proto::decode_guest_agent_instructions_request(msg.payload)
+                .map(|decoded| (decoded.input, Some(decoded.operation)))
+        } else {
+            guest_control_proto::decode_guest_storage_manifest_request(msg.payload)
+                .map(|decoded| (decoded, None))
+        };
+        let (decoded, instruction_operation) = match decoded {
             Ok(decoded) => decoded,
             Err(error) => {
                 send_error_response(msg.seq, &error.to_string(), &self.writer)?;
@@ -673,6 +674,7 @@ impl ConnectionDispatcher {
         };
         match self.guest_storage_manifest_worker.submit(
             GuestStorageManifestSubmission {
+                instruction_operation,
                 seq: msg.seq,
                 timeout_ms: decoded.timeout_ms,
                 run_id: decoded.run_id,
@@ -848,13 +850,15 @@ impl ConnectionDispatcher {
 /// Connect to vsock (Linux only - this binary runs inside Firecracker VM)
 #[cfg(target_os = "linux")]
 pub fn connect_vsock() -> io::Result<UnixStream> {
-    use std::os::unix::io::FromRawFd;
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
     // SAFETY: Creating a vsock socket with valid constants. fd is checked for errors below.
     let fd = unsafe { libc::socket(libc::AF_VSOCK, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
     if fd < 0 {
         return Err(io::Error::last_os_error());
     }
+    // SAFETY: fd is a newly created socket and ownership is adopted exactly once.
+    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
 
     let addr = libc::sockaddr_vm {
         svm_family: libc::AF_VSOCK as u16,
@@ -868,20 +872,17 @@ pub fn connect_vsock() -> io::Result<UnixStream> {
     // size_of returns the correct sockaddr_vm size. Errors are checked below.
     let ret = unsafe {
         libc::connect(
-            fd,
+            fd.as_raw_fd(),
             &addr as *const libc::sockaddr_vm as *const libc::sockaddr,
             std::mem::size_of::<libc::sockaddr_vm>() as u32,
         )
     };
 
     if ret < 0 {
-        // SAFETY: fd is a valid open socket descriptor, and we're about to return an error.
-        unsafe { libc::close(fd) };
         return Err(io::Error::last_os_error());
     }
 
-    // SAFETY: fd is a valid, connected socket descriptor. Ownership transfers to UnixStream.
-    Ok(unsafe { UnixStream::from_raw_fd(fd) })
+    Ok(UnixStream::from(fd))
 }
 
 /// Stub for non-Linux platforms (for IDE support)
@@ -1402,80 +1403,4 @@ pub fn run(unix_socket: Option<&str>) -> io::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use guest_control_proto::{MSG_PING, MSG_SHUTDOWN};
-
-    #[test]
-    fn retry_closed_failure_returns_connection_reset_when_exhausted() {
-        let result = retry_or_fail(ReconnectFailure::Closed, MAX_RECONNECT_ATTEMPTS);
-
-        assert!(result.is_err());
-        if let Err(error) = result {
-            assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
-            assert_eq!(error.to_string(), "Max reconnect attempts reached");
-        }
-    }
-
-    #[test]
-    fn retry_error_failure_returns_original_error_when_exhausted() {
-        let result = retry_or_fail(
-            ReconnectFailure::Error(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "connection timed out",
-            )),
-            MAX_RECONNECT_ATTEMPTS,
-        );
-
-        assert!(result.is_err());
-        if let Err(error) = result {
-            assert_eq!(error.kind(), io::ErrorKind::TimedOut);
-            assert_eq!(error.to_string(), "connection timed out");
-        }
-    }
-
-    #[test]
-    fn connection_stability_requires_duration_or_real_work() {
-        assert!(!connection_is_stable(
-            STABLE_CONNECTION_MIN_DURATION - Duration::from_millis(1),
-            false
-        ));
-        assert!(connection_is_stable(STABLE_CONNECTION_MIN_DURATION, false));
-        assert!(connection_is_stable(Duration::ZERO, true));
-    }
-
-    #[test]
-    fn liveness_and_shutdown_messages_do_not_count_as_real_host_work() {
-        assert!(!is_real_host_work_message(MSG_PING));
-        assert!(!is_real_host_work_message(MSG_SHUTDOWN));
-    }
-
-    #[test]
-    fn operation_messages_count_as_real_host_work() {
-        for msg_type in [
-            MSG_EXEC_START,
-            MSG_EXEC_CANCEL,
-            MSG_EXEC_CONTROL,
-            MSG_WRITE_FILE,
-            guest_control_proto::MSG_WRITE_FILE_STREAM_BEGIN,
-            MSG_WRITE_FILES,
-            MSG_WRITE_PRIVATE_FILES,
-            MSG_GUEST_DNS_READINESS,
-            MSG_GUEST_STORAGE_MANIFEST,
-            MSG_QUIESCE_OPERATIONS,
-            MSG_RESUME_OPERATIONS,
-        ] {
-            assert!(is_real_host_work_message(msg_type));
-        }
-    }
-
-    #[test]
-    fn stable_connection_resets_reconnect_attempt_streak_before_counting_failure() {
-        assert_eq!(next_reconnect_attempts(20, true), 1);
-    }
-
-    #[test]
-    fn unstable_connection_continues_reconnect_attempt_streak() {
-        assert_eq!(next_reconnect_attempts(20, false), 21);
-    }
-}
+mod tests;

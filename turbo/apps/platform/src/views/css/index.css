@@ -35,6 +35,10 @@
   /* Standard utilities share the App's font supply instead of bypassing it. */
   --font-sans: var(--font-family-sans);
   --font-mono: var(--font-family-mono);
+  /* Keep native serif Latin faces ahead of the shared script fallback. */
+  --font-serif:
+    ui-serif, Georgia, Cambria, "Times New Roman", Times, "Noto Serif",
+    "Liberation Serif", var(--font-family-fallback), serif;
   /* Color-emoji fonts must come first so dual-presentation codepoints (e.g. the
      "squared CJK" buttons 🈶🈯🈹) resolve to their color glyph instead of the
      text glyph a CJK text font would otherwise supply. */

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.5.12](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.11...nbd-cow-v0.5.12) (2026-11-04)
+
+## [0.5.11](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.10...nbd-cow-v0.5.11) (2026-11-04)
+
+## [0.5.10](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.9...nbd-cow-v0.5.10) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share kill-and-wait child fixture ownership ([#44794](https://github.com/okou-ai/okou/issues/44794)) ([b80180c](https://github.com/okou-ai/okou/commit/b80180c85fc4ce0bd0fc56266f90e4b4bbf0a1c7))
+
+## [0.5.9](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.8...nbd-cow-v0.5.9) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** use owned unix socket conversions ([#44612](https://github.com/okou-ai/okou/issues/44612)) ([dd36385](https://github.com/okou-ai/okou/commit/dd363859e034973698d1567bab3b676b61c54f8d))
+
+## [0.5.8](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.7...nbd-cow-v0.5.8) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.5.7](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.6...nbd-cow-v0.5.7) (2026-10-20)
 
 

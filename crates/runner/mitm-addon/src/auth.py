@@ -67,6 +67,7 @@ from firewall_auth_client import (
     InsufficientCreditsError,
 )
 from firewall_auth_config import auth_config_injects_credentials
+from firewall_auth_failure import project_firewall_auth_failure
 from logging_utils import log_proxy_entry
 from request_authority import custom_http_auth_is_allowed
 from runtime_url_parsing import split_runtime_url
@@ -419,6 +420,7 @@ def _set_matched_firewall_failure_response(
     connectors: list[str] | None = None,
     failure_reason: str | None = None,
     diagnostic_error_code: str | None = None,
+    auth_failure: dict[str, str | int] | None = None,
 ) -> None:
     """Set the common matched-firewall auth/forward failure response."""
     # `firewall_action` records the firewall permission decision
@@ -440,6 +442,8 @@ def _set_matched_firewall_failure_response(
         body["connectors"] = connectors
     if failure_reason:
         body["failureReason"] = failure_reason
+    if auth_failure is not None:
+        body["authFailure"] = auth_failure
     flow.response = http_local_responses.make_local_json_response(
         flow,
         status,
@@ -1455,12 +1459,14 @@ def _set_firewall_auth_resolution_failure(
         )
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
 
+    auth_failure = project_firewall_auth_failure(exc)
     log_proxy_entry(
         context.proxy_log_path,
         "error",
         f"Firewall header fetch failed: {exc}",
         type="firewall",
         firewall_base=context.firewall_base,
+        auth_failure=auth_failure,
     )
     _set_matched_firewall_failure_response(
         flow,
@@ -1469,6 +1475,7 @@ def _set_firewall_auth_resolution_failure(
         error_code="auth_failed",
         message=f"Failed to resolve auth headers: {exc}",
         permission=context.allow.name,
+        auth_failure=auth_failure,
     )
     return FirewallAuthHandlingResult.LOCAL_RESPONSE
 

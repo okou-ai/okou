@@ -6,6 +6,7 @@ use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
+use cli_test_support::child::KillAndWaitChild as ChildGuard;
 use httpmock::prelude::*;
 use tokio::sync::oneshot;
 
@@ -708,15 +709,6 @@ fn fresh_with_firecracker(
         firecrackers: vec![fc_info(pid, sandbox_id, base_dir)],
         mitmdumps: vec![],
         dnsmasqs: vec![],
-    }
-}
-
-struct ChildGuard(std::process::Child);
-
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
     }
 }
 

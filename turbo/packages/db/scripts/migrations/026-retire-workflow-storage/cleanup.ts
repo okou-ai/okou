@@ -81,7 +81,7 @@ function options() {
       "storage-id": { type: "string" },
       limit: { type: "string", default: "100" },
       "max-pages": { type: "string", default: "8" },
-      "max-ms": { type: "string", default: "60000" },
+      "max-ms": { type: "string", default: "180000" },
       help: { type: "boolean", default: false },
     },
   });
@@ -576,16 +576,18 @@ Default: database-only, read-only review plan. See the adjacent README before an
     await client.query("SET search_path=public");
     if (!args.migrate && !args["process-jobs"])
       await client.query("SET default_transaction_read_only=on");
+    // The hash/attachment census can exceed 2 MB. Allow bounded result
+    // reception while retaining the server SQL and other query deadlines.
+    const inventoryRead = {
+      ...inventoryQuery(
+        args.after,
+        args.reviewed ? 0 : args.limit,
+        args.storageId,
+      ),
+      query_timeout: 120000,
+    };
     const observation = observationSchema.parse(
-      (
-        await client.query(
-          inventoryQuery(
-            args.after,
-            args.reviewed ? 0 : args.limit,
-            args.storageId,
-          ),
-        )
-      ).rows[0]?.observation,
+      (await client.query(inventoryRead)).rows[0]?.observation,
     );
     const baseline = workflowBaseline(observation);
     if (!plan) {

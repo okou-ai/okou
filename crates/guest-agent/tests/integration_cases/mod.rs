@@ -6,7 +6,6 @@
 #[macro_use]
 pub(crate) mod support;
 
-mod codex_session_cleanup;
 mod complete;
 mod events;
 mod finalization;

@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
 import {
   integrationsWhatsappContract as contract,
   type WhatsappFile,
@@ -34,6 +36,11 @@ import {
 import { sendAgentPhoneConnectedMessages$ } from "../services/agentphone-connected-messages.service";
 import { switchAgentPhoneIdentity$ } from "../services/agentphone-link.service";
 import { connectWhatsappIdentity$ } from "../services/whatsapp-link.service";
+import {
+  loadWhatsappCompletedTask$,
+  sendWhatsappTextWithTaskFallback,
+  type WhatsappCompletedTask,
+} from "../services/whatsapp-task-notification.service";
 import type {
   AgentPhoneConnectRequest,
   AgentPhoneConnectStatus,
@@ -42,7 +49,6 @@ import {
   isWhatsappSupportedHandle,
   whatsappConfigured,
   whatsappEnabled$,
-  whatsappFileUploadEnabled$,
   whatsappPhoneNumber,
 } from "../services/whatsapp-config";
 import { logger } from "../../lib/log";
@@ -278,6 +284,102 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 
+const sendMessageParts$ = command(
+  async (
+    { set },
+    args: {
+      readonly text: string;
+      readonly agentphoneAgentId: string;
+      readonly fromNumber: string;
+      readonly link: { readonly id: string; readonly phoneHandle: string };
+      readonly completedTask?: WhatsappCompletedTask;
+    },
+    signal: AbortSignal,
+  ) => {
+    const messages: { id: string }[] = [];
+    let template: "okou_task_completed" | undefined;
+    for (const body of agentPhoneReplyChunks(args.text, "whatsapp")) {
+      const sent = await settle(
+        sendWhatsappTextWithTaskFallback(
+          {
+            agentphoneAgentId: args.agentphoneAgentId,
+            toNumber: args.link.phoneHandle,
+            body,
+            completedTask:
+              messages.length === 0 ? args.completedTask : undefined,
+          },
+          signal,
+        ),
+        signal,
+      );
+      if (!sent.ok) {
+        const providerError = isAgentPhoneApiError(sent.error)
+          ? sent.error
+          : null;
+        if (
+          !providerError &&
+          !(sent.error instanceof TypeError) &&
+          !(sent.error instanceof SyntaxError)
+        ) {
+          throw sent.error;
+        }
+        const rejected =
+          providerError !== null &&
+          providerError.status < 500 &&
+          providerError.status !== 408 &&
+          providerError.code !== "DELIVERY_UNCONFIRMED";
+        return {
+          status: rejected ? (400 as const) : (502 as const),
+          body: {
+            acceptedMessages: messages,
+            delivery: rejected ? ("failed" as const) : ("unknown" as const),
+            error: {
+              code: "WHATSAPP_SEND_FAILED",
+              message: `${rejected ? `WhatsApp rejected the message (HTTP ${providerError.status}).` : "The latest WhatsApp send has an unknown delivery outcome. Do not retry it automatically."} ${messages.length} part(s) accepted${
+                messages.length
+                  ? ` (${messages
+                      .map((message) => {
+                        return message.id;
+                      })
+                      .join(", ")})`
+                  : ""
+              }. Outside the 24-hour service window, an approved template is required.`,
+            },
+          },
+        };
+      }
+      await set(storeOutboundAgentPhoneMessage$, {
+        agentphoneMessageId: sent.value.message.id,
+        conversationId: null,
+        agentphoneAgentId: args.agentphoneAgentId,
+        userLinkId: args.link.id,
+        phoneHandle: args.link.phoneHandle,
+        fromNumber: sent.value.message.fromNumber ?? args.fromNumber,
+        toNumber: sent.value.message.toNumber,
+        body: sent.value.body,
+        channel: "whatsapp",
+        userChannel: "whatsapp",
+        visibilityRecipients: [],
+      });
+      signal.throwIfAborted();
+      messages.push({ id: sent.value.message.id });
+      if (sent.value.template) {
+        template = sent.value.template;
+        break;
+      }
+    }
+    return {
+      status: 200 as const,
+      body: {
+        channel: "whatsapp" as const,
+        toNumber: args.link.phoneHandle,
+        messages,
+        ...(template ? { template } : {}),
+      },
+    };
+  },
+);
+
 const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   const result = await get(bodyResultOf(contract.sendMessage));
   signal.throwIfAborted();
@@ -297,76 +399,37 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   ) {
     return notConfigured();
   }
-  const messages: { id: string }[] = [];
-  for (const body of agentPhoneReplyChunks(result.data.text, "whatsapp")) {
-    const sent = await settle(
-      sendAgentPhoneMessage(
-        {
-          agentphoneAgentId,
-          toNumber: link.phoneHandle,
-          channel: "whatsapp",
-          body,
-        },
-        signal,
-      ),
-      signal,
-    );
-    if (!sent.ok) {
-      const providerError = isAgentPhoneApiError(sent.error)
-        ? sent.error
-        : null;
-      if (
-        !providerError &&
-        !(sent.error instanceof TypeError) &&
-        !(sent.error instanceof SyntaxError)
-      ) {
-        throw sent.error;
-      }
-      const rejected = providerError !== null && providerError.status < 500;
-      return {
-        status: rejected ? (400 as const) : (502 as const),
-        body: {
-          acceptedMessages: messages,
-          delivery: rejected ? ("failed" as const) : ("unknown" as const),
-          error: {
-            code: "WHATSAPP_SEND_FAILED",
-            message: `${rejected ? `WhatsApp rejected the message (HTTP ${providerError.status}).` : "The latest WhatsApp send has an unknown delivery outcome. Do not retry it automatically."} ${messages.length} part(s) accepted${
-              messages.length
-                ? ` (${messages
-                    .map((message) => {
-                      return message.id;
-                    })
-                    .join(", ")})`
-                : ""
-            }. Outside the 24-hour service window, an approved template is required.`,
+  const auth = get(organizationAuthContext$);
+  const completedTask =
+    result.data.taskCompleted && "runId" in auth
+      ? await set(
+          loadWhatsappCompletedTask$,
+          {
+            runId: auth.runId,
+            userId: auth.userId,
+            orgId: auth.orgId,
           },
-        },
-      };
-    }
-    await set(storeOutboundAgentPhoneMessage$, {
-      agentphoneMessageId: sent.value.id,
-      conversationId: null,
-      agentphoneAgentId,
-      userLinkId: link.id,
-      phoneHandle: link.phoneHandle,
-      fromNumber: sent.value.fromNumber ?? fromNumber,
-      toNumber: sent.value.toNumber,
-      body,
-      channel: "whatsapp",
-      userChannel: "whatsapp",
-      visibilityRecipients: [],
-    });
-    signal.throwIfAborted();
-    messages.push({ id: sent.value.id });
+          signal,
+        )
+      : undefined;
+  if (result.data.taskCompleted && !completedTask) {
+    return badRequestMessage(
+      "Task-completion notifications require a current run with an owned chat thread",
+    );
   }
-  return {
-    status: 200 as const,
-    body: {
-      channel: "whatsapp" as const,
-      toNumber: link.phoneHandle,
-      messages,
+  const footerText = await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
+  return await set(
+    sendMessageParts$,
+    {
+      text: appendIntegrationMessageFooter(result.data.text, footerText),
+      agentphoneAgentId,
+      fromNumber,
+      link,
+      completedTask,
     },
-  };
+    signal,
+  );
 });
 
 function whatsappFileSendFailure(error: unknown, file: WhatsappFile) {
@@ -401,11 +464,6 @@ const sendUploadedFile$ = command(async ({ get, set }, signal: AbortSignal) => {
     return result.response;
   }
   const auth = get(organizationAuthContext$);
-  if (
-    !(await set(whatsappFileUploadEnabled$, auth.orgId, auth.userId, signal))
-  ) {
-    return notFound("WhatsApp file delivery is not enabled");
-  }
   const { enabled, link } = await set(loadLink$, signal);
   if (!enabled || !link || !isWhatsappSupportedHandle(link.phoneHandle)) {
     return notFound("No supported WhatsApp account is connected");
@@ -455,13 +513,22 @@ const sendUploadedFile$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
   signal.throwIfAborted();
+  const footerText = object.contentType.startsWith("audio/")
+    ? undefined
+    : await get(integrationMessageSendFooterText$);
+  signal.throwIfAborted();
+  const caption = appendIntegrationMessageFooter(
+    result.data.caption,
+    footerText,
+    1024,
+  );
   const sent = await settle(
     sendAgentPhoneMessage(
       {
         agentphoneAgentId,
         toNumber: link.phoneHandle,
         channel: "whatsapp",
-        body: result.data.caption ?? "",
+        body: caption,
         mediaUrls: [fetchUrl],
       },
       signal,
@@ -480,7 +547,7 @@ const sendUploadedFile$ = command(async ({ get, set }, signal: AbortSignal) => {
     phoneHandle: link.phoneHandle,
     fromNumber: sent.value.fromNumber ?? fromNumber,
     toNumber: sent.value.toNumber,
-    body: result.data.caption,
+    body: caption,
     mediaUrl: object.url,
     channel: "whatsapp",
     userChannel: "whatsapp",

@@ -3,7 +3,23 @@ use std::time::Duration;
 
 use ::sandbox::{ExecOutputLimits, ProcessOutputMode, SandboxControlTarget};
 
-/// Behavior override applied to exec calls whose command contains the pattern.
+/// Captured typed instruction operation, distinct from a generic shell exec.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentInstructionsCall {
+    /// Fixed check/application action selected by the caller.
+    pub operation: guest_contracts::agent_instructions::InstructionOperation,
+    /// Bounded opaque metadata supplied on helper stdin.
+    pub metadata: Vec<u8>,
+    /// Current run context.
+    pub run_id: String,
+    /// Absolute run runtime directory.
+    pub runtime_dir: String,
+    /// Requested helper timeout.
+    pub timeout: Duration,
+}
+
+/// Behavior override applied to exec calls or canonical fixed instruction-helper
+/// invocations whose command contains the pattern.
 ///
 /// The matcher configures an ordinary [`ExecResult`](::sandbox::ExecResult).
 /// The result remains subject to the executing
@@ -66,38 +82,6 @@ pub struct StorageManifestCall {
     pub run_id: String,
     /// Absolute guest runtime directory supplied to the fixed helper.
     pub runtime_dir: String,
-    /// Helper timeout supplied by the caller.
-    pub timeout: Duration,
-}
-
-/// Captured fixed live session-history identity verifier request.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SessionHistoryIdentityVerifyCall {
-    /// Final identity metadata path supplied to the verifier.
-    pub metadata_path: String,
-    /// Canonical guest runtime directory supplied to the verifier.
-    pub runtime_dir: String,
-    /// Stable framework spelling supplied to the verifier.
-    pub framework: String,
-    /// Expected normalized session-id hash supplied to the verifier.
-    pub session_id_hash: String,
-    /// Stable history-reference-kind spelling supplied to the verifier.
-    pub history_ref_kind: String,
-    /// Expected final history hash supplied to the verifier.
-    pub history_hash: String,
-    /// Expected final history byte length supplied to the verifier.
-    pub history_size_bytes: u64,
-    /// Helper timeout supplied by the caller.
-    pub timeout: Duration,
-}
-
-/// Captured fixed reused-Codex session cleanup request.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CodexSessionCleanupCall {
-    /// Canonical Codex thread identifier supplied to the cleanup helper.
-    pub session_id: String,
-    /// Canonical logical rollout path relative to the fixed Codex home.
-    pub fallback_relative_path: String,
     /// Helper timeout supplied by the caller.
     pub timeout: Duration,
 }
@@ -192,30 +176,10 @@ pub struct ProcessControlCall {
 /// Captured `write_file` request fields recorded for test assertions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WriteFileCall {
-    /// Caller-selected compression; content remains the final raw file bytes.
-    pub compression: sandbox::FileCompression,
     /// Guest path passed to `write_file`.
     pub path: String,
     /// Content bytes passed to `write_file`.
     pub content: Vec<u8>,
-}
-
-/// Owned staged-file disposition recorded by the mock.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StagedFileDispositionCall {
-    /// Publish to the recorded final guest path.
-    Publish { destination: String },
-    /// Remove the staging file without publication.
-    Discard,
-}
-
-/// Captured staged-file finalizer request.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FinalizeStagedFileCall {
-    /// Guest staging path supplied by the caller.
-    pub staging_path: String,
-    /// Requested terminal disposition.
-    pub disposition: StagedFileDispositionCall,
 }
 
 /// Captured `write_files` batch request fields recorded for test assertions.

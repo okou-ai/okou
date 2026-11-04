@@ -14,7 +14,15 @@ final class ShellSessionsTests: XCTestCase {
     var body = payload
     body["shellPermissionId"] = .string(permission)
     body["waitMs"] = .number(1000)
-    return await owner.execute(kind: kind, payload: .object(body), budget: 5)
+    do {
+      let payload = try JSONDecoder().decode(
+        ComputerUseCommandClaim.Command.Payload.self,
+        from: JSONEncoder().encode(JSONValue.object(body)))
+      return await owner.execute(kind: .init(rawValue: kind), payload: payload, budget: 5)
+    } catch {
+      XCTFail("Invalid Shell payload: \(error)")
+      return .null
+    }
   }
   private func fixture(idle: Duration = .seconds(900)) async throws -> (ShellSessions, URL) {
     let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -121,10 +129,8 @@ final class ShellSessionsTests: XCTestCase {
       FileManager.default.fileExists(atPath: home.appendingPathComponent("should-not-exist").path))
     let oldSession = try XCTUnwrap(first["result"]["session"]["id"].string)
     let leaked = await owner.execute(
-      kind: "shell.status",
-      payload: .object([
-        "sessionId": .string(oldSession), "shellPermissionId": .string(replacementPermission),
-      ]), budget: 5)
+      kind: .shellStatus,
+      payload: .init(sessionId: oldSession, shellPermissionId: replacementPermission), budget: 5)
     XCTAssertEqual(leaked["error"]["code"].string, "shell_unavailable")
     await owner.stop()
   }
@@ -200,10 +206,8 @@ final class ShellSessionsTests: XCTestCase {
     let time = "2026-10-15T00:00:00.000Z"
     let claim = ComputerUseCommandClaim.Command(
       id: "operation", kind: .shellCmd, status: .running, hostId: "computer", hostName: "Mac",
-      payload: [
-        "command": .string("sleep 60"), "waitMs": .number(1000),
-        "shellPermissionId": .string(String(permission)),
-      ], result: nil, error: nil, timeoutMs: 25000, createdAt: time, claimedAt: time,
+      payload: .init(command: "sleep 60", waitMs: 1000, shellPermissionId: String(permission)),
+      result: nil, error: nil, timeoutMs: 25000, createdAt: time, claimedAt: time,
       completedAt: nil)
     let first = await executor.execute(claim, claimStarted: .now)
     XCTAssertEqual(first["status"].string, "succeeded")

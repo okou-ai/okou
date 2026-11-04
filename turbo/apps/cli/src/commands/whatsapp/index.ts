@@ -3,7 +3,6 @@ import {
   sendWhatsappMessage,
   WhatsappMessageSendError,
 } from "../../lib/api/domains/integrations-whatsapp";
-import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { uploadWhatsappFileCommand } from "./upload-file";
 import { readMessageText } from "../../lib/command/message-target";
 import {
@@ -18,27 +17,40 @@ const sendCommand = new Command("send")
   .description("Send a WhatsApp message to your verified connected account")
   .addOption(phoneToOption("WhatsApp"))
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
+  .option(
+    "--task-completed",
+    "Allow the approved task-completion template when the 24-hour window is closed (requires a current run)",
+  )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
   okou whatsapp message send -t "Hello!"
+  okou whatsapp message send --task-completed -t "Your report is ready."
   printf "Hello!" | okou whatsapp message send --json
 
 Messages go only to your independently verified WhatsApp account.
 Free-form messages require a message from you within the past 24 hours.
+For completed tasks only, --task-completed allows a single approved en_US
+notification linking to the current run's chat if Meta rejects the first part
+because the window is closed. Other reminders cannot use this template.
 Long messages are split; never blindly retry an uncertain or partial send.`,
   )
   .action(
     withErrorHandler(
-      async (options: { to: string; text?: string; json?: boolean }) => {
+      async (options: {
+        to: string;
+        text?: string;
+        json?: boolean;
+        taskCompleted?: boolean;
+      }) => {
         assertPhoneTarget(options.to, "WhatsApp");
         const text = readMessageText(options.text);
         if (!text) {
           throw new Error("Either --text or piped stdin must be provided");
         }
-        const result = await sendWhatsappMessage(text);
+        const result = await sendWhatsappMessage(text, options.taskCompleted);
         printMessageOutput(
           {
             integration: "whatsapp",
@@ -49,6 +61,7 @@ Long messages are split; never blindly retry an uncertain or partial send.`,
                 url: null,
               };
             }),
+            ...(result.template ? { template: result.template } : {}),
           },
           options,
         );
@@ -76,15 +89,9 @@ Long messages are split; never blindly retry an uncertain or partial send.`,
     ),
   );
 
-const tokenPayload = decodeSandboxTokenPayload();
-
 export const whatsappCommand = new Command("whatsapp")
   .description("Send messages and files to your connected WhatsApp account")
-  .addCommand(uploadWhatsappFileCommand, {
-    hidden:
-      tokenPayload !== undefined &&
-      !tokenPayload.capabilities.includes("whatsapp:file:write"),
-  })
+  .addCommand(uploadWhatsappFileCommand)
   .addCommand(
     new Command("message")
       .description("Send a WhatsApp message")

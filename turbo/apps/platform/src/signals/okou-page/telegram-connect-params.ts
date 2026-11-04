@@ -1,5 +1,5 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
-import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/validators/integrations-telegram";
 import { i18n } from "../../i18n/index.ts";
 
 export interface TelegramConnectParams {

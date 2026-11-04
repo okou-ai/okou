@@ -1,6 +1,7 @@
 import {
   discriminatedUnion,
   literal,
+  looseObject,
   object,
   string,
   enum as zEnum,
@@ -26,7 +27,7 @@ import {
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { chatEventContextTypeSchema } from "@okouai/api-contracts/contracts/chat-events";
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
-import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-threads";
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import { conflict } from "../../lib/error";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
@@ -40,6 +41,7 @@ import type { PreparedChatEventRow } from "./chat-event-append.service";
 import { withRunModelAnnotation } from "./chat-user-message.service";
 import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
 import type { ChatThreadContinuation } from "./chat-session-continuity.service";
+import type { QueueFirstRunAssociation } from "./chat-queued-event.service";
 
 interface ValidatedPendingThreadSession {
   readonly kind: "validated-thread-session-snapshot";
@@ -56,6 +58,51 @@ interface AdmissionFacts {
   readonly validatedAccountIdentity: string | null;
 }
 
+const subscriptionRecordSchema = object({
+  phase: literal("subscription"),
+  type: string(),
+  externalAccountId: string().nullable(),
+  accountEmail: string().nullable(),
+  workspaceName: string().nullable(),
+});
+
+const headRecordSchema = object({
+  phase: literal("head"),
+  id: string(),
+  chatThreadId: string(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema,
+  eventType: zEnum(["input.prompt", "input.automation"]),
+  contextType: chatEventContextTypeSchema.nullable(),
+  contextId: string().nullable(),
+  userMessage: userMessageDocumentSchema.nullable(),
+  modelSelection: chatInputModelSelectionSchema.nullable(),
+});
+
+/**
+ * One row for both independent reads. An absent LEFT JOIN LATERAL part has a
+ * NULL phase; a present part is decoded by its own phase record schema.
+ */
+const subscriptionHeadRecordSchema = looseObject({
+  phase: literal("subscription-head"),
+  subscriptionPhase: literal("subscription").nullable(),
+  headPhase: literal("head").nullable(),
+}).transform(({ subscriptionPhase, headPhase, ...columns }) => {
+  return {
+    phase: "subscription-head" as const,
+    subscription:
+      subscriptionPhase === null
+        ? undefined
+        : subscriptionRecordSchema.parse({
+            ...columns,
+            phase: subscriptionPhase,
+          }),
+    head:
+      headPhase === null
+        ? undefined
+        : headRecordSchema.parse({ ...columns, phase: headPhase }),
+  };
+});
+
 export const pendingAdmissionRecordSchema = discriminatedUnion("phase", [
   object({
     phase: literal("thread"),
@@ -64,32 +111,27 @@ export const pendingAdmissionRecordSchema = discriminatedUnion("phase", [
     frameworkSessionId: string().nullable(),
     frameworkSessionRunId: string().nullable(),
   }),
-  object({
-    phase: literal("subscription"),
-    type: string(),
-    externalAccountId: string().nullable(),
-    accountEmail: string().nullable(),
-    workspaceName: string().nullable(),
-  }),
-  object({
-    phase: literal("head"),
-    id: string(),
-    chatThreadId: string(),
-    createdAt: pgTimestampWithoutTimezoneToDateSchema,
-    eventType: zEnum(["input.prompt", "input.automation"]),
-    contextType: chatEventContextTypeSchema.nullable(),
-    contextId: string().nullable(),
-    userMessage: userMessageDocumentSchema.nullable(),
-    modelSelection: chatInputModelSelectionSchema.nullable(),
-  }),
+  subscriptionRecordSchema,
+  headRecordSchema,
+  subscriptionHeadRecordSchema,
 ]);
 type AdmissionRecord = output<typeof pendingAdmissionRecordSchema>;
 
-type AdmissionStatement = AdmissionFacts & {
-  readonly kind: "statement";
-  readonly phase: "thread" | "subscription" | "head";
-  readonly sql: SQL;
-};
+type AdmissionStatement = AdmissionFacts &
+  (
+    | {
+        readonly kind: "statement";
+        readonly phase: "thread" | "subscription" | "head";
+        readonly sql: SQL;
+      }
+    | {
+        readonly kind: "statement";
+        readonly phase: "subscription-head";
+        readonly sql: SQL;
+        /** The queue head read alone; publication repeats it as its guard. */
+        readonly headSql: SQL;
+      }
+  );
 type PreparedInputClaim = AdmissionFacts & {
   readonly kind: "claim";
   readonly claimInput: PreparedChatEventRow & {
@@ -108,7 +150,8 @@ export type PendingAdmissionProgress =
     });
 
 /** Finite read plan and prepared input; publication owns the only write.
- * Each phase occurs at most once. No retries, resources, callbacks or handles. */
+ * Each phase occurs at most once; independent subscription and queue head
+ * reads share one statement. No retries, resources, callbacks or handles. */
 export function pendingLaunchAdmissionStart(
   args: PreparedCommitPreparedLaunchArgs,
 ): PendingAdmissionProgress {
@@ -155,11 +198,7 @@ function subscriptionStep(
   if (!provider.id) {
     return disconnectedSubscription();
   }
-  return {
-    ...facts,
-    kind: "statement",
-    phase: "subscription",
-    sql: sql`SELECT 'subscription' AS phase, ${modelProviderAccounts.type} AS type,
+  const subscriptionSql = sql`SELECT 'subscription' AS phase, ${modelProviderAccounts.type} AS type,
       ${modelProviderAccounts.externalAccountId} AS "externalAccountId", ${modelProviderAccounts.accountEmail} AS "accountEmail",
       ${modelProviderAccounts.workspaceName} AS "workspaceName" FROM ${modelProviderAccounts}
       WHERE ${and(
@@ -169,7 +208,35 @@ function subscriptionStep(
         eq(modelProviderAccounts.type, provider.type),
         isNull(modelProviderAccounts.disconnectedAt),
       )}
-      LIMIT 1`,
+      LIMIT 1`;
+  const association = args.createArgs.queueFirstAssociation;
+  if (!association || association.threadId !== args.createArgs.chatThreadId) {
+    // Any queue head step and its association check follow this read.
+    return {
+      ...facts,
+      kind: "statement",
+      phase: "subscription",
+      sql: subscriptionSql,
+    };
+  }
+  // The head read does not depend on the subscription result: both share one
+  // round trip, and evaluation keeps the subscription-first order.
+  const headSql = queueHeadSql(association);
+  return {
+    ...facts,
+    kind: "statement",
+    phase: "subscription-head",
+    sql: sql`SELECT 'subscription-head' AS phase,
+      admission_subscription.phase AS "subscriptionPhase", admission_subscription.type,
+      admission_subscription."externalAccountId", admission_subscription."accountEmail",
+      admission_subscription."workspaceName", admission_head.phase AS "headPhase",
+      admission_head.id, admission_head."chatThreadId", admission_head."createdAt",
+      admission_head."eventType", admission_head."contextType", admission_head."contextId",
+      admission_head."userMessage", admission_head."modelSelection"
+      FROM (VALUES (1)) AS admission_seed(value)
+      LEFT JOIN LATERAL (${subscriptionSql}) AS admission_subscription ON true
+      LEFT JOIN LATERAL (${headSql}) AS admission_head ON true`,
+    headSql,
   };
 }
 
@@ -193,6 +260,15 @@ function queueHeadStep(
   if (association.threadId !== args.createArgs.chatThreadId) {
     throw new Error("Queue-first association must match the run chat thread");
   }
+  return {
+    ...facts,
+    kind: "statement",
+    phase: "head",
+    sql: queueHeadSql(association),
+  };
+}
+
+function queueHeadSql(association: QueueFirstRunAssociation): SQL {
   const revoker = alias(chatEvents, "pending_launch_queue_revoker");
   const unrevoked = notExists(
     new QueryBuilder()
@@ -200,11 +276,7 @@ function queueHeadStep(
       .from(revoker)
       .where(eq(revoker.revokesEventId, chatEvents.id)),
   );
-  return {
-    ...facts,
-    kind: "statement",
-    phase: "head",
-    sql: sql`SELECT 'head' AS phase, ${chatEvents.id} AS id, ${chatEvents.chatThreadId} AS "chatThreadId",
+  return sql`SELECT 'head' AS phase, ${chatEvents.id} AS id, ${chatEvents.chatThreadId} AS "chatThreadId",
       ${chatEvents.createdAt} AS "createdAt", ${chatEvents.eventType} AS "eventType", ${chatEvents.contextType} AS "contextType", ${chatEvents.contextId} AS "contextId",
       ${canonicalChatEventUserMessage()} AS "userMessage", ${canonicalChatInputModelSelection()} AS "modelSelection"
       FROM ${chatEvents} WHERE ${and(
@@ -213,8 +285,7 @@ function queueHeadStep(
         inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
         unrevoked,
       )}
-      ORDER BY ${asc(chatEvents.seqId)} LIMIT 1`,
-  };
+      ORDER BY ${asc(chatEvents.seqId)} LIMIT 1`;
 }
 
 /** Actual decoded facts feed the next plan; validation never executes SQL. */
@@ -244,6 +315,26 @@ export function advancePendingLaunchAdmission(
         ...facts,
         validatedAccountIdentity: personalSubscriptionAccountIdentity(row),
       });
+    }
+    case "subscription-head": {
+      if (!row || !("phase" in row) || row.phase !== "subscription-head") {
+        throw new Error("Unexpected subscription and queue head result");
+      }
+      // A disconnected account takes precedence over the queue head.
+      if (!row.subscription) {
+        return disconnectedSubscription();
+      }
+      return advanceQueueHead(
+        args,
+        {
+          ...facts,
+          validatedAccountIdentity: personalSubscriptionAccountIdentity(
+            row.subscription,
+          ),
+        },
+        row.head,
+        step.headSql,
+      );
     }
     case "head": {
       return advanceQueueHead(args, facts, row, step.sql);

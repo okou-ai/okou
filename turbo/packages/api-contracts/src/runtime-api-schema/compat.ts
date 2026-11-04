@@ -119,17 +119,39 @@ function compareRequestPart(
   findings: RuntimeApiCompatFinding[],
 ): void {
   const onlineSchema = online.request[part];
-  if (!onlineSchema) {
-    return;
-  }
-
   const currentSchema = current.request[part];
+  if (!onlineSchema && !currentSchema) return;
   const context: CompareContext = {
     online,
     direction: "request",
     findings,
   };
 
+  if (!onlineSchema) {
+    if (part === "body") {
+      if (
+        currentSchema?.kind === "json-schema" &&
+        currentSchema.schema["x-optional-input"] === true
+      )
+        return;
+      pushFinding(context, {
+        path: "request.body",
+        kind: "request-body-added",
+        problem:
+          "The current route requires a body that the production contract did not declare.",
+        recommendation:
+          "Keep the body optional for existing native clients or provide a floor proof.",
+      });
+      return;
+    }
+    compareSchemaSubset(
+      { kind: "json-schema", schema: { type: "object", properties: {} } },
+      currentSchema,
+      `request.${part}`,
+      context,
+    );
+    return;
+  }
   compareSchemaSubset(onlineSchema, currentSchema, `request.${part}`, context);
 }
 
@@ -138,13 +160,21 @@ function compareResponses(
   current: RuntimeApiRouteSnapshot,
   findings: RuntimeApiCompatFinding[],
 ): void {
-  for (const [status, onlineSchema] of Object.entries(online.responses)) {
-    // Desktop also decodes error bodies, such as the 426 upgrade floor and
+  const nativeClient = online.owner === "desktop" || online.owner === "ios";
+  const statuses = nativeClient
+    ? new Set([
+        ...Object.keys(online.responses),
+        ...Object.keys(current.responses),
+      ])
+    : Object.keys(online.responses);
+  for (const status of statuses) {
+    // Native clients also decode error bodies, such as the 426 upgrade floor and
     // the 409 completion code, so its routes compare every status.
-    if (!status.startsWith("2") && online.owner !== "desktop") {
+    if (!status.startsWith("2") && !nativeClient) {
       continue;
     }
 
+    const onlineSchema = online.responses[status];
     const currentSchema = current.responses[status];
     const context: CompareContext = {
       online,
@@ -152,6 +182,17 @@ function compareResponses(
       responseStatus: Number(status),
       findings,
     };
+
+    if (!onlineSchema && currentSchema) {
+      pushFinding(context, {
+        path: `responses.${status}`,
+        kind: "response-status-added",
+        problem: `The current API can return HTTP ${status}, which the production native client response contract does not declare.`,
+        recommendation:
+          "Keep the production response statuses until installed native clients support the added response, or provide an accepted native compatibility proof.",
+      });
+      continue;
+    }
 
     compareSchemaSubset(
       currentSchema,
@@ -199,13 +240,20 @@ function compareJsonSchemaSubset(
   path: string,
   context: CompareContext,
 ): void {
+  if (subset.anyOf || subset.oneOf || superset.anyOf || superset.oneOf) {
+    compareUnionSubset(subset, superset, path, context);
+    return;
+  }
+  if (subset.allOf || superset.allOf) {
+    compareIntersectionSubset(subset, superset, path, context);
+    return;
+  }
   compareTypeSubset(subset, superset, path, context);
   compareEnumSubset(subset, superset, path, context);
   compareConstSubset(subset, superset, path, context);
   compareObjectSubset(subset, superset, path, context);
   compareArraySubset(subset, superset, path, context);
   compareBoundsSubset(subset, superset, path, context);
-  compareUnionSubset(subset, superset, path, context);
 }
 
 function compareTypeSubset(
@@ -244,9 +292,20 @@ function compareEnumSubset(
   path: string,
   context: CompareContext,
 ): void {
-  const subsetEnum = readStringArray(subset.enum);
+  const subsetEnum =
+    readStringArray(subset.enum) ??
+    (typeof subset.const === "string" ? [subset.const] : undefined);
   const supersetEnum = readStringArray(superset.enum);
-  if (!subsetEnum || !supersetEnum) {
+  if (!supersetEnum) return;
+  if (!subsetEnum) {
+    pushFinding(context, {
+      path,
+      kind: `${context.direction}-enum-constraint-removed`,
+      problem:
+        "An unbounded value is not compatible with the declared enum constraint.",
+      recommendation:
+        "Preserve the enum boundary for installed native clients or provide a compatibility proof.",
+    });
     return;
   }
 
@@ -294,6 +353,24 @@ function compareConstSubset(
   }
 }
 
+function compareDictionarySubset(
+  subset: JsonObject,
+  superset: JsonObject,
+  path: string,
+  context: CompareContext,
+): void {
+  const subsetValues = readObject(subset.additionalProperties);
+  const supersetValues = readObject(superset.additionalProperties);
+  if (subsetValues && supersetValues) {
+    compareJsonSchemaSubset(
+      subsetValues,
+      supersetValues,
+      `${path}.additionalProperties`,
+      context,
+    );
+  }
+}
+
 function compareObjectSubset(
   subset: JsonObject,
   superset: JsonObject,
@@ -304,10 +381,36 @@ function compareObjectSubset(
     return;
   }
 
+  compareDictionarySubset(subset, superset, path, context);
   const subsetProperties = readProperties(subset.properties);
   const supersetProperties = readProperties(superset.properties);
   const subsetRequired = new Set(readStringArray(subset.required) ?? []);
   const supersetRequired = new Set(readStringArray(superset.required) ?? []);
+
+  // An optional command field still carries an operation when present. Keeping
+  // the envelope open for GUI/helper data must not hide a Shell field rename.
+  const [production, current] = productionFirst(context, subset, superset);
+  if (
+    context.online.owner === "desktop" &&
+    production["x-desktop-stable-fields"] === true
+  ) {
+    const previousRequired = new Set(
+      readStringArray(production.required) ?? [],
+    );
+    const currentProperties = readProperties(current.properties);
+    for (const field of Object.keys(readProperties(production.properties))) {
+      if (previousRequired.has(field) || field in currentProperties) {
+        continue;
+      }
+      pushFinding(context, {
+        path: `${path}.${field}`,
+        kind: `${context.direction}-declared-field-removed`,
+        problem: `Declared Desktop command field ${field} was removed. Although optional, installed clients use this key when sending or executing the operation.`,
+        recommendation:
+          "Keep declaring and handling the installed Desktop field until a compatible client is published and the enforced floor excludes its old readers or writers.",
+      });
+    }
+  }
 
   for (const requiredField of supersetRequired) {
     if (!subsetRequired.has(requiredField)) {
@@ -452,12 +555,12 @@ function compareUnionSubset(
   const supersetBranches =
     readSchemaArray(superset.anyOf) ?? readSchemaArray(superset.oneOf);
 
-  if (!subsetBranches || !supersetBranches) {
+  if (!subsetBranches && !supersetBranches) {
     return;
   }
 
-  for (const [index, branch] of subsetBranches.entries()) {
-    const compatible = supersetBranches.some((candidate) => {
+  for (const [index, branch] of (subsetBranches ?? [subset]).entries()) {
+    const compatible = (supersetBranches ?? [superset]).some((candidate) => {
       const nestedFindings: RuntimeApiCompatFinding[] = [];
       compareJsonSchemaSubset(branch, candidate, path, {
         ...context,
@@ -476,6 +579,37 @@ function compareUnionSubset(
             : "A union branch the current schema can return is not accepted by the production schema.",
         recommendation:
           "Keep the previous union branch accepted for one release before removing it.",
+      });
+    }
+  }
+}
+
+/** Every required intersection constraint needs a sufficient current constraint. */
+function compareIntersectionSubset(
+  subset: JsonObject,
+  superset: JsonObject,
+  path: string,
+  context: CompareContext,
+): void {
+  const subsetParts = readSchemaArray(subset.allOf) ?? [subset];
+  const supersetParts = readSchemaArray(superset.allOf) ?? [superset];
+  for (const [index, constraint] of supersetParts.entries()) {
+    const compatible = subsetParts.some((candidate) => {
+      const findings: RuntimeApiCompatFinding[] = [];
+      compareJsonSchemaSubset(candidate, constraint, path, {
+        ...context,
+        findings,
+      });
+      return findings.length === 0;
+    });
+    if (!compatible) {
+      pushFinding(context, {
+        path: `${path}.allOf[${index}]`,
+        kind: `${context.direction}-intersection-constraint-changed`,
+        problem:
+          "An intersection constraint is no longer proven compatible with the production contract.",
+        recommendation:
+          "Preserve the production intersection constraints or supply a native client compatibility proof.",
       });
     }
   }
@@ -510,7 +644,10 @@ function buildFinding(
   responseStatus: number | undefined,
   input: FindingInput,
 ): RuntimeApiCompatFinding {
-  const impact = impactFor(input.direction, route.owner);
+  const impact =
+    input.kind === "response-status-added"
+      ? "Compatibility of the added response status and body with installed native clients has not been established."
+      : impactFor(input.direction, route.owner);
   const agentPrompt = [
     "You are fixing a one-version runtime API compatibility break.",
     `Route: ${routeLabel(route)}.`,
@@ -538,8 +675,8 @@ function impactFor(
   direction: RuntimeApiCompatFinding["direction"],
   owner: RuntimeApiRouteOwner,
 ): string {
-  if (owner === "desktop") {
-    return desktopImpactFor(direction);
+  if (owner === "desktop" || owner === "ios") {
+    return nativeImpactFor(direction, owner);
   }
 
   if (direction === "request") {
@@ -553,18 +690,20 @@ function impactFor(
   return "Existing production runner, guest-agent, or MITM clients may keep calling the old method/path during a rolling release and fail against the new API.";
 }
 
-function desktopImpactFor(
+function nativeImpactFor(
   direction: RuntimeApiCompatFinding["direction"],
+  owner: "desktop" | "ios",
 ): string {
+  const label = owner === "ios" ? "iOS" : "Desktop";
   if (direction === "request") {
-    return "Affects the Okou Desktop client. Installed Desktop builds keep sending the production request shape, so the new API may reject them with HTTP 400 until users install an update; the API deploys minutes after merge, while a Desktop release reaches users much later.";
+    return `Affects the Okou ${label} client. Installed ${label} builds keep sending the production request shape, so the new API may reject them with HTTP 400 until users install an update; the API deploys minutes after merge, while a ${label} release reaches users much later.`;
   }
 
   if (direction === "response") {
-    return "Affects the Okou Desktop client. Installed Desktop builds decode this response strictly against their generated Swift bindings, so every installed build fails at decode time once the API deploys, until users install an update that reads the new shape.";
+    return `Affects the Okou ${label} client. Installed ${label} builds decode this response strictly against their ${owner === "desktop" ? "generated Swift bindings" : "Swift models"}, so every installed build fails at decode time once the API deploys, until users install an update that reads the new shape.`;
   }
 
-  return "Affects the Okou Desktop client. Installed Desktop builds keep calling the production method and path and fail against the new API until users install an update.";
+  return `Affects the Okou ${label} client. Installed ${label} builds keep calling the production method and path and fail against the new API until users install an update.`;
 }
 
 /**

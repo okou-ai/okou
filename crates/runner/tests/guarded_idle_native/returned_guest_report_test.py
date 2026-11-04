@@ -133,6 +133,7 @@ class ReturnedGuestTests(unittest.TestCase):
 
     def test_every_original_ownership_clock_byte_and_join_field_is_required(self):
         original = copy.deepcopy(self.witnesses)
+        self.witnesses = original
         def leaves(value, path=()):
             if isinstance(value, dict):
                 for key, item in value.items(): yield from leaves(item, path+(key,))
@@ -141,20 +142,24 @@ class ReturnedGuestTests(unittest.TestCase):
             else: yield path, value
         for index, event in enumerate(original[:9]):
             for path, value in leaves(event):
-                self.witnesses = copy.deepcopy(original)
-                node = self.witnesses[index]
+                node = event
                 for key in path[:-1]: node = node[key]
-                node[path[-1]] = not value if type(value) is bool else (-1 if type(value) is int else "corrupted")
-                with self.subTest(index=index, path=path):
-                    with self.assertRaises((ValueError, KeyError, TypeError)): self.validate()
+                try:
+                    node[path[-1]] = not value if type(value) is bool else (-1 if type(value) is int else "corrupted")
+                    with self.subTest(index=index, path=path):
+                        with self.assertRaises((ValueError, KeyError, TypeError)): self.validate()
+                finally:
+                    node[path[-1]] = value
+        self.validate()
 
     def test_all_missing_duplicate_and_out_of_order_phases_are_refused(self):
-        original = copy.deepcopy(self.witnesses)
+        original = self.witnesses
         for index in range(len(original)):
-            self.witnesses = copy.deepcopy(original)
+            self.witnesses = original.copy()
             self.witnesses.pop(index)
             with self.assertRaises(ValueError): self.validate()
-        self.witnesses = copy.deepcopy(original)
+        self.witnesses = original.copy()
+        self.validate()
         self.witnesses.append(copy.deepcopy(original[-1]))
         with self.assertRaises(ValueError): self.validate()
 

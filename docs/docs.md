@@ -71,7 +71,7 @@ owning surface.
 - [Bad code smells](bad-smell.md): production-code quality boundaries, including
   [external reference authority](bad-smell.md#externally-managed-references).
 - [Zod imports](zod-imports.md): explicit named schema and type imports, aliases,
-  and bundle-measurement boundaries.
+  top-level string formats, and bundle-measurement boundaries.
 - [Fallbacks](fallback.md): legitimate exceptions, declarations, and removal gates.
 - [Deployment compatibility](deployment-compatibility.md): independent releases,
   persisted state, schema transitions, drain, and rollback requirements.

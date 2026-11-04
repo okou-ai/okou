@@ -1,6 +1,6 @@
 [package]
 name = "guest-write-file"
-version = "0.1.260"
+version = "0.1.274"
 edition.workspace = true
 description = "Write guest files from stdin without shell startup overhead"
 
@@ -8,10 +8,9 @@ description = "Write guest files from stdin without shell startup overhead"
 guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 guest-control-proto.workspace = true
-zstd.workspace = true
-crc32fast = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]

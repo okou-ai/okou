@@ -35,6 +35,10 @@ import { printConnectorCheckJson } from "./check-json";
 import { resolveDiagnosticConnectorSelector } from "./diagnostic-connector-selector";
 import { diagnoseConnectorCheckWithContext } from "../../lib/api/domains/connectors";
 import { getAgentUserBuiltinConnectors } from "../../lib/api/domains/agents";
+import {
+  chatConnectorAccountsEnabled,
+  listRunConnectorAccounts,
+} from "../../lib/api/domains/run-connector-accounts";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../lib/okou-env";
 import { toPlatformUrl } from "../../lib/platform-url";
@@ -243,6 +247,16 @@ function printConnectorAuthorizationStatus(
   status: ConnectorConfigurationStatus,
   hasPermission: boolean,
 ): void {
+  if (chatConnectorAccountsEnabled()) {
+    console.log("### 2b: Chat account access");
+    console.log(
+      hasPermission
+        ? `The ${ctx.label} connector has an allowed account in this Chat.`
+        : `The ${ctx.label} connector has no allowed account in this Chat. Inspect connector account list ${ctx.connectorSlug} --json and request owner approval for an account.`,
+    );
+    console.log("");
+    return;
+  }
   console.log(
     "### 2b: Agent authorization (user must authorize agent to use this connector)",
   );
@@ -342,7 +356,15 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
           } satisfies ConnectorConfigurationStatus;
         }),
     ctx.agentId
-      ? getAgentUserBuiltinConnectors(ctx.agentId)
+      ? chatConnectorAccountsEnabled()
+        ? listRunConnectorAccounts().then((inventory) => {
+            return inventory.accounts.flatMap((account) => {
+              return account.enabled && account.target.kind === "builtin"
+                ? [account.target.connectorSlug]
+                : [];
+            });
+          })
+        : getAgentUserBuiltinConnectors(ctx.agentId)
       : Promise.resolve(null),
   ]);
 

@@ -11,6 +11,8 @@ import { publishUserSignal } from "../external/realtime";
 import { grantGetStartedClaim$ } from "./get-started-member-reward.service";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
 
+import { processPendingSlackRewards$ } from "./slack-reward.service";
+
 type Review =
   | {
       readonly kind: "approve";
@@ -98,7 +100,7 @@ const reviewClaim$ = command(
 export const processGetStartedClaims$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
-    let processed = 0;
+    let processed = await set(processPendingSlackRewards$, signal);
     for (let i = 0; i < 10; i++) {
       signal.throwIfAborted();
       const at = nowDate();

@@ -1,6 +1,6 @@
 [package]
 name = "guest-tool-exec"
-version = "0.3.40"
+version = "0.3.55"
 edition.workspace = true
 description = "Explicit shell-tool cgroup launcher and runtime hook adapter for Okou guests"
 
@@ -12,6 +12,7 @@ serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]

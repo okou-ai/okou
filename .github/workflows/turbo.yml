@@ -16,10 +16,6 @@ on:
     secrets:
       ABLY_API_KEY:
         required: false
-      AGENTPHONE_API_KEY:
-        required: false
-      AGENTPHONE_WEBHOOK_SECRET:
-        required: false
       AWS_METAL_RUNNER_HOSTS:
         required: false
       AWS_METAL_RUNNER_SSH_KEY:
@@ -42,21 +38,9 @@ on:
         required: false
       CRON_SECRET:
         required: false
-      DISCORD_BOT_TOKEN:
-        required: false
-      DISCORD_GATEWAY_SECRET:
-        required: false
       FAL_KEY:
         required: false
-      FINICITY_APP_KEY:
-        required: false
-      FINICITY_APP_SECRET:
-        required: false
-      GOOGLE_ADS_DEVELOPER_TOKEN:
-        required: false
-      GOOGLE_ADS_LOGIN_CUSTOMER_ID:
-        required: false
-      MICROSOFT_TEAMS_BOT_APP_PASSWORD:
+      MARKETING_HANDOFF_PUBLISH_TOKEN_DEV:
         required: false
       NEON_API_KEY:
         required: false
@@ -67,12 +51,6 @@ on:
       OKOU_DATA_TOKEN:
         required: false
       OKOU_BROWSER_USE_API_KEY:
-        required: false
-      OKOU_GITHUB_APP_CLIENT_SECRET:
-        required: false
-      OKOU_GITHUB_APP_PRIVATE_KEY:
-        required: false
-      OKOU_GITHUB_APP_WEBHOOK_SECRET:
         required: false
       OKOU_MACHINE_SECRET_KEY:
         required: false
@@ -92,6 +70,10 @@ on:
         required: false
       R2_HOSTED_SITES_SECRET_ACCESS_KEY:
         required: false
+      R2_MARKETING_HANDOFF_ACCESS_KEY_ID_DEV:
+        required: false
+      R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY_DEV:
+        required: false
       R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV:
         required: false
       R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV:
@@ -106,10 +88,6 @@ on:
         required: false
       R2_USER_ARTIFACTS_SECRET_ACCESS_KEY:
         required: false
-      RESEND_API_KEY:
-        required: false
-      RESEND_WEBHOOK_SECRET:
-        required: false
       SECRETS_ENCRYPTION_KEY:
         required: false
       SENTRY_AUTH_TOKEN:
@@ -120,33 +98,15 @@ on:
         required: false
       SENTRY_DSN_WEB:
         required: false
-      SLACK_SIGNING_SECRET:
-        required: false
-      STEAM_WEB_API_KEY:
-        required: false
-      STRIPE_AUTOMATION_WEBHOOK_SECRET:
-        required: false
       STRIPE_SECRET_KEY:
         required: false
       STRIPE_WEBHOOK_SECRET:
-        required: false
-      TELEGRAM_OFFICIAL_BOT_TOKEN:
-        required: false
-      TELEGRAM_OFFICIAL_WEBHOOK_SECRET:
         required: false
       VAPID_PRIVATE_KEY:
         required: false
       VERCEL_AUTOMATION_BYPASS_SECRET:
         required: false
       VERCEL_TOKEN:
-        required: false
-      LINK_APPROVAL_WORKER_SECRET:
-        required: false
-      LINK_APPROVAL_CONTROL_SECRET:
-        required: false
-      WECHAT_GATEWAY_CONTROL_SECRET:
-        required: false
-      WECHAT_GATEWAY_SECRET:
         required: false
 
 # The staging caller holds its lock through E2E and cleanup. This per-run group
@@ -623,6 +583,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
+      - name: Check generated client descriptors
+        working-directory: turbo
+        run: pnpm --filter @okouai/api-contracts generate:client --check
+      - name: Check client descriptor bundle guard
+        working-directory: turbo/apps/platform
+        run: pnpm exec tsx --test scripts/check-client-descriptors.node.ts
       # The two heavy app type-checks (api, @okouai/app ≈ 57% of the former
       # serial total) run in separate jobs below. Here we check everything
       # else. Dependency packages resolve via source
@@ -999,6 +965,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
         run: pnpm --filter @okouai/db db:migrate
+      - name: Test S3 transport lifecycle
+        if: matrix.shard == 1
+        working-directory: turbo/apps/api
+        run: pnpm test:s3-client
       - name: Test API
         working-directory: turbo
         env:
@@ -1137,6 +1107,26 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
+  test-browser-extension:
+    needs: [detect-turbo-ts-checks]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10.33.4
+      - uses: ./.github/actions/toolchain-init
+      - name: Test extension release boundaries
+        run: node --test .github/scripts/release/browser-extension-release.test.mjs
+      - name: Install full Chromium
+        run: pnpm --dir turbo/apps/browser-extension exec playwright install --with-deps chromium
+      - name: Test native extension behavior
+        run: pnpm --dir turbo --filter @okouai/browser-extension test
+      - name: Verify deterministic extension package
+        run: pnpm --dir turbo --filter @okouai/browser-extension verify-package
+
   test-other:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
@@ -1149,7 +1139,7 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Test Other Packages
         working-directory: turbo
-        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --coverage.enabled --coverage.reporter=json
+        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --project=@okouai/browser-extension-client --coverage.enabled --coverage.reporter=json
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default
@@ -1231,7 +1221,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: ./.github/actions/toolchain-init
 
-      - name: Fetch development Doppler OAuth config
+      - name: Fetch development Doppler configuration
         id: doppler-oauth
         uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
         with:
@@ -2787,17 +2777,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     needs: [detect-release, detect-turbo-ts-checks]
-    if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false'
-    # Blocking for Desktop-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
+    if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true'
+    # Blocking for Desktop- and iOS-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
     # Runner, Guest Agent, and MITM findings only warn.
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          # The base commit supplies the base Desktop floor and base schema.
+          # The base commit supplies the native client floors and base schema.
           fetch-depth: 2
       - uses: ./.github/actions/toolchain-init
 
@@ -2854,6 +2845,8 @@ jobs:
           echo "Base commit: $base_sha"
           git show "$base_sha:turbo/apps/api/src/lib/desktop-compatibility.json" \
             > /tmp/runtime-api-schema/desktop-base-floor.json
+          git show "$base_sha:turbo/apps/api/src/lib/ios-client-compatibility.json" \
+            > /tmp/runtime-api-schema/ios-base-floor.json
 
           # Findings the base already has against production were proven by the
           # change that introduced them and must not block this one.
@@ -2866,7 +2859,7 @@ jobs:
           if ! (cd turbo/packages/api-contracts &&
             pnpm exec tsx .compat-base/src/runtime-api-schema/cli.ts build \
               --out /tmp/runtime-api-schema/base.json); then
-            echo "::warning::Base runtime API schema could not be built; every Desktop finding is treated as new."
+            echo "::warning::Base runtime API schema could not be built; every native client finding is treated as new."
             rm -f /tmp/runtime-api-schema/base.json
           fi
           rm -rf "$base_src"
@@ -2888,11 +2881,29 @@ jobs:
             echo "::warning::Published Desktop version unavailable from $url"
           fi
 
+      - name: Read published iOS TestFlight version
+        id: ios-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(node .github/scripts/checks/ios-published-version.mjs)
+          if [ -n "$version" ]; then
+            echo "Published iOS version: $version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check iOS API consumption inventory
+        working-directory: turbo
+        run: pnpm --filter @okouai/api-contracts run lint-ios-api-consumption
+
       - name: Check runtime API compatibility
         working-directory: turbo
         shell: bash
         env:
           DESKTOP_PUBLISHED_VERSION: ${{ steps.desktop-release.outputs.version }}
+          IOS_PUBLISHED_VERSION: ${{ steps.ios-release.outputs.version }}
         run: |
           set -euo pipefail
           schema_dir=/tmp/runtime-api-schema
@@ -2904,14 +2915,20 @@ jobs:
             --current "$schema_dir/candidate.json"
             --report-out "$schema_dir/report.json"
             --block-owner desktop
+            --block-owner ios
             --desktop-floor "$PWD/apps/api/src/lib/desktop-compatibility.json"
             --desktop-base-floor "$schema_dir/desktop-base-floor.json"
+            --ios-floor "$PWD/apps/api/src/lib/ios-client-compatibility.json"
+            --ios-base-floor "$schema_dir/ios-base-floor.json"
           )
           if [ -f "$schema_dir/base.json" ]; then
             args+=(--base-schema "$schema_dir/base.json")
           fi
           if [ -n "$DESKTOP_PUBLISHED_VERSION" ]; then
             args+=(--desktop-published-version "$DESKTOP_PUBLISHED_VERSION")
+          fi
+          if [ -n "$IOS_PUBLISHED_VERSION" ]; then
+            args+=(--ios-published-version "$IOS_PUBLISHED_VERSION")
           fi
           pnpm --filter @okouai/api-contracts run lint-runtime-api-compat -- "${args[@]}"
 
@@ -2955,6 +2972,7 @@ jobs:
       - test-app
       - test-api
       - test-other
+      - test-browser-extension
       - test-discord-gateway
       - test-link-approval
       - test-wechat-gateway
@@ -3027,7 +3045,6 @@ jobs:
           RUNTIME_API_COMPAT_SKIP_ALLOWED=""
           if [ "${{ needs.detect-turbo-ts-checks.outputs.ios-only }}" = "true" ]; then
             CF_APP_SKIP_ALLOWED="true"
-            RUNTIME_API_COMPAT_SKIP_ALLOWED="skipped"
           fi
           if [ "$EVENT_NAME" = "push" ]; then
             RUNTIME_API_COMPAT_SKIP_ALLOWED="skipped"
@@ -3085,10 +3102,11 @@ jobs:
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-browser-extension" "${{ needs.test-browser-extension.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-link-approval" "${{ needs.test-link-approval.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-wechat-gateway" "${{ needs.test-wechat-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
-          # Same skip conditions as the job: pure iOS change sets and staging.
+          # Staging reuses the protected merge group compatibility check.
           check_result "lint-runtime-api-compat" "${{ needs.lint-runtime-api-compat.result }}" "$RUNTIME_API_COMPAT_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable

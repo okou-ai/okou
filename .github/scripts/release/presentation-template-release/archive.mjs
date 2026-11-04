@@ -4,7 +4,17 @@ import path from "node:path";
 
 import * as tar from "tar";
 
-import { listFiles } from "./shared.mjs";
+import { listFiles, sha256 } from "./shared.mjs";
+
+export function registryArchiveDescriptor(archive) {
+  const digest = sha256(archive);
+  return {
+    format: "registry-tar-gzip-v1",
+    sha256: digest,
+    archiveBytes: archive.byteLength,
+    objectKey: `registry-archives/v1/${digest}.tar.gz`,
+  };
+}
 
 export async function createArchive(sourceDir, slug, archivePath) {
   await tar.create(

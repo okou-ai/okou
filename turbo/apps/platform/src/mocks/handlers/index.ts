@@ -73,6 +73,7 @@ import {
   resetMockPersonalModelProviders,
 } from "./api-personal-model-providers.ts";
 import { apiPresentationTemplatesHandlers } from "./api-presentation-templates.ts";
+import { apiProjectsHandlers } from "./api-projects.ts";
 import { apiRealtimeHandlers } from "./api-realtime.ts";
 import {
   apiAvailableRunModelsHandlers,
@@ -102,6 +103,7 @@ import {
   resetMockUserTemplates,
 } from "./api-user-templates.ts";
 import { apiVoiceIoHandlers } from "./api-voice-io.ts";
+import { apiWalletHandlers } from "./api-wallet.ts";
 import { apiWebFilesHandlers } from "./api-web-files.ts";
 import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
 import { chatThreadEmojiHandlers } from "./chat-thread-emoji.ts";
@@ -130,6 +132,7 @@ export const handlers = [
   ...apiAvailableRunModelsHandlers,
   ...apiPersonalModelProvidersHandlers,
   ...apiPresentationTemplatesHandlers,
+  ...apiProjectsHandlers,
   ...apiUserTemplatesHandlers,
   ...appLogsHandlers,
   ...apiIntegrationsSlackOrgHandlers,
@@ -159,6 +162,7 @@ export const handlers = [
   ...apiRealtimeHandlers,
   ...apiUserPermissionGrantsHandlers,
   ...apiVoiceIoHandlers,
+  ...apiWalletHandlers,
   ...apiWebFilesHandlers,
 ];
 

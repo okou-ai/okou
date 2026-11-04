@@ -11,6 +11,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { publicConnectorCatalogIconSchema } from "../validators/connector-catalog";
 import { authHeadersSchema, initContract } from "./base";
 import {
   connectorAuthMethodIdSchema,
@@ -19,8 +20,15 @@ import {
 import { apiErrorSchema } from "./errors";
 
 export { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
+export { publicConnectorCatalogIconSchema } from "../validators/connector-catalog";
 
 const c = initContract();
+
+export const connectorCatalogReleaseSchema = object({
+  schemaVersion: number().int().positive(),
+  catalogDigest: string().regex(/^sha256:[a-f0-9]{64}$/u),
+  catalogVersion: string().min(1).nullable(),
+});
 
 const publicConnectorCatalogAuthMethodSummarySchema = object({
   id: connectorAuthMethodIdSchema,
@@ -44,12 +52,6 @@ const publicConnectorCatalogPermissionSummarySchema = object({
   permissionCount: number().int().nonnegative(),
   hasCategories: boolean(),
   hasDefaultPolicyOverrides: boolean(),
-});
-
-export const publicConnectorCatalogIconSchema = object({
-  url: url({ protocol: /^https$/u }).max(2048),
-  invertInDarkMode: boolean(),
-  scale: number().min(1).max(3).optional(),
 });
 
 const publicConnectorCatalogItemSchema = object({
@@ -326,6 +328,17 @@ export const connectorCatalogContract = c.router({
       503: apiErrorSchema,
     },
     summary: "List metadata for connectors that connect in one browser step",
+  },
+  release: {
+    method: "GET",
+    path: "/api/connector-catalog/release",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({ catalog: connectorCatalogReleaseSchema.nullable() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Get the accepted connector catalog release",
   },
   get: {
     method: "GET",

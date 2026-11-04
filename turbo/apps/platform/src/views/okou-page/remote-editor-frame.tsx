@@ -15,7 +15,6 @@ import {
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { useGet } from "ccstate-react";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { CircleHelp } from "lucide-react";
 
 export const REMOTE_PAGE_ACTION = "min-h-10";
@@ -72,10 +71,6 @@ export function RemoteEditorFrame({
 
 export function RemoteUsernameHelp() {
   const { t } = useTranslation();
-  const enabled = useGet(remoteControlGuidedEnabled$);
-  if (!enabled) {
-    return null;
-  }
   return (
     <Popover>
       <PopoverTrigger
@@ -122,14 +117,12 @@ export function useRemoteNetworkEditorVisible(
     | undefined,
 ) {
   const sessionKey = useGet(authenticatedSessionKey$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   const params = useGet(searchParams$);
   if (!dialog || dialog.sessionKey !== sessionKey) {
     return false;
   }
   return (
     inline ||
-    !guided ||
     params.get("scope") !== "private-network" ||
     (dialog.kind !== "edit" && dialog.kind !== "create")
   );

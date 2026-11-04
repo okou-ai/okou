@@ -10,6 +10,7 @@ import {
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import {
   integrationsFeishuMessageContract,
+  integrationsLarkMessageContract,
   integrationsFeishuUploadCompleteContract,
   integrationsFeishuUploadInitContract,
   integrationsLarkUploadCompleteContract,
@@ -343,89 +344,173 @@ describe("POST /api/integrations/feishu/message", () => {
     expect(forbidden.body.error.message).toContain("feishu:write");
   });
 
-  it("sends chat, current-user, and threaded reply messages", async () => {
-    const { actor, installationId } = await createOnboardedFeishuInstallation();
-    captured = [];
-    const token = await credentials.okouToken(actor);
-    const client = setupApp({
-      context,
-      routes: integrationsFeishuMessageRoutes,
-    })(integrationsFeishuMessageContract);
+  it.each(["feishu", "lark"] as const)(
+    "sends chat, current-user, and threaded reply messages on %s",
+    async (platform) => {
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
+        undefined,
+        platform,
+      );
+      captured = [];
+      const token = await credentials.okouToken(actor);
+      const client = setupApp({
+        context,
+        routes: integrationsFeishuMessageRoutes,
+      })(
+        platform === "lark"
+          ? integrationsLarkMessageContract
+          : integrationsFeishuMessageContract,
+      );
 
-    const chat = await accept(
-      client.sendMessage({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          installationId,
-          chat: "oc_target_chat",
-          text: "Hello chat",
-        },
-      }),
-      [200],
-    );
-    expect(chat.body).toStrictEqual({
-      ok: true,
-      messageId: "om_1",
-      chatId: "oc_feishu_cli",
-    });
+      const chat = await accept(
+        client.sendMessage({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            installationId,
+            chat: "oc_target_chat",
+            text: "Hello chat",
+          },
+        }),
+        [200],
+      );
+      expect(chat.body).toStrictEqual({
+        ok: true,
+        messageId: "om_1",
+        chatId: "oc_feishu_cli",
+      });
 
-    await accept(
-      client.sendMessage({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          installationId,
-          user: "me",
-          card: {
-            schema: "2.0",
-            body: { elements: [] },
+      await accept(
+        client.sendMessage({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            installationId,
+            user: "me",
+            card: {
+              schema: "2.0",
+              header: { title: { tag: "plain_text", content: "Report" } },
+              body: {
+                elements: [{ tag: "markdown", content: "Report ready" }],
+              },
+            },
+          },
+        }),
+        [200],
+      );
+      for (const card of [
+        { elements: [{ tag: "markdown", content: "Legacy report" }] },
+        {
+          type: "template",
+          data: {
+            template_id: "ctp_report",
+            template_variable: { title: "Template report" },
           },
         },
-      }),
-      [200],
-    );
-    await accept(
-      client.sendMessage({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          installationId,
-          replyToMessageId: "om_parent",
-          replyInThread: true,
-          text: "Thread reply",
-        },
-      }),
-      [200],
-    );
+      ]) {
+        await accept(
+          client.sendMessage({
+            headers: { authorization: `Bearer ${token}` },
+            body: { installationId, user: "me", card },
+          }),
+          [200],
+        );
+      }
+      await accept(
+        client.sendMessage({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            installationId,
+            replyToMessageId: "om_parent",
+            replyInThread: true,
+            text: "Thread reply",
+          },
+        }),
+        [200],
+      );
 
-    expect(captured).toStrictEqual([
-      {
-        kind: "send",
-        receiveIdType: "chat_id",
-        target: "oc_target_chat",
-        msgType: "text",
-        content: { text: "Hello chat" },
-        replyInThread: false,
-      },
-      {
-        kind: "send",
-        receiveIdType: "open_id",
-        target: "ou_current_user",
-        msgType: "interactive",
-        content: {
-          schema: "2.0",
-          body: { elements: [] },
+      expect(captured).toStrictEqual([
+        {
+          kind: "send",
+          receiveIdType: "chat_id",
+          target: "oc_target_chat",
+          msgType: "text",
+          content: {
+            text: 'Hello chat\n\nSent via API caller credential · Triggered by <at user_id="ou_current_user">Feishu CLI User</at>',
+          },
+          replyInThread: false,
         },
-        replyInThread: false,
-      },
-      {
-        kind: "reply",
-        receiveIdType: null,
-        target: "om_parent",
-        msgType: "text",
-        content: { text: "Thread reply" },
-        replyInThread: true,
-      },
-    ]);
-  });
+        {
+          kind: "send",
+          receiveIdType: "open_id",
+          target: "ou_current_user",
+          msgType: "interactive",
+          content: {
+            schema: "2.0",
+            header: { title: { tag: "plain_text", content: "Report" } },
+            body: {
+              elements: [
+                { tag: "markdown", content: "Report ready" },
+                { tag: "hr" },
+                {
+                  tag: "markdown",
+                  content:
+                    "Sent via API caller credential · Triggered by <at id=ou_current_user></at>",
+                  text_size: "notation",
+                },
+              ],
+            },
+          },
+          replyInThread: false,
+        },
+        {
+          kind: "send",
+          receiveIdType: "open_id",
+          target: "ou_current_user",
+          msgType: "interactive",
+          replyInThread: false,
+          content: {
+            elements: [
+              { tag: "markdown", content: "Legacy report" },
+              { tag: "hr" },
+              {
+                tag: "note",
+                elements: [
+                  {
+                    tag: "lark_md",
+                    content:
+                      "Sent via API caller credential · Triggered by <at id=ou_current_user></at>",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        {
+          kind: "send",
+          receiveIdType: "open_id",
+          target: "ou_current_user",
+          msgType: "interactive",
+          replyInThread: false,
+          content: {
+            type: "template",
+            data: {
+              template_id: "ctp_report",
+              template_variable: { title: "Template report" },
+            },
+          },
+        },
+        {
+          kind: "reply",
+          receiveIdType: null,
+          target: "om_parent",
+          msgType: "text",
+          content: {
+            text: 'Thread reply\n\nSent via API caller credential · Triggered by <at user_id="ou_current_user">Feishu CLI User</at>',
+          },
+          replyInThread: true,
+        },
+      ]);
+    },
+  );
 
   it("maps Feishu request and response failures to contract errors", async () => {
     const { actor, installationId } = await createOnboardedFeishuInstallation();

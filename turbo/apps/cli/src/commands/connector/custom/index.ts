@@ -14,7 +14,11 @@ import {
   listConnectedConnectors,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
-import { resolveConnectorAgentId } from "../agent-context";
+import {
+  resolveConnectorAgentId,
+  resolveConnectorDiscoveryAgentContext,
+} from "../agent-context";
+import { chatConnectorAccountsEnabled } from "../../../lib/api/domains/run-connector-accounts";
 import { resolveCustomConnectorId } from "../custom-connector-selector";
 import { createCustomConnectorCommand } from "./create";
 import { updateCustomConnectorCommand } from "./update";
@@ -60,6 +64,16 @@ async function resolveCustomAgentContext(agentId: string | undefined): Promise<{
 } | null> {
   if (!agentId) {
     return null;
+  }
+  if (chatConnectorAccountsEnabled()) {
+    const context = await resolveConnectorDiscoveryAgentContext(agentId);
+    return context
+      ? {
+          agentId: context.agentId,
+          displayName: context.displayName,
+          authorizedIds: context.authorizedCustomConnectorIds,
+        }
+      : null;
   }
   const [agent, grants] = await Promise.all([
     getAgent(agentId),
@@ -161,7 +175,11 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         "SAVED ACCOUNTS",
       ];
       if (agentCtx) {
-        header.push(`AUTHORIZED FOR ${agentCtx.displayName}`);
+        header.push(
+          chatConnectorAccountsEnabled()
+            ? "ALLOWED IN THIS CHAT"
+            : `AUTHORIZED FOR ${agentCtx.displayName}`,
+        );
       }
       console.log(chalk.dim(header.join("  ")));
       for (const connector of connectors) {
@@ -310,7 +328,7 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         }
         if (agentCtx) {
           console.log(
-            `${"Authorized:".padEnd(LABEL_WIDTH)}${
+            `${(chatConnectorAccountsEnabled() ? "Chat access:" : "Authorized:").padEnd(LABEL_WIDTH)}${
               agentCtx.authorizedIds.has(connector.id)
                 ? chalk.green("yes")
                 : chalk.yellow("no")
@@ -344,11 +362,15 @@ Definitions and access:
   List JSON hasSavedAccounts reports directory membership only.
   Status/show JSON accountSummary/memberStatus report target account details and
   local status separately from definition metadata and Agent authorization.
-  Creating a definition is separate from connecting a member account, granting
+  ${
+    chatConnectorAccountsEnabled()
+      ? "Connect a member account, then allow it for this Chat. Shared firewall permissions apply across Chats and accounts. A definition alone does not grant execution access."
+      : `Creating a definition is separate from connecting a member account, granting
   Agent access, and selecting any fine-grained permissions. This also applies
   to none/automatic definitions. Members finish connection in the web flow.
   Custom HTTP connectors with a permission bundle use Connectors > agent access
-  > Permissions. MCP connectors have Agent access but no HTTP permission bundle.
+  > Permissions. MCP connectors have Agent access but no HTTP permission bundle.`
+  }
   Builtin permission-request approval links do not apply to custom connectors.
 
 To add a custom connector:

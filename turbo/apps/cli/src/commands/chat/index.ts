@@ -4,6 +4,7 @@ import { archiveCommand, unarchiveCommand } from "./archive";
 import { cancelCommand } from "./cancel";
 import { createCommand } from "./create";
 import { getCommand } from "./get";
+import { moveCommand } from "./move";
 import { listCommand } from "./list";
 import { messagesCommand } from "./messages";
 import { modelCommand } from "./model";
@@ -19,6 +20,7 @@ export const chatCommand = new Command()
   .addCommand(getCommand)
   .addCommand(messagesCommand)
   .addCommand(listCommand)
+  .addCommand(moveCommand)
   .addCommand(modelCommand)
   .addCommand(renameCommand)
   .addCommand(archiveCommand)

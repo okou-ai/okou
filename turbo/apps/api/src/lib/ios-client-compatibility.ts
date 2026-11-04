@@ -1,3 +1,4 @@
+import type { IosUpgradeRequired } from "@okouai/api-contracts/contracts/ios-client-compatibility";
 import { object, string } from "zod";
 
 import { compareAppVersions } from "./app-version";
@@ -29,7 +30,9 @@ export function isSupportedIosClientVersion(version: string): boolean {
   return comparison === null || comparison >= 0;
 }
 
-export function iosUpgradeRequired(minimumSupportedVersion: string) {
+export function iosUpgradeRequired(
+  minimumSupportedVersion: string,
+): IosUpgradeRequired {
   return {
     error: {
       code: "IOS_UPDATE_REQUIRED" as const,

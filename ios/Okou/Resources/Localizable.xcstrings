@@ -1222,13 +1222,13 @@
         }
       }
     },
-    "This action no longer matches an available connector in this conversation.": {
+    "This action no longer matches an available connector in this chat.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This action no longer matches an available connector in this conversation."
+            "value": "This action no longer matches an available connector in this chat."
           }
         }
       }
@@ -1288,13 +1288,13 @@
         }
       }
     },
-    "Confirm this account for the conversation and continue.": {
+    "Confirm this account for the chat and continue.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Confirm this account for the conversation and continue."
+            "value": "Confirm this account for the chat and continue."
           }
         }
       }
@@ -1332,13 +1332,13 @@
         }
       }
     },
-    "Connect this service to continue the conversation.": {
+    "Connect this service to continue the chat.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect this service to continue the conversation."
+            "value": "Connect this service to continue the chat."
           }
         }
       }
@@ -1365,13 +1365,13 @@
         }
       }
     },
-    "Authorization applies to the Agent in this conversation.": {
+    "Authorization applies to the Agent in this chat.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Authorization applies to the Agent in this conversation."
+            "value": "Authorization applies to the Agent in this chat."
           }
         }
       }
@@ -1486,13 +1486,13 @@
         }
       }
     },
-    "Connected. Conversation continued.": {
+    "Connected. Chat continued.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connected. Conversation continued."
+            "value": "Connected. Chat continued."
           }
         }
       }
@@ -1585,13 +1585,13 @@
         }
       }
     },
-    "Permission saved. Continue the conversation.": {
+    "Permission saved. Continue the chat.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permission saved. Continue the conversation."
+            "value": "Permission saved. Continue the chat."
           }
         }
       }
@@ -1849,24 +1849,24 @@
         }
       }
     },
-    "The conversation will continue after confirmation.": {
+    "The chat will continue after confirmation.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The conversation will continue after confirmation."
+            "value": "The chat will continue after confirmation."
           }
         }
       }
     },
-    "Continue conversation": {
+    "Continue chat": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Continue conversation"
+            "value": "Continue chat"
           }
         }
       }
@@ -2054,6 +2054,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ permissions"
+          }
+        }
+      }
+    },
+    "Requested by %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested by %@"
+          }
+        }
+      }
+    },
+    "Allow for": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow for"
+          }
+        }
+      }
+    },
+    "Continuing chat…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuing chat…"
+          }
+        }
+      }
+    },
+    "Submitting code…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submitting code…"
+          }
+        }
+      }
+    },
+    "Connecting…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting…"
+          }
+        }
+      }
+    },
+    "Saving…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving…"
           }
         }
       }

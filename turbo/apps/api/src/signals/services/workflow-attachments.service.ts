@@ -1,6 +1,10 @@
+import { publishContentBundle$ } from "./content-bundle.service";
+import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import { command, computed } from "ccstate";
 import {
   prepareWorkflowAttachmentBundle,
+  normalizeWorkflowAttachmentFiles,
+  type WorkflowAttachmentFile,
   workflowAttachmentMetadata,
   verifyWorkflowAttachmentBundle,
 } from "@okouai/core/workflow-attachment-bundle";
@@ -16,6 +20,7 @@ import {
   completeMultipartS3Upload,
   createMultipartS3Upload,
   downloadS3Buffer,
+  downloadS3BufferWithMaxBytes$,
   uploadMultipartS3Part,
 } from "../external/s3";
 import { settle } from "../utils";
@@ -178,5 +183,68 @@ export const prepareWorkflowAttachments$ = command(
       return { attachments: prepared.descriptor, cleanupJobId: job.id };
     }
     return { attachments: prepared.descriptor, cleanupJobId: null };
+  },
+);
+
+/** Shadow complete bundle: the legacy attachment descriptor remains independently valid. */
+export const publishWorkflowContentBundle$ = command(
+  async (
+    { set },
+    input: {
+      readonly orgId: string;
+      readonly workflowId: string;
+      readonly name: string;
+      readonly description: string | null;
+      readonly instruction: string | null;
+      readonly attachments: WorkflowAttachments;
+      readonly files?: readonly {
+        readonly path: string;
+        readonly content: string;
+      }[];
+    },
+    signal: AbortSignal,
+  ) => {
+    let files: readonly WorkflowAttachmentFile[];
+    if (input.files !== undefined) {
+      files = normalizeWorkflowAttachmentFiles(
+        input.files.map((file) => {
+          return {
+            path: file.path,
+            content: Buffer.from(file.content, "utf8"),
+          };
+        }),
+      );
+    } else if (input.attachments.kind === "empty") {
+      files = [];
+    } else {
+      assertWorkflowAttachmentOwner(
+        input.orgId,
+        input.workflowId,
+        input.attachments.objectKey,
+      );
+      const archive = await set(
+        downloadS3BufferWithMaxBytes$,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+          key: input.attachments.objectKey,
+          maxBytes: 32 * 1024 * 1024,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      files = verifyWorkflowAttachmentBundle(archive, input.attachments);
+    }
+    signal.throwIfAborted();
+    return await set(
+      publishContentBundle$,
+      [
+        {
+          path: "SKILL.md",
+          content: Buffer.from(synthesizeWorkflowSkillMd(input), "utf8"),
+        },
+        ...files,
+      ],
+      signal,
+    );
   },
 );

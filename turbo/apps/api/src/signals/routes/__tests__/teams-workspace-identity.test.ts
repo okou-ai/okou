@@ -27,7 +27,6 @@ import { teamsOauthRoutes } from "../teams-oauth";
 import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
 import { teamsBrowserConnectRoutes } from "../teams-browser-connect";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installTeamsForTest,
@@ -79,17 +78,12 @@ beforeEach(() => {
   mockEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "identity-secret");
 });
 
-async function enabledActor(
-  orgRole: "org:admin" | "org:member" = "org:member",
-) {
+function accountActor(orgRole: "org:admin" | "org:member" = "org:member") {
   const actor = bdd.user({ orgRole });
   if (!actor.orgId) {
     throw new Error("Expected an organization");
   }
   const owner = { ...actor, orgId: actor.orgId };
-  await updateFeatureSwitchesForUser(context, owner, {
-    teamsWorkspaceIdentity: true,
-  });
   return owner;
 }
 async function status(actor: ApiTestUser) {
@@ -198,7 +192,7 @@ async function botInstalled(fixture: TeamsConnectFixture) {
 }
 
 test("oauth connection sends one personal welcome using the verified AAD identity", async () => {
-  const actor = await enabledActor("org:admin");
+  const actor = accountActor("org:admin");
   const fixture = teamsConnectFixture({
     orgId: actor.orgId,
     userId: actor.userId,
@@ -244,7 +238,7 @@ test("oauth connection sends one personal welcome using the verified AAD identit
 });
 
 test("an account connected before bot installation receives its pending DM welcome once the bot is ready", async () => {
-  const actor = await enabledActor("org:admin");
+  const actor = accountActor("org:admin");
   const fixture = teamsConnectFixture({
     orgId: actor.orgId,
     userId: actor.userId,
@@ -272,7 +266,7 @@ test("an account connected before bot installation receives its pending DM welco
 });
 
 test("a rejected Teams welcome remains pending without failing or duplicating the connection", async () => {
-  const actor = await enabledActor("org:admin");
+  const actor = accountActor("org:admin");
   const fixture = teamsConnectFixture({
     orgId: actor.orgId,
     userId: actor.userId,
@@ -328,7 +322,7 @@ test("a rejected Teams welcome remains pending without failing or duplicating th
 });
 
 test("connecting an identity never borrows another workspace's bot for a welcome DM", async () => {
-  const owner = await enabledActor("org:admin");
+  const owner = accountActor("org:admin");
   const fixture = teamsConnectFixture({
     orgId: owner.orgId,
     userId: owner.userId,
@@ -344,7 +338,7 @@ test("connecting an identity never borrows another workspace's bot for a welcome
   );
   await installTeamsForTest(context.signal, fixture);
   await flushWaitUntilForTest();
-  const external = await enabledActor();
+  const external = accountActor();
   expectOAuthSuccess(
     await oauth(external, fixture.teamsTenantId, fixture.teamsAadObjectId),
   );
@@ -355,7 +349,7 @@ test("connecting an identity never borrows another workspace's bot for a welcome
 });
 
 test("a member connects an OAuth identity before installation and can disconnect it", async () => {
-  const actor = await enabledActor();
+  const actor = accountActor();
   const fixture = teamsConnectFixture();
   expectOAuthSuccess(
     await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
@@ -389,18 +383,18 @@ test("connecting to an installed tenant leaves bot ownership with its original o
   await installTeamsForTest(context.signal, fixture);
   const owner = bdd.user({ userId: fixture.userId, orgId: fixture.orgId });
   authenticate(owner);
-  await accept(
-    clients()(teamsConnectContract).connect({
-      headers,
-      body: {
-        tenantId: fixture.teamsTenantId,
-        teamsUserId: fixture.teamsUserId,
-        teamsAadObjectId: fixture.teamsAadObjectId,
-      },
-    }),
-    [200],
+  expectOAuthSuccess(
+    await oauth(
+      owner,
+      fixture.teamsTenantId,
+      fixture.teamsAadObjectId,
+      "install",
+    ),
   );
-  const actor = await enabledActor();
+  expectOAuthSuccess(
+    await oauth(owner, fixture.teamsTenantId, fixture.teamsAadObjectId),
+  );
+  const actor = accountActor();
   expectOAuthSuccess(
     await oauth(
       actor,
@@ -430,7 +424,7 @@ test("connecting to an installed tenant leaves bot ownership with its original o
 });
 
 test("raw identity payloads cannot create an independent account connection", async () => {
-  const actor = await enabledActor();
+  const actor = accountActor();
   const fixture = teamsConnectFixture();
   authenticate(actor);
   await accept(
@@ -461,11 +455,11 @@ test("raw identity payloads cannot create an independent account connection", as
 
 test("another user cannot take an OAuth identity and account changes require disconnect", async () => {
   const fixture = teamsConnectFixture();
-  const actor = await enabledActor();
+  const actor = accountActor();
   expectOAuthSuccess(
     await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
   );
-  const other = await enabledActor();
+  const other = accountActor();
   const conflict = await oauth(
     other,
     fixture.teamsTenantId,
@@ -479,11 +473,6 @@ test("another user cannot take an OAuth identity and account changes require dis
   if (!otherOrganization.orgId) {
     throw new Error("Expected an organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...otherOrganization, orgId: otherOrganization.orgId },
-    { teamsWorkspaceIdentity: true },
-  );
   const moved = await oauth(
     otherOrganization,
     fixture.teamsTenantId,
@@ -530,62 +519,8 @@ test("another user cannot take an OAuth identity and account changes require dis
   );
 });
 
-test("adopting an installation-owned identity through OAuth preserves its organization", async () => {
-  const fixture = teamsConnectFixture();
-  await installTeamsForTest(context.signal, fixture);
-  const original = bdd.user({ userId: fixture.userId, orgId: fixture.orgId });
-  authenticate(original);
-  await accept(
-    clients()(teamsConnectContract).connect({
-      headers,
-      body: {
-        tenantId: fixture.teamsTenantId,
-        teamsUserId: fixture.teamsUserId,
-        teamsAadObjectId: fixture.teamsAadObjectId,
-      },
-    }),
-    [200],
-  );
-  const other = bdd.user({ userId: original.userId });
-  if (!other.orgId) {
-    throw new Error("Expected an organization");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...other, orgId: other.orgId },
-    { teamsWorkspaceIdentity: true },
-  );
-  const rejected = await oauth(
-    other,
-    fixture.teamsTenantId,
-    fixture.teamsAadObjectId,
-  );
-  expect(
-    new URL(rejected.headers.get("location")!).searchParams.get("error"),
-  ).toMatch(/Disconnect/u);
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...original, orgId: fixture.orgId },
-    { teamsWorkspaceIdentity: true },
-  );
-  expectOAuthSuccess(
-    await oauth(
-      original,
-      fixture.teamsTenantId,
-      fixture.teamsAadObjectId,
-      "reconnect",
-    ),
-  );
-  await removeTeamsForTest(context.signal, fixture);
-  await expect(status(original)).resolves.toMatchObject({
-    isConnected: true,
-    isInstalled: false,
-    linkedAccounts: [{ teamsAadObjectId: fixture.teamsAadObjectId }],
-  });
-});
-
 test("an administrator installs the bot separately and uninstall preserves the OAuth identity", async () => {
-  const actor = await enabledActor("org:admin");
+  const actor = accountActor("org:admin");
   const identity = teamsConnectFixture();
   const fixture = teamsConnectFixture({
     userId: actor.userId,
@@ -625,7 +560,6 @@ test("an administrator installs the bot separately and uninstall preserves the O
 test.each([
   "access",
   "callback",
-  "callback-disabled",
   "callback-left",
   "probe-unavailable",
 ] as const)(
@@ -634,7 +568,7 @@ test.each([
     const installations = createPublicTeamsDispatchFixture(context);
     await installations.run(async () => {
       const receiving = await installations.create({ withDefaultAgent: true });
-      const actor = await enabledActor("org:admin");
+      const actor = accountActor("org:admin");
       const ownRuns = publicRunOwner(context, actor);
       await ownRuns.run(async () => {
         const runs = createRunsApi(context);
@@ -775,11 +709,6 @@ test.each([
         expect(token).toStrictEqual(expect.any(String));
         const runHeaders = { authorization: `Bearer ${token}` };
         if (scenario !== "access") {
-          if (scenario === "callback-disabled") {
-            await updateFeatureSwitchesForUser(context, actor, {
-              teamsWorkspaceIdentity: false,
-            });
-          }
           if (scenario === "callback-left") {
             membership = false;
           }
@@ -819,7 +748,9 @@ test.each([
         );
         expect(messages).toContainEqual({
           conversationId: sender.teamsConversationId,
-          text: "Run-scoped result",
+          text: expect.stringMatching(
+            /^Run-scoped result\n\nSent via .+ · Triggered by <at>.+<\/at>$/u,
+          ),
         });
         await accept(
           clients()(integrationsTeamsMessageContract).sendMessage({
@@ -850,22 +781,6 @@ test.each([
           [404],
         );
         membership = true;
-        await updateFeatureSwitchesForUser(context, actor, {
-          teamsWorkspaceIdentity: false,
-        });
-        await accept(
-          clients()(integrationsTeamsMessageContract).sendMessage({
-            headers: runHeaders,
-            body: {
-              conversationId: sender.teamsConversationId,
-              text: "Disabled source authority",
-            },
-          }),
-          [404],
-        );
-        await updateFeatureSwitchesForUser(context, actor, {
-          teamsWorkspaceIdentity: true,
-        });
         installSharedThreadStorage(context);
         const bytes = Buffer.from("Canonical Teams report");
         const operationId = randomUUID();
@@ -1023,75 +938,42 @@ test.each([
 );
 
 test.each([
-  { eventType: "organizationMembership.deleted", ownership: "independent" },
-  { eventType: "organization.deleted", ownership: "independent" },
-  { eventType: "user.deleted", ownership: "independent" },
-  { eventType: "organizationMembership.deleted", ownership: "installation" },
-  { eventType: "organization.deleted", ownership: "installation" },
-  { eventType: "user.deleted", ownership: "installation" },
-] as const)(
-  "$eventType releases $ownership Teams account authority",
-  async ({ eventType, ownership }) => {
-    const actor = await enabledActor("org:admin");
-    const fixture = teamsConnectFixture({
-      orgId: actor.orgId,
-      userId: actor.userId,
-    });
-    if (ownership === "installation") {
-      await updateFeatureSwitchesForUser(context, actor, {
-        teamsWorkspaceIdentity: false,
-      });
-      await installTeamsForTest(context.signal, fixture);
-      authenticate(actor);
-      await accept(
-        clients()(teamsConnectContract).connect({
-          headers,
-          body: {
-            tenantId: fixture.teamsTenantId,
-            teamsUserId: fixture.teamsUserId,
-            teamsAadObjectId: fixture.teamsAadObjectId,
+  "organizationMembership.deleted",
+  "organization.deleted",
+  "user.deleted",
+] as const)("%s releases Teams account authority", async (eventType) => {
+  const actor = accountActor("org:admin");
+  const fixture = teamsConnectFixture({
+    orgId: actor.orgId,
+    userId: actor.userId,
+  });
+  expectOAuthSuccess(
+    await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
+  );
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: eventType,
+    data:
+      eventType === "organizationMembership.deleted"
+        ? {
+            id: randomUUID(),
+            organization_id: actor.orgId,
+            user_id: actor.userId,
+          }
+        : {
+            id:
+              eventType === "organization.deleted" ? actor.orgId : actor.userId,
           },
-        }),
-        [200],
-      );
-      await updateFeatureSwitchesForUser(context, actor, {
-        teamsWorkspaceIdentity: true,
-      });
-    } else {
-      expectOAuthSuccess(
-        await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
-      );
-    }
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: eventType,
-      data:
-        eventType === "organizationMembership.deleted"
-          ? {
-              id: randomUUID(),
-              organization_id: actor.orgId,
-              user_id: actor.userId,
-            }
-          : {
-              id:
-                eventType === "organization.deleted"
-                  ? actor.orgId
-                  : actor.userId,
-            },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
-    const next = await enabledActor("org:admin");
-    expectOAuthSuccess(
-      await oauth(next, fixture.teamsTenantId, fixture.teamsAadObjectId),
-    );
-    await expect(status(next)).resolves.toMatchObject({
-      isConnected: true,
-      isInstalled: false,
-    });
-    if (ownership === "installation") {
-      await removeTeamsForTest(context.signal, fixture);
-    }
-  },
-);
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+  const next = accountActor("org:admin");
+  expectOAuthSuccess(
+    await oauth(next, fixture.teamsTenantId, fixture.teamsAadObjectId),
+  );
+  await expect(status(next)).resolves.toMatchObject({
+    isConnected: true,
+    isInstalled: false,
+  });
+});

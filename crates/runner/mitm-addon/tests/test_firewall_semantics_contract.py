@@ -122,6 +122,8 @@ def test_aws_rule_validation_matches_shared_contract(case: dict[str, object]):
 def _normalize_final_decision(result: object | None) -> dict[str, object]:
     if result is None:
         return {"kind": "no_match"}
+    if isinstance(result, matching.FirewallInvalidInput):
+        return {"kind": "invalid_input", "method": result.method, "path": result.path}
     if isinstance(result, matching.FirewallAllow):
         base = result.api_entry["base"]
         assert isinstance(base, str)

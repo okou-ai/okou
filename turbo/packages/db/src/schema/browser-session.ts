@@ -316,9 +316,11 @@ export const browserSessionScreenshots = pgTable(
 );
 
 /**
- * Durable deletion intent for immutable screenshot objects superseded by a
- * later capture. The row deliberately has no thread foreign key: cleanup must
- * remain retryable after the owning thread is deleted.
+ * Durable cleanup identities for immutable screenshot candidates, including
+ * rejected uploads. An accepted preview keeps its identity dormant while the
+ * screenshot pointer references it; replacement/removal makes it eligible.
+ * The row deliberately has no thread foreign key: cleanup must remain retryable
+ * after the owning thread is deleted.
  */
 export const browserSessionScreenshotDeletions = pgTable(
   "browser_session_screenshot_deletions",

@@ -17,8 +17,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::agent_run::{
-    AgentExecutionResult, AgentRunLifecycle, PreparedGuestRuntime, PreparedRunInputs,
-    ProcessCancelTimeouts, RunControls, RunStart, run_in_sandbox_with_process_cancel_timeouts,
+    AgentExecutionResult, AgentRunLifecycle, PreparationCancellation, PreparedGuestRuntime,
+    PreparedRunInputs, ProcessCancelTimeouts, RunControls, RunStart,
+    run_in_sandbox_with_process_cancel_timeouts,
 };
 use super::cli_framework::{
     EffectiveCliFramework, effective_cli_framework, normalized_cli_agent_type,
@@ -45,7 +46,7 @@ use crate::home_mount::ensure_home_drive_mounted;
 use crate::network_log_manager::NetworkLogSession;
 use crate::proxy;
 use crate::storage_cache::PreparedStorage;
-use crate::storage_fingerprints::StorageFingerprints;
+use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 use crate::storage_plan::build_storage_plan;
 use crate::telemetry::JobTelemetry;
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
@@ -451,9 +452,8 @@ pub(super) async fn prepare_storage(
     cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<Option<PreparedStorage>> {
-    let Some(manifest) = &context.storage_manifest else {
-        return Ok(None);
-    };
+    let empty_manifest = runner_types::storage_manifest::StorageManifest::default();
+    let manifest = context.storage_manifest.as_ref().unwrap_or(&empty_manifest);
     let apply_started = Instant::now();
     let result: RunnerResult<Option<PreparedStorage>> = async {
         let mut plan = build_storage_plan(manifest, previous_storage)?;
@@ -598,6 +598,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     sandbox_prepared,
                     reuse_result,
                     cancel: &controls.cancel,
+                    hard_cancel: &controls.hard_cancel,
                     codex_model_catalog_prefetch,
                 },
             )
@@ -935,6 +936,7 @@ struct StartSandboxOptions<'a> {
     sandbox_prepared: Option<&'a SandboxPreparedNotifier>,
     reuse_result: SandboxReuseResult,
     cancel: &'a CancellationToken,
+    hard_cancel: &'a CancellationToken,
     codex_model_catalog_prefetch: bool,
 }
 
@@ -1093,6 +1095,7 @@ async fn create_started_sandbox(
         sandbox_prepared,
         reuse_result,
         cancel,
+        hard_cancel,
         codex_model_catalog_prefetch,
     } = options;
     let home_drive = match home_image {
@@ -1301,7 +1304,7 @@ async fn create_started_sandbox(
                 context,
                 params.restore_guest_state,
                 reuse_result,
-                cancel,
+                PreparationCancellation::new(cancel, hard_cancel),
                 telemetry,
             )
             .await
@@ -1311,7 +1314,7 @@ async fn create_started_sandbox(
                     sandbox.as_ref(),
                     context,
                     params.restore_guest_state,
-                    cancel,
+                    PreparationCancellation::new(cancel, hard_cancel),
                     telemetry,
                 )
                 .await,
@@ -1743,6 +1746,7 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context, &cleanup_cancel));
     let reuse_result = start.reuse_result;
     let home_reuse_result = start.home_reuse_result;
+    let previous_storage = start.prev_storage;
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
@@ -1849,16 +1853,31 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
             None
         };
 
+    let current_inputs = context.storage_fingerprints();
+    let mut storage_fingerprints = if lifecycle.storage_preparation_complete {
+        current_inputs
+    } else {
+        // Cancellation may precede reconciliation, or interrupt a partial apply.
+        // Retain both generations' paths without claiming the requested versions
+        // were installed. A later physical reuse must reconcile them again.
+        current_inputs.tainted_paths_including(previous_storage)
+    };
+    if !lifecycle.instruction_preparation_complete
+        && let Some(instruction) = &context.instruction_file
+    {
+        // Staging can finish before bootstrap copies the final instruction file.
+        // Preserve other completed inputs without claiming this file was applied.
+        storage_fingerprints.storages.insert(
+            instruction.storage_mount.clone(),
+            StorageFingerprint::tainted(),
+        );
+    }
     PreparedSandboxAttempt {
         retry_inputs,
         outcome: ExecuteOutcome {
             failure: agent_result.failure,
             sandbox_reuse_disposition: agent_result.sandbox_reuse_disposition,
-            storage_fingerprints: context
-                .storage_manifest
-                .as_ref()
-                .map(StorageFingerprints::from_manifest)
-                .unwrap_or_default(),
+            storage_fingerprints,
             sandbox: Some(sandbox),
             source_ip,
             network_log_session: Some(network_log_session),

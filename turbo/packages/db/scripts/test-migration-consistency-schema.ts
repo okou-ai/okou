@@ -1,5 +1,7 @@
 #!/usr/bin/env tsx
 
+import { validatePermanentProjectStorage } from "./test-project-storage-permanent";
+
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
 import { validateRunOutputMemoryCitationRetirement } from "./test-run-output-memory-citation-retirement";
@@ -47,6 +49,8 @@ import { applyPendingMigrations } from "./migration-runner";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
+import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
+import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
@@ -336,6 +340,7 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
 
 async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
+  const rewardOrgId = `slack-reward-${crypto.randomUUID()}`;
   await client.connect();
 
   try {
@@ -345,8 +350,36 @@ async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
         AND conname = 'billing_run_attribution_source_check'
     `);
     assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
+    const insertCredit = (source: string) => {
+      return client.query(
+        `INSERT INTO credit_expires_record (org_id, source, amount, remaining, expires_at)
+         VALUES ($1, $2, 2000, 2000, now() + interval '7 days')`,
+        [rewardOrgId, source],
+      );
+    };
+    await insertCredit("get_started_reward");
+    await assert.rejects(insertCredit("get_started_reward"), {
+      code: "23505",
+      constraint: "uq_credit_expires_slack_reward_org",
+    });
+    await client.query(
+      "UPDATE credit_expires_record SET remaining = 0, expires_at = now() - interval '1 day' WHERE org_id = $1",
+      [rewardOrgId],
+    );
+    await assert.rejects(insertCredit("get_started_reward"), {
+      code: "23505",
+      constraint: "uq_credit_expires_slack_reward_org",
+    });
+    await insertCredit("credit_purchase");
+    await insertCredit("credit_purchase");
+    console.log(
+      "   ✅ Slack rewards remain unique after consumption and expiry; purchases remain repeatable\n",
+    );
     console.log("   ✅ Billing attribution source constraint is validated\n");
   } finally {
+    await client.query("DELETE FROM credit_expires_record WHERE org_id = $1", [
+      rewardOrgId,
+    ]);
     await client.end();
   }
 }
@@ -1035,6 +1068,89 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${discordOwnership}`,
   );
+  // Drizzle does not model routines. Install the independently maintained
+  // current definition, then validate its exact body on both schema shapes.
+  const agentMetadata = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/update-agent-metadata.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${agentMetadata}`,
+  );
+  const userBuiltinConnectors = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/update-user-builtin-connectors.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${userBuiltinConnectors}`,
+  );
+  const agentDeletion = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/delete-agent-rows.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${agentDeletion}`,
+  );
+  const workflowDeletion = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/delete-workflow-rows.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${workflowDeletion}`,
+  );
+  const chatThreadDeletion = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/delete-chat-thread-content.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${chatThreadDeletion}`,
+  );
+  const runBuiltInAdmission = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/start-run-built-in-admission.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${runBuiltInAdmission}`,
+  );
+  const chatEventSearchProjection = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/publish-chat-event-search-projection.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${chatEventSearchProjection}`,
+  );
+  const usagePackPendingSnapshot = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/write-usage-pack-pending-snapshot.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${usagePackPendingSnapshot}`,
+  );
+  const builtinConnectorDeletion = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/delete-builtin-connector-local-state.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${builtinConnectorDeletion}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1307,6 +1423,9 @@ type PermanentTrigger = {
 
 type PermanentFunction = {
   readonly bodyHash: string;
+  readonly volatility: string;
+  readonly securityDefiner: boolean;
+  readonly parallel: string;
   readonly functionName: string;
   readonly identityArguments: string;
   readonly kind: string;
@@ -1317,7 +1436,105 @@ type PermanentFunction = {
 // pgcrypto and vector functions are deliberately absent from the function list.
 const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
-const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [];
+const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
+  {
+    schemaName: "public",
+    functionName: "delete_builtin_connector_local_state",
+    identityArguments: "p_input jsonb, p_clock timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "91c7e4000e63fc2b8c901635c53304bd",
+  },
+  {
+    schemaName: "public",
+    functionName: "write_usage_pack_pending_snapshot",
+    identityArguments: "p_input jsonb, p_clock timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "7401f5cb04ba3cc021f8c39b3dce1b8d",
+  },
+  {
+    schemaName: "public",
+    functionName: "update_agent_metadata",
+    identityArguments:
+      "p_org_id text, p_agent_id uuid, p_member_id text, p_is_admin boolean, p_identity_changes boolean, p_visibility text, p_public_limit integer, p_body bytea, p_now timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "80d63df57c2cf7e352b6f691c40d30f8",
+  },
+  {
+    schemaName: "public",
+    functionName: "update_user_builtin_connectors",
+    identityArguments:
+      "p_org_id text, p_user_id text, p_agent_id uuid, p_operation text, p_slugs bytea",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "8a2a556c87ae25537c4d58abe23305cf",
+  },
+  {
+    schemaName: "public",
+    functionName: "delete_agent_rows",
+    identityArguments:
+      "p_agent_id uuid, p_org_id text, p_member_user_id text, p_is_org_admin boolean",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "92643bf0c1e256d924d2cf022c7c3657",
+  },
+  {
+    schemaName: "public",
+    functionName: "delete_workflow_rows",
+    identityArguments:
+      "p_org_id text, p_workflow_id uuid, p_allow_official_installation_deletion boolean, p_required_official_installation_state text",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "10474201f5b27fc7f34631dcc0a84e10",
+  },
+  {
+    schemaName: "public",
+    functionName: "delete_chat_thread_content",
+    identityArguments:
+      "p_thread_id uuid, p_user_id text, p_org_id text, p_event_id text, p_automation_updated_at timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "6c1bccc08d6ef1bfd6f65c4042f82575",
+  },
+  {
+    schemaName: "public",
+    functionName: "start_run_built_in_admission",
+    identityArguments:
+      "p_run_id uuid, p_now timestamp without time zone, p_max_in_flight integer, p_max_started integer, p_ttl_ms integer",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "c0151c83c8e52d965b9764bc702adf35",
+  },
+  {
+    schemaName: "public",
+    functionName: "publish_chat_event_search_projection",
+    identityArguments:
+      "p_messages jsonb, p_revoked_event_ids uuid[], p_watermark_thread_id uuid, p_watermark_seq_id bigint",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "50a2fe216ae85095eb34b877a41d9093",
+  },
+];
 
 function assertPermanentInventory(args: {
   readonly actual: readonly string[];
@@ -1382,6 +1599,9 @@ async function validatePermanentTriggerAndFunctionInventory(
         pg_catalog.pg_get_function_identity_arguments(catalog_function."oid")
           AS "identityArguments",
         catalog_function."prokind"::text AS "kind",
+        catalog_function."provolatile"::text AS "volatility",
+        catalog_function."prosecdef" AS "securityDefiner",
+        catalog_function."proparallel"::text AS "parallel",
         pg_catalog.md5(catalog_function."prosrc") AS "bodyHash"
       FROM pg_catalog."pg_proc" AS catalog_function
       INNER JOIN pg_catalog."pg_namespace" AS namespace
@@ -1406,7 +1626,7 @@ async function validatePermanentTriggerAndFunctionInventory(
       return `${trigger.schemaName}.${trigger.tableName}.${trigger.triggerName} [${trigger.definition}]`;
     };
     const functionKey = (catalogFunction: PermanentFunction): string => {
-      return `${catalogFunction.schemaName}.${catalogFunction.functionName}(${catalogFunction.identityArguments}) [${catalogFunction.kind}] [body md5=${catalogFunction.bodyHash}]`;
+      return `${catalogFunction.schemaName}.${catalogFunction.functionName}(${catalogFunction.identityArguments}) [${catalogFunction.kind}] [body md5=${catalogFunction.bodyHash}] [volatility=${catalogFunction.volatility};definer=${catalogFunction.securityDefiner};parallel=${catalogFunction.parallel}]`;
     };
 
     assertPermanentInventory({
@@ -2901,6 +3121,30 @@ async function main(): Promise<void> {
       ),
     );
 
+    console.log("=== Content bundle preparation CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/027-content-bundles/test-backfill.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
+    console.log("=== Registry resource inventory CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
+    console.log("=== Registry resource backfill CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
     console.log("=== Presentation template copy CLI ===");
     console.log(
       execCommand(
@@ -2940,6 +3184,7 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentChatThreadStorage(dbUrl1);
+    await validatePermanentProjectStorage(dbUrl1);
     await validatePermanentStorageLineage(dbUrl1);
     await validatePermanentAgentInstructions(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
@@ -2956,6 +3201,8 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
+    await validateSeedSkillBundleSchema(dbUrl1);
+    await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
     await validateExpandedBrowserSchema(dbUrl1);
@@ -2976,6 +3223,7 @@ async function main(): Promise<void> {
     const dbUrl2 = createTestDbUrl(TEST_DB_2);
     await runMigrations(dbUrl2);
     console.log("   ✅ Fresh migrations applied successfully\n");
+    await validatePermanentTriggerAndFunctionInventory(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentDiscordFoundation(dbUrl2);
     await validatePermanentDiscordChat(dbUrl2);
@@ -2983,6 +3231,7 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentChatThreadStorage(dbUrl2);
+    await validatePermanentProjectStorage(dbUrl2);
     await validatePermanentStorageLineage(dbUrl2);
     await validatePermanentAgentInstructions(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);
@@ -2991,6 +3240,7 @@ async function main(): Promise<void> {
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
+    await validateCanonicalBillingSources(dbUrl2);
     await validatePermanentNativeVncStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validateChatRelations(dbUrl2);
@@ -3001,6 +3251,8 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
+    await validateSeedSkillBundleSchema(dbUrl2);
+    await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);
     await validateOfficialAutomationBindingSchema(dbUrl2);
     await validateConnectorAutomaticOAuthConstraints(dbUrl2);

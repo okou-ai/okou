@@ -3,6 +3,21 @@ import Foundation
 import XCTest
 
 final class ChatUserMessageTests: XCTestCase {
+  func testProjectReferencesKeepTheirSavedNameAndIdentityInHistory() throws {
+    let project = identity(71)
+    let document = try JSONDecoder().decode(
+      ChatUserMessage.self,
+      from: Data(
+        """
+        {"version":1,"parts":[{"type":"text","text":"Review "},{"type":"project","projectId":"\(project)","nameSnapshot":"Original launch"},{"type":"feedback","quote":"Check this","note":[{"type":"project","projectId":"\(project)","nameSnapshot":"Original launch"}]}]}
+        """.utf8))
+    let message = try XCTUnwrap(history([document]).messages.first)
+    XCTAssertTrue(message.text.contains("Review Original launch"))
+    XCTAssertEqual(message.userMessage?.parts[1].projectId, project)
+    XCTAssertEqual(message.userMessage?.parts[1].nameSnapshot, "Original launch")
+    try document.validate()
+  }
+
   func testVisiblePartsKeepTheirInlineOrderAndSnapshotsWithoutPrivateContext() throws {
     let document = ChatUserMessage(parts: [
       .init(type: "text", text: "Ask "),

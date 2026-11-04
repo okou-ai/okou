@@ -136,6 +136,7 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
     const site = `artifact-versions-${randomUUID().slice(0, 8)}`;
     const body = {
       site,
+      title: site,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>versioned artifact</main>")],
@@ -195,6 +196,7 @@ describe("hosted artifacts without a supplied cover", () => {
     const site = `optional-cover-${randomUUID().slice(0, 8)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site,
+      title: site,
       artifactKind: "hosted-site",
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>Hosted publication</main>")],

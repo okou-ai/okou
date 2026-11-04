@@ -1277,3 +1277,38 @@ test.each(callbackAuthenticationModes)(
     }
   },
 );
+
+test("reconnecting an awarded workspace preserves its single permanent award", async () => {
+  const current = actor();
+  await complete(await startInstall(), current);
+  const before = await readGetStartedStatus(context, current);
+  const award = before.recentGrants.find((grant) => {
+    return grant.questKey === "slack";
+  });
+  expect(award).toMatchObject({
+    status: "granted",
+    rewardAmount: 2000,
+    rewardTarget: "org",
+  });
+  await disconnectChat();
+  const reconnect = await integrationStatus();
+  if (!reconnect.connectUrl) {
+    throw new Error("Expected a reconnect link");
+  }
+  await complete(await start(reconnect.connectUrl), current);
+  const after = await readGetStartedStatus(context, current);
+  expect(
+    after.quests.find((quest) => {
+      return quest.key === "slack";
+    }),
+  ).toMatchObject({ claimedCount: 1, earnedCredits: 2000, pendingCount: 0 });
+  expect(
+    after.recentGrants.find((grant) => {
+      return grant.questKey === "slack";
+    }),
+  ).toStrictEqual(award);
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isInstalled: true,
+    isConnected: true,
+  });
+});

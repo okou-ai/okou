@@ -1,13 +1,15 @@
 import type {
-  ChatThreadEvent,
   ChatThreadSnapshotProjection,
+  ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
-export type ReplayChatThreadEvent = Omit<ChatThreadEvent, "seqId">;
+type WithoutSequence<T> = T extends unknown ? Omit<T, "seqId"> : never;
+export type ReplayChatThreadEvent = WithoutSequence<ChatThreadEvent>;
 
 export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
+  readonly projectId: string | null;
   readonly sortAt: string;
   readonly archived: boolean;
   readonly muted: boolean;
@@ -40,7 +42,8 @@ function isDeferrableUpdate(kind: ReplayChatThreadEvent["kind"]): boolean {
   return (
     kind === "model_selection_updated" ||
     kind === "service_tier_updated" ||
-    kind === "computer_use_host_updated"
+    kind === "computer_use_host_updated" ||
+    kind === "project_updated"
   );
 }
 
@@ -52,6 +55,9 @@ function updatedThreadFields(
   event: ReplayChatThreadEvent,
   thread: EventDrivenChatThread,
 ): Partial<EventDrivenChatThread> | null {
+  if (event.kind === "project_updated") {
+    return { projectId: event.projectId };
+  }
   if (event.kind === "renamed") {
     return { title: event.title, renamedAt: event.createdAt };
   }
@@ -122,6 +128,7 @@ function applyEvent(
   if (event.kind === "created") {
     threads.set(event.chatThreadId, {
       id: event.chatThreadId,
+      projectId: event.projectId ?? null,
       agentId: event.agentId,
       title: event.title,
       sortAt: event.createdAt,
@@ -200,6 +207,7 @@ export function replayChatThreadEvents(
   for (const thread of snapshot) {
     threads.set(thread.id, {
       ...thread,
+      projectId: thread.projectId ?? null,
       // Retained shared snapshots can omit mute; absence is the initial state.
       // Remove only after rewriting those snapshots and requiring the wire field.
       muted: thread.muted ?? false,

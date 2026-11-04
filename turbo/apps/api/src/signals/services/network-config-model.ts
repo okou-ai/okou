@@ -16,7 +16,6 @@ export interface NetworkReference {
   readonly userId: string;
   readonly displayName: string;
   readonly generation: number;
-  readonly version: string;
   readonly rfb: boolean;
   readonly kdc: boolean;
 }
@@ -27,7 +26,6 @@ export function presentNetworkReference(
     readonly userId: string | null;
     readonly displayName: string | null;
     readonly generation: number | null;
-    readonly version: string;
     readonly rfb: boolean;
     readonly kdc: boolean;
   } | null,

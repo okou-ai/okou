@@ -40,17 +40,6 @@ export function getCustomSkillStorageName(skillName: string): string {
 }
 
 /**
- * Generate the stable system storage name for an Official Workflow Definition.
- * Every immutable revision of one Definition is registered beneath this one
- * name-derived storage identity.
- */
-export function getOfficialWorkflowDefinitionStorageName(
-  definitionName: string,
-): string {
-  return `official-workflow@${definitionName}`;
-}
-
-/**
  * Generate the storage name for a published presentation template package.
  * Format: presentation-template@{templateId}
  *

@@ -10,7 +10,7 @@ import {
   type ModelProviderResponse,
   type PersonalSubscriptionProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/client/third-party-subscriptions";
 import {
   knownRunFailureReasonSchema,
   type KnownRunFailureReason,
@@ -269,6 +269,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   invalid_api_key: "provider-settings",
   invalid_credentials: "provider-settings",
   terms_acceptance_required: "terms-acceptance-required",
+  account_verification_required: null,
   context_window_exceeded: "new-chat-required",
   input_too_large: "input-too-large",
   provider_image_too_large: "input-too-large",
@@ -279,6 +280,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   provider_queue_timeout: "provider-retryable",
   codex_access_program_unavailable: "provider-retryable",
   provider_server_error: "provider-retryable",
+  firewall_auth_failed: null,
   provider_bad_request: null,
   response_connection_lost: "provider-retryable",
   safety_policy_refusal: "safety-policy-refusal",

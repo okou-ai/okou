@@ -2,6 +2,7 @@ import {
   array,
   object,
   string,
+  url,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -48,7 +49,7 @@ const squirrelMacReleaseSchema = object({
     name: string(),
     version: string(),
     pub_date: string(),
-    url: string().url(),
+    url: url(),
     notes: string(),
   }),
 });

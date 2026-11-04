@@ -1,11 +1,14 @@
 import { command, computed, state, type Computed } from "ccstate";
-import {
-  type ApplyUserPermissionGrant,
-  type UserPermissionGrantApplyMode,
-  type UserPermissionGrantExpiresIn,
-  type UserPermissionGrantAction,
-  userPermissionGrantsContract,
+import type {
+  ApplyUserPermissionGrant,
+  UserPermissionGrantApplyMode,
+  UserPermissionGrantExpiresIn,
+  UserPermissionGrantAction,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
+import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
+import { connectorPermissionsContract } from "@okouai/api-contracts/client/connector-permissions";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,
@@ -162,12 +165,55 @@ export function userPermissionGrantsByAgentIfExists(
   });
 }
 
+/** Confirmation cards read only their requested targets, with the mode's owner. */
+export function permissionGrantsForConnectors(params: {
+  readonly agentId: string;
+  readonly connectorSlugs: readonly string[];
+}) {
+  const legacy$ = userPermissionGrantsByAgent({ agentId: params.agentId });
+  return computed(
+    async (get): Promise<readonly PlatformUserPermissionGrant[]> => {
+      get(internalUserPermissionGrantsReload$);
+      if (
+        !(await get(featureSwitch$))[
+          FeatureSwitchKey.ConnectorChatAccountAccess
+        ]
+      ) {
+        return await get(legacy$);
+      }
+      const client = get(apiClient$)(connectorPermissionsContract);
+      const grants = await Promise.all(
+        [...new Set(params.connectorSlugs)].map(async (connectorSlug) => {
+          const result = await accept(
+            client.get({ query: { kind: "builtin", connectorSlug } }),
+            [200, 404],
+          );
+          return result.status === 200
+            ? result.body.grants.map((grant) => {
+                return { connectorSlug, ...grant };
+              })
+            : [];
+        }),
+      );
+      return grants.flat();
+    },
+  );
+}
+
 export const permissionAllowUserPermissionGrants$ = computed(async (get) => {
   const agentId = get(permissionAllowAgentId$);
   if (!agentId) {
     return [];
   }
-  return await get(userPermissionGrantsByAgent({ agentId }));
+  const connectorSlug = get(permissionAllowConnectorSlug$);
+  return connectorSlug
+    ? await get(
+        permissionGrantsForConnectors({
+          agentId,
+          connectorSlugs: [connectorSlug],
+        }),
+      )
+    : [];
 });
 
 /** The current agent-detail route's permission grants. */
@@ -192,7 +238,7 @@ export const permissionAllowFirewallPermissionMetadata$ = computed(
 
 export const applyUserPermissionGrants$ = command(
   async (
-    { get },
+    { get, set },
     params: {
       agentId?: string;
       connectorSlug: string;
@@ -203,6 +249,32 @@ export const applyUserPermissionGrants$ = command(
   ): Promise<readonly PlatformUserPermissionGrant[]> => {
     if (!params.agentId) {
       throw new Error("Permission grant scope is required");
+    }
+    const features = await get(featureSwitch$);
+    signal.throwIfAborted();
+    if (features[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+      const result = await accept(
+        get(apiClient$)(connectorPermissionsContract).apply({
+          body: {
+            target: { kind: "builtin", connectorSlug: params.connectorSlug },
+            mode: params.mode,
+            grants: [...params.grants],
+          },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+      set(onPermissionUpdated$);
+      return result.body.grants
+        .filter((grant) => {
+          return params.grants.some((requested) => {
+            return requested.permission === grant.permission;
+          });
+        })
+        .map((grant) => {
+          return { connectorSlug: params.connectorSlug, ...grant };
+        });
     }
     const client = get(apiClient$)(userPermissionGrantsContract);
     const result = await accept(

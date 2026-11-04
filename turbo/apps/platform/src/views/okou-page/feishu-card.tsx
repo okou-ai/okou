@@ -19,7 +19,7 @@ import {
 import {
   FEISHU_OAUTH_SCOPES,
   FEISHU_TENANT_SCOPES,
-} from "@okouai/api-contracts/contracts/feishu-connect";
+} from "@okouai/api-contracts/validators/feishu-connect";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import {
   Dialog,

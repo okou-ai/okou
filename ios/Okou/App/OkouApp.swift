@@ -162,12 +162,12 @@ private struct WorkspaceRootView: View {
     self.userID = userID
     _accountError = accountError
     self.notifications = notifications
+    let cacheScope = ChatCacheScope(
+      apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)
     _store = State(
       initialValue: WorkspaceStore(
         client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
-        draftStorage: ChatDraftStorage(
-          scope: ChatCacheScope(
-            apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)),
+        draftStorage: ChatDraftStorage(scope: cacheScope), measurementScope: cacheScope,
         didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
   }
 
@@ -185,7 +185,7 @@ private struct WorkspaceRootView: View {
 
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
-          notifications: notifications,
+          notifications: notifications, sidebar: sidebar,
           headerHeight: headerHeight,
           accountError: $accountError,
           close: closeSidebar,
@@ -213,7 +213,7 @@ private struct WorkspaceRootView: View {
                   draft: $composer.text, isBusy: store.isCreating,
                   showsProgress: store.isCreating, canStop: false,
                   needsUpgrade: store.needsUpgrade,
-                  error: store.error ?? store.list.actionError, attachmentURL: store.webURL,
+                  error: store.error, attachmentURL: store.webURL,
                   attachments: composer.attachments,
                   draftState: composer,
                   submit: {
@@ -243,11 +243,6 @@ private struct WorkspaceRootView: View {
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
             ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
-            if let error = store.list.syncError {
-              ChatSyncFailureView(message: error, isRefreshing: store.list.isLoading) {
-                await store.refresh()
-              }
-            }
           }
           .onGeometryChange(for: CGFloat.self) {
             $0.size.height
@@ -308,16 +303,14 @@ private struct WorkspaceRootView: View {
           })
       )
       .composerWorkflowOverlay(
-        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil)
+        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
+      )
+    }
+    .safeAreaBar(edge: .top, spacing: 0) {
+      ChatFeedbackBanner(store: store)
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
-    .overlay(alignment: .bottom) {
-      if let feedback = store.threadFeedback {
-        ChatThreadFeedbackView(store: store, feedback: feedback)
-          .padding(.bottom, 100)
-      }
-    }
     .task {
       let target = store
       notifications.didSynchronize = { [weak target] in
@@ -347,7 +340,7 @@ private struct WorkspaceRootView: View {
       "Unable to update chats",
       isPresented: Binding(
         get: {
-          store.selectedConversation != nil && store.list.actionError != nil
+          store.list.actionError != nil
             && store.list.renameRequest == nil && !store.list.isSavingRename
         },
         set: { if !$0 { store.list.dismissError() } }

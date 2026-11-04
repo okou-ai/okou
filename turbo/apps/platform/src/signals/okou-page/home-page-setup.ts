@@ -17,14 +17,19 @@ export const setupHomePage$ = command(
     }
     const params = get(searchParams$);
     const prompt = params.get("prompt");
+    const handoff = params.get("handoff");
     const queue = params.get("queue");
     const settings = params.get("settings");
     const billingView = params.get("billingView");
     const featureGuidePreview = params.get("featureGuidePreview");
+    const halloween = params.get("halloween");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
     );
     const forwardParams = new URLSearchParams();
+    if (handoff) {
+      forwardParams.set("handoff", handoff);
+    }
     if (prompt) {
       forwardParams.set("prompt", prompt);
     }
@@ -39,6 +44,9 @@ export const setupHomePage$ = command(
     }
     if (featureGuidePreview === "1") {
       forwardParams.set("featureGuidePreview", featureGuidePreview);
+    }
+    if (halloween === "1") {
+      forwardParams.set("halloween", halloween);
     }
     if (templatePicker) {
       forwardParams.set("templatePicker", templatePicker);

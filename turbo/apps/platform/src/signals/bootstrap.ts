@@ -1,3 +1,11 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
+import {
+  captureFriendReferral$,
+  registerFriendReferral$,
+} from "./friend-referrals.ts";
+import { activeRoute$ } from "./active-route.ts";
+import { resetProjectUi$ } from "./projects/project-ui.ts";
 import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
@@ -47,11 +55,15 @@ import { setupActivityInspectPage$ } from "./activity-page/activity-inspect-page
 import { setupAgentsPage$ } from "./agents-page/agents-page-setup.ts";
 import { setupAgentDetailPage$ } from "./agents-page/agent-detail-page-setup.ts";
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
+import { setupFeedPage$ } from "./feed-page/feed-page-setup.ts";
+import { suggestionFeedEnabled$ } from "./okou-page/agent-suggestion-session.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
 import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
+import { setupProjectPage$ } from "./projects/project-page-setup.ts";
+import { hydrateProjects$ } from "./projects/projects.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
@@ -62,6 +74,7 @@ import {
   setupOnboardingSkillsPage$,
   setupOnboardingSlackPage$,
   setupOnboardingTeamPage$,
+  setupOnboardingCapabilitiesPage$,
 } from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
@@ -155,11 +168,15 @@ function setupSettingsParamAfterStableRoute(
   setupPage: Command<Promise<void> | void, [AbortSignal]>,
 ) {
   return command(async ({ get, set }, signal: AbortSignal) => {
+    set(resetProjectUi$);
     const initialPathname = get(pathname$);
     await set(setupPage, signal);
     signal.throwIfAborted();
     if (get(pathname$) !== initialPathname) {
       return;
+    }
+    if (get(activeRoute$) !== "project") {
+      await set(hydrateProjects$, signal);
     }
     await set(checkUnifiedSettingsParam$, signal);
   });
@@ -173,6 +190,15 @@ function setupAuthSidebarPageWrapper(
 
 const setupAuthenticatedPwaMePage$ =
   setupAuthSidebarPageWrapper(setupPwaMePage$);
+
+const setupFeedRoute$ = setupAuthSidebarPageWrapper(
+  command(async ({ get, set }, signal: AbortSignal) => {
+    await set(
+      get(suggestionFeedEnabled$) ? setupFeedPage$ : setupNotFoundPage$,
+      signal,
+    );
+  }),
+);
 
 const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   await set(
@@ -235,6 +261,10 @@ const ROUTE_CONFIG = [
     analytics: false,
   },
 
+  {
+    path: ROUTES.project,
+    setup: setupAuthSidebarPageWrapper(setupProjectPage$),
+  },
   // --- New routes ---
   {
     path: ROUTES.chat,
@@ -378,6 +408,10 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(setupArtifactsPage$),
   },
   {
+    path: ROUTES.feed,
+    setup: setupFeedRoute$,
+  },
+  {
     path: ROUTES.settingsSlack,
     setup: setupAuthSidebarPageWrapper(setupSlackConnectPage$),
   },
@@ -473,6 +507,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.onboardingSlack,
     setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
+  },
+  {
+    path: ROUTES.onboardingCapabilities,
+    setup: setupAuthPageWrapper(setupOnboardingCapabilitiesPage$),
   },
   {
     path: ROUTES.onboardingReady,
@@ -608,7 +646,13 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
     set(applyFeatureSwitches$, featureSwitches);
 
+    await set(registerFriendReferral$, signal);
+    signal.throwIfAborted();
+
     await Promise.all([
+      ...(featureSwitches[FeatureSwitchKey.MarketingContentHandoff]
+        ? [set(enrollMarketingHandoffSession$, signal)]
+        : []),
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
       set(bootstrapOnboardingGuard$, signal),
@@ -663,6 +707,9 @@ export const bootstrap$ = command(
       ...(vercelProtectionBypass ? { vercelProtectionBypass } : {}),
     });
     set(setupLoggers$);
+
+    await set(captureFriendReferral$, signal);
+    signal.throwIfAborted();
 
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);

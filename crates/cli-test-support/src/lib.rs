@@ -6,6 +6,7 @@
 //! build. Default builds expose no fixture API and activate no dependencies.
 //! Guest runtime adapters and process-global setup remain with their test owners.
 
+pub mod child;
 pub mod command;
 pub mod delivery_image;
 pub mod http;

@@ -133,15 +133,13 @@ GMAIL_PUBSUB_TOPIC_NAME=op://Development/gmail/GMAIL_PUBSUB_TOPIC_NAME
 GMAIL_PUBSUB_PUSH_AUDIENCE=op://Development/gmail/GMAIL_PUBSUB_PUSH_AUDIENCE
 GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL=op://Development/gmail/GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL
 
-# Optional: Google Ads API (developer token + login customer ID for MCC)
+# Optional: Google Ads API developer token
 GOOGLE_ADS_DEVELOPER_TOKEN=op://Development/google/GOOGLE_ADS_DEVELOPER_TOKEN
-GOOGLE_ADS_LOGIN_CUSTOMER_ID=op://Development/google/GOOGLE_ADS_LOGIN_CUSTOMER_ID
 
-# Optional: Managed browser provider (Browser Use)
+# Managed browser provider (Browser Use)
 OKOU_BROWSER_USE_API_KEY=op://Development/browser-use/OKOU_BROWSER_USE_API_KEY
-# Optional: up to 3 comma-separated uploaded extension UUIDs. Installed when
-# BrowserSharedOwner is enabled, during new Browser instance creation only.
-OKOU_BROWSER_USE_EXTENSION_IDS=
+# Required: one uploaded extension UUID, installed on every new managed Browser.
+OKOU_BROWSER_USE_EXTENSION_ID=
 
 # Optional: Steam Web API
 STEAM_WEB_API_KEY=op://Development/steam/STEAM_WEB_API_KEY
@@ -212,11 +210,6 @@ TODOIST_OAUTH_CLIENT_SECRET=op://Development/todoist/TODOIST_OAUTH_CLIENT_SECRET
 # Optional: Monday.com OAuth Connector
 MONDAY_OAUTH_CLIENT_ID=op://Development/monday/MONDAY_OAUTH_CLIENT_ID
 MONDAY_OAUTH_CLIENT_SECRET=op://Development/monday/MONDAY_OAUTH_CLIENT_SECRET
-MONDAY_OAUTH_APP_ID=op://Development/monday/MONDAY_OAUTH_APP_ID
-
-# Optional: Wix OAuth Connector
-WIX_OAUTH_CLIENT_ID=op://Development/wix/WIX_OAUTH_CLIENT_ID
-WIX_OAUTH_CLIENT_SECRET=op://Development/wix/WIX_OAUTH_CLIENT_SECRET
 
 # Optional: Meta Ads OAuth Connector
 META_ADS_OAUTH_CLIENT_ID=op://Development/meta-ads/META_ADS_OAUTH_CLIENT_ID
@@ -262,10 +255,6 @@ AGENTPHONE_WEBHOOK_SECRET=op://Development/agentphone/AGENTPHONE_WEBHOOK_SECRET
 # Optional WhatsApp country calling prefixes, e.g. +49,+55,+90.
 # Empty or unset disables country filtering.
 WHATSAPP_ALLOWED_COUNTRY_PREFIXES=
-
-# Optional: ngrok (Computer Connector)
-NGROK_API_KEY=op://Development/ngrok/NGROK_API_KEY
-NGROK_COMPUTER_CONNECTOR_DOMAIN=computer.vm7.io
 
 # Optional: Blog Configuration
 BLOG_BASE_URL=

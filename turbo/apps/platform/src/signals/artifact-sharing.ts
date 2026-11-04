@@ -1,13 +1,11 @@
 import { command, computed, state, type Computed, type State } from "ccstate";
-import {
-  artifactReferencesContract,
-  parseArtifactReference,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  artifactSharesContract,
-  artifactShareTargetSchema,
-  type ArtifactShareStatus,
-  type ArtifactShareTarget,
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
+import { artifactSharesContract } from "@okouai/api-contracts/client/artifact-shares";
+import { artifactShareTargetSchema } from "@okouai/api-contracts/validators/artifact-shares";
+import type {
+  ArtifactShareStatus,
+  ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
@@ -110,14 +108,14 @@ function createAudienceSignals(
       const details = await get(details$);
       signal.throwIfAborted();
       if (!details?.status) {
-        return false;
+        return;
       }
       if (
         details.audience === audience &&
         (audience === "private" ||
           details.status.selectedTarget?.id === details.target.id)
       ) {
-        return false;
+        return;
       }
       await accept(
         get(apiClient$)(artifactSharesContract).update({
@@ -138,11 +136,9 @@ function createAudienceSignals(
           return $.artifacts.sharing.permissionsUpdated;
         }),
       );
-      return true;
     },
   );
-  const save$ = throttleCommand(persist$, 0);
-  return { change$: save$ };
+  return { change$: persist$ };
 }
 
 function createArtifactShareSession(source: ShareSource) {
@@ -181,12 +177,13 @@ function createArtifactShareSession(source: ShareSource) {
     }
   });
   const audience = createAudienceSignals(details$, reload$);
-  // "Copied" confirmed the link under the previous audience; a new choice asks
-  // to be copied again.
-  const change$ = command(({ set }, choice: Audience, signal: AbortSignal) => {
-    set(linkCopy.clear$);
-    return set(audience.change$, choice, signal);
-  });
+  const change$ = throttleCommand(
+    command(({ set }, choice: Audience, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      return set(audience.change$, choice, signal);
+    }),
+    0,
+  );
   return {
     signal$,
     details$,

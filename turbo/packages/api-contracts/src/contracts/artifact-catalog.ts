@@ -7,9 +7,11 @@ import {
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
 } from "zod";
 
+import { artifactIdPathParamsSchema } from "../validators/artifact-catalog";
 import { authHeadersSchema, initContract } from "./base";
 import {
   chatThreadArtifactGoogleDriveSyncSchema,
@@ -272,37 +274,29 @@ const artifactThumbnailSchema = object({
  * detail request. The list query never joins a kind table.
  */
 const artifactSummarySchema = object({
-  id: string().uuid(),
+  id: uuid(),
   kind: artifactKindSchema,
   title: string(),
   thumbnail: artifactThumbnailSchema.nullable(),
   sourceUrl: string().optional(),
   aliasUrl: string().optional(),
-  sharedThreadId: string().uuid().optional(),
+  sharedThreadId: uuid().optional(),
   videoSourceUrl: string().optional(),
   createdAt: string(),
   updatedAt: string(),
-});
-
-/**
- * Keyset pagination over `(created_at DESC, id DESC)`. Updates never reorder
- * the list, so a cursor stays stable for the whole scroll session.
- */
-const artifactIdPathParamsSchema = object({
-  artifactId: string().uuid(),
 });
 
 const artifactCatalogListQuerySchema = object({
   limit: coerce.number().int().positive().max(200).optional(),
   cursor: string().optional(),
   kind: artifactKindSchema.optional(),
-  chatThreadId: string().uuid().optional(),
+  chatThreadId: uuid().optional(),
   keyword: string().trim().min(1).max(256).optional(),
 });
 
 const artifactCatalogGetQuerySchema = object({
   sourceKind: literal("shared-thread").optional(),
-  chatThreadId: string().uuid().optional(),
+  chatThreadId: uuid().optional(),
 });
 
 const artifactCatalogListResponseSchema = object({
@@ -314,7 +308,7 @@ const artifactCatalogListResponseSchema = object({
  * The stored file backing a `file`, `image`, `video`, or `avatar` artifact.
  */
 const artifactFileSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   filename: string(),
   contentType: string(),
   size: number(),
@@ -327,7 +321,7 @@ const artifactFileSchema = object({
  * Version state stays owned by the hosted deployment records.
  */
 const artifactHostedSiteSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   slug: string(),
   publicSlug: string(),
   url: string(),
@@ -338,7 +332,7 @@ const artifactHostedSiteSchema = object({
 
 // Drive metadata is loaded lazily for detail requests with thread context only.
 const artifactDetailBaseSchema = artifactSummarySchema.extend({
-  googleDriveConnectionId: string().uuid().optional(),
+  googleDriveConnectionId: uuid().optional(),
   googleDriveSync: chatThreadArtifactGoogleDriveSyncSchema.optional(),
 });
 
@@ -375,7 +369,7 @@ const artifactDetailSchema = discriminatedUnion("kind", [
   }),
   artifactDetailBaseSchema.extend({
     kind: literal("shared-thread"),
-    sharedThread: object({ id: string().uuid() }),
+    sharedThread: object({ id: uuid() }),
   }),
 ]);
 
@@ -497,7 +491,7 @@ export type ArtifactCatalogContract = {
 // explicit request and response slots to downstream API and app typechecks.
 export const artifactCatalogContract: ArtifactCatalogContract =
   artifactCatalogRuntimeContract;
-/** Invalidation only: catalog entries remain authoritative over HTTP. */
-export function chatArtifactCatalogChangedEvent(threadId: string): string {
-  return `chatArtifactCatalogChanged:${threadId}`;
-}
+export {
+  artifactIdPathParamsSchema,
+  chatArtifactCatalogChangedEvent,
+} from "../validators/artifact-catalog";
