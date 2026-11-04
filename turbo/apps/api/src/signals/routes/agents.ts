@@ -425,6 +425,8 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     updatedAt: createdAt,
   };
   let blocked = false;
+  // Concurrent replays can collide on either id or the (orgId, name) index.
+  // The final scoped read resolves the accepted identity after either conflict.
   if (visibility === "public") {
     const countPlan = publicAgentCountReadPlan(auth.orgId);
     const publicAgentCount = writeDb
@@ -440,15 +442,12 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           .from(publicAgentCount)
           .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
       )
-      .onConflictDoNothing({ target: agents.id })
+      .onConflictDoNothing()
       .returning({ id: agents.id });
     signal.throwIfAborted();
     blocked = inserted.length === 0;
   } else {
-    await writeDb
-      .insert(agents)
-      .values(values)
-      .onConflictDoNothing({ target: agents.id });
+    await writeDb.insert(agents).values(values).onConflictDoNothing();
   }
   signal.throwIfAborted();
 
