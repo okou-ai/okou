@@ -3114,14 +3114,13 @@
   "connectorChatAccess": {
     "accountAccess": "{{account}} access",
     "enableByDefault": "Enable {{account}} by default",
-    "enabledAccounts": "{{value}} on",
+    "enabledAccounts": "{{value}} enabled",
     "manageAccounts": "Manage accounts",
     "noAccount": "No account selected",
     "noEnabledAccount": "No account is on for this chat",
     "permissions": "Permissions",
     "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
-    "settingsDescription": "Choose which accounts are on by default and the default account for new chats.",
-    "thisChat": "This chat"
+    "settingsDescription": "Choose which accounts are on by default and the default account for new chats."
   },
   "connectors": {
     "access": {

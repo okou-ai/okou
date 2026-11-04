@@ -3107,8 +3107,7 @@
     "noEnabledAccount": "目前聊天未啟用任何帳號",
     "permissions": "權限",
     "permissionsDescription": "這些規則適用於你所有聊天和帳號中的此連接器。",
-    "settingsDescription": "選擇預設啟用的帳號，以及新聊天的預設帳號。",
-    "thisChat": "目前聊天"
+    "settingsDescription": "選擇預設啟用的帳號，以及新聊天的預設帳號。"
   },
   "connectors": {
     "access": {

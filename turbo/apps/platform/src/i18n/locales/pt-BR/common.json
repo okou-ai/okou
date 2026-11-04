@@ -3168,8 +3168,7 @@
     "noEnabledAccount": "Nenhuma conta está ativa neste chat",
     "permissions": "Permissões",
     "permissionsDescription": "Estas regras se aplicam a este conector em todos os seus chats e contas.",
-    "settingsDescription": "Escolha as contas ativas por padrão e a conta padrão para novos chats.",
-    "thisChat": "Este chat"
+    "settingsDescription": "Escolha as contas ativas por padrão e a conta padrão para novos chats."
   },
   "connectors": {
     "access": {
