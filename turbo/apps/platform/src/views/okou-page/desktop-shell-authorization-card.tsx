@@ -242,7 +242,7 @@ export function DesktopShellAuthorizationCard({
             trigger={
               <Button
                 variant="quiet"
-                className="h-auto w-full min-w-0 justify-start px-0 py-0 text-left font-normal whitespace-normal text-foreground"
+                className="flex h-auto w-full min-w-0 justify-start px-0 py-0 text-left font-normal whitespace-normal text-foreground"
                 aria-label={viewReason}
                 showTooltip
               >
