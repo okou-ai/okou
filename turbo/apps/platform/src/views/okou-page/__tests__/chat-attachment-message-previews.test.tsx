@@ -3,7 +3,7 @@ import type {
   ChatThreadArtifactFile,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -423,21 +423,53 @@ test("Persisted Markdown attachments render without offering sharing", async () 
   await closeFocusedPreview();
 });
 
-test("Persisted HTML presentations open and download as presentations", async () => {
-  const downloads = context.mocks.browser.blobDownload();
-  await setupPersistedAttachmentMessage();
+test.each([false, true])(
+  "Persisted HTML presentations open, expand and download (split view=%s)",
+  async (splitView) => {
+    const downloads = context.mocks.browser.blobDownload();
+    await setupPersistedAttachmentMessage();
 
-  click(getNamedButton("Open html preview for quarterly-deck.html"));
-  await expect(
-    screen.findByTestId("presentation-artifact-viewport"),
-  ).resolves.toBeVisible();
-  click(getNamedButton("Download options"));
-  click(await findNamedMenuItem("Download"));
-  await waitFor(() => {
-    expect(downloads.downloads).toHaveLength(1);
-  });
-  expect(downloads.downloads[0]?.filename).toBe("quarterly-deck.html");
-});
+    click(getNamedButton("Open html preview for quarterly-deck.html"));
+    await screen.findByTestId("presentation-artifact-viewport");
+    if (splitView) {
+      click(getNamedButton("Open in split view"));
+    }
+    const preview = await screen.findByTestId(
+      splitView ? "artifact-sidebar" : "attachment-lightbox",
+    );
+    const expectPresentation = () => {
+      const frame = within(preview).getByTitle("quarterly-deck.html preview");
+      expect(frame).toHaveAttribute(
+        "src",
+        "https://private-files.example/quarterly-deck.html",
+      );
+      expect(frame).toHaveAttribute("tabindex", "-1");
+      expect(
+        within(preview).getByTestId("presentation-artifact-viewport"),
+      ).toContainElement(frame);
+    };
+    expectPresentation();
+
+    click(getNamedButton("Enter fullscreen", preview));
+    await findNamedButton("Exit fullscreen", preview);
+    expectPresentation();
+    click(getNamedButton("Exit fullscreen", preview));
+    await findNamedButton("Enter fullscreen", preview);
+    expectPresentation();
+
+    click(
+      getNamedButton(
+        splitView ? "Download artifact" : "Download options",
+        preview,
+      ),
+    );
+    click(await findNamedMenuItem("Download"));
+    await waitFor(() => {
+      expect(downloads.downloads).toHaveLength(1);
+    });
+    expect(downloads.downloads[0]?.filename).toBe("quarterly-deck.html");
+  },
+);
 
 test("A Slack-originated message keeps its attachment and original source", async () => {
   const fileId = "slack-review-markdown";
