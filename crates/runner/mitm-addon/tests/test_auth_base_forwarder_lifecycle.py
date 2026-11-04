@@ -21,6 +21,7 @@ from tests.auth_base_forwarder_helpers import (
     forwarder_concurrency_harness,
     http_response,
 )
+from tests.thread_helpers import ThreadUnderTest
 
 _PROCESS_EXIT_TIMEOUT_SECONDS = 5
 
@@ -107,7 +108,7 @@ class _TricklingResponseServer:
             self.connection_closed,
         )
         self._response_head = response_head
-        self.thread = threading.Thread(
+        self.thread = ThreadUnderTest(
             target=self._serve,
             name="auth-base-trickle-server",
         )
@@ -142,7 +143,7 @@ class _TricklingResponseServer:
         self._release.set()
         self.client_socket.close()
         self.server_socket.close()
-        await asyncio.to_thread(self.thread.join, 2)
+        await asyncio.to_thread(self.thread.join_and_raise, 2)
 
 
 class _RecordingSocket(forwarder.socket.socket):
