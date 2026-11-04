@@ -4224,7 +4224,7 @@
     "registered": "Friends signed up",
     "retry": "Try again",
     "signupLabel": "Invitation code (optional)",
-    "signupPlaceholder": "Enter your friend’s code",
+    "signupPlaceholder": "Enter invitation code",
     "terms": "For new users only. Each friend can earn you one reward. Credits go to your personal balance in this workspace and expire one month after they are granted.",
     "title": "Invite your friends"
   },
