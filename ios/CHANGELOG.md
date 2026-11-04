@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/okou-ai/okou/compare/ios-v0.25.0...ios-v0.25.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **ios:** float shared feedback below navigation ([#45254](https://github.com/okou-ai/okou/issues/45254)) ([c9e8665](https://github.com/okou-ai/okou/commit/c9e8665af07485f33289a79e41481e24785be625))
+
 ## [0.25.0](https://github.com/okou-ai/okou/compare/ios-v0.24.2...ios-v0.25.0) (2026-11-04)
 
 
