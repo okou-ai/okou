@@ -37,6 +37,10 @@ fn classifies_all_scenario_rules() {
             MockScenario::EchoJsonl("{\"type\":\"result\"}"),
         ),
         (
+            "@ECHO-FILE@\n/tmp/echo fixture.jsonl",
+            MockScenario::EchoJsonlFile("/tmp/echo fixture.jsonl"),
+        ),
+        (
             "@fail-no-newline:partial stderr",
             MockScenario::FailNoNewline("partial stderr"),
         ),

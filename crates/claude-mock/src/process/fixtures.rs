@@ -159,6 +159,16 @@ pub(super) fn run_fail(msg: &str) -> ExitCode {
     ExitCode::from(1)
 }
 
+pub(super) fn run_echo_jsonl_file_mode(path: &str) -> ExitCode {
+    match std::fs::read_to_string(path) {
+        Ok(payload) => run_echo_jsonl_mode(&payload, false),
+        Err(error) => {
+            eprintln!("read @ECHO-FILE@ input: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 pub(super) fn run_echo_jsonl_mode(payload: &str, hang_after_output: bool) -> ExitCode {
     let events = match parse_echo_jsonl(payload) {
         Ok(events) => events,
