@@ -1748,11 +1748,6 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "suggestion-learning",
-    contracts: ["suggestionLearningContract"],
-    bindings: [],
-  },
-  {
     module: "suggestions",
     contracts: ["suggestionsContract"],
     bindings: [

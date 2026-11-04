@@ -1,11 +1,9 @@
 import { command } from "ccstate";
 import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
-import { suggestionLearningContract } from "@okouai/api-contracts/contracts/suggestion-learning";
 import {
   readSuggestionManagement$,
   readSuggestions$,
 } from "../services/agent-suggestion-read.service";
-import { prepareSuggestionLearning$ } from "../services/suggestion-learning.service";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
@@ -106,18 +104,6 @@ export const suggestionsRoutes: readonly RouteEntry[] = [
               get(queryOf(suggestionsContract.manage)).after,
               signal,
             );
-      }),
-    ),
-  },
-  {
-    route: suggestionLearningContract.prepare,
-    handler: authRoute(
-      writeAuth,
-      command(async ({ set }, signal: AbortSignal) => {
-        const owner = await set(suggestionAccess$, signal);
-        return "status" in owner
-          ? owner
-          : await set(prepareSuggestionLearning$, owner, signal);
       }),
     ),
   },

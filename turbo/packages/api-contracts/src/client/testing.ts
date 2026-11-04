@@ -663,8 +663,6 @@ import { sshConnectionsContract as OriginalSshConnectionsContract } from "../con
 import { sshConnectionsContract } from "./ssh-connections";
 import { sshCredentialsContract as OriginalSshCredentialsContract } from "../contracts/ssh-credentials";
 import { sshCredentialsContract } from "./ssh-credentials";
-import { suggestionLearningContract as OriginalSuggestionLearningContract } from "../contracts/suggestion-learning";
-import { suggestionLearningContract } from "./suggestion-learning";
 import { suggestionsContract as OriginalSuggestionsContract } from "../contracts/suggestions";
 import { suggestionsContract } from "./suggestions";
 import { tailscaleContract as OriginalTailscaleContract } from "../contracts/tailscale";
@@ -1291,7 +1289,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [sshHostsContract, OriginalSshHostsContract],
   [sshConnectionsContract, OriginalSshConnectionsContract],
   [sshCredentialsContract, OriginalSshCredentialsContract],
-  [suggestionLearningContract, OriginalSuggestionLearningContract],
   [suggestionsContract, OriginalSuggestionsContract],
   [tailscaleContract, OriginalTailscaleContract],
   [teamsBotContract, OriginalTeamsBotContract],

@@ -11,21 +11,19 @@ import {
 export function liveSuggestion(at: Date) {
   return sql`(${and(eq(agentSuggestions.status, "active"), gt(agentSuggestions.expiresAt, at))})`;
 }
-export function pendingSuggestionFeedback() {
-  return sql`jsonb_path_exists(${agentSuggestions.feedbacks}, '$[*] ? (@.learnedAt == null)')`;
+export function retainedSuggestionFeedback(at: Date) {
+  const cutoff = new Date(at.getTime() - SUGGESTION_FEEDBACK_RETENTION_MS);
+  return sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${agentSuggestions.feedbacks}) AS feedback WHERE (feedback->>'createdAt')::timestamptz > ${cutoff.toISOString()}::timestamptz)`;
 }
 export function retainedSuggestion(at: Date) {
   const cutoff = new Date(at.getTime() - SUGGESTION_RETENTION_MS);
-  const feedbackCutoff = new Date(
-    at.getTime() - SUGGESTION_FEEDBACK_RETENTION_MS,
-  );
   return sql`(${or(
     liveSuggestion(at),
     and(
       not(eq(agentSuggestions.status, "active")),
       gt(agentSuggestions.updatedAt, cutoff),
     ),
-    sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${agentSuggestions.feedbacks}) AS feedback WHERE feedback->'learnedAt' = 'null'::jsonb AND (feedback->>'createdAt')::timestamptz > ${feedbackCutoff.toISOString()}::timestamptz)`,
+    retainedSuggestionFeedback(at),
   )})`;
 }
 export function suggestionRow(row: typeof agentSuggestions.$inferSelect) {
