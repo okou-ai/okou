@@ -3191,8 +3191,7 @@
     "noEnabledAccount": "Für diesen Chat ist kein Konto aktiviert",
     "permissions": "Berechtigungen",
     "permissionsDescription": "Diese Regeln gelten für diesen Connector in allen deinen Chats und Konten.",
-    "settingsDescription": "Wähle die standardmäßig aktivierten Konten und das Standardkonto für neue Chats.",
-    "thisChat": "Dieser Chat"
+    "settingsDescription": "Wähle die standardmäßig aktivierten Konten und das Standardkonto für neue Chats."
   },
   "connectors": {
     "access": {

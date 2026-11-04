@@ -3239,8 +3239,7 @@
     "noEnabledAccount": "Ninguna cuenta está activa en este chat",
     "permissions": "Permisos",
     "permissionsDescription": "Estas reglas se aplican a este conector en todos tus chats y cuentas.",
-    "settingsDescription": "Elige las cuentas activas por defecto y la cuenta predeterminada para nuevos chats.",
-    "thisChat": "Este chat"
+    "settingsDescription": "Elige las cuentas activas por defecto y la cuenta predeterminada para nuevos chats."
   },
   "connectors": {
     "access": {

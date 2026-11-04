@@ -3178,8 +3178,7 @@
     "noEnabledAccount": "Tidak ada akun aktif untuk chat ini",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
-    "settingsDescription": "Pilih akun yang aktif secara default dan akun default untuk chat baru.",
-    "thisChat": "Chat ini"
+    "settingsDescription": "Pilih akun yang aktif secara default dan akun default untuk chat baru."
   },
   "connectors": {
     "access": {

@@ -3178,8 +3178,7 @@
     "noEnabledAccount": "このチャットで有効なアカウントはありません",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
-    "settingsDescription": "既定で有効にするアカウントと、新しいチャットの既定のアカウントを選択します。",
-    "thisChat": "このチャット"
+    "settingsDescription": "既定で有効にするアカウントと、新しいチャットの既定のアカウントを選択します。"
   },
   "connectors": {
     "access": {

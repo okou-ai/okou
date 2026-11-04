@@ -3239,8 +3239,7 @@
     "noEnabledAccount": "Aucun compte actif pour cette discussion",
     "permissions": "Autorisations",
     "permissionsDescription": "Ces règles s’appliquent à ce connecteur dans toutes vos discussions et tous vos comptes.",
-    "settingsDescription": "Choisissez les comptes actifs par défaut et le compte par défaut pour les nouvelles discussions.",
-    "thisChat": "Cette discussion"
+    "settingsDescription": "Choisissez les comptes actifs par défaut et le compte par défaut pour les nouvelles discussions."
   },
   "connectors": {
     "access": {
