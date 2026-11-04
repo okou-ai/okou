@@ -15,6 +15,8 @@ import { theme$ } from "../../signals/theme.ts";
 import type { AuthV1ClerkSignals } from "../../signals/auth-v1-clerk.ts";
 import { AuthV1Layout } from "./auth-v1-layout.tsx";
 import { getClerkAuthAppearance } from "./clerk-auth-appearance.ts";
+import { SignupFriendReferral } from "./signup-friend-referral.tsx";
+import { signupFriendReferralReady$ } from "../../signals/friend-referrals.ts";
 
 export type AuthV1PageMode = "sign-in" | "sign-up";
 
@@ -47,6 +49,7 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
   const activeRoute = useGet(activeRoute$);
   const theme = useGet(theme$);
   const authBrand = resolveAuthBrandContext();
+  const referralReady = useGet(signupFriendReferralReady$);
 
   if (mode === "sign-in") {
     const redirectUrl = buildSignInRedirectUrl(
@@ -116,15 +119,18 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
         data-testid="app-sign-up"
         ref={authPageMountRef}
       >
-        <SignUp
-          appearance={getClerkAuthAppearance(authBrand.homeUrl, theme)}
-          fallback={<AuthLoadingFallback />}
-          fallbackRedirectUrl={redirectUrl}
-          forceRedirectUrl={redirectUrl}
-          path="/sign-up"
-          routing="path"
-          signInUrl={signInUrl}
-        />
+        {activeRoute === "signUp" && <SignupFriendReferral />}
+        <div inert={!referralReady}>
+          <SignUp
+            appearance={getClerkAuthAppearance(authBrand.homeUrl, theme)}
+            fallback={<AuthLoadingFallback />}
+            fallbackRedirectUrl={redirectUrl}
+            forceRedirectUrl={redirectUrl}
+            path="/sign-up"
+            routing="path"
+            signInUrl={signInUrl}
+          />
+        </div>
       </div>
     </AuthV1Layout>
   );

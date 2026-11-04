@@ -53,7 +53,7 @@ import {
 const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
 
-test("Friends have a separate referral link with paid-pack qualification and one-month rewards", async () => {
+test("Friends can copy their invitation code or link with paid-pack qualification and one-month rewards", async () => {
   configureQuestPage(context, "admin");
   const linkReady = context.mocks.deferred<void>();
   context.mocks.api(friendReferralsContract.link, async ({ respond }) => {
@@ -100,12 +100,22 @@ test("Friends have a separate referral link with paid-pack qualification and one
     within(dialog).getByText(/expire one month after they are granted/u),
   ).toBeInTheDocument();
   await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Getting your referral link…",
+    "Getting your invitation code…",
   );
   linkReady.resolve();
-  const link = await within(dialog).findByLabelText("Your referral link");
-  expect(link).toHaveValue(`${location.origin}/sign-up?friend_referral=a7k2p9`);
+  const code = await within(dialog).findByLabelText("Your invitation code");
+  expect(code).toHaveValue("a7k2p9");
+  expect(
+    within(dialog).queryByDisplayValue(
+      `${location.origin}/sign-up?friend_referral=a7k2p9`,
+    ),
+  ).not.toBeInTheDocument();
   expect(within(dialog).getByText("40,000")).toBeInTheDocument();
+  click(buttonNamed("Copy code", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
+  await expect(navigator.clipboard.readText()).resolves.toBe("a7k2p9");
   click(buttonNamed("Copy link", dialog));
   await waitFor(() => {
     expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
@@ -113,6 +123,7 @@ test("Friends have a separate referral link with paid-pack qualification and one
   await expect(navigator.clipboard.readText()).resolves.toBe(
     `${location.origin}/sign-up?friend_referral=a7k2p9`,
   );
+  expect(buttonNamed("Copy code", dialog)).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
@@ -180,12 +191,12 @@ test("Referral link failures can be retried in the same dialog", async () => {
     name: "Invite your friends",
   });
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-    "Your referral link could not be loaded. Try again.",
+    "Your invitation code could not be loaded. Try again.",
   );
   failed = false;
   click(buttonNamed("Try again", dialog));
   await expect(
-    within(dialog).findByLabelText("Your referral link"),
+    within(dialog).findByLabelText("Your invitation code"),
   ).resolves.toBeInTheDocument();
 });
 
