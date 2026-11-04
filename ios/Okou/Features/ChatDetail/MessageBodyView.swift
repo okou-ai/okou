@@ -3,7 +3,7 @@ import ChatDomain
 import SwiftUI
 import Textual
 
-struct MessageActionContext: Equatable {
+struct MessageActionContext: Hashable, Sendable {
   let agentID: String
   let threadID: String
 }
@@ -20,11 +20,14 @@ struct MessageBodyView: View, Equatable {
   let loadsActions: Bool
   let loadsDiagrams: Bool
   @Environment(\.openURL) private var openURL
-  private struct Prepared {
+  @Environment(\.messageUnitMeasurement) private var unitMeasurement
+  private struct Request: Hashable {
     let source: String
-    let content: AttributedString
+    let context: MessageRenderPlan.Context
   }
-  @State private var prepared: Prepared?
+
+  private let request: Request
+  @State private var prepared: (request: Request, plan: MessageRenderPlan)?
 
   init(
     text: String, baseURL: URL, markdown: MessageMarkdownCache,
@@ -43,8 +46,15 @@ struct MessageBodyView: View, Equatable {
     self.artifactImageSources = artifactImageSources
     self.loadsActions = loadsActions
     self.loadsDiagrams = loadsDiagrams
+    let context = MessageRenderPlan.Context(
+      webURL: baseURL, action: connectorActions == nil ? nil : actionContext,
+      permissionsEnabled: permissionActions != nil, artifacts: artifacts)
+    let request = Request(source: text, context: context)
+    self.request = request
     _prepared = State(
-      initialValue: markdown.cached(text).map { Prepared(source: text, content: $0) })
+      initialValue: markdown.cachedPlan(for: text, context: context).map {
+        (request, $0)
+      })
   }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
@@ -56,100 +66,20 @@ struct MessageBodyView: View, Equatable {
       && lhs.loadsDiagrams == rhs.loadsDiagrams
   }
 
-  @ViewBuilder private func preparedBody(_ content: AttributedString) -> some View {
-    if let context = actionContext, let connectorActions {
-      let blocks = MessageActionBody.blocks(
-        content, webURL: baseURL, agentID: context.agentID, threadID: context.threadID,
-        permissionsEnabled: permissionActions != nil)
-      VStack(alignment: .leading, spacing: 12) {
-        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-          switch block {
-          case .markdown(let fragment):
-            if !String(fragment.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-              artifactBody(fragment)
-            }
-          case .connector(let action):
-            ConnectorActionCard(action: action, store: connectorActions, loadsState: loadsActions)
-          case .permission(let action):
-            if let permissionActions {
-              PermissionActionCard(store: permissionActions.card(action), loadsState: loadsActions)
-            }
-          case .permissionBatch(let action):
-            if let permissionActions {
-              PermissionBatchCard(store: permissionActions.card(action), loadsState: loadsActions)
-            }
-          case .unavailablePermission:
-            ChatCardHeader(
-              title: String(localized: "Permission request unavailable"),
-              systemImage: "exclamationmark.shield"
-            ) {
-              EmptyView()
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-            .modifier(ChatCardSurface())
-          }
-        }
-      }
-    } else {
-      artifactBody(content)
-    }
-  }
-
-  @ViewBuilder private func artifactBody(_ content: AttributedString) -> some View {
-    if let artifacts {
-      let images =
-        prepared.map { MessageArtifactBody.resources($0.content, viewer: artifacts) } ?? []
-      let blocks = MessageArtifactBody.blocks(content, viewer: artifacts)
-      VStack(alignment: .leading, spacing: 8) {
-        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-          switch block {
-          case .markdown(let fragment):
-            if !String(fragment.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-              diagramBody(fragment)
-            }
-          case .artifact(let resource, let label, let destination):
-            MessageArtifactCard(
-              resource: resource, label: label, destination: destination,
-              images: images, imageSources: artifactImageSources, viewer: artifacts,
-              loadsContent: loadsActions)
-          }
-        }
-      }
-    } else {
-      diagramBody(content)
-    }
-  }
-
-  private func diagramBody(_ content: AttributedString) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
-      ForEach(Array(MessageMermaidBody.blocks(content, source: text).enumerated()), id: \.offset) {
-        _, block in
-        switch block {
-        case .markdown(let fragment):
-          StructuredText(text, parser: PreparedMessageParser(content: fragment))
-        case .diagram(let code, let original):
-          MessageMermaidView(
-            code: code, original: original, renderer: markdown.diagrams, loadsContent: loadsDiagrams
-          )
-          .id(code)
-        }
-      }
-    }
-  }
-
   var body: some View {
+    let plan = prepared?.request == request ? prepared?.plan : nil
     Group {
-      if let prepared, prepared.source == text {
-        preparedBody(prepared.content)
+      if let plan {
+        MessageRenderUnitView(
+          unit: plan.root, message: self, resources: plan.resources,
+          measurement: plan.hasIndependentUnits ? unitMeasurement : nil)
       } else {
         Text(text).textSelection(.enabled)
       }
     }
     // Keep overrides closest to the content; the bundled style sets the same environment keys.
     .textual.codeBlockStyle(MessageCodeBlockStyle())
+    .textual.codeHighlightCache(markdown.codeHighlights)
     .textual.tableStyle(.overflow)
     .textual.structuredTextStyle(.gitHub)
     .textual.imageAttachmentLoader(
@@ -164,9 +94,8 @@ struct MessageBodyView: View, Equatable {
           return .discarded
         }
         if let artifacts, let resource = artifacts.resource(url.absoluteString) {
-          let images =
-            prepared.map { MessageArtifactBody.resources($0.content, viewer: artifacts) } ?? []
-          artifacts.open(resource, images: images, imageSources: artifactImageSources)
+          artifacts.open(
+            resource, images: plan?.resources ?? [], imageSources: artifactImageSources)
         } else {
           // Markdown links can retain a base URL. System dispatch needs the
           // resolved standalone destination, even when absoluteString is valid.
@@ -175,10 +104,85 @@ struct MessageBodyView: View, Equatable {
         return .handled
       }
     )
-    .task(id: text) {
-      let content = await markdown.content(for: text)
-      guard !Task.isCancelled else { return }
-      prepared = Prepared(source: text, content: content)
+    .task(id: request) {
+      guard prepared?.request != request else { return }
+      guard let plan = await markdown.renderPlan(for: request.source, context: request.context),
+        !Task.isCancelled
+      else { return }
+      prepared = (request, plan)
+    }
+  }
+}
+
+private struct MessageRenderUnitView: View {
+  let unit: MessageRenderPlan.Unit
+  let message: MessageBodyView
+  let resources: [ChatArtifact]
+  let measurement: MessageUnitMeasurements.Session?
+
+  var body: some View {
+    if let measurement, let key = unit.sizeKey {
+      if let size = measurement.size(for: key) {
+        Color.clear.frame(width: size.width, height: size.height)
+      } else {
+        content.onGeometryChange(for: CGSize.self) {
+          $0.size
+        } action: { size in
+          measurement.observe(size, for: key)
+        }
+      }
+    } else {
+      content
+    }
+  }
+
+  @ViewBuilder private var content: some View {
+    switch unit {
+    case .group(let units, let spacing):
+      VStack(alignment: .leading, spacing: spacing) {
+        ForEach(units.indices, id: \.self) { index in
+          MessageRenderUnitView(
+            unit: units[index], message: message, resources: resources, measurement: measurement)
+        }
+      }
+    case .markdown(let fragment, _):
+      StructuredText(prepared: fragment)
+    case .connector(let action):
+      if let store = message.connectorActions {
+        ConnectorActionCard(action: action, store: store, loadsState: message.loadsActions)
+      }
+    case .permission(let action):
+      if let store = message.permissionActions {
+        PermissionActionCard(store: store.card(action), loadsState: message.loadsActions)
+      }
+    case .permissionBatch(let action):
+      if let store = message.permissionActions {
+        PermissionBatchCard(store: store.card(action), loadsState: message.loadsActions)
+      }
+    case .unavailablePermission:
+      ChatCardHeader(
+        title: String(localized: "Permission request unavailable"),
+        systemImage: "exclamationmark.shield"
+      ) {
+        EmptyView()
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 12)
+      .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+      .modifier(ChatCardSurface())
+    case .artifact(let resource, let label, let destination):
+      if let viewer = message.artifacts {
+        MessageArtifactCard(
+          resource: resource, label: label, destination: destination, images: resources,
+          imageSources: message.artifactImageSources, viewer: viewer,
+          loadsContent: message.loadsActions)
+      }
+    case .diagram(let code, let original):
+      MessageMermaidView(
+        code: code, original: original, renderer: message.markdown.diagrams,
+        loadsContent: message.loadsDiagrams
+      )
+      .id(code)
     }
   }
 }

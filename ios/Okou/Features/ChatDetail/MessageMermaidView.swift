@@ -21,7 +21,7 @@ struct MessageMermaidView: View {
   var body: some View {
     Group {
       if failed {
-        StructuredText(code, parser: PreparedMessageParser(content: original))
+        StructuredText(prepared: original)
       } else {
         VStack(alignment: .leading, spacing: 8) {
           HStack {

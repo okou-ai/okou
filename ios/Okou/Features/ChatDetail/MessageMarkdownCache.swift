@@ -6,11 +6,14 @@ import Textual
 @MainActor
 final class MessageMarkdownCache {
   private(set) var diagrams = MessageMermaidRenderer()
+  private(set) var codeHighlights = StructuredText.CodeHighlightCache()
+  let unitMeasurements = MessageUnitMeasurements()
   private struct Entry {
     let content: AttributedString
     let cost: Int
     var lastUse: UInt64
     var tables: (viewport: MessageTableLayout.Viewport, layouts: MessageTableLayouts)?
+    var plan: (context: MessageRenderPlan.Context, value: MessageRenderPlan)?
   }
 
   private struct TableKey: Hashable {
@@ -18,17 +21,25 @@ final class MessageMarkdownCache {
     let viewport: MessageTableLayout.Viewport
   }
 
-  private let worker: MarkdownWorker
+  private struct PlanKey: Hashable {
+    let text: String
+    let context: MessageRenderPlan.Context
+  }
+
+  private var worker: MarkdownWorker
+  private let baseURL: URL
   private let costLimit: Int
   private let entryLimit: Int
   private var entries: [String: Entry] = [:]
   private var inFlight: [String: Task<AttributedString, Never>] = [:]
   private var tableTasks: [TableKey: Task<MessageTableLayouts, Never>] = [:]
+  private var planTasks: [PlanKey: Task<MessageRenderPlan, Never>] = [:]
   private var totalCost = 0
   private var clock: UInt64 = 0
   private var generation = UUID()
 
   init(baseURL: URL, costLimit: Int = 8 * 1024 * 1024, entryLimit: Int = 256) {
+    self.baseURL = baseURL
     worker = MarkdownWorker(baseURL: baseURL)
     self.costLimit = costLimit
     self.entryLimit = entryLimit
@@ -89,6 +100,34 @@ final class MessageMarkdownCache {
     return layouts
   }
 
+  func cachedPlan(for text: String, context: MessageRenderPlan.Context) -> MessageRenderPlan? {
+    guard let plan = entries[text]?.plan, plan.context == context else { return nil }
+    _ = cached(text)
+    return plan.value
+  }
+
+  func renderPlan(for text: String, context: MessageRenderPlan.Context) async -> MessageRenderPlan?
+  {
+    guard !Task.isCancelled else { return nil }
+    if let plan = cachedPlan(for: text, context: context) { return plan }
+    let currentGeneration = generation
+    let content = await content(for: text)
+    guard generation == currentGeneration, !Task.isCancelled else { return nil }
+    if let plan = cachedPlan(for: text, context: context) { return plan }
+    let key = PlanKey(text: text, context: context)
+    if let task = planTasks[key] {
+      let plan = await task.value
+      return generation == currentGeneration && !Task.isCancelled ? plan : nil
+    }
+    let task = Task { [worker] in await worker.renderPlan(content, source: text, context: context) }
+    planTasks[key] = task
+    let plan = await task.value
+    guard generation == currentGeneration else { return nil }
+    planTasks[key] = nil
+    entries[text]?.plan = (context, plan)
+    return Task.isCancelled ? nil : plan
+  }
+
   func prepareLatest(_ messages: [ChatMessage]) async {
     // Prepare the landing viewport before publication; older rows are prepared on demand.
     let currentGeneration = generation
@@ -100,11 +139,16 @@ final class MessageMarkdownCache {
 
   func clear() {
     diagrams = MessageMermaidRenderer()
+    codeHighlights = StructuredText.CodeHighlightCache()
+    unitMeasurements.clear()
+    worker = MarkdownWorker(baseURL: baseURL)
     generation = UUID()
     for task in inFlight.values { task.cancel() }
     inFlight.removeAll()
     for task in tableTasks.values { task.cancel() }
     tableTasks.removeAll()
+    for task in planTasks.values { task.cancel() }
+    planTasks.removeAll()
     entries.removeAll()
     totalCost = 0
   }
@@ -112,13 +156,20 @@ final class MessageMarkdownCache {
 
 private actor MarkdownWorker {
   let baseURL: URL
+  private var tableLayouts = MessageTableLayout.Cache()
 
   init(baseURL: URL) { self.baseURL = baseURL }
 
   func prepareTables(
     _ content: AttributedString, viewport: MessageTableLayout.Viewport
   ) -> MessageTableLayouts {
-    MessageTableLayout.prepare(content, viewport: viewport)
+    tableLayouts.prepare(content, viewport: viewport)
+  }
+
+  func renderPlan(
+    _ content: AttributedString, source: String, context: MessageRenderPlan.Context
+  ) -> MessageRenderPlan {
+    MessageRenderPlan(content: content, source: source, context: context)
   }
 
   func parse(_ text: String) -> AttributedString {
@@ -151,10 +202,4 @@ private actor MarkdownWorker {
     if !tracksDiagrams { content.markdownSourcePosition = nil }
     return content
   }
-}
-
-struct PreparedMessageParser: MarkupParser {
-  let content: AttributedString
-
-  func attributedString(for input: String) throws -> AttributedString { content }
 }

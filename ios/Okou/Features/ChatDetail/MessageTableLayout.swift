@@ -11,6 +11,54 @@ enum MessageTableLayout {
     let scale: CGFloat
   }
 
+  struct Cache {
+    private struct Key: Hashable {
+      let viewport: Viewport
+      let rows: [[AttributedString]]
+
+      init(_ table: StructuredText.TableSource, viewport: Viewport) {
+        self.viewport = viewport
+        rows = table.rows.map { row in
+          row.map { cell in
+            var value = AttributedString(cell)
+            // The parser assigns these identities within each document. They do not size the cell.
+            value.presentationIntent = nil
+            value.markdownSourcePosition = nil
+            return value
+          }
+        }
+      }
+    }
+
+    private var layouts: [Key: StructuredText.PreparedTableLayout] = [:]
+    private var order: [Key] = []
+
+    mutating func prepare(_ document: AttributedString, viewport: Viewport) -> MessageTableLayouts {
+      guard viewport.width > 0, viewport.fontSize > 0, viewport.scale > 0 else { return [:] }
+      var result: MessageTableLayouts = [:]
+      for table in StructuredText.tables(in: document).prefix(2) {
+        guard !Task.isCancelled else { return [:] }
+        guard MessageTableLayout.supports(table) else { continue }
+        let key = Key(table, viewport: viewport)
+        if let existing = layouts[key] {
+          let cells = zip(existing.cells, table.rows.joined()).map { geometry, content in
+            StructuredText.PreparedTableLayout.Cell(
+              content: content, row: geometry.row, column: geometry.column, frame: geometry.frame)
+          }
+          result[table.content] = .init(
+            size: existing.size, contentWidth: existing.contentWidth,
+            cells: cells, dividers: existing.dividers)
+        } else if let layout = MessageTableLayout.prepare(table, viewport: viewport) {
+          layouts[key] = layout
+          order.append(key)
+          if order.count > 32 { layouts.removeValue(forKey: order.removeFirst()) }
+          result[table.content] = layout
+        }
+      }
+      return result
+    }
+  }
+
   // Match the GitHub cell padding and the overflow table's one-point dividers.
   private static let horizontalPadding: CGFloat = 26
   private static let verticalPadding: CGFloat = 12
@@ -18,23 +66,22 @@ enum MessageTableLayout {
   private static let fontKey = NSAttributedString.Key(kCTFontAttributeName as String)
 
   static func prepare(_ document: AttributedString, viewport: Viewport) -> MessageTableLayouts {
-    guard viewport.width > 0, viewport.fontSize > 0, viewport.scale > 0 else { return [:] }
-    var result: MessageTableLayouts = [:]
-    for table in StructuredText.tables(in: document).prefix(2) {
-      guard !Task.isCancelled else { return [:] }
-      result[table.content] = prepare(table, viewport: viewport)
-    }
-    return result
+    var cache = Cache()
+    return cache.prepare(document, viewport: viewport)
+  }
+
+  private static func supports(_ table: StructuredText.TableSource) -> Bool {
+    (3...6).contains(table.columnCount) && (8...35).contains(table.rows.count)
+      && table.rows.count * table.columnCount <= 160
+      && table.rows.allSatisfy { $0.count == table.columnCount }
+      && table.content.characters.prefix(8_193).count <= 8_192
   }
 
   private static func prepare(
     _ table: StructuredText.TableSource, viewport: Viewport
   ) -> StructuredText.PreparedTableLayout? {
     let columnCount = table.columnCount
-    guard (3...6).contains(columnCount), (8...35).contains(table.rows.count),
-      table.rows.count * columnCount <= 160, table.rows.allSatisfy({ $0.count == columnCount }),
-      table.content.characters.prefix(8_193).count <= 8_192,
-      let regular = CTFontCreateUIFontForLanguage(.system, viewport.fontSize, nil),
+    guard let regular = CTFontCreateUIFontForLanguage(.system, viewport.fontSize, nil),
       let bold = CTFontCreateCopyWithSymbolicTraits(regular, 0, nil, .boldTrait, .boldTrait)
     else { return nil }
 

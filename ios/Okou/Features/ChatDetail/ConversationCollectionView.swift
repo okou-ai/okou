@@ -96,6 +96,7 @@ final class ConversationCollectionScroll {
 struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable {
   let rows: [ConversationCollectionRow]
   let markdown: MessageMarkdownCache
+  let renderContext: (ChatMessage) -> MessageRenderPlan.Context
   var measurements = ConversationMeasurementCache()
   var contentInsets = EdgeInsets()
   let anchor: ConversationScrollAnchor
@@ -149,6 +150,17 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let height: CGFloat
   }
 
+  private final class CellHeightObservation {
+    weak var cell: MessageSelectionCell?
+    var height: CGFloat?
+  }
+
+  private struct PrefetchedContent {
+    let measurement: Measurement
+    let view: UIView
+    let observation: CellHeightObservation
+  }
+
   private let layout = UICollectionViewFlowLayout()
   private var collection: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
@@ -156,6 +168,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var measurements: [String: Measurement] = [:]
   private var displayedRows: [String: ConversationCollectionRow] = [:]
   private var tableLookahead: Task<Void, Never>?
+  private var contentPrefetchContainer: UIView?
+  private var prefetchedContent: [String: PrefetchedContent] = [:]
+  private var prefetchTask: Task<Void, Never>?
   private var displayedWidth: CGFloat = 0
   private var displayedCategory = UIContentSizeCategory.unspecified
   private var preparation: Task<Void, Never>?
@@ -246,33 +261,32 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collection) {
       [weak self] collection, index, id in
       guard let self else { return nil }
-      let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index)
+      guard
+        let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index)
+          as? MessageSelectionCell
+      else { preconditionFailure("Expected a message cell") }
       guard let row = self.displayedRows[id], let measurement = self.measurements[id] else {
         preconditionFailure("Every displayed conversation row must have a measurement")
       }
-      if let cell = cell as? MessageSelectionCell {
-        cell.representedRowID = row.id
-        cell.message = row.message
-        cell.quote = self.source.quote
-      }
+      cell.representedRowID = row.id
+      cell.message = row.message
+      cell.quote = source.quote
       cell.clipsToBounds = true
-      let content = self.source.content(row, self.source.anchor)
-      cell.contentConfiguration = UIHostingConfiguration {
-        content
-          .textual.preparedTables(measurement.tables)
-          .id(row.id)
-          .frame(width: measurement.width, alignment: .leading)
-          .fixedSize(horizontal: false, vertical: true)
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: { [weak self, weak cell] height in
-            guard (cell as? MessageSelectionCell)?.representedRowID == row.id else { return }
-            self?.observeHeight(
-              height, row: row, width: measurement.width, category: measurement.category,
-              tableViewport: measurement.tableViewport)
-          }
-          .frame(height: measurement.height, alignment: .topLeading)
-      }.margins(.all, 0)
+      let prepared = prefetchedContent.removeValue(forKey: row.id)
+      if let prepared, prepared.measurement == measurement {
+        prepared.observation.cell = cell
+        cell.showPrefetchedContent(prepared.view)
+        if let height = prepared.observation.height {
+          observeHeight(
+            height, row: row, width: measurement.width, category: measurement.category,
+            tableViewport: measurement.tableViewport)
+        }
+      } else {
+        prepared?.view.removeFromSuperview()
+        let observation = CellHeightObservation()
+        observation.cell = cell
+        cell.setMessageConfiguration(messageConfiguration(row, measurement, observation))
+      }
       return cell
     }
     source.anchor.isPresentedMarker = { [weak self] marker in
@@ -292,6 +306,134 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       controller.publishViewportChange()
       controller.prepareRowsIfNeeded()
     }
+  }
+
+  private func messageConfiguration(
+    _ row: ConversationCollectionRow, _ measurement: Measurement,
+    _ observation: CellHeightObservation
+  ) -> some UIContentConfiguration {
+    let content = source.content(row, source.anchor)
+    return UIHostingConfiguration {
+      content
+        .textual.preparedTables(measurement.tables)
+        .id(row.id)
+        .frame(width: measurement.width, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self, of: \.size.height) { [weak self] height in
+          observation.height = height
+          guard observation.cell?.representedRowID == row.id else { return }
+          self?.observeHeight(
+            height, row: row, width: measurement.width, category: measurement.category,
+            tableViewport: measurement.tableViewport)
+        }
+        .frame(height: measurement.height, alignment: .topLeading)
+    }.margins(.all, 0)
+  }
+
+  private var canPrefetchContent: Bool {
+    !stopped && !isScrolling && !appliesRows && view.window != nil
+      && collection.isUserInteractionEnabled && source.sendTransition?.isActive != true
+  }
+
+  private func prefetchNearbyContent() {
+    prefetchTask?.cancel()
+    guard canPrefetchContent else { return }
+    // After a prepend, UIKit's visible cell list can lag the restored content offset.
+    let visible = (layout.layoutAttributesForElements(in: collection.bounds) ?? []).compactMap {
+      $0.representedElementCategory == .cell ? $0.indexPath.item : nil
+    }
+    guard let first = visible.min(), let last = visible.max() else { return }
+    let ids = dataSource.snapshot().itemIdentifiers
+    let above = Array(ids.prefix(first).suffix(14).reversed())
+    let below = Array(ids.dropFirst(last + 1).prefix(12))
+    let nearby = above + below
+    let rich = nearby.filter { id in
+      guard case .message(let message, _, _, nil, false, false) = displayedRows[id],
+        message.role == .assistant, message.attachments.isEmpty,
+        (250...8_192).contains(message.text.utf8.count),
+        let plan = source.markdown.cachedPlan(
+          for: message.text, context: source.renderContext(message))
+      else { return false }
+      return plan.hasStableHeight && plan.resources.isEmpty
+    }
+    let plain = nearby.filter { id in
+      guard case .message(let message, _, _, nil, false, false) = displayedRows[id],
+        message.role == .user, message.attachments.isEmpty, message.modelChange == nil,
+        message.inputError == nil, let document = message.userMessage,
+        document.annotation == nil, document.bodyParts.count == 1,
+        let part = document.bodyParts.first, part.type == "text"
+      else { return false }
+      return part.displayText.utf8.count <= 8_192
+    }
+    let richIDs = Set(rich.prefix(8))
+    let plainIDs = Set(plain.prefix(6))
+    // Prepare the expensive rows above the reader first so a quick follow-up swipe can use them.
+    let candidates =
+      above.filter { richIDs.contains($0) } + above.filter { plainIDs.contains($0) }
+      + below.filter { richIDs.contains($0) } + below.filter { plainIDs.contains($0) }
+    for id in prefetchedContent.keys
+    where !candidates.contains(id)
+      || prefetchedContent[id]?.measurement != measurements[id]
+    {
+      prefetchedContent.removeValue(forKey: id)?.view.removeFromSuperview()
+    }
+    if let container = contentPrefetchContainer, container.subviews.isEmpty {
+      container.removeFromSuperview()
+      contentPrefetchContainer = nil
+    }
+    guard candidates.contains(where: { prefetchedContent[$0] == nil }) else { return }
+    prefetchTask = Task(priority: .utility) { [weak self] in
+      for id in candidates {
+        await conversationLayoutFrame()
+        guard let self, !Task.isCancelled, canPrefetchContent else { return }
+        guard prefetchedContent[id] == nil, let row = displayedRows[id],
+          let measurement = measurements[id]
+        else { continue }
+        let observation = CellHeightObservation()
+        let content = messageConfiguration(row, measurement, observation).makeContentView()
+        let usesViewport = richIDs.contains(id)
+        let host: UIView = usesViewport ? contentPrefetchHost() : view
+        content.frame = CGRect(
+          x: usesViewport ? -measurement.width : -2 * measurement.width,
+          y: 0, width: measurement.width, height: measurement.height)
+        content.isUserInteractionEnabled = false
+        content.accessibilityElementsHidden = true
+        host.addSubview(content)
+        prefetchedContent[id] = .init(
+          measurement: measurement, view: content, observation: observation)
+      }
+    }
+  }
+
+  private func contentPrefetchHost() -> UIView {
+    if let contentPrefetchContainer { return contentPrefetchContainer }
+    // Give nearby complex rows their scroll-view environment while the reader is idle.
+    let container = UIView()
+    container.isUserInteractionEnabled = false
+    container.accessibilityElementsHidden = true
+    container.translatesAutoresizingMaskIntoConstraints = false
+    collection.addSubview(container)
+    let viewport = collection.frameLayoutGuide
+    NSLayoutConstraint.activate([
+      container.widthAnchor.constraint(equalTo: viewport.widthAnchor),
+      container.heightAnchor.constraint(equalTo: viewport.heightAnchor),
+      container.topAnchor.constraint(equalTo: viewport.topAnchor),
+      container.trailingAnchor.constraint(equalTo: viewport.leadingAnchor),
+    ])
+    contentPrefetchContainer = container
+    return container
+  }
+
+  private func clearPrefetchedContent() {
+    prefetchTask?.cancel()
+    prefetchTask = nil
+    for content in prefetchedContent.values { content.view.removeFromSuperview() }
+    prefetchedContent.removeAll()
+  }
+
+  override func didReceiveMemoryWarning() {
+    super.didReceiveMemoryWarning()
+    clearPrefetchedContent()
   }
 
   override func viewDidLayoutSubviews() {
@@ -352,6 +494,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   func stop() {
     source.sidebar?.detach(self)
     stopped = true
+    clearPrefetchedContent()
     tableLookahead?.cancel()
     tableLookahead = nil
     source.sendTransition?.cancel()
@@ -430,6 +573,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       requestedRows != source.rows || requestedWidth != width || requestedCategory != category
         || requestedTableViewport != viewport
     else { return }
+    if requestedWidth != width || requestedCategory != category
+      || requestedTableViewport != viewport
+    {
+      clearPrefetchedContent()
+    }
     requestedRows = source.rows
     requestedWidth = width
     requestedCategory = category
@@ -561,7 +709,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     _ row: ConversationCollectionRow, viewport: MessageTableLayout.Viewport?
   ) async -> MessageTableLayouts? {
     guard let message = row.message else { return nil }
-    _ = await source.markdown.content(for: message.text)
+    if message.role == .assistant || (message.role == .user && message.userMessage == nil) {
+      _ = await source.markdown.renderPlan(
+        for: message.text, context: source.renderContext(message))
+    }
     guard let viewport, !Task.isCancelled, message.role == .assistant,
       case .message(_, _, _, _, _, false) = row
     else { return nil }
@@ -621,7 +772,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private static var rendererVersion: String {
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-    return build + "/prepared-tables-1/" + ProcessInfo.processInfo.operatingSystemVersionString
+    return build + "/render-units-2/" + ProcessInfo.processInfo.operatingSystemVersionString
   }
 
   private func diskKey(
@@ -640,15 +791,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       else { return nil }
       text = part.displayText
     } else if message.role == .assistant {
-      // Links can resolve to cards and attachments can grow after initial layout.
-      guard let content = source.markdown.cached(text),
-        content.runs.allSatisfy({ run in
-          guard run.link == nil, run.imageURL == nil else { return false }
-          return run.presentationIntent?.components.allSatisfy { component in
-            guard case .codeBlock(let language) = component.kind else { return true }
-            return language?.lowercased() != "mermaid" && language?.lowercased() != "math"
-          } != false
-        })
+      guard
+        source.markdown.cachedPlan(for: text, context: source.renderContext(message))?
+          .hasStableHeight == true
       else { return nil }
     }
     return ConversationHeightDiskCache.Key(
@@ -659,10 +804,23 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private func measure(
     _ rows: [ConversationCollectionRow], width: CGFloat, tables: [String: MessageTableLayouts]
   ) async -> (heights: [CGFloat], settled: Bool) {
+    if defersHostedMeasurement, !(await waitForMeasurementFrame()) { return ([], false) }
+    let layout = diskLayout(width: width)
+    var unitSessions: [MessageUnitMeasurements.Session] = []
     let hosts = rows.map { row in
+      let unitSession: MessageUnitMeasurements.Session?
+      if case .message(let message, _, _, _, _, false) = row, message.role == .assistant {
+        let session = MessageUnitMeasurements.Session(
+          cache: source.markdown.unitMeasurements, layout: layout)
+        unitSessions.append(session)
+        unitSession = session
+      } else {
+        unitSession = nil
+      }
       let host = UIHostingController(
         rootView: source.content(row, nil)
           .textual.preparedTables(tables[row.id] ?? [:])
+          .environment(\.messageUnitMeasurement, unitSession)
           .fixedSize(horizontal: false, vertical: true))
       // System bars must not contribute to intrinsic row sizes in the offscreen measurement host.
       host.safeAreaRegions = []
@@ -686,8 +844,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     // Textual populates its initial state and nested overflow geometry after mounting.
     // Later asynchronous attachment growth is measured separately by visible cells.
     for _ in 0..<30 {
-      await conversationLayoutFrame()
-      guard !Task.isCancelled else { return (previous, false) }
+      guard await waitForMeasurementFrame() else { return (previous, false) }
       let heights = hosts.map { host in
         let size = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
         let height = pixelHeight(size.height)
@@ -697,9 +854,24 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       }
       stableFrames = heights == previous ? stableFrames + 1 : 0
       previous = heights
-      if stableFrames >= 2 { return (previous, true) }
+      if stableFrames >= 2 {
+        for session in unitSessions { session.commit() }
+        return (previous, true)
+      }
     }
     return (previous, false)
+  }
+
+  private var defersHostedMeasurement: Bool {
+    isScrolling && source.sendTransition?.isActive != true
+  }
+
+  private func waitForMeasurementFrame() async -> Bool {
+    repeat {
+      await conversationLayoutFrame()
+      guard !Task.isCancelled else { return false }
+    } while defersHostedMeasurement
+    return true
   }
 
   private func measureImmediately(_ rows: [ConversationCollectionRow], width: CGFloat) -> [CGFloat]
@@ -784,6 +956,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         guard let self, !stopped else { return }
         source.rowsPresented(firstItemID)
         prepareEarlierTables(width: displayedWidth)
+        prefetchNearbyContent()
       }
       if isScrolling {
         publishMetrics()
@@ -897,6 +1070,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    prefetchTask?.cancel()
     source.sendTransition?.cancel()
     pendingScroll = nil
     animatesScroll = false
@@ -923,6 +1097,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     DispatchQueue.main.async { [weak self] in
       guard let self, !stopped, source.sendTransition?.isActive != true else { return }
       source.phaseChanged(.idle)
+      prefetchNearbyContent()
     }
   }
 
@@ -960,8 +1135,15 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let measurement = measurements[row.id], measurement.row == row, measurement.width == width,
       measurement.category == category, measurement.tableViewport == tableViewport
     else { return }
+    let renderedHeight = pixelHeight(height)
+    if abs(measurement.height - renderedHeight) <= 0.5 {
+      observedHeights.removeValue(forKey: row.id)
+      resizeIDs.removeValue(forKey: row.id)
+      resizeTasks.removeValue(forKey: row.id)?.cancel()
+      return
+    }
     observedHeights[row.id] = ObservedHeight(
-      row: row, width: width, category: measurement.category, height: pixelHeight(height))
+      row: row, width: width, category: measurement.category, height: renderedHeight)
     guard resizeTasks[row.id] == nil else { return }
     let generation = UUID()
     resizeIDs[row.id] = generation

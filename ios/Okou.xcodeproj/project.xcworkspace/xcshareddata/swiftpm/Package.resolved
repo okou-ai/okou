@@ -105,7 +105,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/okou-ai/textual.git",
       "state" : {
-        "revision" : "7bfd355629ab8897b9d92e80de20db6d2f802ce9"
+        "revision" : "d3c74e97c2995d3819fad7173816f889c3257e96"
       }
     }
   ],

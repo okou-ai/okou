@@ -263,7 +263,7 @@
 			"repositoryURL" = "https://github.com/okou-ai/textual.git";
 			"requirement" = {
 				"kind" = "revision";
-				"revision" = "7bfd355629ab8897b9d92e80de20db6d2f802ce9";
+				"revision" = "d3c74e97c2995d3819fad7173816f889c3257e96";
 			};
 		};
 		"000000000000000000000060" = {
