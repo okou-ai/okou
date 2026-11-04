@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.244.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.8...runner-rs-v0.244.9) (2026-11-04)
+
+
+### Refactoring
+
+* **python:** centralize metadata lexical scope ownership ([#45097](https://github.com/okou-ai/okou/issues/45097)) ([7316ef8](https://github.com/okou-ai/okou/commit/7316ef8399612241b731b2d06079daab9dfee7de))
+* **python:** share configured platform url parsing primitives ([#45135](https://github.com/okou-ai/okou/issues/45135)) ([a9a4989](https://github.com/okou-ai/okou/commit/a9a498944103371b9ee8b16c1bea6de90accca65))
+* **test:** share the s3 partial-body error fixture ([#45118](https://github.com/okou-ai/okou/issues/45118)) ([413a9a3](https://github.com/okou-ai/okou/commit/413a9a3f1b856a77ffd86ddbe6a728913285a46f))
+
+
+### Performance Improvements
+
+* **runner:** optimize and prewarm firewall catalog initialization ([#45101](https://github.com/okou-ai/okou/issues/45101)) ([628bfa0](https://github.com/okou-ai/okou/commit/628bfa04201573db4431df43b1686a9738f970ba))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.7...runner-rs-v0.244.8) (2026-11-04)
 
 

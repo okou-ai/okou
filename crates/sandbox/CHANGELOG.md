@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.10](https://github.com/okou-ai/okou/compare/sandbox-v0.28.9...sandbox-v0.28.10) (2026-11-04)
+
+
+### Refactoring
+
+* **sandbox:** retire orphaned staged-file finalization ([#45133](https://github.com/okou-ai/okou/issues/45133)) ([e397ac6](https://github.com/okou-ai/okou/commit/e397ac62f05a037478f6135ecb231f665ab76afe))
+
 ## [0.28.9](https://github.com/okou-ai/okou/compare/sandbox-v0.28.8...sandbox-v0.28.9) (2026-11-04)
 
 
