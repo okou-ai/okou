@@ -22,6 +22,28 @@ use crate::{
 const VENCRYPT: u8 = 19;
 const MAX_ERROR_BYTES: u32 = 4096;
 
+pub(crate) fn start_handshake(deadline: Instant) -> Result<Instant, Error> {
+    let deadline = deadline.min(Instant::now() + crate::MAX_HANDSHAKE_DURATION);
+    // Check before polling any I/O: timeout_at may first poll a ready inner future.
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    Ok(deadline)
+}
+
+pub(crate) fn finish_handshake<S>(
+    authenticated: Authenticated<S>,
+    deadline: Instant,
+    stage: AuthenticationStage,
+) -> Result<Authenticated<S>, Error> {
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded { stage });
+    }
+    Ok(authenticated)
+}
+
 pub(crate) async fn authenticate<S>(
     stream: S,
     server_name: &str,
