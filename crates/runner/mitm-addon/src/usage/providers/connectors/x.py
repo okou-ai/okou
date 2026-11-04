@@ -243,6 +243,8 @@ def _parse_bounded_positive_decimal(value: str, min_value: int, max_value: int) 
 def _slice_exceeds_query_hint_byte_limit(value: str, start: int, end: int, max_bytes: int) -> bool:
     if end - start > max_bytes:
         return True
+    if value.isascii():
+        return False
 
     size = 0
     for index in range(start, end):
