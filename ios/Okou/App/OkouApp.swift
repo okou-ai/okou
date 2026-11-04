@@ -305,11 +305,9 @@ private struct WorkspaceRootView: View {
       .composerWorkflowOverlay(
         topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
       )
-      .overlay(alignment: .topLeading) {
-        ChatFeedbackOverlay(store: store)
-          .frame(width: sidebar.isOpen ? sidebarWidth : geometry.size.width)
-          .padding(.top, headerHeight + 8)
-      }
+    }
+    .safeAreaBar(edge: .top, spacing: 0) {
+      ChatFeedbackBanner(store: store)
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
