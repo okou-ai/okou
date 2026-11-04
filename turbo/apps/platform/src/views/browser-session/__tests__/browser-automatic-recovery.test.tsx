@@ -608,6 +608,46 @@ test("Missing initial paint recovers automatically and rejects the retired first
   });
 });
 
+test("The episode ceiling shows its final error while the last native bootstrap is still pending", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  for (const interval of [1000, 2000]) {
+    const attachment = viewer.browser.holdNext("Target.attachToTarget");
+    viewer.advance(interval);
+    await attachment.received;
+    viewer.advance(61_000);
+    await waitFor(() => {
+      expect(viewer.browser.activeConnections()).toBe(0);
+    });
+    await act(async () => {
+      await attachment.release();
+    });
+  }
+  const attachment = viewer.browser.holdNext("Target.attachToTarget");
+  viewer.advance(4000);
+  await attachment.received;
+  viewer.advance(51_000);
+  await waitFor(() => {
+    expect(reconnect()).toBeEnabled();
+  });
+  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  expect(screen.queryByText("Connecting to browser…")).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "The browser did not become ready in time. Reconnect the browser.",
+  );
+  click(reconnect());
+  await ready();
+  await act(async () => {
+    await attachment.release();
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 test("A split image socket is replaced without replacing its healthy control socket", async () => {
   const viewer = mockViewer();
   await viewer.start();
