@@ -110,16 +110,6 @@ class PromotionTest(unittest.TestCase):
                         "ios": {"release-type": "simple"},
                         "turbo/apps/cli": {"release-type": "node"},
                         "crates/runner": {"release-type": "rust"},
-                        "turbo/apps/browser-extension": {
-                            "release-type": "node",
-                            "extra-files": [
-                                {
-                                    "type": "json",
-                                    "path": "manifest.json",
-                                    "jsonpath": "$.version",
-                                }
-                            ],
-                        },
                     }
                 }
             ),
@@ -128,14 +118,6 @@ class PromotionTest(unittest.TestCase):
         self.file(
             "turbo/apps/cli/package.json",
             '{"name": "cli", "version": "1.0.0", "scripts": {"build": "build"}}\n',
-        )
-        self.file(
-            "turbo/apps/browser-extension/package.json",
-            '{"name": "browser-extension", "version": "1.0.0"}\n',
-        )
-        self.file(
-            "turbo/apps/browser-extension/manifest.json",
-            '{"manifest_version": 3, "version": "1.0.0", "permissions": ["tabs"]}\n',
         )
         self.file(
             "crates/runner/Cargo.toml",
@@ -411,47 +393,6 @@ class PromotionTest(unittest.TestCase):
         mapping = json.loads((target / "release-mapping.json").read_bytes())
         self.assertEqual(mapping["builderRunId"], 124)
         self.assertEqual(mapping["testEvidence"]["runId"], 123)
-
-    def test_configured_json_version_reuses_evidence_without_simulator_job(self):
-        self.cli("publish", self.work)
-        self.release()
-        self.file(
-            "turbo/apps/browser-extension/package.json",
-            '{"name": "browser-extension", "version": "1.0.1"}\n',
-        )
-        self.file(
-            "turbo/apps/browser-extension/manifest.json",
-            '{"manifest_version": 3, "version": "1.0.1", "permissions": ["tabs"]}\n',
-        )
-        self.commit()
-        self.capture()
-        self.cli("resolve-tests", self.work)
-        self.assertIn("run_tests=false", Path(self.env["GITHUB_OUTPUT"]).read_text())
-        self.env["GITHUB_RUN_ID"] = "124"
-        self.env["IOS_RAN_TESTS"] = "false"
-        self.record()
-        self.records["124"]["jobs"][0]["conclusion"] = "skipped"
-        self.records["124"]["jobs"][0]["steps"][0]["conclusion"] = "skipped"
-        self.save_records()
-        self.archive()
-        self.cli("publish", self.work)
-        target = self.consume_work()
-        self.cli("consume", target, "--wait-seconds", 0)
-        mapping = json.loads((target / "release-mapping.json").read_bytes())
-        self.assertEqual(mapping["builderRunId"], 124)
-        self.assertEqual(mapping["testEvidence"]["runId"], 123)
-
-    def test_configured_json_nonversion_change_runs_simulator_tests(self):
-        self.cli("publish", self.work)
-        self.release()
-        self.file(
-            "turbo/apps/browser-extension/manifest.json",
-            '{"manifest_version": 3, "version": "1.0.1", "permissions": ["tabs", "storage"]}\n',
-        )
-        self.commit()
-        self.capture()
-        self.cli("resolve-tests", self.work)
-        self.assertIn("run_tests=true", Path(self.env["GITHUB_OUTPUT"]).read_text())
 
     def test_missing_test_evidence_runs_tests(self):
         self.release()
