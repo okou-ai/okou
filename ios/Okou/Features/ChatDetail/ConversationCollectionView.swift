@@ -167,7 +167,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var source: ConversationCollectionView<Content>
   private var measurements: [String: Measurement] = [:]
   private var displayedRows: [String: ConversationCollectionRow] = [:]
-  private var tableLookahead: Task<Void, Never>?
+  private var markdownLookahead: Task<Void, Never>?
   private var contentPrefetchContainer: UIView?
   private var prefetchedContent: [String: PrefetchedContent] = [:]
   private var prefetchTask: Task<Void, Never>?
@@ -178,7 +178,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var requestedRows: [ConversationCollectionRow] = []
   private var requestedWidth: CGFloat = 0
   private var requestedCategory = UIContentSizeCategory.unspecified
-  private var requestedTableViewport: MessageTableLayout.Viewport?
+  private var requestedEnvironment: ConversationHeightDiskCache.Layout?
   private var preparedRows: PreparedRows?
   private var appliesRows = false
   private var pendingScroll: (String, UnitPoint, Bool)?
@@ -279,7 +279,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         if let height = prepared.observation.height {
           observeHeight(
             height, row: row, width: measurement.width, category: measurement.category,
-            tableViewport: measurement.tableViewport)
+            environment: measurement.environment)
         }
       } else {
         prepared?.view.removeFromSuperview()
@@ -301,6 +301,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     registerForTraitChanges([
       UITraitPreferredContentSizeCategory.self, UITraitLayoutDirection.self,
       UITraitLegibilityWeight.self, UITraitDisplayScale.self,
+      UITraitUserInterfaceStyle.self,
     ]) {
       (controller: ConversationCollectionController<Content>, _: UITraitCollection) in
       controller.publishViewportChange()
@@ -315,7 +316,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let content = source.content(row, source.anchor)
     return UIHostingConfiguration {
       content
-        .textual.preparedTables(measurement.tables)
         .id(row.id)
         .frame(width: measurement.width, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
@@ -324,7 +324,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
           guard observation.cell?.representedRowID == row.id else { return }
           self?.observeHeight(
             height, row: row, width: measurement.width, category: measurement.category,
-            tableViewport: measurement.tableViewport)
+            environment: measurement.environment)
         }
         .frame(height: measurement.height, alignment: .topLeading)
     }.margins(.all, 0)
@@ -495,8 +495,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     source.sidebar?.detach(self)
     stopped = true
     clearPrefetchedContent()
-    tableLookahead?.cancel()
-    tableLookahead = nil
+    markdownLookahead?.cancel()
+    markdownLookahead = nil
     source.sendTransition?.cancel()
     source.sendTransition?.didBegin = nil
     source.sendTransition?.didFinish = nil
@@ -568,20 +568,18 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     guard !stopped, collection.bounds.width > 0 else { return }
     let width = collection.bounds.width
     let category = traitCollection.preferredContentSizeCategory
-    let viewport = tableViewport(width: width)
+    let environment = diskLayout(width: width)
     guard
       requestedRows != source.rows || requestedWidth != width || requestedCategory != category
-        || requestedTableViewport != viewport
+        || requestedEnvironment != environment
     else { return }
-    if requestedWidth != width || requestedCategory != category
-      || requestedTableViewport != viewport
-    {
+    if requestedEnvironment != environment {
       clearPrefetchedContent()
     }
     requestedRows = source.rows
     requestedWidth = width
     requestedCategory = category
-    requestedTableViewport = viewport
+    requestedEnvironment = environment
     preparation?.cancel()
     preparation = nil
     let generation = UUID()
@@ -591,11 +589,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     var preparedMeasurements: [String: Measurement] = [:]
     for row in rows {
       if let measured = measurements[row.id], measured.row == row, measured.width == width,
-        measured.category == category, measured.tableViewport == viewport
+        measured.category == category, measured.environment == environment
       {
         preparedMeasurements[row.id] = measured
       } else if let measured = source.measurements.measurement(
-        for: row, width: width, category: category, tableViewport: viewport)
+        for: row, width: width, category: category, environment: environment)
       {
         preparedMeasurements[row.id] = measured
       }
@@ -625,7 +623,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     if measuresImmediately {
       for (row, height) in zip(missing, measureImmediately(missing, width: width)) {
         preparedMeasurements[row.id] = Measurement(
-          row: row, width: width, category: category, height: height, tableViewport: viewport)
+          row: row, width: width, category: category, environment: environment, height: height)
       }
       preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
       applyPreparedRows()
@@ -641,12 +639,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let disk = ConversationHeightDiskCache.shared
       var keys: [String: ConversationHeightDiskCache.Key] = [:]
       var warmed = Set<String>()
-      var tables: [String: MessageTableLayouts] = [:]
       if let namespace = source.measurements.namespace, missing.count <= 64 {
         let layout = diskLayout(width: width)
         for row in missing {
           guard let message = row.message, message.role == .assistant else { continue }
-          tables[row.id] = await prepareMarkdown(row, viewport: viewport)
+          await prepareMarkdown(row)
           guard !Task.isCancelled, preparationID == generation else { return }
           warmed.insert(row.id)
         }
@@ -659,8 +656,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
           for row in missing {
             if let height = heights[row.id] {
               preparedMeasurements[row.id] = Measurement(
-                row: row, width: width, category: category, height: height, diskKey: keys[row.id],
-                tableViewport: viewport, tables: tables[row.id] ?? [:])
+                row: row, width: width, category: category, environment: environment,
+                height: height, diskKey: keys[row.id])
             }
           }
         }
@@ -671,17 +668,17 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       for start in stride(from: 0, to: unmeasured.count, by: 4) {
         let batch = Array(unmeasured[start..<min(start + 4, unmeasured.count)])
         for row in batch where !warmed.contains(row.id) {
-          tables[row.id] = await prepareMarkdown(row, viewport: viewport)
+          await prepareMarkdown(row)
           guard !Task.isCancelled, preparationID == generation else { return }
         }
-        let (heights, settled) = await measure(batch, width: width, tables: tables)
+        let (heights, settled) = await measure(batch, width: width)
         guard !Task.isCancelled, preparationID == generation else { return }
         for (row, height) in zip(batch, heights) {
           let key = settled ? keys[row.id] : nil
           if let key { settledHeights[key] = height }
           preparedMeasurements[row.id] = Measurement(
-            row: row, width: width, category: category, height: height, diskKey: key,
-            tableViewport: viewport, tables: tables[row.id] ?? [:])
+            row: row, width: width, category: category, environment: environment,
+            height: height, diskKey: key)
         }
       }
       guard !Task.isCancelled, preparationID == generation, !stopped else { return }
@@ -692,46 +689,25 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
   }
 
-  private func tableViewport(width: CGFloat) -> MessageTableLayout.Viewport? {
-    let traits = traitCollection
-    guard traits.preferredContentSizeCategory == .large, traits.layoutDirection == .leftToRight,
-      traits.legibilityWeight != .bold
-    else { return nil }
-    let bodyWidth =
-      width - 2 * ConversationCollectionRow.messageHorizontalInset
-      - ConversationCollectionRow.assistantLeadingInset
-    guard bodyWidth > 0 else { return nil }
-    let fontSize = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits).pointSize
-    return .init(width: bodyWidth, fontSize: fontSize, scale: traits.displayScale)
+  private func prepareMarkdown(_ row: ConversationCollectionRow) async {
+    guard let message = row.message,
+      message.role == .assistant || (message.role == .user && message.userMessage == nil)
+    else { return }
+    _ = await source.markdown.renderPlan(
+      for: message.text, context: source.renderContext(message))
   }
 
-  private func prepareMarkdown(
-    _ row: ConversationCollectionRow, viewport: MessageTableLayout.Viewport?
-  ) async -> MessageTableLayouts? {
-    guard let message = row.message else { return nil }
-    if message.role == .assistant || (message.role == .user && message.userMessage == nil) {
-      _ = await source.markdown.renderPlan(
-        for: message.text, context: source.renderContext(message))
-    }
-    guard let viewport, !Task.isCancelled, message.role == .assistant,
-      case .message(_, _, _, _, _, false) = row
-    else { return nil }
-    let tables = await source.markdown.prepareTables(for: message.text, viewport: viewport)
-    return tables.isEmpty ? nil : tables
-  }
-
-  private func prepareEarlierTables(width: CGFloat) {
-    tableLookahead?.cancel()
-    tableLookahead = nil
-    guard let viewport = tableViewport(width: width) else { return }
-    let messages = source.earlierMessages().lazy
-      .filter { $0.role == .assistant && $0.text.contains("|") }.suffix(10)
+  private func prepareEarlierMarkdown() {
+    markdownLookahead?.cancel()
+    markdownLookahead = nil
+    let messages = source.earlierMessages().lazy.filter { $0.role == .assistant }.suffix(10)
     guard !messages.isEmpty else { return }
+    let requests = Array(messages.reversed()).map { ($0.text, source.renderContext($0)) }
     let markdown = source.markdown
-    tableLookahead = Task(priority: .utility) {
-      for message in messages.reversed() {
+    markdownLookahead = Task(priority: .utility) {
+      for (text, context) in requests {
         guard !Task.isCancelled else { return }
-        _ = await markdown.prepareTables(for: message.text, viewport: viewport)
+        _ = await markdown.renderPlan(for: text, context: context)
       }
     }
   }
@@ -772,7 +748,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private static var rendererVersion: String {
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-    return build + "/render-units-2/" + ProcessInfo.processInfo.operatingSystemVersionString
+    return build + "/upstream-render-units-1/"
+      + ProcessInfo.processInfo.operatingSystemVersionString
   }
 
   private func diskKey(
@@ -802,7 +779,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private func measure(
-    _ rows: [ConversationCollectionRow], width: CGFloat, tables: [String: MessageTableLayouts]
+    _ rows: [ConversationCollectionRow], width: CGFloat
   ) async -> (heights: [CGFloat], settled: Bool) {
     if defersHostedMeasurement, !(await waitForMeasurementFrame()) { return ([], false) }
     let layout = diskLayout(width: width)
@@ -819,7 +796,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       }
       let host = UIHostingController(
         rootView: source.content(row, nil)
-          .textual.preparedTables(tables[row.id] ?? [:])
           .environment(\.messageUnitMeasurement, unitSession)
           .fixedSize(horizontal: false, vertical: true))
       // System bars must not contribute to intrinsic row sizes in the offscreen measurement host.
@@ -924,7 +900,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     for row in rows {
       if let current = measurements[row.id], let prepared = updatedMeasurements[row.id],
         current.row == prepared.row, current.width == prepared.width,
-        current.category == prepared.category, current.tableViewport == prepared.tableViewport
+        current.category == prepared.category, current.environment == prepared.environment
       {
         updatedMeasurements[row.id] = current
       }
@@ -955,7 +931,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       DispatchQueue.main.async { [weak self] in
         guard let self, !stopped else { return }
         source.rowsPresented(firstItemID)
-        prepareEarlierTables(width: displayedWidth)
+        prepareEarlierMarkdown()
         prefetchNearbyContent()
       }
       if isScrolling {
@@ -1129,11 +1105,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private func observeHeight(
     _ height: CGFloat, row: ConversationCollectionRow, width: CGFloat,
-    category: UIContentSizeCategory, tableViewport: MessageTableLayout.Viewport?
+    category: UIContentSizeCategory, environment: ConversationHeightDiskCache.Layout
   ) {
     guard !stopped, height.isFinite, height > 0, width == collection.bounds.width,
       let measurement = measurements[row.id], measurement.row == row, measurement.width == width,
-      measurement.category == category, measurement.tableViewport == tableViewport
+      measurement.category == category, measurement.environment == environment
     else { return }
     let renderedHeight = pixelHeight(height)
     if abs(measurement.height - renderedHeight) <= 0.5 {

@@ -6,19 +6,12 @@ import Textual
 @MainActor
 final class MessageMarkdownCache {
   private(set) var diagrams = MessageMermaidRenderer()
-  private(set) var codeHighlights = StructuredText.CodeHighlightCache()
   let unitMeasurements = MessageUnitMeasurements()
   private struct Entry {
     let content: AttributedString
     let cost: Int
     var lastUse: UInt64
-    var tables: (viewport: MessageTableLayout.Viewport, layouts: MessageTableLayouts)?
     var plan: (context: MessageRenderPlan.Context, value: MessageRenderPlan)?
-  }
-
-  private struct TableKey: Hashable {
-    let text: String
-    let viewport: MessageTableLayout.Viewport
   }
 
   private struct PlanKey: Hashable {
@@ -32,7 +25,6 @@ final class MessageMarkdownCache {
   private let entryLimit: Int
   private var entries: [String: Entry] = [:]
   private var inFlight: [String: Task<AttributedString, Never>] = [:]
-  private var tableTasks: [TableKey: Task<MessageTableLayouts, Never>] = [:]
   private var planTasks: [PlanKey: Task<MessageRenderPlan, Never>] = [:]
   private var totalCost = 0
   private var clock: UInt64 = 0
@@ -78,28 +70,6 @@ final class MessageMarkdownCache {
     return content
   }
 
-  func prepareTables(
-    for text: String, viewport: MessageTableLayout.Viewport
-  ) async -> MessageTableLayouts {
-    guard text.contains("|"), !Task.isCancelled else { return [:] }
-    let content = await content(for: text)
-    guard !Task.isCancelled else { return [:] }
-    if let tables = entries[text]?.tables, tables.viewport == viewport { return tables.layouts }
-    let key = TableKey(text: text, viewport: viewport)
-    let currentGeneration = generation
-    if let task = tableTasks[key] {
-      let layouts = await task.value
-      return currentGeneration == generation && !Task.isCancelled ? layouts : [:]
-    }
-    let task = Task { [worker] in await worker.prepareTables(content, viewport: viewport) }
-    tableTasks[key] = task
-    let layouts = await task.value
-    guard currentGeneration == generation else { return [:] }
-    tableTasks[key] = nil
-    entries[text]?.tables = (viewport, layouts)
-    return layouts
-  }
-
   func cachedPlan(for text: String, context: MessageRenderPlan.Context) -> MessageRenderPlan? {
     guard let plan = entries[text]?.plan, plan.context == context else { return nil }
     _ = cached(text)
@@ -139,14 +109,11 @@ final class MessageMarkdownCache {
 
   func clear() {
     diagrams = MessageMermaidRenderer()
-    codeHighlights = StructuredText.CodeHighlightCache()
     unitMeasurements.clear()
     worker = MarkdownWorker(baseURL: baseURL)
     generation = UUID()
     for task in inFlight.values { task.cancel() }
     inFlight.removeAll()
-    for task in tableTasks.values { task.cancel() }
-    tableTasks.removeAll()
     for task in planTasks.values { task.cancel() }
     planTasks.removeAll()
     entries.removeAll()
@@ -156,15 +123,8 @@ final class MessageMarkdownCache {
 
 private actor MarkdownWorker {
   let baseURL: URL
-  private var tableLayouts = MessageTableLayout.Cache()
 
   init(baseURL: URL) { self.baseURL = baseURL }
-
-  func prepareTables(
-    _ content: AttributedString, viewport: MessageTableLayout.Viewport
-  ) -> MessageTableLayouts {
-    tableLayouts.prepare(content, viewport: viewport)
-  }
 
   func renderPlan(
     _ content: AttributedString, source: String, context: MessageRenderPlan.Context
@@ -202,4 +162,10 @@ private actor MarkdownWorker {
     if !tracksDiagrams { content.markdownSourcePosition = nil }
     return content
   }
+}
+
+struct PreparedMessageParser: MarkupParser {
+  let content: AttributedString
+
+  func attributedString(for input: String) throws -> AttributedString { content }
 }

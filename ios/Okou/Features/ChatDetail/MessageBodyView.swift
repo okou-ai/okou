@@ -79,7 +79,6 @@ struct MessageBodyView: View, Equatable {
     }
     // Keep overrides closest to the content; the bundled style sets the same environment keys.
     .textual.codeBlockStyle(MessageCodeBlockStyle())
-    .textual.codeHighlightCache(markdown.codeHighlights)
     .textual.tableStyle(.overflow)
     .textual.structuredTextStyle(.gitHub)
     .textual.imageAttachmentLoader(
@@ -146,7 +145,8 @@ private struct MessageRenderUnitView: View {
         }
       }
     case .markdown(let fragment, _):
-      StructuredText(prepared: fragment)
+      StructuredText(message.text, parser: PreparedMessageParser(content: fragment))
+        .id(fragment)
     case .connector(let action):
       if let store = message.connectorActions {
         ConnectorActionCard(action: action, store: store, loadsState: message.loadsActions)

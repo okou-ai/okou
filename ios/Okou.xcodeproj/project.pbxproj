@@ -260,10 +260,10 @@
 		};
 		"000000000000000000000025" = {
 			"isa" = "XCRemoteSwiftPackageReference";
-			"repositoryURL" = "https://github.com/okou-ai/textual.git";
+			"repositoryURL" = "https://github.com/gonzalezreal/textual.git";
 			"requirement" = {
-				"kind" = "revision";
-				"revision" = "d3c74e97c2995d3819fad7173816f889c3257e96";
+				"kind" = "exactVersion";
+				"version" = "0.5.0";
 			};
 		};
 		"000000000000000000000060" = {

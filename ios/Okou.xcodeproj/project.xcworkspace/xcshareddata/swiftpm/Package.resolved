@@ -103,9 +103,10 @@
     {
       "identity" : "textual",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/okou-ai/textual.git",
+      "location" : "https://github.com/gonzalezreal/textual.git",
       "state" : {
-        "revision" : "d3c74e97c2995d3819fad7173816f889c3257e96"
+        "revision" : "01b51875a5406eefc95f52a058cb059e7bc94dc4",
+        "version" : "0.5.0"
       }
     }
   ],
