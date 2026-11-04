@@ -8,8 +8,8 @@ use std::thread;
 use std::time::Duration;
 
 use guest_control_proto::{
-    GuestDnsReadinessTermination, MSG_GUEST_DNS_READINESS, MSG_GUEST_DNS_READINESS_RESULT,
-    MSG_OPERATIONS_QUIESCED,
+    GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES, GuestDnsReadinessTermination,
+    MSG_GUEST_DNS_READINESS, MSG_GUEST_DNS_READINESS_RESULT, MSG_OPERATIONS_QUIESCED,
 };
 
 use super::support::*;
@@ -120,15 +120,19 @@ printf '192.0.2.1 STREAM success.invalid\n'
 
 #[test]
 fn guest_dns_readiness_returns_exit_diagnostic_and_bounded_output() {
-    let (_directory, program) = create_program(
+    let unicode_prefix = "x".repeat(GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES - 1);
+    let (_directory, program) = create_program(&format!(
         r#"
 if [ "$2" = "failure.invalid" ]; then
   printf 'resolver failed\n' >&2
   exit 2
+elif [ "$2" = "unicode.invalid" ]; then
+  printf '%s' '{unicode_prefix}界' >&2
+  exit 2
 fi
 head -c 1100 /dev/zero | tr '\000' x
 "#,
-    );
+    ));
     let (handle, mut host_stream) = start_guest_connection_with_dns_readiness_program(program);
 
     send_request(&mut host_stream, 302, 1_100, "failure.invalid");
@@ -147,6 +151,16 @@ head -c 1100 /dev/zero | tr '\000' x
     );
     assert_eq!(large.answer.len(), 1_024);
     assert!(large.output_truncated);
+
+    send_request(&mut host_stream, 315, 1_100, "unicode.invalid");
+    let unicode = read_result(&mut host_stream, 315);
+    assert_eq!(
+        unicode.termination,
+        GuestDnsReadinessTermination::Exited { exit_code: 2 }
+    );
+    assert_eq!(unicode.diagnostic, unicode_prefix);
+    assert!(unicode.answer.is_empty());
+    assert!(unicode.output_truncated);
 
     finish_guest_connection(handle, host_stream);
 }
