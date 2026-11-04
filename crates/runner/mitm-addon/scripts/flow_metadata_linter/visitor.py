@@ -1503,7 +1503,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._visit_comprehension(node.generators, [node.elt], deferred=True)
 
     def visit_DictComp(self, node: ast.DictComp) -> None:
-        self._visit_comprehension(node.generators, [node.key, node.value], deferred=False)
+        self._visit_comprehension(
+            node.generators,
+            [expression for expression in (node.key, node.value) if expression is not None],
+            deferred=False,
+        )
 
     def visit_Import(self, node: ast.Import) -> bool:
         for alias in node.names:

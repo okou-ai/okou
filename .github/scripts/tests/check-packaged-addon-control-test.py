@@ -37,6 +37,8 @@ class PackagedArchiveTests(unittest.TestCase):
         self.binary = b"fixture standalone runtime\n"
         self.upstream = self.root / "upstream.tar.gz"
         self.make_archive(self.binary)
+        self.upstream_lock = self.root / "upstream.uv.lock"
+        self.upstream_lock.write_bytes(b"fixture released dependency reference\n")
         self.cache = self.root / "cache/mitmproxy.tar.gz"
         self.cache.parent.mkdir()
         self.requests = self.root / "requests.jsonl"
@@ -61,7 +63,8 @@ destination = Path(arguments[arguments.index("--output") + 1])
 if os.environ["TEST_DOWNLOAD_MODE"] == "failure":
     destination.write_bytes(b"incomplete upstream response")
     sys.exit(28)
-shutil.copyfile(os.environ["TEST_UPSTREAM"], destination)
+source = "TEST_UPSTREAM_LOCK" if arguments[-1].endswith("/uv.lock") else "TEST_UPSTREAM"
+shutil.copyfile(os.environ[source], destination)
 """,
         )
         self.command(
@@ -71,6 +74,9 @@ import os
 from pathlib import Path
 
 binary = Path(os.environ["MITMDUMP_CONTROL_TEST_BINARY"])
+assert Path(os.environ["MITMPROXY_CONTROL_TEST_UPSTREAM_LOCK"]).read_bytes() == Path(
+    os.environ["TEST_UPSTREAM_LOCK"]
+).read_bytes()
 Path(os.environ["TEST_EXECUTED"]).write_bytes(binary.read_bytes())
 """,
         )
@@ -79,6 +85,7 @@ Path(os.environ["TEST_EXECUTED"]).write_bytes(binary.read_bytes())
             "TEST_ARCH": "x86_64",
             "TEST_REQUESTS": str(self.requests),
             "TEST_UPSTREAM": str(self.upstream),
+            "TEST_UPSTREAM_LOCK": str(self.upstream_lock),
             "TEST_DOWNLOAD_MODE": "success",
             "TEST_EXECUTED": str(self.executed),
             "MITMPROXY_CONTROL_TEST_ARCHIVE": str(self.cache),
@@ -104,6 +111,10 @@ Path(os.environ["TEST_EXECUTED"]).write_bytes(binary.read_bytes())
         archive_sha = hashlib.sha256(archive).hexdigest()
         binary_sha = binary_sha or hashlib.sha256(self.binary).hexdigest()
         lines = [f'pub const MITMPROXY_VERSION: &str = "{version}";']
+        lock_sha = hashlib.sha256(self.upstream_lock.read_bytes()).hexdigest()
+        reference_hash = self.root / "crates/runner/mitm-addon/tests/mitmproxy-uv.lock.sha256"
+        reference_hash.parent.mkdir(exist_ok=True)
+        reference_hash.write_text(lock_sha + "\n")
         for arch in ("X86_64", "AARCH64"):
             lines.extend(
                 [
@@ -184,6 +195,19 @@ Path(os.environ["TEST_EXECUTED"]).write_bytes(binary.read_bytes())
         self.assertTrue(self.requests.exists())
         self.assertFalse(self.cache.exists())
         self.assertFalse(list(self.cache.parent.glob("*.partial.*")))
+        self.assertFalse(self.executed.exists())
+
+    def test_corrupt_dependency_reference_fails_before_tests_or_download(self):
+        self.assert_success(self.check())
+        requests = self.requests.read_text()
+        self.executed.unlink()
+        reference = Path(f"{self.cache}.uv.lock")
+        reference.write_bytes(b"untrusted dependency reference\n")
+
+        result = self.check()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.requests.read_text(), requests)
         self.assertFalse(self.executed.exists())
 
 

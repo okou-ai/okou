@@ -1,7 +1,7 @@
 [project]
 name = "mitm-addon"
 version = "0.1.0"
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 
 [dependency-groups]
 dev = [
@@ -9,16 +9,18 @@ dev = [
     "ruff>=0.8",
 ]
 test = [
-    "Brotli>=1.2.0",
-    "cryptography==48.0.1",
+    "Brotli>=1.2.1",
+    # Match the frozen runtime; CFFI 2.1.0 crashes ALPN callbacks on Python 3.15.
+    "cffi==2.1.1",
+    "cryptography==50.0.2",
     "h11==0.16.0",
-    "h2>=4.3.0",
+    "h2==4.4.1",
     # pytest 9.1 loses directory fixtures for interleaved file arguments (#38047).
     # Lift the bound after a released fix passes the collection smoke and full addon suite.
     "pytest>=9.0.3,<9.1",
     "pytest-asyncio>=0.23",
     # Keep tests on the exact standalone runtime and its release-locked wsproto.
-    "mitmproxy==12.3.0",
+    "mitmproxy==12.3.1",
     "wsproto==1.3.2",
     # Independent wire-fixture encoder; production uses stdlib compression.zstd.
     "zstandard>=0.25.0",
@@ -31,7 +33,7 @@ exclude-newer = "7 days"
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py315"
 
 [tool.ruff.lint]
 select = [
@@ -97,7 +99,7 @@ banned-from = ["matching"]
 include = ["src", "scripts", "tests"]
 exclude = ["build", "**/__pycache__"]
 extraPaths = ["src", "scripts"]
-pythonVersion = "3.14"
+pythonVersion = "3.15"
 pythonPlatform = "Linux"
 typeCheckingMode = "basic"
 

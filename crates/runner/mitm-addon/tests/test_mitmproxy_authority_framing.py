@@ -5,6 +5,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from h2.config import H2Configuration
+from h2.connection import H2Connection
+from h2.errors import ErrorCodes
+from h2.events import ConnectionTerminated
 from mitmproxy import connection, http
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.net.http import http1
@@ -19,7 +23,6 @@ import mitm_addon
 import request_authority
 from tests.mitmproxy_http_framing_helpers import (
     PLACEHOLDER_HOST,
-    start_http2_request,
     start_http_layer,
 )
 from tests.request_handler_helpers import _write_github_firewall_registry
@@ -253,48 +256,37 @@ async def test_http2_duplicate_host_is_rejected_before_auth_or_http1_downgrade(
             okou_api_url="https://api.okou.ai",
             okou_proxy_registry_path=str(registry_path),
         )
-        http_layer, request_headers_hook = start_http2_request(
-            addon_context,
-            method="GET",
-            end_stream=True,
-            regular_headers=(
+        client, http_layer = start_http_layer(addon_context, alpn=b"h2")
+        # The attack must reach the real receiver, which now rejects duplicate
+        # Host fields before an HTTP flow or auth hook can be created.
+        peer = H2Connection(H2Configuration(client_side=True, validate_outbound_headers=False))
+        peer.initiate_connection()
+        peer.send_headers(
+            1,
+            [
+                (b":method", b"GET"),
+                (b":scheme", b"https"),
+                (b":authority", PLACEHOLDER_HOST.encode()),
+                (b":path", b"/"),
                 (b"host", b"attacker.example.com"),
                 (b"host", PLACEHOLDER_HOST.encode()),
-            ),
+            ],
+            end_stream=True,
         )
-        flow = request_headers_hook.flow
-        original_headers = tuple(flow.request.headers.fields)
-        original_path = flow.request.path
-
-        assert flow.request.host_header == PLACEHOLDER_HOST
-        assert flow.request.headers.get_all("Host") == [
-            "attacker.example.com",
-            PLACEHOLDER_HOST,
+        request_commands = list(
+            http_layer.handle_event(events.DataReceived(client, peer.data_to_send()))
+        )
+        wire = b"".join(
+            command.data
+            for command in request_commands
+            if isinstance(command, commands.SendData) and command.connection is client
+        )
+        terminated = [
+            event for event in peer.receive_data(wire) if isinstance(event, ConnectionTerminated)
         ]
 
-        await addon_context.master.addons.invoke_addon(mitm_addon, request_headers_hook)
-
-        get_headers.assert_not_awaited()
-        assert tuple(flow.request.headers.fields) == original_headers
-        assert flow.request.path == original_path
-
-        header_commands = list(
-            http_layer.handle_event(events.HookCompleted(request_headers_hook, None))
-        )
-        request_hook = next(
-            command for command in header_commands if isinstance(command, HttpRequestHook)
-        )
-        await addon_context.master.addons.invoke_addon(mitm_addon, request_hook)
-
-        request_commands = list(http_layer.handle_event(events.HookCompleted(request_hook, None)))
-
-    assert flow.response is not None
-    assert flow.response.status_code == 403
-    assert flow.response.content is not None
-    assert json.loads(flow.response.content)["error"] == "invalid_authority"
-    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "invalid_authority"
-    assert tuple(flow.request.headers.fields) == original_headers
-    assert flow.request.path == original_path
+    assert terminated
+    assert all(event.error_code == ErrorCodes.PROTOCOL_ERROR for event in terminated)
     get_headers.assert_not_awaited()
     assert not any(
         isinstance(command, (commands.OpenConnection, commands.SendData))

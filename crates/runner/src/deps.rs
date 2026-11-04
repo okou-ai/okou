@@ -3,7 +3,7 @@
 pub const FIRECRACKER_VERSION: &str = "v1.16.2";
 pub const KERNEL_VERSION: &str = "6.18.44";
 /// Canonical mitmproxy release for runner artifacts and the embedded add-on.
-pub const MITMPROXY_VERSION: &str = "12.3.0";
+pub const MITMPROXY_VERSION: &str = "12.3.1";
 
 // Exact identities for installed artifacts, keyed by arch.
 pub const FIRECRACKER_SIZE_X86_64: u64 = 3_539_456;
@@ -18,12 +18,12 @@ pub const KERNEL_SHA256_X86_64: &str =
     "d8ced68bd61e27b6813e2c993cc53a4029c59e13210672180591c84109684fe4";
 pub const KERNEL_SHA256_AARCH64: &str =
     "3b0233769ed8c89f1f47fdbcc4ff9300a2b1b5c618e25ade966a484481b151dc";
-pub const MITMDUMP_SIZE_X86_64: u64 = 34_305_904;
-pub const MITMDUMP_SIZE_AARCH64: u64 = 32_495_056;
+pub const MITMDUMP_SIZE_X86_64: u64 = 35_411_144;
+pub const MITMDUMP_SIZE_AARCH64: u64 = 33_258_392;
 pub const MITMDUMP_SHA256_X86_64: &str =
-    "edb61120fe1496f649bb95ac3186dc0dbb3ef06e25758ea3cfce7bf91f8ebac9";
+    "044bc4dce2d526c83f78db79141ef96d6b0ae833293ec30479c6202fb3678b51";
 pub const MITMDUMP_SHA256_AARCH64: &str =
-    "3adf33868f5477ff65d954b3fbe5dc5eca9703b5f02692500e880b8789caccb1";
+    "0e1a9e2689cc3cb0e367aecbb297def5c5f109baf765781e4e82bb0e5c921c61";
 
 // Exact identities for compressed source archives, keyed by arch.
 pub const FIRECRACKER_ARCHIVE_SIZE_X86_64: u64 = 7_499_848;
@@ -32,12 +32,12 @@ pub const FIRECRACKER_ARCHIVE_SHA256_X86_64: &str =
     "32e3cdcd4081f91fe2b024a266f57dcb3b4e5fec5033e0cb22467ad7f7820bda";
 pub const FIRECRACKER_ARCHIVE_SHA256_AARCH64: &str =
     "751365040ca3dde7616c5a1d97cc1304674fae469ce02993104eab22f5961950";
-pub const MITMPROXY_ARCHIVE_SIZE_X86_64: u64 = 104_087_608;
-pub const MITMPROXY_ARCHIVE_SIZE_AARCH64: u64 = 98_927_179;
+pub const MITMPROXY_ARCHIVE_SIZE_X86_64: u64 = 107_431_939;
+pub const MITMPROXY_ARCHIVE_SIZE_AARCH64: u64 = 101_257_436;
 pub const MITMPROXY_ARCHIVE_SHA256_X86_64: &str =
-    "d52bacb30012023c7e920f322a97a6bc3b0553a7944b520e9aa02278c910b938";
+    "f7b4237f5702f6cd21357fe6e4680a7e905f8f9b816b872230d018ea696c34d5";
 pub const MITMPROXY_ARCHIVE_SHA256_AARCH64: &str =
-    "f8756fa831c4abe431dd922ae7291b158b465285562b35d12e5669cbfc29d1f3";
+    "97a21d57b2288f7e293e63d3b11af34f394a8bbf760e6cf101ed1d57057a1f40";
 
 /// Tarball entry name for firecracker binary.
 pub fn firecracker_tar_entry(arch: &str) -> String {
