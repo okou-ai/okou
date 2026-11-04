@@ -20,10 +20,7 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  installResourceGeometry,
-  resourceButton,
-} from "./chat-resources-test-helpers.ts";
+import { installResourceGeometry } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
 
@@ -43,7 +40,7 @@ async function setupHostedSite(
   context.mocks.data.userPreferences({
     timezone: "Etc/UTC",
     locale: "en-US",
-    chatResourcesEnabledByDefault: false,
+    chatResourcesEnabledByDefault: true,
   });
   const summary = {
     ...artifactSummary(artifactId, "hosted-site", siteTitle),
@@ -188,7 +185,6 @@ async function setupHostedSite(
 }
 
 async function copyFromResources() {
-  click(resourceButton());
   const resources = await screen.findByRole("region", {
     name: "Artifacts and chats",
   });
