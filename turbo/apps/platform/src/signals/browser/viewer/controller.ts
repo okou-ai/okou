@@ -638,6 +638,9 @@ interface ControllerOwner {
   readonly nativeHost: NativeInputHost;
   readonly preferredTargetId: string | null;
   readonly selectionChanged$: Command<void, []>;
+  readonly presentedTarget$: Computed<string | null>;
+  readonly framePresented$: Command<void, [string]>;
+  readonly frameCleared$: Command<void, []>;
 }
 
 function createControllerState(
@@ -736,6 +739,9 @@ function createControllerState(
     connection,
     preferredTargetId,
     selectionChanged$,
+    presentedTarget$: owner.presentedTarget$,
+    framePresented$: owner.framePresented$,
+    frameCleared$: owner.frameCleared$,
     authority$,
     nativeHost,
     ...atoms,
@@ -776,7 +782,7 @@ function createDiscoveryFailure(
     if (!recoverable) {
       set(context.connectedState$, false);
     }
-    set(get(links$).retireCurrent$, "target-replaced", false);
+    set(get(links$).retireCurrent$, "target-replaced", recoverable);
     set(model.transition$, {
       type: recoverable ? "failed" : "discovery-failed",
       error: diagnostic(error),
@@ -1046,7 +1052,7 @@ function createCaptureRecoveryGraph(
         set(display.setSuspended$, true);
       }
       set(selected.geometry.suspendPresentation$);
-      sink.reset();
+      sink.invalidate();
       // A retained transition preview is not a live image after decode failure.
       set(model.transition$, { type: "stopped", retainFrame: true });
       set(get(links$).imageEvent$, {
@@ -1525,6 +1531,7 @@ function createRetirementsGraph(
     | "closingState$"
     | "creationOwner$"
     | "disposedState$"
+    | "frameCleared$"
     | "model"
     | "nativeHost"
     | "resetCreate$"
@@ -1628,6 +1635,7 @@ function createRetirementsGraph(
         sink.invalidate();
       } else {
         sink.reset();
+        set(context.frameCleared$);
       }
       set(model.transition$, { type: "stopped", retainFrame });
       set(nativeHost.synchronize$);
@@ -2291,6 +2299,7 @@ function createSelectionGraph(
     | "disposedState$"
     | "extensionRevision$"
     | "model"
+    | "presentedTarget$"
     | "readinessFailure$"
     | "resetSelection$"
     | "selectedOwner$"
@@ -2358,9 +2367,7 @@ function createSelectionGraph(
         return value + 1;
       });
       const preview =
-        !target.blank &&
-        (get(model.presentation$).status === "streaming" ||
-          get(model.presentation$).loadingPreview);
+        !target.blank && get(context.presentedTarget$) === targetId;
       set(get(links$).retireCurrent$, "target-replaced", preview);
       set(context.crashedSelection$, null);
       set(readinessFailure$, null);
@@ -2568,7 +2575,7 @@ function createSessionEvent(
 }
 
 function createScreencastEvent(
-  context: ControllerContext<"framesState$">,
+  context: ControllerContext<"framesState$" | "framePresented$">,
   links$: ControllerDependencies<"selectedSession$" | "streaming$">,
 ) {
   const { framesState$ } = context;
@@ -2609,6 +2616,7 @@ function createScreencastEvent(
           return;
         }
         set(selected.geometry.paintFrame$, receipt, raster);
+        set(context.framePresented$, selected.attached.owner.targetId);
         if (!get(selected.painted$)) {
           set(selected.painted$, true);
           set(get(links$).streaming$, selected);
@@ -2719,6 +2727,7 @@ function createProtocolEventDispatch(
     | "connected$"
     | "crashedSelection$"
     | "disposedState$"
+    | "framePresented$"
     | "framesState$"
     | "model"
     | "retirements$"
@@ -2982,7 +2991,7 @@ function createFramesDisconnectionHandling(
         }),
       ),
     });
-    set(get(links$).retireCurrent$, "target-replaced", false, true);
+    set(get(links$).retireCurrent$, "target-replaced", true, true);
     // Admission can lose frames before a selected input/capture graph exists.
     if (!selected) {
       set(get(links$).imageEvent$, {
@@ -3068,7 +3077,11 @@ function createDisconnectionHandling(
     }
     set(connectedState$, false);
     set(readinessFailure$, fault);
-    set(get(links$).retireCurrent$, "disconnected", false);
+    set(
+      get(links$).retireCurrent$,
+      "disconnected",
+      !!diagnostic(fault).transient,
+    );
     const display = get(get(links$).displayGraph$);
     if (display) {
       set(display.close$);
@@ -3109,6 +3122,7 @@ function createEventsGraph(
     | "disconnectingState$"
     | "disposedState$"
     | "extensionRevision$"
+    | "framePresented$"
     | "framesState$"
     | "model"
     | "readinessFailure$"
@@ -4596,7 +4610,7 @@ function createDisposalGraph(
       return;
     }
     set(disposedState$, true);
-    set(get(links$).retireCurrent$, "disposed", false);
+    set(get(links$).retireCurrent$, "disposed", true);
     const display = get(get(links$).displayGraph$);
     if (display) {
       set(display.close$);

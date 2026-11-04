@@ -1390,8 +1390,8 @@
       "takeOver": "Ambil alih",
       "takeOverMessage": "Saya mengambil alih browser. Jangan gunakan sampai saya menyerahkannya kembali."
     },
-    "reclaimHint_one": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
-    "reclaimHint_other": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
+    "reclaimHint_one": "Dipertahankan selama panel terbuka; dilepas setelah {{formattedCount}} menit tidak aktif.",
+    "reclaimHint_other": "Dipertahankan selama panel terbuka; dilepas setelah {{formattedCount}} menit tidak aktif.",
     "status": {
       "live": "Live",
       "starting": "Memulai",
@@ -1429,6 +1429,7 @@
     "paused": "Tampilan dijeda",
     "quality": "Kualitas gambar",
     "reconnect": "Hubungkan kembali",
+    "reconnecting": "Menghubungkan ulang…",
     "reload": "Muat ulang",
     "remoteInput": "Input browser jarak jauh",
     "resolution": "Resolusi",

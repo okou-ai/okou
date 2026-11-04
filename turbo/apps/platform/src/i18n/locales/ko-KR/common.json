@@ -1390,8 +1390,8 @@
       "takeOver": "직접 조작",
       "takeOverMessage": "브라우저를 직접 조작할게요. 다시 넘겨드릴 때까지 사용하지 말아 주세요."
     },
-    "reclaimHint_one": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
-    "reclaimHint_other": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
+    "reclaimHint_one": "패널이 열려 있으면 유지되며, {{formattedCount}}분간 사용하지 않으면 회수됩니다.",
+    "reclaimHint_other": "패널이 열려 있으면 유지되며, {{formattedCount}}분간 사용하지 않으면 회수됩니다.",
     "status": {
       "live": "라이브",
       "starting": "시작 중",
@@ -1429,6 +1429,7 @@
     "paused": "화면 일시 중지됨",
     "quality": "이미지 품질",
     "reconnect": "다시 연결",
+    "reconnecting": "다시 연결 중…",
     "reload": "새로고침",
     "remoteInput": "원격 브라우저 입력",
     "resolution": "해상도",

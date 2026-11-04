@@ -1390,8 +1390,8 @@
       "takeOver": "接管",
       "takeOverMessage": "我先接管浏览器，在我交还之前请不要操作它。"
     },
-    "reclaimHint_one": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
-    "reclaimHint_other": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
+    "reclaimHint_one": "面板打开时保留，闲置 {{formattedCount}} 分钟后回收。",
+    "reclaimHint_other": "面板打开时保留，闲置 {{formattedCount}} 分钟后回收。",
     "status": {
       "live": "运行中",
       "starting": "启动中",
@@ -1429,6 +1429,7 @@
     "paused": "画面已暂停",
     "quality": "图像质量",
     "reconnect": "重新连接",
+    "reconnecting": "正在重连…",
     "reload": "刷新",
     "remoteInput": "远程浏览器输入",
     "resolution": "分辨率",

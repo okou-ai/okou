@@ -1390,8 +1390,8 @@
       "takeOver": "操作を代わる",
       "takeOverMessage": "ブラウザの操作を引き継ぎました。お返しするまで使わないでください。"
     },
-    "reclaimHint_one": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
-    "reclaimHint_other": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
+    "reclaimHint_one": "パネル表示中は保持し、{{formattedCount}} 分間操作がないと解放します。",
+    "reclaimHint_other": "パネル表示中は保持し、{{formattedCount}} 分間操作がないと解放します。",
     "status": {
       "live": "ライブ",
       "starting": "開始",
@@ -1429,6 +1429,7 @@
     "paused": "表示を一時停止中",
     "quality": "画質",
     "reconnect": "再接続",
+    "reconnecting": "再接続中…",
     "reload": "再読み込み",
     "remoteInput": "リモートブラウザー入力",
     "resolution": "解像度",

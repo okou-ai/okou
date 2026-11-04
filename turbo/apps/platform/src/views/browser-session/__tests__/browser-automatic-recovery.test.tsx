@@ -102,11 +102,14 @@ function mockViewer() {
   return {
     browser,
     session,
-    start(enabled = true) {
+    start(enabled = true, refined = false) {
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
-        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: enabled },
+        featureSwitches: {
+          [FeatureSwitchKey.BrowserSharedOwner]: enabled,
+          [FeatureSwitchKey.CloudBrowserPanel]: refined,
+        },
       });
     },
     advance(ms: number) {
@@ -137,12 +140,11 @@ function reconnect() {
   return button;
 }
 
-async function pendingRecovery(label = "Reconnect") {
-  const button = await screen.findByText(label, { selector: "button" });
-  await waitFor(() => {
-    expect(button).toBeDisabled();
-  });
-  return button;
+async function pendingRecovery() {
+  const status = await screen.findByText("Reconnecting…");
+  expect(status).toHaveAttribute("role", "status");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  return status;
 }
 
 async function insertText(text: string) {
@@ -161,6 +163,26 @@ async function splitConnection() {
   click(within(mode).getByText("Separate image connection"));
   await ready();
 }
+
+test("The refined panel shows a non-blocking recovery status without a reclaim footer", async () => {
+  const viewer = mockViewer();
+  await viewer.start(true, true);
+  await ready();
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  expect(screen.queryByText(/Kept while open/)).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Browser view unavailable"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("img", { name: "Live browser view" }),
+  ).toBeInTheDocument();
+  viewer.advance(1000);
+  await ready();
+  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+});
 
 test("Automatic connection recovery survives transient descriptors and restores the selected scoped tab", async () => {
   const viewer = mockViewer();
@@ -213,6 +235,185 @@ test("Automatic connection recovery survives transient descriptors and restores 
 });
 
 test.each(["shared", "split"] as const)(
+  "%s recovery keeps the presented picture through failed attempts and replaces it only with a fresh frame",
+  async (transport) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    if (transport === "split") {
+      await splitConnection();
+    }
+    const canvas =
+      screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+    const renderer = canvas.getContext("2d")!;
+    const clear = vi.spyOn(renderer, "clearRect");
+    const paint = vi.spyOn(renderer, "drawImage");
+    const dimensions = [canvas.width, canvas.height];
+    const visibleFailures: string[] = [];
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          const text = node.textContent ?? "";
+          if (
+            text.includes("Browser disconnected") ||
+            text.includes("Browser view unavailable")
+          ) {
+            visibleFailures.push(text);
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    context.signal.addEventListener(
+      "abort",
+      () => {
+        observer.disconnect();
+      },
+      { once: true },
+    );
+    let reads = 0;
+    const replies = Array.from({ length: 3 }, () => {
+      return context.mocks.deferred<void>();
+    });
+    const fresh = viewer.browser.holdTargetFrames("example-page");
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      replies[reads++]!.resolve();
+      return reads < 3
+        ? respond(500, {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Temporary descriptor failure",
+            },
+          })
+        : respond(200, {
+            browser: viewer.session(),
+            cdpUrl: endpoint,
+            extension: TEST_BROWSER_EXTENSION,
+          });
+    });
+    act(() => {
+      return viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    const status = await pendingRecovery();
+    expect(status.parentElement).toHaveTextContent(
+      "Kept while open; reclaimed after 10 idle minutes.",
+    );
+    for (const [index, interval] of [1000, 2000, 4000].entries()) {
+      viewer.advance(interval);
+      await act(async () => {
+        await replies[index]!.promise;
+      });
+      expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Browser view unavailable"),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(clear).not.toHaveBeenCalled();
+      expect(paint).not.toHaveBeenCalled();
+      expect([canvas.width, canvas.height]).toStrictEqual(dimensions);
+    }
+    await fresh.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(canvas).toHaveAttribute("aria-hidden", "false");
+    act(() => {
+      return fresh.release();
+    });
+    await ready();
+    expect(paint).toHaveBeenCalledTimes(1);
+    expect(clear).not.toHaveBeenCalled();
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    expect(visibleFailures).toStrictEqual([]);
+  },
+);
+
+test.each(["shared", "split"] as const)(
+  "%s connection recovery preserves pixels and rejects a late decode from its retired frame generation",
+  async (transport) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    if (transport === "split") {
+      await splitConnection();
+    }
+    const canvas =
+      screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+    const renderer = canvas.getContext("2d")!;
+    const clear = vi.spyOn(renderer, "clearRect");
+    const paint = vi.spyOn(renderer, "drawImage");
+    const decode = context.mocks.deferred<ImageBitmap>();
+    const started = context.mocks.deferred<void>();
+    vi.spyOn(globalThis, "createImageBitmap").mockImplementationOnce(() => {
+      started.resolve();
+      return decode.promise;
+    });
+    act(() => {
+      return viewer.browser.frame("YQ==");
+    });
+    await started.promise;
+    act(() => {
+      return viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await pendingRecovery();
+    viewer.advance(1000);
+    await ready();
+    expect(clear).not.toHaveBeenCalled();
+    const draws = paint.mock.calls.length;
+    const close = vi.fn<() => void>();
+    await act(async () => {
+      decode.resolve({ width: 1440, height: 900, close } as ImageBitmap);
+      await decode.promise;
+    });
+    await waitFor(() => {
+      return expect(close).toHaveBeenCalledOnce();
+    });
+    expect(paint).toHaveBeenCalledTimes(draws);
+    expect(clear).not.toHaveBeenCalled();
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  },
+);
+
+test("A different selected target clears the previous picture while its first frame is pending", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const canvas = screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+  const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
+  const fresh = viewer.browser.holdTargetFrames("other");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await fresh.received;
+  expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
+  expect(canvas).toHaveAttribute("aria-hidden", "true");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    return fresh.release();
+  });
+  await ready("https://other.example");
+});
+
+test("Definitive authorization loss clears the picture and ends the reconnecting notice", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const canvas = screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+  const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(403, { error: { code: "FORBIDDEN", message: "Revoked" } });
+  });
+  act(() => {
+    return viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  viewer.advance(1000);
+  await waitFor(() => {
+    return expect(reconnect()).toBeEnabled();
+  });
+  expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
+  expect(canvas).toHaveAttribute("aria-hidden", "true");
+  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
+test.each(["shared", "split"] as const)(
   "Automatic %s image recovery retains healthy control",
   async (transport) => {
     const viewer = mockViewer();
@@ -221,11 +422,16 @@ test.each(["shared", "split"] as const)(
     if (transport === "split") {
       await splitConnection();
     }
+    const canvas =
+      screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+    const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
     const connections = viewer.browser.connections();
     act(() => {
       viewer.browser.frame("!");
     });
-    await pendingRecovery("Retry live image");
+    await pendingRecovery();
+    expect(clear).not.toHaveBeenCalled();
+    expect(canvas).toHaveAttribute("aria-hidden", "false");
     viewer.advance(1000);
     await ready();
     await insertText("after image recovery");
@@ -236,6 +442,7 @@ test.each(["shared", "split"] as const)(
       });
     });
     expect(viewer.browser.connections()).toBe(connections);
+    expect(clear).not.toHaveBeenCalled();
   },
 );
 
@@ -276,6 +483,10 @@ test("Exhausted automatic recovery stops after three attempts and permits a fres
   await waitFor(() => {
     expect(reconnect()).toBeEnabled();
   });
+  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "The browser action could not be completed. Check the browser before trying again.",
+  );
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   unavailable = false;
   viewer.advance(61_000);
@@ -413,7 +624,7 @@ test("A split image socket is replaced without replacing its healthy control soc
   act(() => {
     viewer.browser.disconnect({ code: 1006, wasClean: false }, 1);
   });
-  await pendingRecovery("Retry live image");
+  await pendingRecovery();
   viewer.advance(1000);
   await ready();
   await insertText("after image socket loss");
@@ -511,7 +722,7 @@ test("Selecting another tab cancels held automatic image recovery and old pixels
   act(() => {
     viewer.browser.frame("!");
   });
-  await pendingRecovery("Retry live image");
+  await pendingRecovery();
   const image = viewer.browser.holdTargetFrames("example-page");
   viewer.advance(1000);
   await act(async () => {
@@ -539,6 +750,9 @@ test.each(["binding", "chat"] as const)(
     const viewer = mockViewer();
     await viewer.start();
     await ready();
+    const canvas =
+      screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+    const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
     const attachment = viewer.browser.holdNext("Target.attachToTarget");
     act(() => {
       viewer.browser.disconnect({ code: 1006, wasClean: false });
@@ -548,6 +762,7 @@ test.each(["binding", "chat"] as const)(
     await act(async () => {
       await attachment.received;
     });
+    const fresh = viewer.browser.holdTargetFrames("sibling");
     act(() => {
       if (replacement === "binding") {
         viewer.replaceBinding();
@@ -557,10 +772,21 @@ test.each(["binding", "chat"] as const)(
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
     });
+    await fresh.received;
+    expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
+    expect(screen.getByLabelText("Live browser view")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    act(() => {
+      return fresh.release();
+    });
     await ready("https://sibling.example");
+    const cleared = clear.mock.calls.length;
     await act(async () => {
       await attachment.release();
     });
+    expect(clear).toHaveBeenCalledTimes(cleared);
     viewer.advance(180_000);
     await insertText("replacement survives");
     await waitFor(() => {
@@ -572,6 +798,32 @@ test.each(["binding", "chat"] as const)(
     });
   },
 );
+
+test("Unmounting during recovery clears the retained surface and cancels further attempts", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const canvas = screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+  const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
+  act(() => {
+    return viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  act(() => {
+    window.history.pushState(null, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await waitFor(() => {
+    return expect(
+      screen.queryByLabelText("Remote browser viewer"),
+    ).not.toBeInTheDocument();
+  });
+  expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
+  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  viewer.advance(180_000);
+  expect(viewer.browser.connections()).toBe(1);
+  expect(viewer.browser.activeConnections()).toBe(0);
+});
 
 test.each(["input", "navigation", "creation"] as const)(
   "Automatic recovery never replays uncertain %s",
@@ -783,7 +1035,7 @@ test.each(["network", "http-503"] as const)(
     await act(async () => {
       await failed.promise;
     });
-    await screen.findByText("Browser view unavailable");
+    expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
     viewer.advance(2000);
     await ready();
     expect(viewer.browser.connections()).toBe(2);
@@ -850,8 +1102,17 @@ async function failImageAttempts(
     await act(async () => {
       await image.received;
     });
+    const stops = viewer.browser.requests.filter((request) => {
+      return request.method === "Page.stopScreencast";
+    }).length;
     viewer.advance(31_000);
-    await screen.findByText("Browser view unavailable");
+    await waitFor(() => {
+      expect(
+        viewer.browser.requests.filter((request) => {
+          return request.method === "Page.stopScreencast";
+        }).length,
+      ).toBeGreaterThan(stops);
+    });
     await act(() => {
       image.release();
     });
@@ -862,12 +1123,15 @@ test("Repeated missing retry images recover locally within the original budget",
   const viewer = mockViewer();
   await viewer.start();
   await ready();
+  const canvas = screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+  const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
   const connections = viewer.browser.connections();
   act(() => {
     viewer.browser.frame("!");
   });
-  await pendingRecovery("Retry live image");
+  await pendingRecovery();
   await failImageAttempts(viewer, 2);
+  expect(clear).not.toHaveBeenCalled();
   viewer.advance(4000);
   await ready();
   await insertText("after repeated missing images");
@@ -877,6 +1141,7 @@ test("Repeated missing retry images recover locally within the original budget",
     });
   });
   expect(viewer.browser.connections()).toBe(connections);
+  expect(clear).not.toHaveBeenCalled();
 });
 
 test("Exhausted local image recovery permits a new manual image retry", async () => {
@@ -887,7 +1152,7 @@ test("Exhausted local image recovery permits a new manual image retry", async ()
   act(() => {
     viewer.browser.frame("!");
   });
-  await pendingRecovery("Retry live image");
+  await pendingRecovery();
   await failImageAttempts(viewer, 3);
   const retry = await screen.findByText("Retry live image", {
     selector: "button",
@@ -935,7 +1200,7 @@ test("Remote tab activation replaces the target restored by pending automatic re
   act(() => {
     viewer.browser.frame("!");
   });
-  await pendingRecovery("Retry live image");
+  await pendingRecovery();
   const image = viewer.browser.holdTargetFrames("other");
   act(() => {
     viewer.browser.event("BrowserUse.activeTargetChanged", {
@@ -972,7 +1237,7 @@ async function loseControlDuringImageRetry(
   act(() => {
     viewer.browser.frame("!");
   });
-  await pendingRecovery("Retry live image");
+  await pendingRecovery();
   const image = viewer.browser.holdTargetFrames("example-page");
   viewer.advance(1000);
   await act(async () => {
