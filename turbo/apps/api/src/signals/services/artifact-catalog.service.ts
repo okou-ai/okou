@@ -1301,18 +1301,19 @@ function toArtifactSummary(row: {
 }): ArtifactSummary {
   const kind =
     row.displayKind ?? catalogArtifactKind(row.kind, null, row.logicalKey);
-  return {
+  const summary = {
     id: row.id,
-    kind,
     title: row.title,
     thumbnail: row.thumbnail,
-    ...(kind === "shared-thread" ? { sharedThreadId: row.entityId } : {}),
     ...(row.sourceUrl ? { sourceUrl: row.sourceUrl } : {}),
     ...(row.aliasUrl ? { aliasUrl: row.aliasUrl } : {}),
     ...(row.videoSourceUrl ? { videoSourceUrl: row.videoSourceUrl } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+  return kind === "shared-thread"
+    ? { ...summary, kind, sharedThreadId: row.entityId }
+    : { ...summary, kind };
 }
 
 function artifactCatalogOwnerFilter(userId: string): SQL {
@@ -1798,6 +1799,7 @@ export const getArtifactCatalogEntry$ = command(
       return {
         ...summary,
         kind: "shared-thread",
+        sharedThreadId: row.entityId,
         sharedThread: { id: row.entityId },
       };
     }

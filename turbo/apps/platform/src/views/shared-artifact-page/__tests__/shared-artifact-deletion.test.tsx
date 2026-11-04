@@ -65,7 +65,12 @@ function detail(kind: PageKind): ArtifactDetail {
     updatedAt: "2026-10-01T00:00:00Z",
   };
   if (kind === "shared-thread") {
-    return { ...summary, kind, sharedThread: { id: sourceId } };
+    return {
+      ...summary,
+      kind,
+      sharedThreadId: sourceId,
+      sharedThread: { id: sourceId },
+    };
   }
   if (kind === "html") {
     return {

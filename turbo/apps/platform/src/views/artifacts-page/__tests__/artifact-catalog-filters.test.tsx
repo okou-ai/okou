@@ -163,6 +163,7 @@ test.each([false, true])(
       return respond(200, {
         ...conversation,
         kind: "shared-thread",
+        sharedThreadId,
         sharedThread: { id: sharedThreadId },
       });
     });
