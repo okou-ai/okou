@@ -310,6 +310,53 @@ Stage file deletions before running the Git-backed scan. This command is intenti
 
 This is a static policy guard, not a runtime/data-flow proof. It rejects extra detected boundaries and unregistered, copied, moved or resurrected IDs. It intentionally allows an existing callback's business logic to change. Replacing a boundary within the same file and owner while transferring its sole ID cannot be distinguished from an edit; review must reject using that limitation to introduce a new transaction. Expanded transaction scope, external I/O, surrounding control flow, arbitrary reflection, dynamically generated property names or SQL, cross-file callable aliases, external callback bodies and new callers of old transaction-opening helpers also require review. CI workflow/rule/scanner changes themselves require review. Preserve authorization, concurrency, idempotency, cleanup and financial correctness when removing transactions.
 
+## Legacy Storage Dependency Lint
+
+New business code must not acquire dependencies on the legacy Storage entity
+tables or their access modules. Use the owning entity's independent data model
+and archive publication contract. Ordinary private R2/S3 objects, content bundles,
+browser localStorage and IndexedDB are not legacy Storage entities. The shared
+signed-URL cache also serves independent artifacts and previews, and is not
+classified as a legacy entity merely because its name contains Storage.
+
+From `turbo/`, run `pnpm lint:storage <full-base-main-sha>`. The existing
+`lint-eslint` CI job runs this command against the captured PR or merge-group
+base, after fetching that exact revision. The checker reads repository source
+and Git history only; no production database or object-store credentials are
+required.
+
+`turbo/storage-dependency-baseline.json` records exact file/dependency reference
+counts. It covers production JavaScript/TypeScript across the repository,
+including mutable migration/operator scripts. Test directories, test files,
+declaration files, build output and the checker itself are outside this scan.
+Historical SQL migrations and non-JavaScript/TypeScript sources are unchanged.
+
+The independent parser ignores inline lint configuration. It detects schema
+imports through package or relative paths, imports of modules that directly
+access legacy tables, re-exports, literal require/dynamic imports, import types,
+literal SQL table references and legacy table properties on schema/query objects.
+Imported binding references are counted using lexical scope, including renamed
+imports, so an existing import does not exempt additional uses in the same file.
+The DB schema aggregator is not classified as a Storage access module: importing
+the general database connection must remain available to independent entities.
+
+The candidate baseline may only remove entries or lower counts relative to
+base/main. Current references must match it exactly; remove stale entries and
+lower counts when migrating a consumer. A deleted entry cannot be restored.
+Initial activation additionally checks the candidate inventory against actual
+base/main source. Once the checker exists on main, a missing main inventory
+cannot reopen bootstrap. `node scripts/check-storage-dependencies.mjs --inventory`
+prints the current reference inventory for inspection; it does not authorize or
+automatically apply changes to the baseline.
+
+This is a static dependency ratchet, not a runtime or complete data-flow proof.
+It does not recursively classify callers of every existing wrapper. Reusing
+existing callable aliases, changes hidden behind existing dependencies,
+dynamically constructed module/property/table names, arbitrary SQL and other
+languages still require review. Changes to the checker, its scope and CI wiring
+require review as well. A passing check does not prove production data can be
+deleted or replace rollout, retention and ownership acceptance.
+
 ## Database Triggers
 
 `api/no-database-trigger` rejects `CREATE TRIGGER`, `CREATE OR REPLACE TRIGGER`,
