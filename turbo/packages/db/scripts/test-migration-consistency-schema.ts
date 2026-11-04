@@ -3137,6 +3137,14 @@ async function main(): Promise<void> {
       ),
     );
 
+    console.log("=== Registry resource dual publication CLI ===");
+    console.log(
+      execCommand("node scripts/test-registry-publication.mjs", {
+        cwd: PACKAGE_DIR,
+        env: { DATABASE_URL: dbUrl1 },
+      }),
+    );
+
     console.log("=== Registry resource backfill CLI ===");
     console.log(
       execCommand(

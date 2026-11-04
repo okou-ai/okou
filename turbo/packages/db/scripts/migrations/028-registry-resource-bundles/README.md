@@ -1,9 +1,12 @@
 # Registry resource inventory and backfill preparation
 
-Production downloads and presentation publication still use Storage. The first
-release added independent archive/head tables and the shared private archive
-allowlist. The operator described here prepares a reviewed original-byte
-backfill; deploying its code does not run it or enable independent readers.
+The first release added independent archive/head tables and the shared private
+archive allowlist. The reader cutover uses these independent tables and private
+objects; the presentation publisher maintains both indices during transition.
+The operator described here prepares a reviewed original-byte backfill;
+deploying its code does not run it or establish production convergence. See the
+[publisher and cutover gate](../../../../../../.github/scripts/release/presentation-template-release/README.md)
+before activating readers.
 
 ## Archive identity
 
