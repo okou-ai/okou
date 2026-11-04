@@ -1,4 +1,6 @@
-use std::io::Read;
+use cli_test_support::child::{
+    ChildOutputReader as OutputReader, collect_child_output as collect_output,
+};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -402,58 +404,6 @@ fn spawn_child_reaper(mut child: Child) -> Receiver<std::io::Result<ExitStatus>>
         let _ = tx.send(child.wait());
     });
     rx
-}
-
-struct OutputReader {
-    rx: Receiver<std::io::Result<Vec<u8>>>,
-}
-
-impl OutputReader {
-    fn spawn(mut pipe: impl Read + Send + 'static) -> Self {
-        let (tx, rx) = mpsc::channel();
-        let _ = std::thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let result = pipe.read_to_end(&mut bytes).map(|_| bytes);
-            let _ = tx.send(result);
-        });
-        Self { rx }
-    }
-
-    fn finish(self, stream: &str, deadline: Instant) -> std::io::Result<Vec<u8>> {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let result = match self.rx.recv_timeout(remaining) {
-            Ok(result) => result,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    format!("{stream} did not close before the child output deadline"),
-                ));
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(std::io::Error::other(format!(
-                    "{stream} reader exited without output"
-                )));
-            }
-        };
-        result.map_err(|error| {
-            std::io::Error::new(error.kind(), format!("read child {stream}: {error}"))
-        })
-    }
-}
-
-fn collect_output(
-    status: ExitStatus,
-    stdout_reader: OutputReader,
-    stderr_reader: OutputReader,
-    deadline: Instant,
-) -> std::io::Result<Output> {
-    let stdout = stdout_reader.finish("stdout", deadline)?;
-    let stderr = stderr_reader.finish("stderr", deadline)?;
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-    })
 }
 
 pub(crate) fn require_session_file(codex_home: &Path) -> std::io::Result<PathBuf> {
