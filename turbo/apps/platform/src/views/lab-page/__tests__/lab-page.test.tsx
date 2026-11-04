@@ -198,7 +198,7 @@ test.each([
   [FeatureSwitchKey.TestOauthConnector, false],
   [FeatureSwitchKey.Dummy, true],
   [FeatureSwitchKey.ChatEmailQuote, false],
-  [FeatureSwitchKey.MarkdownCjkEmphasis, false],
+  [FeatureSwitchKey.MarkdownCjkEmphasis, true],
 ] as const)(
   "Toggle and reset a Lab override: %s",
   async (featureKey, defaultEnabled) => {
