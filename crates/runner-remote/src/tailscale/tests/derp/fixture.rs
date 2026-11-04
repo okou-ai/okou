@@ -26,7 +26,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpSocket, TcpStream},
     sync::Notify,
 };
 
@@ -291,6 +291,7 @@ pub(in crate::tailscale::tests) struct Server {
     pub(in crate::tailscale::tests) task:
         tokio::task::JoinHandle<(Framed<Upgraded, frame::Codec>, NodePublicKey)>,
     pub(in crate::tailscale::tests) tls: Option<Arc<rustls::ClientConfig>>,
+    pub(in crate::tailscale::tests) reservation: Arc<TcpSocket>,
 }
 impl Server {
     pub(in crate::tailscale::tests) async fn new() -> Self {
@@ -327,8 +328,17 @@ impl Server {
         server: Option<Arc<rustls::ServerConfig>>,
         tls: Option<Arc<rustls::ClientConfig>>,
     ) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
+        // Reserve the endpoint before publishing its single-session listener.
+        // After upgrade it must refuse reconnects without being reassigned to
+        // another fixture while a regional dialer still holds the old address.
+        let reservation = TcpSocket::new_v4().unwrap();
+        reservation.set_reuseaddr(true).unwrap();
+        reservation.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let address = reservation.local_addr().unwrap();
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.set_reuseaddr(true).unwrap();
+        socket.bind(address).unwrap();
+        let listener = socket.listen(128).unwrap();
         let task = tokio::spawn(
             async move {
                 let io = upgraded_server(listener, server).await;
@@ -336,7 +346,12 @@ impl Server {
             }
             .with_subscriber(tracing::Dispatch::none()),
         );
-        Self { address, task, tls }
+        Self {
+            address,
+            task,
+            tls,
+            reservation: Arc::new(reservation),
+        }
     }
 }
 pub(super) async fn connect(
