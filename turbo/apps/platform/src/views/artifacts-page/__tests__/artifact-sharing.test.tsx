@@ -9,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   setupPage,
@@ -64,7 +65,9 @@ const canonical = artifactReferencePath(deploymentId, "index.html");
 const organizationUrl = `https://app.okou.ai${artifactReferencePath(shareId, "index.html")}`;
 const publicUrl = `https://${"b".repeat(24)}.okou.app/`;
 
-async function openArtifact() {
+async function openArtifact(
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
+) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Private report" })],
@@ -102,6 +105,7 @@ async function openArtifact() {
   await setupPage({
     context,
     path: "/artifacts",
+    ...(featureSwitches ? { featureSwitches } : {}),
   });
   click(await findArtifactAction("Private report"));
   await screen.findByTestId("artifact-dialog-site-frame");
@@ -138,6 +142,31 @@ async function openShareMenu() {
   });
 }
 
+test("the share audience switch describes each option beneath its name", async () => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, sharingStatus());
+  });
+  await openArtifact({ [FeatureSwitchKey.ShareAudienceDescriptions]: true });
+  await openShareMenu();
+  await waitFor(() => {
+    expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
+  });
+  expect(
+    queryAllByRoleFast("radio").map((element) => {
+      return [
+        element.getAttribute("aria-label"),
+        element.getAttribute("aria-description"),
+      ];
+    }),
+  ).toStrictEqual([
+    ["Only me", "Only you can open it"],
+    ["Anyone at Acme", "Teammates can view"],
+    ["Anyone with the link", "No sign-in needed"],
+  ]);
+  expect(screen.getByText("Teammates can view")).toBeInTheDocument();
+  expect(action("button", "Copy link")).toBeEnabled();
+});
+
 test("owners can change three access levels separately from copying the stable app link", async () => {
   let status = sharingStatus();
   const changes: string[] = [];
@@ -160,15 +189,13 @@ test("owners can change three access levels separately from copying the stable a
       return element.getAttribute("aria-label");
     }),
   ).toStrictEqual(["Only me", "Anyone at Acme", "Anyone with the link"]);
+  // Descriptions stay behind `ShareAudienceDescriptions`, which is off here.
   expect(
     queryAllByRoleFast("radio").map((element) => {
       return element.getAttribute("aria-description");
     }),
-  ).toStrictEqual([
-    "Only you can open it",
-    "Teammates can view",
-    "No sign-in needed",
-  ]);
+  ).toStrictEqual([null, null, null]);
+  expect(screen.queryByText("Only you can open it")).not.toBeInTheDocument();
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([]);

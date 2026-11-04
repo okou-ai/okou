@@ -26,6 +26,7 @@ import {
   Skeleton,
   cn,
 } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useTranslation } from "react-i18next";
 import {
   getArtifactShareScope,
@@ -35,6 +36,7 @@ import type {
   ArtifactShareIdentity,
   AttachmentPreviewSignals,
 } from "../../signals/attachment-resource-url.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 export function SharePermissionChoices({
@@ -51,6 +53,8 @@ export function SharePermissionChoices({
   readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
 }) {
   const { t } = useTranslation();
+  const described =
+    useGet(featureSwitch$)[FeatureSwitchKey.ShareAudienceDescriptions];
   const options = [
     {
       audience: "private",
@@ -112,7 +116,8 @@ export function SharePermissionChoices({
       {options.map(({ audience, Icon, label, description }) => {
         const isSelected = !saving && selected === audience;
         // The row names its audience by the label alone; the line beneath it
-        // says what that audience can do, so it describes rather than names.
+        // (behind `ShareAudienceDescriptions`) says what that audience can do,
+        // so it describes rather than names.
         return (
           <RadioPrimitive.Root
             key={audience}
@@ -121,9 +126,10 @@ export function SharePermissionChoices({
             render={<button type="button" />}
             aria-busy={saving}
             aria-label={label}
-            aria-description={description}
+            aria-description={described ? description : undefined}
             className={cn(
-              "flex w-full select-none items-start gap-2 rounded-lg px-2 text-left outline-none transition-colors",
+              "flex w-full select-none gap-2 rounded-lg px-2 text-left outline-none transition-colors",
+              described ? "items-start" : "items-center",
               MENU_ROW_HEIGHT_CLASS,
               unavailable && "opacity-50",
               // `state-hover` says "the pointer is here"; selection owns
@@ -135,16 +141,38 @@ export function SharePermissionChoices({
               unavailable && "hover:bg-transparent",
             )}
           >
-            <Icon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className={cn("truncate", isSelected && "font-medium")}>
+            <Icon
+              size={16}
+              className={cn(
+                "shrink-0 text-muted-foreground",
+                described && "mt-0.5",
+              )}
+            />
+            {described ? (
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className={cn("truncate", isSelected && "font-medium")}>
+                  {label}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {description}
+                </span>
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate",
+                  isSelected && "font-medium",
+                )}
+              >
                 {label}
               </span>
-              <span className="truncate text-xs text-muted-foreground">
-                {description}
-              </span>
-            </span>
-            {isSelected && <Check size={16} className="mt-0.5 shrink-0" />}
+            )}
+            {isSelected && (
+              <Check
+                size={16}
+                className={cn("shrink-0", described && "mt-0.5")}
+              />
+            )}
           </RadioPrimitive.Root>
         );
       })}
@@ -203,7 +231,7 @@ export function ShareCopyButton({
 }
 
 /**
- * The copy action sits under a hairline that runs to the popover's edges
+ * Behind `ShareAudienceDescriptions`, the copy action sits under a hairline that runs to the popover's edges
  * (`-mx-1.5` cancels the content's `p-1.5`), so it reads as the menu's footer
  * rather than a button left floating beside the last option.
  */
@@ -235,6 +263,8 @@ export function ShareSkeleton({
   readonly showCopyButton?: boolean;
 }) {
   const { t } = useTranslation();
+  const described =
+    useGet(featureSwitch$)[FeatureSwitchKey.ShareAudienceDescriptions];
   return (
     <div
       role="status"
@@ -246,21 +276,39 @@ export function ShareSkeleton({
         return (
           <div
             key={index}
-            className={cn("flex items-start gap-2 px-2", MENU_ROW_HEIGHT_CLASS)}
+            className={cn(
+              "flex gap-2 px-2",
+              described ? "items-start" : "items-center",
+              MENU_ROW_HEIGHT_CLASS,
+            )}
           >
-            <Skeleton className="mt-0.5 size-4 rounded" />
-            <span className="flex flex-col gap-1.5 pt-0.5">
-              <Skeleton className="h-4 w-40 rounded" />
-              <Skeleton className="h-3 w-24 rounded" />
-            </span>
+            {described ? (
+              <>
+                <Skeleton className="mt-0.5 size-4 rounded" />
+                <span className="flex flex-col gap-1.5 pt-0.5">
+                  <Skeleton className="h-4 w-40 rounded" />
+                  <Skeleton className="h-3 w-24 rounded" />
+                </span>
+              </>
+            ) : (
+              <>
+                <Skeleton className="size-4 rounded" />
+                <Skeleton className="h-4 w-40 rounded" />
+              </>
+            )}
           </div>
         );
       })}
-      {showCopyButton && (
-        <ShareCopyFooter>
-          <Skeleton className="h-8 w-full rounded-lg" />
-        </ShareCopyFooter>
-      )}
+      {showCopyButton &&
+        (described ? (
+          <ShareCopyFooter>
+            <Skeleton className="h-8 w-full rounded-lg" />
+          </ShareCopyFooter>
+        ) : (
+          <div className="mt-1.5 flex justify-end">
+            <Skeleton className="h-8 w-28 rounded-lg" />
+          </div>
+        ))}
     </div>
   );
 }
@@ -295,6 +343,8 @@ export function ShareMenuContent({
   };
 }) {
   const { t } = useTranslation();
+  const described =
+    useGet(featureSwitch$)[FeatureSwitchKey.ShareAudienceDescriptions];
   return (
     <PopoverContent
       aria-label={label}
@@ -330,11 +380,16 @@ export function ShareMenuContent({
           ) : (
             <>
               {errorMessage && <ShareLoadError message={errorMessage} />}
-              {copy && (
-                <ShareCopyFooter>
-                  <ShareCopyButton {...copy} className="w-full" />
-                </ShareCopyFooter>
-              )}
+              {copy &&
+                (described ? (
+                  <ShareCopyFooter>
+                    <ShareCopyButton {...copy} className="w-full" />
+                  </ShareCopyFooter>
+                ) : (
+                  <div className="mt-1.5 flex justify-end">
+                    <ShareCopyButton {...copy} />
+                  </div>
+                ))}
             </>
           )}
         </>
