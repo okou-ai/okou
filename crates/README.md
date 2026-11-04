@@ -421,10 +421,18 @@ Request transport failures are INFO and remain in local Runner logs. Each
 Runner process maintains an exact five-minute rolling window of eligible upload
 sessions. A session is an eligible success only when it sends at least one HTTP
 request, every response is a confirmed 2xx, and the session completes normally;
-a request transport failure is an eligible failure. Confirmed rejection,
-request construction, malformed input, capacity or source truncation, deadline
-cancellation, and sessions that send no request are excluded even if an earlier
-batch received 2xx.
+malformed input prevents an otherwise completed upload from qualifying as an
+eligible success. A terminal typed request transport failure is an eligible
+failure, even if malformed lines were skipped earlier. Confirmed rejection,
+request construction failure, capacity or source truncation, deadline cancellation,
+and sessions that send no request are excluded even if an earlier batch received 2xx.
+
+For example, a JSONL file contains one malformed line and one valid entry. If
+the valid entry's upload returns 2xx and the session completes normally, the
+session is excluded because of the malformed input. If that request instead ends
+in a typed transport failure before the overall deadline, the session is an
+eligible failure. Three such failed sessions in an otherwise empty five-minute
+window meet the alert threshold.
 
 When the window contains at least three eligible failures and a failure rate of
 at least 20%, the Runner emits one `network log uploads degraded` ERROR with
