@@ -17,7 +17,7 @@ const COUNT_REPRESENTATIVES: [usize; 7] = [0, 1, 2, 3, 5, 9, 17];
 const COMPRESSED_BYTE_REPRESENTATIVES: [u64; 8] = [
     0, 1, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216, 67_108_864,
 ];
-const EXPECTED_ACTION_SCHEMA: [&str; 95] = [
+const EXPECTED_ACTION_SCHEMA: [&str; 99] = [
     "guest_storage_apply_task_count_0",
     "guest_storage_apply_task_count_1",
     "guest_storage_apply_task_count_2",
@@ -113,6 +113,10 @@ const EXPECTED_ACTION_SCHEMA: [&str; 95] = [
     "artifact_download_remote_attempt_count_1",
     "artifact_download_file_body_read",
     "artifact_download_file_extract_outside_body_read",
+    "guest_storage_apply_stale_cleanup",
+    "guest_storage_apply_stale_cleanup_cpu",
+    "guest_storage_apply_instruction_cleanup",
+    "guest_storage_apply_instruction_cleanup_cpu",
 ];
 
 fn action_schema() -> Vec<&'static str> {
@@ -140,6 +144,9 @@ fn action_schema() -> Vec<&'static str> {
             archive_kind.file_body_read_action(),
             archive_kind.file_extract_outside_body_read_action(),
         ]);
+    }
+    for phase in [CleanupPhase::StalePaths, CleanupPhase::Instructions] {
+        actions.extend([phase.wall_action(), phase.cpu_action()]);
     }
     actions
 }
@@ -316,5 +323,8 @@ fn complete_action_schema_is_exact_and_unique() {
     let actions = action_schema();
 
     assert_eq!(actions.as_slice(), EXPECTED_ACTION_SCHEMA.as_slice());
-    assert_eq!(actions.iter().copied().collect::<HashSet<_>>().len(), 95);
+    assert_eq!(
+        actions.iter().copied().collect::<HashSet<_>>().len(),
+        EXPECTED_ACTION_SCHEMA.len()
+    );
 }
