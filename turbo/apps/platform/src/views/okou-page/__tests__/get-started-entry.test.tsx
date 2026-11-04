@@ -53,8 +53,9 @@ import {
 const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
 
-test("Friends have a separate referral link with paid-pack qualification and one-month rewards", async () => {
-  configureQuestPage(context, "admin");
+test("The gift opens invitations independently of credit quests, with code and link copying", async () => {
+  const status = configureQuestPage(context, "admin");
+  status.quests = [];
   const linkReady = context.mocks.deferred<void>();
   context.mocks.api(friendReferralsContract.link, async ({ respond }) => {
     await linkReady.promise;
@@ -81,12 +82,10 @@ test("Friends have a separate referral link with paid-pack qualification and one
     },
   });
   const user = userEvent.setup({ delay: null });
-  await user.click(await screen.findByTestId("get-started-entry"));
-  const panel = await screen.findByRole("menu");
-  expect(within(panel).getByText("Invite your team")).toBeInTheDocument();
-  await user.keyboard("{End}");
-  expect(document.activeElement).toHaveTextContent("Invite your friends");
-  expect(document.activeElement).toHaveAttribute("role", "menuitem");
+  const entry = await waitFor(() => {
+    return buttonNamed("Invite your friends", document.body);
+  });
+  entry.focus();
   await user.keyboard("{Enter}");
   const dialog = await screen.findByRole("dialog", {
     name: "Invite your friends",
@@ -100,12 +99,22 @@ test("Friends have a separate referral link with paid-pack qualification and one
     within(dialog).getByText(/expire one month after they are granted/u),
   ).toBeInTheDocument();
   await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Getting your referral link…",
+    "Getting your invitation code…",
   );
   linkReady.resolve();
-  const link = await within(dialog).findByLabelText("Your referral link");
-  expect(link).toHaveValue(`${location.origin}/sign-up?friend_referral=a7k2p9`);
+  const code = await within(dialog).findByLabelText("Your invitation code");
+  expect(code).toHaveValue("a7k2p9");
+  expect(
+    within(dialog).queryByDisplayValue(
+      `${location.origin}/sign-up?friend_referral=a7k2p9`,
+    ),
+  ).not.toBeInTheDocument();
   expect(within(dialog).getByText("40,000")).toBeInTheDocument();
+  click(buttonNamed("Copy code", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
+  await expect(navigator.clipboard.readText()).resolves.toBe("a7k2p9");
   click(buttonNamed("Copy link", dialog));
   await waitFor(() => {
     expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
@@ -113,19 +122,21 @@ test("Friends have a separate referral link with paid-pack qualification and one
   await expect(navigator.clipboard.readText()).resolves.toBe(
     `${location.origin}/sign-up?friend_referral=a7k2p9`,
   );
+  expect(buttonNamed("Copy code", dialog)).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
-    expect(screen.getByTestId("get-started-entry")).toHaveFocus();
+    expect(entry).toHaveFocus();
   });
   await user.click(linkNamed("Workflows", document.body));
   await screen.findByRole("heading", { name: "Workflows" });
   act(() => {
     window.history.back();
   });
-  await user.click(await screen.findByTestId("get-started-entry"));
-  await screen.findByRole("menu");
-  await user.keyboard("{End}{Enter}");
+  const reopenedEntry = await waitFor(() => {
+    return buttonNamed("Invite your friends", document.body);
+  });
+  await user.click(reopenedEntry);
   await screen.findByRole("dialog", { name: "Invite your friends" });
   act(() => {
     window.history.forward();
@@ -175,18 +186,34 @@ test("Referral link failures can be retried in the same dialog", async () => {
       },
     },
   });
-  click(within(await openQuestPanel()).getByText("Invite your friends"));
+  await screen.findByTestId("get-started-entry");
+  click(buttonNamed("Invite your friends", document.body));
   const dialog = await screen.findByRole("dialog", {
     name: "Invite your friends",
   });
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-    "Your referral link could not be loaded. Try again.",
+    "Your invitation code could not be loaded. Try again.",
   );
   failed = false;
   click(buttonNamed("Try again", dialog));
   await expect(
-    within(dialog).findByLabelText("Your referral link"),
+    within(dialog).findByLabelText("Your invitation code"),
   ).resolves.toBeInTheDocument();
+});
+
+test("The invitation gift is hidden when friend referrals are disabled", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: false },
+  });
+  await screen.findByTestId("get-started-entry");
+  expect(
+    queryAllByRoleFast("button").find((button) => {
+      return button.getAttribute("aria-label") === "Invite your friends";
+    }),
+  ).toBeUndefined();
 });
 
 function normalizedText(element: Element): string {
