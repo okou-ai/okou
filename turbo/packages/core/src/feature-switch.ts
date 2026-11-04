@@ -69,7 +69,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Marketing content handoff",
     description:
       "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.ConnectorChatAccountAccess]: {
     maintainer: "liangyou@okou.ai",
