@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/okou-ai/okou/compare/ios-v0.24.1...ios-v0.24.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **ios:** reserve space for feedback outside the sliding sidebar ([#45142](https://github.com/okou-ai/okou/issues/45142)) ([689d91e](https://github.com/okou-ai/okou/commit/689d91e8d5066e871d203902cedba10f38f90c3e))
+
 ## [0.24.1](https://github.com/okou-ai/okou/compare/ios-v0.24.0...ios-v0.24.1) (2026-11-04)
 
 

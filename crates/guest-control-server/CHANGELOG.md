@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.74](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.73...guest-control-server-v0.24.74) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** preserve system sbin directories in agent path ([#45143](https://github.com/okou-ai/okou/issues/45143)) ([42e1307](https://github.com/okou-ai/okou/commit/42e1307f32e3518faa32019c65356b8476216a8a))
+
 ## [0.24.73](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.72...guest-control-server-v0.24.73) (2026-11-04)
 
 ## [0.24.72](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.71...guest-control-server-v0.24.72) (2026-11-04)
