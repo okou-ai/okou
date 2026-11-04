@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1091.0](https://github.com/okou-ai/okou/compare/app-v0.1090.0...app-v0.1091.0) (2026-11-04)
+
+
+### Features
+
+* **core:** enable projects for staff ([#45012](https://github.com/okou-ai/okou/issues/45012)) ([1c4dff2](https://github.com/okou-ai/okou/commit/1c4dff2cbb485abfce7e587bf91e411b79a7336a))
+
+
+### Bug Fixes
+
+* **app:** preserve header actions while switching chats ([#45030](https://github.com/okou-ai/okou/issues/45030)) ([b2cab5b](https://github.com/okou-ai/okou/commit/b2cab5b32b2e23a86754f2096de4c53fd62d9f0b))
+* **browser:** unify recovery ownership and usable readiness ([#44959](https://github.com/okou-ai/okou/issues/44959)) ([3aa45d9](https://github.com/okou-ai/okou/commit/3aa45d97a28c68749580a0a3e5d24ce8dfade705))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.0
+    * @okouai/core bumped to 8.815.0
+
 ## [0.1090.0](https://github.com/okou-ai/okou/compare/app-v0.1089.0...app-v0.1090.0) (2026-11-03)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.72](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.71...guest-control-server-v0.24.72) (2026-11-04)
+
+
+### Refactoring
+
+* **guest-control:** share helper diagnostic byte bounds ([#45065](https://github.com/okou-ai/okou/issues/45065)) ([952833e](https://github.com/okou-ai/okou/commit/952833e7630ac4170dd99d842c68cc717a059930))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
 ## [0.24.71](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.70...guest-control-server-v0.24.71) (2026-11-03)
 
 

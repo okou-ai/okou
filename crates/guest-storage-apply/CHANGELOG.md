@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.10](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.9...guest-storage-apply-v0.28.10) (2026-11-04)
+
+
+### Performance Improvements
+
+* **guest-storage:** buffer large archive file copies ([#45070](https://github.com/okou-ai/okou/issues/45070)) ([e1a05bb](https://github.com/okou-ai/okou/commit/e1a05bbfbcf40173b10a56bd171b11e61b177afb))
+
 ## [0.28.9](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.8...guest-storage-apply-v0.28.9) (2026-11-03)
 
 ## [0.28.8](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.7...guest-storage-apply-v0.28.8) (2026-11-03)

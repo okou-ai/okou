@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.73](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.72...guest-control-client-v0.23.73) (2026-11-04)
+
+
+### Refactoring
+
+* **guest-control:** share fixed-helper response validation ([#45033](https://github.com/okou-ai/okou/issues/45033)) ([8ad4db9](https://github.com/okou-ai/okou/commit/8ad4db93f2a6f537b6d1a4617074ae2ac608ac79))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
 ## [0.23.72](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.71...guest-control-client-v0.23.72) (2026-11-03)
 
 
