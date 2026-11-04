@@ -1,4 +1,88 @@
 use super::*;
+use std::future::Future as _;
+
+#[tokio::test]
+async fn failed_group_joins_started_host_io_before_returning() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    write_cached_archive(&home, "reading", "v1", &body);
+    write_storage_lock(&home, "reading", "v1");
+    let plan = fresh_storage_plan("https://r2.example.com/reading".into(), "reading", "v1");
+    let group = group_targets(collect_targets(plan.cache_candidates()))
+        .pop()
+        .unwrap();
+    let lock_path = home.storage_lock("reading", "v1");
+    let mut groups = JoinSet::new();
+    let (entered_tx, entered_rx) = oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    groups.spawn_blocking({
+        let group = group.clone();
+        let lock_path = lock_path.clone();
+        move || {
+            let reader = lock::try_acquire_shared_or_busy_blocking(&lock_path).unwrap();
+            assert!(matches!(reader, lock::TryLock::Acquired(_)));
+            entered_tx.send(()).unwrap();
+            // Model accepted physical IO that cannot be interrupted by abort.
+            release_rx.recv().unwrap();
+            let mut metrics = CacheProcessMetrics::default();
+            let processed = process_group_hit_or_passthrough(&group, &home, &mut metrics, None);
+            drop(reader);
+            ProcessedGroupTask {
+                group,
+                metrics,
+                processed,
+            }
+        }
+    });
+    entered_rx.await.unwrap();
+    let sandbox = MockSandbox::new("failed-while-reading");
+    let guest_writes = GuestWriteLocks::default();
+    let mut telemetry = new_telemetry();
+    let mut metrics = StorageCacheStageMetrics::start();
+    let mut stage = GuestStageRecorder {
+        sandbox: &sandbox,
+        guest_writes: &guest_writes,
+        telemetry: &mut telemetry,
+        metrics: &mut metrics,
+    };
+    let failed_plan = fresh_storage_plan("https://r2.example.com/failed".into(), "failed", "v1");
+    let failed_group = group_targets(collect_targets(failed_plan.cache_candidates()))
+        .pop()
+        .unwrap();
+    let failed = ProcessedGroupTask {
+        group: failed_group,
+        metrics: CacheProcessMetrics::default(),
+        processed: Err(RunnerError::Internal("original read failure".into())),
+    };
+    let mut outcomes = Vec::new();
+    let mut batch = GuestStageBatch::default();
+    let mut failure = Box::pin(stage_joined_processed_group(
+        &mut groups,
+        failed,
+        &mut outcomes,
+        &mut batch,
+        &mut stage,
+    ));
+    std::future::poll_fn(|cx| {
+        assert!(failure.as_mut().poll(cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    assert!(matches!(
+        lock::try_acquire_or_busy_blocking(&lock_path).unwrap(),
+        lock::TryLock::Busy
+    ));
+    release_tx.send(()).unwrap();
+    let error = failure.await.unwrap_err();
+    assert!(error.to_string().contains("original read failure"));
+    assert!(groups.is_empty());
+    assert!(matches!(
+        lock::try_acquire_or_busy_blocking(&lock_path).unwrap(),
+        lock::TryLock::Acquired(_)
+    ));
+    assert!(sandbox.write_files_calls().is_empty());
+}
 
 #[tokio::test]
 async fn group_processing_lock_error_preserves_source_and_cache() {

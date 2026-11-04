@@ -524,9 +524,13 @@ async fn try_acquire_shared_or_busy_succeeds_with_existing_shared_lock() {
     let path = dir.path().join("test.lock");
     let _guard = acquire_shared(path.clone()).await.unwrap();
 
-    let result = try_acquire_shared_or_busy(path).await.unwrap();
+    let result = try_acquire_shared_or_busy(path.clone()).await.unwrap();
 
     assert!(matches!(result, TryLock::Acquired(_)));
+    assert!(matches!(
+        try_acquire_shared_or_busy_blocking(&path).unwrap(),
+        TryLock::Acquired(_)
+    ));
 }
 
 #[tokio::test]
@@ -535,9 +539,13 @@ async fn try_acquire_shared_or_busy_reports_busy_when_exclusive_lock_held() {
     let path = dir.path().join("test.lock");
     let _guard = acquire(path.clone()).await.unwrap();
 
-    let result = try_acquire_shared_or_busy(path).await.unwrap();
+    let result = try_acquire_shared_or_busy(path.clone()).await.unwrap();
 
     assert!(matches!(result, TryLock::Busy));
+    assert!(matches!(
+        try_acquire_shared_or_busy_blocking(&path).unwrap(),
+        TryLock::Busy
+    ));
 }
 
 #[tokio::test]

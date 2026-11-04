@@ -47,7 +47,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
 use std::fmt;
-use std::io;
+use std::io::{self, Read};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -59,7 +59,6 @@ use futures_util::{FutureExt, StreamExt};
 use reqwest::Client;
 use sandbox::{Sandbox, WriteFileEntry};
 use tokio::fs;
-use tokio::io::AsyncReadExt as _;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, TryAcquireError, mpsc, oneshot};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -2420,10 +2419,11 @@ pub async fn populate_cache_with_fresh_delivery(
         })
         .collect::<Vec<_>>();
 
-    // Cache population runs in owned tasks so a slow guest staging write does
-    // not stop already-started workers from releasing host cache flocks. Failure
-    // paths explicitly abort and drain pending workers so locks are not left for
-    // the runtime to clean up later.
+    // Each blocking job owns the complete Host read and its flock. A slow Guest
+    // write cannot delay lock release. Started blocking jobs are not abortable:
+    // failure draining joins their physical IO before returning. An outer hard
+    // cancellation may discard their result, but never their lock ownership;
+    // only this async owner can stage bytes into the Guest.
     let mut groups = JoinSet::new();
     let stage_result: RunnerResult<Vec<(CacheTargetGroup, TargetOutcome)>> = async {
         let mut stage_batch = GuestStageBatch::default();
@@ -2450,10 +2450,24 @@ pub async fn populate_cache_with_fresh_delivery(
             }
 
             let home = home.clone();
-            groups.spawn(async move {
+            // Keep known large allocations on the async owner's heap instead
+            // of retaining them across many blocking-worker arenas. The hint
+            // selects capacity only; the locked file still determines its data.
+            let buffer = group
+                .archive_size
+                .filter(|size| {
+                    *size > BODY_BUFFER_FALLBACK_CAPACITY as u64 && *size <= CACHE_MAX_SIZE
+                })
+                .map(|size| {
+                    Vec::with_capacity(
+                        initial_body_capacity(Some(size), None, CACHE_MAX_SIZE).saturating_add(1),
+                    )
+                });
+            groups.spawn_blocking(move || {
                 let mut metrics = CacheProcessMetrics::default();
                 let started_at = Instant::now();
-                let processed = process_group_hit_or_passthrough(&group, &home, &mut metrics).await;
+                let processed =
+                    process_group_hit_or_passthrough(&group, &home, &mut metrics, buffer);
                 let success = processed.is_ok();
                 metrics.record(
                     STORAGE_CACHE_PROCESS_GROUP,
@@ -3321,16 +3335,17 @@ async fn process_group_background_fill(
     process_one_background_fill(target, group.archive_size, http, home).await
 }
 
-async fn process_group_hit_or_passthrough(
+fn process_group_hit_or_passthrough(
     group: &CacheTargetGroup,
     home: &HomePaths,
     metrics: &mut CacheProcessMetrics,
+    buffer: Option<Vec<u8>>,
 ) -> RunnerResult<ProcessedGroup> {
     let target = &group.representative;
     let ProcessedTarget {
         outcome,
         stage_write,
-    } = process_one_hit_or_passthrough(target, home, metrics).await?;
+    } = process_one_hit_or_passthrough(target, home, metrics, buffer)?;
 
     Ok(ProcessedGroup {
         outcome,
@@ -3494,17 +3509,18 @@ async fn fetch_cache_target(
     Ok(CacheFetchOutcome::Downloaded(bytes))
 }
 
-async fn process_one_hit_or_passthrough(
+fn process_one_hit_or_passthrough(
     target: &CacheTarget,
     home: &HomePaths,
     metrics: &mut CacheProcessMetrics,
+    buffer: Option<Vec<u8>>,
 ) -> RunnerResult<ProcessedTarget> {
     let lock_path = home.storage_lock(&target.name, &target.version);
     let cache_dir = home.storage_cache_dir(&target.name, &target.version);
     let archive_path = cache_dir.join("archive.tar.gz");
-    let archive_may_exist = cached_archive_exists(&archive_path).await?;
+    let archive_may_exist = cached_archive_exists(&archive_path)?;
     let started_at = Instant::now();
-    let reader_result = lock::try_acquire_existing_shared_or_missing(lock_path.clone()).await;
+    let reader_result = lock::try_acquire_existing_shared_or_missing_blocking(&lock_path);
     let success = reader_result.is_ok();
     metrics.record(
         STORAGE_CACHE_LOCK_WAIT,
@@ -3521,7 +3537,7 @@ async fn process_one_hit_or_passthrough(
             });
         }
         lock::ExistingTryLock::Missing => {
-            if !archive_may_exist || !cached_archive_exists(&archive_path).await? {
+            if !archive_may_exist || !cached_archive_exists(&archive_path)? {
                 return Ok(ProcessedTarget {
                     outcome: TargetOutcome::MissPassthrough { reason: "missing" },
                     stage_write: None,
@@ -3529,7 +3545,7 @@ async fn process_one_hit_or_passthrough(
             }
 
             let started_at = Instant::now();
-            let reader_result = lock::try_acquire_shared_or_busy(lock_path.clone()).await;
+            let reader_result = lock::try_acquire_shared_or_busy_blocking(&lock_path);
             let success = reader_result.is_ok();
             metrics.record(
                 STORAGE_CACHE_LOCK_WAIT,
@@ -3549,7 +3565,7 @@ async fn process_one_hit_or_passthrough(
         }
     };
 
-    match read_cache_entry(&cache_dir, &archive_path, metrics).await? {
+    match read_cache_entry(&cache_dir, &archive_path, metrics, buffer)? {
         CachedArchive::Hit(bytes) => {
             let guest_path = guest_archive_path(&target.name, &target.version);
             drop(reader);
@@ -3560,7 +3576,7 @@ async fn process_one_hit_or_passthrough(
         }
         CachedArchive::Missing => {
             drop(reader);
-            remove_storage_lock_after_missing_cache(&lock_path, &archive_path).await;
+            remove_storage_lock_after_missing_cache(&lock_path, &archive_path);
             Ok(ProcessedTarget {
                 outcome: TargetOutcome::MissPassthrough { reason: "missing" },
                 stage_write: None,
@@ -3582,14 +3598,14 @@ async fn process_one_hit_or_passthrough(
     }
 }
 
-async fn remove_storage_lock_after_missing_cache(lock_path: &Path, archive_path: &Path) {
-    let lock = match lock::try_acquire_existing_or_missing(lock_path.to_path_buf()).await {
+fn remove_storage_lock_after_missing_cache(lock_path: &Path, archive_path: &Path) {
+    let lock = match lock::try_acquire_existing_or_missing_blocking(lock_path) {
         Ok(lock::ExistingTryLock::Acquired(lock)) => lock,
         Ok(lock::ExistingTryLock::Busy | lock::ExistingTryLock::Missing) => return,
         Err(_) => return,
     };
 
-    match cached_archive_exists(archive_path).await {
+    match cached_archive_exists(archive_path) {
         Ok(false) => {}
         Ok(true) | Err(_) => return,
     }
@@ -3598,7 +3614,7 @@ async fn remove_storage_lock_after_missing_cache(lock_path: &Path, archive_path:
         return;
     };
 
-    match fs::symlink_metadata(lock_path).await {
+    match std::fs::symlink_metadata(lock_path) {
         Ok(path_meta)
             if path_meta.dev() == lock_meta.dev() && path_meta.ino() == lock_meta.ino() => {}
         Ok(_) => return,
@@ -3606,11 +3622,11 @@ async fn remove_storage_lock_after_missing_cache(lock_path: &Path, archive_path:
         Err(_) => return,
     }
 
-    let _ = fs::remove_file(lock_path).await;
+    let _ = std::fs::remove_file(lock_path);
 }
 
-async fn cached_archive_exists(archive_path: &Path) -> RunnerResult<bool> {
-    match fs::metadata(archive_path).await {
+fn cached_archive_exists(archive_path: &Path) -> RunnerResult<bool> {
+    match std::fs::metadata(archive_path) {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(RunnerError::Internal(format!(
@@ -3620,16 +3636,17 @@ async fn cached_archive_exists(archive_path: &Path) -> RunnerResult<bool> {
     }
 }
 
-async fn read_cache_entry(
+fn read_cache_entry(
     cache_dir: &Path,
     archive_path: &Path,
     metrics: &mut CacheProcessMetrics,
+    buffer: Option<Vec<u8>>,
 ) -> RunnerResult<CachedArchive> {
-    match fs::metadata(archive_path).await {
+    match std::fs::metadata(archive_path) {
         Ok(metadata) if metadata.len() == 0 => Ok(CachedArchive::Empty),
         Ok(metadata) if metadata.len() <= CACHE_MAX_SIZE => {
             let started_at = Instant::now();
-            match read_cached_archive(archive_path, Some(metadata.len()), CACHE_MAX_SIZE).await? {
+            match read_cached_archive(archive_path, Some(metadata.len()), CACHE_MAX_SIZE, buffer)? {
                 DownloadBody::Complete(bytes) => {
                     metrics.record(STORAGE_CACHE_HIT_READ, started_at.elapsed(), true, None);
                     touch_mtime(cache_dir);
@@ -3925,41 +3942,57 @@ async fn download_tarball(
     Ok(DownloadBody::Complete(bytes))
 }
 
-async fn read_cached_archive(
+fn read_cached_archive(
     path: &Path,
     expected_size: Option<u64>,
     max_size: u64,
+    buffer: Option<Vec<u8>>,
 ) -> RunnerResult<DownloadBody> {
-    let mut file = fs::File::open(path)
-        .await
+    let mut file = std::fs::File::open(path)
         .map_err(|e| RunnerError::Internal(format!("open cached {}: {e}", path.display())))?;
     let capacity = initial_body_capacity(None, expected_size, max_size);
-    let mut body = BoundedArchiveBody::new(capacity, max_size);
-    // Keep the scratch space out of every spawned archive task's future. Small
-    // cached archives also need no 64-KiB Tokio file read buffer. The size is
-    // only a hint: retain a useful minimum and read to EOF under the byte limit.
-    let mut buf = vec![0u8; capacity.clamp(4096, BODY_BUFFER_FALLBACK_CAPACITY)];
-
-    loop {
-        let n = file
-            .read(&mut buf)
-            .await
-            .map_err(|e| RunnerError::Internal(format!("read cached {}: {e}", path.display())))?;
-        if n == 0 {
-            break;
-        }
-        let chunk = buf.get(..n).ok_or_else(|| {
-            RunnerError::Internal(format!(
-                "read cached {} produced invalid chunk length {n}",
-                path.display()
-            ))
+    let buffer = buffer.filter(|bytes| bytes.capacity() >= capacity);
+    let bytes = if capacity > BODY_BUFFER_FALLBACK_CAPACITY && buffer.is_none() {
+        // Anonymous memory is a snapshot, not a mapping of the archive file.
+        // Its final Bytes owner unmaps it instead of retaining large allocations
+        // in the arenas of many blocking-pool threads after concurrent starts.
+        let limit = usize::try_from(max_size.saturating_add(1))
+            .map_err(|_| RunnerError::Internal("cached archive limit overflow".into()))?;
+        let mut buffer = memmap2::MmapMut::map_anon(limit).map_err(|e| {
+            RunnerError::Internal(format!("allocate cached {}: {e}", path.display()))
         })?;
-        if let Some(observed_size) = body.append(chunk)? {
-            return Ok(DownloadBody::OverSize { observed_size });
+        let mut length = 0;
+        while let Some(remaining) = buffer.get_mut(length..).filter(|s| !s.is_empty()) {
+            match file.read(remaining) {
+                Ok(0) => break,
+                Ok(read) => length += read,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => {
+                    return Err(RunnerError::Internal(format!(
+                        "read cached {}: {e}",
+                        path.display()
+                    )));
+                }
+            }
         }
+        let mut bytes = Bytes::from_owner(buffer);
+        bytes.truncate(length);
+        bytes
+    } else {
+        let mut bytes = buffer.unwrap_or_else(|| Vec::with_capacity(capacity));
+        // Metadata is only a hint. Read directly into the retained buffer, including
+        // at most one extra byte to distinguish exact-limit EOF from a growing file.
+        file.take(max_size.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|e| RunnerError::Internal(format!("read cached {}: {e}", path.display())))?;
+        Bytes::from(bytes)
+    };
+    let observed_size = u64::try_from(bytes.len())
+        .map_err(|_| RunnerError::Internal("cached archive length overflow".into()))?;
+    if observed_size > max_size {
+        return Ok(DownloadBody::OverSize { observed_size });
     }
 
-    let bytes = body.into_bytes();
     if bytes.is_empty() {
         return Ok(DownloadBody::Empty);
     }

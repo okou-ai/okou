@@ -377,6 +377,15 @@ pub async fn try_acquire_shared_or_busy(path: PathBuf) -> HostResult<TryLock> {
     }
 }
 
+/// The same nonblocking shared acquisition for callers already doing blocking IO.
+/// Path validation, inode rechecks and contention outcomes match the async helper.
+pub fn try_acquire_shared_or_busy_blocking(path: &Path) -> HostResult<TryLock> {
+    match acquire_result_blocking(path, LockMode::TryShared)? {
+        LockAcquire::Acquired(lock) => Ok(TryLock::Acquired(lock)),
+        LockAcquire::Busy => Ok(TryLock::Busy),
+    }
+}
+
 /// Try to acquire an exclusive flock on an existing path without waiting.
 ///
 /// This is an existing-only probe: it does not create missing parent

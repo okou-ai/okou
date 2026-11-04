@@ -22,7 +22,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
@@ -5933,9 +5933,7 @@ async fn cached_archive_read_rejects_one_byte_over_limit() {
     let archive_path = temp.path().join("archive.tar.gz");
     fs::write(&archive_path, b"abcdefg").await.unwrap();
 
-    let result = read_cached_archive(&archive_path, Some(7), 6)
-        .await
-        .unwrap();
+    let result = read_cached_archive(&archive_path, Some(7), 6, None).unwrap();
 
     match result {
         DownloadBody::Complete(bytes) => {
@@ -5953,29 +5951,93 @@ async fn cached_archive_read_rejects_one_byte_over_limit() {
 async fn cached_archive_read_preserves_contents_with_stale_size_hints() {
     let temp = tempfile::tempdir().unwrap();
     let archive_path = temp.path().join("archive.tar.gz");
-    for length in [0, 1, 4097, 131_073] {
+    for length in [
+        0,
+        1,
+        4097,
+        131_073,
+        3 * 1024 * 1024,
+        CACHE_MAX_SIZE as usize,
+    ] {
         let content = (0..length).map(|i| (i % 251) as u8).collect::<Vec<_>>();
         fs::write(&archive_path, &content).await.unwrap();
         for hint in [None, Some(0), Some(1), Some(length as u64)] {
-            let result = read_cached_archive(&archive_path, hint, length as u64)
-                .await
-                .unwrap();
-            match result {
-                DownloadBody::Empty => assert!(content.is_empty()),
-                DownloadBody::Complete(bytes) => assert_eq!(bytes.as_ref(), content),
-                DownloadBody::OverSize { observed_size } => {
-                    panic!("valid cached file rejected at {observed_size} bytes")
+            for capacity in [None, Some(1), Some(length + 1)] {
+                let buffer = capacity.map(Vec::with_capacity);
+                let result =
+                    read_cached_archive(&archive_path, hint, length as u64, buffer).unwrap();
+                match result {
+                    DownloadBody::Empty => assert!(content.is_empty()),
+                    DownloadBody::Complete(bytes) => assert_eq!(bytes.as_ref(), content),
+                    DownloadBody::OverSize { observed_size } => {
+                        panic!("valid cached file rejected at {observed_size} bytes")
+                    }
                 }
             }
         }
         if length > 1 {
-            let result = read_cached_archive(&archive_path, Some(1), length as u64 - 1)
-                .await
-                .unwrap();
-            assert!(matches!(result, DownloadBody::OverSize { observed_size }
+            for hint in [1, length as u64 - 1] {
+                let result =
+                    read_cached_archive(&archive_path, Some(hint), length as u64 - 1, None)
+                        .unwrap();
+                assert!(matches!(result, DownloadBody::OverSize { observed_size }
                     if observed_size == length as u64));
+            }
         }
     }
+}
+
+#[tokio::test]
+async fn warm_large_archive_staging_preserves_bytes_with_all_size_hints() {
+    let body = tarball_with_compression(&vec![37; 128 * 1024], flate2::Compression::none());
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    write_cached_archive(&home, "large", "v1", &body);
+    write_storage_lock(&home, "large", "v1");
+    for hint in [None, Some(1), Some(65_537), Some(body.len() as u64)] {
+        let mut plan = plan_from_entries(
+            vec![storage_entry_with_archive_size(
+                "/mnt/large".into(),
+                "https://r2.example.com/large".into(),
+                "large",
+                "v1",
+                hint,
+            )],
+            Vec::new(),
+            None,
+        );
+        let sandbox = MockSandbox::new("large-hints");
+        populate_cache(&mut plan, &sandbox, &home, &mut new_telemetry())
+            .await
+            .unwrap();
+        let writes = sandbox.write_files_calls();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].files.len(), 1);
+        assert_eq!(writes[0].files[0].path, guest_archive_path("large", "v1"));
+        assert_eq!(writes[0].files[0].content, body);
+        assert_eq!(
+            storage_archive_url(&plan, 0),
+            Some(format!("file://{}", guest_archive_path("large", "v1")).as_str())
+        );
+    }
+}
+
+#[tokio::test]
+async fn cached_archive_bytes_outlive_source_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("archive.tar.gz");
+    let content = vec![37; 3 * 1024 * 1024];
+    fs::write(&path, &content).await.unwrap();
+    let DownloadBody::Complete(bytes) =
+        read_cached_archive(&path, Some(content.len() as u64), CACHE_MAX_SIZE, None).unwrap()
+    else {
+        panic!("valid archive should be retained");
+    };
+    let retained = bytes.clone();
+    drop(bytes);
+    fs::write(&path, b"replaced").await.unwrap();
+    fs::remove_file(&path).await.unwrap();
+    assert_eq!(retained.as_ref(), content);
 }
 
 #[tokio::test]
