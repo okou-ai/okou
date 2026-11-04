@@ -100,21 +100,7 @@ jobs:
         run: swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 
       - name: Test native debug symbol pipeline
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            chmod +x ops/desktop-dmg-investigation/collect.py
-            python3 ops/desktop-dmg-investigation/collect.py "$RUNNER_TEMP/dmg-investigation"
-          else
-            python3 desktop/scripts/debug_symbols_test.py
-          fi
-
-      - name: Retain every independent iteration
-        if: always() && github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: dmg-investigation
-          path: ${{ runner.temp }}/dmg-investigation
-          retention-days: 3
+        run: python3 desktop/scripts/debug_symbols_test.py
 
   package-macos:
     name: package-macos-arm64

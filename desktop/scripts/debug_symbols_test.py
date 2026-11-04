@@ -134,6 +134,15 @@ if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
 
     def test_signed_app_and_both_distribution_packages_match(self):
         self.command("--zip", self.archive, "--dmg", self.dmg)
+        self.assert_dmg_detached(self.dmg)
+
+    def assert_dmg_detached(self, dmg):
+        output = run("hdiutil", "info", "-plist").stdout
+        images = plistlib.loads(output.encode())["images"]
+        self.assertNotIn(
+            dmg.resolve(),
+            [Path(image["image-path"]).resolve() for image in images],
+        )
 
     def test_missing_symbols_stop_upload(self):
         shutil.rmtree(self.symbols / "Okou.app.dSYM")
@@ -166,8 +175,12 @@ if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
         self.assertFalse(self.log.exists())
 
     def test_published_dmg_from_another_build_stops_upload(self):
-        self.command("--dmg", self.other_dmg, "--upload", success=False)
+        result = self.command("--dmg", self.other_dmg, "--upload", success=False)
+        self.assertRegex(
+            result.stderr, r"ValueError: Binary/dSYM UUID mismatch: [^\n]+\n\Z"
+        )
         self.assertFalse(self.log.exists())
+        self.assert_dmg_detached(self.other_dmg)
 
     def test_upload_requires_all_verified_ids_and_waits_for_processing(self):
         self.command("--upload")
