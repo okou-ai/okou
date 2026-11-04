@@ -48,6 +48,8 @@ The first independent-only publication requires all of these checks:
    active. The supported rollback resolver rejects APIs before that reader,
    before provider or host access. The floor is the reader's merged main commit,
    not a branch-only SHA or the later publisher-retirement commit.
+   Drain any rollback that resolved its target before this floor became active;
+   installing a new floor does not invalidate an already-resolved rollback.
 3. Read every page of active `publish-presentation-template-archives.yml` runs
    (`queued`, `in_progress`, `pending`, `waiting`, `requested`). Drain attempts
    pinned to the old-only or dual publisher before first publication. Do not
