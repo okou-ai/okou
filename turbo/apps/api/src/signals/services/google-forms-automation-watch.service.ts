@@ -12,7 +12,6 @@ import {
   googleFormsAutomationCursors,
   googleFormsWatchStates,
 } from "@okouai/db/schema/google-forms-event";
-import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import {
@@ -48,12 +47,13 @@ import {
   builtinConnectorCredentialRuntimeValueRef,
 } from "./builtin-connector-credential-runtime.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
+import {
+  loadWorkflowAutomationAccountMode$,
+  readWorkflowAutomationConnectorAccount$,
+} from "./workflow-automation-account.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
-
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { connectors } from "@okouai/db/schema/connector";
 
 const GOOGLE_FORMS_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_FORMS_TOKEN";
 
@@ -1246,11 +1246,18 @@ export const reprojectGoogleFormsAutomationOwnership$ = command(
     args: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<void> => {
+    const chatAccountAccess = await set(
+      loadWorkflowAutomationAccountMode$,
+      args,
+      signal,
+    );
     const db = set(writeDb$);
     // One conditional UPDATE computes each target from the member's current
     // account set and default; an account change committed after its
     // snapshot is picked up by the next repair.
-    await db.execute(googleFormsAccountProjectionStatement(args));
+    await db.execute(
+      googleFormsAccountProjectionStatement({ ...args, chatAccountAccess }),
+    );
     signal.throwIfAborted();
   },
 );
@@ -1586,35 +1593,9 @@ export const prepareGoogleFormsResponseEventConfigForPersist$ = command(
   },
 );
 
-function googleFormsSelectedAccountCondition(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly workflowId: string;
-  readonly connectorId?: string;
-}) {
-  const selection = sql`SELECT ${chatThreadConnectorSelections.connectorId}
-    FROM ${workflowUserAutomationThreads}
-    INNER JOIN ${chatThreadConnectorSelections}
-      ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
-      AND ${chatThreadConnectorSelections.connectorSlug} = 'google-forms'
-    WHERE ${workflowUserAutomationThreads.orgId} = ${args.orgId}
-      AND ${workflowUserAutomationThreads.userId} = ${args.userId}
-      AND ${workflowUserAutomationThreads.workflowId} = ${args.workflowId}`;
-  return and(
-    args.connectorId === undefined
-      ? undefined
-      : eq(connectors.id, args.connectorId),
-    eq(connectors.orgId, args.orgId),
-    eq(connectors.userId, args.userId),
-    eq(connectors.connectorSlug, "google-forms"),
-    sql`CASE WHEN EXISTS (${selection}) THEN ${connectors.id} = (${selection} LIMIT 1)
-      ELSE ${connectors.isDefault} END`,
-  );
-}
-
 export const readGoogleFormsActivationAccount$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1622,14 +1603,11 @@ export const readGoogleFormsActivationAccount$ = command(
     },
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const db = get(db$);
-    const [account] = await db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(googleFormsSelectedAccountCondition(args))
-      .limit(1);
-    signal.throwIfAborted();
-    return account?.id ?? null;
+    return await set(
+      readWorkflowAutomationConnectorAccount$,
+      { ...args, connectorSlug: "google-forms" },
+      signal,
+    );
   },
 );
 

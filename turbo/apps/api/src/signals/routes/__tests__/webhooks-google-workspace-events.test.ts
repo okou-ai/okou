@@ -6,6 +6,8 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import {
   workflowAutomationsContract,
   workflowsDetailContract,
@@ -796,6 +798,84 @@ describe("Google Workspace Events subscription lifecycle", () => {
       expect(primary.body.chatThreadId).not.toBe(secondary.body.chatThreadId);
     },
   );
+
+  it("does not restore a denied Meet default after deleting the last allowed account", async () => {
+    const fixture = await setupFixture();
+    await connectors.updateFeatureSwitches(fixture.actor, {
+      connectorChatAccountAccess: true,
+    });
+    const created = await createMeetAutomation(fixture);
+    const threadId = created.body.chatThreadId;
+    if (!threadId) {
+      throw new Error("Expected a Meet automation Chat");
+    }
+    const primary = await connectors.readDefaultBuiltinAccount(
+      fixture.actor,
+      "google-meet",
+    );
+    const primarySubscription =
+      fixture.provider.accounts.primary.createdNames[0];
+    if (!primarySubscription) {
+      throw new Error("Expected the primary Meet subscription");
+    }
+    const secondaryId = await connectGoogleMeet(
+      fixture.actor,
+      fixture.provider,
+      "secondary",
+      fixture.agentId,
+      { intent: "add", displayName: "Secondary Google Meet" },
+    );
+    const target = { kind: "builtin", connectorSlug: "google-meet" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const selected = await accept(
+      access.setThreadOverride({
+        headers: authHeaders(fixture.actor),
+        params: { threadId, connectionId: primary.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    expect(selected.body.currentConnectionId).toBe(secondaryId);
+    await connectors.deleteBuiltinConnectorAccount(
+      fixture.actor,
+      "google-meet",
+      secondaryId,
+    );
+    const current = await accept(
+      access.getThread({
+        headers: authHeaders(fixture.actor),
+        params: { threadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      currentConnectionId: null,
+      available: false,
+    });
+    const oldSource = await postWorkspaceEvent(primarySubscription);
+    expect(oldSource.status).toBe(200);
+    await expect(oldSource.json()).resolves.toMatchObject({
+      watchStates: 0,
+      dispatched: 0,
+    });
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(fixture.actor),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(fixture.actor),
+        params: { id: created.body.id },
+      }),
+      [400],
+    );
+  });
 
   it("reconciles subscriptions when selection and default account change", async () => {
     const fixture = await setupFixture();

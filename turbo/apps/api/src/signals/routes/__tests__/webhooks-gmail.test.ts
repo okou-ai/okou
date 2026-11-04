@@ -6,6 +6,8 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import {
   workflowAutomationsContract,
   type WorkflowAutomationSummary,
@@ -1712,6 +1714,87 @@ describe("POST /api/webhooks/gmail", () => {
     expect(labelAuthorizations).toStrictEqual([
       "Bearer gmail-second-access-token",
     ]);
+  });
+
+  it("does not restore a denied Gmail default after deleting the last allowed account", async () => {
+    configureGmailEnv();
+    configureGmailWatchLifecycleMock();
+    const {
+      actor,
+      workflowId,
+      firstEmail,
+      firstConnectorId,
+      secondConnectorId,
+    } = await setupMultiAccountGmailFixture();
+    await updateFeatureSwitchesForUser(context, actor, {
+      connectorChatAccountAccess: true,
+    });
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(actor),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-new-message",
+          eventConfig: { provider: "gmail", event: "new_message" },
+        },
+      }),
+      [201],
+    );
+    const threadId = requireAutomationChatThreadId(created.body);
+    const target = { kind: "builtin", connectorSlug: "gmail" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const selected = await accept(
+      access.setThreadOverride({
+        headers: authHeaders(actor),
+        params: { threadId, connectionId: firstConnectorId },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    expect(selected.body.currentConnectionId).toBe(secondConnectorId);
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      actor,
+      "gmail",
+      secondConnectorId,
+    );
+    const current = await accept(
+      access.getThread({
+        headers: authHeaders(actor),
+        params: { threadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      currentConnectionId: null,
+      available: false,
+    });
+    const oldSource = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: firstEmail,
+        historyId: 101,
+        messageId: "pubsub-denied-default-after-deletion",
+      }),
+    );
+    expectResponseStatus(oldSource, 200);
+    expect(oldSource.body).toMatchObject({ dispatched: 0 });
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(actor),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(actor),
+        params: { id: created.body.id },
+      }),
+      [400],
+    );
   });
 
   it("reconciles Gmail watches when selection and default account change", async () => {

@@ -10,6 +10,7 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
+import { nowDate } from "../../../lib/time";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -1166,6 +1167,167 @@ describe("POST /api/webhooks/notion", () => {
     );
     expect(changed.body.currentConnectionId).toBe(secondAccount.id);
     await expectAutomationConnector(secondAccount.id);
+  });
+
+  it.each(["selected", "default"] as const)(
+    "keeps an allowed Notion listener after deleting the %s account",
+    async (deletedAccount) => {
+      const {
+        actor,
+        agentId,
+        threadId,
+        firstAccount,
+        secondAccount,
+        expectAutomationConnector,
+      } = await setupNotionAccountLifecycle();
+      await connectorsApi.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: true,
+      });
+      const thirdOwner = randomUUID();
+      mockNotionConnectorOAuth({
+        accessToken: "notion-third-access-token",
+        ownerId: thirdOwner,
+        ownerName: "Third Notion User",
+      });
+      const oauth = await connectorsApi.startOauth(
+        actor,
+        "notion",
+        "oauth",
+        agentId,
+        { intent: "add", displayName: "Third Notion" },
+      );
+      const state = new URL(oauth.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected third Notion account OAuth state");
+      }
+      await connectorsApi.completeOauthCallback("notion", {
+        code: "notion-third-code",
+        state,
+      });
+      const thirdAccount = (
+        await connectorsApi.listBuiltinConnectorAccounts(actor, "notion")
+      ).find((account) => {
+        return account.externalId === thirdOwner;
+      });
+      if (!thirdAccount) {
+        throw new Error("Expected the third Notion account");
+      }
+      const target = { kind: "builtin", connectorSlug: "notion" } as const;
+      const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      );
+      const denied =
+        deletedAccount === "selected" ? firstAccount : secondAccount;
+      const selected =
+        deletedAccount === "selected" ? thirdAccount : firstAccount;
+      const expected =
+        deletedAccount === "selected" ? secondAccount : thirdAccount;
+      await accept(
+        access.setThreadOverride({
+          headers: authHeaders(),
+          params: { threadId, connectionId: denied.id },
+          body: { target, enabled: false },
+        }),
+        [200],
+      );
+      await accept(
+        access.setThreadCurrent({
+          headers: authHeaders(),
+          params: { threadId },
+          body: { target, connectionId: selected.id },
+        }),
+        [200],
+      );
+      await expectAutomationConnector(selected.id);
+      await connectorsApi.deleteBuiltinConnectorAccount(
+        actor,
+        "notion",
+        selected.id,
+      );
+      const current = await accept(
+        access.getThread({
+          headers: authHeaders(),
+          params: { threadId },
+          query: target,
+        }),
+        [200],
+      );
+      expect(current.body.currentConnectionId).toBe(expected.id);
+      await expectAutomationConnector(expected.id);
+    },
+  );
+
+  it("does not reactivate a denied Notion default when deletion leaves no allowed account", async () => {
+    const webhook = (
+      await setupApp({
+        context,
+        routes: webhooksNotionRoutes,
+        isolatePg: true,
+      })
+    )(webhookNotionContract);
+    await verifyNotionWebhook(webhook);
+    const {
+      actor,
+      threadId,
+      automationId,
+      entities,
+      firstAccount,
+      secondAccount,
+    } = await setupNotionAccountLifecycle();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    const target = { kind: "builtin", connectorSlug: "notion" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const selected = await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: firstAccount.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    expect(selected.body.currentConnectionId).toBe(secondAccount.id);
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      actor,
+      "notion",
+      secondAccount.id,
+    );
+    const current = await accept(
+      access.getThread({
+        headers: authHeaders(),
+        params: { threadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      currentConnectionId: null,
+      available: false,
+    });
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [400],
+    );
+    const event = notionPageEvent({
+      entities,
+      type: "page.created",
+      timestamp: nowDate().toISOString(),
+    });
+    await expect(
+      postNotionWebhook(
+        { rawBody: event.rawBody, signature: notionSignature(event.rawBody) },
+        webhook,
+      ),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { kind: "event", pending: 0 },
+    });
   });
 
   it("synchronizes Notion listeners after Chat, Run, approval and account allowance changes", async () => {

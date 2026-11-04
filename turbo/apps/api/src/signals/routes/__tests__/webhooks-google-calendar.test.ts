@@ -1,4 +1,6 @@
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -724,12 +726,86 @@ describe("POST /api/webhooks/google-calendar", () => {
           secondAccessToken,
           scenario,
           secondConnectorId,
+          created,
+          chatThreadId,
         };
       }
       let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
+      it.runIf(chatAccountAccess)(
+        "does not restore a denied Calendar default after deleting the last allowed account",
+        async () => {
+          const {
+            scenario,
+            firstWatch,
+            secondWatch,
+            secondConnectorId,
+            created,
+            chatThreadId,
+          } = preparedScenario;
+          const first = await connectorsApi.readDefaultBuiltinAccount(
+            scenario.actor,
+            "google-calendar",
+          );
+          const target = {
+            kind: "builtin",
+            connectorSlug: "google-calendar",
+          } as const;
+          const access = setupApp({
+            context,
+            routes: chatConnectorAccessRoutes,
+          })(chatConnectorAccessContract);
+          await accept(
+            access.setThreadOverride({
+              headers: authHeaders(),
+              params: { threadId: chatThreadId, connectionId: first.id },
+              body: { target, enabled: false },
+            }),
+            [200],
+          );
+          await connectorsApi.deleteBuiltinConnectorAccount(
+            scenario.actor,
+            "google-calendar",
+            secondConnectorId,
+          );
+          const current = await accept(
+            access.getThread({
+              headers: authHeaders(),
+              params: { threadId: chatThreadId },
+              query: target,
+            }),
+            [200],
+          );
+          expect(current.body).toMatchObject({
+            currentConnectionId: null,
+            available: false,
+          });
+          expect(
+            (await postGoogleCalendarWebhook(webhookHeaders(firstWatch)))
+              .status,
+          ).toBe(401);
+          expect(
+            (await postGoogleCalendarWebhook(webhookHeaders(secondWatch)))
+              .status,
+          ).toBe(401);
+          await accept(
+            automationsClient().disable({
+              headers: authHeaders(),
+              params: { id: created.body.id },
+            }),
+            [200],
+          );
+          await accept(
+            automationsClient().enable({
+              headers: authHeaders(),
+              params: { id: created.body.id },
+            }),
+            [400],
+          );
+        },
+      );
       it("rejects the retired source and dispatches from the selected account even when remote stop fails", async () => {
         const { firstWatch, secondWatch, scenario, secondConnectorId } =
           preparedScenario;

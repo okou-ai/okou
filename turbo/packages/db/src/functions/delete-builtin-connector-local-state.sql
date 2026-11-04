@@ -1,5 +1,7 @@
 -- okou:non-transactional
 -- One finite local deletion; provider revocation remains after commit.
+-- Serving/rollback APIs can omit chatAccountAccess from the existing deletion payload.
+-- Retire legacy mode in #44632 after GA and old callers drain; schema cleanup follows in #44633.
 CREATE OR REPLACE FUNCTION public.delete_builtin_connector_local_state(
   p_input jsonb,
   p_clock timestamp without time zone
@@ -10,6 +12,7 @@ DECLARE
   organization text := p_input->>'orgId';
   member text := p_input->>'userId';
   slug text := p_input->>'connectorSlug';
+  chat_account_access boolean := coalesce((p_input->>'chatAccountAccess')::boolean, false);
   source_id uuid := (p_input->>'sourceId')::uuid;
   resolved_id uuid;
   was_default boolean;
@@ -53,8 +56,38 @@ BEGIN
     END IF;
   END IF;
 
-  DELETE FROM public.chat_thread_connector_selections WHERE connector_id = resolved_id;
-  GET DIAGNOSTICS early_count = ROW_COUNT;
+  IF chat_account_access THEN
+    -- Replaced and cleared selections are disjoint; both count as resolved.
+    WITH affected AS MATERIALIZED (
+      SELECT selection.chat_thread_id, (
+        SELECT account.id FROM public.connectors AS account
+        LEFT JOIN public.chat_thread_connector_access_overrides AS access
+          ON access.chat_thread_id = selection.chat_thread_id AND access.connector_id = account.id
+        WHERE account.org_id = organization AND account.user_id = member
+          AND account.connector_slug = slug AND account.id <> resolved_id
+          AND coalesce(access.enabled, account.default_enabled_for_chats)
+          AND EXISTS (
+            SELECT 1 FROM public.chat_threads AS thread JOIN public.agents AS agent ON agent.id = thread.agent_id
+            WHERE thread.id = selection.chat_thread_id AND thread.user_id = member AND agent.org_id = organization
+          )
+        ORDER BY account.is_default DESC, account.created_at, account.id LIMIT 1
+      ) AS connector_id
+      FROM public.chat_thread_connector_selections AS selection WHERE selection.connector_id = resolved_id
+    ), replaced AS (
+      UPDATE public.chat_thread_connector_selections AS selection SET connector_id = affected.connector_id
+      FROM affected WHERE selection.chat_thread_id = affected.chat_thread_id
+        AND selection.connector_id = resolved_id AND affected.connector_id IS NOT NULL
+      RETURNING selection.chat_thread_id
+    ), cleared AS (
+      DELETE FROM public.chat_thread_connector_selections AS selection USING affected
+      WHERE selection.chat_thread_id = affected.chat_thread_id
+        AND selection.connector_id = resolved_id AND affected.connector_id IS NULL
+      RETURNING selection.chat_thread_id
+    ) SELECT (SELECT count(*) FROM replaced) + (SELECT count(*) FROM cleared) INTO early_count;
+  ELSE
+    DELETE FROM public.chat_thread_connector_selections WHERE connector_id = resolved_id;
+    GET DIAGNOSTICS early_count = ROW_COUNT;
+  END IF;
   IF slug = 'notion' THEN
     at := coalesce(p_clock, date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC'));
     UPDATE public.notion_workflow_pending_events
@@ -74,16 +107,30 @@ BEGIN
           OR (slug = 'google-meet' AND event_type = 'google-meet-transcript-generated')
           OR (slug = 'notion' AND event_type IN ('notion-child-page-created',
             'notion-database-item-created', 'notion-page-content-updated'))) LOOP
-      SELECT selection.connector_id INTO chosen
-      FROM public.workflow_user_automation_threads AS thread
-      JOIN public.chat_thread_connector_selections AS selection
-        ON selection.chat_thread_id = thread.chat_thread_id AND selection.connector_slug = slug
-      WHERE thread.org_id = organization AND thread.user_id = member
-        AND thread.workflow_id = automation.workflow_id LIMIT 1;
-      IF NOT FOUND THEN
-        SELECT id INTO chosen FROM public.connectors
-          WHERE org_id = organization AND user_id = member AND connector_slug = slug
-            AND is_default LIMIT 1;
+      IF chat_account_access THEN
+        SELECT account.id INTO chosen FROM public.connectors AS account
+        LEFT JOIN public.workflow_user_automation_threads AS thread
+          ON thread.org_id = organization AND thread.user_id = member AND thread.workflow_id = automation.workflow_id
+        LEFT JOIN public.chat_thread_connector_selections AS selection
+          ON selection.chat_thread_id = thread.chat_thread_id AND selection.connector_slug = slug
+        LEFT JOIN public.chat_thread_connector_access_overrides AS access
+          ON access.chat_thread_id = thread.chat_thread_id AND access.connector_id = account.id
+        WHERE account.org_id = organization AND account.user_id = member AND account.connector_slug = slug
+          AND account.id <> resolved_id AND coalesce(access.enabled, account.default_enabled_for_chats)
+        ORDER BY (account.id = selection.connector_id) DESC NULLS LAST,
+          account.is_default DESC, account.created_at, account.id LIMIT 1;
+      ELSE
+        SELECT selection.connector_id INTO chosen
+        FROM public.workflow_user_automation_threads AS thread
+        JOIN public.chat_thread_connector_selections AS selection
+          ON selection.chat_thread_id = thread.chat_thread_id AND selection.connector_slug = slug
+        WHERE thread.org_id = organization AND thread.user_id = member
+          AND thread.workflow_id = automation.workflow_id LIMIT 1;
+        IF NOT FOUND THEN
+          SELECT id INTO chosen FROM public.connectors
+            WHERE org_id = organization AND user_id = member AND connector_slug = slug
+              AND is_default LIMIT 1;
+        END IF;
       END IF;
 
       IF slug = 'notion' THEN
@@ -152,7 +199,15 @@ BEGIN
           THEN jsonb_set(target.event_config, '{connectorId}', to_jsonb(desired.connector_id::text))
           ELSE target.event_config END
       FROM (
-        SELECT a.id, CASE WHEN s.connector_slug IS NOT NULL THEN s.connector_id ELSE c.id END AS connector_id
+        SELECT a.id, CASE WHEN chat_account_access THEN (
+          SELECT account.id FROM public.connectors AS account
+          LEFT JOIN public.chat_thread_connector_access_overrides AS access
+            ON access.chat_thread_id = t.chat_thread_id AND access.connector_id = account.id
+          WHERE account.org_id = organization AND account.user_id = member AND account.connector_slug = slug
+            AND account.id <> resolved_id AND coalesce(access.enabled, account.default_enabled_for_chats)
+          ORDER BY (account.id = s.connector_id) DESC NULLS LAST,
+            account.is_default DESC, account.created_at, account.id LIMIT 1
+        ) ELSE CASE WHEN s.connector_slug IS NOT NULL THEN s.connector_id ELSE c.id END END AS connector_id
         FROM public.workflow_automations AS a
         LEFT JOIN public.workflow_user_automation_threads AS t
           ON t.org_id = a.org_id AND t.user_id = a.owner_user_id AND t.workflow_id = a.workflow_id
