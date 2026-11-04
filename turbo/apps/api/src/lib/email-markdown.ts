@@ -1,10 +1,10 @@
 import { convert } from "html-to-text";
-import MarkdownIt from "markdown-it";
+import { decodeHTML, escapeUTF8 as escapeHtml } from "entities";
+import { Marked } from "marked";
 
 import { safeUrlParse } from "../signals/utils";
+import { singleton } from "./singleton";
 
-const SAFE_LINK_INFO = "email-safe-link";
-const UNSAFE_LINK_INFO = "email-unsafe-link";
 const LINK_STYLE =
   "color:#171717;text-decoration:underline;text-decoration-color:#f5d90a;text-underline-offset:3px";
 const PARAGRAPH_STYLE =
@@ -29,34 +29,6 @@ const HEADING_STYLES: Readonly<Record<string, string>> = {
   h6: "margin:16px 0 8px;font-size:12px;line-height:1.45",
 };
 
-export function escapeHtml(value: string): string {
-  let escaped = "";
-  for (const char of value) {
-    switch (char) {
-      case "&": {
-        escaped += "&amp;";
-        break;
-      }
-      case "<": {
-        escaped += "&lt;";
-        break;
-      }
-      case ">": {
-        escaped += "&gt;";
-        break;
-      }
-      case '"': {
-        escaped += "&quot;";
-        break;
-      }
-      default: {
-        escaped += char;
-      }
-    }
-  }
-  return escaped;
-}
-
 function linkDestinationIsSafe(destination: string): boolean {
   const parsed = safeUrlParse(destination);
   if (!parsed) {
@@ -76,115 +48,116 @@ function linkDestinationIsSafe(destination: string): boolean {
   return false;
 }
 
-function createMarkdownRenderer(): MarkdownIt {
-  const markdown = new MarkdownIt({
-    html: false,
+const markdown = singleton(() => {
+  return new Marked({
+    async: false,
     breaks: false,
-    linkify: false,
-    typographer: false,
+    gfm: true,
+    tokenizer: {
+      // Email bodies are Markdown, not authored HTML. Bare URLs stay plain text.
+      html() {
+        return undefined;
+      },
+      tag() {
+        return undefined;
+      },
+      url() {
+        return undefined;
+      },
+    },
+    renderer: {
+      heading({ tokens, depth }) {
+        const tag = `h${depth}`;
+        const style = HEADING_STYLES[tag] ?? HEADING_STYLES.h6;
+        return `<${tag} style="${style}">${this.parser.parseInline(tokens)}</${tag}>\n`;
+      },
+      paragraph({ tokens }) {
+        return `<p style="${PARAGRAPH_STYLE}">${this.parser.parseInline(tokens)}</p>\n`;
+      },
+      list({ ordered, start, items }) {
+        const tag = ordered ? "ol" : "ul";
+        const startAttribute =
+          ordered && start !== 1 ? ` start="${escapeHtml(String(start))}"` : "";
+        const body = items
+          .map((item) => {
+            return this.listitem(item);
+          })
+          .join("");
+        return `<${tag}${startAttribute} style="${LIST_STYLE}">\n${body}</${tag}>\n`;
+      },
+      listitem({ tokens }) {
+        return `<li style="${LIST_ITEM_STYLE}">${this.parser.parse(tokens)}</li>\n`;
+      },
+      checkbox({ raw }) {
+        return escapeHtml(raw);
+      },
+      strong({ tokens }) {
+        return `<strong style="font-weight:700">${this.parser.parseInline(tokens)}</strong>`;
+      },
+      em({ tokens }) {
+        return `<em style="font-style:italic">${this.parser.parseInline(tokens)}</em>`;
+      },
+      del({ tokens }) {
+        return `<s style="text-decoration:line-through">${this.parser.parseInline(tokens)}</s>`;
+      },
+      blockquote({ tokens }) {
+        return `<blockquote style="margin:0 0 24px;padding:2px 0 2px 14px;border-left:3px solid #dbcdc6;color:#555555;overflow-wrap:anywhere;word-break:break-word">${this.parser.parse(tokens)}</blockquote>\n`;
+      },
+      codespan({ text }) {
+        return `<code style="${INLINE_CODE_STYLE}">${escapeHtml(text)}</code>`;
+      },
+      code({ text }) {
+        return `<pre style="${CODE_BLOCK_STYLE}"><code>${escapeHtml(text)}\n</code></pre>\n`;
+      },
+      hr() {
+        return '<hr style="height:1px;margin:24px 0;border:0;background-color:#dbcdc6">\n';
+      },
+      table({ header, rows }) {
+        const head = this.tablerow({
+          text: header
+            .map((cell) => {
+              return this.tablecell(cell);
+            })
+            .join(""),
+        });
+        const body = rows
+          .map((cells) => {
+            return this.tablerow({
+              text: cells
+                .map((cell) => {
+                  return this.tablecell(cell);
+                })
+                .join(""),
+            });
+          })
+          .join("");
+        return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;margin:0 0 16px"><thead style="background-color:#faf5f3">${head}</thead><tbody>${body}</tbody></table>\n`;
+      },
+      tablecell({ header, tokens }) {
+        const tag = header ? "th" : "td";
+        const style = `${TABLE_CELL_STYLE}${header ? ";font-weight:700" : ""}`;
+        return `<${tag} style="${style}">${this.parser.parseInline(tokens)}</${tag}>\n`;
+      },
+      link({ href, tokens }) {
+        // Marked retains entities in destinations; validate the browser-visible URL.
+        const destination = decodeHTML(href);
+        const label = this.parser.parseInline(tokens);
+        return linkDestinationIsSafe(destination)
+          ? `<a href="${escapeHtml(destination)}" style="${LINK_STYLE}">${label}</a>`
+          : label;
+      },
+      image({ tokens }) {
+        const label = this.parser.parseInline(tokens, this.parser.textRenderer);
+        return escapeHtml(decodeHTML(label));
+      },
+    },
   });
-
-  // Link destinations have already been entity-decoded and normalized when
-  // validateLink runs. Retain every parsed link token here so the renderer can
-  // remove only an unsafe anchor while preserving its visible label.
-  markdown.validateLink = () => {
-    return true;
-  };
-  markdown.core.ruler.after("inline", "email_link_policy", (state) => {
-    for (const blockToken of state.tokens) {
-      if (blockToken.type !== "inline" || blockToken.children === null) {
-        continue;
-      }
-      const safeLinkStack: boolean[] = [];
-      for (const token of blockToken.children) {
-        if (token.type === "link_open") {
-          const safe = linkDestinationIsSafe(token.attrGet("href") ?? "");
-          safeLinkStack.push(safe);
-          token.info = safe ? SAFE_LINK_INFO : UNSAFE_LINK_INFO;
-        } else if (token.type === "link_close") {
-          token.info = safeLinkStack.pop() ? SAFE_LINK_INFO : UNSAFE_LINK_INFO;
-        }
-      }
-    }
-  });
-
-  markdown.renderer.rules.heading_open = (tokens, index) => {
-    const token = tokens[index]!;
-    const style = HEADING_STYLES[token.tag] ?? HEADING_STYLES.h6;
-    return `<${token.tag} style="${style}">`;
-  };
-  markdown.renderer.rules.paragraph_open = () => {
-    return `<p style="${PARAGRAPH_STYLE}">`;
-  };
-  markdown.renderer.rules.bullet_list_open = () => {
-    return `<ul style="${LIST_STYLE}">`;
-  };
-  markdown.renderer.rules.ordered_list_open = (tokens, index) => {
-    const start = tokens[index]!.attrGet("start");
-    const startAttribute = start ? ` start="${escapeHtml(start)}"` : "";
-    return `<ol${startAttribute} style="${LIST_STYLE}">`;
-  };
-  markdown.renderer.rules.list_item_open = () => {
-    return `<li style="${LIST_ITEM_STYLE}">`;
-  };
-  markdown.renderer.rules.strong_open = () => {
-    return '<strong style="font-weight:700">';
-  };
-  markdown.renderer.rules.em_open = () => {
-    return '<em style="font-style:italic">';
-  };
-  markdown.renderer.rules.s_open = () => {
-    return '<s style="text-decoration:line-through">';
-  };
-  markdown.renderer.rules.blockquote_open = () => {
-    return '<blockquote style="margin:0 0 24px;padding:2px 0 2px 14px;border-left:3px solid #dbcdc6;color:#555555;overflow-wrap:anywhere;word-break:break-word">';
-  };
-  markdown.renderer.rules.code_inline = (tokens, index) => {
-    return `<code style="${INLINE_CODE_STYLE}">${escapeHtml(tokens[index]!.content)}</code>`;
-  };
-  const renderCodeBlock = (
-    tokens: Parameters<NonNullable<typeof markdown.renderer.rules.fence>>[0],
-    index: number,
-  ): string => {
-    return `<pre style="${CODE_BLOCK_STYLE}"><code>${escapeHtml(tokens[index]!.content)}</code></pre>\n`;
-  };
-  markdown.renderer.rules.fence = renderCodeBlock;
-  markdown.renderer.rules.code_block = renderCodeBlock;
-  markdown.renderer.rules.hr = () => {
-    return '<hr style="height:1px;margin:24px 0;border:0;background-color:#dbcdc6">\n';
-  };
-  markdown.renderer.rules.table_open = () => {
-    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;margin:0 0 16px">';
-  };
-  markdown.renderer.rules.thead_open = () => {
-    return '<thead style="background-color:#faf5f3">';
-  };
-  markdown.renderer.rules.th_open = () => {
-    return `<th style="${TABLE_CELL_STYLE};font-weight:700">`;
-  };
-  markdown.renderer.rules.td_open = () => {
-    return `<td style="${TABLE_CELL_STYLE}">`;
-  };
-  markdown.renderer.rules.link_open = (tokens, index) => {
-    const token = tokens[index]!;
-    if (token.info !== SAFE_LINK_INFO) {
-      return "";
-    }
-    return `<a href="${escapeHtml(token.attrGet("href") ?? "")}" style="${LINK_STYLE}">`;
-  };
-  markdown.renderer.rules.link_close = (tokens, index) => {
-    return tokens[index]!.info === SAFE_LINK_INFO ? "</a>" : "";
-  };
-  markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
-    const children = tokens[index]!.children ?? [];
-    return escapeHtml(renderer.renderInlineAsText(children, options, env));
-  };
-
-  return markdown;
-}
+});
 
 /** Safe email Markdown: HTTPS/mailto links only, images reduced to alt text. */
-export const markdownRenderer = createMarkdownRenderer();
+export function renderEmailMarkdown(source: string): string {
+  return markdown().parse(source, { async: false });
+}
 
 export function plainTextFromHtml(html: string): string {
   return convert(html, {
