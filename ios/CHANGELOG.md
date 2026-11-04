@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.0](https://github.com/okou-ai/okou/compare/ios-v0.24.2...ios-v0.25.0) (2026-11-04)
+
+
+### Features
+
+* **ios:** add recoverable voice input ([#45177](https://github.com/okou-ai/okou/issues/45177)) ([2395272](https://github.com/okou-ai/okou/commit/23952723a3d5d2433d3462a20aacdbd5854df8a9))
+
+
+### Performance Improvements
+
+* **ios:** reuse conversation content with upstream textual ([#45154](https://github.com/okou-ai/okou/issues/45154)) ([4047328](https://github.com/okou-ai/okou/commit/4047328fc87ad57ae71c29b8b32f2c99f0afb2e3))
+
 ## [0.24.2](https://github.com/okou-ai/okou/compare/ios-v0.24.1...ios-v0.24.2) (2026-11-04)
 
 

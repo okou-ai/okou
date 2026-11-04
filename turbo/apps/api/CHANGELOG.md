@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.47.0](https://github.com/okou-ai/okou/compare/api-v2.46.3...api-v2.47.0) (2026-11-04)
+
+
+### Features
+
+* switch registry downloads to independent archives ([#45172](https://github.com/okou-ai/okou/issues/45172)) ([7b2c84e](https://github.com/okou-ai/okou/commit/7b2c84e6f17b88c2a9fe165ad6efe9d80672be9e))
+
+
+### Bug Fixes
+
+* **api:** classify agentphone webhook content rejections ([#45167](https://github.com/okou-ai/okou/issues/45167)) ([33922e5](https://github.com/okou-ai/okou/commit/33922e5d81237d206be59621b4501172b054178a))
+* **api:** reuse published content bundles ([#45215](https://github.com/okou-ai/okou/issues/45215)) ([a3a492d](https://github.com/okou-ai/okou/commit/a3a492d75c838e45d506d94484d0a12928d8abb0))
+* **api:** route named platforms to data router families in run prompt ([#45185](https://github.com/okou-ai/okou/issues/45185)) ([9277115](https://github.com/okou-ai/okou/commit/9277115040db02346f8ed6e2d9b397cd81c077fe))
+* **marketing:** verify short addresses in batch publication ([#45163](https://github.com/okou-ai/okou/issues/45163)) ([a965f60](https://github.com/okou-ai/okou/commit/a965f602dcb1d2090596f563a1e660a7ace97e66))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.41.0
+    * @okouai/core bumped to 8.817.0
+    * @okouai/db bumped to 2.21.0
+    * @okouai/pi-agent-runtime bumped to 1.51.63
+
 ## [2.46.3](https://github.com/okou-ai/okou/compare/api-v2.46.2...api-v2.46.3) (2026-11-04)
 
 
