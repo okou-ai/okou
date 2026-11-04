@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.244.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.11...runner-rs-v0.244.12) (2026-11-04)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#45244](https://github.com/okou-ai/okou/issues/45244)) ([a1933e5](https://github.com/okou-ai/okou/commit/a1933e593f4c66bce81c0ac201cd40c5826a07f9))
+* **runner:** upgrade mitmproxy to 12.3.1 with runtime dependency parity ([#45239](https://github.com/okou-ai/okou/issues/45239)) ([1d01c56](https://github.com/okou-ai/okou/commit/1d01c56186b97550868be9d018d8984a40425830))
+
+
+### Performance Improvements
+
+* **python:** avoid per-character ascii query byte counting ([#45251](https://github.com/okou-ai/okou/issues/45251)) ([ba160c0](https://github.com/okou-ai/okou/commit/ba160c059171cad110dc37cff6e804ddeac9cc0a))
+* **runner:** avoid decoding method-override values for presence checks ([#45226](https://github.com/okou-ai/okou/issues/45226)) ([053c9fc](https://github.com/okou-ai/okou/commit/053c9fc0674ca1a27aa954a79820f600ba894bbf))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.10...runner-rs-v0.244.11) (2026-11-04)
 
 

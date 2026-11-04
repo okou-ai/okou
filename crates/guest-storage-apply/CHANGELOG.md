@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.0...guest-storage-apply-v0.29.1) (2026-11-04)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** overlap remote archive downloads ([#45199](https://github.com/okou-ai/okou/issues/45199)) ([de139a0](https://github.com/okou-ai/okou/commit/de139a0378b55157b7f993099d1518c70254c954))
+
 ## [0.29.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.11...guest-storage-apply-v0.29.0) (2026-11-04)
 
 
