@@ -269,15 +269,15 @@ test("Directory permissions use the same connector rules without enabling accoun
   installAccess({ allOff: true });
   await setup();
   const trigger = await findFastControl("button", "Connectors");
-  const directory = await openDirectory(user);
+  await user.click(trigger);
+  click(await findFastControl("button", "Add connectors"));
+  const directory = await screen.findByRole("dialog", { name: "Connectors" });
   await fill(
     within(directory).getByPlaceholderText("Find connectors..."),
     "GitHub",
   );
-  await user.click(
-    await findFastControl("button", "Open GitHub details", directory),
-  );
-  await user.click(await findFastControl("button", "Configure", directory));
+  click(await findFastControl("button", "Open GitHub details", directory));
+  click(await findFastControl("button", "Configure", directory));
   const editor = await screen.findByRole("dialog", {
     name: "GitHub permissions",
   });
@@ -287,7 +287,7 @@ test("Directory permissions use the same connector rules without enabling accoun
   await waitFor(() => {
     expect(editor.contains(document.activeElement)).toBeTruthy();
   });
-  await user.click(await findFastControl("button", "Deny", permission));
+  click(await findFastControl("button", "Deny", permission));
   await user.click(await findFastControl("button", "Apply", editor));
   await waitFor(() => {
     expect(
@@ -297,8 +297,8 @@ test("Directory permissions use the same connector rules without enabling accoun
   });
   const row = await openMenu();
   expect(row).toHaveTextContent("0 enabled");
-  await user.click(row);
-  await user.click(await findFastControl("button", "Permissions"));
+  click(row);
+  click(await findFastControl("button", "Permissions"));
   const saved = await screen.findByRole("dialog", {
     name: "GitHub permissions",
   });
