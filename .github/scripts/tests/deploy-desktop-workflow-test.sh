@@ -12,8 +12,6 @@ desktop = YAML.safe_load(File.read("#{root}/.github/workflows/desktop.yml"), ali
 release = YAML.safe_load(File.read("#{root}/.github/workflows/release-please.yml"), aliases: true).fetch("jobs")
 deploy = desktop.fetch("deploy-desktop")
 # Evaluate the actual job conditions across event contexts, including release PRs.
-build_condition = desktop.fetch("build-macos").fetch("if")
-deploy_condition = deploy.fetch("if")
 evaluate = lambda do |condition, event_name, head_ref, changed, detection_result, cancelled|
   expression = condition.strip.delete_prefix('${{').delete_suffix('}}')
     .gsub("startsWith(github.head_ref, 'release-please--branches--')", "head_ref.start_with?('release-please--branches--')")
@@ -30,26 +28,51 @@ detect_condition = desktop.fetch("detect-desktop-version").fetch("if")
   raise "unexpected Desktop version detection for #{event_name}" unless evaluate.call(detect_condition, event_name, "", "", "success", false) == expected
 end
 [
-  ["pull_request", "release-please--branches--main", "", "skipped", false, false, false],
-  ["pull_request", "fix/desktop", "", "skipped", false, true, false],
-  ["pull_request", "release-please-imitation", "", "skipped", false, true, false],
-  ["merge_group", "", "true", "success", false, false, true],
-  ["merge_group", "", "false", "success", false, true, false],
-  ["merge_group", "release-please--branches--main", "true", "success", false, false, true],
-  ["push", "", "", "skipped", false, true, false],
-  ["workflow_dispatch", "", "", "skipped", false, true, false],
-  ["merge_group", "", "", "failure", false, false, false],
-  ["merge_group", "", "false", "failure", false, false, false],
-  ["merge_group", "", "true", "failure", false, false, false],
-  ["merge_group", "", "false", "cancelled", false, false, false],
-  ["merge_group", "", "false", "skipped", false, false, false],
-  ["pull_request", "fix/desktop", "", "skipped", true, false, false],
-  ["push", "", "", "skipped", true, false, false],
-  ["workflow_dispatch", "", "", "skipped", true, false, false],
-  ["merge_group", "", "true", "success", true, false, false]
-].each do |event_name, head_ref, changed, detection_result, cancelled, build_expected, deploy_expected|
-  raise "unexpected Desktop build selection for #{event_name}/#{head_ref}/#{detection_result}/#{cancelled}" unless evaluate.call(build_condition, event_name, head_ref, changed, detection_result, cancelled) == build_expected
-  raise "unexpected Desktop artifact selection for #{event_name}/#{head_ref}/#{detection_result}/#{cancelled}" unless evaluate.call(deploy_condition, event_name, head_ref, changed, detection_result, cancelled) == deploy_expected
+  ["pull_request", "release-please--branches--main", "", "skipped", false, false, false, false],
+  ["pull_request", "fix/desktop", "", "skipped", false, true, true, false],
+  ["pull_request", "release-please-imitation", "", "skipped", false, true, true, false],
+  ["merge_group", "", "true", "success", false, false, false, true],
+  ["merge_group", "", "false", "success", false, true, true, false],
+  ["merge_group", "release-please--branches--main", "true", "success", false, false, false, true],
+  ["push", "", "", "skipped", false, true, true, false],
+  ["workflow_dispatch", "", "", "skipped", false, true, true, false],
+  ["merge_group", "", "", "failure", false, false, true, false],
+  ["merge_group", "", "false", "failure", false, false, true, false],
+  ["merge_group", "", "true", "failure", false, false, true, false],
+  ["merge_group", "", "false", "cancelled", false, false, true, false],
+  ["merge_group", "", "false", "skipped", false, false, true, false],
+  ["pull_request", "fix/desktop", "", "skipped", true, false, false, false],
+  ["push", "", "", "skipped", true, false, false, false],
+  ["workflow_dispatch", "", "", "skipped", true, false, false, false],
+  ["merge_group", "", "true", "success", true, false, false, false]
+].each do |event_name, head_ref, changed, detection_result, cancelled, native_expected, publication_expected, deploy_expected|
+  {
+    "test-native" => native_expected,
+    "package-macos" => native_expected,
+    "build-macos" => publication_expected,
+    "deploy-desktop" => deploy_expected
+  }.each do |job, expected|
+    condition = desktop.fetch(job).fetch("if")
+    raise "unexpected Desktop #{job} selection for #{event_name}/#{head_ref}/#{detection_result}/#{cancelled}" unless evaluate.call(condition, event_name, head_ref, changed, detection_result, cancelled) == expected
+  end
+end
+gate_steps = desktop.fetch("build-macos").fetch("steps")
+validation = gate_steps.find { |step| step["name"] == "Verify parallel native checks" }
+download = gate_steps.find { |step| step.fetch("uses", "").start_with?("actions/download-artifact@") }
+raise "native packages must follow passing native checks" unless gate_steps.index(validation) < gate_steps.index(download)
+[
+  ["success", "success", true],
+  ["failure", "success", false],
+  ["success", "failure", false],
+  ["cancelled", "success", false],
+  ["success", "cancelled", false],
+  ["skipped", "success", false],
+  ["success", "skipped", false]
+].each do |native_result, package_result, expected|
+  output, status = Open3.capture2e(
+    {"NATIVE_TEST_RESULT" => native_result, "PACKAGE_RESULT" => package_result},
+    "bash", "-c", validation.fetch("run"), chdir: root)
+  raise "unexpected native publication for #{native_result}/#{package_result}: #{output}" unless status.success? == expected
 end
 raise "canonical artifacts must remain merge-group only" unless deploy.fetch("if").include?("github.event_name == 'merge_group'")
 raise "canonical artifacts must follow version detection" unless deploy.fetch("needs") == "detect-desktop-version"
