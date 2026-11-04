@@ -1072,9 +1072,10 @@ async fn abort(
     .map_err(|_| AgentError::Execution("Pi RPC abort timed out".to_string()))?
 }
 
-async fn request_prompt(
+async fn request_message(
     stdin: &mut tokio::process::ChildStdin,
     responses: &mut mpsc::Receiver<PiRpcResponse>,
+    command: &str,
     id: &str,
     message: &str,
     cancellation: &CancellationToken,
@@ -1083,7 +1084,7 @@ async fn request_prompt(
         stdin,
         &json!({
             "id": id,
-            "type": "prompt",
+            "type": command,
             "message": message,
         }),
         cancellation,
@@ -1092,34 +1093,7 @@ async fn request_prompt(
     tokio::select! {
         biased;
         () = cancellation.cancelled() => Ok(false),
-        response = wait_for_response(responses, id, "prompt", false) => {
-            response?;
-            Ok(true)
-        }
-    }
-}
-
-async fn request_steer(
-    stdin: &mut tokio::process::ChildStdin,
-    responses: &mut mpsc::Receiver<PiRpcResponse>,
-    id: &str,
-    message: &str,
-    cancellation: &CancellationToken,
-) -> Result<bool, AgentError> {
-    write_command_with_cancellation(
-        stdin,
-        &json!({
-            "id": id,
-            "type": "steer",
-            "message": message,
-        }),
-        cancellation,
-    )
-    .await?;
-    tokio::select! {
-        biased;
-        () = cancellation.cancelled() => Ok(false),
-        response = wait_for_response(responses, id, "steer", false) => {
+        response = wait_for_response(responses, id, command, false) => {
             response?;
             Ok(true)
         }
@@ -1134,7 +1108,15 @@ async fn deliver_active_input(
     cancellation: &CancellationToken,
 ) -> Result<bool, AgentError> {
     active_input.mark_writing(&frame.uuid);
-    let request = request_steer(stdin, responses, &frame.uuid, &frame.text, cancellation).await;
+    let request = request_message(
+        stdin,
+        responses,
+        "steer",
+        &frame.uuid,
+        &frame.text,
+        cancellation,
+    )
+    .await;
     match request {
         Ok(true) => {
             active_input.mark_backend_accepted_without_replay(frame)?;
@@ -1191,9 +1173,10 @@ pub(super) async fn write_commands(
     }
 
     let prompt_id = format!("{run_id}:pi:initial-prompt");
-    if !request_prompt(
+    if !request_message(
         &mut stdin,
         &mut responses,
+        "prompt",
         &prompt_id,
         prompt,
         &cancellation,
