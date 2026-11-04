@@ -951,6 +951,21 @@ body {
   initial-value: 0px;
 }
 
+/* Resolve container units to lengths before atan2 converts them into scale
+   ratios. The canvas scales visually while its iframe keeps a 1920x1080 layout
+   viewport; typed division of lengths is not supported by all target browsers. */
+@property --okou-presentation-fit-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --okou-presentation-fit-height {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 @layer base {
   *,
   *::before,
