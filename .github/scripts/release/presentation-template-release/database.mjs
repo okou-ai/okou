@@ -1,14 +1,24 @@
 import postgres from "postgres";
+import {
+  loadRegistryHead,
+  registerRegistryArchive,
+  publishRegistryHead,
+  verifyRegistryPublication,
+} from "./registry-index.mjs";
 
 const PUBLISHER = "github-actions-presentation-template-publisher";
 
 export function createDatabaseClient(databaseUrl) {
-  return postgres(databaseUrl, { max: 1 });
+  return postgres(databaseUrl, {
+    max: 1,
+    connect_timeout: 10,
+    connection: { statement_timeout: 30000 },
+  });
 }
 
 async function loadReleaseState(sql, release) {
   const storageRows = await sql`
-    SELECT id, name, s3_prefix, head_version_id
+    SELECT id, name, s3_prefix, head_version_id, xmin::text AS xmin
     FROM storages
     WHERE id = ${release.storageId}
   `;
@@ -35,7 +45,8 @@ async function loadReleaseState(sql, release) {
       `${release.slug}: production HEAD does not belong to its storage`,
     );
   }
-  return { storage, previousVersionId: storage.head_version_id };
+  const registryHead = await loadRegistryHead(sql, release, storage);
+  return { storage, registryHead, previousVersionId: storage.head_version_id };
 }
 
 export async function loadStorageState(sql, releases) {
@@ -44,18 +55,6 @@ export async function loadStorageState(sql, releases) {
     state.set(release.slug, await loadReleaseState(sql, release));
   }
   return state;
-}
-
-function assertLockedStorage(locked, release, current) {
-  if (!locked || locked.name !== `registry-resource@${release.resourceId}`) {
-    throw new Error(`${release.slug}: storage identity changed before commit`);
-  }
-  if (
-    locked.head_version_id !== current.previousVersionId &&
-    locked.head_version_id !== release.newVersionId
-  ) {
-    throw new Error(`${release.slug}: storage HEAD changed before commit`);
-  }
 }
 
 function assertExistingVersion(existing, release, current) {
@@ -72,12 +71,11 @@ function assertExistingVersion(existing, release, current) {
   }
 }
 
-async function insertVersion(tx, release, current, sourceCommit) {
-  await tx`
+async function insertVersion(sql, release, current, sourceCommit) {
+  await sql`
     INSERT INTO storage_versions
       (id, storage_id, s3_key, size, archive_size, file_count, message, created_by)
-    VALUES
-      (
+    SELECT
         ${release.newVersionId},
         ${release.storageId},
         ${current.s3Key},
@@ -86,66 +84,80 @@ async function insertVersion(tx, release, current, sourceCommit) {
         ${current.pkg.fileCount},
         ${`Template-artifact@${sourceCommit}`},
         ${PUBLISHER}
-      )
+    WHERE EXISTS (
+      SELECT 1 FROM storages WHERE id = ${release.storageId}
+        AND xmin::text = ${current.storage.xmin}
+        AND head_version_id = ${current.previousVersionId}
+        AND name = ${current.storage.name} AND s3_prefix = ${current.storage.s3_prefix}
+    )
+    ON CONFLICT (id) DO NOTHING
   `;
 }
 
-async function registerVersion(tx, release, current, sourceCommit) {
-  const existingRows = await tx`
+async function registerVersion(sql, release, current, sourceCommit) {
+  await insertVersion(sql, release, current, sourceCommit);
+  const existingRows = await sql`
     SELECT id, storage_id, s3_key, size, archive_size, file_count
     FROM storage_versions
     WHERE id = ${release.newVersionId}
   `;
   const existing = existingRows[0];
-  if (existing) {
-    assertExistingVersion(existing, release, current);
-  } else {
-    await insertVersion(tx, release, current, sourceCommit);
-  }
+  if (!existing)
+    throw new Error(
+      `${release.slug}: source changed before version registration`,
+    );
+  assertExistingVersion(existing, release, current);
 }
 
-async function updateStorageHead(tx, release, current, locked) {
-  const alreadyCurrent =
-    locked.head_version_id === release.newVersionId &&
-    Number(locked.size) === current.pkg.totalSize &&
-    locked.file_count === current.pkg.fileCount;
-  if (alreadyCurrent) {
-    return;
-  }
-
-  await tx`
+async function updateStorageHead(sql, release, current) {
+  await sql`
     UPDATE storages
     SET
       head_version_id = ${release.newVersionId},
       size = ${current.pkg.totalSize},
       file_count = ${current.pkg.fileCount},
       updated_at = now()
-    WHERE id = ${release.storageId}
+    WHERE id = ${release.storageId} AND xmin::text = ${current.storage.xmin}
+      AND name = ${current.storage.name} AND s3_prefix = ${current.storage.s3_prefix}
+      AND head_version_id = ${current.previousVersionId}
+      AND (head_version_id IS DISTINCT FROM ${release.newVersionId}
+        OR size IS DISTINCT FROM ${current.pkg.totalSize}
+        OR file_count IS DISTINCT FROM ${current.pkg.fileCount})
   `;
+  const [published] = await sql`
+    SELECT xmin::text AS xmin FROM storages WHERE id = ${release.storageId}
+      AND name = ${current.storage.name} AND s3_prefix = ${current.storage.s3_prefix}
+      AND head_version_id = ${release.newVersionId}
+      AND size = ${current.pkg.totalSize} AND file_count = ${current.pkg.fileCount}
+  `;
+  if (!published)
+    throw new Error(`${release.slug}: storage HEAD changed before commit`);
+  return { ...current, publishedStorageXmin: published.xmin };
 }
 
-async function registerRelease(tx, release, current, sourceCommit) {
+async function registerRelease(sql, release, current, sourceCommit) {
   if (!current?.pkg) {
     throw new Error(`${release.slug}: verified upload state is missing`);
   }
-  const lockedRows = await tx`
-    SELECT id, name, head_version_id, size, file_count
-    FROM storages
-    WHERE id = ${release.storageId}
-    FOR UPDATE
-  `;
-  const locked = lockedRows[0];
-  assertLockedStorage(locked, release, current);
-  await registerVersion(tx, release, current, sourceCommit);
-  await updateStorageHead(tx, release, current, locked);
+  await registerRegistryArchive(sql, release, current);
+  await registerVersion(sql, release, current, sourceCommit);
+  const published = await updateStorageHead(sql, release, current);
+  // The independent HEAD is the final publication point, after both immutable
+  // objects and version records are verified. Retain partial immutable work.
+  await publishRegistryHead(sql, release, published);
+  return published;
 }
 
 export async function registerPublication(sql, releases, state, sourceCommit) {
-  await sql.begin(async (tx) => {
-    for (const release of releases) {
-      await registerRelease(tx, release, state.get(release.slug), sourceCommit);
-    }
-  });
+  for (const release of releases) {
+    const published = await registerRelease(
+      sql,
+      release,
+      state.get(release.slug),
+      sourceCommit,
+    );
+    state.set(release.slug, published);
+  }
 }
 
 async function verifyRelease(sql, release, current) {
@@ -176,5 +188,6 @@ async function verifyRelease(sql, release, current) {
 export async function verifyDatabasePublication(sql, releases, state) {
   for (const release of releases) {
     await verifyRelease(sql, release, state.get(release.slug));
+    await verifyRegistryPublication(sql, release, state.get(release.slug));
   }
 }

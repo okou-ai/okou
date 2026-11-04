@@ -13,19 +13,56 @@ import { inspectArchive } from "./archive.mjs";
 import { requiredEnv } from "./options.mjs";
 import { sha256, writeLine } from "./shared.mjs";
 
-export function createR2Client() {
+function r2Client(accessKeyId, secretAccessKey) {
   const accountId = requiredEnv("R2_ACCOUNT_ID");
+  const endpoint = new URL(
+    process.env.R2_ENDPOINT ?? `https://${accountId}.r2.cloudflarestorage.com`,
+  );
+  const native =
+    endpoint.origin === `https://${accountId}.r2.cloudflarestorage.com`;
+  const local =
+    endpoint.protocol === "http:" &&
+    ["127.0.0.1", "localhost"].includes(endpoint.hostname);
+  if (
+    (!native && !local) ||
+    endpoint.username ||
+    endpoint.password ||
+    endpoint.pathname !== "/" ||
+    endpoint.search ||
+    endpoint.hash
+  ) {
+    throw new Error(
+      "R2_ENDPOINT must be the account's native endpoint or a loopback fixture",
+    );
+  }
+  return new S3Client({
+    region: "auto",
+    endpoint: endpoint.origin,
+    forcePathStyle: local,
+    credentials: { accessKeyId, secretAccessKey },
+    maxAttempts: 1,
+    requestHandler: { connectionTimeout: 10000, requestTimeout: 30000 },
+    requestChecksumCalculation: "WHEN_REQUIRED",
+  });
+}
+
+export function createR2Client() {
   return {
     bucket: requiredEnv("R2_USER_STORAGES_BUCKET_NAME"),
-    client: new S3Client({
-      region: "auto",
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-      credentials: {
-        accessKeyId: requiredEnv("R2_ACCESS_KEY_ID"),
-        secretAccessKey: requiredEnv("R2_SECRET_ACCESS_KEY"),
-      },
-      requestChecksumCalculation: "WHEN_REQUIRED",
-    }),
+    client: r2Client(
+      requiredEnv("R2_ACCESS_KEY_ID"),
+      requiredEnv("R2_SECRET_ACCESS_KEY"),
+    ),
+  };
+}
+
+export function createRegistryR2Client() {
+  return {
+    bucket: requiredEnv("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+    client: r2Client(
+      requiredEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID"),
+      requiredEnv("R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY"),
+    ),
   };
 }
 
@@ -36,7 +73,8 @@ function isPreconditionFailure(error) {
   );
 }
 
-async function putImmutable(client, bucket, key, body, contentType) {
+async function putImmutable(client, bucket, key, body, contentType, verify) {
+  let writeError;
   try {
     await client.send(
       new PutObjectCommand({
@@ -49,20 +87,42 @@ async function putImmutable(client, bucket, key, body, contentType) {
       }),
     );
   } catch (error) {
-    if (!isPreconditionFailure(error)) {
-      throw error;
-    }
+    writeError = error;
   }
+  // A missing PUT response can follow a committed write. Read once; never
+  // replay the mutation or overwrite a conflicting immutable object.
+  let uploaded;
+  try {
+    uploaded = await getObject(
+      client,
+      bucket,
+      key,
+      Math.max(Buffer.byteLength(body), 64 * 1024),
+    );
+  } catch (error) {
+    throw writeError && !isPreconditionFailure(writeError) ? writeError : error;
+  }
+  verify(uploaded);
+  return uploaded;
 }
 
-async function getObject(client, bucket, key) {
+async function getObject(client, bucket, key, maxBytes) {
   const response = await client.send(
     new GetObjectCommand({ Bucket: bucket, Key: key }),
   );
   if (!response.Body) {
     throw new Error("R2 returned an empty object body");
   }
-  return Buffer.from(await response.Body.transformToByteArray());
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of response.Body) {
+    const bytes = Buffer.from(chunk);
+    length += bytes.length;
+    if (length > maxBytes)
+      throw new Error("R2 object exceeds the verified publication size");
+    chunks.push(bytes);
+  }
+  return Buffer.concat(chunks);
 }
 
 function assertManifest(actual, expected, slug) {
@@ -100,13 +160,17 @@ function createManifest(pkg) {
   };
 }
 
-async function uploadObjects(client, bucket, s3Key, archive, manifest) {
-  await putImmutable(
+async function uploadObjects(client, bucket, s3Key, archive, manifest, slug) {
+  const uploadedArchive = await putImmutable(
     client,
     bucket,
     `${s3Key}/archive.tar.gz`,
     archive,
     "application/gzip",
+    (actual) => {
+      if (!actual.equals(archive))
+        throw new Error(`${slug}: immutable R2 archive conflicts`);
+    },
   );
   await putImmutable(
     client,
@@ -114,7 +178,10 @@ async function uploadObjects(client, bucket, s3Key, archive, manifest) {
     `${s3Key}/manifest.json`,
     `${JSON.stringify(manifest)}\n`,
     "application/json",
+    (actual) =>
+      assertManifest(JSON.parse(actual.toString("utf8")), manifest, slug),
   );
+  return uploadedArchive;
 }
 
 export async function uploadPackage({
@@ -132,16 +199,11 @@ export async function uploadPackage({
   }
 
   const manifest = createManifest(pkg);
-  await uploadObjects(client, bucket, s3Key, archive, manifest);
-  const [uploadedArchive, uploadedManifest] = await Promise.all([
-    getObject(client, bucket, `${s3Key}/archive.tar.gz`),
-    getObject(client, bucket, `${s3Key}/manifest.json`),
-  ]);
-  if (sha256(uploadedArchive) !== release.newSha256) {
-    throw new Error(`${pkg.slug}: uploaded R2 archive sha256 mismatch`);
-  }
-  assertManifest(
-    JSON.parse(uploadedManifest.toString("utf8")),
+  const uploadedArchive = await uploadObjects(
+    client,
+    bucket,
+    s3Key,
+    archive,
     manifest,
     pkg.slug,
   );
@@ -151,6 +213,33 @@ export async function uploadPackage({
     `VERIFIED R2 ${pkg.slug} version=${release.newVersionId} sha256=${release.newSha256} skillBytes=${inspected.skillBytes}`,
   );
   return { ...current, pkg, s3Key, archiveSize: uploadedArchive.byteLength };
+}
+
+export async function uploadRegistryPackage({
+  client,
+  bucket,
+  outputDir,
+  pkg,
+  release,
+}) {
+  const archive = await readFile(path.join(outputDir, pkg.archive.path));
+  if (
+    sha256(archive) !== release.newSha256 ||
+    archive.length !== pkg.registryArchive.archiveBytes
+  ) {
+    throw new Error(`${pkg.slug}: artifact changed before registry upload`);
+  }
+  await putImmutable(
+    client,
+    bucket,
+    pkg.registryArchive.objectKey,
+    archive,
+    "application/gzip",
+    (actual) => {
+      if (!actual.equals(archive))
+        throw new Error(`${pkg.slug}: immutable registry object conflicts`);
+    },
+  );
 }
 
 export async function verifyR2Objects(client, bucket, releases, state) {
