@@ -1318,8 +1318,9 @@ function sameTeamsDeliveryDestination(
     stored.conversationId === requested.conversationId &&
     stored.activityId === requested.activityId &&
     stored.text === requested.text &&
-    stored.source === requested.source &&
-    stored.recipientId === requested.recipientId
+    // The provider conversation is the destination identity. The optional DM
+    // member is a revalidation hint, absent from retained and explicit-conversation operations.
+    stored.source === requested.source
   );
 }
 

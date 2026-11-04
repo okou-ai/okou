@@ -340,12 +340,14 @@ describe("Microsoft Teams integration CLI routes", () => {
 
   it.each(
     ["delivered", "uncertain"].flatMap((outcome) => {
-      return ["conversation", "me", "29:other-recipient"].map((target) => {
-        return {
-          outcome,
-          target,
-        };
-      });
+      return ["conversation", "direct DM", "me", "29:other-recipient"].map(
+        (target) => {
+          return {
+            outcome,
+            target,
+          };
+        },
+      );
     }),
   )(
     "owns a non-Run v2 $target upload and preserves its $outcome delivery outcome",
@@ -394,7 +396,9 @@ describe("Microsoft Teams integration CLI routes", () => {
           checksumSha256: createHash("sha256").update(bytes).digest("hex"),
           ...(target === "conversation"
             ? { conversationId: fixture.teamsConversationId }
-            : { user: target }),
+            : target === "direct DM"
+              ? { conversationId: outgoing.dmConversationId }
+              : { user: target }),
           text: "Pinned account report",
         },
       };
@@ -441,7 +445,20 @@ describe("Microsoft Teams integration CLI routes", () => {
       expect(captured.body?.text).toContain("Pinned account report");
       expect(captured.body?.text).not.toContain("Replacement text");
       const reused = await accept(
-        client(integrationsTeamsUploadInitContract).init({ headers, body }),
+        client(integrationsTeamsUploadInitContract).init({
+          headers,
+          body:
+            target === "direct DM"
+              ? {
+                  ...body,
+                  canonical: {
+                    ...body.canonical,
+                    conversationId: undefined,
+                    user: "me",
+                  },
+                }
+              : body,
+        }),
         [200],
       );
       expect(reused.body).toMatchObject({
