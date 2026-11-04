@@ -39,6 +39,34 @@ import type {
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
+function ShareChoiceText({
+  label,
+  description,
+  selected,
+}: {
+  readonly label: string;
+  readonly description: string | null;
+  readonly selected: boolean;
+}) {
+  if (description === null) {
+    return (
+      <span
+        className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}
+      >
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span className="flex min-w-0 flex-1 flex-col">
+      <span className={cn("truncate", selected && "font-medium")}>{label}</span>
+      <span className="truncate text-xs text-muted-foreground">
+        {description}
+      </span>
+    </span>
+  );
+}
+
 export function SharePermissionChoices({
   selected,
   organizationName,
@@ -148,25 +176,11 @@ export function SharePermissionChoices({
                 described && "mt-0.5",
               )}
             />
-            {described ? (
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className={cn("truncate", isSelected && "font-medium")}>
-                  {label}
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {description}
-                </span>
-              </span>
-            ) : (
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate",
-                  isSelected && "font-medium",
-                )}
-              >
-                {label}
-              </span>
-            )}
+            <ShareChoiceText
+              label={label}
+              description={described ? description : null}
+              selected={isSelected}
+            />
             {isSelected && (
               <Check
                 size={16}
