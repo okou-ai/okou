@@ -1,4 +1,5 @@
 import { openDB, type IDBPDatabase } from "idb";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { expect, test, vi } from "vitest";
 import { testContext } from "../../__tests__/test-helpers.ts";
 import { createChatIdbOpener } from "../chat-idb-opener.ts";
@@ -11,6 +12,8 @@ import {
   CHAT_THREAD_EVENTS_ORDER_INDEX,
   CHAT_THREAD_EVENTS_STORE,
   CHAT_THREAD_SNAPSHOT_STORE,
+  PROJECT_EVENTS_STORE,
+  PROJECT_SNAPSHOT_STORE,
 } from "../chat-idb-schema.ts";
 
 const context = testContext();
@@ -67,12 +70,22 @@ test("A local chat-cache upgrade closes the old connection and notifies its owne
   const userId = `upgrade-user-${identitySuffix}`;
   const orgId = `upgrade-workspace-${identitySuffix}`;
   const databaseName = `vm0-chat-${userId}-${orgId}`;
-  const oldDatabase = await openDB(databaseName, CHAT_IDB_VERSION - 1);
+  const previousVersion = 32_000 + CURRENT_CHAT_EVENT_SCHEMA_VERSION;
+  const oldDatabase = await openDB(databaseName, previousVersion, {
+    upgrade(db) {
+      db.createObjectStore(CHAT_THREAD_SNAPSHOT_STORE, { keyPath: "id" });
+    },
+  });
+  const existingRecord = { id: "existing-cache-record", value: "preserved" };
+  await oldDatabase.put(CHAT_THREAD_SNAPSHOT_STORE, existingRecord);
   oldDatabase.close();
   const onVersionChange = vi.fn<() => void>();
   const database = closeOnAbort(
     await createChatIdbOpener({ onVersionChange }).openChatIdb(userId, orgId),
   );
+  await expect(
+    database.get(CHAT_THREAD_SNAPSHOT_STORE, existingRecord.id),
+  ).resolves.toStrictEqual(existingRecord);
 
   expect(Array.from(database.objectStoreNames).sort()).toStrictEqual(
     [
@@ -81,6 +94,8 @@ test("A local chat-cache upgrade closes the old connection and notifies its owne
       CHAT_THREAD_EVENT_SYNC_STORE,
       CHAT_THREAD_EVENTS_STORE,
       CHAT_THREAD_SNAPSHOT_STORE,
+      PROJECT_EVENTS_STORE,
+      PROJECT_SNAPSHOT_STORE,
     ].sort(),
   );
   expect(
