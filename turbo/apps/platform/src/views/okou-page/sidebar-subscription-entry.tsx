@@ -13,6 +13,7 @@ import {
   sidebarSubscriptionOpen$,
   setSidebarSubscriptionEntry$,
   previewSidebarSubscriptionUsage$,
+  focusSidebarSubscriptionEntry$,
   openSidebarSubscriptionUsageDialog$,
   openSidebarSubscriptionResetDialog$,
 } from "../../signals/okou-page/sidebar-subscription-entry.ts";
@@ -30,6 +31,7 @@ export function SidebarSubscriptionUsage({
   const open = useGet(sidebarSubscriptionOpen$);
   const setEntry = useSet(setSidebarSubscriptionEntry$);
   const previewUsage = useSet(previewSidebarSubscriptionUsage$);
+  const focusEntry = useSet(focusSidebarSubscriptionEntry$);
   const openUsageDialog = useSet(openSidebarSubscriptionUsageDialog$);
   const openResetDialog = useSet(openSidebarSubscriptionResetDialog$);
   const pageSignal = useGet(pageSignal$);
@@ -66,9 +68,7 @@ export function SidebarSubscriptionUsage({
               })
             : label
         }
-        onFocus={() => {
-          previewUsage(true);
-        }}
+        onFocus={focusEntry}
         onClick={(event) => {
           event.preventBaseUIHandler();
           handleOpenUsage();

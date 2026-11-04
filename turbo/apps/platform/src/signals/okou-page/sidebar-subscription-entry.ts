@@ -12,6 +12,7 @@ import {
 
 const internalSidebarSubscriptionOpen$ = state(false);
 const internalSidebarSubscriptionEntry$ = state<HTMLButtonElement | null>(null);
+const internalSidebarSubscriptionFocusReturnPending$ = state(false);
 
 export const sidebarSubscriptionOpen$ = computed((get) => {
   return (
@@ -29,6 +30,7 @@ export const setSidebarSubscriptionEntry$ = onRef(
       () => {
         set(internalSidebarSubscriptionEntry$, null);
         set(internalSidebarSubscriptionOpen$, false);
+        set(internalSidebarSubscriptionFocusReturnPending$, false);
       },
       { once: true },
     );
@@ -47,11 +49,24 @@ export const previewSidebarSubscriptionUsage$ = command(
   },
 );
 
+export const focusSidebarSubscriptionEntry$ = command(({ get, set }) => {
+  if (get(settingsDialogOpen$) || get(accountMenuCodexResetDialog$).open) {
+    return;
+  }
+  if (get(internalSidebarSubscriptionFocusReturnPending$)) {
+    // Modal dismissal returns keyboard focus without requesting a new preview.
+    set(internalSidebarSubscriptionFocusReturnPending$, false);
+    return;
+  }
+  set(previewSidebarSubscriptionUsage$, true);
+});
+
 const prepareSubscriptionDialog$ = command(({ get, set }) => {
   // The popup row unmounts. Let the modal capture the persistent rail entry
   // as its return target before handing focus to the modal.
   get(internalSidebarSubscriptionEntry$)?.focus();
   set(internalSidebarSubscriptionOpen$, false);
+  set(internalSidebarSubscriptionFocusReturnPending$, true);
 });
 
 export const openSidebarSubscriptionUsageDialog$ = command(
