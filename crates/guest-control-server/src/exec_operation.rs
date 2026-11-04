@@ -73,7 +73,7 @@ use crate::drain::{
 use crate::error::to_io_error;
 use crate::exec_control::ExecControlGuard;
 use crate::log::log;
-use crate::process::{extract_exit_code, kill_and_reap_child};
+use crate::process::kill_and_reap_child;
 use crate::process_containment::{
     ExecProcessContainment, ProcessContainmentCleanupMode, ProcessContainmentError,
     ProcessContainmentMode, WorkloadPlacementBootstrap,
@@ -1066,20 +1066,7 @@ fn resolve_exec_result(
     lifecycle: ExecOperationLifecycle,
     containment_error: Option<&str>,
 ) -> (ExecTermination, String) {
-    let (termination, diagnostic) = match outcome {
-        WaitOutcome::Exited(status) => (
-            ExecTermination::Exited {
-                exit_code: extract_exit_code(status),
-            },
-            String::new(),
-        ),
-        WaitOutcome::TimedOut => (ExecTermination::TimedOut, String::new()),
-        WaitOutcome::Cancelled => (ExecTermination::Cancelled, String::new()),
-        WaitOutcome::WaitFailed(msg) => (
-            ExecTermination::WaitFailed,
-            format!("Failed to wait: {msg}"),
-        ),
-    };
+    let (termination, diagnostic) = outcome.into_exec_result("Failed to wait");
     if lifecycle == ExecOperationLifecycle::OneShot && containment_error.is_some() {
         return (
             ExecTermination::WaitFailed,

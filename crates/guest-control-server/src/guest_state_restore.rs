@@ -16,7 +16,7 @@ use crate::error::to_io_error;
 use crate::helper_input::FixedInputWriter;
 use crate::helper_output::truncate_utf8;
 use crate::log::log;
-use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
+use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
     WaitOutcome, await_drain_deadline, wait_with_kill_timeout_or_connection_cancelled,
@@ -359,20 +359,8 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
         stderr.captured = Some(Vec::new());
     }
 
-    let (termination, diagnostic) = match outcome {
-        WaitOutcome::Exited(status) => (
-            ExecTermination::Exited {
-                exit_code: extract_exit_code(status),
-            },
-            String::new(),
-        ),
-        WaitOutcome::TimedOut => (ExecTermination::TimedOut, String::new()),
-        WaitOutcome::Cancelled => (ExecTermination::Cancelled, String::new()),
-        WaitOutcome::WaitFailed(message) => (
-            ExecTermination::WaitFailed,
-            format!("failed to wait for guest state helper: {message}"),
-        ),
-    };
+    let (termination, diagnostic) =
+        outcome.into_exec_result("failed to wait for guest state helper");
     if let Err(error) = stdin_result
         && matches!(termination, ExecTermination::Exited { .. })
     {
