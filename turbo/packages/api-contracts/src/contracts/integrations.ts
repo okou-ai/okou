@@ -848,6 +848,7 @@ export type IntegrationsTeamsDownloadFileContract =
  */
 const teamsUploadInitBodySchema = object({
   canonical: object({
+    version: literal(2).optional(),
     operationId: uuid(),
     checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
     conversationId: string().min(1).optional(),

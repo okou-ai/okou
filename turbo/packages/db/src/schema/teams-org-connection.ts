@@ -1,15 +1,12 @@
 import {
   pgTable,
-  uuid,
   varchar,
-  text,
-  boolean,
-  timestamp,
   uniqueIndex,
   index,
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { teamsOrgConnectionColumns } from "../columns/teams-org-connection";
 import { teamsOrgInstallations } from "./teams-org-installation";
 
 /**
@@ -19,11 +16,7 @@ import { teamsOrgInstallations } from "./teams-org-installation";
 export const teamsOrgConnections = pgTable(
   "teams_org_connections",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    teamsUserId: varchar("teams_user_id", { length: 255 }),
-    teamsAadObjectId: varchar("teams_aad_object_id", { length: 255 }),
-    teamsTenantId: varchar("teams_tenant_id", { length: 255 }).notNull(),
-    orgId: text("org_id"),
+    ...teamsOrgConnectionColumns(),
     // Keep draining installation-owned writers constrained while independently
     // owned OAuth identities can exist before installation and after uninstall.
     // Remove this discriminator after the DB/API and row gates in #43729.
@@ -32,14 +25,6 @@ export const teamsOrgConnections = pgTable(
     }).generatedAlwaysAs(
       sql`CASE WHEN org_id IS NULL THEN teams_tenant_id ELSE NULL END`,
     ),
-    userId: text("user_id").notNull(),
-    teamsUserDisplayName: varchar("teams_user_display_name", { length: 255 }),
-    teamsUserPrincipalName: varchar("teams_user_principal_name", {
-      length: 255,
-    }),
-    dmWelcomeSent: boolean("dm_welcome_sent").default(false).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
     return [

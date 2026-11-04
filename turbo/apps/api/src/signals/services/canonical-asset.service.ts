@@ -1202,7 +1202,7 @@ type PrepareCanonicalPublishedAssetArgs = CanonicalPublicationFileArgs &
   (
     | {
         readonly provider: "teams";
-        readonly runId: string;
+        readonly runId: string | null;
         readonly destination: CanonicalAssetTeamsDeliveryDestination;
       }
     | {
@@ -1431,6 +1431,9 @@ const ensureCanonicalDelivery$ = command(
 );
 
 function canonicalPublicationScope(args: PrepareCanonicalPublishedAssetArgs) {
+  if (args.provider === "teams" && args.runId === null) {
+    return `teams:${args.orgId}`;
+  }
   return (args.provider === "discord" || args.provider === "wechat") &&
     args.runId === null
     ? `${args.provider}:${args.destination.connectionId}`

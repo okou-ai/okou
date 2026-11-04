@@ -1,8 +1,9 @@
 import { connectTeamsAccountForTest } from "./helpers/teams-account";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   integrationsTeamsMessageContract,
+  integrationsTeamsUploadInitContract,
   integrationsTeamsUploadCompleteContract,
 } from "@okouai/api-contracts/contracts/integrations";
 import { createStore } from "ccstate";
@@ -15,6 +16,8 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
 import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upload-complete";
+import { integrationsTeamsUploadInitRoutes } from "../integrations-teams-upload-init";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
@@ -334,6 +337,160 @@ describe("Microsoft Teams integration CLI routes", () => {
       });
     },
   );
+
+  it.each(["delivered", "uncertain"])(
+    "owns a non-Run v2 upload and preserves its %s delivery outcome",
+    async (outcome) => {
+      const fixture = teamsFixture();
+      fixtures.push(fixture);
+      await seedConnectedTeams(fixture);
+      const captured: CapturedTeamsActivity = {};
+      const outgoing = mockOutgoingTeams(fixture, captured);
+      installSharedThreadStorage(context);
+      let sends = 0;
+      server.use(
+        http.post(
+          `${SERVICE_URL}v3/conversations/:conversationId/activities`,
+          async ({ request, params }) => {
+            sends++;
+            captured.conversationId = String(params.conversationId);
+            captured.body = (await request.json()) as Record<string, unknown>;
+            return outcome === "uncertain"
+              ? HttpResponse.error()
+              : HttpResponse.json({ id: outgoing.activityId });
+          },
+        ),
+      );
+      const client = setupApp({
+        context,
+        routes: [
+          ...integrationsTeamsUploadInitRoutes,
+          ...integrationsTeamsUploadCompleteRoutes,
+        ],
+      });
+      const headers = { authorization: "Bearer clerk-session" };
+      const bytes = Buffer.from("Account-owned Teams report");
+      const operationId = randomUUID();
+      const body = {
+        filename: "report.txt",
+        contentType: "text/plain",
+        length: bytes.length,
+        canonical: {
+          version: 2 as const,
+          operationId,
+          checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+          conversationId: fixture.teamsConversationId,
+          text: "Pinned account report",
+        },
+      };
+      const prepared = await accept(
+        client(integrationsTeamsUploadInitContract).init({ headers, body }),
+        [200],
+      );
+      expect(prepared.body).toMatchObject({
+        operationId,
+        uploadRequired: true,
+      });
+      const uploaded = await fetch(prepared.body.uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": body.contentType,
+          ...prepared.body.uploadHeaders,
+        },
+        body: bytes,
+      });
+      expect(uploaded.status).toBe(200);
+      const completion = {
+        uploadId: prepared.body.uploadId,
+        operationId,
+        conversationId: "19:replacement-destination",
+        text: "Replacement text",
+      };
+      const complete = () => {
+        return client(integrationsTeamsUploadCompleteContract).complete({
+          headers,
+          body: completion,
+        });
+      };
+      const response = await complete();
+      expect(response.status).toBe(outcome === "delivered" ? 200 : 409);
+      const replayed = await complete();
+      expect(replayed.status).toBe(response.status);
+      expect(replayed.body).toStrictEqual(response.body);
+      expect(sends).toBe(1);
+      expect(captured.conversationId).toBe(fixture.teamsConversationId);
+      expect(captured.body?.text).toContain("Pinned account report");
+      expect(captured.body?.text).not.toContain("Replacement text");
+      const reused = await accept(
+        client(integrationsTeamsUploadInitContract).init({ headers, body }),
+        [200],
+      );
+      expect(reused.body).toMatchObject({
+        uploadId: prepared.body.uploadId,
+        operationId,
+        uploadRequired: false,
+      });
+      const changed = await client(integrationsTeamsUploadInitContract).init({
+        headers,
+        body: {
+          ...body,
+          canonical: { ...body.canonical, checksumSha256: "0".repeat(64) },
+        },
+      });
+      expect(changed.status).toBe(409);
+      mocks.clerk.session(`user_other_${randomUUID()}`, fixture.orgId);
+      expect((await complete()).status).toBe(404);
+      expect(sends).toBe(1);
+    },
+  );
+
+  it("requires an organization for a non-Run v2 upload", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, null);
+    const response = await setupApp({
+      context,
+      routes: integrationsTeamsUploadInitRoutes,
+    })(integrationsTeamsUploadInitContract).init({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        filename: "report.txt",
+        contentType: "text/plain",
+        length: 12,
+        canonical: {
+          version: 2,
+          operationId: randomUUID(),
+          checksumSha256: "a".repeat(64),
+          conversationId: "19:example",
+        },
+      },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("keeps unversioned non-Run initialization compatible during the v2 preparation", async () => {
+    const fixture = teamsFixture();
+    fixtures.push(fixture);
+    await seedConnectedTeams(fixture);
+    const initialized = await accept(
+      setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
+        integrationsTeamsUploadInitContract,
+      ).init({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          filename: "report.txt",
+          contentType: "text/plain",
+          length: 12,
+          canonical: {
+            operationId: randomUUID(),
+            checksumSha256: "a".repeat(64),
+            conversationId: fixture.teamsConversationId,
+          },
+        },
+      }),
+      [200],
+    );
+    expect(initialized.body.operationId).toBeUndefined();
+    expect(initialized.body.uploadUrl).toBeTruthy();
+  });
 
   it("sends an uploaded file URL as a Teams attachment", async () => {
     const fixture = teamsFixture();

@@ -26,7 +26,7 @@ import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";

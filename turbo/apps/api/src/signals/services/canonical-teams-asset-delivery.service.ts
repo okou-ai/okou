@@ -2,7 +2,7 @@ import { appendIntegrationMessageFooter } from "../../lib/integration-message-fo
 import { resolveTeamsMessageSendPresentation$ } from "./integration-message-send-presentation.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { TeamsUploadCompleteResponse } from "@okouai/api-contracts/contracts/integrations";
 import {
   canonicalAssetDeliveries,
@@ -24,7 +24,7 @@ import { routeError } from "./teams-message-target.service";
 interface TeamsUploadIdentity {
   readonly assetId: string;
   readonly operationId: string;
-  readonly runId: string;
+  readonly runId: string | null;
   readonly orgId: string;
   readonly userId: string;
 }
@@ -55,7 +55,9 @@ const teamsUploadDelivery$ = command(
           eq(canonicalAssetDeliveries.assetId, args.assetId),
           eq(canonicalAssetDeliveries.provider, "teams"),
           eq(canonicalAssetDeliveries.operationId, args.operationId),
-          eq(runUploadedFiles.runId, args.runId),
+          args.runId === null
+            ? isNull(runUploadedFiles.runId)
+            : eq(runUploadedFiles.runId, args.runId),
           eq(runUploadedFiles.userId, args.userId),
           eq(runUploadedFiles.orgId, args.orgId),
           eq(runUploadedFiles.assetVersion, 1),
@@ -174,7 +176,7 @@ export const completeCanonicalTeamsUpload$ = command(
     if (!row) {
       return routeError(
         404,
-        "Teams upload operation not found for this Run",
+        "Teams upload operation not found for this caller",
         "NOT_FOUND",
       );
     }
@@ -210,13 +212,13 @@ export const completeCanonicalTeamsUpload$ = command(
       },
       signal,
     );
-    // Completion input cannot replace the persisted Run, installation or conversation.
+    // Completion input cannot replace the persisted owner, installation or conversation.
     const target = await set(
       resolveTeamsWriteTarget$,
       {
         orgId: args.orgId,
         userId: args.userId,
-        runId: args.runId,
+        ...(args.runId !== null ? { runId: args.runId } : {}),
         tenantId: destination.tenantId,
         allowSource: destination.source,
         sourceOnly: destination.source,
