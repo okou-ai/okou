@@ -115,6 +115,52 @@ describe("Agent database instructions", () => {
     },
   );
 
+  it("does not create an Agent when its bundle lookup is cancelled", async () => {
+    installWorkflowVolumeS3Fixture(context);
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!send) {
+      throw new Error("Expected the S3 fixture");
+    }
+    const owner = new AbortController();
+    const reason = new DOMException("Agent creation cancelled", "AbortError");
+    context.mocks.s3.send.mockImplementation((request: unknown, ...args) => {
+      if (request instanceof HeadObjectCommand) {
+        const options = args[0];
+        if (
+          typeof options !== "object" ||
+          options === null ||
+          !("abortSignal" in options) ||
+          !(options.abortSignal instanceof AbortSignal)
+        ) {
+          throw new Error("Expected a cancellable bundle lookup");
+        }
+        const lookup = createDeferredPromise<void>(options.abortSignal);
+        owner.abort(reason);
+        return lookup.promise;
+      }
+      return send(request, ...args);
+    });
+    mocks.clerk.session(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+      "org:admin",
+    );
+    const collection = setupApp({
+      context,
+      routes: agentsRoutes,
+      signal: AbortSignal.any([context.signal, owner.signal]),
+      rethrowErrors: true,
+    })(agentsMainContract);
+    await expect(collection.create({ headers, body: {} })).rejects.toBe(reason);
+    const accepted = await accept(
+      setupApp({ context, routes: agentsRoutes })(agentsMainContract).list({
+        headers,
+      }),
+      [200],
+    );
+    expect(accepted.body).toStrictEqual([]);
+  });
+
   it("publishes exact text and explicit empty overwrite", async () => {
     const fixture = await instructionFixture();
     const raw = "\uFEFF  First line\r\n中文\n\n  ";
