@@ -405,6 +405,9 @@ export function ChatConnectorMenu({
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
   const overview = useLoadable(accounts.overview$);
+  const notifications = useLoadable(accounts.notifications$);
+  const failed =
+    overview.state === "hasError" || notifications.state === "hasError";
   const previous = useLastResolved(accounts.overview$);
   const target = useGet(accounts.target$);
   const back = useSet(accounts.closeTarget$);
@@ -432,11 +435,9 @@ export function ChatConnectorMenu({
   return (
     <ComposerConnectorMenuShell
       loading={overview.state === "loading" && !previous}
-      hasContent={
-        entries.length > 0 || target !== null || overview.state === "hasError"
-      }
+      hasContent={entries.length > 0 || target !== null || failed}
       error={
-        overview.state === "hasError" && !target
+        failed && !target
           ? t(($) => {
               return $.connectors.accounts.accountsUnavailable;
             })
@@ -452,7 +453,7 @@ export function ChatConnectorMenu({
     >
       <ChatConnectorOverviewRetry
         signals={signals}
-        failed={overview.state === "hasError"}
+        failed={failed}
         target={target}
       />
       {target ? (

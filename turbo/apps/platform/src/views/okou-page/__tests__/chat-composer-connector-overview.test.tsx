@@ -353,6 +353,77 @@ test("Recover from an initial subscription failure through the overview retry", 
   expect(full).toBe(1);
 });
 
+test("Expose a failed target refresh and keep notifications working after retry", async () => {
+  const { entries } = fixture(2);
+  let current = entries[0];
+  let full = 0;
+  let targets = 0;
+  let fail = true;
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    full += 1;
+    return respond(200, [current, entries[1]]);
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ query, respond }) => {
+      targets += 1;
+      if (query.kind === "builtin" && query.connectorSlug === "probe-02") {
+        return respond(200, { connector: entries[1] });
+      }
+      return fail
+        ? respond(503, {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "Catalog unavailable",
+            },
+          })
+        : respond(200, { connector: current });
+    },
+  );
+  const popup = await openAfterSetup(false, "message-port");
+  await findFastControl("button", "Probe 1Account 11 enabled", popup);
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-01",
+  });
+  await findFastControl("button", "Try again", popup);
+  expect(popup).toHaveTextContent("Account 1");
+  expect({ full, targets }).toStrictEqual({ full: 1, targets: 1 });
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-02",
+  });
+  await waitFor(() => {
+    return expect(targets).toBe(2);
+  });
+  await findFastControl("button", "Probe 2Account 21 enabled", popup);
+  const retry = await findFastControl("button", "Try again", popup);
+  fail = false;
+  click(retry);
+  await findFastControl("button", "Probe 1Account 11 enabled", popup);
+  await waitFor(() => {
+    return expect(
+      queryAllByRoleFast("button", popup).some((button) => {
+        return button.textContent === "Try again";
+      }),
+    ).toBeFalsy();
+  });
+  expect(full).toBe(2);
+  current = {
+    ...current,
+    accounts: current.accounts.map((account) => {
+      return { ...account, displayName: "Updated after recovery" };
+    }),
+  };
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-01",
+  });
+  await findFastControl(
+    "button",
+    "Probe 1Updated after recovery1 enabled",
+    popup,
+  );
+  expect({ full, targets }).toStrictEqual({ full: 2, targets: 3 });
+});
+
 test("Load full readiness only for an opened panel's selected off-page account", async () => {
   const target = { kind: "builtin", connectorSlug: "github" } as const;
   const work = connectorAccount({

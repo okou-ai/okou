@@ -1,4 +1,11 @@
-import { command, computed, state, type State, type Computed } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type State,
+  type Computed,
+  type Command,
+} from "ccstate";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
 import type { ChatConnectorOverviewEntry } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/validators/connector-accounts";
@@ -152,13 +159,46 @@ function createTargetRefreshCommand({
   );
 }
 
+function createNotificationRefreshCommand(
+  refreshes$: State<ReadonlyMap<string, Promise<void>>>,
+  refreshTarget$: ReturnType<typeof createTargetRefreshCommand>,
+  refreshAll$: Command<Promise<boolean>, [AbortSignal]>,
+) {
+  return command(async ({ set }, payload: unknown, signal: AbortSignal) => {
+    const parsed = connectorChangedPayloadSchema.safeParse(payload);
+    if (parsed.success) {
+      const target = {
+        kind: "builtin" as const,
+        connectorSlug: parsed.data.connectorSlug,
+      };
+      const refresh = set(refreshTarget$, target, signal);
+      set(refreshes$, (refreshes) => {
+        return new Map(refreshes).set(
+          connectorAccountTargetKey(target),
+          refresh,
+        );
+      });
+      await refresh;
+    } else {
+      await set(refreshAll$, signal);
+    }
+    return false;
+  });
+}
+
 /** One Chat page owns the memoized baseline, target patches and subscription. */
 export function createChatConnectorOverviewSignals(threadId?: string) {
   const owner$ = state<CacheOwner | null>(null);
+  const notificationRefreshes$ = state<ReadonlyMap<string, Promise<void>>>(
+    new Map(),
+  );
   const version$ = state(0);
   const patches$ = state<ReadonlyMap<string, TargetPatch>>(new Map());
   const resetOwner$ = resetSignal();
   const { epoch$, baseline$ } = createOverviewReads(owner$, version$);
+  const notifications$ = computed(async (get) => {
+    await Promise.all(get(notificationRefreshes$).values());
+  });
   const entries$ = computed(async (get): Promise<Overview> => {
     const patches = get(patches$);
     const epoch = get(epoch$);
@@ -181,6 +221,7 @@ export function createChatConnectorOverviewSignals(threadId?: string) {
     return [...merged.values()];
   });
   const reload$ = command(({ set }) => {
+    set(notificationRefreshes$, new Map());
     set(patches$, new Map());
     set(version$, (version) => {
       return version + 1;
@@ -198,23 +239,10 @@ export function createChatConnectorOverviewSignals(threadId?: string) {
     baseline$,
     patches$,
   });
-  const changed$ = command(
-    async ({ set }, payload: unknown, signal: AbortSignal) => {
-      const parsed = connectorChangedPayloadSchema.safeParse(payload);
-      if (parsed.success) {
-        await set(
-          refreshTarget$,
-          {
-            kind: "builtin",
-            connectorSlug: parsed.data.connectorSlug,
-          },
-          signal,
-        );
-      } else {
-        await set(refreshAll$, signal);
-      }
-      return false;
-    },
+  const changed$ = createNotificationRefreshCommand(
+    notificationRefreshes$,
+    refreshTarget$,
+    refreshAll$,
   );
   const open$ = command(({ get, set }, parentSignal: AbortSignal) => {
     if (get(owner$)) {
@@ -226,6 +254,7 @@ export function createChatConnectorOverviewSignals(threadId?: string) {
       signal,
       requests: overviewRequests(ready.promise, threadId, signal),
     };
+    set(notificationRefreshes$, new Map());
     set(owner$, owner);
     // Custom account writes do not all publish connector:changed notifications.
     window.addEventListener(
@@ -243,6 +272,7 @@ export function createChatConnectorOverviewSignals(threadId?: string) {
         if (get(owner$) === owner) {
           set(owner$, null);
           set(patches$, new Map());
+          set(notificationRefreshes$, new Map());
         }
       },
       { once: true },
@@ -274,5 +304,5 @@ export function createChatConnectorOverviewSignals(threadId?: string) {
     set(resetOwner$);
     set(open$, get(pageSignal$));
   });
-  return { entries$, open$, reload$, refreshTarget$, retry$ };
+  return { entries$, notifications$, open$, reload$, refreshTarget$, retry$ };
 }

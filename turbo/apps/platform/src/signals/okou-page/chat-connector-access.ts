@@ -389,6 +389,7 @@ export function createChatConnectorAccessSignals(threadId?: string) {
   );
   return {
     overview$,
+    notifications$: cache.notifications$,
     active$,
     list,
     open$,
