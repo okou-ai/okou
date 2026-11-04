@@ -50,6 +50,7 @@
 2 release-tool-downloads-test.sh
 2 resolve-desktop-version-change-test.sh
 2 resolve-production-rollback-target-test.sh
+2 verify-registry-publisher-cutover-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-agent-ready-benchmark-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-submit-test.sh

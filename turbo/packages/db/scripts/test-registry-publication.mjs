@@ -118,9 +118,6 @@ const baseEnv = {
   PATH: process.env.PATH,
   R2_ACCOUNT_ID: "fixture",
   R2_ENDPOINT: endpoint,
-  R2_USER_STORAGES_BUCKET_NAME: "legacy",
-  R2_ACCESS_KEY_ID: "fixture",
-  R2_SECRET_ACCESS_KEY: "fixture",
   R2_PRIVATE_ARTIFACTS_BUCKET_NAME: "private",
   R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID: "fixture",
   R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY: "fixture",
@@ -172,7 +169,14 @@ async function build(label) {
 
 const schemas = [];
 const roles = [];
-async function fixture(initial) {
+async function legacyState(sql) {
+  return {
+    storages: await sql`SELECT *, xmin::text FROM storages ORDER BY id`,
+    versions: await sql`SELECT *, xmin::text FROM storage_versions ORDER BY id`,
+  };
+}
+
+async function fixture(initial, writableHeads = true) {
   objects.clear();
   interceptPut = undefined;
   const schema = `registry_pub_${randomUUID().replaceAll("-", "")}`;
@@ -211,35 +215,66 @@ async function fixture(initial) {
     objects.set(`legacy/${key}/archive.tar.gz`, bytes);
     objects.set(`private/${pkg.registryArchive.objectKey}`, bytes);
   }
-  return { sql, schema, env: { ...baseEnv, DATABASE_URL: url.href } };
+  const legacy = await legacyState(sql);
+  const legacyObjects = new Map(
+    [...objects].filter(([key]) => {
+      return key.startsWith("legacy/");
+    }),
+  );
+  const role = `registry_writer_${randomUUID().replaceAll("-", "")}`;
+  await admin.unsafe(
+    `CREATE ROLE "${role}" LOGIN PASSWORD 'registry-publication-fixture'`,
+  );
+  roles.push(role);
+  await admin`GRANT USAGE ON SCHEMA ${admin(schema)} TO ${admin(role)}`;
+  for (const table of [
+    "registry_resource_archives",
+    "registry_resource_heads",
+  ]) {
+    await admin`GRANT SELECT ON ${admin(`${schema}.${table}`)} TO ${admin(role)}`;
+  }
+  await admin`GRANT INSERT ON ${admin(`${schema}.registry_resource_archives`)} TO ${admin(role)}`;
+  if (writableHeads) {
+    await admin`GRANT UPDATE ON ${admin(`${schema}.registry_resource_heads`)} TO ${admin(role)}`;
+  }
+  url.username = role;
+  url.password = "registry-publication-fixture";
+  return {
+    sql,
+    schema,
+    role,
+    legacy,
+    legacyObjects,
+    env: { ...baseEnv, DATABASE_URL: url.href },
+  };
 }
 
 async function heads(sql) {
-  return await sql`SELECT s.id, s.head_version_id, s.xmin::text AS storage_xmin,
-    h.sha256, h.xmin::text AS head_xmin, h.updated_at
-    FROM storages s JOIN registry_resource_heads h ON s.name = 'registry-resource@' || h.resource_id ORDER BY s.id`;
+  return await sql`SELECT resource_id, sha256, xmin::text, updated_at
+    FROM registry_resource_heads ORDER BY resource_id`;
+}
+
+async function verifyLegacy(f) {
+  assert.deepEqual(await legacyState(f.sql), f.legacy);
+  for (const [key, value] of f.legacyObjects) {
+    assert.deepEqual(objects.get(key), value);
+  }
 }
 
 async function verify(f, bundle) {
+  await verifyLegacy(f);
   for (const pkg of bundle.publication.packages) {
     const [row] =
-      await f.sql`SELECT a.version_id,a.archive_bytes,a.file_count,a.total_bytes,s.head_version_id
+      await f.sql`SELECT a.version_id,a.archive_bytes,a.file_count,a.total_bytes
       FROM registry_resource_archives a JOIN registry_resource_heads h USING (resource_id,sha256)
-      JOIN storages s ON s.name = 'registry-resource@' || h.resource_id WHERE a.resource_id = ${pkg.resourceId}`;
+      WHERE a.resource_id = ${pkg.resourceId}`;
     assert.equal(row.version_id, pkg.versionId);
-    assert.equal(row.head_version_id, pkg.versionId);
     assert.equal(Number(row.archive_bytes), pkg.archive.byteSize);
     assert.equal(row.file_count, pkg.fileCount);
     assert.equal(Number(row.total_bytes), pkg.totalSize);
     const bytes = await readFile(path.join(bundle.output, pkg.archive.path));
     assert.deepEqual(
       objects.get(`private/${pkg.registryArchive.objectKey}`),
-      bytes,
-    );
-    assert.deepEqual(
-      objects.get(
-        `legacy/__system__/${pkg.storageId}/${pkg.versionId}/archive.tar.gz`,
-      ),
       bytes,
     );
   }
@@ -271,7 +306,7 @@ try {
       await f.sql`SELECT count(*)::int AS count FROM registry_resource_archives`;
     assert.equal(retained.count, initial.publication.packages.length * 2);
     console.log(
-      "PASS original bytes in both locations, uncertain PUT recovery, retained fixed archives and idempotent rerun",
+      "PASS independent-only credentials and database grants, original private bytes, uncertain PUT recovery, retained archives and idempotent rerun",
     );
   } finally {
     await f.sql.end();
@@ -292,62 +327,33 @@ try {
       "conflicting immutable object",
     );
     assert.deepEqual(await heads(conflict.sql), originalHeads);
-    console.log(
-      "PASS conflicting immutable object leaves both published HEADs unchanged",
-    );
+    console.log("PASS conflicting immutable object preserves published HEADs");
   } finally {
     await conflict.sql.end();
   }
 
-  const interrupted = await fixture(initial);
+  const interrupted = await fixture(initial, false);
   try {
-    const role = `registry_writer_${randomUUID().replaceAll("-", "")}`;
-    await admin.unsafe(
-      `CREATE ROLE "${role}" LOGIN PASSWORD 'registry-publication-fixture'`,
-    );
-    roles.push(role);
-    await admin`GRANT USAGE ON SCHEMA ${admin(interrupted.schema)} TO ${admin(role)}`;
-    for (const table of [
-      "storages",
-      "storage_versions",
-      "registry_resource_archives",
-      "registry_resource_heads",
-    ]) {
-      await admin`GRANT SELECT ON ${admin(`${interrupted.schema}.${table}`)} TO ${admin(role)}`;
-    }
-    for (const table of ["storage_versions", "registry_resource_archives"]) {
-      await admin`GRANT INSERT ON ${admin(`${interrupted.schema}.${table}`)} TO ${admin(role)}`;
-    }
-    await admin`GRANT UPDATE ON ${admin(`${interrupted.schema}.storages`)} TO ${admin(role)}`;
-    const url = new URL(interrupted.env.DATABASE_URL);
-    url.username = role;
-    url.password = "registry-publication-fixture";
-    const writerEnv = { ...interrupted.env, DATABASE_URL: url.href };
+    const before = await heads(interrupted.sql);
     await assert.rejects(
-      run(["publish", "--output-dir", next.output], writerEnv),
+      run(["publish", "--output-dir", next.output], interrupted.env),
       (error) => {
         return /permission denied/.test(error.stderr);
       },
     );
+    assert.deepEqual(await heads(interrupted.sql), before);
     const [partial] =
-      await interrupted.sql`SELECT s.head_version_id,h.sha256 FROM storages s
-      JOIN registry_resource_heads h ON s.name = 'registry-resource@' || h.resource_id
-      WHERE h.resource_id = ${next.publication.packages[0].resourceId}`;
-    assert.equal(
-      partial.head_version_id,
-      next.publication.packages[0].versionId,
-    );
-    assert.equal(
-      partial.sha256,
-      initial.publication.packages[0].archive.sha256,
-    );
-    await admin`GRANT UPDATE ON ${admin(`${interrupted.schema}.registry_resource_heads`)} TO ${admin(role)}`;
+      await interrupted.sql`SELECT version_id FROM registry_resource_archives
+      WHERE resource_id = ${next.publication.packages[0].resourceId}
+        AND sha256 = ${next.publication.packages[0].archive.sha256}`;
+    assert.equal(partial.version_id, next.publication.packages[0].versionId);
+    await admin`GRANT UPDATE ON ${admin(`${interrupted.schema}.registry_resource_heads`)} TO ${admin(interrupted.role)}`;
     const retainedObjects = new Map(objects);
-    await run(["publish", "--output-dir", next.output], writerEnv);
+    await run(["publish", "--output-dir", next.output], interrupted.env);
     await verify(interrupted, next);
     assert.deepEqual(objects, retainedObjects);
     console.log(
-      "PASS interrupted dual publication resumes the same verified bundle without rewriting objects",
+      "PASS interrupted independent publication resumes the same verified bundle and preserves existing objects",
     );
   } finally {
     await interrupted.sql.end();
@@ -398,7 +404,7 @@ try {
     assert.equal(result.succeeded, false);
     assert.match(
       result.error.stderr,
-      /source changed before registry archive registration/,
+      /registry HEAD changed before archive registration/,
     );
     await verify(concurrent, newer);
     console.log(
@@ -406,6 +412,61 @@ try {
     );
   } finally {
     await concurrent.sql.end();
+  }
+
+  const aba = await fixture(initial);
+  try {
+    let releaseFirst;
+    let observedFirst;
+    const firstObserved = new Promise((resolve) => {
+      observedFirst = resolve;
+    });
+    const firstReleased = new Promise((resolve) => {
+      releaseFirst = resolve;
+    });
+    interceptPut = async (key) => {
+      if (key !== firstKey) return false;
+      observedFirst();
+      await firstReleased;
+      return false;
+    };
+    const outcome = run(["publish", "--output-dir", next.output], aba.env).then(
+      () => {
+        return { succeeded: true };
+      },
+      (error) => {
+        return { succeeded: false, error };
+      },
+    );
+    let restored;
+    try {
+      await Promise.race([
+        firstObserved,
+        outcome.then((result) => {
+          if (!result.succeeded) throw result.error;
+          throw new Error("First publisher did not reach the object boundary");
+        }),
+      ]);
+      await run(["publish", "--output-dir", newer.output], aba.env);
+      await run(["publish", "--output-dir", initial.output], aba.env);
+      restored = await heads(aba.sql);
+    } finally {
+      releaseFirst();
+      await outcome;
+    }
+    const result = await outcome;
+    assert.equal(result.succeeded, false);
+    assert.match(
+      result.error.stderr,
+      /registry HEAD changed before archive registration/,
+    );
+    assert.deepEqual(await heads(aba.sql), restored);
+    await verify(aba, initial);
+    console.log(
+      "PASS xmin rejects a stale publisher even after HEAD content returns to its original digest",
+    );
+  } finally {
+    await aba.sql.end();
   }
 } finally {
   interceptPut = undefined;
