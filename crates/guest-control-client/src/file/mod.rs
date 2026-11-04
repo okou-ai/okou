@@ -1,5 +1,4 @@
 mod copy;
-mod finalize;
 mod read;
 mod write;
 
@@ -73,22 +72,6 @@ impl FileWritePathLocks {
         let reservation = self.reserve(PathBuf::from(path));
         let guard = Arc::clone(&reservation.lock).write_owned().await;
         FileWritePathGuard::new(FileWritePathGuardKind::Exclusive(guard), reservation)
-    }
-
-    async fn acquire_exclusive_many<'a>(
-        &'a self,
-        paths: impl IntoIterator<Item = &'a str>,
-    ) -> Vec<FileWritePathGuard<'a>> {
-        let reservations = self.reserve_many(paths);
-        let mut guards = Vec::with_capacity(reservations.len());
-        for reservation in reservations {
-            let guard = Arc::clone(&reservation.lock).write_owned().await;
-            guards.push(FileWritePathGuard::new(
-                FileWritePathGuardKind::Exclusive(guard),
-                reservation,
-            ));
-        }
-        guards
     }
 
     fn reserve_many<'a>(
