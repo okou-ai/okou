@@ -113,19 +113,12 @@ fn validate_result_output(
     output: ExecCapturedOutput<'_>,
     field: &'static str,
 ) -> Result<(), ProtocolError> {
-    match output {
-        ExecCapturedOutput::Captured { bytes, .. }
-            if bytes.len() <= HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES =>
-        {
-            Ok(())
-        }
-        ExecCapturedOutput::Captured { bytes, .. } => {
-            Err(ProtocolError::PayloadTooLarge(field, bytes.len()))
-        }
-        ExecCapturedOutput::Discarded => Err(ProtocolError::InvalidPayload(
-            "home_drive_mount_result output must be captured",
-        )),
-    }
+    super::validate_bounded_capture(
+        output,
+        HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES,
+        field,
+        "home_drive_mount_result output must be captured",
+    )
 }
 
 #[cfg(test)]

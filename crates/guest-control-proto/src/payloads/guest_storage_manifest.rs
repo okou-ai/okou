@@ -363,17 +363,10 @@ fn validate_result_output(
     output: ExecCapturedOutput<'_>,
     field: &'static str,
 ) -> Result<(), ProtocolError> {
-    match output {
-        ExecCapturedOutput::Captured { bytes, .. }
-            if bytes.len() <= GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES =>
-        {
-            Ok(())
-        }
-        ExecCapturedOutput::Captured { bytes, .. } => {
-            Err(ProtocolError::PayloadTooLarge(field, bytes.len()))
-        }
-        ExecCapturedOutput::Discarded => Err(ProtocolError::InvalidPayload(
-            "guest_storage_manifest_result output must be captured",
-        )),
-    }
+    super::validate_bounded_capture(
+        output,
+        GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES,
+        field,
+        "guest_storage_manifest_result output must be captured",
+    )
 }

@@ -93,3 +93,122 @@ fn result_rejects_discarded_or_oversized_output() {
         .is_err()
     );
 }
+
+#[test]
+fn result_capture_boundaries_match_across_payload_frame_and_decode() {
+    let bytes = vec![0xA5; HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES + 1];
+    let empty = ExecCapturedOutput::Captured {
+        bytes: &[],
+        truncated: false,
+    };
+    for field in ["stdout", "stderr"] {
+        for truncated in [false, true] {
+            let maximum = ExecCapturedOutput::Captured {
+                bytes: &bytes[..HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES],
+                truncated,
+            };
+            let (stdout, stderr) = if field == "stdout" {
+                (maximum, empty)
+            } else {
+                (empty, maximum)
+            };
+            let termination = ExecTermination::Exited { exit_code: 7 };
+            let payload =
+                encode_home_drive_mount_result(termination, u32::MAX, stdout, stderr, "boundary")
+                    .unwrap();
+            let decoded = decode_home_drive_mount_result(&payload).unwrap();
+            assert_eq!(decoded.termination, termination);
+            assert_eq!(decoded.duration_ms, u32::MAX);
+            assert_eq!(decoded.stdout, stdout);
+            assert_eq!(decoded.stderr, stderr);
+            assert_eq!(decoded.diagnostic, "boundary");
+            let mut frame = b"stale frame bytes".to_vec();
+            encode_home_drive_mount_result_frame_into(
+                &mut frame,
+                42,
+                termination,
+                u32::MAX,
+                stdout,
+                stderr,
+                "boundary",
+            )
+            .unwrap();
+            assert_eq!(
+                frame,
+                crate::encode(crate::MSG_HOME_DRIVE_MOUNT_RESULT, 42, &payload).unwrap()
+            );
+
+            for invalid in [
+                ExecCapturedOutput::Captured {
+                    bytes: &bytes,
+                    truncated,
+                },
+                ExecCapturedOutput::Discarded,
+            ] {
+                let (stdout, stderr) = if field == "stdout" {
+                    (invalid, empty)
+                } else {
+                    (empty, invalid)
+                };
+                assert_home_capture_errors(stdout, stderr, invalid, field);
+            }
+        }
+    }
+
+    // Both streams are invalid: stdout's contract violation takes precedence.
+    let oversized = ExecCapturedOutput::Captured {
+        bytes: &bytes,
+        truncated: false,
+    };
+    assert_home_capture_errors(
+        oversized,
+        ExecCapturedOutput::Discarded,
+        oversized,
+        "stdout",
+    );
+    assert_home_capture_errors(
+        ExecCapturedOutput::Discarded,
+        oversized,
+        ExecCapturedOutput::Discarded,
+        "stdout",
+    );
+}
+
+fn assert_home_capture_errors(
+    stdout: ExecCapturedOutput<'_>,
+    stderr: ExecCapturedOutput<'_>,
+    invalid: ExecCapturedOutput<'_>,
+    field: &'static str,
+) {
+    let termination = ExecTermination::WaitFailed;
+    let payload = crate::encode_exec_result(termination, 0, stdout, stderr, "").unwrap();
+    let mut frame = b"stale frame bytes".to_vec();
+    let errors = [
+        encode_home_drive_mount_result(termination, 0, stdout, stderr, "").unwrap_err(),
+        encode_home_drive_mount_result_frame_into(
+            &mut frame,
+            42,
+            termination,
+            0,
+            stdout,
+            stderr,
+            "",
+        )
+        .unwrap_err(),
+        decode_home_drive_mount_result(&payload).unwrap_err(),
+    ];
+    assert_eq!(frame, b"stale frame bytes");
+    for error in errors {
+        match invalid {
+            ExecCapturedOutput::Captured { bytes, .. } => assert!(matches!(
+                error,
+                ProtocolError::PayloadTooLarge(actual_field, size)
+                    if actual_field == field && size == bytes.len()
+            )),
+            ExecCapturedOutput::Discarded => assert!(matches!(
+                error,
+                ProtocolError::InvalidPayload("home_drive_mount_result output must be captured")
+            )),
+        }
+    }
+}
