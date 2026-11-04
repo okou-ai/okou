@@ -1,6 +1,7 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { useId, type ReactNode } from "react";
 // The shared `Radio` is the 16px circle meant to sit beside a label. Here the
 // whole row is the control and the trailing check marks it, the way
 // `DropdownMenu` and `Select` mark theirs, so the row composes `Radio.Root`
@@ -57,6 +58,9 @@ export function SharePermissionChoices({
       label: t(($) => {
         return $.artifacts.sharing.onlyMeOption;
       }),
+      description: t(($) => {
+        return $.artifacts.sharing.onlyMeDescription;
+      }),
     },
     {
       audience: "organization",
@@ -76,6 +80,9 @@ export function SharePermissionChoices({
                 organization: organizationName,
               },
             ),
+      description: t(($) => {
+        return $.artifacts.sharing.organizationDescription;
+      }),
     },
     {
       audience: "public",
@@ -83,8 +90,12 @@ export function SharePermissionChoices({
       label: t(($) => {
         return $.artifacts.sharing.publicOption;
       }),
+      description: t(($) => {
+        return $.artifacts.sharing.publicDescription;
+      }),
     },
   ] as const;
+  const idPrefix = useId();
   // No pending choice is confirmed yet. Keeping every option unchecked also
   // lets native pointer and arrow selection reaffirm the server baseline.
   return (
@@ -99,8 +110,12 @@ export function SharePermissionChoices({
         return onChange(value as ArtifactShareStatus["audience"]);
       }}
     >
-      {options.map(({ audience, Icon, label }) => {
+      {options.map(({ audience, Icon, label, description }) => {
         const isSelected = !saving && selected === audience;
+        const labelId = `${idPrefix}-${audience}-label`;
+        const descriptionId = `${idPrefix}-${audience}-description`;
+        // The row names its audience by the label alone; the line beneath it
+        // says what that audience can do, so it describes rather than names.
         return (
           <RadioPrimitive.Root
             key={audience}
@@ -108,8 +123,10 @@ export function SharePermissionChoices({
             nativeButton
             render={<button type="button" />}
             aria-busy={saving}
+            aria-labelledby={labelId}
+            aria-describedby={descriptionId}
             className={cn(
-              "flex w-full select-none items-center gap-2 rounded-lg px-2 text-left outline-none transition-colors",
+              "flex w-full select-none items-start gap-2 rounded-lg px-2 text-left outline-none transition-colors",
               MENU_ROW_HEIGHT_CLASS,
               unavailable && "opacity-50",
               // `state-hover` says "the pointer is here"; selection owns
@@ -121,16 +138,22 @@ export function SharePermissionChoices({
               unavailable && "hover:bg-transparent",
             )}
           >
-            <Icon size={16} className="shrink-0 text-muted-foreground" />
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate",
-                isSelected && "font-medium",
-              )}
-            >
-              {label}
+            <Icon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span
+                id={labelId}
+                className={cn("truncate", isSelected && "font-medium")}
+              >
+                {label}
+              </span>
+              <span
+                id={descriptionId}
+                className="truncate text-xs text-muted-foreground"
+              >
+                {description}
+              </span>
             </span>
-            {isSelected && <Check size={16} className="shrink-0" />}
+            {isSelected && <Check size={16} className="mt-0.5 shrink-0" />}
           </RadioPrimitive.Root>
         );
       })}
@@ -188,6 +211,19 @@ export function ShareCopyButton({
   );
 }
 
+/**
+ * The copy action sits under a hairline that runs to the popover's edges
+ * (`-mx-1.5` cancels the content's `p-1.5`), so it reads as the menu's footer
+ * rather than a button left floating beside the last option.
+ */
+function ShareCopyFooter({ children }: { readonly children: ReactNode }) {
+  return (
+    <div className="-mx-1.5 mt-1.5 border-t border-border px-1.5 pt-1.5">
+      {children}
+    </div>
+  );
+}
+
 export function ShareLoadError({ message }: { readonly message?: string }) {
   const { t } = useTranslation();
   return (
@@ -219,20 +255,20 @@ export function ShareSkeleton({
         return (
           <div
             key={index}
-            className={cn(
-              "flex items-center gap-2 px-2",
-              MENU_ROW_HEIGHT_CLASS,
-            )}
+            className={cn("flex items-start gap-2 px-2", MENU_ROW_HEIGHT_CLASS)}
           >
-            <Skeleton className="size-4 rounded" />
-            <Skeleton className="h-4 w-40 rounded" />
+            <Skeleton className="mt-0.5 size-4 rounded" />
+            <span className="flex flex-col gap-1.5 pt-0.5">
+              <Skeleton className="h-4 w-40 rounded" />
+              <Skeleton className="h-3 w-24 rounded" />
+            </span>
           </div>
         );
       })}
       {showCopyButton && (
-        <div className="mt-1.5 flex justify-end">
-          <Skeleton className="h-8 w-28 rounded-lg" />
-        </div>
+        <ShareCopyFooter>
+          <Skeleton className="h-8 w-full rounded-lg" />
+        </ShareCopyFooter>
       )}
     </div>
   );
@@ -304,9 +340,9 @@ export function ShareMenuContent({
             <>
               {errorMessage && <ShareLoadError message={errorMessage} />}
               {copy && (
-                <div className="mt-1.5 flex justify-end">
-                  <ShareCopyButton {...copy} />
-                </div>
+                <ShareCopyFooter>
+                  <ShareCopyButton {...copy} className="w-full" />
+                </ShareCopyFooter>
               )}
             </>
           )}

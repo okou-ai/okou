@@ -28,10 +28,21 @@ beforeEach(() => {
     });
   });
 });
+// Permission rows name their audience through `aria-labelledby`; the line
+// beneath it describes the audience and is not part of the name.
+function labelledText(element: HTMLElement) {
+  const id = element.getAttribute("aria-labelledby");
+  return id ? document.getElementById(id)?.textContent?.trim() : undefined;
+}
+function describedText(element: HTMLElement) {
+  const id = element.getAttribute("aria-describedby");
+  return id ? document.getElementById(id)?.textContent?.trim() : undefined;
+}
 function queryAction(role: "button" | "menuitem" | "radio", name: string) {
   return queryAllByRoleFast(role).find((element) => {
     return (
       element.getAttribute("aria-label") === name ||
+      labelledText(element) === name ||
       element.textContent?.trim() === name
     );
   });
@@ -157,9 +168,18 @@ test("owners can change three access levels separately from copying the stable a
   });
   expect(
     queryAllByRoleFast("radio").map((element) => {
-      return element.textContent;
+      return labelledText(element);
     }),
   ).toStrictEqual(["Only me", "Anyone at Acme", "Anyone with the link"]);
+  expect(
+    queryAllByRoleFast("radio").map((element) => {
+      return describedText(element);
+    }),
+  ).toStrictEqual([
+    "Only you can open it",
+    "Teammates can view",
+    "No sign-in needed",
+  ]);
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([]);

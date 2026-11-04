@@ -487,8 +487,14 @@ function mockSiteAlias() {
 }
 
 function permission(name: string): HTMLElement {
+  // Rows name their audience through `aria-labelledby`; the description line
+  // beneath it is not part of that name.
   const row = queryAllByRoleFast("radio").find((element) => {
-    return element.textContent?.trim() === name;
+    const id = element.getAttribute("aria-labelledby");
+    return (
+      (id ? document.getElementById(id)?.textContent?.trim() : undefined) ===
+      name
+    );
   });
   if (!row) {
     throw new Error(`Expected permission named "${name}"`);
