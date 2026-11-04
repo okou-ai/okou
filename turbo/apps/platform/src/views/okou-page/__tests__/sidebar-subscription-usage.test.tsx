@@ -115,6 +115,9 @@ test("Preview subscriptions from the rail and open usage in Settings", async () 
   const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
     "Subscription usage",
   );
+  expect(entry).toHaveAccessibleDescription(
+    "ChatGPT: 55% left; Claude: 76% left",
+  );
   const codexInformation = within(codex).getByLabelText("ChatGPT usage");
   await user.hover(codexInformation);
   await waitFor(() => {
@@ -267,6 +270,11 @@ test("Keep ChatGPT summary and actions tied to its weekly limit", async () => {
     within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
       "Subscription usage",
     ),
+  ).toHaveAccessibleDescription("ChatGPT: 47% left; Claude: 76% left");
+  expect(
+    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      "Subscription usage",
+    ),
   ).toBeInTheDocument();
   expect(within(codex).queryByText("Reset usage")).not.toBeInTheDocument();
   expect(within(codex).queryByText(/Resets in /)).not.toBeInTheDocument();
@@ -315,6 +323,11 @@ test("Show an exhausted week with its own reset time", async () => {
   expect(week).toHaveAttribute("aria-valuenow", "0");
   expect(within(panel).getAllByRole("meter")).toHaveLength(1);
   expect(within(panel).getByText("0% left")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      /^Subscription usage/,
+    ),
+  ).toHaveAccessibleDescription("ChatGPT: 0% left");
   expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
   expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
   await userEvent.setup().hover(week);
@@ -585,4 +598,32 @@ test("Keep the account menu available without a subscription entry", async () =>
   expect(
     screen.queryByLabelText(/^Subscription usage/),
   ).not.toBeInTheDocument();
+});
+
+test("Describe connected usage with an unknown percentage without treating it as empty", async () => {
+  mockAdminAccountSidebar();
+  context.mocks.data.personalModelProviders([
+    connectedPersonalClaudeCodeProvider({
+      subscriptionUsage: {
+        fiveHour: null,
+        weekly: {
+          usedPercent: null,
+          remainingPercent: null,
+          resetAt: "2030-01-07T00:00:00.000Z",
+          windowSeconds: 604_800,
+        },
+      },
+    }),
+  ]);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+  });
+  const entry = await within(
+    screen.getByTestId("labeled-nav-rail"),
+  ).findByLabelText("Subscription usage");
+  expect(entry).toHaveAccessibleDescription("Claude: —");
+  const panel = await openSubscriptionUsage();
+  expect(within(panel).getByText("—")).toBeInTheDocument();
 });
