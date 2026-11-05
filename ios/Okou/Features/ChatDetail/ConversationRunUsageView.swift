@@ -69,7 +69,7 @@ struct ConversationRunUsageDetails: View {
       .okouGroupedBackground()
       .navigationTitle("Credit usage")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } } }
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
     }
   }
 }

@@ -112,6 +112,21 @@
               }
             }
             .background(OkouColor.sidebar)
+            // An Active chat under the rail: one line like every row, its agent's avatar in
+            // the status column.
+            HStack(spacing: OkouSpace.ten) {
+              OkouAgentAvatar(
+                avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.row
+              )
+              .frame(width: OkouControl.statusColumn)
+              Text(verbatim: "!45375 Sidebar entries open in one tap")
+                .font(.okou(.body)).lineLimit(1)
+              Spacer(minLength: 0)
+              Circle().fill(OkouStatusColor.running)
+                .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
+            }
+            .frame(minHeight: OkouControl.listRow)
+            .background(OkouColor.sidebar)
           }
           section("Dictation") {
             // A frozen sample of the live strip: dots before audio, then speech.
@@ -127,12 +142,33 @@
             .padding(OkouSpace.six)
             .glassEffect(.regular, in: Capsule())
           }
-          section("Catalog cards") {
-            Picker("Directory", selection: .constant(0)) {
-              Text("Discover").tag(0)
-              Text("Custom").tag(1)
+          section("Add to chat") {
+            // Camera, then picked and unpicked photos; the rows below use OkouRowLabel.
+            HStack(spacing: OkouSpace.sm) {
+              OkouActionTile(title: "Camera", icon: "camera")
+              OkouMediaThumbnail(image: nil, isSelected: true)
+              OkouMediaThumbnail(image: nil, isSelected: false)
             }
-            .okouSegmented()
+            HStack(spacing: OkouSpace.sm) {
+              ForEach(
+                Array([OkouSwipeTint.readState, OkouSwipeTint.neutral].enumerated()), id: \.offset
+              ) {
+                index, tint in
+                Label(
+                  index == 0 ? "Mark as unread" : "Archive",
+                  okouSymbol: index == 0 ? "mail" : "archive"
+                )
+                .font(.okou(.subheadline).weight(.medium))
+                .foregroundStyle(OkouColor.onFilled)
+                .padding(.horizontal, OkouSpace.lg)
+                .frame(height: OkouControl.minimumTarget)
+                .background(tint, in: Capsule())
+              }
+            }
+          }
+          section("Catalog cards") {
+            OkouSegmentControl(
+              selection: .constant(0), options: [(0, "Discover"), (1, "Custom")])
             OkouChipRail(inset: 0) {
               OkouChip(title: Text("All"), isSelected: true) {}
               OkouChip(title: Text("Documents"), isSelected: false) {}
@@ -146,7 +182,7 @@
                 }
                 VStack(alignment: .leading, spacing: OkouSpace.two) {
                   Text("Connector").font(.okou(.body).weight(.medium))
-                  Text("What it lets the agent do, in two lines at most.")
+                  Text(added ? "Connected" : "What it lets the agent do, in two lines at most.")
                     .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
                 }
                 Spacer(minLength: 0)

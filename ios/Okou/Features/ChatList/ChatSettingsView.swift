@@ -50,7 +50,8 @@ struct ChatSettingsView: View {
         Section {
           workspaceRow
           Link(destination: store.webURL) {
-            settingsLabel("Open Okou on web", icon: "arrow-up-right")
+            OkouRowLabel(
+              "Open Okou on web", okouSymbol: "arrow-up-right", slot: OkouAvatarSize.account)
           }
         } header: {
           Text("Workspace").okouSectionHeader()
@@ -98,7 +99,7 @@ struct ChatSettingsView: View {
         } footer: {
           Group {
             Text(
-              "Notifications tell you when a chat finishes. Model and connector choices are in the message composer."
+              "Notifications tell you when a chat finishes. Pick a chat's model at the top of the chat, and its connectors under + in the message composer."
             )
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
 
@@ -167,7 +168,7 @@ struct ChatSettingsView: View {
       .tint(OkouColor.foreground)
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } } }
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
       .confirmationDialog(
         "Delete your Okou account?", isPresented: $confirmsDeletion, titleVisibility: .visible
       ) {
@@ -194,11 +195,11 @@ struct ChatSettingsView: View {
 
   private var profile: some View {
     let profile = authentication.profile
-    // Same leading slot as every other row, so the name starts on the sheet's text edge.
+    // The account and the workspace below share one mark size and one text edge.
     return HStack(spacing: OkouSpace.md) {
       OkouProfileAvatar(
         imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-        size: OkouControl.rowLeadingSlot)
+        size: OkouAvatarSize.account)
       VStack(alignment: .leading, spacing: OkouSpace.one) {
         Text(profile?.name ?? profile?.email ?? String(localized: "Signed in"))
           .font(.okou(.body).weight(.medium))
@@ -216,11 +217,11 @@ struct ChatSettingsView: View {
     if let workspace = authentication.workspaces.first(where: {
       $0.id == authentication.activeWorkspaceID
     }) {
-      OkouRowLabel(Text(workspace.name)) {
+      OkouRowLabel(Text(workspace.name), slot: OkouAvatarSize.account) {
         OkouWorkspaceLogo(
           workspaceID: workspace.id, name: workspace.name,
           imageURL: workspace.imageURL, hasImage: workspace.hasImage,
-          size: OkouIconSize.large)
+          size: OkouAvatarSize.account)
       }
     }
   }

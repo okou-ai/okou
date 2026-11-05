@@ -100,10 +100,7 @@ struct MessageMermaidView: View {
             .navigationTitle("Diagram")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-              ToolbarItem(placement: .cancellationAction) {
-                OkouCloseButton { expanded = false }
-              }
-              ToolbarItem(placement: .primaryAction) {
+              ToolbarItem(placement: .topBarTrailing) {
                 HStack {
                   Button {
                     zoomStep -= 1
@@ -125,6 +122,8 @@ struct MessageMermaidView: View {
                   .accessibilityLabel("Copy diagram source")
                 }
               }
+              ToolbarSpacer(.fixed, placement: .topBarTrailing)
+              OkouCloseToolbarItem { expanded = false }
             }
         }
       }

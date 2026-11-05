@@ -241,7 +241,7 @@ struct ChatModelPickerView: View {
       .navigationTitle("Chat models")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } }
+        OkouCloseToolbarItem { dismiss() }
       }
       .task {
         if !models.isLoading && !selection.isLoading { await selection.open() }

@@ -10,3 +10,5 @@
 /* Privacy - Microphone Usage Description */
 "NSMicrophoneUsageDescription" = "जब आप बोलकर संदेश लिखते हैं, तब Okou माइक्रोफ़ोन का उपयोग करता है।";
 
+/* Privacy - Photo Library Usage Description */
+"NSPhotoLibraryUsageDescription" = "Okou आपकी हाल की फ़ोटो दिखाता है ताकि आप उन्हें किसी संदेश के साथ जोड़ सकें।";

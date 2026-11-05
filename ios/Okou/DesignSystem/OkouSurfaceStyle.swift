@@ -63,10 +63,12 @@ extension View {
   /// Every grouped list or form in a sheet: the same neutral grouped ground with the system's
   /// rows (the warm grey ramp read as pink behind white rows), and the soft blur under the
   /// sheet's title bar. Sheets are hosted separately and do not inherit the app root's
-  /// scroll-edge style, so they get it here and cannot forget it.
-  func okouGroupedBackground() -> some View {
+  /// scroll-edge style, so they get it here and cannot forget it. A page drawn as the web
+  /// draws it (the connector directory, whose track and chips are web greys made for white)
+  /// passes the white page ground instead.
+  func okouGroupedBackground(_ ground: Color = OkouGroupedColor.background) -> some View {
     scrollContentBackground(.hidden)
-      .background(OkouGroupedColor.background)
+      .background(ground)
       .scrollEdgeEffectStyle(.soft, for: .top)
       // The first card starts just under the title bar instead of a header's worth below.
       .contentMargins(.top, OkouSpace.sm, for: .scrollContent)

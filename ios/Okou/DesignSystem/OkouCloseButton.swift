@@ -9,3 +9,14 @@ struct OkouCloseButton: View {
       .labelStyle(.iconOnly)
   }
 }
+
+/// The close button's one place on every sheet and full-screen viewer: the trailing end of
+/// the toolbar, after the screen's own actions. Never the leading side, so a reader always
+/// finds it in the same corner.
+struct OkouCloseToolbarItem: ToolbarContent {
+  let action: () -> Void
+
+  var body: some ToolbarContent {
+    ToolbarItem(placement: .topBarTrailing) { OkouCloseButton(action: action) }
+  }
+}

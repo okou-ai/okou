@@ -1,10 +1,10 @@
 import ChatData
 import SwiftUI
 
-/// The connector catalog in the manner of Manus: one card per connector, "+" on the card adds
-/// it straight away and the rest of the card opens its detail. Categories are chips that
-/// scroll sideways; a large segmented control switches between the catalog and the
-/// connections the workspace set up itself.
+/// The connector catalog in the web directory's colours, on the same white page: a segment
+/// control switches between the catalog and the connections the workspace set up itself,
+/// categories are chips that scroll sideways, and every connector is a card. "+" on a card adds it straight away and the rest opens its detail; a connected card
+/// says "Connected" under its name and opens its detail from anywhere.
 struct ComposerConnectorDirectory: View {
   let store: ComposerConnectorStore
   @State private var tab = Tab.discover
@@ -22,11 +22,9 @@ struct ComposerConnectorDirectory: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
-        Picker("Directory", selection: $tab) {
-          Text("Discover").tag(Tab.discover)
-          Text("Custom").tag(Tab.custom)
-        }
-        .okouSegmented()
+        OkouSegmentControl(
+          selection: $tab, options: [(Tab.discover, "Discover"), (Tab.custom, "Custom")]
+        )
         .padding(.horizontal, OkouSpace.lg)
         if tab == .discover && !categories.isEmpty {
           OkouChipRail {
@@ -63,7 +61,7 @@ struct ComposerConnectorDirectory: View {
       }
       .padding(.bottom, OkouSpace.xxl)
     }
-    .okouGroupedBackground()
+    .okouGroupedBackground(OkouColor.background)
     .navigationTitle("Add connectors")
     .navigationBarTitleDisplayMode(.inline)
     .searchable(text: $search, prompt: "Find connectors")
@@ -96,22 +94,28 @@ struct ComposerConnectorDirectory: View {
               .font(.okou(.body).weight(.medium))
               .foregroundStyle(OkouColor.foreground)
               .lineLimit(1)
-            Text(connector.description)
-              .font(.okou(.footnote))
-              .foregroundStyle(OkouColor.mutedForeground)
-              .lineLimit(2)
-              .multilineTextAlignment(.leading)
+            // As on the web, a connected card trades what the connector does for its status.
+            if added {
+              Text("Connected")
+                .font(.okou(.footnote))
+                .foregroundStyle(OkouColor.mutedForeground)
+            } else {
+              Text(connector.description)
+                .font(.okou(.footnote))
+                .foregroundStyle(OkouColor.mutedForeground)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            }
           }
           Spacer(minLength: 0)
+          if added {
+            OkouAddIndicator(isAdded: true).accessibilityHidden(true)
+          }
         }
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      if added {
-        OkouAddIndicator(isAdded: true)
-          .accessibilityElement()
-          .accessibilityLabel("Connected")
-      } else {
+      if !added {
         Button {
           Self.connect(connector, store: store)
         } label: {
@@ -270,7 +274,7 @@ private struct ComposerConnectorDetail: View {
       .padding(.horizontal, OkouSpace.lg)
       .padding(.bottom, OkouSpace.xxl)
     }
-    .okouGroupedBackground()
+    .okouGroupedBackground(OkouColor.background)
     .navigationTitle("")
     .navigationBarTitleDisplayMode(.inline)
   }

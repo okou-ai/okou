@@ -243,7 +243,7 @@ struct ConnectorAuthorizationSheet: View {
       .navigationTitle("Connect service")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { store.cancel() } }
+        OkouCloseToolbarItem { store.cancel() }
       }
       .onChange(of: flow.methodID) { _, _ in
         flow.values = [:]

@@ -35,6 +35,9 @@ struct ChatComposerView: View {
   @State private var showsConnectors = false
   @State private var selectedPhotos: [PhotosPickerItem] = []
   @State private var showsCamera = false
+  @State private var showsAddSheet = false
+  /// What "Add to chat" asked for; the composer opens it once the sheet has gone.
+  @State private var pendingAdd: ComposerAddAction?
   @State private var showsScanner = false
   @State private var trailingWidth: CGFloat = 106
   @State private var sendFeedback = 0
@@ -190,29 +193,8 @@ struct ChatComposerView: View {
       }
       .overlay(alignment: expandsInput ? .bottomLeading : .leading) {
         HStack(spacing: 0) {
-          Menu {
-            if ComposerCamera.isAvailable {
-              Button("Take Photo", okouSymbol: "camera") { showsCamera = true }
-            }
-            if ComposerDocumentScanner.isAvailable {
-              Button("Scan Document", okouSymbol: "scan-text") { showsScanner = true }
-            }
-            Button("Photo Library", okouSymbol: "images") { showsPhotos = true }
-            Button("Choose Files", okouSymbol: "folder") { showsFiles = true }
-            if let connectorSelection {
-              Section {
-                Button(
-                  connectorSelection.uncertain ? "Connectors — confirm settings" : "Connectors",
-                  okouSymbol: "plug"
-                ) { showsConnectors = true }
-                .disabled(connectorSelection.agentID == nil)
-                .accessibilityIdentifier("composer-connectors")
-              }
-            }
-            if let state = draftState, state.hasContent || state.error != nil {
-              Divider()
-              Button("Clear draft", role: .destructive) { state.clear() }
-            }
+          Button {
+            showsAddSheet = true
           } label: {
             OkouToolbarIcon("plus")
               .frame(width: actionSize, height: actionSize)
@@ -331,6 +313,15 @@ struct ChatComposerView: View {
       showsConnectors = false
       connectorSelection?.configure(agentID: agentID)
     }
+    .sheet(isPresented: $showsAddSheet, onDismiss: openPendingAdd) {
+      ComposerAddSheet(
+        attachments: attachments, connectorSelection: connectorSelection,
+        clearDraft: clearDraftAction
+      ) { action in
+        pendingAdd = action
+        showsAddSheet = false
+      }
+    }
     .sheet(isPresented: $showsConnectors) {
       if let connectorSelection {
         ComposerConnectorSheet(store: connectorSelection)
@@ -378,6 +369,24 @@ struct ChatComposerView: View {
       case .success(let urls): attachments.importFiles(urls)
       case .failure(let error): attachments.report(error)
       }
+    }
+  }
+
+  /// "Clear draft" in Add to chat, only while there is something to clear.
+  private var clearDraftAction: (() -> Void)? {
+    guard let state = draftState, state.hasContent || state.error != nil else { return nil }
+    return { state.clear() }
+  }
+
+  private func openPendingAdd() {
+    guard let action = pendingAdd else { return }
+    pendingAdd = nil
+    switch action {
+    case .camera: showsCamera = true
+    case .photos: showsPhotos = true
+    case .scan: showsScanner = true
+    case .files: showsFiles = true
+    case .connectors: showsConnectors = true
     }
   }
 

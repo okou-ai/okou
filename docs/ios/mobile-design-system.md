@@ -198,13 +198,23 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   short release; the waveform draws 3 pt bars with 2 pt gaps that glide one bar per
   sample, the newest growing in at the trailing edge and the oldest fading out at the
   leading one; slots with no audio yet are baseline dots.
-- **Catalog controls** (`OkouCatalogControls.swift`): `OkouChip` in an `OkouChipRail`
-  for filters that scroll sideways (36 pt capsules; selected filled `foreground`, the
-  rest cards with a hairline); `OkouLogoTile` (44 pt on a card, 64 pt on a detail page,
-  `state-hover` fill and a hairline, corner 27 % of its size) so logos of any shape
-  line up; `OkouAddIndicator`, the card's trailing 32 pt "+" that adds without opening
-  the item and becomes a filled check once added. `okouSegmented()` is the large
-  segmented control for a page-level switch (Discover / Custom).
+- **Catalog controls** (`OkouCatalogControls.swift`) keep iOS sizes and shapes and take
+  their colours from the web directory's tokens (`connector-directory-dialog.tsx`,
+  `connector-card.tsx`, `segment-control.tsx`): no black fills, since black is never a
+  selection colour here, and a primary action is amber.
+  - `OkouSegmentControl` switches what a page lists (Discover / Custom): the large
+    segmented shape — a full-width 48 pt capsule with equal segments, the selected one
+    inset 2 pt — in `segment-track`, with the selected segment raised in
+    `segment-selected` and the web's soft shadow; 15 pt medium labels, supporting text
+    when not selected.
+  - `OkouChip` in an `OkouChipRail` for filters that scroll sideways: 36 pt capsules in
+    `gray-50` with a `gray-400` hairline and supporting text; the selected chip takes
+    `state-selected` and the text colour, at the same weight.
+  - `OkouLogoTile` (44 pt on a card, 64 pt on a detail page, `state-hover` fill and a
+    hairline, corner 27 % of its size) so logos of any shape line up.
+  - `OkouAddIndicator`, the card's trailing 32 pt control: "+" in an outlined square
+    adds without opening the item; once added it is a chevron with no edge and the
+    whole card opens the item.
 - **Buttons**: `OkouButtonStyle(isPrimary:)` is a filled primary or the web's outline
   button. `isCompact` (15 pt, 44 pt tall, one line) fits two actions side by side on a
   card; the default size is for one full-width action.
@@ -212,10 +222,16 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   `ChatModelPickerButton`, a 44 pt glass capsule with the model's name in callout medium
   `foreground` and its thinking effort and Fast in callout `muted-foreground` ("GPT 6.1 Sol
   High"). On the home screen it is the next new chat's model; in a chat, that chat's. It
-  opens the model sheet. The composer's only leading control is `+`, whose menu holds Take
-  Photo, Scan Document (only where the device has a camera), Photo Library, Choose Files and
-  Connectors. A connector uncertainty badge stays on `+`; opening the menu never enables
-  service access.
+  opens the model sheet. The composer's only leading control is `+`, which opens **Add to
+  chat** (`ComposerAddSheet`, after Manus and Claude): a sideways strip of 88 pt tiles —
+  `OkouActionTile` Camera, then the latest photos as `OkouMediaThumbnail`s once the reader
+  lets Okou see the library — where photos are picked with `OkouSelectionMark` (an open
+  white ring, then the web checkbox's amber fill with an ink check) and added with one
+  "Add N" primary button; then rows: All photos (the system picker), Scan Document (where
+  the device can scan), Choose Files, Connectors (with "Confirm settings" while they are
+  uncertain) and Clear draft. A connector uncertainty badge stays on `+`; opening the
+  sheet never enables service access. The camera, pickers and connectors open once the
+  sheet has gone.
 - **Card actions** use `ChatCardButtonStyle`: the web's small outline button (`gray-400`
   hairline on the background fill, 8 pt corner, the pressed state laid over the fill),
   `.primary` for the card's single committing action, `.detail` for a bare text action. A
@@ -239,6 +255,20 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - Viewing sheets and immediately applied settings use `OkouCloseButton`. Use Done
   for a completed operation, Save for an explicit commit, and Back within a sheet.
   Do not imply a pending save where selections already apply immediately.
+- **The close button has one place**: the trailing end of the toolbar, after the screen's
+  own actions, on every sheet and full-screen viewer (`OkouCloseToolbarItem`; never
+  `.cancellationAction` or the leading side). The system's own pickers (Photos, Files)
+  keep theirs.
+- **Swipes move between pages.** A right swipe anywhere in a chat opens the full-screen
+  sidebar and a left swipe anywhere in the sidebar closes it; content that scrolls
+  sideways (a code block, a table, the pinned agents rail) keeps the finger, and from
+  there the chat still opens the sidebar from its leading edge (`SidebarGesturePolicy`).
+  A page swipe never also taps the row under it. Chat rows keep their actions on the
+  right swipe — Mark as read/unread, Archive — so they never compete with closing.
+- **Swipe-action fills** (`OkouSwipeTint`) carry the system's white label in both
+  appearances and say what kind of change it is: `neutral` (brand dark grey) for moving a
+  chat, `readState` (the unread dot's sky blue) for read state. Never amber or the warning
+  orange.
 
 ### Surfaces
 
@@ -322,10 +352,13 @@ single floating line, and colour is a small accent for status only.
 
 ### Navigation and lists
 
-- **The sidebar is full screen**, as in Grok, because chat titles are long. Opening it,
-  the chat slides out to the right and blurs (`OkouElevation.sidebarBlur`, 12 pt) while
-  the list slides in from 25 % to the left (`OkouMotion.sidebarParallax`) and comes
-  into focus from the same blur. No shadow: the chat is off screen at full open.
+- **The sidebar is full screen**, as in Grok, because chat titles are long. The chat and
+  the list cross-fade through a blur (`OkouElevation.sidebarBlur`, 12 pt): the chat
+  drifts a quarter screen right as it blurs and fades away, the list drifts in from a
+  quarter screen left (`OkouMotion.sidebarParallax`) as it comes into focus, and the edge
+  each page leads with fades out over up to 35 % of the screen while it moves
+  (`OkouMotion.sidebarFeather`). Neither page slides as a card, so no edge, corner or
+  shadow ever crosses the screen.
 - **Sidebar layout**: the workspace switcher top left and "back to chat" (»,
   `chevrons-right`) top right. A thumb-reach bottom bar: the account's own photo
   (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
@@ -339,8 +372,9 @@ single floating line, and colour is a small accent for status only.
   first avatar sits on the list's text edge.
 - **Placeholders** (the composer's "Message Okou", the sidebar's "Search chats" and its glyph)
   use `OkouColor.placeholder` (gray-600), lighter than supporting text.
-- **Sidebar order**: **Active** (running and unread chats from every agent, at most six,
-  each with its agent's name as a caption line); the Pinned Agents rail; the chat filter (the
+- **Sidebar order**: the Pinned Agents rail, always at the top so the avatars never move;
+  **Active** (running and unread chats from every agent, at most six), shown only while
+  there are some; the chat filter (the
   web's Inbox — All chats without archiving — / Unread / Archived / Muted, then Mark
   all read); the selected agent's chats grouped Pinned / Today / Yesterday / Previous
   7 days / Earlier. Everything starts on the `pageInset` edge.
@@ -348,7 +382,10 @@ single floating line, and colour is a small accent for status only.
   state. The status column holds the web's title status emoji (✅ Done, ⏳ Waiting, …);
   it appears in a section only when one of that section's chats has a status, and
   rows without one show a quiet `message-circle` glyph so titles stay on one edge.
-  The emoji stays in the title so web and iOS agree; archive is a separate flag.
+  The emoji stays in the title so web and iOS agree; archive is a separate flag. An
+  Active row is one line like the rest: its agent's 28 pt avatar (`OkouAvatarSize.row`)
+  takes the status column, overhanging it so the mark lines up with an emoji, in place of
+  a second line with the agent's name.
 - **Trailing state** is the running indicator, an unread dot (8 pt `running` sky blue, as on
   the web; amber is kept for a primary commit), or nothing. Status is
   never a system spinner.
@@ -411,10 +448,12 @@ grouped rows with the shared 28 pt glyph slot, a 17 pt name and two 15 pt muted 
 
 ### Other surfaces
 
-- **Add connectors** follows Manus: a large segmented Discover / Custom, the web's short
-  category names as chips (the full name on the detail page), and one card per
-  connector — logo tile, name, two lines of description, and "+" that connects at once
-  while the rest of the card opens the detail. The detail is one card with the logo,
+- **Add connectors** is drawn in the web directory's colours on the same white page
+  (the web's greys are made for white): a Discover / Custom segment control, the web's
+  short category names as chips (the full name on the detail page), and one card per connector — logo tile, name,
+  two lines of description, and "+" that connects at once while the rest of the card
+  opens the detail. A connected card shows "Connected" in place of the description and
+  a chevron in place of "+", as the web's card does. The detail is one card with the logo,
   name, description and compact Connect (or Add account) and Permissions buttons, then
   a facts card (status, category, how it signs in) and, only with several methods, a
   card that explains them. Custom holds "Create custom connector", the workspace's
@@ -425,7 +464,12 @@ grouped rows with the shared 28 pt glyph slot, a 17 pt name and two 15 pt muted 
   custom-connector fallback.
 - Account preferences live in the grouped Settings sheet: profile, workspace,
   notifications, appearance, language, support, version, then sign out and delete
-  account. Destructive session actions stay apart from preferences.
+  account. Destructive session actions stay apart from preferences. The account photo and
+  the workspace mark are one size (`OkouAvatarSize.account`, 40 pt, the height of the
+  account row's two lines), and the workspace card's rows share that slot so their text
+  starts with the account name. The version is a row in Support, as in ChatGPT and
+  Apple's Settings; no app logo at the foot (none of ChatGPT, Claude, Perplexity or
+  Gemini shows one).
 - App Shortcuts (`OkouIntents.swift`) accept only SF Symbol names; that system
   surface is the one product exception to Lucide-only icons.
 
@@ -501,12 +545,14 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouValueRow`                                                                | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt muted value yields and truncates in the middle                                  |
 | `OkouInlineCodeChip`                                                          | Web-style inline code in Markdown: padding and a 4 pt corner, on the sentence's baseline without growing the line; short spans only, off under VoiceOver                         |
 | `OkouProfileAvatar`                                                           | The signed-in person's photo in a circle with a hairline; account glyph without a photo (sidebar Settings, Settings profile row)                                                 |
+| `OkouActionTile` / `OkouMediaThumbnail` / `OkouSelectionMark`                 | An 88 pt media-strip tile (Camera), a photo thumbnail with a hairline, and its pick mark (open ring, then amber with an ink check)                                               |
+| `OkouCloseToolbarItem`                                                        | The close button in its one place: the toolbar's trailing end                                                                                                                    |
 | `OkouAgentTile`                                                               | An agent in a sideways avatar rail: 56 pt avatar, one 11 pt line of name ending in "…", selected tile, unread dot                                                                |
 | `OkouLiveWaveform`                                                            | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                |
-| `OkouChip` / `OkouChipRail`                                                   | Filter chips in a sideways-scrolling row starting on the content edge; selected / unselected                                                                                     |
+| `OkouChip` / `OkouChipRail`                                                   | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                  |
 | `OkouLogoTile`                                                                | A partner logo or glyph on a quiet square tile (44 / 64 pt) so catalog marks line up                                                                                             |
-| `OkouAddIndicator`                                                            | A catalog card's trailing "+" (add now) or filled check (added), 32 pt in a 44 pt target                                                                                         |
-| `okouSegmented()`                                                             | Large segmented picker for a page-level switch                                                                                                                                   |
+| `OkouAddIndicator`                                                            | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                                           |
+| `OkouSegmentControl`                                                          | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                                           |
 | Feature components                                                            | Compose the foundations for domain-specific information; promote only reusable visual/interaction patterns into DesignSystem                                                     |
 
 [`OkouDesignSystemCatalog.swift`](../../ios/Okou/DesignSystem/OkouDesignSystemCatalog.swift)

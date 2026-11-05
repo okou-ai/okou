@@ -197,15 +197,22 @@ private struct WorkspaceRootView: View {
 
   var body: some View {
     GeometryReader { geometry in
-      // Full width: chat titles are long. The chat slides out to the right and blurs away while
-      // the list slides in from the left and comes into focus.
+      // Full width: chat titles are long. The two pages cross-fade through a blur, as in Grok:
+      // the chat drifts a quarter screen right as it blurs away and the list drifts in from a
+      // quarter screen left as it comes into focus. Neither slides as a card, so no edge of
+      // either page ever crosses the screen.
       let sidebarWidth = geometry.size.width
+      let sidebarProgress =
+        min(
+          max((sidebar.isOpen ? sidebarWidth : 0) + (sidebar.translation ?? 0), 0), sidebarWidth)
+        / sidebarWidth
+      let drift = sidebarWidth * OkouMotion.sidebarParallax
       let topInset = geometry.safeAreaInsets.top
       let screenHeight = geometry.size.height + topInset + geometry.safeAreaInsets.bottom
-      let sidebarOffset = min(
-        max((sidebar.isOpen ? sidebarWidth : 0) + (sidebar.translation ?? 0), 0), sidebarWidth)
-      let sidebarProgress = sidebarOffset / sidebarWidth
-      let panelCornerRadius = 30 * sidebarProgress
+      // The edge each page leads with fades out over part of the screen while it moves, so the
+      // two pages meet in the blur instead of along a line.
+      let chatFeather = min(sidebarProgress, OkouMotion.sidebarFeather)
+      let sidebarFeather = min(1 - sidebarProgress, OkouMotion.sidebarFeather)
       ZStack(alignment: .leading) {
         OkouColor.background.ignoresSafeArea()
 
@@ -220,7 +227,16 @@ private struct WorkspaceRootView: View {
         .frame(width: sidebarWidth, height: geometry.size.height)
         .blur(radius: OkouElevation.sidebarBlur * (1 - sidebarProgress))
         .opacity(sidebarProgress)
-        .offset(x: -sidebarWidth * OkouMotion.sidebarParallax * (1 - sidebarProgress))
+        .mask(alignment: .top) {
+          LinearGradient(
+            stops: [
+              .init(color: .black, location: 1 - sidebarFeather), .init(color: .clear, location: 1),
+            ], startPoint: .leading, endPoint: .trailing
+          )
+          .frame(width: sidebarWidth, height: screenHeight)
+          .offset(y: -topInset)
+        }
+        .offset(x: -drift * (1 - sidebarProgress))
         .allowsHitTesting(sidebar.isOpen)
         .accessibilityHidden(!sidebar.isOpen)
 
@@ -302,36 +318,23 @@ private struct WorkspaceRootView: View {
           }
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
+        .background { OkouColor.background.ignoresSafeArea() }
         .accessibilityHidden(sidebar.isOpen)
+        .allowsHitTesting(!sidebar.isOpen)
         .sensoryFeedback(.selection, trigger: sidebar.isOpen)
         .blur(radius: OkouElevation.sidebarBlur * sidebarProgress)
-        .background(alignment: .top) {
-          RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-            .fill(OkouColor.background)
-            .frame(width: geometry.size.width, height: screenHeight)
-            .offset(y: -topInset)
-        }
-        .overlay(alignment: .top) {
-          // The chat dissolves into the sidebar's own ground as it slides away.
-          Button(action: closeSidebar) {
-            OkouColor.sidebar
-              .frame(width: geometry.size.width, height: screenHeight)
-              .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-              .opacity(0.5 * sidebarProgress)
-              .offset(y: -topInset)
-          }
-          .buttonStyle(.plain)
-          .allowsHitTesting(sidebar.isOpen)
-          .accessibilityLabel("Close sidebar")
-          .accessibilityIdentifier("close-sidebar")
-          .accessibilityHidden(!sidebar.isOpen)
-        }
         .mask(alignment: .top) {
-          RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-            .frame(width: geometry.size.width, height: screenHeight)
-            .offset(y: -topInset)
+          LinearGradient(
+            stops: [
+              .init(color: .clear, location: 0), .init(color: .black, location: chatFeather),
+            ],
+            startPoint: .leading, endPoint: .trailing
+          )
+          .frame(width: sidebarWidth, height: screenHeight)
+          .offset(y: -topInset)
         }
-        .offset(x: sidebarOffset)
+        .opacity(1 - sidebarProgress)
+        .offset(x: drift * sidebarProgress)
       }
       .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
       .gesture(

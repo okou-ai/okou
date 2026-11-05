@@ -102,9 +102,7 @@ struct ChatSearchView: View {
         placement: .navigationBarDrawer(displayMode: .always), prompt: "Search workspace chats"
       )
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          OkouCloseButton { search.dismiss() }
-        }
+        OkouCloseToolbarItem { search.dismiss() }
       }
     }
   }

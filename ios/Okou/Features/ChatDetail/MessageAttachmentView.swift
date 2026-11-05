@@ -170,7 +170,7 @@ struct MessageAttachmentPreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Attachment").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .cancellationAction) { OkouCloseButton { viewer.dismiss() } }
+          OkouCloseToolbarItem { viewer.dismiss() }
         }
         .task(id: preview.file?.url) {
           if let file = preview.file, QLPreviewController.canPreview(file.url as NSURL) {

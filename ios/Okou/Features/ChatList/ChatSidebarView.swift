@@ -35,7 +35,7 @@ struct ChatSidebarView: View {
   }
 
   @ScaledMetric(relativeTo: .body) private var statusColumnWidth = OkouControl.statusColumn
-  /// One caption line of Geist under each pinned agent's avatar.
+  @ScaledMetric(relativeTo: .body) private var rowAvatar = OkouAvatarSize.row
   /// One caption2 line of Geist under each pinned agent's avatar.
   @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
   /// One leading edge for the header, every heading, row content and the footer buttons.
@@ -47,8 +47,12 @@ struct ChatSidebarView: View {
     threads.contains { $0.titleParts.emoji != nil }
   }
 
-  private func agentName(_ id: String) -> String {
-    store.list.agents.first(where: { $0.agentId == id })?.displayName ?? "Okou"
+  /// The agent doing an active chat's work, drawn in the row's status column.
+  private func agentAvatar(_ id: String) -> some View {
+    let agent = store.list.agents.first(where: { $0.agentId == id })
+    return OkouAgentAvatar(
+      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Okou",
+      isDefault: agent?.isDefaultAgent ?? false, size: rowAvatar)
   }
 
   private var visibleThreads: [ChatThread] {
@@ -75,10 +79,11 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
+      // The rail stays at the top whatever is running; active chats come in under it.
+      pinnedAgentsSection
       if threadFilter.wrappedValue == .recent && !activeThreads.isEmpty {
         activeSection
       }
-      pinnedAgentsSection
       if store.list.isLoading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
@@ -245,14 +250,13 @@ struct ChatSidebarView: View {
   }
 
   /// Running and unread chats from every agent, so parallel work is visible without
-  /// switching agents one by one.
+  /// switching agents one by one. Each row is one line like the rest, with its agent's
+  /// avatar in the status column.
   private var activeSection: some View {
     Section {
       scrollingSectionHeading("Active · \(activeThreads.count)")
       ForEach(Array(activeThreads.enumerated()), id: \.element.id) { index, thread in
-        threadRow(
-          thread, showsAgent: true, waveIndex: index,
-          showsStatusColumn: usesStatusColumn(activeThreads))
+        threadRow(thread, showsAgent: true, waveIndex: index)
       }
     }
   }
@@ -325,7 +329,12 @@ struct ChatSidebarView: View {
     } label: {
       HStack(spacing: OkouSpace.ten) {
         let parts = thread.titleParts
-        if showsStatusColumn {
+        if showsAgent {
+          // Active chats come from every agent: its avatar names the one doing the work. The
+          // 28 pt avatar overhangs the status column so its mark lines up with an emoji.
+          agentAvatar(thread.agentID)
+            .frame(width: statusColumnWidth)
+        } else if showsStatusColumn {
           // Every row in the section fills the slot, so titles share one left edge without a
           // blank gap: the chat's status emoji, or a quiet chat glyph when it has none.
           Group {
@@ -339,18 +348,9 @@ struct ChatSidebarView: View {
           }
           .frame(width: statusColumnWidth, alignment: .leading)
         }
-        VStack(alignment: .leading, spacing: OkouSpace.one) {
-          Text(parts.text)
-            .font(.okou(.body))
-            .lineLimit(1)
-          // Active chats come from every agent; name the one doing the work.
-          if showsAgent {
-            Text(agentName(thread.agentID))
-              .font(.okou(.caption))
-              .foregroundStyle(OkouColor.mutedForeground)
-              .lineLimit(1)
-          }
-        }
+        Text(parts.text)
+          .font(.okou(.body))
+          .lineLimit(1)
         Spacer(minLength: 0)
         if thread.indicator == .active {
           OkouRunningIndicator(phaseOffset: Double(waveIndex) / OkouMotion.runningWaveRows)
@@ -413,19 +413,18 @@ struct ChatSidebarView: View {
         .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
       }
     }
+    // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
     .swipeActions(edge: .leading, allowsFullSwipe: false) {
       if !thread.isMuted {
-        readAction(thread, read: thread.isUnread).tint(OkouColor.link)
+        readAction(thread, read: thread.isUnread).tint(OkouSwipeTint.readState)
       }
-    }
-    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
       if store.list.canArchiveChats {
         Button {
           Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
         } label: {
           Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
         }
-        .tint(OkouStatusColor.warning)
+        .tint(OkouSwipeTint.neutral)
         .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
       }
     }
@@ -463,7 +462,7 @@ struct ChatSidebarView: View {
       }
       .font(.okou(.subheadline).weight(.semibold))
       .foregroundStyle(OkouColor.mutedForeground)
-      .frame(maxWidth: .infinity, minHeight: OkouControl.minimumTarget, alignment: .leading)
+      .frame(minHeight: OkouControl.minimumTarget)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -471,6 +470,9 @@ struct ChatSidebarView: View {
     .accessibilityValue(Text(filterTitle(threadFilter.wrappedValue)))
     .accessibilityAddTraits(.isHeader)
     .accessibilityIdentifier("chat-list-filter")
+    // The menu opens from what it is attached to: the label's own width, so it drops from
+    // "Inbox ⌄" on the left instead of from the middle of a full-width row.
+    .frame(maxWidth: .infinity, alignment: .leading)
     .listRowInsets(EdgeInsets(top: 2, leading: rowInset, bottom: 0, trailing: rowInset))
     .listRowSeparator(.hidden)
     .listRowBackground(Color.clear)

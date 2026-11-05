@@ -10,3 +10,5 @@
 /* Privacy - Microphone Usage Description */
 "NSMicrophoneUsageDescription" = "當你以語音輸入訊息時，Okou 會使用麥克風。";
 
+/* Privacy - Photo Library Usage Description */
+"NSPhotoLibraryUsageDescription" = "Okou 會顯示你最近的照片，方便你附加到訊息中。";

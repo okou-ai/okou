@@ -2,15 +2,21 @@ import SwiftUI
 
 /// The title of a grouped-list row with a leading graphic (icon, partner logo, avatar,
 /// workspace mark). Every graphic sits in the same 28 pt slot, so row text starts on one
-/// edge across a sheet and across the app, whatever the graphic's own size.
+/// edge across a sheet and across the app, whatever the graphic's own size. A card led by a
+/// larger mark (the workspace in Settings) gives all its rows that mark's slot, so their text
+/// still shares one edge.
 struct OkouRowLabel<Leading: View>: View {
   let title: Text
   let leading: Leading
   @ScaledMetric(relativeTo: .body) private var slot = OkouControl.rowLeadingSlot
 
-  init(_ title: Text, @ViewBuilder leading: () -> Leading) {
+  init(
+    _ title: Text, slot: CGFloat = OkouControl.rowLeadingSlot,
+    @ViewBuilder leading: () -> Leading
+  ) {
     self.title = title
     self.leading = leading()
+    _slot = ScaledMetric(wrappedValue: slot, relativeTo: .body)
   }
 
   var body: some View {
@@ -24,8 +30,10 @@ struct OkouRowLabel<Leading: View>: View {
 }
 
 extension OkouRowLabel where Leading == OkouIcon {
-  init(_ title: LocalizedStringKey, okouSymbol: String) {
-    self.init(Text(title)) { OkouIcon(okouSymbol, size: OkouIconSize.standard) }
+  init(
+    _ title: LocalizedStringKey, okouSymbol: String, slot: CGFloat = OkouControl.rowLeadingSlot
+  ) {
+    self.init(Text(title), slot: slot) { OkouIcon(okouSymbol, size: OkouIconSize.standard) }
   }
 }
 

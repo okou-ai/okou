@@ -29,10 +29,7 @@ struct MessageArtifactPreview: View {
         .navigationTitle(preview.artifact.filename)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .cancellationAction) {
-            OkouCloseButton { viewer.dismiss() }
-          }
-          ToolbarItemGroup(placement: .primaryAction) {
+          ToolbarItemGroup(placement: .topBarTrailing) {
             if preview.artifact.kind == .image {
               Button {
                 viewer.navigateImage(-1)
@@ -73,6 +70,8 @@ struct MessageArtifactPreview: View {
               .accessibilityLabel("Download file to share or save")
             }
           }
+          ToolbarSpacer(.fixed, placement: .topBarTrailing)
+          OkouCloseToolbarItem { viewer.dismiss() }
         }
         .onChange(of: preview.id) { _, _ in
           webError = nil

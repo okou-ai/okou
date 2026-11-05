@@ -180,7 +180,7 @@ struct PermissionActionDetails: View {
       .okouGroupedBackground()
       .navigationTitle("Permission request")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } } }
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
     }
   }
 }

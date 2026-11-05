@@ -276,11 +276,9 @@ struct SubscriptionAuthorizationView: View {
       .navigationTitle(store.authType.map(providerTitle) ?? "Connect subscription")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Close") {
-            store.cancelAuth()
-            dismiss()
-          }
+        OkouCloseToolbarItem {
+          store.cancelAuth()
+          dismiss()
         }
       }
     }

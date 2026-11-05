@@ -67,13 +67,19 @@ enum OkouControl {
   static let emptyStateWidth: CGFloat = 300
   /// Filter chips in a sideways row.
   static let chipHeight: CGFloat = 36
+  /// A page-level segment control's track, the large segmented control's height.
+  static let segmentHeight: CGFloat = 48
   /// Catalog logo tiles: on a card, and at the top of an item's detail.
   static let logoTile: CGFloat = 44
   static let logoTileLarge: CGFloat = 64
   /// The image or video preview at the top of a file or result card in the transcript.
   static let cardMediaHeight: CGFloat = 180
-  /// The "+" / check on a catalog card, inside a 44 pt target.
+  /// The "+" or chevron on a catalog card, inside a 44 pt target.
   static let addControl: CGFloat = 32
+  /// A tile in a sideways media strip (Camera, a recent photo), and the pick mark on a photo.
+  static let mediaTile: CGFloat = 88
+  static let selectionMark: CGFloat = 22
+  static let selectionMarkStroke: CGFloat = 1.5
 }
 
 enum OkouIconSize {
@@ -102,8 +108,13 @@ enum OkouAvatarSize {
   static let greeting: CGFloat = 56
   /// An agent in the sidebar's sideways rail of pinned agents.
   static let rail: CGFloat = 56
+  /// An agent in a chat row's status column (Active): its mark is the size of a status emoji.
+  static let row: CGFloat = 28
   /// The agent at the top of its profile sheet.
   static let profile: CGFloat = 64
+  /// The account and the workspace at the top of Settings: one size, the height of the
+  /// account row's two lines.
+  static let account: CGFloat = 40
 }
 
 enum OkouMotion {
@@ -119,6 +130,8 @@ enum OkouMotion {
   static let waveformSample: TimeInterval = 0.05
   /// How far left the sidebar starts as it slides in, as a share of its width.
   static let sidebarParallax: CGFloat = 0.25
+  /// How much of the screen each page's leading edge fades over while the sidebar moves.
+  static let sidebarFeather: CGFloat = 0.35
   /// Web `--duration-running-indicator`; list rows trail by 1/12 of a cycle each.
   static let runningCycle: Double = 2.4
   static let runningWaveRows: Double = 12
@@ -138,4 +151,8 @@ enum OkouElevation {
   static let floatingRadius: CGFloat = 16
   static let floatingY: CGFloat = 6
   static let floatingOpacity: Double = 0.08
+  /// The selected segment's lift off its track (the web's `--segment-selected-shadow`).
+  static let segmentRadius: CGFloat = 1.5
+  static let segmentY: CGFloat = 1
+  static let segmentOpacity: Double = 0.08
 }

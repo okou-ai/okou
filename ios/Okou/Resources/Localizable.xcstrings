@@ -2661,6 +2661,76 @@
         }
       }
     },
+    "Add %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld hinzufügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir %lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter %lld"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld जोड़ें"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tambahkan %lld"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiungi %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件を追加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld개 추가"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 %lld 张"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入 %lld 張"
+          }
+        }
+      }
+    },
     "Add account": {
       "localizations": {
         "de": {
@@ -2937,6 +3007,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "充值積分"
+          }
+        }
+      }
+    },
+    "Add to chat": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Chat hinzufügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir al chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter au chat"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "चैट में जोड़ें"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tambahkan ke chat"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiungi alla chat"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットに追加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅에 추가"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar ao chat"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到对话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入對話"
           }
         }
       }
@@ -3574,6 +3714,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部聊天"
+          }
+        }
+      }
+    },
+    "All photos": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Fotos"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las fotos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les photos"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "सभी फ़ोटो"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semua foto"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tutte le foto"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての写真"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 사진"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas as fotos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部照片"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有照片"
           }
         }
       }
@@ -6200,6 +6410,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "繼續即表示你同意 Okou 的"
+          }
+        }
+      }
+    },
+    "Camera": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kamera"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cámara"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appareil photo"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "कैमरा"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kamera"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fotocamera"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카메라"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Câmera"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相機"
           }
         }
       }
@@ -9144,6 +9424,76 @@
         }
       }
     },
+    "Confirm settings": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen bestätigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar ajustes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmer les réglages"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "सेटिंग्स की पुष्टि करें"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfirmasi pengaturan"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conferma impostazioni"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を確認"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 확인"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar ajustes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認設定"
+          }
+        }
+      }
+    },
     "Confirm this account for the chat and continue.": {
       "extractionState": "manual",
       "localizations": {
@@ -10708,76 +11058,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "連接器"
-          }
-        }
-      }
-    },
-    "Connectors — confirm settings": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Integrationen – Einstellungen bestätigen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conectores: confirma la configuración"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecteurs — confirmez les réglages"
-          }
-        },
-        "hi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "कनेक्टर — सेटिंग्स की पुष्टि करें"
-          }
-        },
-        "id": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Konektor — konfirmasi pengaturan"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connettori — conferma le impostazioni"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コネクター — 設定を確認"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "커넥터 — 설정 확인"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conectores — confirme as configurações"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接器 — 请确认设置"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "連接器 — 請確認設定"
           }
         }
       }
@@ -25441,72 +25721,72 @@
         }
       }
     },
-    "Notifications tell you when a chat finishes. Model and connector choices are in the message composer.": {
+    "Notifications tell you when a chat finishes. Pick a chat's model at the top of the chat, and its connectors under + in the message composer.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Benachrichtigungen informieren Sie, wenn ein Chat fertig ist. Modell und Integrationen wählen Sie im Nachrichtenfeld."
+            "value": "Benachrichtigungen melden, wenn ein Chat fertig ist. Das Modell eines Chats wählen Sie oben im Chat, seine Konnektoren unter + im Nachrichtenfeld."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las notificaciones te avisan cuando termina un chat. El modelo y los conectores se eligen en el cuadro de mensaje."
+            "value": "Las notificaciones te avisan cuando termina un chat. Elige el modelo de un chat en la parte superior del chat y sus conectores en + del cuadro de mensaje."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les notifications vous préviennent quand une discussion se termine. Le modèle et les connecteurs se choisissent dans le champ de message."
+            "value": "Les notifications vous préviennent quand un chat se termine. Choisissez le modèle d’un chat en haut du chat, et ses connecteurs sous + dans le champ de message."
           }
         },
         "hi": {
           "stringUnit": {
             "state": "translated",
-            "value": "चैट पूरी होने पर सूचनाएँ आपको बताती हैं। मॉडल और कनेक्टर के विकल्प संदेश कंपोज़र में हैं।"
+            "value": "चैट पूरी होने पर सूचनाएँ आपको बताती हैं। चैट का मॉडल चैट के ऊपर चुनें, और उसके कनेक्टर संदेश बॉक्स में + के अंदर।"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notifikasi memberi tahu Anda saat chat selesai. Pilihan model dan konektor ada di kolom pesan."
+            "value": "Notifikasi memberi tahu Anda saat chat selesai. Pilih model chat di bagian atas chat, dan konektornya di + pada kotak pesan."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le notifiche ti avvisano quando una chat termina. Modello e connettori si scelgono nel campo del messaggio."
+            "value": "Le notifiche ti avvisano quando una chat termina. Scegli il modello di una chat in alto nella chat e i suoi connettori sotto + nel campo del messaggio."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "チャットが完了すると通知でお知らせします。モデルとコネクターはメッセージ入力欄で選択できます。"
+            "value": "チャットが終わると通知でお知らせします。チャットのモデルはチャット上部で、コネクタはメッセージ欄の + から選べます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "채팅이 끝나면 알림으로 알려 드립니다. 모델과 커넥터는 메시지 입력창에서 선택할 수 있습니다."
+            "value": "채팅이 끝나면 알림으로 알려 드립니다. 채팅의 모델은 채팅 상단에서, 커넥터는 메시지 입력창의 + 에서 고르세요."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "As notificações avisam quando uma conversa termina. As opções de modelo e conector ficam no campo de mensagem."
+            "value": "As notificações avisam quando um chat termina. Escolha o modelo de um chat no topo do chat e os conectores em + na caixa de mensagem."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聊天完成时会通知你。模型和连接器可在消息输入框中选择。"
+            "value": "聊天完成时会通知你。对话的模型在对话顶部选择，连接器在消息输入框的 + 里选择。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "聊天完成時會通知你。模型和連接器可在訊息輸入框中選擇。"
+            "value": "聊天完成時會通知你。對話的模型在對話頂部選擇，連接器在訊息輸入框的 + 裡選擇。"
           }
         }
       }
@@ -28612,72 +28892,72 @@
         }
       }
     },
-    "Photo Library": {
+    "Photo": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fotomediathek"
+            "value": "Foto"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fototeca"
+            "value": "Foto"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Photothèque"
+            "value": "Photo"
           }
         },
         "hi": {
           "stringUnit": {
             "state": "translated",
-            "value": "फ़ोटो लाइब्रेरी"
+            "value": "फ़ोटो"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Perpustakaan Foto"
+            "value": "Foto"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Libreria foto"
+            "value": "Foto"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "写真ライブラリ"
+            "value": "写真"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사진 보관함"
+            "value": "사진"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fototeca"
+            "value": "Foto"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "照片图库"
+            "value": "照片"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "照片圖庫"
+            "value": "照片"
           }
         }
       }
@@ -38936,76 +39216,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟隨系統"
-          }
-        }
-      }
-    },
-    "Take Photo": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Foto aufnehmen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hacer foto"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prendre une photo"
-          }
-        },
-        "hi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "फ़ोटो लें"
-          }
-        },
-        "id": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ambil Foto"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scatta foto"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "写真を撮る"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "사진 찍기"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tirar foto"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拍照"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拍照"
           }
         }
       }

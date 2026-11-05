@@ -41,7 +41,7 @@ struct AgentProfileSheet: View {
       }
       .okouGroupedBackground()
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } } }
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
       .task {
         defer { loadingWorkflows = false }
         workflows = (try? await store.composerWorkflows.load(agentID: agentID)) ?? []

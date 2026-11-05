@@ -10,3 +10,5 @@
 /* Privacy - Microphone Usage Description */
 "NSMicrophoneUsageDescription" = "O Okou usa o microfone quando você dita uma mensagem.";
 
+/* Privacy - Photo Library Usage Description */
+"NSPhotoLibraryUsageDescription" = "O Okou mostra suas fotos recentes para que você possa anexá-las a uma mensagem.";

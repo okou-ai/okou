@@ -21,10 +21,21 @@ enum OkouGroupedColor {
 enum OkouMediaColor {
   static let foreground = Color.white
   static let scrim = Color.black
+  /// The scrim inside an open pick mark, so its white ring reads on a white photo.
+  static let markScrimOpacity = 0.2
 }
 
 extension OkouColor {
   /// Placeholder text and the hint glyph beside it (the composer's "Message Okou", the sidebar's
   /// "Search chats"): gray-600, lighter than supporting text, so a hint never reads as content.
   static let placeholder = gray600
+}
+
+/// Swipe-action fills. The system always draws a swipe action's icon and label in white, so a
+/// fill must carry white text in both appearances, and it says what kind of change it is: a
+/// quiet dark neutral for moving a chat (Archive, Unarchive), the unread dot's sky blue for
+/// read state. Amber stays for a primary commit and orange for warnings.
+enum OkouSwipeTint {
+  static let neutral = OkouColor.brandDarkGray
+  static let readState = OkouStatusColor.running
 }

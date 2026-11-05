@@ -64,7 +64,7 @@ struct ComposerConnectorSheet: View {
       .navigationDestination(item: $destination) { destination in
         connectorDestination(destination)
       }
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } } }
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
       .alert(
         "Could not open connector",
         isPresented: Binding(
@@ -305,11 +305,7 @@ private struct ComposerRemoteControls: View {
         }
         .okouGroupedBackground()
         .navigationTitle("Connect my computer")
-        .toolbar {
-          ToolbarItem(placement: .topBarTrailing) {
-            OkouCloseButton { showsDesktopSetup = false }
-          }
-        }
+        .toolbar { OkouCloseToolbarItem { showsDesktopSetup = false } }
       }.presentationDetents([.medium])
     }
   }

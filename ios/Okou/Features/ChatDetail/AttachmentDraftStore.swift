@@ -2,6 +2,7 @@ import ChatData
 import ChatDomain
 import Foundation
 import Observation
+import Photos
 import PhotosUI
 import SwiftUI
 
@@ -149,6 +150,19 @@ final class AttachmentDraftStore {
               "This photo or video could not be loaded. Select it again.")
           }
           self.add(file)
+        } catch { self.report(error) }
+      }
+    }
+  }
+
+  /// Photos picked from the "Add to chat" strip, in the order they were picked.
+  func importLibraryPhotos(_ assets: [PHAsset]) {
+    startImport {
+      for asset in assets {
+        try Task.checkCancellation()
+        do {
+          let url = try await RecentPhotoLibrary.file(for: asset)
+          self.add(try await AttachmentFileImporter.shared.copy(url))
         } catch { self.report(error) }
       }
     }
