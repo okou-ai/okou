@@ -1030,7 +1030,7 @@ body {
 /* Global selection color. See `--selection` in the UI tokens; a colour
    palette supplies its own further down. */
 ::selection {
-  background-color: hsl(var(--selection, var(--brand-subtle)));
+  background-color: hsl(var(--selection));
   color: hsl(var(--foreground));
 }
 
