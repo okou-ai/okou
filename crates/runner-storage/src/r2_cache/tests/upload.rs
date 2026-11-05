@@ -1,6 +1,7 @@
 use super::super::{R2Error, keys::key_for_template_hash, multipart::MultipartUploadGuard};
 use super::fixtures::{mock_cache, small_src_file, wait_for_rule_calls};
-use aws_smithy_mocks::{Rule, mock};
+use crate::test_fixtures::multipart_success_rules;
+use aws_smithy_mocks::mock;
 
 // ---- upload: force + dedup + multipart lifecycle -------------------
 //
@@ -8,27 +9,6 @@ use aws_smithy_mocks::{Rule, mock};
 // exactly one `upload_part` — keeps the lifecycle mock setup compact.
 // Multi-part scheduler ordering is covered by the focused inline tests in
 // `multipart.rs`.
-
-/// Mock-rule factory for the happy-path multipart triad.
-/// Returns (create, upload_part, complete) rules. Caller wires them with
-/// any head_object rule needed by the specific test.
-fn multipart_success_rules() -> (Rule, Rule, Rule) {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadOutput;
-    use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
-    use aws_sdk_s3::operation::upload_part::UploadPartOutput;
-
-    let create = mock!(Client::create_multipart_upload).then_output(|| {
-        CreateMultipartUploadOutput::builder()
-            .upload_id("test-upload-id")
-            .build()
-    });
-    let upload_part = mock!(Client::upload_part)
-        .then_output(|| UploadPartOutput::builder().e_tag("\"etag-123\"").build());
-    let complete = mock!(Client::complete_multipart_upload)
-        .then_output(|| CompleteMultipartUploadOutput::builder().build());
-    (create, upload_part, complete)
-}
 
 /// `force = true` MUST NOT call `head_object` — the corrupt-eviction
 /// contract: after detecting a bad object (download succeeded but

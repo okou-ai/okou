@@ -4,6 +4,7 @@ use aws_smithy_mocks::{Rule, RuleMode, mock, mock_client};
 use std::sync::Arc;
 
 use runner_storage::test_fixtures::byte_stream_with_error_after;
+pub(super) use runner_storage::test_fixtures::multipart_success_rules;
 
 pub(super) const TEST_TEMPLATE_DISK_BYTES: u64 = 128 * 1024 * 1024;
 
@@ -267,22 +268,4 @@ pub(super) fn template_head_miss_rule() -> Rule {
     use aws_sdk_s3::types::error::NotFound;
 
     mock!(Client::head_object).then_error(|| HeadObjectError::NotFound(NotFound::builder().build()))
-}
-
-pub(super) fn multipart_success_rules() -> (Rule, Rule, Rule) {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadOutput;
-    use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
-    use aws_sdk_s3::operation::upload_part::UploadPartOutput;
-
-    let create = mock!(Client::create_multipart_upload).then_output(|| {
-        CreateMultipartUploadOutput::builder()
-            .upload_id("test-upload-id")
-            .build()
-    });
-    let upload_part = mock!(Client::upload_part)
-        .then_output(|| UploadPartOutput::builder().e_tag("\"etag-123\"").build());
-    let complete = mock!(Client::complete_multipart_upload)
-        .then_output(|| CompleteMultipartUploadOutput::builder().build());
-    (create, upload_part, complete)
 }
