@@ -211,7 +211,7 @@ const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
         ref={ref}
         data-slot="select-item"
         className={cn(
-          "relative flex w-full cursor-pointer select-none items-center rounded-lg pl-2 pr-8 outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
+          "relative flex w-full cursor-default select-none items-center rounded-lg pl-2 pr-8 outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
           MENU_ROW_HEIGHT_CLASS,
           className,
         )}

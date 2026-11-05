@@ -31,7 +31,7 @@ function ConnectorShelfTail({
   return (
     <button
       type="button"
-      className="mt-2 flex w-full cursor-pointer items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition-colors hover:bg-state-hover"
+      className="mt-2 flex w-full items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition-colors hover:bg-state-hover"
       onClick={onOpen}
     >
       <span className="flex shrink-0 items-center" aria-hidden="true">
@@ -150,7 +150,7 @@ export function ConnectorShelfChips({
               key={chip.category}
               type="button"
               className={cn(
-                "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg bg-gray-50 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground",
+                "flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-gray-50 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground",
                 DIRECTORY_HAIRLINE,
               )}
               onClick={() => {

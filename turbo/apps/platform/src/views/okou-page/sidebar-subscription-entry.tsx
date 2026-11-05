@@ -60,7 +60,7 @@ export function SidebarSubscriptionUsage({
             variant="quiet"
             size="icon"
             className={cn(
-              "relative size-11 shrink-0 cursor-pointer p-1 text-muted-foreground",
+              "relative size-11 shrink-0 p-1 text-muted-foreground",
               open && "bg-state-hover",
             )}
           />

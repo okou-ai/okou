@@ -455,7 +455,7 @@ function OAuth2AdvancedFields({ form, setField }: CreateFormFieldProps) {
   ];
   return (
     <details className="group rounded-lg border border-border">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-foreground">
+      <summary className="flex cursor-default list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-foreground">
         <ChevronRight
           size={16}
           className="shrink-0 transition-transform group-open:rotate-90"

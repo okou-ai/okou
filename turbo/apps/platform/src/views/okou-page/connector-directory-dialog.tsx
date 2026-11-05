@@ -237,7 +237,7 @@ function CustomConnectorDirectoryCard({
       )}
       className={cn(
         DIRECTORY_SURFACE,
-        "cursor-pointer overflow-hidden text-left hover:bg-card-hover",
+        "overflow-hidden text-left hover:bg-card-hover",
       )}
       onClick={onConnect}
     >

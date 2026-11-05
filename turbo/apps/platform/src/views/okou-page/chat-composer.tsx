@@ -853,7 +853,7 @@ function WebsiteTemplateCard({
             }}
             className={cn(
               TEMPLATE_TILE_USE,
-              "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
+              "[@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
             )}
           >
             {t(($) => {
@@ -4073,7 +4073,7 @@ function ComputerUseConnectorMenuSection({
   const { t } = useTranslation();
   return (
     <div className="shrink-0 border-t border-border/50 bg-gray-50 p-1 dark:bg-gray-100">
-      <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
+      <label className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
           <Globe size={16} />
         </span>
@@ -4139,7 +4139,7 @@ function ComputerUseConnectorMenuSection({
             return (
               <label
                 key={host.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover"
+                className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover"
               >
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
                   <Monitor size={16} />
@@ -4355,10 +4355,10 @@ function ComposerConnectorAccessRow({
         </span>
       ) : null}
       <label className="contents">
-        <span className="order-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center">
+        <span className="order-1 flex h-4 w-4 shrink-0 cursor-default items-center justify-center">
           {icon}
         </span>
-        <span className="order-1 min-w-0 flex-1 cursor-pointer truncate text-sm text-foreground">
+        <span className="order-1 min-w-0 flex-1 cursor-default truncate text-sm text-foreground">
           {connectorLabel}
         </span>
         <span className="order-3 shrink-0">
@@ -4494,8 +4494,8 @@ function ComposerConnectorAccountChoices({
 }) {
   const { t } = useTranslation();
   const choiceClassName = cn(
-    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover data-highlighted:bg-state-hover data-highlighted:ring-2 data-highlighted:ring-inset data-highlighted:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-    saving && "cursor-default opacity-50",
+    "flex w-full cursor-default items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover data-highlighted:bg-state-hover data-highlighted:ring-2 data-highlighted:ring-inset data-highlighted:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    saving && "opacity-50",
   );
   const accountLabel = useConnectorAccountLabel();
   const defaultLabel = defaultConnection

@@ -1370,7 +1370,7 @@ function PromptCard({
         />
       )}
       <details className="group relative py-2">
-        <summary className="cursor-pointer list-none">
+        <summary className="cursor-default list-none">
           <div className="flex gap-2 items-center">
             <StatusDot variant="neutral" />
             <span className="font-semibold text-sm text-foreground shrink-0">

@@ -212,7 +212,7 @@ const CommandItem = React.forwardRef<HTMLDivElement, Autocomplete.Item.Props>(
         ref={ref}
         data-slot="command-item"
         className={cn(
-          "relative flex cursor-pointer select-none items-center rounded-lg text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[highlighted]:bg-state-hover data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
+          "relative flex cursor-default select-none items-center rounded-lg text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[highlighted]:bg-state-hover data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
           className,
         )}
         {...props}

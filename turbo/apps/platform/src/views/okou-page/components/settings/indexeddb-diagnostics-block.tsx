@@ -29,7 +29,7 @@ function IndexedDbDiagnosticsSummary({
   const { t } = useTranslation();
 
   return (
-    <summary className="flex w-full cursor-pointer list-none items-start gap-4 p-4 text-left transition-colors hover:bg-state-hover [&::-webkit-details-marker]:hidden">
+    <summary className="flex w-full cursor-default list-none items-start gap-4 p-4 text-left transition-colors hover:bg-state-hover [&::-webkit-details-marker]:hidden">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center">
         <Database size={22} className="text-muted-foreground" />
       </span>

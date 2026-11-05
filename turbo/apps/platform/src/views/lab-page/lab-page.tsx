@@ -143,7 +143,7 @@ function LabFeatureGroup(props: {
           const featureMetadata = props.metadata[key];
           return (
             <li key={key}>
-              <label className="flex cursor-pointer items-center justify-between px-4 py-3 transition-colors hover:bg-state-hover">
+              <label className="flex cursor-default items-center justify-between px-4 py-3 transition-colors hover:bg-state-hover">
                 <div className="flex min-w-0 flex-col gap-1 pr-4">
                   <span className="text-sm text-foreground">
                     {featureMetadata.displayName ?? key}

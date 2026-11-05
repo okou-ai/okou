@@ -126,7 +126,7 @@ export function IdeationPage() {
         <button
           type="button"
           onClick={handleBack}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-state-hover hover:text-foreground transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-state-hover hover:text-foreground transition-colors"
         >
           <MessageCircle size={14} className="shrink-0" />
           {t(($) => {
