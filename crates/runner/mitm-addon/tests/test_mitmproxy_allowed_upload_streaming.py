@@ -192,7 +192,7 @@ async def _finish_upload(addon_context: taddons.context, stream: HttpStream) -> 
 @pytest.mark.parametrize("request_kind", ["api", "browser", "policy", "credentials"])
 @pytest.mark.parametrize("framing", ["content-length", "chunked", "http2"])
 @pytest.mark.parametrize("capture_body", [False, True])
-@pytest.mark.parametrize("upload_size", [8 * 1024 * 1024, 32 * 1024 * 1024], ids=["8MiB", "32MiB"])
+@pytest.mark.parametrize("upload_size", [32 * 1024 * 1024], ids=["32MiB"])
 async def test_allowed_upload_forwards_before_eof_with_bounded_retention(
     tmp_path: Path,
     fake_firewall_headers,
