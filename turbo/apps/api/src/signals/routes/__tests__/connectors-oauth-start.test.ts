@@ -106,7 +106,7 @@ function mockAuthenticatedSession(): void {
   );
 }
 
-// #30570 pre-stages twenty launch-gated OAuth connectors on the direct Okou App
+// #30570 pre-stages launch-gated OAuth connectors on the direct Okou App
 // callback. Each case pins the provider-specific authorization and token
 // exchange contract that must survive the callback change.
 type LaunchGatedDirectOkouCase = {
@@ -511,28 +511,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
             first_name: "PostHog",
             last_name: "Test User",
             email: "posthog@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "reddit",
-    label: "Reddit",
-    clientEnvPrefix: "REDDIT",
-    authorizationEndpoint: "https://www.reddit.com/api/v1/authorize",
-    tokenUrl: "https://www.reddit.com/api/v1/access_token",
-    tokenResponse: {
-      access_token: "reddit-test-token",
-      refresh_token: "reddit-refresh-token",
-      expires_in: 86_400,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://oauth.reddit.com/api/v1/me", () => {
-          return HttpResponse.json({
-            id: "reddit-user-123",
-            name: "reddit-test-user",
           });
         }),
       );

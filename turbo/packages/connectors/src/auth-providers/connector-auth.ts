@@ -101,7 +101,6 @@ import { noyoProvider } from "./connectors/noyo/provider";
 import { outlookCalendarProvider } from "./connectors/outlook-calendar/provider";
 import { outlookMailProvider } from "./connectors/outlook-mail/provider";
 import { resourceGuruProvider } from "./connectors/resource-guru/provider";
-import { redditProvider } from "./connectors/reddit/provider";
 import { intervalsIcuProvider } from "./connectors/intervals-icu/provider";
 import { sentryProvider } from "./connectors/sentry/provider";
 import { slackProvider } from "./connectors/slack/provider";
@@ -1077,7 +1076,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("quickbooks", "oauth", quickbooksProvider),
   authCodeRefreshTokenRevokeProviderEntry("ramp", "oauth", rampProvider),
   refreshProviderEntry("reckon", "oauth-refresh-token", reckonProvider),
-  authCodeRefreshProviderEntry("reddit", "oauth", redditProvider),
   authCodeRefreshProviderEntry("sentry", "oauth", sentryProvider),
   authCodeTokenRevokeProviderEntry("slack", "oauth", slackProvider),
   deviceAuthRefreshProviderEntry("slock", "oauth", slockProvider),

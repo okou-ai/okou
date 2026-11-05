@@ -302,11 +302,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Garmin Connect wellness connector",
     enabled: false,
   },
-  [FeatureSwitchKey.RedditConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Reddit connector integration",
-    enabled: false,
-  },
   [FeatureSwitchKey.SupabaseConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Supabase database connector integration",

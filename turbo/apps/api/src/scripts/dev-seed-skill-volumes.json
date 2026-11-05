@@ -4422,28 +4422,6 @@
     "versionFileCount": 1
   },
   {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/reddit",
-    "name": "reddit",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/reddit/51ab55533ff3745043460eb86e7989752c5661759c52f75f328f7bee48923881",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/reddit",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/reddit",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 2658,
-    "storageId": "15c3947b-bd58-4ccc-9e4e-f20ac12cb6c6",
-    "frontmatter": {
-      "name": "reddit",
-      "description": "Reddit API for accessing discussions and content. Use when user mentions \"Reddit\", \"reddit.com\", shares a Reddit link, \"subreddit\", or asks about Reddit discussions."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/reddit",
-    "storageSize": 1156,
-    "versionHash": "51ab55533ff3745043460eb86e7989752c5661759c52f75f328f7bee48923881",
-    "versionSize": 1156,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/reducto",
     "name": "reducto",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/reducto/d237ba0c34b11c47745218afa2a2094af15a0fd73dc7695a86acb796756d1804",
