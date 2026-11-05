@@ -23,6 +23,8 @@ final class ComposerVoiceInputStore {
   private var insertion: ComposerEditor.VoiceInsertion?
   private var generation = UUID()
   private var startingTask: Task<Void, Never>?
+  private var quotaTask: Task<Void, Error>?
+  private var quotaAllowed = false
   private var captureTask: Task<Void, Error>?
   private var transcriptionTask: Task<Void, Never>?
   private var preparationTask: Task<String, Error>?
@@ -67,6 +69,7 @@ final class ComposerVoiceInputStore {
     let owner = UUID()
     generation = owner
     phase = .starting
+    quotaAllowed = false
     error = nil
     microphoneDenied = false
     let starting = Task { await begin(composer: composer, target: target, owner: owner) }
@@ -78,20 +81,12 @@ final class ComposerVoiceInputStore {
   private func begin(
     composer: ComposerDraftStore, target: ComposerEditor.VoiceInsertion, owner: UUID
   ) async {
+    let quota = checkQuota()
+    quotaTask = quota
     do {
-      let quota = try await client.quota()
-      guard generation == owner else { return }
-      guard composer.canEditVoice else {
-        phase = .idle
-        return
-      }
-      guard quota.allowed else {
-        throw APIClientError.http(
-          status: 402, message: "Your voice input limit has been reached.",
-          code: "AUDIO_INPUT_QUOTA_EXCEEDED")
-      }
       let stream = try await capture.start()
       guard generation == owner, composer.canEditVoice else {
+        quota.cancel()
         capture.stop()
         if generation == owner { phase = .idle }
         return
@@ -131,10 +126,12 @@ final class ComposerVoiceInputStore {
         phase = .recording
         composer.editor.dismissKeyboard()
       } else {
+        quota.cancel()
         capture.stop()
         if phase == .idle { phase = .saved }
       }
     } catch {
+      quota.cancel()
       guard generation == owner else { return }
       capture.stop()
       phase = storage.hasRecording ? .saved : .idle
@@ -142,11 +139,47 @@ final class ComposerVoiceInputStore {
       if case NativeVoiceAudioCapture.CaptureError.permissionDenied = error {
         microphoneDenied = true
       }
+      return
+    }
+    do {
+      try await quota.value
+      guard generation == owner, !Task.isCancelled else { return }
+      quotaAllowed = true
+      if phase == .recording, let id = recordingID {
+        transcribeAvailable(id: id, owner: owner)
+      }
+    } catch {
+      // Finishing owns its own failure; a pending check must never upload audio.
+      guard generation == owner, phase == .recording else { return }
+      phase = .processing
+      capture.stop()
+      _ = await captureTask?.result
+      guard generation == owner else { return }
+      captureTask = nil
+      phase = .saved
+      reportQuotaFailure(error)
     }
   }
 
+  private func checkQuota() -> Task<Void, Error> {
+    Task { [client] in
+      let quota = try await client.quota()
+      try Task.checkCancellation()
+      guard quota.allowed else {
+        throw APIClientError.http(
+          status: 402, message: "Your voice input limit has been reached.",
+          code: "AUDIO_INPUT_QUOTA_EXCEEDED")
+      }
+    }
+  }
+
+  private func reportQuotaFailure(_ failure: Error) {
+    report(failure)
+    error = failure.localizedDescription + " Your recording is saved. Use it to retry."
+  }
+
   private func transcribeAvailable(id: UUID, owner: UUID) {
-    guard transcriptionTask == nil, !transcriptionFailed, let session else { return }
+    guard quotaAllowed, transcriptionTask == nil, !transcriptionFailed, let session else { return }
     transcriptionTask = Task { [weak self] in
       defer { self?.transcriptionTask = nil }
       do { try await session.transcribeAvailable(recordingID: id) } catch {
@@ -166,7 +199,8 @@ final class ComposerVoiceInputStore {
     guard phase == .recording || phase == .saved,
       let composer, composer.canEditVoice, let session, let id = recordingID
     else { return }
-    if phase == .saved { insertion = composer.editor.voiceInsertion() }
+    let usingSavedRecording = phase == .saved
+    if usingSavedRecording { insertion = composer.editor.voiceInsertion() }
     guard insertion != nil else {
       error = "Finish editing and place the cursor where you want to insert the recording."
       return
@@ -184,7 +218,23 @@ final class ComposerVoiceInputStore {
       captureTask = nil
       await transcriptionTask?.value
       _ = await preparationTask?.result
+      let hasPreparedText = await session.hasPreparedText
       guard generation == owner, composer.canEditVoice else { return }
+      if !hasPreparedText {
+        if usingSavedRecording {
+          quotaTask?.cancel()
+          quotaTask = checkQuota()
+          quotaAllowed = false
+        }
+        guard let quotaTask else { throw VoiceDraftError.unavailable }
+        do { try await quotaTask.value } catch {
+          guard generation == owner else { return }
+          phase = .saved
+          reportQuotaFailure(error)
+          return
+        }
+        guard generation == owner, composer.canEditVoice else { return }
+      }
       let preparation = Task { try await session.finish(recordingID: id) }
       preparationTask = preparation
       let text = try await preparation.value
@@ -224,9 +274,11 @@ final class ComposerVoiceInputStore {
     phase = .processing
     capture.stop()
     startingTask?.cancel()
+    quotaTask?.cancel()
     transcriptionTask?.cancel()
     preparationTask?.cancel()
     await startingTask?.value
+    _ = await quotaTask?.result
     _ = await captureTask?.result
     await transcriptionTask?.value
     _ = await preparationTask?.result
@@ -250,22 +302,26 @@ final class ComposerVoiceInputStore {
     let owner = generation
     capture.stop()
     startingTask?.cancel()
+    quotaTask?.cancel()
     transcriptionTask?.cancel()
     preparationTask?.cancel()
     insertion = nil
     guard phase != .idle else { return }
     phase = .processing
     let startingTask = startingTask
+    let quotaTask = quotaTask
     let captureTask = captureTask
     let transcriptionTask = transcriptionTask
     let preparationTask = preparationTask
     Task { [weak self] in
       await startingTask?.value
+      _ = await quotaTask?.result
       _ = await captureTask?.result
       await transcriptionTask?.value
       _ = await preparationTask?.result
       guard let self, generation == owner else { return }
       self.startingTask = nil
+      self.quotaTask = nil
       self.captureTask = nil
       self.transcriptionTask = nil
       self.preparationTask = nil
