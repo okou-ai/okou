@@ -99,7 +99,7 @@ def validate(directory, contract):
     running = contract.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")
     is_running = contract.name == "RunningRestore"
     directory = pathlib.Path(directory)
-    collector = json.loads(retained.regular(directory/"report.json", 1024**2), object_pairs_hook=pressure.unique_object)
+    collector = json.loads(retained.regular(directory/"report.json", 1024**2), object_pairs_hook=report.unique_object)
     if (collector.get("format") != "runner-memory-calibration-v2" or collector.get("success") is not False
             or type(collector.get("driver_exit_code")) is not int or collector["driver_exit_code"] != 101
             or collector.get("driver_wait_confirmed") is not True or collector.get("cleanup_confirmed") is not True
@@ -118,7 +118,7 @@ def validate(directory, contract):
         for prefix, target in ((PREFIX, events), (report.PREFIX, terminals),
                                ("NATIVE_CONTINUATION_WITNESS ", continuation)):
             if line.startswith(prefix):
-                target.append(json.loads(line[len(prefix):], object_pairs_hook=pressure.unique_object))
+                target.append(json.loads(line[len(prefix):], object_pairs_hook=report.unique_object))
     if (tuple(e.get("phase") for e in events) != PHASES or len(terminals) != 2
             or tuple(e.get("phase") for e in terminals) != ("case_started", "terminal_started")
             or len(continuation) != 1 or continuation[0].get("phase") != "original_executor_completed"):

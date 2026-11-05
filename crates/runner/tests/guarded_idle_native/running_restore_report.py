@@ -8,7 +8,7 @@ import struct
 
 import claim_producer_report as retained
 import guest_preparation_report as preparation
-import pressure_report as pressure
+import report
 from snapshot_report import exact
 
 
@@ -34,7 +34,7 @@ def packet(raw, nonce, sequence, response):
     data = preparation.blob(raw, 16388)
     if len(data) < 5 or int.from_bytes(data[:4], "big") != len(data)-4 or len(data)-4 > 16384:
         raise ValueError("invalid original control framing")
-    value = json.loads(data[4:], object_pairs_hook=pressure.unique_object)
+    value = json.loads(data[4:], object_pairs_hook=report.unique_object)
     fields = {"nonce","id","result" if response else "command"}
     if sequence == 0:
         fields = {"nonce","id","ready","uid","original","executable","kernel"}
@@ -70,7 +70,7 @@ def control_records(waiting, held, joined, request, response, allow, directory):
     for name,raw in frames.items():
         if retained.regular(files/(name+".bin"),16388) != preparation.blob(raw,16388):
             raise ValueError("original control file differs from phase record")
-    exact(json.loads(retained.regular(files/"controller-terminal.json",300000),object_pairs_hook=pressure.unique_object),
+    exact(json.loads(retained.regular(files/"controller-terminal.json",300000),object_pairs_hook=report.unique_object),
           joined["process_terminal"],"original process terminal file differs")
     hello = packet(frames["response-0"],nonce,0,True)
     if hello["ready"] is not True or type(hello["uid"]) is not int or hello["uid"] != 0:

@@ -8,7 +8,6 @@ import re
 
 import batch_replacement_report as replacement
 import later_parking_report as later
-import pressure_report as pressure
 import report
 from snapshot_report import exact
 
@@ -29,7 +28,7 @@ def raw_bytes(value, limit=65536):
 def history(value, thread):
     raw = raw_bytes(value)
     try:
-        lines = [json.loads(line, object_pairs_hook=pressure.unique_object) for line in raw.decode().splitlines()]
+        lines = [json.loads(line, object_pairs_hook=report.unique_object) for line in raw.decode().splitlines()]
     except (ValueError, TypeError, UnicodeError) as error:
         raise ValueError("history is not complete native JSONL") from error
     if (len(lines) < 2 or not all(isinstance(line, dict) for line in lines)
@@ -45,14 +44,11 @@ def validate(directory):
     result = replacement.validate(directory, CASES, "native_dual_history_policy_json")
     groups = {prefix: {case: [] for case in CASES}
               for prefix in (PREFIX, replacement.PREFIX, report.PREFIX)}
-    for line in (directory / "stdout.log").read_text().splitlines():
-        for prefix, cases in groups.items():
-            if not line.startswith(prefix):
-                continue
-            event = json.loads(line[len(prefix):], object_pairs_hook=pressure.unique_object)
-            if not report.valid_witness_envelope(event, lambda value: value in CASES):
-                raise ValueError("invalid dual-history original-file witness")
-            cases[event["case"]].append(event)
+    report.collect_witnesses(
+        directory / 'stdout.log', groups,
+        case_matches=lambda value: value in CASES,
+        invalid_message="invalid dual-history original-file witness",
+    )
     seen, keys = set(), set()
 
     def identity(value):

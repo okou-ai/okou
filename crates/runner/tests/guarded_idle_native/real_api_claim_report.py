@@ -34,7 +34,7 @@ def read_regular(path):
 
 
 def read_json(path):
-    return json.loads(read_regular(path), object_pairs_hook=pressure.unique_object)
+    return json.loads(read_regular(path), object_pairs_hook=report.unique_object)
 
 
 def digest(value):
@@ -154,7 +154,7 @@ def validate(directory):
     directory = pathlib.Path(directory)
     producer_path = directory / "producer.json"
     producer_raw = read_regular(producer_path)
-    producer = json.loads(producer_raw, object_pairs_hook=pressure.unique_object)
+    producer = json.loads(producer_raw, object_pairs_hook=report.unique_object)
     producer_sha = hashlib.sha256(producer_raw).hexdigest()
     if (producer.get("format") != "native-real-api-producer-v1"
             or producer.get("postgres", {}).get("host") != "127.0.0.1"
@@ -207,13 +207,11 @@ def validate(directory):
             raise ValueError("native physical ownership was replayed across cases")
         identities.update(physical)
         witnesses = {case: [] for case in cases}
-        for line in (root / "p1/stdout.log").read_text().splitlines():
-            if not line.startswith(PREFIX):
-                continue
-            event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-            if not report.valid_witness_envelope(event, lambda value: value in cases):
-                raise ValueError("unexpected native arbitration witness")
-            witnesses[event["case"]].append(event)
+        report.collect_witnesses(
+            root / 'p1/stdout.log', {PREFIX: witnesses},
+            case_matches=lambda value: value in cases,
+            invalid_message="unexpected native arbitration witness",
+        )
         observations = api.get("publicObservations")
         if not isinstance(observations, list) or len(observations) != 2:
             raise ValueError("public terminal/winner observations are incomplete")

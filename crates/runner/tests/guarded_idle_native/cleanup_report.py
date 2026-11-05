@@ -5,6 +5,7 @@ import hashlib
 import json
 
 import pressure_report as pressure
+import report
 from snapshot_report import exact
 
 COUNTS = {"registered_operations", "queued", "granted", "started", "uncertain",
@@ -40,7 +41,7 @@ def supplied_policy(collector, result, key):
     if (not isinstance(raw, str)
             or hashlib.sha256(raw.encode()).hexdigest() != result["artifacts"]["policy_sha256"]):
         raise ValueError("cleanup original policy identity changed")
-    policy = json.loads(raw, object_pairs_hook=pressure.unique_object)
+    policy = json.loads(raw, object_pairs_hook=report.unique_object)
     if (not isinstance(policy, dict) or set(policy) != pressure.POLICY_FIELDS
             or any(not pressure.integer(v, 1) for v in policy.values())
             or policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"] >= policy["host_total_bytes"]

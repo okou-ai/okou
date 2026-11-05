@@ -47,13 +47,11 @@ def validate(directory):
     output, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy, raw = startup.original_inputs(collector["metadata"], output["artifacts"], "native_returned_guest")
     witnesses = {case: [] for case in CASES}
-    for line in (directory/"stdout.log").read_text().splitlines():
-        if not line.startswith(PREFIX):
-            continue
-        event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if not report.valid_witness_envelope(event, lambda value: value in CASES):
-            raise ValueError("invalid actual returned Guest witness")
-        witnesses[event["case"]].append(event)
+    report.collect_witnesses(
+        directory / 'stdout.log', {PREFIX: witnesses},
+        case_matches=lambda value: value in CASES,
+        invalid_message="invalid actual returned Guest witness",
+    )
     identities, generations, home_uuids = set(), set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]

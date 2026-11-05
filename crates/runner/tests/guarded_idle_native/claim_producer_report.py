@@ -13,7 +13,6 @@ import batch_aba_report as batch
 import cleanup_report as cleanup
 import progress_report as foreground
 import later_parking_report as later
-import pressure_report as pressure
 import report
 import status_failure_report as status
 from snapshot_report import exact
@@ -38,7 +37,7 @@ def regular(path, limit):
 
 def validate(directory):
     directory = pathlib.Path(directory)
-    collector = json.loads(regular(directory/"report.json", 1024**2), object_pairs_hook=pressure.unique_object)
+    collector = json.loads(regular(directory/"report.json", 1024**2), object_pairs_hook=report.unique_object)
     if (collector.get("format") != "runner-memory-calibration-v2" or collector.get("success") is not False
             or type(collector.get("driver_exit_code")) is not int or collector["driver_exit_code"] != 101
             or collector.get("driver_wait_confirmed") is not True
@@ -57,9 +56,9 @@ def validate(directory):
     terminals, events = [], []
     for line in log.splitlines():
         if line.startswith(PREFIX):
-            events.append(json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object))
+            events.append(json.loads(line[len(PREFIX):], object_pairs_hook=report.unique_object))
         elif line.startswith(report.PREFIX):
-            terminals.append(json.loads(line[len(report.PREFIX):], object_pairs_hook=pressure.unique_object))
+            terminals.append(json.loads(line[len(report.PREFIX):], object_pairs_hook=report.unique_object))
     if len(terminals) != 2 or tuple(e["phase"] for e in terminals) != ("case_started", "terminal_started"):
         raise ValueError("retained uncertainty became successful terminal saving or lost original phases")
     case = terminals[0]["case"]

@@ -5,7 +5,7 @@ import json
 import pathlib
 
 import guest_preparation_report as preparation
-import pressure_report as pressure
+import report
 
 PHASES = preparation.PHASES
 LEASE = preparation.LEASE
@@ -71,7 +71,7 @@ def wire(value, kind, sequence=None, unix_window=None, history=None):
         payload.expect(bytes(2))
         if len(stdout)>65536 or len(stderr)>65536:
             raise ValueError("final-exec bounded output contract changed")
-        result = json.loads(stdout, object_pairs_hook=pressure.unique_object)
+        result = json.loads(stdout, object_pairs_hook=report.unique_object)
         if not isinstance(result,dict) or set(result)!={"before","after","home","removedEntries"}:
             raise ValueError("original final preparation report is missing or malformed")
         for capacity in (result["before"],result["after"],result["home"]):

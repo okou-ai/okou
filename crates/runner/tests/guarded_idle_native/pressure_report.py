@@ -22,15 +22,6 @@ POLICY_FIELDS = {
 }
 
 
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate native pressure policy field")
-        result[key] = value
-    return result
-
-
 def integer(value, minimum=0):
     return type(value) is int and minimum <= value <= 2**64 - 1
 
@@ -98,7 +89,7 @@ def validate(directory):
     if not isinstance(raw_policy, str) or hashlib.sha256(raw_policy.encode()).hexdigest() != \
             result["artifacts"]["policy_sha256"]:
         raise ValueError("native pressure raw policy/hash mismatch")
-    policy = json.loads(raw_policy, object_pairs_hook=unique_object)
+    policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
     if not isinstance(policy, dict) or set(policy) != POLICY_FIELDS or any(
             not integer(value, 1) for value in policy.values()):
         raise ValueError("invalid native pressure policy")
