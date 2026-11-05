@@ -57,6 +57,7 @@ struct ChatComposerView: View {
     VStack(alignment: .leading, spacing: 8) {
       if let voice = draftState?.voice, voice.error != nil || voiceActive {
         ComposerVoiceInputTray(voice: voice)
+          .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
       }
       if let state = draftState {
         if !state.document.isSupported {
@@ -263,6 +264,7 @@ struct ChatComposerView: View {
           ? sendTransition?.composerAnimation : nil,
         value: hasText)
     }
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
     .padding(.horizontal, 16)
     .padding(.top, 8)
     .padding(.bottom, isFocused ? 8 : 0)
