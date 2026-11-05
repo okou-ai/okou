@@ -3,20 +3,13 @@ import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/cha
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import {
-  badRequestMessage,
-  notFound,
-  providerUnavailable,
-} from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
-import { chatConnectorOverview } from "../services/chat-connector-overview.service";
-import { isConnectorCatalogUnavailableError } from "../services/connector-catalog-reader.service";
-import { settle } from "../utils";
 import {
   chatConnectorAccess,
   connectorAccountAccessDefaults,
@@ -43,60 +36,6 @@ const featureAvailable$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, context);
 });
-
-const overviewScope$ = computed((get) => {
-  return {
-    ...get(owner$),
-    ...get(queryOf(chatConnectorAccessContract.overview)),
-  };
-});
-const overview$ = chatConnectorOverview(overviewScope$, featureContext$);
-const overviewTargetScope$ = computed((get) => {
-  const { threadId, ...target } = get(
-    queryOf(chatConnectorAccessContract.overviewTarget),
-  );
-  return { ...get(owner$), ...(threadId ? { threadId } : {}), target };
-});
-const overviewTarget$ = chatConnectorOverview(
-  overviewTargetScope$,
-  featureContext$,
-);
-const overviewHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
-  const result = await settle(get(overview$));
-  signal.throwIfAborted();
-  if (!result.ok) {
-    if (isConnectorCatalogUnavailableError(result.error)) {
-      return providerUnavailable(
-        "Connector catalog is temporarily unavailable",
-      );
-    }
-    throw result.error;
-  }
-  return result.value ? { status: 200 as const, body: result.value } : missing;
-});
-const overviewTargetHandler$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(featureAvailable$, signal))) {
-      return unavailable;
-    }
-    const result = await settle(get(overviewTarget$));
-    signal.throwIfAborted();
-    if (!result.ok) {
-      if (isConnectorCatalogUnavailableError(result.error)) {
-        return providerUnavailable(
-          "Connector catalog is temporarily unavailable",
-        );
-      }
-      throw result.error;
-    }
-    return result.value
-      ? { status: 200 as const, body: { connector: result.value[0] ?? null } }
-      : missing;
-  },
-);
 
 const defaultsScope$ = computed((get) => {
   return {
@@ -261,14 +200,6 @@ const currentHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const chatConnectorAccessRoutes: readonly RouteEntry[] = [
-  {
-    route: chatConnectorAccessContract.overview,
-    handler: authRoute(ownerAuth, overviewHandler$),
-  },
-  {
-    route: chatConnectorAccessContract.overviewTarget,
-    handler: authRoute(ownerAuth, overviewTargetHandler$),
-  },
   {
     route: chatConnectorAccessContract.accountDefaults,
     handler: authRoute(ownerAuth, defaultsHandler$),

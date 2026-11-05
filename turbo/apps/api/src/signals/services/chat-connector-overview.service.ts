@@ -6,7 +6,7 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorAuthMethodIdSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
@@ -15,7 +15,6 @@ import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-threa
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import { connectedConnectorBriefs } from "./connected-connectors.service";
 import { connectorAccessAccountOwner } from "./connector-access-owner";
 
 interface OverviewOwner {
@@ -80,9 +79,8 @@ function overviewAccountRows(owner$: Computed<OverviewOwner>) {
 /** Account identities and preferences only, without credential/setup projections. */
 export function chatConnectorOverview(
   owner$: Computed<OverviewOwner>,
-  context$: Computed<Promise<FeatureSwitchContext>>,
+  connected$: Computed<Promise<ConnectedConnectors>>,
 ) {
-  const connected$ = connectedConnectorBriefs(owner$, context$);
   const rows$ = overviewAccountRows(owner$);
   const owned$ = computed(async (get) => {
     const owner = get(owner$);

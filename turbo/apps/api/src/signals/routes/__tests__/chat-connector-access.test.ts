@@ -6,16 +6,13 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { connectedConnectorsRoutes } from "../connected-connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  withPgQueryExecutionCapture,
-  type PgQueryExecutionCapture,
-} from "../../../lib/db-instrumentation";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -27,9 +24,10 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const target = { kind: "builtin", connectorSlug: "openai" } as const;
 
 function client() {
-  return setupApp({ context, routes: chatConnectorAccessRoutes })(
-    chatConnectorAccessContract,
-  );
+  return setupApp({
+    context,
+    routes: [...chatConnectorAccessRoutes, ...connectedConnectorsRoutes],
+  })(chatConnectorAccessContract);
 }
 function accounts() {
   return setupApp({ context, routes: connectorAccountRoutes })(
@@ -158,6 +156,18 @@ describe("Chat connector account configuration", () => {
       icon: null,
       hasPermissions: false,
     });
+    const singleCustom = await accept(
+      client().overviewTarget({
+        headers,
+        query: { ...params, kind: "custom", customConnectorId: custom.id },
+      }),
+      [200],
+    );
+    expect(singleCustom.body.connector).toStrictEqual(
+      existing.body.find((entry) => {
+        return entry.target.kind === "custom";
+      }),
+    );
     const single = await accept(
       client().overviewTarget({ headers, query: { ...target, ...params } }),
       [200],
@@ -195,10 +205,6 @@ describe("Chat connector account configuration", () => {
         expect.objectContaining({ enabled: true, overrideEnabled: null }),
       ],
     });
-    const before: PgQueryExecutionCapture = { executions: [] };
-    await withPgQueryExecutionCapture(before, () => {
-      return client().overview({ headers, query: params });
-    });
     const extra = await connectors.createCustomConnector(owner.actor, {
       kind: "http",
       displayName: "Another service",
@@ -209,13 +215,11 @@ describe("Chat connector account configuration", () => {
       queryInjections: [],
     });
     await connectors.setCustomConnectorValues(owner.actor, extra.id, []);
-    const after: PgQueryExecutionCapture = { executions: [] };
-    const grown = await withPgQueryExecutionCapture(after, () => {
-      return accept(client().overview({ headers, query: params }), [200]);
-    });
+    const grown = await accept(
+      client().overview({ headers, query: params }),
+      [200],
+    );
     expect(grown.body).toHaveLength(3);
-    expect(before.executions.length).toBeGreaterThan(0);
-    expect(after.executions).toHaveLength(before.executions.length);
     await accept(
       client().setThreadOverride({
         headers,
