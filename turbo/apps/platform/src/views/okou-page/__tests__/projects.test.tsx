@@ -65,7 +65,10 @@ function projectRow(projectId = id) {
   return projectRows(projectId)[0]!;
 }
 type QueryScope = HTMLElement | Document | readonly HTMLElement[];
-function queryAllInScope(role: string, scope: QueryScope) {
+function queryAllInScope(
+  role: Parameters<typeof queryAllByRoleFast>[0],
+  scope: QueryScope,
+) {
   return Array.isArray(scope)
     ? scope.flatMap((container: HTMLElement) => {
         return queryAllByRoleFast(role, container);
