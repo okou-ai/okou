@@ -10,12 +10,12 @@ import { timeout } from "signal-timers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 import {
-  claimErrorReporting,
-  hasErrorReportOwner,
-} from "../../../lib/error-reporting.ts";
+  claimBrowserFailure,
+  ownsBrowserFailure,
+  detachBrowser,
+} from "../reporting.ts";
 import {
   createDeferredPromise,
-  detach,
   isAbortError,
   Reason,
   resetSignal,
@@ -907,7 +907,7 @@ function createDiscoveryGraph(
         !get(context.creationOwner$) &&
         get(available$)
       ) {
-        detach(
+        detachBrowser(
           set(get(links$).selectTab$, selected, signal),
           Reason.DomCallback,
           "browser revalidated selection",
@@ -920,7 +920,7 @@ function createDiscoveryGraph(
         snapshot.targets[0] &&
         get(available$)
       ) {
-        detach(
+        detachBrowser(
           set(get(links$).selectTab$, snapshot.targets[0].id, signal),
           Reason.DomCallback,
           "browser discovered selection",
@@ -1377,7 +1377,7 @@ function createCaptureGraph(
         if (performance.now() - get(captureUpdated$) < 150) {
           set(scheduleCapture$);
         } else {
-          detach(
+          detachBrowser(
             set(configureCapture$, selected.attached.frames.signal),
             Reason.DomCallback,
             "browser capture resize",
@@ -1613,7 +1613,7 @@ function createRetirementsGraph(
         set(selected.input.revoke$);
         set(selected.stream.suspend$);
         set(selected.geometry.cancelPresentation$);
-        detach(
+        detachBrowser(
           set(
             receipts.finishRetirement$,
             selected,
@@ -1743,7 +1743,7 @@ function createReadinessGraph(
       set(wake$);
     }
     set(nativeHost.synchronize$);
-    detach(
+    detachBrowser(
       set(
         get(links$).refreshFavicon$,
         selected,
@@ -2118,7 +2118,7 @@ function createSelectionRevalidation(
       set(get(links$).retireCurrent$, "target-replaced", false, true);
       const discovery = get(get(links$).discovery$);
       if (discovery) {
-        detach(
+        detachBrowser(
           set(discovery.refresh$, get(clientState$)!.signal),
           Reason.DomCallback,
           "browser selected target revalidation",
@@ -2447,7 +2447,7 @@ function createFaviconGraph(
           }
           const current = get(get(links$).selectedSession$);
           if (current) {
-            detach(
+            detachBrowser(
               set(refreshFavicon$, current, current.attached.client.signal),
               Reason.DomCallback,
               "browser successor favicon",
@@ -2537,7 +2537,7 @@ function createSessionEvent(
           url: null,
         });
         if (restored) {
-          detach(
+          detachBrowser(
             set(
               get(links$).refreshFavicon$,
               selected,
@@ -2568,7 +2568,7 @@ function createSessionEvent(
         waiting: false,
         wanted: document.waiting || document.wanted,
       });
-      detach(
+      detachBrowser(
         set(
           get(links$).refreshFavicon$,
           selected,
@@ -2716,7 +2716,7 @@ function createRetiredSessionEvents(
         }
         const discovery = get(get(links$).discovery$);
         if (discovery) {
-          detach(
+          detachBrowser(
             set(discovery.refresh$, original.attached.client.signal),
             Reason.DomCallback,
             "browser confirmed capture retirement",
@@ -3012,9 +3012,9 @@ function createFramesDisconnectionHandling(
 }
 
 function claimDisconnectionReport(fault: CdpFault): void {
-  claimErrorReporting(fault);
+  claimBrowserFailure(fault);
   if (fault.cause instanceof BrowserBridgeError) {
-    claimErrorReporting(fault.cause);
+    claimBrowserFailure(fault.cause);
   }
 }
 
@@ -3203,7 +3203,7 @@ function createEventsGraph(
     set(directory.invalidate$);
     const discovery = get(get(links$).discovery$);
     if (discovery) {
-      detach(
+      detachBrowser(
         set(discovery.refresh$, client.signal),
         Reason.DomCallback,
         "browser native membership validation",
@@ -3229,7 +3229,7 @@ function createFramesConnectionGraph(
     );
     set(framesState$, frames);
     frames.onEvent((event) => {
-      detach(
+      detachBrowser(
         set(get(links$).event$, event, frames, lifetime),
         Reason.DomCallback,
         "browser video event",
@@ -3361,7 +3361,7 @@ function createConnectionBootstrap(
     set(clientState$, client);
     set(framesState$, client);
     client.onEvent((event) => {
-      detach(
+      detachBrowser(
         set(get(links$).event$, event, client, lifetime),
         Reason.DomCallback,
         "browser protocol event",
@@ -3871,7 +3871,7 @@ function createTabClosingGraph(
             return !preceding.has(target.id);
           }) ?? targets.at(-1);
         if (next) {
-          detach(
+          detachBrowser(
             set(get(links$).selectTab$, next.id, client.signal),
             Reason.DomCallback,
             "browser close successor",
@@ -4598,14 +4598,14 @@ function createDisposalGraph(
               : undefined;
           const native = get(nativeState$);
           let reason: BrowserBridgeError | undefined;
-          if (native && !native.signal.aborted && hasErrorReportOwner(fault)) {
+          if (native && !native.signal.aborted && ownsBrowserFailure(fault)) {
             // Installed native clients completed bootstrap. Give their pending
             // calls the original resource report owner, not a fresh close error.
             reason = new BrowserBridgeError("unavailable", {
               stage: "ready",
               reason: "closed",
             });
-            claimErrorReporting(reason);
+            claimBrowserFailure(reason);
           }
           const nativeClosed = native?.close(reason);
           get(framesState$)?.close(fault);
@@ -4629,7 +4629,7 @@ function createDisposalGraph(
     }
     set(closingState$, true);
     const signal = set(resetClosing$);
-    detach(
+    detachBrowser(
       set(closeTransport$, signal),
       Reason.DomCallback,
       "browser original transport retirement",

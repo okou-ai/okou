@@ -13,6 +13,8 @@ export interface CdpConnectionObservation {
 }
 
 export class CdpFault extends Error {
+  /** Capture ownership follows this fault through wrappers retaining its cause. */
+  reported = false;
   readonly connection: CdpConnectionObservation | undefined;
   readonly readOnly: boolean;
 

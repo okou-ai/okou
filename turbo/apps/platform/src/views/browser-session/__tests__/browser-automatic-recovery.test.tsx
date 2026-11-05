@@ -1301,6 +1301,13 @@ test("Rejected navigation remains local and does not trigger resource replay", a
       return request.method === "Page.navigate";
     }),
   ).toHaveLength(1);
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    type: "exception",
+    error: { name: "NavigationFault" },
+    context: { tags: { logger: "Promise" } },
+  });
+  expect(viewer.errorLogs()).toHaveLength(1);
 });
 
 async function failImageAttempts(

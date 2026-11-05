@@ -3,7 +3,6 @@ import { delay, timeout } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { ApiError } from "../lib/api-error.ts";
 import { logger } from "./log.ts";
-import { hasErrorReportOwner } from "../lib/error-reporting.ts";
 
 const L = logger("Promise");
 
@@ -45,8 +44,7 @@ export function detach<T>(
       (error: unknown) => {
         if (
           !isAbortError(error) &&
-          !(error instanceof ApiError && error.expected) &&
-          !hasErrorReportOwner(error)
+          !(error instanceof ApiError && error.expected)
         ) {
           L.error(`Detached promise rejected [${reason}]`, error);
         }

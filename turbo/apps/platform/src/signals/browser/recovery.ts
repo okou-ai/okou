@@ -8,7 +8,6 @@ import {
 } from "ccstate";
 import {
   createDeferredPromise,
-  detach,
   isAbortError,
   Reason,
   resetSignal,
@@ -17,7 +16,7 @@ import {
   type DeferredPromise,
 } from "../utils.ts";
 import { monotonicNow } from "../../lib/time.ts";
-import { claimErrorReporting } from "../../lib/error-reporting.ts";
+import { claimBrowserFailure, detachBrowser } from "./reporting.ts";
 import {
   captureSentryLogError,
   sentryLogContext,
@@ -413,7 +412,7 @@ function createRecoveryStart(
         });
       }
       // The operation owns its result; native receipt cleanup may outlive cancellation.
-      detach(
+      detachBrowser(
         set(execute$, operation, mode, automatic, scope),
         Reason.Daemon,
         "browser resource recovery",
@@ -449,7 +448,7 @@ function createManualRecovery(
       signal.throwIfAborted();
       if (result.status !== "restored") {
         const fault = new CdpFault(result.error.kind, result.error.message);
-        claimErrorReporting(fault);
+        claimBrowserFailure(fault);
         throw fault;
       }
     },
