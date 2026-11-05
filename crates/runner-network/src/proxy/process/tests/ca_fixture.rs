@@ -2,10 +2,12 @@ use cli_test_support::mock_build::test_runner_build_session_id;
 use runner_host::host_file::{self, DirMode};
 use runner_host::paths::HomePaths;
 use runner_host::state_file::{self, OwnerCheck};
+use std::path::PathBuf;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CachedCa {
     session: String,
+    executable: PathBuf,
     combined: String,
 }
 
@@ -29,10 +31,13 @@ fn load_combined_ca() -> String {
         return runtime.block_on(generate_combined_ca());
     };
     // nextest isolates cases in separate processes. Reuse only within its
-    // verified parent session, with one bounded slot beside the test binary.
+    // verified parent session and binary. Build mounts may have a foreign
+    // owner inside containers; keep the private slot in the temporary root.
     let executable = std::env::current_exe().unwrap();
-    let profile = executable.parent().unwrap().parent().unwrap();
-    let directory = profile.join(".runner-network-test-ca");
+    let directory = std::env::temp_dir().join(format!(
+        "okou-runner-network-test-ca-{}",
+        nix::unistd::geteuid()
+    ));
     host_file::ensure_dir(&directory, DirMode::Private, "test CA cache").unwrap();
     let lock = runner_host::lock::open_lock_file(&directory.join("identity.lock")).unwrap();
     lock.lock().unwrap();
@@ -48,12 +53,13 @@ fn load_combined_ca() -> String {
         .unwrap()
     {
         let cached: CachedCa = serde_json::from_str(&text).unwrap();
-        if cached.session == session {
+        if cached.session == session && cached.executable == executable {
             return cached.combined;
         }
     }
     let cached = CachedCa {
         session,
+        executable,
         combined: runtime.block_on(generate_combined_ca()),
     };
     state_file::write_private_atomic_blocking(&path, &serde_json::to_vec(&cached).unwrap())
