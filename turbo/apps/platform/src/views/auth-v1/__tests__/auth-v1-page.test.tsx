@@ -151,9 +151,7 @@ test("The edited signup code reaches our registration API after authentication",
     path: "/sign-up",
   });
   expect(registeredToken).toBe("signed-visit:b8m3q0");
-  expect(
-    screen.queryByLabelText("Invitation code (optional)"),
-  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue("");
 });
 
 function setupSignedOutPage(path: string): Promise<void> {
