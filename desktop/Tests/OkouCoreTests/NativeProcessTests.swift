@@ -251,6 +251,7 @@ final class NativeProcessTests: XCTestCase {
       let failed = await listApps(executor)
       XCTAssertEqual(failed["status"].string, "failed")
     }
+    await fulfillment(of: [collector.expectation(eventCount: 4)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.count, 4)
     XCTAssertTrue(
