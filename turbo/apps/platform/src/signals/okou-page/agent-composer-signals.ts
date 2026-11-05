@@ -87,6 +87,11 @@ const noOpEventAction$ = command(
 
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
+  /**
+   * A dialog composer sends from its own unsaved draft and keeps the current
+   * page, leaving the Agent's saved composer untouched.
+   */
+  readonly inPlace?: boolean;
   readonly onOptimisticSend?: () => void;
 }
 
@@ -114,7 +119,7 @@ function createAgentSubmitMessage(
         ? null
         : await get(connector.accounts.preferenceState$);
       signal.throwIfAborted();
-      const send = options.forward
+      const send = options.inPlace
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
@@ -131,10 +136,10 @@ function createAgentSubmitMessage(
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
           editorDocument: submission.editorDocument,
-          // A forward stays on this page, so only a send that opens the new
-          // thread hands the selection over to it.
-          ...(options.forward
-            ? {}
+          // An in-place send stays on this page, so only a send that opens the
+          // new thread hands the selection over to it.
+          ...(options.inPlace
+            ? { preserveAgentDraft: true }
             : { composerTask: submission.taskSelection }),
           // Omit untouched draft preferences so the server applies the current
           // member default. Explicit "none" must also override a true default.
@@ -192,13 +197,13 @@ function createAgentComposerSignalsWithDraft(
     pendingRemoteAccess,
     draft: {
       signals: agentDraft.draft,
-      load$: options.forward ? noOpAction$ : agentDraft.load$,
-      save$: options.forward ? noOpAction$ : agentDraft.queueDraftSync$,
+      load$: options.inPlace ? noOpAction$ : agentDraft.load$,
+      save$: options.inPlace ? noOpAction$ : agentDraft.queueDraftSync$,
     },
     eventSignals: createChatEventProjectionSignals(chatEvents$),
     voiceDraftTarget: `agent:${agentId}`,
     singleLineOnMobile: false,
-    forwardComposer: options.forward !== undefined,
+    forwardComposer: options.inPlace === true,
     modelSelection$: chatPageModelSelection$,
     selectedModelOauthAvailable$: chatPageSelectedModelOauthAvailable$,
     setModelSelection$,
@@ -223,8 +228,20 @@ export function createForwardAgentComposerSignals(
   return createAgentComposerSignalsWithDraft(
     agentId,
     createAgentDraftSignals(agentId),
-    { forward, onOptimisticSend },
+    { forward, inPlace: true, onOptimisticSend },
   );
+}
+
+/** A dialog composer for a prepared draft that starts a new thread in place. */
+export function createInPlaceAgentComposerSignals(
+  agentId: string,
+  agentDraft: EnsuredAgentDraft,
+  onOptimisticSend: () => void,
+) {
+  return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
+    inPlace: true,
+    onOptimisticSend,
+  });
 }
 
 interface AgentComposerContext {

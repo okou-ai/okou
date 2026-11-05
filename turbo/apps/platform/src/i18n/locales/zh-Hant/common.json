@@ -1634,6 +1634,7 @@
       "notPlannedRecorded": "已記下，這件事暫無計劃",
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
+      "sent": "已傳送到新聊天",
       "undoFeedback": "復原",
       "useSuggestion": "使用建議"
     },

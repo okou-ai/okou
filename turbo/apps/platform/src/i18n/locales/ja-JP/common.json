@@ -1634,6 +1634,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "新しいチャットに送信しました",
       "undoFeedback": "Undo",
       "useSuggestion": "提案を使う"
     },
