@@ -58,13 +58,11 @@ def validate(directory, *, cases=CASES, policy_key="native_claim_loss_policy_jso
     result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
     policy = supplied_policy(collector, result, policy_key)
     witnesses = {case: [] for case in cases}
-    for line in (directory / "stdout.log").read_text().splitlines():
-        if not line.startswith(PREFIX):
-            continue
-        event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if not report.valid_witness_envelope(event, lambda value: value in cases):
-            raise ValueError("invalid native claim rejection witness")
-        witnesses[event["case"]].append(event)
+    report.collect_witnesses(
+        directory / 'stdout.log', {PREFIX: witnesses},
+        case_matches=lambda value: value in cases,
+        invalid_message="invalid native claim rejection witness",
+    )
     identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
     paths = set()
     zero = dict.fromkeys(COUNTS, 0) | {"closed": False}

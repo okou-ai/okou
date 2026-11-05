@@ -63,13 +63,11 @@ def validate(directory):
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_later_parking_policy_json")
     witnesses = {case: [] for case in CASES}
-    for line in (directory / "stdout.log").read_text().splitlines():
-        if not line.startswith(PREFIX):
-            continue
-        event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if not report.valid_witness_envelope(event, lambda value: value in CASES):
-            raise ValueError("invalid later parking witness")
-        witnesses[event["case"]].append(event)
+    report.collect_witnesses(
+        directory / 'stdout.log', {PREFIX: witnesses},
+        case_matches=lambda value: value in CASES,
+        invalid_message="invalid later parking witness",
+    )
     identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
     runners, paths, operations, reuse_keys = set(), set(), set(), set()
     for case, events in witnesses.items():

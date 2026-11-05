@@ -82,13 +82,11 @@ def validate(directory):
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_speculative_fault_policy_json")
     witnesses = {case: [] for case in CASES}
-    for line in (directory / "stdout.log").read_text().splitlines():
-        if not line.startswith(PREFIX):
-            continue
-        event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if not report.valid_witness_envelope(event, lambda value: value in CASES):
-            raise ValueError("invalid speculative fault witness")
-        witnesses[event["case"]].append(event)
+    report.collect_witnesses(
+        directory / 'stdout.log', {PREFIX: witnesses},
+        case_matches=lambda value: value in CASES,
+        invalid_message="invalid speculative fault witness",
+    )
     identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}
     paths, runners = set(), set()
     for case, events in witnesses.items():

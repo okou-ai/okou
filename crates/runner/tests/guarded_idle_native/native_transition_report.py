@@ -4,8 +4,8 @@ import hashlib
 import json
 
 import batch_aba_report as batch
-import pressure_report as pressure
 import progress_report as foreground
+import report
 from snapshot_report import exact
 
 
@@ -37,7 +37,7 @@ def wire(value, response=False, state="Resumed"):
     if response:
         if body:
             raise ValueError("204 response contains a body")
-    elif json.loads(body, object_pairs_hook=pressure.unique_object) != {"state": state}:
+    elif json.loads(body, object_pairs_hook=report.unique_object) != {"state": state}:
         raise ValueError("native transition evidence names another operation")
     return hashlib.sha256(raw).hexdigest()
 

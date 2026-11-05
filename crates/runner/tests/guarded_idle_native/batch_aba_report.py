@@ -51,13 +51,11 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
     result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
     policy = supplied_policy(collector, result, policy_key)
     witnesses = {case: [] for case in cases}
-    for line in (directory/"stdout.log").read_text().splitlines():
-        if not line.startswith(PREFIX):
-            continue
-        event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if not report.valid_witness_envelope(event, lambda value: value in cases):
-            raise ValueError("invalid batch ABA witness")
-        witnesses[event["case"]].append(event)
+    report.collect_witnesses(
+        directory / 'stdout.log', {PREFIX: witnesses},
+        case_matches=lambda value: value in cases,
+        invalid_message="invalid batch ABA witness",
+    )
     runners, paths = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]

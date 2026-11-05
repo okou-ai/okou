@@ -86,6 +86,27 @@ def valid_witness_envelope(event, case_matches):
     )
 
 
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate native pressure policy field")
+        result[key] = value
+    return result
+
+
+def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
+    """Admit strict witnesses into caller-owned groups in original log order."""
+    for line in log_path.read_text().splitlines():
+        for prefix, cases in groups.items():
+            if not line.startswith(prefix):
+                continue
+            event = json.loads(line[len(prefix):], object_pairs_hook=unique_object)
+            if not valid_witness_envelope(event, case_matches):
+                raise ValueError(invalid_message)
+            cases[event["case"]].append(event)
+
+
 def validate_residency(sample):
     age = sample.get("sample_age_ns")
     if type(age) is not int or age < 0:

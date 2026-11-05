@@ -5,6 +5,7 @@ import json
 import pathlib
 
 import pressure_report
+import report
 
 BYTES = 4 * 1024**3
 
@@ -20,8 +21,8 @@ def original_inputs(metadata, artifacts, prefix):
     if (not isinstance(raw_policy, str) or not isinstance(raw_inputs, str)
             or hashlib.sha256(raw_policy.encode()).hexdigest() != artifacts["policy_sha256"]):
         raise ValueError("startup raw policy/hash mismatch")
-    policy = json.loads(raw_policy, object_pairs_hook=pressure_report.unique_object)
-    inputs = json.loads(raw_inputs, object_pairs_hook=pressure_report.unique_object)
+    policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
+    inputs = json.loads(raw_inputs, object_pairs_hook=report.unique_object)
     if (not isinstance(policy, dict) or set(policy) != pressure_report.POLICY_FIELDS
             or any(not pressure_report.integer(v, 1) for v in policy.values())
             or not policy["operating_floor_bytes"] <= policy["critical_available_bytes"]

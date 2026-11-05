@@ -30,7 +30,7 @@ def validate(directory):
         prefix = next((p for p in (PREFIX, batch.PREFIX) if line.startswith(p)), None)
         if prefix is None:
             continue
-        event = json.loads(line[len(prefix):], object_pairs_hook=pressure.unique_object)
+        event = json.loads(line[len(prefix):], object_pairs_hook=report.unique_object)
         if not isinstance(event, dict) or event.get("case") not in CASES:
             raise ValueError("physical rollback has an unexpected case")
         (physical if prefix == PREFIX else shared)[event["case"]].append(event)
