@@ -3010,6 +3010,13 @@ function createFramesDisconnectionHandling(
   });
 }
 
+function claimDisconnectionReport(fault: CdpFault): void {
+  claimErrorReporting(fault);
+  if (fault.cause instanceof BrowserBridgeError) {
+    claimErrorReporting(fault.cause);
+  }
+}
+
 function createDisconnectionHandling(
   context: ControllerContext<
     | "clientState$"
@@ -3060,10 +3067,7 @@ function createDisconnectionHandling(
     const automatic = get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
     if (automatic) {
       // Recovery owns the final report, including rejected in-flight effects.
-      claimErrorReporting(fault);
-      if (fault.cause instanceof BrowserBridgeError) {
-        claimErrorReporting(fault.cause);
-      }
+      claimDisconnectionReport(fault);
     }
     if (source !== get(clientState$) && established) {
       set(framesDisconnected$, fault, source);
@@ -3087,6 +3091,7 @@ function createDisconnectionHandling(
           },
         }),
       ]);
+      claimDisconnectionReport(fault);
     }
     set(connectedState$, false);
     set(readinessFailure$, fault);
