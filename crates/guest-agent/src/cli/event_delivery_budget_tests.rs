@@ -255,7 +255,7 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
             );
         }
         let mut event = collaboration_event(Value::Object(states)).unwrap();
-        event["item"]["prompt"] = json!("p".repeat(LIMIT));
+        event["item"]["prompt"] = Value::String("p".repeat(LIMIT));
         let mut expected = collaboration_event(Value::Object(expected_states)).unwrap();
         expected["item"]["prompt"] = json!("[event content truncated for delivery]");
 
@@ -343,14 +343,14 @@ async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() 
     .enumerate()
     .map(|(i, (framework, mut event))| {
         match i {
-            0 | 1 => event["message"]["id"] = json!("x".repeat(LIMIT)),
-            2 => event["item"]["id"] = json!("x".repeat(LIMIT)),
+            0 | 1 => event["message"]["id"] = Value::String("x".repeat(LIMIT)),
+            2 => event["item"]["id"] = Value::String("x".repeat(LIMIT)),
             3 => event["item"]["receiver_thread_ids"] = json!(["x".repeat(LIMIT)]),
             4 => {
                 event["item"]["agents_states"] =
                     json!({"x".repeat(LIMIT): {"status": "errored", "message": "text"}})
             }
-            _ => event["item"]["reasoning_effort"] = json!("x".repeat(LIMIT)),
+            _ => event["item"]["reasoning_effort"] = Value::String("x".repeat(LIMIT)),
         }
         (framework, event)
     }) {
@@ -380,9 +380,9 @@ async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() 
         let mut tail = text_event_at_sequence(framework, "tail", 21);
         match framework {
             Framework::ClaudeCode | Framework::Pi => {
-                tail["message"]["id"] = json!("x".repeat(LIMIT));
+                tail["message"]["id"] = Value::String("x".repeat(LIMIT));
             }
-            Framework::Codex => tail["item"]["id"] = json!("x".repeat(LIMIT)),
+            Framework::Codex => tail["item"]["id"] = Value::String("x".repeat(LIMIT)),
         }
         runtime
             .sender()
