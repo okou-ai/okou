@@ -139,6 +139,7 @@ test.each(["provider", "native"] as const)(
     await f.owned.run(async () => {
       const a = await f.start();
       const first = await open(a);
+      mockNow(START + MINUTE);
       let reads = 0;
       let failing = true;
       server.use(
@@ -175,6 +176,7 @@ test.each(["revoked", "expired"] as const)(
     await f.owned.run(async () => {
       const a = await f.start();
       const first = await open(a);
+      mockNow(START + MINUTE);
       f.provider.native.beforeNativeWindowReply = async () => {
         f.provider.native.beforeNativeWindowReply = undefined;
         if (change === "revoked") {
@@ -270,6 +272,7 @@ test.each(["provider", "native"] as const)(
     await f.owned.run(async () => {
       const a = await f.start();
       const first = await open(a);
+      mockNow(START + MINUTE);
       const controller = new AbortController();
       const cancellation = new DOMException("Open ended", "AbortError");
       const cancel = () => {
