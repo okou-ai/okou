@@ -398,21 +398,6 @@ struct ChatDetailView: View {
         ConversationWorkHeader(section: section, expanded: expanded, failed: failed) {
           scrolling.toggleWorkHistory(section.id)
         }
-        // Tool calls live only in the run log; the expanded steps link to it.
-        if expanded,
-          let runID = conversation.visibleMessages.first(where: {
-            $0.id == section.anchorMessageID
-          })?.runID
-        {
-          Spacer(minLength: 0)
-          Link(destination: conversation.webURL.appending(path: "activities/\(runID)")) {
-            Label("Run log", okouSymbol: "arrow-up-right", iconSize: OkouIconSize.inline)
-              .font(.okou(.footnote))
-              .foregroundStyle(OkouColor.mutedForeground)
-              .frame(minHeight: OkouControl.minimumTarget)
-          }
-          .accessibilityHint("Opens the run's tool calls on the web")
-        }
       }
       .padding(.leading, showsAvatar ? 0 : OkouSpace.six)
       .frame(maxWidth: .infinity, alignment: .leading)
