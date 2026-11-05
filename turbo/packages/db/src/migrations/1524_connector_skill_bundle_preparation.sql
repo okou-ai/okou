@@ -1,3 +1,6 @@
+-- Existing rows receive NULL pairs, which satisfy both checks. Enforce every
+-- subsequent INSERT/UPDATE without scanning the catalog under ACCESS EXCLUSIVE.
+-- Leave historical validation outside this bounded deployment transaction.
 ALTER TABLE "connector_catalog_entries" ADD COLUMN "skill_content_bundle" jsonb;--> statement-breakpoint
 ALTER TABLE "connector_catalog_entries" ADD COLUMN "skill_content_bundle_source_version_id" varchar(64);--> statement-breakpoint
 ALTER TABLE "org_custom_connectors" ADD COLUMN "skill_content_bundle" jsonb;--> statement-breakpoint
@@ -22,7 +25,7 @@ ALTER TABLE "connector_catalog_entries" ADD CONSTRAINT "connector_catalog_entrie
               ELSE false
             END
           )
-        ) IS TRUE);--> statement-breakpoint
+        ) IS TRUE) NOT VALID;--> statement-breakpoint
 ALTER TABLE "org_custom_connectors" ADD CONSTRAINT "org_custom_connectors_skill_content_bundle_check" CHECK ((
           ("org_custom_connectors"."skill_content_bundle" IS NULL AND "org_custom_connectors"."skill_content_bundle_source_version_id" IS NULL)
           OR (
@@ -40,4 +43,4 @@ ALTER TABLE "org_custom_connectors" ADD CONSTRAINT "org_custom_connectors_skill_
               ELSE false
             END
           )
-        ) IS TRUE);
+        ) IS TRUE) NOT VALID;
