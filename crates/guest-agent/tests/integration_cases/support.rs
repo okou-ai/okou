@@ -2,11 +2,11 @@ use httpmock::prelude::*;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, LazyLock, Mutex, MutexGuard,
+    Arc, LazyLock,
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, MutexGuard, Notify};
 
 pub(crate) use crate::common::SystemLogOverrideGuard;
 
@@ -22,7 +22,32 @@ pub(crate) static MOCK_RUNTIME_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 pub(crate) static MOCK_SERVER: LazyLock<MockServer> = LazyLock::new(MockServer::start);
 
 /// Serialize shared mock resets, runtime files, and process-wide log overrides.
-pub(crate) static TEST_MUTEX: Mutex<()> = Mutex::new(());
+static TEST_MUTEX: Mutex<()> = Mutex::const_new(());
+
+pub(crate) async fn lock_test_state() -> MutexGuard<'static, ()> {
+    TEST_MUTEX.lock().await
+}
+
+/// A private HTTP boundary still produces process-global guest logs.
+#[must_use = "keep PrivateApiMock alive until all HTTP producers have finished"]
+pub(crate) struct PrivateApiMock {
+    server: MockServer,
+    _guard: MutexGuard<'static, ()>,
+}
+
+impl PrivateApiMock {
+    pub(crate) async fn new() -> Self {
+        let guard = lock_test_state().await;
+        Self {
+            server: MockServer::start(),
+            _guard: guard,
+        }
+    }
+
+    pub(crate) fn server(&self) -> &MockServer {
+        &self.server
+    }
+}
 
 #[must_use = "keep SharedApiMock alive for the full test to hold the shared mock lock"]
 pub(crate) struct SharedApiMock {
@@ -32,10 +57,7 @@ pub(crate) struct SharedApiMock {
 
 impl SharedApiMock {
     pub(crate) async fn new() -> Self {
-        let guard = match TEST_MUTEX.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let guard = lock_test_state().await;
         let server = &*MOCK_SERVER;
         server.reset_async().await;
         cleanup_integration_runtime_root();

@@ -30,10 +30,12 @@ struct HeldOpenResponseServer {
     base_url: String,
     release: oneshot::Sender<()>,
     handle: tokio::task::JoinHandle<std::io::Result<()>>,
+    _guard: tokio::sync::MutexGuard<'static, ()>,
 }
 
 impl HeldOpenResponseServer {
     async fn start(response_parts: Vec<Vec<u8>>) -> std::io::Result<Self> {
+        let guard = lock_test_state().await;
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let (release, release_rx) = oneshot::channel();
@@ -50,6 +52,7 @@ impl HeldOpenResponseServer {
             base_url: format!("http://{address}"),
             release,
             handle,
+            _guard: guard,
         })
     }
 
@@ -651,7 +654,8 @@ fn with_api_config_rejects_invalid_client_session_header() {
 
 #[tokio::test]
 async fn post_json_uses_explicit_api_config_without_env_api_url() {
-    let server = MockServer::start();
+    let api = PrivateApiMock::new().await;
+    let server = api.server();
     let http = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "explicit-token",
@@ -679,7 +683,8 @@ async fn post_json_uses_explicit_api_config_without_env_api_url() {
 
 #[tokio::test]
 async fn steered_input_declaration_posts_once_to_the_event_route() {
-    let server = MockServer::start();
+    let api = PrivateApiMock::new().await;
+    let server = api.server();
     let client = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token",
@@ -706,7 +711,8 @@ async fn steered_input_declaration_posts_once_to_the_event_route() {
 
 #[tokio::test]
 async fn steered_input_conflict_is_returned_without_a_retry() {
-    let server = MockServer::start();
+    let api = PrivateApiMock::new().await;
+    let server = api.server();
     let client = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token",
@@ -730,6 +736,125 @@ async fn steered_input_conflict_is_returned_without_a_retry() {
         result,
         Err(AgentError::HttpStatus { status: 409, .. })
     ));
+}
+
+#[tokio::test]
+async fn private_http_warnings_wait_until_telemetry_releases_its_sink() {
+    let api = SharedApiMock::new().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = guest_agent::paths::GuestPaths::from_runtime_dir(tmp.path().join("runtime"));
+    let marker = "owned telemetry log\n";
+    guest_agent::paths::write_private(paths.system_log_file(), marker).unwrap();
+    let system_log_guard = SystemLogOverrideGuard::set(paths.system_log_file());
+    let upload_mock = api.server().mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/telemetry")
+            .body_includes(marker.trim());
+        then.status(200);
+    });
+    let telemetry = guest_agent::telemetry::Telemetry::spawn_for_paths(
+        TEST_RUN_ID.to_string(),
+        &paths,
+        Arc::new(SecretMasker::from_raw("")),
+        http_client!(),
+    );
+
+    let first_report = telemetry
+        .flush(guest_agent::telemetry::UploadMode::Live)
+        .await
+        .unwrap();
+    assert_eq!(
+        first_report,
+        guest_agent::telemetry::FlushReport {
+            uploaded: true,
+            position_persisted: true,
+        }
+    );
+
+    let private_api = PrivateApiMock::new();
+    let response_head = format!(
+        "HTTP/1.1 400 Bad Request\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        EXPECTED_ERROR_RESPONSE_BODY_LIMIT_BYTES + 1,
+    );
+    let held_server = HeldOpenResponseServer::start(vec![response_head.into_bytes()]);
+    tokio::pin!(private_api, held_server);
+    // Poll the actual fixture constructors at the vulnerable two-flush boundary.
+    // Both must wait for ownership before they can start an HTTP log producer.
+    assert!(futures_util::poll!(&mut private_api).is_pending());
+    assert!(futures_util::poll!(&mut held_server).is_pending());
+
+    let second_report = telemetry
+        .flush(guest_agent::telemetry::UploadMode::Live)
+        .await
+        .unwrap();
+    assert_eq!(
+        second_report,
+        guest_agent::telemetry::FlushReport {
+            uploaded: false,
+            position_persisted: true,
+        }
+    );
+    upload_mock.assert_calls_async(1).await;
+    telemetry.shutdown().await;
+    upload_mock.delete_async().await;
+    drop(system_log_guard);
+    drop(api);
+
+    // Complete both warning paths after the previous sink has been cleared.
+    let private_api = tokio::time::timeout(RESPONSE_LIMIT_TEST_TIMEOUT, private_api)
+        .await
+        .expect("private HTTP fixture did not acquire released ownership");
+    let server = private_api.server();
+    let conflict_mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/runners/runs/run-123/steerable-inputs/event-123/steered");
+        then.status(409).json_body(json!({
+            "error": { "message": "Input already consumed" }
+        }));
+    });
+    let client = guest_agent::http::HttpClient::with_api_config(
+        server.base_url(),
+        "test-token",
+        "",
+        "steered-run",
+        Duration::ZERO,
+    )
+    .unwrap();
+    assert!(matches!(
+        client.post_steered_input("run-123", "event-123").await,
+        Err(AgentError::HttpStatus { status: 409, .. })
+    ));
+    conflict_mock.assert_calls_async(1).await;
+    drop(private_api);
+
+    let server = tokio::time::timeout(RESPONSE_LIMIT_TEST_TIMEOUT, held_server)
+        .await
+        .expect("held-open HTTP fixture did not acquire released ownership")
+        .unwrap();
+    let client = guest_agent::http::HttpClient::with_api_config(
+        &server.base_url,
+        "test-token",
+        "",
+        "response-limit-run",
+        Duration::ZERO,
+    )
+    .unwrap();
+    let result = tokio::time::timeout(
+        RESPONSE_LIMIT_TEST_TIMEOUT,
+        client.post_json(&server.base_url, &json!({}), 1),
+    )
+    .await
+    .expect("client waited for an oversized declared error response");
+    let Err(AgentError::HttpStatus { status, message }) = result else {
+        panic!("expected structured HTTP status error");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(message, EXPECTED_ERROR_RESPONSE_BODY_LIMIT_DIAGNOSTIC);
+    server.finish().await;
+    assert_eq!(
+        std::fs::read_to_string(paths.system_log_file()).unwrap(),
+        marker
+    );
 }
 
 #[tokio::test]
