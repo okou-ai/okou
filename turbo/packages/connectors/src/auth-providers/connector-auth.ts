@@ -67,7 +67,6 @@ import { datadogProvider } from "./connectors/datadog/provider";
 import { docusignProvider } from "./connectors/docusign/provider";
 import { dropboxProvider } from "./connectors/dropbox/provider";
 import { figmaProvider } from "./connectors/figma/provider";
-import { garminConnectProvider } from "./connectors/garmin-connect/provider";
 import { gumroadProvider } from "./connectors/gumroad/provider";
 import { githubProvider } from "./connectors/github/provider";
 import { gmailProvider } from "./connectors/gmail/provider";
@@ -999,11 +998,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("docusign", "oauth", docusignProvider),
   authCodeRefreshProviderEntry("dropbox", "oauth", dropboxProvider),
   authCodeRefreshProviderEntry("figma", "oauth", figmaProvider),
-  authCodeRefreshProviderEntry(
-    "garmin-connect",
-    "oauth",
-    garminConnectProvider,
-  ),
   authCodeTokenRevokeProviderEntry("github", "oauth", githubProvider),
   authCodeRefreshProviderEntry("gmail", "oauth", gmailProvider),
   authCodeRefreshProviderEntry("google-ads", "oauth", googleAdsProvider),
