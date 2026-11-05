@@ -2297,7 +2297,7 @@ function HeaderWorkflowAutomationEditDialog({
             automation={automation}
             headerAutomations={headerAutomations}
             displayTimezone={displayTimezone}
-            onDone={() => {
+            onCancel={() => {
               onOpenChange(false);
             }}
           />
@@ -2307,7 +2307,7 @@ function HeaderWorkflowAutomationEditDialog({
           <HeaderGmailNewMessageAutomationEditForm
             automation={automation}
             headerAutomations={headerAutomations}
-            onDone={() => {
+            onCancel={() => {
               onOpenChange(false);
             }}
           />
@@ -2317,7 +2317,7 @@ function HeaderWorkflowAutomationEditDialog({
           <HeaderGmailLabelAutomationEditForm
             automation={automation}
             headerAutomations={headerAutomations}
-            onDone={() => {
+            onCancel={() => {
               onOpenChange(false);
             }}
           />
@@ -2379,7 +2379,7 @@ function HeaderScheduleAutomationEditForm({
   automation,
   headerAutomations,
   displayTimezone,
-  onDone,
+  onCancel,
 }: {
   readonly automation: Extract<
     ChatThreadWorkflowAutomation,
@@ -2387,7 +2387,7 @@ function HeaderScheduleAutomationEditForm({
   >;
   readonly headerAutomations: HeaderAutomationSignals;
   readonly displayTimezone: string;
-  readonly onDone: () => void;
+  readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -2412,7 +2412,6 @@ function HeaderScheduleAutomationEditForm({
         detach(
           updateAutomation(
             { automationId: automation.id, schedule: scheduleValue },
-            onDone,
             pageSignal,
           ),
           Reason.DomCallback,
@@ -2477,7 +2476,7 @@ function HeaderScheduleAutomationEditForm({
           </span>
         </label>
       ) : null}
-      <HeaderAutomationEditFooter saving={saving} onCancel={onDone} />
+      <HeaderAutomationEditFooter saving={saving} onCancel={onCancel} />
     </form>
   );
 }
@@ -2694,14 +2693,14 @@ function HeaderGmailTextMatcherFields({
 function HeaderGmailNewMessageAutomationEditForm({
   automation,
   headerAutomations,
-  onDone,
+  onCancel,
 }: {
   readonly automation: Extract<
     ChatThreadWorkflowAutomation,
     { eventType: "gmail-new-message" }
   >;
   readonly headerAutomations: HeaderAutomationSignals;
-  readonly onDone: () => void;
+  readonly onCancel: () => void;
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateAutomation] = useLoadableSet(
@@ -2724,7 +2723,6 @@ function HeaderGmailNewMessageAutomationEditForm({
                 automation.eventConfig,
               ),
             },
-            onDone,
             pageSignal,
           ),
           Reason.DomCallback,
@@ -2740,7 +2738,7 @@ function HeaderGmailNewMessageAutomationEditForm({
         eventConfig={automation.eventConfig}
         disabled={saving}
       />
-      <HeaderAutomationEditFooter saving={saving} onCancel={onDone} />
+      <HeaderAutomationEditFooter saving={saving} onCancel={onCancel} />
     </form>
   );
 }
@@ -2748,14 +2746,14 @@ function HeaderGmailNewMessageAutomationEditForm({
 function HeaderGmailLabelAutomationEditForm({
   automation,
   headerAutomations,
-  onDone,
+  onCancel,
 }: {
   readonly automation: Extract<
     ChatThreadWorkflowAutomation,
     { eventType: "gmail-label-applied" }
   >;
   readonly headerAutomations: HeaderAutomationSignals;
-  readonly onDone: () => void;
+  readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -2778,7 +2776,6 @@ function HeaderGmailLabelAutomationEditForm({
         detach(
           updateAutomation(
             { automationId: automation.id, eventConfig },
-            onDone,
             pageSignal,
           ),
           Reason.DomCallback,
@@ -2803,7 +2800,7 @@ function HeaderGmailLabelAutomationEditForm({
           })}
         />
       </label>
-      <HeaderAutomationEditFooter saving={saving} onCancel={onDone} />
+      <HeaderAutomationEditFooter saving={saving} onCancel={onCancel} />
     </form>
   );
 }

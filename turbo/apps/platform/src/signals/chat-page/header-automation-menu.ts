@@ -41,10 +41,8 @@ export interface HeaderAutomationSignals {
     Promise<readonly HeaderWorkflowAutomationEntry[]>
   >;
   readonly reloadAutomations$: Command<void, []>;
-  readonly save$: Command<
-    Promise<void>,
-    [HeaderAutomationUpdate, () => void, AbortSignal]
-  >;
+  /** Saves the automation and closes the editor that was open when it began. */
+  readonly save$: Command<Promise<void>, [HeaderAutomationUpdate, AbortSignal]>;
   readonly runNow$: Command<Promise<void>, [string, AbortSignal]>;
 }
 
@@ -171,11 +169,18 @@ function workflowAutomationSummary(
   );
 }
 
+/** The thread sidebar's automation editor, which a successful save closes. */
+interface HeaderAutomationEditor<Editor> {
+  readonly editingAutomation$: Computed<Editor | null>;
+  readonly closeEditingAutomation$: Command<void, [Editor | null]>;
+}
+
 /**
  * Create the automation graph owned by one chat-thread signal instance.
  */
-export function createHeaderAutomationSignals(
+export function createHeaderAutomationSignals<Editor>(
   threadId: string,
+  editor: HeaderAutomationEditor<Editor>,
 ): HeaderAutomationSignals {
   const internalReloadAutomations$ = state(0);
 
@@ -216,9 +221,10 @@ export function createHeaderAutomationSignals(
     async (
       { get, set },
       params: HeaderAutomationUpdate,
-      onSaved: () => void,
       signal: AbortSignal,
     ) => {
+      // Closing is identity-scoped: an editor opened during the save stays open.
+      const openEditor = get(editor.editingAutomation$);
       const client = get(apiClient$)(workflowAutomationsContract);
       await accept(
         client.update({
@@ -233,7 +239,7 @@ export function createHeaderAutomationSignals(
       );
       signal.throwIfAborted();
       set(reloadAutomations$);
-      onSaved();
+      set(editor.closeEditingAutomation$, openEditor);
     },
   );
 
