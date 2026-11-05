@@ -69,10 +69,10 @@ final class ConversationCollectionTests: XCTestCase {
       contentInsets: EdgeInsets(top: 64, leading: 0, bottom: 80, trailing: 0),
       anchor: ConversationScrollAnchor(), scroll: ConversationCollectionScroll(),
       followsBottom: false, phaseChanged: { _ in }, metricsChanged: { _ in },
-      rowsPresented: rowsPresented, refresh: {}
-    ) { row, _ in
-      Text(row.message?.text ?? "")
-    }
+      rowsPresented: rowsPresented, refresh: {},
+      content: { row, _ in
+        Text(row.message?.text ?? "")
+      })
   }
 
   private func message() -> ChatMessage {
