@@ -90,6 +90,9 @@ def _run_suite(
             "pytest.ini",
             f"--confcutdir={suite}",
             "-q",
+            # The fixture reports node IDs itself; no pytest cache is consumed.
+            "-p",
+            "no:cacheprovider",
             *arguments,
             *paths,
         ],
