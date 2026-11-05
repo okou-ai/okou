@@ -14,7 +14,6 @@ import {
   launchConnectorConnect,
   type ConnectorConnectHandlers,
 } from "./launch-connector-connect.ts";
-import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 
 export type ConnectorInventoryStatus = "loading" | "unavailable" | "ready";
 
@@ -403,7 +402,6 @@ function AccountsConnectorCard({
       trailingAction={
         <div className="relative z-20 min-w-0 max-w-full">{manageAccess}</div>
       }
-      footer={connector.slug === "mercury" ? <MercuryDisclosure /> : undefined}
     />
   );
 }

@@ -1545,32 +1545,6 @@ const connectors = [
     ],
   }),
   connector({
-    connectorSlug: "mercury",
-    label: "Mercury",
-    authMethods: [
-      standardOauthMethod({
-        connectorSlug: "mercury",
-        prefix: "MERCURY",
-        tokenEnvironmentNames: ["MERCURY_TOKEN"],
-        scopes: ["read", "offline_access"],
-      }),
-      manualMethod({
-        label: "API Token",
-        description: "Enter a Mercury API token.",
-        fields: [
-          manualField({
-            privateName: "MERCURY_TOKEN",
-            publicId: "apiToken",
-            label: "API Token",
-            storage: "secret",
-            placeholder: "secret-token:mercury_production_...",
-          }),
-        ],
-        envBindings: { MERCURY_TOKEN: secret("MERCURY_TOKEN") },
-      }),
-    ],
-  }),
-  connector({
     connectorSlug: "meta-ads",
     label: "Meta Ads",
     authMethods: [

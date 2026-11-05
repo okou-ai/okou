@@ -3366,28 +3366,6 @@
     "versionFileCount": 1
   },
   {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/mercury",
-    "name": "mercury",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/mercury/1c992a7662aa74d83acbeba0531819c9e8d901d048b46ad8569cb3f3ee96d88b",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/mercury",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/mercury",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 7479,
-    "storageId": "f5a03609-47df-46b5-9990-12b1e0b4693a",
-    "frontmatter": {
-      "name": "mercury",
-      "description": "Mercury API for banking. Use when user mentions \"Mercury\", \"business banking\", \"bank account\", or fintech operations."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/mercury",
-    "storageSize": 1711,
-    "versionHash": "1c992a7662aa74d83acbeba0531819c9e8d901d048b46ad8569cb3f3ee96d88b",
-    "versionSize": 1711,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/meta-ads",
     "name": "meta-ads",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/meta-ads/f8b77b8ee9ef31a7b1cf626fb72e4f9f304a02ae344ab30d8e8545590d96fc56",

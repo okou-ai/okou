@@ -442,31 +442,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
     },
   },
   {
-    connectorSlug: "mercury",
-    label: "Mercury",
-    clientEnvPrefix: "MERCURY",
-    authorizationEndpoint: "https://oauth2.mercury.com/oauth2/auth",
-    tokenUrl: "https://oauth2.mercury.com/oauth2/token",
-    pkce: true,
-    tokenResponse: {
-      access_token: "mercury-test-token",
-      refresh_token: "mercury-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.mercury.com/api/v1/organization", () => {
-          return HttpResponse.json({
-            organization: {
-              id: "mercury-org-123",
-              legalBusinessName: "Mercury Test Org",
-            },
-          });
-        }),
-      );
-    },
-  },
-  {
     connectorSlug: "neon",
     label: "Neon",
     clientEnvPrefix: "NEON",

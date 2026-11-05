@@ -417,7 +417,6 @@ runs:
           QUICKBOOKS
           RAMP
           GUMROAD
-          MERCURY
           SPOTIFY
           STRIPE
           ZOOM
@@ -449,7 +448,6 @@ runs:
         add_doppler_config FINICITY_APP_SECRET
         add_doppler_config FINICITY_PARTNER_ID
         add_doppler_config VERCEL_INTEGRATION_SLUG
-        add_doppler_config MERCURY_OAUTH_ENVIRONMENT
         add_secret STRIPE_SECRET_KEY STRIPE_SECRET_KEY
         add_var STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID
         add_secret STRIPE_WEBHOOK_SECRET STRIPE_WEBHOOK_SECRET

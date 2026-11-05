@@ -1082,33 +1082,6 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
-    connectorSlug: "mercury",
-    authMethodId: "oauth",
-    contract: {
-      client: {
-        kind: "static-confidential-env",
-        clientIdEnv: "MERCURY_OAUTH_CLIENT_ID",
-        clientSecretEnv: "MERCURY_OAUTH_CLIENT_SECRET",
-      },
-      grant: {
-        kind: "auth-code",
-        callbackOrigin: "web",
-        outputNames: ["accessToken", "refreshToken"],
-        startOptionNames: [],
-      },
-      access: {
-        kind: "refresh-token",
-        inputNames: ["refreshToken"],
-        outputNames: ["accessToken", "refreshToken"],
-        platformSecrets: [],
-      },
-      revoke: {
-        kind: "none",
-        inputNames: [],
-      },
-    },
-  },
-  {
     connectorSlug: "meta-ads",
     authMethodId: "oauth",
     contract: {

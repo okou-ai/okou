@@ -282,11 +282,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the DocuSign e-signature connector",
     enabled: false,
   },
-  [FeatureSwitchKey.MercuryConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mercury banking connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.NeonConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Neon serverless Postgres connector",

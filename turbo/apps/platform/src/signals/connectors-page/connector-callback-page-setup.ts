@@ -76,11 +76,7 @@ function connectorLabel(connectorSlug: ConnectorCallbackSlug | null): string {
     ? i18n.t(($) => {
         return $.connectors.callback.githubLabel;
       })
-    : connectorSlug === "mercury"
-      ? i18n.t(($) => {
-          return $.connectors.callback.mercuryLabel;
-        })
-      : connectorSlug.toUpperCase();
+    : connectorSlug.toUpperCase();
 }
 
 function connectorCallbackDocumentTitle(label: string): string {

@@ -11,10 +11,7 @@ import { expect, test } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  getConnectorAction,
-  publicStatusItem,
-} from "./connector-page-test-helpers.ts";
+import { publicStatusItem } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
 
@@ -218,37 +215,6 @@ test.each([
     expect(screen.getByRole("img", { name: "Link" })).toBeInTheDocument();
   },
 );
-
-test("Show Mercury attribution on a completed connector callback", async () => {
-  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    expect(params.connectorSlug).toBe("mercury");
-    return respond(200, {
-      connector: publicStatusItem({
-        connectorSlug: "mercury",
-        label: "Mercury",
-      }),
-    });
-  });
-
-  await setupPage({
-    context,
-    path: "/connectors/mercury/callback/success?username=Not+A+Real+Company+Inc.",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "Mercury connected" }),
-  ).resolves.toBeInTheDocument();
-  expect(getConnectorAction("link", "Powered by Mercury")).toHaveAttribute(
-    "href",
-    "https://mercury.com",
-  );
-  expect(
-    screen.getByText(
-      "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-    ),
-  ).toBeInTheDocument();
-});
 
 test("Show a provider error safely without an authenticated session", async () => {
   context.mocks.api(

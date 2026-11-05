@@ -30,7 +30,7 @@ const AGENT_UUID = "550e8400-e29b-41d4-a716-446655440000";
 function stubConnectors(savedSlugs: readonly string[]) {
   server.use(stubConnectedConnectors(savedSlugs));
   return stubConnectorCatalog(
-    [...new Set(["github", "mercury", ...savedSlugs])].map((connectorSlug) => {
+    [...new Set(["github", ...savedSlugs])].map((connectorSlug) => {
       return catalogItem({
         connectorSlug,
         authMethods: [authCodeMethod("oauth")],
@@ -376,20 +376,6 @@ describe("okou connector list command", () => {
 
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).not.toContain("zapier");
-    });
-
-    it("includes connectors with ungated api-token auth even when oauth is feature-gated", async () => {
-      server.use(
-        stubConnectors(["github"]),
-        stubAgent(AGENT_UUID, "test"),
-        stubUserConnectors(AGENT_UUID, []),
-      );
-
-      await listCommand.parseAsync(["node", "cli", "--agent", AGENT_UUID]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      // mercury has an ungated api-token auth method, so it is always visible.
-      expect(logCalls).toContain("mercury");
     });
 
     it("uses the server-visible catalog for feature-gated oauth connectors", async () => {

@@ -27,8 +27,6 @@ import {
   mockSavedConnectorAccounts,
   mockGithubAccounts,
   mockOAuthCompletions,
-  mockPublicConnectorStatus,
-  publicStatusItem,
   queryConnectorAction,
   mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
@@ -258,7 +256,7 @@ function accountActions(container: ParentNode): HTMLElement[] {
 
 function builtinAccount(args: {
   readonly id: string;
-  readonly slug?: "github" | "mercury" | "stripe";
+  readonly slug?: "github" | "stripe";
   readonly authMethod?: string;
   readonly displayName: string | null;
   readonly isDefault: boolean;
@@ -348,81 +346,6 @@ test("Keep the exact account and current reconnect UI when future setup metadata
     within(manager).findByText("Prepared work account"),
   ).resolves.toBeInTheDocument();
   expect(getConnectorAction("button", "Reconnect", manager)).toBeEnabled();
-});
-
-test("Show Mercury disclosures while managing its accounts", async () => {
-  const [connector] = mockConnectors(context, [
-    { connectorSlug: "mercury", externalUsername: "Not A Real Company Inc." },
-  ]);
-  if (!connector) {
-    throw new Error("Expected Mercury connector");
-  }
-  const account = builtinAccount({
-    id: connector.id,
-    slug: "mercury",
-    displayName: "Sandbox",
-    isDefault: true,
-    externalUsername: "Not A Real Company Inc.",
-  });
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "mercury",
-      label: "Mercury",
-      account: {
-        id: connector.id,
-        authMethod: "oauth",
-        externalUsername: "Not A Real Company Inc.",
-        externalEmail: null,
-        reconnectReason: null,
-        connectionStatus: "connected",
-      },
-    }),
-  ]);
-  mockSavedConnectorAccounts(context, () => {
-    return [account];
-  });
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, {
-      connections: [account],
-      nextCursor: null,
-      defaultConnection: account,
-    });
-  });
-  await setupPage({ context, path: "/connectors?keywords=mercury" });
-
-  const card = await waitFor(() => {
-    return getConnectorCard("Mercury");
-  });
-  expect(
-    getConnectorAction("link", "Powered by Mercury", card),
-  ).toHaveAttribute("href", "https://mercury.com");
-
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage Mercury accounts", card);
-    }),
-  );
-  const manager = await screen.findByRole("dialog", {
-    name: "Manage Mercury accounts",
-  });
-  expect(
-    getConnectorAction("link", "Powered by Mercury", manager),
-  ).toHaveAttribute("href", "https://mercury.com");
-  expect(manager).toHaveTextContent(
-    "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-  );
-
-  click(getConnectorAction("button", "Close", manager));
-  await waitFor(() => {
-    expect(manager).not.toBeInTheDocument();
-  });
-  click(getConnectorAction("button", "Manage Mercury access", card));
-  const access = await screen.findByRole("dialog", {
-    name: "Manage Mercury access",
-  });
-  expect(
-    getConnectorAction("link", "Powered by Mercury", access),
-  ).toHaveAttribute("href", "https://mercury.com");
 });
 
 async function openConnectorAccessSummary() {

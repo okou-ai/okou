@@ -87,7 +87,6 @@ import { googleSheetsProvider } from "./connectors/google-sheets/provider";
 import { larkProvider } from "./connectors/lark/provider";
 import { linearProvider } from "./connectors/linear/provider";
 import { mailchimpProvider } from "./connectors/mailchimp/provider";
-import { mercuryProvider } from "./connectors/mercury/provider";
 import { microsoft365Provider } from "./connectors/microsoft-365/provider";
 import { mondayProvider } from "./connectors/monday/provider";
 import { neonProvider } from "./connectors/neon/provider";
@@ -1040,7 +1039,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeProviderEntry("intervals-icu", "oauth", intervalsIcuProvider),
   authCodeRefreshTokenRevokeProviderEntry("linear", "oauth", linearProvider),
   authCodeProviderEntry("mailchimp", "oauth", mailchimpProvider),
-  authCodeRefreshProviderEntry("mercury", "oauth", mercuryProvider),
   authCodeRefreshProviderEntry("microsoft-365", "oauth", microsoft365Provider),
   authCodeRefreshProviderEntry("monday", "oauth", mondayProvider),
   authCodeRefreshProviderEntry("neon", "oauth", neonProvider),

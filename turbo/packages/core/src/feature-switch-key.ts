@@ -20,7 +20,6 @@ export enum FeatureSwitchKey {
   CanvaConnector = "canvaConnector",
   DeelConnector = "deelConnector",
   DocuSignConnector = "docusignConnector",
-  MercuryConnector = "mercuryConnector",
   NeonConnector = "neonConnector",
   NetSuiteConnector = "netSuiteConnector",
   GarminConnectConnector = "garminConnectConnector",

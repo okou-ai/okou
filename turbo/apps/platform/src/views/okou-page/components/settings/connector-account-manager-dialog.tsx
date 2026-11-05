@@ -59,7 +59,6 @@ import {
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { useConnectorAccountLabel } from "./use-connector-account-label.ts";
-import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 import { LoadingSwitch } from "../../../components/loading-switch.tsx";
 
 interface ConnectorAccountManagerDialogProps {
@@ -929,9 +928,6 @@ function LoadedConnectorAccountManagerDialog({
             </Button>
           ) : null}
         </div>
-        {target.kind === "builtin" && target.connectorSlug === "mercury" ? (
-          <MercuryDisclosure className="shrink-0 border-t border-border/50 pt-3" />
-        ) : null}
         {onAdd ? (
           <DialogFooter className="shrink-0">
             <Button

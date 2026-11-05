@@ -126,7 +126,7 @@ export function builtinConnectorAccountFacts(
   return {
     scopeMismatch: account.scopeMismatch,
     // Existing accounts can use a method hidden from new connections, such as
-    // the non-expiring Mercury API token. Absence does not invent a capability.
+    // a non-expiring API token. Absence does not invent a capability.
     supportsRefresh: method?.supportsRefresh,
   };
 }

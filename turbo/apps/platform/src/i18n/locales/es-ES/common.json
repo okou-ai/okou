@@ -3248,10 +3248,6 @@
       "githubLabel": "GitHub",
       "invalidUrl": "URL de devolución de llamada de conector inválida.",
       "linkLabel": "Link",
-      "mercuryAttribution": "Powered by Mercury",
-      "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-      "mercuryDisclosureLabel": "Mercury banking disclosure",
-      "mercuryLabel": "Mercury",
       "success": "Conectado"
     },
     "card": {

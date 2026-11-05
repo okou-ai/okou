@@ -18,7 +18,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "deel\0oauth": FeatureSwitchKey.DeelConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
-  "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,
   "netsuite\0api-token": FeatureSwitchKey.NetSuiteConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
@@ -37,22 +36,9 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "zoom\0oauth": FeatureSwitchKey.ZoomConnector,
 });
 
-const FEATURE_SWITCH_HIDDEN_AUTH_METHOD = Object.freeze<
-  Record<string, FeatureSwitchKey | undefined>
->({
-  "mercury\0api-token": FeatureSwitchKey.MercuryConnector,
-});
-
 export function connectorAuthMethodFeatureSwitch(
   connectorSlug: ConnectorSlug,
   authMethodId: ConnectorAuthMethodId,
 ): FeatureSwitchKey | undefined {
   return FEATURE_SWITCH_BY_AUTH_METHOD[`${connectorSlug}\0${authMethodId}`];
-}
-
-export function connectorAuthMethodHiddenFeatureSwitch(
-  connectorSlug: ConnectorSlug,
-  authMethodId: ConnectorAuthMethodId,
-): FeatureSwitchKey | undefined {
-  return FEATURE_SWITCH_HIDDEN_AUTH_METHOD[`${connectorSlug}\0${authMethodId}`];
 }
