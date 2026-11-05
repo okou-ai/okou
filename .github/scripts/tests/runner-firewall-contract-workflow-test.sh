@@ -81,7 +81,8 @@ for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
     assert not any('rustup toolchain install' in step.get('run', '') for step in job['steps'])
 
 native_wrappers = ['crates/kerberos-worker/tests/check-native-kerberos.sh',
-                   'crates/rfb-client/tests/check-native-gssapi-peer.sh']
+                   'crates/rfb-client/tests/check-native-gssapi-peer.sh',
+                   'crates/runner-remote/tests/check-native-vnc-kerberos.sh']
 for wrapper in native_wrappers:
     source = (root / wrapper).read_text()
     assert not re.search(r'^python3\s', source, re.MULTILINE), \
@@ -105,6 +106,8 @@ scenarios = [
     ('runner-types', ['crates/runner-types/src/types.rs'], 'coverage', True, True, False, False),
     ('rfb-client', ['crates/rfb-client/src/qemu_gssapi.rs'], 'coverage', True, True, False, True),
     ('kerberos-worker', ['crates/kerberos-worker/src/lib.rs'], 'coverage', True, True, True, True),
+    ('vnc-admission', ['crates/runner-remote/src/vnc/authority.rs'], 'coverage', True, True, True, False),
+    ('vnc-native-harness', ['crates/runner-remote/tests/check-native-vnc-kerberos.sh'], 'coverage', True, True, True, False),
     ('credentials', ['crates/kerberos-credentials/src/lib.rs'], 'coverage', True, True, True, True),
     ('other-crate', ['crates/xtask/src/main.rs'], 'coverage', False, True, False, False),
     ('workspace-lock', ['crates/Cargo.lock'], 'coverage', True, True, True, True),
@@ -361,11 +364,12 @@ CHECK
     # Cargo is the external boundary; dependency traversal and Git change
     # detection still run through the actual repository scripts.
     metadata = directory / 'metadata.json'
-    names = ['ably-subscriber', 'api-contracts', 'runner', 'runner-types', 'sandbox-firecracker',
+    names = ['ably-subscriber', 'api-contracts', 'runner', 'runner-types', 'runner-remote', 'sandbox-firecracker',
              'nbd-cow', 'guest-control-tests', 'xtask', 'rfb-client', 'kerberos-worker',
              'kerberos-credentials', 'guest-agent', 'guest-contracts']
     dependencies = {
-        'runner': ['runner-types', 'rfb-client'],
+        'runner': ['runner-types', 'rfb-client', 'runner-remote'],
+        'runner-remote': ['runner-types', 'rfb-client'],
         'runner-types': ['api-contracts', 'guest-contracts'],
         'guest-agent': ['api-contracts', 'guest-contracts'],
         'rfb-client': ['kerberos-worker', 'kerberos-credentials'],
@@ -505,6 +509,7 @@ cat "$CARGO_METADATA_FIXTURE"
         ('crates/guest-agent/src/reuse_preparation.rs', False, False),
         ('crates/guest-contracts/src/disk_cleanup.rs', False, False),
         ('crates/kerberos-worker/tests/check-native-kerberos.sh', True, True),
+        ('crates/runner-remote/tests/check-native-vnc-kerberos.sh', True, False),
         ('crates/rfb-client/tests/check-native-gssapi-peer.sh', False, True),
         ('crates/kerberos-credentials/src/lib.rs', True, True),
     ]

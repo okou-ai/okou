@@ -26,6 +26,7 @@ import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   connectorCatalog,
@@ -33,6 +34,7 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
@@ -117,6 +119,10 @@ import {
 import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
+import {
+  activeMemberConnectorPermissionCondition,
+  memberConnectorPermissionColumns,
+} from "../services/member-connector-selection";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
   resolveRunnerReusePreference$,
@@ -1368,11 +1374,33 @@ const readClaimNetworkPolicyRefreshes$ = command(
           plan.selection,
           rows,
         );
-        const refreshes = await set(readActiveNetworkPolicyRefreshes$, {
-          scope,
-          connectorSlugs: builtinConnectorSlugs,
-          snapshot,
-        });
+        const checkedAt = nowDate();
+        const memberRules = args.storedContext.featureFlags?.[
+          FeatureSwitchKey.ConnectorChatAccountAccess
+        ]
+          ? await get(db$)
+              .select(memberConnectorPermissionColumns())
+              .from(connectorPermissionGrants)
+              .where(
+                and(
+                  activeMemberConnectorPermissionCondition(scope, checkedAt),
+                  inArray(
+                    connectorPermissionGrants.connectorSlug,
+                    builtinConnectorSlugs,
+                  ),
+                ),
+              )
+          : undefined;
+        const refreshes = await set(
+          readActiveNetworkPolicyRefreshes$,
+          {
+            scope,
+            connectorSlugs: builtinConnectorSlugs,
+            snapshot,
+            memberRules,
+          },
+          checkedAt,
+        );
 
         return {
           value: {

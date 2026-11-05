@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.818.3](https://github.com/okou-ai/okou/compare/core-v8.818.2...core-v8.818.3) (2026-11-05)
+
+
+### Refactoring
+
+* **api:** prepare connector skill bundle references ([#45339](https://github.com/okou-ai/okou/issues/45339)) ([6a51f10](https://github.com/okou-ai/okou/commit/6a51f10737ae9c0e2ee40509387fbd6f04b0f095))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.3
+
+## [8.818.2](https://github.com/okou-ai/okou/compare/core-v8.818.1...core-v8.818.2) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.2
+
 ## [8.818.1](https://github.com/okou-ai/okou/compare/core-v8.818.0...core-v8.818.1) (2026-11-05)
 
 

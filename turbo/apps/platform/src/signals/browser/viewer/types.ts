@@ -1,4 +1,5 @@
 import type { BridgeDiagnostics } from "@okouai/browser-extension-client";
+import type { CdpConnectionObservation } from "../cdp/errors.ts";
 
 export type ViewerStatus =
   | "connecting"
@@ -33,6 +34,8 @@ export interface ViewerError {
   };
   /** Safe bridge observations, retained independently of reporting policy. */
   readonly bridge?: BridgeDiagnostics;
+  readonly connection?: CdpConnectionObservation;
+  readonly http?: { readonly status: number; readonly code: string };
 }
 
 export interface ViewerTarget {

@@ -188,6 +188,7 @@ final class ComposerVoiceInputTests: XCTestCase {
     await voice.finish()
     XCTAssertEqual(composer.text, "Before old after new notes")
     XCTAssertNotNil(voice.error)
+    fixture.state.value.withLock { $0.quotaAllowed = false }
     input.selectedRange = NSRange(location: 7, length: 3)
     await voice.finish()
     XCTAssertEqual(composer.text, "Before spoken words after new notes")
@@ -198,7 +199,7 @@ final class ComposerVoiceInputTests: XCTestCase {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   }
 
-  func testVoiceQuotaUpgradeResponseBlocksTheOwningWorkspace() async throws {
+  func testVoiceQuotaUpgradeResponseReachesTheOwningCaller() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -209,21 +210,194 @@ final class ComposerVoiceInputTests: XCTestCase {
           #"{"error":{"code":"IOS_UPDATE_REQUIRED","message":"Update Okou"},"minimumSupportedVersion":"99.0.0"}"#
       )
     }
-    let client = fixture.http.client
-    let storage = ChatDraftStorage(
-      scope: ChatCacheScope(
-        apiBaseURL: fixture.http.baseURL, userID: "voice-user", workspaceID: "voice-org"),
-      directory: root)
-    let workspace = WorkspaceStore(
-      client: client, webURL: fixture.http.baseURL, draftStorage: storage)
-    defer { workspace.close() }
-    workspace.selectedAgentID = "voice-agent"
-    workspace.newComposer.setForeground(true)
-    let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
+    let upgrade = expectation(description: "The caller must require an app update")
+    let composer = fixture.composer(root: root, capture: VoiceCaptureFixture()) { failure in
+      XCTAssertEqual((failure as? APIClientError)?.statusCode, 426)
+      upgrade.fulfill()
+    }
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
-    await workspace.newComposer.voice?.start()
-    XCTAssertTrue(workspace.needsUpgrade)
+    await composer.voice?.start()
+    await fulfillment(of: [upgrade], timeout: 3)
+    XCTAssertEqual(composer.voice?.phase, .saved)
+    XCTAssertFalse(fixture.state.value.withLock { $0.uploadedBeforeQuota })
+  }
+
+  func testSlowQuotaAllowsLocalCaptureAndTranscribesBufferedAudioAfterApproval() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let gate = VoiceResponseGate(started: expectation(description: "Quota requested"))
+    let upload = expectation(description: "Buffered audio transcribed after approval")
+    fixture.state.value.withLock {
+      $0.quotaGate = gate
+      $0.transcriptionRequested = upload
+    }
+    let voice = try XCTUnwrap(composer.voice)
+    let starting = Task { await voice.start() }
+    addTeardownBlock { @MainActor in
+      gate.release()
+      composer.close()
+      await starting.value
+    }
+    await fulfillment(of: [gate.started], timeout: 3)
+    try await waitForBusinessResult { voice.phase == .recording }
+    capture.speak(seconds: 16)
+    try await waitForBusinessResult { voice.duration == 16 }
+    gate.release()
+    await starting.value
+    await fulfillment(of: [upload], timeout: 3)
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [480_000, 96_000])
+    XCTAssertFalse(fixture.state.value.withLock { $0.uploadedBeforeQuota })
+  }
+
+  func testDeniedQuotaStopsAndDrainsCaptureWithoutLosingTheRecording() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    capture.finalSeconds = 1
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let gate = VoiceResponseGate(started: expectation(description: "Quota requested"))
+    fixture.state.value.withLock {
+      $0.quotaGate = gate
+      $0.quotaAllowed = false
+    }
+    let voice = try XCTUnwrap(composer.voice)
+    let starting = Task { await voice.start() }
+    addTeardownBlock { @MainActor in
+      gate.release()
+      composer.close()
+      await starting.value
+    }
+    await fulfillment(of: [gate.started], timeout: 3)
+    try await waitForBusinessResult { voice.phase == .recording }
+    capture.speak(seconds: 15)
+    try await waitForBusinessResult { voice.duration == 15 }
+    gate.release()
+    await starting.value
+    XCTAssertEqual(voice.phase, .saved)
+    XCTAssertEqual(voice.duration, 16)
+    XCTAssertTrue(try XCTUnwrap(voice.error).contains("limit has been reached"))
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
+    fixture.state.value.withLock {
+      $0.quotaGate = nil
+      $0.quotaAllowed = true
+    }
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [480_000, 96_000])
+    XCTAssertFalse(fixture.state.value.withLock { $0.uploadedBeforeQuota })
+  }
+
+  func testFinishingWhileOfflineRetainsAudioForAnExplicitRetryAfterReopening() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    composer.text = "Notes: "
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let gate = VoiceResponseGate(started: expectation(description: "Quota requested"))
+    fixture.state.value.withLock {
+      $0.quotaGate = gate
+      $0.quotaError = URLError(.notConnectedToInternet)
+    }
+    let voice = try XCTUnwrap(composer.voice)
+    let starting = Task { await voice.start() }
+    addTeardownBlock { @MainActor in
+      gate.release()
+      composer.close()
+      await starting.value
+    }
+    await fulfillment(of: [gate.started], timeout: 3)
+    try await waitForBusinessResult { voice.phase == .recording }
+    capture.speak(seconds: 1)
+    try await waitForBusinessResult { voice.duration == 1 }
+    let finish = Task { await voice.finish() }
+    addTeardownBlock { @MainActor in
+      gate.release()
+      await finish.value
+    }
+    try await waitForBusinessResult { voice.phase == .processing }
+    gate.release()
+    await starting.value
+    await finish.value
+    XCTAssertEqual(voice.phase, .saved)
+    XCTAssertTrue(try XCTUnwrap(voice.error).contains("Your recording is saved"))
+    XCTAssertEqual(composer.text, "Notes: ")
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
+    composer.close()
+    try await waitForBusinessResult { voice.phase == .saved }
+    unmount(window)
+
+    fixture.state.value.withLock {
+      $0.quotaGate = nil
+      $0.quotaError = nil
+    }
+    let restored = fixture.composer(root: root, capture: VoiceCaptureFixture())
+    defer { restored.close() }
+    let restoredHost = UIHostingController(rootView: MentionComposerHarness(state: restored))
+    let restoredWindow = try await mountMentionHost(restoredHost)
+    defer { unmount(restoredWindow) }
+    XCTAssertEqual(restored.voice?.duration, 1)
+    await restored.voice?.finish()
+    XCTAssertEqual(restored.text, "Notes: spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [32_000])
+    XCTAssertFalse(fixture.state.value.withLock { $0.uploadedBeforeQuota })
+  }
+
+  func testDiscardingBeforeQuotaReturnsCannotUploadAudioIntoTheNextRecording() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let gate = VoiceResponseGate(started: expectation(description: "Quota requested"))
+    fixture.state.value.withLock { $0.quotaGate = gate }
+    let voice = try XCTUnwrap(composer.voice)
+    let starting = Task { await voice.start() }
+    addTeardownBlock { @MainActor in
+      gate.release()
+      composer.close()
+      await starting.value
+    }
+    await fulfillment(of: [gate.started], timeout: 3)
+    try await waitForBusinessResult { voice.phase == .recording }
+    capture.speak(seconds: 16)
+    try await waitForBusinessResult { voice.duration == 16 }
+    await voice.discard()
+    await starting.value
+    XCTAssertEqual(voice.phase, .idle)
+    fixture.state.value.withLock { $0.quotaGate = nil }
+    await voice.start()
+    capture.speak(seconds: 1)
+    gate.release()
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [32_000])
+    XCTAssertFalse(fixture.state.value.withLock { $0.uploadedBeforeQuota })
   }
 
   func testRemoteDraftConflictKeepsReadyVoiceTextRecoverableUntilTheUserChooses() async throws {
@@ -340,7 +514,14 @@ private final class VoiceComposerState: Sendable {
   struct State: Sendable {
     var remote = ComposerDraft()
     var quotaFailure: ChatHTTPResponse?
+    var quotaError: URLError?
+    var quotaGate: VoiceResponseGate?
+    var quotaAllowed = true
+    var quotaApproved = false
     var audioUploads = 0
+    var uploadedAudioBytes: [Int] = []
+    var uploadedBeforeQuota = false
+    var transcriptionRequested: XCTestExpectation?
     var sentMessages = 0
     var failPolish = false
     var gate: VoiceResponseGate?
@@ -365,10 +546,29 @@ private final class VoiceComposerFixture: Sendable {
         let data = try JSONEncoder().encode(state.value.withLock { $0.remote })
         return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
       case "/api/voice-io/quota":
-        if let failure = state.value.withLock({ $0.quotaFailure }) { return failure }
-        return ChatHTTPResponse(body: #"{"allowed":true,"count":0,"limit":60}"#)
+        let quota = state.value.withLock { value in
+          value.quotaApproved = false
+          return (value.quotaGate, value.quotaError, value.quotaFailure, value.quotaAllowed)
+        }
+        if let gate = quota.0 { await gate.wait() }
+        if let failure = quota.1 { throw failure }
+        if let failure = quota.2 { return failure }
+        state.value.withLock { $0.quotaApproved = quota.3 }
+        return ChatHTTPResponse(body: "{\"allowed\":\(quota.3),\"count\":0,\"limit\":60}")
       case "/api/voice-io/transcribe/segment":
-        state.value.withLock { $0.audioUploads += 1 }
+        let body = try chatRequestBody(request)
+        let wav = try XCTUnwrap(body.range(of: Data("RIFF".utf8)))
+        let byteCount = body[(wav.lowerBound + 40)..<(wav.lowerBound + 44)]
+          .enumerated().reduce(0) { $0 | (Int($1.element) << ($1.offset * 8)) }
+        let requested = state.value.withLock { value in
+          value.audioUploads += 1
+          value.uploadedAudioBytes.append(byteCount)
+          if !value.quotaApproved { value.uploadedBeforeQuota = true }
+          let requested = value.transcriptionRequested
+          value.transcriptionRequested = nil
+          return requested
+        }
+        requested?.fulfill()
         return ChatHTTPResponse(body: #"{"transcript":"spoken words","language":"en"}"#)
       case "/api/voice-io/polish/segments":
         if let gate = state.value.withLock({ $0.gate }) { await gate.wait() }
@@ -386,7 +586,9 @@ private final class VoiceComposerFixture: Sendable {
   }
 
   @MainActor func composer(
-    root: URL, capture: VoiceCaptureFixture, agent: String = "voice-agent", syncDrafts: Bool = false
+    root: URL, capture: VoiceCaptureFixture, agent: String = "voice-agent",
+    syncDrafts: Bool = false,
+    didFail: @escaping @MainActor (Error) -> Void = { XCTFail($0.localizedDescription) }
   )
     -> ComposerDraftStore
   {
@@ -398,24 +600,36 @@ private final class VoiceComposerFixture: Sendable {
     return ComposerDraftStore(
       target: .agent(agent), commands: ChatCommands(client: client, sync: ChatSync(client: client)),
       repository: syncDrafts ? ChatDraftRepository(client: client) : nil,
-      storage: storage, didFail: { XCTFail($0.localizedDescription) }, voiceCapture: capture)
+      storage: storage, didFail: didFail, voiceCapture: capture)
   }
 }
 
 private final class VoiceResponseGate: Sendable {
+  private struct State: Sendable {
+    var released = false
+    var continuation: CheckedContinuation<Void, Never>?
+  }
   let started: XCTestExpectation
-  private let continuation = Mutex<CheckedContinuation<Void, Never>?>(nil)
+  private let state = Mutex(State())
   init(started: XCTestExpectation) { self.started = started }
   func wait() async {
     await withCheckedContinuation { value in
-      continuation.withLock { $0 = value }
+      let released = state.withLock { state in
+        if state.released { return true }
+        state.continuation = value
+        return false
+      }
       started.fulfill()
+      if released { value.resume() }
     }
   }
   func release() {
-    continuation.withLock { value in
-      value?.resume()
-      value = nil
+    let continuation = state.withLock { state in
+      state.released = true
+      let continuation = state.continuation
+      state.continuation = nil
+      return continuation
     }
+    continuation?.resume()
   }
 }

@@ -189,3 +189,4 @@ export {
   RequestCommit,
   commitLayoutUpdate,
 } from "./components/ui/layout-panel";
+export { RailViewport } from "./components/ui/rail-viewport";

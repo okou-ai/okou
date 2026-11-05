@@ -10,35 +10,40 @@ import { signupControl } from "./signup-test-helpers.ts";
 const context = testContext();
 const target = "https://app.okou.ai/onboarding?source=signup-test";
 
-test("Ordinary signup offers an optional invitation code without a referral link", async () => {
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/sign-up",
-    auth: null,
-  });
-  expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue("");
-  expect(signupControl("button", "Continue")).toBeEnabled();
-});
-
 test.each([
-  { path: "/sign-up", status: "missing_requirements" },
-  { path: "/sign-up?__clerk_ticket=invitation", status: null },
+  { name: "new visitor", status: null, user: null },
+  { name: "unfinished signup", status: "missing_requirements", user: null },
+  {
+    name: "signed-in visitor",
+    status: null,
+    user: { id: "signup-existing-user", fullName: "Existing User" },
+  },
 ] as const)(
-  "Clerk owns the existing attempt or invitation at $path",
-  async ({ path, status }) => {
+  "A $name can enter an optional invitation code on the signup form",
+  async ({ status, user }) => {
     mockedClerk.client.signUp.status = status;
     await setupPage({
       context,
       host: "app.okou.ai",
-      path,
-      auth: null,
+      path: "/sign-up",
+      auth: user ? { user } : null,
     });
-    await expect(
-      screen.findByTestId("clerk-sign-up"),
-    ).resolves.toBeInTheDocument();
+    expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue("");
+    expect(signupControl("button", "Continue")).toBeEnabled();
   },
 );
+
+test("Clerk owns organization invitation tickets", async () => {
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/sign-up?__clerk_ticket=invitation",
+    auth: null,
+  });
+  await expect(
+    screen.findByTestId("clerk-sign-up"),
+  ).resolves.toBeInTheDocument();
+});
 
 async function openSignup() {
   await setupPage({

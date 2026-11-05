@@ -98,9 +98,11 @@ test("The gift opens invitations independently of credit quests, with code and l
   expect(
     within(dialog).getByText(/expire one month after they are granted/u),
   ).toBeInTheDocument();
-  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Getting your invitation code…",
-  );
+  await expect(
+    within(dialog).findByRole("status", {
+      name: "Getting your invitation code…",
+    }),
+  ).resolves.toBeInTheDocument();
   linkReady.resolve();
   const code = await within(dialog).findByLabelText("Your invitation code");
   expect(code).toHaveValue("a7k2p9");

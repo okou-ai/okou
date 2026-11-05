@@ -1,11 +1,11 @@
-import type { Ref, UIEventHandler } from "react";
 import { cn, Toggle, ToggleGroup } from "@okouai/ui";
-
 import {
   SCROLLBAR_HIDDEN,
   SCROLL_FADE_X,
   type ScrollFade,
 } from "./scroll-fade.ts";
+import { COMPOSER_RAIL_FADE } from "./rail-boundary.ts";
+import { RailViewport } from "./rail-viewport.tsx";
 
 interface TemplateFilterPill {
   readonly id: string;
@@ -13,16 +13,10 @@ interface TemplateFilterPill {
 }
 
 /**
- * The template picker's filter row: a wall of cards below a search box, with
- * one control for narrowing it.
- *
- * `layout` lets a caller choose how the pills use the dialog's height. The
- * workflow tab's personas grow with the catalog and `wrap` onto as many lines
- * as they need; a fixed set of groups stays on one `scroll`ing line instead.
- *
- * The caller owns the row's padding, because each tab indents its content to a
- * different gutter, and supplies `label` when the row is a named group for
- * assistive technology.
+ * A filter group can wrap or scroll. A paged row keeps its ToggleGroup as a
+ * max-content track inside the scrollport, so selection/focus remain owned by
+ * Base UI while CSS owns the available viewport width. The caller's padding
+ * stays on the group/track, so its measured extent includes the whole gutter.
  */
 export function TemplateFilterPillRow({
   pills,
@@ -31,9 +25,7 @@ export function TemplateFilterPillRow({
   className,
   layout = "wrap",
   fade,
-  scrollerRef,
   rail,
-  onScroll,
   onSelect,
 }: {
   readonly pills: readonly TemplateFilterPill[];
@@ -42,28 +34,28 @@ export function TemplateFilterPillRow({
   readonly className?: string;
   readonly layout?: "wrap" | "scroll";
   readonly fade?: ScrollFade;
-  readonly scrollerRef?: Ref<HTMLDivElement>;
   /** Names the row for a `RailPager` in the nearest `data-rail-root`. */
   readonly rail?: string;
-  readonly onScroll?: UIEventHandler<HTMLDivElement>;
   readonly onSelect: (id: string) => void;
 }) {
-  return (
+  // Only rendered labels/order affect this auto-width track. Active selection
+  // changes ink/fill, never font weight or metrics, and is not a revision.
+  const group = (
     <ToggleGroup
-      ref={scrollerRef}
       value={[active]}
       onValueChange={(value) => {
         onSelect(value[0] ?? active);
       }}
       aria-label={label}
-      data-rail={rail}
-      onScroll={onScroll}
+      data-rail-track={rail === undefined ? undefined : ""}
       data-fade={fade === "none" ? undefined : fade}
       className={cn(
         "flex items-center gap-1.5",
-        layout === "wrap"
-          ? "flex-wrap"
-          : ["overflow-x-auto", SCROLLBAR_HIDDEN, SCROLL_FADE_X],
+        rail !== undefined
+          ? "w-max"
+          : layout === "wrap"
+            ? "flex-wrap"
+            : ["overflow-x-auto", SCROLLBAR_HIDDEN, SCROLL_FADE_X],
         className,
       )}
     >
@@ -75,5 +67,20 @@ export function TemplateFilterPillRow({
         );
       })}
     </ToggleGroup>
+  );
+  return rail === undefined ? (
+    group
+  ) : (
+    <RailViewport
+      contentRevision={JSON.stringify([rail, pills])}
+      data-rail={rail}
+      className={cn(
+        "min-w-0 overflow-x-auto",
+        SCROLLBAR_HIDDEN,
+        COMPOSER_RAIL_FADE,
+      )}
+    >
+      {group}
+    </RailViewport>
   );
 }

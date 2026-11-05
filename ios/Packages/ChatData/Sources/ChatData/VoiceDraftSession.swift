@@ -47,6 +47,7 @@ public actor VoiceDraftSession {
 
   public nonisolated let restoredRecordingID: UUID?
   public nonisolated let restoredDuration: Double
+  public var hasPreparedText: Bool { record?.text != nil }
   private let storage: VoiceDraftStorage
   private let client: VoiceInputClient
   private var record: Record?

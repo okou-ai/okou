@@ -7,6 +7,8 @@ already owns, or as a generic loop that repairs layout and scrolling afterward.
 This guide complements [effects and commands](../react.md#effects-and-ownership),
 [ccstate lifecycle ownership](../../.claude/skills/ccstate/SKILL.md),
 [styles](styles.md), and [stable chat cards](../chat.md#fixed-height-and-stable-layout).
+For horizontal shelves and filter/category rows, see the concrete
+[rail geometry and content-commit contract](rail-travel.md).
 
 ## Recognize the Anti-Pattern
 
@@ -120,61 +122,49 @@ the locator must not measure the transcript on every streaming update. Keeping
 the chat pinned to the tail and deriving the locator are separate concerns with
 different inputs.
 
-### Cloud Browser tab admission during width motion
+### Coordinate geometry and destination commits
 
-The Cloud Browser toolbar keeps a stable pre-picker budget around its tab list
-and All tabs picker. Explicit toolbar, host-layout, and native viewport commits
-sample that budget. The data projection admits a prefix of the inventory,
-substituting the selected target when necessary; CSS flex layout distributes
-width among those admitted tabs. The picker is reserved exactly once. An
-unmeasured or zero-width toolbar admits no tabs rather than assuming infinity.
+Separate CSS width distribution from any data projection that needs a numeric
+space budget. Measure a stable container that does not change identity when an
+overflow control appears, reserve that control's space once, and treat unknown
+or zero geometry as unavailable space rather than an infinite budget.
 
-Keep the sidebar's existing width transitions. Before a moving layout is
-painted, lower the admission budget to a conservative host floor. Never increase
-that lock during a transaction, even when a transition is interrupted or another
-layout owner starts moving. An established desktop split has a 400px floor;
-entry from zero and the responsive full-row layout use zero when no tighter
-bound is proved. A brief conservative set, including picker-only entry, is
-intentional. Target creation, removal, and selection still update normally.
+When multiple layout owners can animate, establish a conservative budget before
+the moving layout is painted. A lower-only transaction limit must survive
+interruptions and newly moving siblings. Reconcile the current owners and their
+actual width/flex-basis transitions on run, end, and cancel; one terminal event
+does not prove that all owners have settled. Release the limit only at that
+shared completion boundary, not after a guessed duration or continuous sampling.
 
-The app shell coordinates both the utility panel and its chat-list sibling.
-Semantic layout commits and Base UI's staged opening commit prepare the budget;
-width/flex-basis run, end, and cancel events reconcile all current CSS
-transitions. One property's terminal event cannot finish another property's or
-sibling's transition. Only the fully settled host explicitly unlocks admission.
-No duration timer, observer, or frame-by-frame DOM measurement is involved.
+Direct manipulation must disable interpolation on every affected width owner,
+including an owner remounted during the gesture. Explicit `transition-none` is
+important: removing a transition-property utility while retaining a nonzero
+duration can leave CSS's default `all` active. Keep discrete button animations
+separate, and do not animate passive flex children as independent width owners.
+When taking over an existing animation, preserve its displayed geometry before
+cancelling it, while respecting the layout's minimum constraints.
 
-Direct divider manipulation is a shared workspace transaction: a ccstate
-`computed` derives whether either divider is active. Both width owners,
-including a list remounted during a gesture, explicitly use `transition-none`.
-Removing only the transition-property utility is insufficient: a remaining
-nonzero duration uses CSS's default `all`. Opening/closing buttons retain their
-own transitions; the passive transcript flex child does not animate separately.
-The list folds as soon as its minimum usable width is exhausted and restores
-after 16px of reverse travel, rather than holding the divider for 72px.
+A final gesture sample must reach the DOM before direct-manipulation ownership
+is released or persisted. Otherwise React can batch that sample with restored
+button-animation styles. Use a discrete synchronous completion boundary when
+that ordering is required, not a per-move render scheduler. Cancellation, blur,
+and unmount release the resource without applying a later terminal sample.
 
-Chat-workspace commit acknowledgements compare the committed owner elements and
-their semantic keys, exact thread identities, and scroll containers. Identical
-sibling acknowledgements share geometry measurement and scroll restoration;
-distinct commits are never delayed behind an earlier restore. Native viewport
-and actual owner transition events remain unconditional motion refreshes, not
-cache hits. Content/composer commits and the independent artifact catalog keep
-their own restoration lifetimes. Decorator width transitions are not geometry
-owners. Final pointerup coordinates cross the shared UI's synchronous DOM commit
-boundary before release/persistence, so a final-only fold/restore cannot regain
-button animations in the same React batch. This boundary runs only at gesture
-completion, never per move. A measurable panel grip seeds its displayed width
-before cancelling an in-flight animation, subject to the existing hard minima.
-Cancel, blur, and unmount discard later callbacks without adding a scheduler.
+Deduplicate acknowledgements only when the committed elements, domain
+identities, relevant containers, and semantic geometry keys are identical.
+Reset the record with its DOM owner; never let it swallow mount, navigation, or
+a distinct commit, or delay newer geometry behind an earlier asynchronous
+restore. Native viewport and actual geometry-owner transition events still
+refresh motion independently. Unrelated content and scroll owners retain their
+own restoration lifetimes.
 
-Toolbar focus has a separate mount lifetime from CDP. User actions and focused
-controls issue tokenized intent; narrowly keyed destination commit
-acknowledgements consume it once. Use the shared UI `LayoutCommit` and
-`RequestCommit` boundaries with stable callbacks and semantic keys, never a
-render counter or a fresh request object on each render. A remote create/close receipt is not a DOM
-commit. Validate mount, native authority, selection, actual enabled destination,
-and retained user intent before focusing. A close receipt must not wait for the
-successor's live image, and later user input must supersede any pending handoff.
+Focus handoffs have a DOM mount lifetime independent of a remote connection.
+Record user intent as an exact request and consume it once at the corresponding
+enabled destination commit. Shared `LayoutCommit` and `RequestCommit` boundaries
+use stable callbacks and semantic keys, not render counters or fresh-per-render
+requests. A remote operation receipt is not a DOM commit. Revalidate mount,
+authority, selection, destination availability, and retained intent before
+focusing; later user input supersedes a pending handoff.
 
 ## Preserve ccstate Ownership
 

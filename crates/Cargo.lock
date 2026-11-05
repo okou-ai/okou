@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.41"
+version = "0.109.42"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2053,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.149"
+version = "0.1.150"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.76"
+version = "0.24.77"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2137,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.142"
+version = "0.12.143"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.62"
+version = "0.20.63"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.14"
+version = "0.244.17"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4120,7 +4120,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.19.13"
+version = "0.19.14"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4300,7 +4300,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.11"
+version = "0.31.12"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4445,7 +4445,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.35"
+version = "0.21.36"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -6775,9 +6775,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
+checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 
 [[package]]
 name = "wnaf"

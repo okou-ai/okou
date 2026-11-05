@@ -23,6 +23,17 @@ use transport_timing::{ConnectionTimingLayer, TimedResolver};
 mod transport_diagnostics;
 use transport_diagnostics::{ConnectionDiagnosticsLayer, TransportDiagnostics};
 
+// Retain only the bounded provider-issued identifier, never arbitrary headers.
+pub(crate) fn response_cf_ray(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get("cf-ray")?.to_str().ok()?;
+    let (ray, colo) = value.split_once('-')?;
+    (ray.len() == 16
+        && ray.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && colo.len() == 3
+        && colo.bytes().all(|byte| byte.is_ascii_uppercase()))
+    .then_some(value)
+}
+
 /// Validate and normalize the Runner API base URL before authenticated requests.
 pub fn normalize_api_base_url(value: &str) -> ProviderResult<String> {
     let mut parsed = url::Url::parse(value)

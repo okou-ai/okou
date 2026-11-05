@@ -180,12 +180,16 @@ fn receive(fd: &OwnedFd) -> io::Result<Option<Packet>> {
     // Maximum direct IPv6/TCP or IPv4/TCP header including all options is 120B.
     let mut bytes = [0u8; 120];
     let mut control = [0usize; 8];
+    // SAFETY: sockaddr_ll is valid zero-initialized storage for recvmsg.
+    let mut address: libc::sockaddr_ll = unsafe { zeroed() };
     let mut iov = libc::iovec {
         iov_base: bytes.as_mut_ptr().cast(),
         iov_len: bytes.len(),
     };
     // SAFETY: msghdr is initialized with valid buffers for this recvmsg call.
     let mut message: libc::msghdr = unsafe { zeroed() };
+    message.msg_name = std::ptr::from_mut(&mut address).cast();
+    message.msg_namelen = size_of_val(&address) as libc::socklen_t;
     message.msg_iov = &mut iov;
     message.msg_iovlen = 1;
     message.msg_control = control.as_mut_ptr().cast();
@@ -217,7 +221,26 @@ fn receive(fd: &OwnedFd) -> io::Result<Option<Packet>> {
             header = libc::CMSG_NXTHDR(&message, header);
         }
     }
-    Ok(stamp.and_then(|stamp| parse(bytes.get(..received as usize)?, stamp)))
+    Ok(stamp.and_then(|stamp| {
+        let mut packet = parse(bytes.get(..received as usize)?, stamp)?;
+        packet.capture_origin = capture_origin(&address, message.msg_namelen);
+        Some(packet)
+    }))
+}
+
+fn capture_origin(address: &libc::sockaddr_ll, length: libc::socklen_t) -> Option<CaptureOrigin> {
+    // Non-packet fixture sockets and incomplete addresses have no provenance.
+    // Never infer it from the IP tuple or substitute the current route.
+    if length < size_of_val(address) as libc::socklen_t
+        || address.sll_family != libc::AF_PACKET as u16
+    {
+        return None;
+    }
+    let interface_index = u32::try_from(address.sll_ifindex).ok().filter(|i| *i > 0)?;
+    Some(CaptureOrigin {
+        interface_index,
+        packet_type: address.sll_pkttype,
+    })
 }
 
 fn parse(bytes: &[u8], unix_ns: u64) -> Option<Packet> {
@@ -264,6 +287,22 @@ fn parse(bytes: &[u8], unix_ns: u64) -> Option<Packet> {
         acknowledgment: u32::from_be_bytes(tcp.get(8..12)?.try_into().ok()?),
         window: read_u16(tcp, 14)?,
         payload_bytes: total.checked_sub((offset + header_length) as u32)?,
+        ip_ttl: if version == 4 {
+            Some(*bytes.get(8)?)
+        } else {
+            None
+        },
+        ipv4_id: if version == 4 {
+            Some(read_u16(bytes, 4)?)
+        } else {
+            None
+        },
+        ipv6_hop_limit: if version == 6 {
+            Some(*bytes.get(7)?)
+        } else {
+            None
+        },
+        capture_origin: None,
     })
 }
 
@@ -368,6 +407,10 @@ fn log_packet(request_id: &str, phase: &'static str, record: &RecordedPacket) {
         packet_unix_ns = p.unix_ns, outbound = record.outbound,
         flags = p.flags, sequence = p.sequence, acknowledgment = p.acknowledgment,
         window = p.window, payload_bytes = p.payload_bytes,
+        ip_ttl = p.ip_ttl, ipv4_id = p.ipv4_id, ipv6_hop_limit = p.ipv6_hop_limit,
+        // Kernel provenance is independent of `outbound`, which uses IPs.
+        capture_ifindex = p.capture_origin.map(|o| o.interface_index),
+        capture_packet_type = p.capture_origin.map(|o| o.packet_type),
         "API TCP packet metadata");
 }
 

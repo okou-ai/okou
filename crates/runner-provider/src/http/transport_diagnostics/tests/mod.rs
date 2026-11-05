@@ -134,7 +134,7 @@ async fn reset_case(tls: bool) {
                     .to_lowercase()
                     .contains("authorization: bearer private-auth-canary")
             );
-            peer.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+            peer.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\ncf-ray: 0123456789abcdef-SEA\r\nx-private-test: private-response-canary\r\n\r\nok")
                 .await
                 .unwrap();
             peer.flush().await.unwrap();
@@ -198,7 +198,7 @@ async fn reset_case(tls: bool) {
         assert_eq!(warm_tuple.local, peer_addr);
 
         let healthy = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(
-            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\ncf-ray: fedcba9876543210-DFW\r\n\r\nok".to_vec(),
         )])
         .await;
         let response = http
@@ -210,6 +210,15 @@ async fn reset_case(tls: bool) {
         assert_ne!(warm_tuple, healthy_tuple);
         assert_eq!(response.text().await.unwrap(), "ok");
         healthy.assert_finished().await;
+        assert!(
+            captured.entries().iter().all(|e| {
+                !matches!(
+                    e.fields.get("message").map(String::as_str),
+                    Some("API transport failure diagnostics" | "API TCP packet metadata")
+                )
+            }),
+            "successful requests must not dump fault evidence"
+        );
         reset_tx.send(()).unwrap();
         let error = join_raw_http_task(failing, "failed request diagnostics")
             .await
@@ -258,11 +267,42 @@ async fn reset_case(tls: bool) {
         );
         assert_eq!(diagnostic.fields["socket_metadata_available"], "true");
         assert_eq!(diagnostic.fields["responses_observed"], "1");
+        assert_eq!(
+            diagnostic.fields["last_response_cf_ray"],
+            "0123456789abcdef-SEA"
+        );
+        assert_eq!(diagnostic.fields["last_response_http_version"], "HTTP/1.1");
         assert_eq!(diagnostic.fields["raw_os_error"], "104");
+        #[cfg(target_os = "linux")]
+        if capture_ready {
+            let packet = events
+                .iter()
+                .find(|e| {
+                    e.fields.get("client_request_id") == Some(&request_id)
+                        && e.fields.get("message").map(String::as_str)
+                            == Some("API TCP packet metadata")
+                        && e.fields.get("outbound").map(String::as_str) == Some("false")
+                        && e.fields.get("flags").and_then(|f| f.parse::<u8>().ok())
+                            .is_some_and(|f| f & 4 != 0)
+                })
+                .unwrap();
+            // SAFETY: the interface name is a valid, terminated C string.
+            let loopback = unsafe { nix::libc::if_nametoindex(c"lo".as_ptr()) };
+            assert!(loopback > 0);
+            assert_eq!(packet.fields["capture_ifindex"], loopback.to_string());
+            let packet_type = packet.fields["capture_packet_type"].parse::<u8>().unwrap();
+            assert!(matches!(
+                packet_type,
+                nix::libc::PACKET_HOST | nix::libc::PACKET_OUTGOING
+            ));
+            assert!(packet.fields["ip_ttl"].parse::<u8>().unwrap() > 0);
+            packet.fields["ipv4_id"].parse::<u16>().unwrap();
+        }
         for secret in [
             "private-auth-canary",
             "private-bypass-canary",
             "private-query-canary",
+            "private-response-canary",
         ] {
             assert!(!format!("{events:?}").contains(secret));
         }
@@ -270,6 +310,79 @@ async fn reset_case(tls: bool) {
     }
     .with_subscriber(subscriber)
     .await;
+}
+
+#[tokio::test]
+async fn latest_response_without_valid_ray_clears_the_prior_connection_ray() {
+    for (ray_header, version) in [
+        ("", "HTTP/1.1"),
+        ("cf-ray: private-response-canary\r\n", "HTTP/1.0"),
+    ] {
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move {
+                let (mut peer, _) = listener.accept().await.unwrap();
+                request(&mut peer).await;
+                peer.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\ncf-ray: 0123456789abcdef-SEA\r\n\r\n")
+                    .await
+                    .unwrap();
+                request(&mut peer).await;
+                peer.write_all(
+                    format!("{version} 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n{ray_header}\r\n")
+                        .as_bytes(),
+                )
+                .await
+                .unwrap();
+                assert!(request(&mut peer).await.starts_with("POST /reset "));
+                peer.reset();
+            });
+            let http = client(&url);
+            for path in ["warm", "latest"] {
+                let response = http
+                    .authenticated_request(
+                        reqwest::Method::GET,
+                        format!("{url}/{path}"),
+                        "private-auth-canary",
+                    )
+                    .send(path)
+                    .await
+                    .unwrap();
+                assert!(response.bytes().await.unwrap().is_empty());
+            }
+            let error = http
+                .authenticated_request(
+                    reqwest::Method::POST,
+                    format!("{url}/reset"),
+                    "private-auth-canary",
+                )
+                .send("reset")
+                .await
+                .unwrap_err();
+            assert!(matches!(error, ProviderError::ApiTransport(ref e)
+                if e.failure_cause == crate::error::ApiTransportCause::ConnectionReset));
+            join_raw_http_task(task, "reset after replacing response snapshot").await;
+            let events = captured.entries();
+            let fault = events
+                .iter()
+                .find(|e| {
+                    e.fields.get("message").map(String::as_str)
+                        == Some("API transport failure diagnostics")
+                })
+                .unwrap();
+            assert_eq!(fault.fields["responses_observed"], "2");
+            assert_eq!(fault.fields["last_response_http_version"], version);
+            assert!(
+                !fault.fields.contains_key("last_response_cf_ray"),
+                "absent or invalid Ray is not an older response's edge"
+            );
+            assert!(!format!("{events:?}").contains("private-response-canary"));
+        }
+        .with_subscriber(subscriber)
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -344,7 +457,7 @@ async fn diagnostic_state_contention_never_blocks_a_failed_request() {
 #[tokio::test]
 async fn delayed_response_cannot_update_a_replacement_registration() {
     let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(
-        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec(),
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\ncf-ray: 0123456789abcdef-SEA\r\n\r\nok".to_vec(),
     )])
     .await;
     let http = client(&server.url());

@@ -1,12 +1,8 @@
-import type { ReactNode } from "react";
-import { useGet, useSet } from "ccstate-react";
+import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@okouai/ui/lib/utils";
-import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import {
-  measureRail,
-  type RailTravel,
-} from "../../signals/okou-page/rail-travel.ts";
 import { ComposerRailPager } from "./rail-pager.tsx";
+import { COMPOSER_RAIL_FADE, RAIL_ROOT_CLASS } from "./rail-boundary.ts";
+import { RailViewport } from "./rail-viewport.tsx";
 
 /**
  * A row is a rail, not a set of equal pages. Items pack continuously, so the
@@ -23,15 +19,15 @@ import { ComposerRailPager } from "./rail-pager.tsx";
  * too.
  */
 const RAIL = cn(
-  "flex min-w-0 snap-x snap-mandatory items-start overflow-x-auto scroll-smooth",
+  "min-w-0 snap-x snap-mandatory overflow-x-auto scroll-smooth",
   "scroll-pl-14",
   "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
 );
 /**
  * The rail owns each item's frame so that snapping and the entry stagger have
- * exactly one owner; an item only has to size itself.
+ * exactly one owner; an item fills its frame rather than sizing the rail.
  */
-const RAIL_ITEM_FRAME = "shrink-0 snap-start";
+const RAIL_ITEM_FRAME = "w-(--rail-item-width) shrink-0 snap-start";
 /**
  * Items resolve left to right as the row arrives. The step is capped so a
  * catalog of eighteen still finishes in about a fifth of a second: past the
@@ -61,119 +57,63 @@ export const RAIL_TILE = cn(
 );
 /** The caption sits under the art and outside it, on every type's shelf. */
 export const RAIL_TILE_CAPTION = "mt-2 block truncate text-[12px] leading-4";
-/**
- * The overrun dissolves instead of being cut through a chip or a cover, on
- * whichever side still has travel: at either end that side has nothing to
- * dissolve, so it carries no fade. The 56px here is the rail's scroll padding;
- * changing one without the other puts the fade back over a complete item.
- */
-const RAIL_FADE = {
-  none: "",
-  back: cn(
-    "[-webkit-mask-image:linear-gradient(to_right,transparent,#000_56px)]",
-    "[mask-image:linear-gradient(to_right,transparent,#000_56px)]",
-  ),
-  forward: cn(
-    "[-webkit-mask-image:linear-gradient(to_right,#000_calc(100%_-_56px),transparent)]",
-    "[mask-image:linear-gradient(to_right,#000_calc(100%_-_56px),transparent)]",
-  ),
-  both: cn(
-    "[-webkit-mask-image:linear-gradient(to_right,transparent,#000_56px,#000_calc(100%_-_56px),transparent)]",
-    "[mask-image:linear-gradient(to_right,transparent,#000_56px,#000_calc(100%_-_56px),transparent)]",
-  ),
-} as const;
-/**
- * Focus lifts the mask so a keyboard user never lands on a control it dimmed.
- *
- * It reads `:focus-visible` rather than `:focus-within`, because a tile opens a
- * dialog and a dialog hands focus back to whatever opened it. After a pointer
- * user clicks a tile and closes that dialog, the tile holds focus with nothing
- * on screen saying so, and `:focus-within` would leave the row's fade off until
- * they happen to click elsewhere -- the row goes back to ending on a hard cut
- * through a cover. `:focus-visible` is exactly the state the mask is being
- * lifted for: the browser keeps it through a keyboard-driven open and close and
- * withholds it from a pointer-driven one.
- */
-const RAIL_FADE_OFF = cn(
-  "has-[:focus-visible]:[-webkit-mask-image:none]",
-  "has-[:focus-visible]:[mask-image:none]",
-);
-/**
- * The fade a row carries for its travel, with the focus override. Exported for
- * rows that are not `ComposerRail` items -- the document shelf's filter pills
- * are one `ToggleGroup` -- so every row on the shelf dissolves the same 56px.
- */
-export function composerRailFade(travel: RailTravel | undefined): string {
-  const canBack = travel?.canScrollBack ?? false;
-  const canForward = travel?.canScrollForward ?? false;
-  return cn(
-    canBack
-      ? canForward
-        ? RAIL_FADE.both
-        : RAIL_FADE.back
-      : canForward
-        ? RAIL_FADE.forward
-        : RAIL_FADE.none,
-    RAIL_FADE_OFF,
-  );
+interface RailGeometryStyle extends CSSProperties {
+  readonly "--rail-item-width": string;
 }
+
 /**
- * One row of controls, rendered as a rail. Both pagers only exist while the
- * rail has somewhere to go in that direction, so the row never offers to move
- * past its own ends.
+ * Fixed frames keep media/label changes from altering the shelf's extent.
+ * Only its rendered count or frame width requests a new content measurement;
+ * reading the real track avoids accumulating fractional gap rounding error.
+ * CSS owns intermediate viewport widths during sidebar transitions, while
+ * native scrolling remains the offset owner.
  */
 export function ComposerRail({
-  signals,
   rail,
   label,
-  gap,
+  itemWidth,
   items,
 }: {
-  readonly signals: ComposerSignals;
-  /** Identifies this row's travel; one row per task per kind. */
   readonly rail: string;
+  /** The frame owns width; its tile fills it rather than choosing another one. */
+  readonly itemWidth: number;
   /** Set only when the row is the whole group; a shelf labels its wrapper. */
   readonly label?: string;
-  readonly gap: string;
   /** The row's items, in order; the rail frames and staggers each one. */
   readonly items: readonly ReactNode[];
 }) {
-  const travel = useGet(signals.taskChips.railTravel$)[rail];
-  const setTravel = useSet(signals.taskChips.setRailTravel$);
-  // A stable ref: the command owns the row's observers and their teardown, so
-  // a re-render does not detach and rebuild them.
-  const bindRail = useSet(signals.taskChips.bindRail$);
-  const canBack = travel?.canScrollBack ?? false;
-  const canForward = travel?.canScrollForward ?? false;
+  const geometry: RailGeometryStyle = {
+    "--rail-item-width": `${String(itemWidth)}px`,
+  };
   return (
     <div
-      className="relative min-w-0"
+      className={RAIL_ROOT_CLASS}
+      style={geometry}
       data-rail-root=""
       role="group"
       aria-label={label}
     >
-      <div
+      <RailViewport
+        contentRevision={JSON.stringify([items.length, itemWidth])}
         data-rail={rail}
-        ref={bindRail}
-        className={cn(RAIL, gap, composerRailFade(travel))}
-        onScroll={(event) => {
-          setTravel(rail, measureRail(event.currentTarget));
-        }}
+        className={cn(RAIL, COMPOSER_RAIL_FADE)}
       >
-        {items.map((item, index) => {
-          return (
-            <div
-              key={`rail-item-${String(index)}`}
-              className={cn(RAIL_ITEM_FRAME, RAIL_ITEM_ENTER)}
-              style={{ animationDelay: railItemEnterDelay(index) }}
-            >
-              {item}
-            </div>
-          );
-        })}
-      </div>
-      {canBack && <ComposerRailPager side="back" />}
-      {canForward && <ComposerRailPager side="forward" />}
+        <div data-rail-track="" className="flex w-max items-start gap-3">
+          {items.map((item, index) => {
+            return (
+              <div
+                key={`rail-item-${String(index)}`}
+                className={cn(RAIL_ITEM_FRAME, RAIL_ITEM_ENTER)}
+                style={{ animationDelay: railItemEnterDelay(index) }}
+              >
+                {item}
+              </div>
+            );
+          })}
+        </div>
+      </RailViewport>
+      <ComposerRailPager side="back" />
+      <ComposerRailPager side="forward" />
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { gunzipSync } from "node:zlib";
+import { Parser } from "tar";
 import {
   prepareContentBundle,
   readContentBundle,
@@ -6,6 +8,39 @@ import {
 } from "../content-bundle";
 
 describe("content-addressed input bundles", () => {
+  it("preserves requested file modes while keeping private instructions private by default", async () => {
+    const prepared = await prepareContentBundle([
+      { path: "instructions.md", content: Buffer.from("private") },
+      { path: "SKILL.md", content: Buffer.from("connector"), mode: 0o644 },
+      {
+        path: "scripts/run.sh",
+        content: Buffer.from("#!/bin/sh\n"),
+        mode: 0o755,
+      },
+    ]);
+    const modes = new Map<string, number | undefined>();
+    const parser = new Parser({
+      onReadEntry(entry) {
+        modes.set(entry.path, entry.mode);
+        entry.resume();
+      },
+    });
+    parser.end(gunzipSync(prepared.archive));
+    expect(modes).toEqual(
+      new Map([
+        ["SKILL.md", 0o644],
+        ["instructions.md", 0o600],
+        ["scripts/run.sh", 0o755],
+      ]),
+    );
+    const restricted = await prepareContentBundle([
+      { path: "SKILL.md", content: Buffer.from("connector") },
+    ]);
+    const readable = await prepareContentBundle([
+      { path: "SKILL.md", content: Buffer.from("connector"), mode: 0o644 },
+    ]);
+    expect(readable.descriptor.sha256).not.toBe(restricted.descriptor.sha256);
+  });
   it("uses identical complete archive bytes for reordered files across owners", async () => {
     const files = [
       {

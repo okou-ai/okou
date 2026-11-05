@@ -1,5 +1,6 @@
 import type { ConnectorConnectionMetadataArgs } from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
+import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import {
   isIntegrationManagedCustomConnector,
   isIntegrationManagedCustomConnectorProviderAdapter,
@@ -29,6 +30,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -40,7 +42,11 @@ import {
 import { command, computed, type Computed } from "ccstate";
 import { boolean, object, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+  zodDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import {
   and,
   count,
@@ -115,13 +121,15 @@ import {
   customConnectorPermissionBundleDependencySlug,
   loadCustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
-import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
+import {
+  prepareCustomConnectorSkillVolume$,
+  type PreparedCustomConnectorSkill,
+} from "./custom-connector-skill-volume.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import { preparedVolumePublicationPlan } from "./storage-volume-publication-sql";
-import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { addUserCustomConnector$ } from "./user-connectors.service";
 
 const L = logger("CustomConnectorService");
@@ -1847,7 +1855,7 @@ type PersistCustomConnectorCreateArgs = {
   readonly storageVersion: number;
   readonly oauthConfigUpdate: ValidatedOAuthConfigUpdate;
   readonly encryptedClientSecret: string | null;
-  readonly preparedSkill: PreparedServerSideVolume | null;
+  readonly preparedSkill: PreparedCustomConnectorSkill | null;
 };
 
 export function customConnectorCreateSource(
@@ -1918,6 +1926,14 @@ export function customConnectorCreateSource(
       sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectors.skillStorageVersionId)}`
         .mapWith(orgCustomConnectors.skillStorageVersionId)
         .as("skill_storage_version_id"),
+    skillContentBundle:
+      sql`${sql.param(args.preparedSkill?.contentBundle ?? null, orgCustomConnectorSkillBundles.skillContentBundle)}`
+        .mapWith(zodDriverValueDecoder(contentBundleSchema.nullable()))
+        .as("skill_content_bundle"),
+    skillContentBundleSourceVersionId:
+      sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId)}`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("skill_content_bundle_source_version_id"),
     storageVersion:
       sql`${sql.param(args.storageVersion, orgCustomConnectors.storageVersion)}`
         .mapWith(orgCustomConnectors.storageVersion)
@@ -2258,7 +2274,7 @@ interface PersistCustomConnectorUpdateArgs {
   readonly encryptedClientSecret: string | null;
   readonly grantConfigurationChanged: boolean;
   readonly storageVersion: number;
-  readonly preparedSkill: PreparedServerSideVolume | null;
+  readonly preparedSkill: PreparedCustomConnectorSkill | null;
 }
 
 function requireCustomConnectorOAuthConfig(
@@ -2283,6 +2299,9 @@ function customConnectorDefinitionUpdateValues(
     authMode: args.definition.authMode,
     skillMarkdown: args.definition.skillMarkdown,
     skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
+    skillContentBundle: args.preparedSkill?.contentBundle ?? null,
+    skillContentBundleSourceVersionId:
+      args.preparedSkill?.version.versionId ?? null,
     storageVersion: args.storageVersion,
     updatedAt: at,
   };

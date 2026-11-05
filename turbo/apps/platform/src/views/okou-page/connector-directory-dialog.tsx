@@ -1,5 +1,5 @@
 import { Toolbar } from "@base-ui/react/toolbar";
-import { useGet, useLoadable, useSet, type LoadableState } from "ccstate-react";
+import { useLoadable, useSet, type LoadableState } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -25,13 +25,9 @@ import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { sshSummary$ } from "../../signals/ssh.ts";
-import {
-  bindConnectorCategoryRail$,
-  connectorCategoryRailTravel$,
-  setConnectorCategoryRailTravel$,
-} from "../../signals/okou-page/settings/connector-category-rail.ts";
-import { measureRail } from "../../signals/okou-page/rail-travel.ts";
 import { RailPager } from "./rail-pager.tsx";
+import { CATEGORY_RAIL_FADE, RAIL_ROOT_CLASS } from "./rail-boundary.ts";
+import { RailViewport } from "./rail-viewport.tsx";
 import type {
   ComposerConnectorUiState,
   ConnectorDirectoryTab,
@@ -308,37 +304,6 @@ function CustomConnectorDirectoryCard({
 }
 
 /**
- * The overrun dissolves on whichever side still has travel, so the row reads as
- * continuing rather than as ending on a cut. At either end that side has
- * nothing left to dissolve and carries no fade. 48px is the pager's own width
- * plus its gutter: the control then sits in the dissolved part instead of over
- * a chip someone is reading.
- */
-const CHIP_RAIL_FADE = {
-  none: "",
-  back: "[mask-image:linear-gradient(to_right,transparent,#000_48px)]",
-  forward:
-    "[mask-image:linear-gradient(to_right,#000_calc(100%_-_48px),transparent)]",
-  both: "[mask-image:linear-gradient(to_right,transparent,#000_48px,#000_calc(100%_-_48px),transparent)]",
-} as const;
-/**
- * Every chip is a button, so the row is walked by Tab as well as by the pagers,
- * and the browser scrolls whichever chip takes focus into view. `scroll-px-12`
- * is the fade's own width on both sides, so a chip scrolled in that way stops
- * clear of the dissolve rather than resting inside it; the two have to stay
- * equal. Lifting the mask while the row holds focus covers what scroll padding
- * cannot -- a chip already at rest under the fade when focus arrives -- so a
- * keyboard user never lands on a control the row dimmed. `composer-rail.tsx`
- * pairs the same two.
- *
- * `:focus-visible` rather than `:focus-within`, for the reason spelled there: a
- * chip clicked with a pointer keeps focus after the click, and the row would
- * hold its mask off -- ending on a hard cut through a chip -- for as long as
- * that focus lasts.
- */
-const CHIP_RAIL_FADE_OFF = "has-[:focus-visible]:[mask-image:none]";
-
-/**
  * The dialog's own surface is `--card`, not `--background`: in dark the two are
  * eight levels apart, and a pager filled with the composer's tone would read as
  * a hole punched in the card rather than a disc raised off the chip.
@@ -383,39 +348,39 @@ function DirectoryCategoryChips({
       active ? "bg-state-selected text-foreground" : "text-muted-foreground",
     );
   };
-  const travel = useGet(connectorCategoryRailTravel$);
-  const setTravel = useSet(setConnectorCategoryRailTravel$);
-  // A stable ref: the command owns the row's observers and their teardown, so
-  // a re-render does not detach and rebuild them.
-  const bindRail = useSet(bindConnectorCategoryRail$);
-  const fade = travel.canScrollBack
-    ? travel.canScrollForward
-      ? CHIP_RAIL_FADE.both
-      : CHIP_RAIL_FADE.back
-    : travel.canScrollForward
-      ? CHIP_RAIL_FADE.forward
-      : CHIP_RAIL_FADE.none;
+  const allCategories = t(($) => {
+    return $.chat.connectors.directory.allCategories;
+  });
+  // This receipt describes what is actually rendered: late catalog/fallback
+  // switches, count digit changes and SSH/VNC's Remote Access category all
+  // change it. Selection and the rest of the directory do not.
+  const contentRevision = JSON.stringify([
+    allCategories,
+    sections.map((section) => {
+      return [
+        section.category,
+        section.menuLabel,
+        categoryCounts?.[section.category],
+      ];
+    }),
+  ]);
   return (
     // A pager centres on its positioning root, so the row's own spacing sits
     // outside that root: left inside it, the 12px above the chips would carry
     // the control 6px up off the chips it belongs to. What stays inside is the
     // symmetric gutter the chips' focus ring needs, which centres exactly.
     <div className="shrink-0 pt-2">
-      <div className="relative" data-rail-root="">
-        <div
+      <div className={RAIL_ROOT_CLASS} data-rail-root="">
+        <RailViewport
+          contentRevision={contentRevision}
           data-rail="connector-categories"
-          ref={bindRail}
-          onScroll={(event) => {
-            setTravel(measureRail(event.currentTarget));
-          }}
           className={cn(
-            "overflow-x-auto scroll-smooth scroll-px-12 px-6 py-1",
+            "overflow-x-auto scroll-smooth scroll-px-12 py-1",
             "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            fade,
-            CHIP_RAIL_FADE_OFF,
+            CATEGORY_RAIL_FADE,
           )}
         >
-          <div className="flex w-max gap-1.5">
+          <div data-rail-track="" className="flex w-max gap-1.5 px-6">
             <button
               type="button"
               data-connector-category-chip=""
@@ -424,9 +389,7 @@ function DirectoryCategoryChips({
                 onSelect(null);
               }}
             >
-              {t(($) => {
-                return $.chat.connectors.directory.allCategories;
-              })}
+              {allCategories}
             </button>
             {sections.map((section) => {
               return (
@@ -450,9 +413,9 @@ function DirectoryCategoryChips({
               );
             })}
           </div>
-        </div>
-        {travel.canScrollBack && <DirectoryChipPager side="back" />}
-        {travel.canScrollForward && <DirectoryChipPager side="forward" />}
+        </RailViewport>
+        <DirectoryChipPager side="back" />
+        <DirectoryChipPager side="forward" />
       </div>
     </div>
   );

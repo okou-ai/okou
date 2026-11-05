@@ -61,6 +61,21 @@ gate_steps = desktop.fetch("build-macos").fetch("steps")
 validation = gate_steps.find { |step| step["name"] == "Verify parallel native checks" }
 download = gate_steps.find { |step| step.fetch("uses", "").start_with?("actions/download-artifact@") }
 raise "native packages must follow passing native checks" unless gate_steps.index(validation) < gate_steps.index(download)
+preview = gate_steps.find { |step| step["name"] == "Upload preview artifact" }
+staging = desktop.fetch("package-macos").fetch("steps").find { |step| step["name"] == "Stage preview package" }
+raise "preview publication must follow its handoff" unless gate_steps.index(download) < gate_steps.index(preview)
+%w[pull_request push workflow_dispatch merge_group].each do |event_name|
+  [staging, download, preview].each do |step|
+    selected = evaluate.call(step.fetch("if", "true"), event_name, "", "", "success", false)
+    raise "unexpected artifact transfer for #{event_name}: #{step.fetch('name')}" unless selected == (event_name == "pull_request")
+  end
+end
+raise "preview staging must expire after one day" unless staging.fetch("with").fetch("retention-days") == 1
+raise "preview must expire after seven days" unless preview.fetch("with").fetch("retention-days") == 7
+preview_paths = ["desktop/out/Okou Dev-*.zip", "desktop/out/Okou Dev-darwin-arm64/dSYMs"]
+[staging, preview].each do |step|
+  raise "preview handoff must contain the installable ZIP and symbols" unless step.fetch("with").fetch("path").lines.map(&:strip) == preview_paths
+end
 [
   ["success", "success", true],
   ["failure", "success", false],

@@ -48,7 +48,7 @@ use crate::error::{
     ApiBodyReadError, ApiFailureKind, ApiStatusError, ApiTransportCause, ApiTransportError,
     ProviderError, ProviderResult,
 };
-use crate::http::{ApiRequestBuilder, HttpClient};
+use crate::http::{ApiRequestBuilder, HttpClient, response_cf_ray};
 use crate::run_cancellation::RunCancellationRegistry;
 #[cfg(test)]
 use guest_contracts::okou_cli::OkouCliInstalledPackage;
@@ -1751,7 +1751,7 @@ impl ApiClient {
                 http_status = status,
                 execution_to_response_headers_ms = duration_ms(execution_to_response_headers_elapsed),
                 http_version = ?resp.version(),
-                response_cf_ray = claim_cf_ray(resp.headers()),
+                response_cf_ray = response_cf_ray(resp.headers()),
                 response_vercel_id = claim_vercel_id(resp.headers()),
                 "claim response headers received"
             );
@@ -2022,16 +2022,6 @@ impl ApiClient {
 
 // Only provider-issued request identifiers are retained, never arbitrary
 // response headers. Invalid/unknown shapes are simply unobserved diagnostics.
-fn claim_cf_ray(headers: &reqwest::header::HeaderMap) -> Option<&str> {
-    let value = headers.get("cf-ray")?.to_str().ok()?;
-    let (ray, colo) = value.split_once('-')?;
-    (ray.len() == 16
-        && ray.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && colo.len() == 3
-        && colo.bytes().all(|byte| byte.is_ascii_uppercase()))
-    .then_some(value)
-}
-
 fn claim_vercel_id(headers: &reqwest::header::HeaderMap) -> Option<&str> {
     let value = headers.get("x-vercel-id")?.to_str().ok()?;
     let (region, request_id) = value.split_once("::")?;
