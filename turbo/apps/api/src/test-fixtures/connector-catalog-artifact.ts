@@ -1066,17 +1066,6 @@ const connectors = [
     ),
   }),
   connector({
-    connectorSlug: "garmin-connect",
-    label: "Garmin Connect",
-    authMethods: [
-      standardOauthMethod({
-        connectorSlug: "garmin-connect",
-        prefix: "GARMIN_CONNECT",
-        tokenEnvironmentNames: ["GARMIN_CONNECT_TOKEN"],
-      }),
-    ],
-  }),
-  connector({
     connectorSlug: "github",
     label: "GitHub",
     authMethods: [

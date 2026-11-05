@@ -297,11 +297,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Oracle NetSuite ERP connector",
     enabled: false,
   },
-  [FeatureSwitchKey.GarminConnectConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Garmin Connect wellness connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Reddit connector integration",
