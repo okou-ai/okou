@@ -1166,32 +1166,7 @@ describe("okou connector search command", () => {
     });
   });
 
-  describe("auth method feature flag filtering", () => {
-    it("excludes zapier from search results when ZapierConnector feature switch is disabled (default)", async () => {
-      server.use(
-        stubConnectors([]),
-        stubAgent(AGENT_UUID, "test"),
-        stubUserConnectors(AGENT_UUID, []),
-      );
-
-      await searchCommand.parseAsync([
-        "node",
-        "cli",
-        "zapier",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const lines = mockConsoleLog.mock.calls.flat() as string[];
-      const output = lines.join("\n");
-      const dataRows = findDataRows(lines);
-      const slugs = dataRows.map((row) => {
-        return row.split(/\s+/)[0];
-      });
-      expect(slugs).not.toContain("zapier");
-      expect(output).not.toContain("zapier");
-    });
-
+  describe("server-visible connector catalog", () => {
     it("includes connectors with ungated api-token auth even when oauth is feature-gated", async () => {
       server.use(
         stubConnectors([]),

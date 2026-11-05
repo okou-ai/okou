@@ -364,20 +364,7 @@ describe("okou connector list command", () => {
     expect(mockExit).toHaveBeenCalledWith(1);
   });
 
-  describe("auth method feature flag filtering", () => {
-    it("excludes zapier when ZapierConnector feature switch is disabled (default)", async () => {
-      server.use(
-        stubConnectors(["github"]),
-        stubAgent(AGENT_UUID, "test"),
-        stubUserConnectors(AGENT_UUID, []),
-      );
-
-      await listCommand.parseAsync(["node", "cli", "--agent", AGENT_UUID]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).not.toContain("zapier");
-    });
-
+  describe("server-visible connector catalog", () => {
     it("includes connectors with ungated api-token auth even when oauth is feature-gated", async () => {
       server.use(
         stubConnectors(["github"]),

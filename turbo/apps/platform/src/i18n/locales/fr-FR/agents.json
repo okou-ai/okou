@@ -162,10 +162,6 @@
           "vercel-deploy-digest": {
             "description": "Il relie chaque déploiement à son commit et alerte Slack lorsqu’un déploiement échoue",
             "title": "Résumé des déploiements Vercel"
-          },
-          "zapier-okou-migration": {
-            "description": "Recréez vos workflows Zapier en tant qu'agents {{brandName}}",
-            "title": "Migration Zapier → {{brandName}}"
           }
         },
         "title": "Ingénierie"

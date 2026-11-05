@@ -1,12 +1,10 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 interface UseCase {
   readonly id: string;
   readonly prompt: string;
   readonly customAgentOnly?: boolean;
   readonly connectorSlugs?: readonly ConnectorSlug[];
-  readonly featureFlag?: FeatureSwitchKey;
 }
 
 interface Category {
@@ -16,7 +14,6 @@ interface Category {
 
 interface IdeationFilterOptions {
   readonly isCustomAgent: boolean;
-  readonly features?: Partial<Record<FeatureSwitchKey, boolean>>;
   readonly visibleConnectorSlugs?: ReadonlySet<string>;
 }
 
@@ -101,13 +98,6 @@ const categories: readonly Category[] = [
         prompt:
           "Set up automated browser tests using Browserbase that check our landing page, login flow, and dashboard every day and report failures to Slack",
         connectorSlugs: ["browserbase", "slack"],
-      },
-      {
-        id: "zapier-okou-migration",
-        prompt:
-          "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
-        connectorSlugs: ["zapier", "slack", "notion"],
-        featureFlag: FeatureSwitchKey.ZapierConnector,
       },
       {
         id: "make-scenario-builder",
@@ -528,24 +518,11 @@ const categories: readonly Category[] = [
   },
 ];
 
-function isEnabled(
-  useCase: UseCase,
-  features?: Partial<Record<FeatureSwitchKey, boolean>>,
-): boolean {
-  if (!useCase.featureFlag) {
-    return true;
-  }
-  return !!features?.[useCase.featureFlag];
-}
-
 function filterUseCase(
   useCase: UseCase,
   options: IdeationFilterOptions,
 ): UseCase | null {
   const visibleConnectorSlugs = options.visibleConnectorSlugs;
-  if (!isEnabled(useCase, options.features)) {
-    return null;
-  }
   if (useCase.customAgentOnly && !options.isCustomAgent) {
     return null;
   }

@@ -162,10 +162,6 @@
           "vercel-deploy-digest": {
             "description": "각 배포를 커밋과 연결하고 배포 실패 시 Slack 알림",
             "title": "Vercel 배포 요약"
-          },
-          "zapier-okou-migration": {
-            "description": "Zapier 워크플로를 {{brandName}} 에이전트로 재구성",
-            "title": "Zapier → {{brandName}} 마이그레이션"
           }
         },
         "title": "엔지니어링"

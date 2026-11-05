@@ -15,7 +15,6 @@ import { useTranslation } from "react-i18next";
 import { Link } from "../router/link.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { getCategories } from "./ideation-data.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { agents$, currentAgentId$ } from "../../signals/agent.ts";
@@ -39,7 +38,6 @@ export function IdeationPage() {
     agentsLoadable.data.some((agent) => {
       return agent.agentId === agentId && agent.isDefaultAgent === false;
     });
-  const features = useLastResolved(featureSwitch$);
   const connectorStatusLoadable = useLoadable(connectorCatalogStatusBySlug$);
   const lastConnectorStatusBySlug = useLastResolved(
     connectorCatalogStatusBySlug$,
@@ -63,10 +61,7 @@ export function IdeationPage() {
     { returnObjects: true },
   );
   const categories = localizeIdeationCategories(
-    getCategories({ features, visibleConnectorSlugs, isCustomAgent }).slice(
-      0,
-      8,
-    ),
+    getCategories({ visibleConnectorSlugs, isCustomAgent }).slice(0, 8),
     catalogCopy,
   );
   const activeTab = useGet(ideationActiveTab$);

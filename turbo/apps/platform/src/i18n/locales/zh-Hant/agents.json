@@ -162,10 +162,6 @@
           "vercel-deploy-digest": {
             "description": "把每次部署關聯到對應提交，部署失敗時在 Slack 告警",
             "title": "Vercel 部署摘要"
-          },
-          "zapier-okou-migration": {
-            "description": "把你的 Zapier 工作流重建為 {{brandName}} 智能體",
-            "title": "Zapier → {{brandName}} 遷移"
           }
         },
         "title": "工程"

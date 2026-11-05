@@ -376,12 +376,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
-  [FeatureSwitchKey.ZapierConnector]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Enable the Zapier connector. When disabled, Zapier is hidden from the connectors list and cannot be connected.",
-    enabled: false,
-  },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:

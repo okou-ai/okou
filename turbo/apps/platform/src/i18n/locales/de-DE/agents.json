@@ -162,10 +162,6 @@
           "vercel-deploy-digest": {
             "description": "Es verknüpft jede Bereitstellung mit ihrem Commit und benachrichtigt Slack, wenn eine Bereitstellung fehlschlägt",
             "title": "Vercel Deploy Digest"
-          },
-          "zapier-okou-migration": {
-            "description": "Erstellen Sie Ihre Zapier-Workflows als {{brandName}}-Agenten neu",
-            "title": "Zapier → {{brandName}}-Migration"
           }
         },
         "title": "Engineering"
