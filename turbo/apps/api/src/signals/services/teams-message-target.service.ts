@@ -80,13 +80,6 @@ const resolveTeamsMessageConnection$ = command(
         teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
       })
       .from(teamsOrgConnections)
-      .leftJoin(
-        teamsOrgInstallations,
-        eq(
-          teamsOrgInstallations.teamsTenantId,
-          teamsOrgConnections.teamsTenantId,
-        ),
-      )
       .where(teamsAccountOwnerCondition(args))
       .limit(2);
     signal.throwIfAborted();

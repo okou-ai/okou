@@ -728,6 +728,10 @@
     --brand-text: var(--primary-700); /* #885600 */
     --brand-text-hover: var(--primary-800); /* #6C4300 */
 
+    /* Selected text. The brand wash sits on the selected row's lightness and
+       reads as unselected, so selection takes a deeper amber of its own. */
+    --selection: 31.4 100% 78%; /* #FFCA8F */
+
     /* The selected label sits on the brand stop while the product's own
        palette is active; a colour theme repoints it at that theme's hue. */
     --selected-foreground: var(--brand-text);
@@ -898,6 +902,10 @@
     --brand-subtle: var(--primary-950); /* #31200B */
     --brand-text: var(--primary-300); /* #FFA500 */
     --brand-text-hover: var(--primary-200); /* #FFC580 */
+
+    /* The dark wash (#31200B) sinks below the dark row; selection rises above
+       it instead. */
+    --selection: 33.1 35% 30%; /* #674F32 */
 
     /* See the light note: the same default, on this theme's brand stop. */
     --selected-foreground: var(--brand-text);

@@ -28,7 +28,7 @@ export function ThreadPinMoveMenuItems({
   });
   const move = useSet(stepPinnedThread$);
   const signal = useGet(pageSignal$);
-  // Pin ranks belong to an Agent; cross-Agent folders offer pin/unpin only.
+  // Pin ranks belong to an Agent; cross-Agent Projects offer pin/unpin only.
   if (!enabled || !pinned || (projectsEnabled && projectMember)) {
     return null;
   }

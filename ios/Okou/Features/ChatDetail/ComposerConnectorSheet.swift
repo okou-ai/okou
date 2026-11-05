@@ -51,7 +51,7 @@ struct ComposerConnectorSheet: View {
           NavigationLink {
             ComposerRemoteControls(store: store)
           } label: {
-            Label("Remote control", systemImage: "desktopcomputer")
+            Label("Remote control", systemImage: "desktopcomputer").foregroundStyle(.primary)
           }
         }
         Section {

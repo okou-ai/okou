@@ -691,19 +691,20 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           },
         };
       },
-      uint8ArrayFromBase64: (): void => {
-        // The viewer requires this browser API, which the test runtime lacks.
+      uint8ArrayFromBase64: (available = true): void => {
         const descriptor = defineWindowProperty(
           Uint8Array,
           "fromBase64",
-          (value: string) => {
-            const binary = atob(value);
-            const bytes = new Uint8Array(binary.length);
-            for (let index = 0; index < binary.length; index++) {
-              bytes[index] = binary.charCodeAt(index);
-            }
-            return bytes;
-          },
+          available
+            ? (value: string) => {
+                const binary = atob(value);
+                const bytes = new Uint8Array(binary.length);
+                for (let index = 0; index < binary.length; index++) {
+                  bytes[index] = binary.charCodeAt(index);
+                }
+                return bytes;
+              }
+            : undefined,
         );
         restoreOnAbort(getSignal(), () => {
           restoreWindowProperty(Uint8Array, "fromBase64", descriptor);
