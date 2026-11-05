@@ -1258,10 +1258,10 @@ test("A rejected Project move does not replace a later confirmed move", async ()
 
   await waitFor(() => {
     return expect(
-      namedLink(folder(secondId), "Reference notes"),
+      namedLink(projectRows(secondId), "Reference notes"),
     ).toBeInTheDocument();
   });
-  expect(namedLink(folder(secondId), "Ordinary chat")).toBeInTheDocument();
+  expect(namedLink(projectRows(secondId), "Ordinary chat")).toBeInTheDocument();
 });
 
 test("Dropping over an existing Project chat moves immediately while the request is pending", async () => {

@@ -210,7 +210,7 @@ test("A rejected Project name does not replace the confirmed name of a later sav
     rejectedRenames: 1,
     confirmedName: "Launch confirmed",
   });
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectName("Launch"));
   await findNameField();
   await user.keyboard("Launch draft{Enter}");
   await expect(
@@ -218,12 +218,12 @@ test("A rejected Project name does not replace the confirmed name of a later sav
   ).resolves.toBeInTheDocument();
 
   // The rejected name stays visible until reload; the next save supersedes it.
-  await user.dblClick(folderButton("Launch draft"));
+  await user.dblClick(projectName("Launch draft"));
   await findNameField();
   await user.keyboard("Launch plan{Enter}");
 
   await waitFor(() => {
-    expect(folderButton("Launch confirmed")).toBeInTheDocument();
+    expect(projectName("Launch confirmed")).toBeInTheDocument();
   });
 });
 
