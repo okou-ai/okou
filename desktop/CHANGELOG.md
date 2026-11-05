@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.10](https://github.com/okou-ai/okou/compare/desktop-v0.55.9...desktop-v0.55.10) (2026-11-05)
+
+
+### Performance Improvements
+
+* **ci:** run desktop xctest with two isolated workers ([#45390](https://github.com/okou-ai/okou/issues/45390)) ([591faa3](https://github.com/okou-ai/okou/commit/591faa33ba2c4371f014f50c083fd4bc5e557ecf))
+
 ## [0.55.9](https://github.com/okou-ai/okou/compare/desktop-v0.55.8...desktop-v0.55.9) (2026-11-05)
 
 
