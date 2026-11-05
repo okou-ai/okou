@@ -1,8 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// The composer's mic: a clear glass circle like every bar control, a spinner while the
-/// recorder starts.
+/// A plain toolbar action like the composer's add button, with a spinner while the recorder starts.
 struct ComposerVoiceInputButton: View {
   let voice: ComposerVoiceInputStore
 
@@ -21,9 +20,9 @@ struct ComposerVoiceInputButton: View {
         }
       }
       .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+      .contentShape(Circle())
     }
     .buttonStyle(.plain)
-    .modifier(OkouGlassControl(shape: .circle))
     .accessibilityLabel("Voice input")
     .accessibilityIdentifier("voice-input")
     .disabled(voice.phase != .idle)
