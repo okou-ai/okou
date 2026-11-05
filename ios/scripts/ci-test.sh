@@ -112,13 +112,23 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     exit 1
   fi
   # Keep test results and attachments without failure-triggered simulator sysdiagnoses.
-  xcodebuild -xctestrun "${test_runs[0]}" \
-    -destination "$IOS_TEST_DESTINATION" \
-    -parallel-testing-enabled NO \
-    -maximum-concurrent-test-simulator-destinations 1 \
-    -collect-test-diagnostics never \
-    -resultBundlePath "$build_root/Tests.xcresult" \
+  test_args=(
+    -xctestrun "${test_runs[0]}"
+    -destination "$IOS_TEST_DESTINATION"
+    -parallel-testing-enabled NO
+    -maximum-concurrent-test-simulator-destinations 1
+    -collect-test-diagnostics never
+    -resultBundlePath "$build_root/Tests.xcresult"
     test-without-building
+  )
+  if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+    echo "iOS starting test process observer" >&2
+    mkdir -p "$build_root/startup-samples"
+    python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples/test" -- \
+      xcodebuild "${test_args[@]}"
+  else
+    xcodebuild "${test_args[@]}"
+  fi
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS test-without-building: $((SECONDS - ios_phase_started)) seconds"
 fi

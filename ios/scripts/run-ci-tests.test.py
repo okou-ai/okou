@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise real CI scripts with controlled external compiler/simulator processes."""
 
+import json
 import os
 import shutil
 import signal
@@ -231,6 +232,27 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 23, result.stderr)
         self.assertFalse((self.state / "boot-started").exists())
         self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_sampled_run_keeps_the_full_suite_and_separate_phase_reports(self):
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        packages = self.invoke("ci-package-test.sh")
+        self.assertEqual(packages.returncode, 0, packages.stderr)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_complete_suite()
+        reports = self.root / "work/okou-ios-ci/startup-samples"
+        for report in (reports / "summary.json", reports / "test/summary.json"):
+            self.assertEqual(json.loads(report.read_text())["exit_code"], 0)
+
+    def test_sampled_test_failure_preserves_status_and_result_bundle(self):
+        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 65, result.stderr)
+        bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
+        self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
+        report = self.root / "work/okou-ios-ci/startup-samples/test/summary.json"
+        self.assertEqual(json.loads(report.read_text())["exit_code"], 65)
 
     def test_native_failure_preserves_its_status_and_result_bundle(self):
         self.env["CI_PROCESS_SCENARIO"] = "test-failure"
