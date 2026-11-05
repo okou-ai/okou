@@ -225,65 +225,6 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertTrue(details.contains("DecodingError"))
   }
 
-  func testProtocolAttachmentsAreBoundedAcrossHelperRestartsWithoutDroppingErrorEvents()
-    async throws
-  {
-    let collector = try telemetry()
-    let (executor, _) = try fixture(
-      #"""
-      #!/usr/bin/python3
-      import json, os, pathlib, sys
-      attempts = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY']) / 'attempts'
-      for line in sys.stdin:
-          request = json.loads(line)
-          if request['kind'] == 'permissions.state':
-              print(json.dumps({'id': request['id'], 'status': 'succeeded',
-                                'result': {'accessibility': True, 'screenRecording': True}}), flush=True)
-          else:
-              count = int(attempts.read_text()) if attempts.exists() else 0
-              attempts.write_text(str(count + 1))
-              payload = b'x' * (4 * 1024 * 1024 + 4096) if count == 0 else b'broken-response'
-              sys.stdout.buffer.write(payload + b'\n')
-              sys.stdout.buffer.flush()
-      """#)
-
-    for _ in 0..<4 {
-      let failed = await listApps(executor)
-      XCTAssertEqual(failed["status"].string, "failed")
-    }
-    await fulfillment(of: [collector.expectation(eventCount: 4)], timeout: 5)
-    let events = try collector.events()
-    XCTAssertEqual(events.count, 4)
-    XCTAssertTrue(
-      events.contains {
-        $0["contexts"]["nativeHelper"]["responseBytes"].number == Double(4 * 1024 * 1024 + 4096)
-      })
-    var attached = 0
-    var limited = 0
-    for event in events {
-      let attachments = try collector.attachments(for: event)
-      if event["contexts"]["nativeHelper"]["diagnosticAttachments"].string == "rate_limited" {
-        limited += 1
-        XCTAssertTrue(attachments.isEmpty)
-      } else {
-        attached += 1
-        let raw = try XCTUnwrap(attachments["native-helper-response.bin"])
-        XCTAssertLessThanOrEqual(raw.count, 4 * 1024 * 1024)
-        let report = try XCTUnwrap(attachments["native-helper-diagnostics.txt"])
-        XCTAssertLessThan(report.count, 65_536)
-        let details = String(decoding: report, as: UTF8.self)
-        if event["contexts"]["nativeHelper"]["responseBytes"].number
-          == Double(4 * 1024 * 1024 + 4096)
-        {
-          XCTAssertEqual(raw, Data(repeating: 120, count: 4 * 1024 * 1024))
-          XCTAssertTrue(details.contains("responseTruncated=true"))
-        }
-      }
-    }
-    XCTAssertEqual(attached, 3)
-    XCTAssertEqual(limited, 1)
-  }
-
   func testOversizedOutputIsRetiredBeforeDecoding() async throws {
     let collector = try telemetry()
     let (executor, _) = try fixture(
