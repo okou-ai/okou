@@ -115,7 +115,7 @@ function fixture(t) {
   };
 }
 
-test("initial inventory permits existing dependencies, unrelated object storage and lexical shadowing", (t) => {
+await test("initial inventory permits existing dependencies, unrelated object storage and lexical shadowing", (t) => {
   const f = fixture(t);
   f.write(
     feature,
@@ -140,7 +140,7 @@ test("initial inventory permits existing dependencies, unrelated object storage 
   assert.equal(readFileSync(join(f.root, baselinePath), "utf8"), before);
 });
 
-test("an existing import cannot grow, even with a regenerated candidate baseline", (t) => {
+await test("an existing import cannot grow, even with a regenerated candidate baseline", (t) => {
   const f = fixture(t);
   const base = f.activate();
   f.write(
@@ -152,7 +152,7 @@ test("an existing import cannot grow, even with a regenerated candidate baseline
   f.check(base, false, /New legacy Storage dependencies are prohibited/);
 });
 
-test("new schema and existing Storage-owner consumers are rejected across import forms", (t) => {
+await test("new schema and existing Storage-owner consumers are rejected across import forms", (t) => {
   const f = fixture(t);
   const base = f.activate();
   for (const source of [
@@ -174,7 +174,7 @@ test("new schema and existing Storage-owner consumers are rejected across import
   }
 });
 
-test("literal SQL and schema-object access cannot bypass the import boundary", (t) => {
+await test("literal SQL and schema-object access cannot bypass the import boundary", (t) => {
   const f = fixture(t);
   const base = f.activate();
   for (const source of [
@@ -197,7 +197,7 @@ test("literal SQL and schema-object access cannot bypass the import boundary", (
   }
 });
 
-test("migration removes stale entries and a reduced main baseline cannot be resurrected", (t) => {
+await test("migration removes stale entries and a reduced main baseline cannot be resurrected", (t) => {
   const f = fixture(t);
   const base = f.activate();
   rmSync(join(f.root, owner));
@@ -216,7 +216,7 @@ test("migration removes stale entries and a reduced main baseline cannot be resu
   f.check(reduced, false, /grew from 0/);
 });
 
-test("initial registration cannot admit same-PR dependencies, and activated bootstrap stays closed", (t) => {
+await test("initial registration cannot admit same-PR dependencies, and activated bootstrap stays closed", (t) => {
   const f = fixture(t);
   f.write(
     feature,
