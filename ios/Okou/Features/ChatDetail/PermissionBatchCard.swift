@@ -66,6 +66,8 @@ struct PermissionBatchCard: View {
 }
 
 struct PermissionBatchDetails: View {
+  @Environment(\.singleAgentExperience) private var singleAgent
+
   @Bindable var store: PermissionBatchStore
   @Environment(\.dismiss) private var dismiss
 
@@ -79,7 +81,9 @@ struct PermissionBatchDetails: View {
               Text(
                 snapshot.connectorScoped
                   ? "These permissions apply to these connectors across your chats and accounts."
-                  : "These permissions apply to your account for this Agent."
+                  : (singleAgent
+                    ? "These permissions apply to your account for Okou across chats in this workspace."
+                    : "These permissions apply to your account for this Agent.")
               )
               .font(.footnote).foregroundStyle(.secondary)
               ForEach(snapshot.groups) { group in
@@ -118,8 +122,10 @@ struct PermissionBatchDetails: View {
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
         Text("\(store.action.items.count) permissions requested").font(.headline)
-        Text("Requested by \(store.snapshot?.agentName ?? String(localized: "this Agent"))")
-          .font(.subheadline).foregroundStyle(.secondary)
+        Text(
+          "Requested by \(singleAgent ? "Okou" : (store.snapshot?.agentName ?? String(localized: "this Agent")))"
+        )
+        .font(.subheadline).foregroundStyle(.secondary)
         if let snapshot = store.snapshot, snapshot.enabled && !store.requiresReadback {
           Text("\(snapshot.allowedCount) of \(store.action.items.count) permissions allowed")
             .font(.footnote).foregroundStyle(.secondary)

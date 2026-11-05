@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   remoteResource$,
@@ -381,6 +382,11 @@ function ConnectorFilterMenu({
  * ones -- the question left to ask is which agent can reach them.
  */
 function ConnectorAgentFilterMenu() {
+  const singleAgent = useGet(singleAgentEnabled$);
+  return singleAgent ? null : <LegacyConnectorAgentFilterMenu />;
+}
+
+function LegacyConnectorAgentFilterMenu() {
   const { t } = useTranslation();
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];

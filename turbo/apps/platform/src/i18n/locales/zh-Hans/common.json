@@ -1179,7 +1179,7 @@
       "confirmProCancellation": "确定要取消 Pro 套餐吗？",
       "confirmTarget": "降级到{{plan}}？",
       "inProgress": "降级中…",
-      "proWarning": "你的 Pro 权益会持续到当前账单周期结束。之后这个工作区会变成无套餐状态，在再次升级前智能体无法运行。",
+      "proWarning": "Pro 权益持续到本计费周期结束。之后此工作区将变为无套餐，升级后 Okou 才能继续工作。",
       "teamWarning": "你的 Team 权益会持续到当前账单周期结束，之后这个工作区会变成{{plan}}。",
       "title": "降级套餐"
     },
@@ -1214,15 +1214,15 @@
       },
       "highlights": {
         "addOnConcurrency": "随时加购并发",
-        "agentFanOut": "一个智能体可以带动一整队智能体",
+        "agentFanOut": "Okou 将工作分配给多个 AI 助手协作完成",
         "automations": "定时和事件触发的自动化",
         "builtInResearchData": "内置 SEO、线索、网页和市场数据",
         "chatIntegrations": "Slack 和 Telegram 集成",
-        "computerUse": "智能体直接操作你电脑上的应用",
-        "concurrentAgents": "{{slots}} 个智能体同时运行",
+        "computerUse": "Okou 操作桌面上的真实应用",
+        "concurrentAgents": "同时运行 {{slots}} 项工作",
         "everythingInBuiltForTeams": "包含{{plan}}的全部功能，并为团队打造",
         "included": "已包含",
-        "liveBrowser": "实时观看智能体的浏览器，随时接管",
+        "liveBrowser": "查看 Okou 的实时浏览器并随时接管",
         "moreConnectorsChannels": "更多自定义连接器和渠道集成",
         "supportEmail": "邮件支持",
         "supportPriority": "优先支持",
@@ -1237,7 +1237,7 @@
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
-        "description": "日常的智能体工作，按成员计费。",
+        "description": "日常工作，按成员计费。",
         "name": "Pro"
       },
       "renews": "{{date}}续订",
@@ -1245,7 +1245,7 @@
       "sectionTitle": "套餐",
       "selectedPlan": "所选套餐",
       "team": {
-        "description": "适合让智能体全天运转的团队。",
+        "description": "适合全天使用 Okou 工作的团队。",
         "name": "Team"
       },
       "upgrade": "升级",
@@ -4223,6 +4223,27 @@
       "uploadFailed": "表格上传失败，请重试。"
     }
   },
+  "myOkou": {
+    "access": "你在此工作区的访问权限",
+    "conflict": "指令已在其他地方更新。本地草稿已保留，请先查看或复制，再重新加载已保存的内容。",
+    "description": "在此工作区中，专属于你的 Okou 指令",
+    "discard": "放弃",
+    "draftKept": "切换页面或工作区时，草稿会保留在此浏览器标签页中。",
+    "instructions": "指令",
+    "loadError": "无法加载指令，请重试。",
+    "markdown": "支持纯文本和 Markdown",
+    "newChat": "新聊天",
+    "placeholder": "告诉 Okou 你喜欢怎样工作…",
+    "reload": "重新加载已保存的指令",
+    "retry": "重试",
+    "save": "保存",
+    "saved": "指令已保存",
+    "saveError": "保存失败，草稿已保留，请重试。",
+    "saving": "保存中…",
+    "timing": "Okou 下次开始工作时使用，进行中的工作不会改变。",
+    "title": "我的 Okou",
+    "unsaved": "有未保存的更改"
+  },
   "onboarding": {
     "common": {
       "next": "下一步",
@@ -5454,7 +5475,7 @@
         "starting": "正在开始导出"
       },
       "backToAssistant": "返回 {{assistantName}}",
-      "description": "下载你在 {{assistantName}} 中的对话、记忆，以及你可访问的智能体和工作流指令。",
+      "description": "下载你在 {{assistantName}} 中的聊天、记忆、指令及可访问的工作流指令。",
       "documentTitle": "导出数据",
       "duration": {
         "soon": "很快"

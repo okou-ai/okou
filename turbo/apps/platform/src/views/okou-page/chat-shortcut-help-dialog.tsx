@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -241,29 +242,40 @@ function translatedShortcutLabels(): Readonly<Record<ShortcutLabelId, string>> {
 
 function localizeShortcutSections(
   sections: readonly ShortcutSectionDefinition[],
+  singleAgent: boolean,
 ) {
   const sectionTitles = translatedSectionTitles();
   const shortcutLabels = translatedShortcutLabels();
   return sections.map((section) => {
     return {
       title: sectionTitles[section.titleId],
-      shortcuts: section.shortcuts.map((shortcut) => {
-        return {
-          key: shortcut.key,
-          label: shortcutLabels[shortcut.labelId],
-        };
-      }),
+      shortcuts: section.shortcuts
+        .filter((shortcut) => {
+          return (
+            !singleAgent ||
+            (shortcut.labelId !== "previousAgent" &&
+              shortcut.labelId !== "nextAgent")
+          );
+        })
+        .map((shortcut) => {
+          return {
+            key: shortcut.key,
+            label: shortcutLabels[shortcut.labelId],
+          };
+        }),
     };
   });
 }
 
 export function ChatShortcutHelpDialog() {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   const shortcutHelpOpen = useGet(chatShortcutHelpOpen$);
   const setShortcutHelpOpen = useSet(setChatShortcutHelpOpen$);
   const activeRoute = useGet(activeRoute$);
   const shortcutSections = localizeShortcutSections(
     shortcutSectionsForRoute(activeRoute),
+    singleAgent,
   );
 
   return (

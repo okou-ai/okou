@@ -280,7 +280,7 @@ struct DesktopView: View {
       )
       .fontWeight(.semibold).disabled(model.busy)
       Text(
-        "Allow agents authorized for this Mac to run interactive terminal commands as your account. Sessions start in your home directory and close after 15 minutes without agent interaction."
+        "Allow Okou to run interactive terminal commands as your account when authorized for this Mac. Sessions start in your home directory and close after 15 minutes of inactivity."
       )
       .font(.system(size: 13)).foregroundStyle(muted)
       HStack {

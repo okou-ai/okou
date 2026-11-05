@@ -1179,7 +1179,7 @@
       "confirmProCancellation": "Yakin ingin membatalkan paket Pro Anda?",
       "confirmTarget": "Turunkan ke {{plan}}?",
       "inProgress": "Menurunkan paket...",
-      "proWarning": "Akses Pro Anda tetap aktif hingga akhir periode tagihan saat ini. Setelah itu, ruang kerja ini akan berpindah ke No plan dan agen tidak dapat dijalankan sampai Anda meningkatkan paket lagi.",
+      "proWarning": "Akses Pro tetap aktif hingga akhir periode penagihan. Setelah itu, ruang kerja ini tidak memiliki paket dan Okou tidak dapat bekerja hingga Anda berlangganan lagi.",
       "teamWarning": "Akses Team Anda tetap aktif hingga akhir periode tagihan saat ini. Setelah itu, ruang kerja ini akan berpindah ke {{plan}}.",
       "title": "Turunkan paket"
     },
@@ -1214,15 +1214,15 @@
       },
       "highlights": {
         "addOnConcurrency": "Tambah konkurensi kapan saja",
-        "agentFanOut": "Satu agen bisa memimpin satu tim agen",
+        "agentFanOut": "Okou membagi pekerjaan ke tim asisten AI",
         "automations": "Otomatisasi terjadwal dan berbasis event",
         "builtInResearchData": "Data SEO, lead, web, dan pasar bawaan",
         "chatIntegrations": "Integrasi Slack dan Telegram",
-        "computerUse": "Agen menjalankan aplikasi sungguhan di desktop Anda",
-        "concurrentAgents": "{{slots}} agen sekaligus",
+        "computerUse": "Okou mengendalikan aplikasi nyata di desktop Anda",
+        "concurrentAgents": "{{slots}} tugas berjalan sekaligus",
         "everythingInBuiltForTeams": "Semua di {{plan}}, dibuat untuk tim",
         "included": "Termasuk",
-        "liveBrowser": "Pantau browser langsung agen dan ambil alih kendali",
+        "liveBrowser": "Lihat browser Okou secara langsung dan ambil alih",
         "moreConnectorsChannels": "Lebih banyak custom connector & integrasi saluran",
         "supportEmail": "Dukungan email",
         "supportPriority": "Dukungan prioritas",
@@ -1237,7 +1237,7 @@
       "perMonth": "/bulan",
       "pricePerMonth": "{{price}}/bulan",
       "pro": {
-        "description": "Kerja agen harian, dihitung per anggota.",
+        "description": "Pekerjaan sehari-hari, dengan harga per anggota.",
         "name": "Pro"
       },
       "renews": "Memperbarui {{date}}",
@@ -1245,7 +1245,7 @@
       "sectionTitle": "Paket",
       "selectedPlan": "paket yang dipilih",
       "team": {
-        "description": "Untuk tim yang menjalankan agen sepanjang hari.",
+        "description": "Untuk tim yang bekerja dengan Okou sepanjang hari.",
         "name": "Tim"
       },
       "upgrade": "Tingkatkan",
@@ -4223,6 +4223,27 @@
       "uploadFailed": "Tabel tidak dapat diunggah. Coba lagi."
     }
   },
+  "myOkou": {
+    "access": "Akses Anda di ruang kerja ini",
+    "conflict": "Instruksi tersimpan berubah di tempat lain. Draf Anda tetap disimpan. Tinjau atau salin sebelum memuat ulang instruksi tersimpan.",
+    "description": "Instruksi Anda untuk Okou di ruang kerja ini",
+    "discard": "Buang",
+    "draftKept": "Draf Anda tetap ada di tab ini saat berpindah halaman atau ruang kerja.",
+    "instructions": "Instruksi",
+    "loadError": "Instruksi tidak dapat dimuat. Coba lagi.",
+    "markdown": "Tulis dengan teks biasa atau Markdown",
+    "newChat": "Chat baru",
+    "placeholder": "Beri tahu Okou cara kerja yang Anda sukai…",
+    "reload": "Muat ulang instruksi tersimpan",
+    "retry": "Coba lagi",
+    "save": "Simpan",
+    "saved": "Instruksi disimpan",
+    "saveError": "Gagal menyimpan. Draf Anda tetap ada. Coba lagi.",
+    "saving": "Menyimpan…",
+    "timing": "Digunakan saat Okou memulai pekerjaan berikutnya. Pekerjaan yang sedang berjalan tidak berubah.",
+    "title": "Okou saya",
+    "unsaved": "Perubahan belum disimpan"
+  },
   "onboarding": {
     "common": {
       "next": "Berikutnya",
@@ -5454,7 +5475,7 @@
         "starting": "Memulai ekspor"
       },
       "backToAssistant": "Kembali ke {{assistantName}}",
-      "description": "Unduh percakapan, memori, serta instruksi agen dan alur kerja yang dapat Anda akses di {{assistantName}}.",
+      "description": "Unduh chat, memori, instruksi, dan instruksi workflow yang dapat diakses di {{assistantName}}.",
       "documentTitle": "Ekspor data",
       "duration": {
         "soon": "segera"

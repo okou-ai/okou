@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -94,7 +95,8 @@ function MeLink({
 }: {
   readonly icon: LucideIcon;
   readonly children: ReactNode;
-  readonly pathname: "/agents" | "/workflows" | "/works" | "/export";
+  readonly pathname:
+    "/my-okou" | "/agents" | "/workflows" | "/works" | "/export";
   readonly target?: "_blank";
   readonly trailing?: ReactNode;
 }) {
@@ -217,6 +219,7 @@ function MeNavigation({
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
+  const singleAgent = useGet(singleAgentEnabled$);
   const subscriptionEntry = useSubscriptionLinkingEntry();
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
   const defaultDisplayName =
@@ -238,10 +241,17 @@ function MeNavigation({
           return $.settings.accountMenu.settings;
         })}
       </MeAction>
-      <MeLink icon={Users} pathname={ROUTES.agents}>
-        {t(($) => {
-          return $.appShell.sidebar.navigation.agents;
-        })}
+      <MeLink
+        icon={Users}
+        pathname={singleAgent ? ROUTES.myOkou : ROUTES.agents}
+      >
+        {singleAgent
+          ? t(($) => {
+              return $.myOkou.title;
+            })
+          : t(($) => {
+              return $.appShell.sidebar.navigation.agents;
+            })}
       </MeLink>
       <MeLink icon={Route} pathname={ROUTES.workflows}>
         {t(($) => {

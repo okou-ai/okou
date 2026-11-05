@@ -95,9 +95,12 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
       title: agentName, subtitle: String(localized: "Agent profile"),
       image: OkouIcon.uiImage("bot"), identifier: UIAction.Identifier("chat-agent")
     ) { _ in openAgent() }
-    var actions: [UIMenuElement] = [
-      UIMenu(options: .displayInline, children: [agent]), pin, rename, status, openWeb,
-    ]
+    var actions: [UIMenuElement] = [pin, rename, status, openWeb]
+    if !list.singleAgentEnabled
+      || thread.agentID != list.agents.first(where: \.isDefaultAgent)?.agentId
+    {
+      actions.insert(UIMenu(options: .displayInline, children: [agent]), at: 0)
+    }
     if list.canMuteChats || thread.isMuted {
       actions.append(
         UIAction(

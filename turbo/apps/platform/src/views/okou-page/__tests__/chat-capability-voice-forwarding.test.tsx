@@ -1,6 +1,7 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cleanup,
   fireEvent,
@@ -43,6 +44,38 @@ const { installCapabilityChat } = createChatCapabilityHelpers(context);
 // A replacement app has fresh app/worker stores under the same document owner.
 const refreshedContext = createTestRuntime(context);
 const FORWARD_TARGET_NAME = "Okou";
+
+test("Personal forwarding opens a new chat without an Agent picker or changing the source draft", async () => {
+  installVoiceBoundaries();
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+  const originalComposer = await screen.findByRole("textbox", {
+    name: "Message",
+  });
+  await selectPassage("launch plan has three careful stages");
+  click(await findEnabledButton("Forward"));
+  const dialog = await screen.findByRole("dialog");
+  const newChat = await within(dialog).findByRole("option", {
+    name: "New chat",
+  });
+  expect(within(dialog).queryByRole("option", { name: "Okou" })).toBeNull();
+  expect(within(dialog).queryByText("Agents")).toBeNull();
+  click(newChat);
+  const editor = await within(dialog).findByRole("textbox", {
+    name: "Message",
+  });
+  await fill(editor, "Follow up on this passage");
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+  expect(editor).toHaveTextContent("Follow up on this passage");
+  click(await findEnabledButton("Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+});
 
 function releasePageDom() {
   cleanup();

@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { command, computed, state } from "ccstate";
 import { detachedNavigateTo$, pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
@@ -5,7 +6,7 @@ import { ROUTES, type RouteKey } from "../route-paths.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
-import { currentChatAgentId$ } from "../agent-chat.ts";
+import { currentChatAgentId$, newChatAgentId$ } from "../agent-chat.ts";
 import { setChatShortcutHelpOpen$ } from "../chat-page/chat-shortcut-help.ts";
 import { openThreeColumnSearchDialog$ } from "./sidebar-state.ts";
 import { displayedPinnedAgents$ } from "./pinned-agents.ts";
@@ -35,7 +36,7 @@ export const navigateToChat$ = command(({ set }, chatThreadId: string) => {
 // chat asks for the composer explicitly.
 export const navigateToNewChat$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const agentId = await get(currentChatAgentId$);
+    const agentId = await get(newChatAgentId$);
     signal.throwIfAborted();
     if (!agentId) {
       return;
@@ -79,6 +80,9 @@ const navigateAdjacentPinnedAgent$ = command(
     direction: PinnedAgentShortcutDirection,
     signal: AbortSignal,
   ) => {
+    if (get(singleAgentEnabled$)) {
+      return;
+    }
     const currentAgentId = await get(currentChatAgentId$);
     signal.throwIfAborted();
     const targetAgentId = adjacentPinnedAgentId(
@@ -145,7 +149,7 @@ export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
 }
 
 export const setupGlobalKeyboardShortcuts$ = command(
-  ({ set }, signal: AbortSignal) => {
+  ({ get, set }, signal: AbortSignal) => {
     set(setupThreadNumberShortcuts$, signal);
     set(setupKeyboardShortcutHints$, signal);
     setupGlobalShortcut(
@@ -180,12 +184,18 @@ export const setupGlobalKeyboardShortcuts$ = command(
         },
         "ctrl+shift+[": {
           allowInEditableTarget: true,
+          shouldHandle: () => {
+            return !get(singleAgentEnabled$);
+          },
           run: async () => {
             await set(navigateAdjacentPinnedAgent$, "prev", signal);
           },
         },
         "ctrl+shift+]": {
           allowInEditableTarget: true,
+          shouldHandle: () => {
+            return !get(singleAgentEnabled$);
+          },
           run: async () => {
             await set(navigateAdjacentPinnedAgent$, "next", signal);
           },

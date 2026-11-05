@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -340,6 +341,11 @@ function PinnedAgentGridTitle({ signals }: PinnedAgentProps) {
 }
 
 export function PinAgentDialogContainer() {
+  const singleAgent = useGet(singleAgentEnabled$);
+  return singleAgent ? null : <LegacyPinAgentDialogContainer />;
+}
+
+function LegacyPinAgentDialogContainer() {
   const open = useGet(pinAgentDialogOpen$);
   const handingOff = useGet(pinAgentDialogHandoff$);
   // A dismissed popup does not end its page-owned preference mutation.
@@ -410,6 +416,10 @@ export function PinnedAgentListSection({
 }: {
   layout?: "vertical" | "horizontal";
 }) {
+  const singleAgent = useGet(singleAgentEnabled$);
+  if (singleAgent) {
+    return null;
+  }
   return layout === "horizontal" ? (
     <HorizontalPinnedAgentSection />
   ) : (

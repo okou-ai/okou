@@ -1181,7 +1181,7 @@
       "confirmProCancellation": "Are you sure you want to cancel your Pro plan?",
       "confirmTarget": "Downgrade to {{plan}}?",
       "inProgress": "Downgrading...",
-      "proWarning": "Your Pro access remains active until the current billing period ends. After that, this workspace moves to No plan and agents cannot run until you upgrade again.",
+      "proWarning": "Your Pro access remains active until the current billing period ends. After that, this workspace moves to No plan and Okou cannot work until you upgrade again.",
       "teamWarning": "Your Team access remains active until the current billing period ends. After that, this workspace moves to {{plan}}.",
       "title": "Downgrade plan"
     },
@@ -1216,15 +1216,15 @@
       },
       "highlights": {
         "addOnConcurrency": "Add more concurrency any time",
-        "agentFanOut": "One agent can run a whole team of agents",
+        "agentFanOut": "Okou delegates work to a team of AI helpers",
         "automations": "Scheduled and event automations",
         "builtInResearchData": "Built-in SEO, lead, web, and market data",
         "chatIntegrations": "Slack and Telegram integration",
-        "computerUse": "Agents drive real apps on your desktop",
-        "concurrentAgents": "{{slots}} agents running at once",
+        "computerUse": "Okou controls real apps on your desktop",
+        "concurrentAgents": "{{slots}} tasks running at once",
         "everythingInBuiltForTeams": "Everything in {{plan}}, built for teams",
         "included": "Included",
-        "liveBrowser": "Watch an agent's live browser and take the wheel",
+        "liveBrowser": "Watch Okou’s live browser and take the wheel",
         "moreConnectorsChannels": "More custom connectors & channel integration",
         "supportEmail": "Email support",
         "supportPriority": "Priority support",
@@ -1239,7 +1239,7 @@
       "perMonth": "/month",
       "pricePerMonth": "{{price}}/month",
       "pro": {
-        "description": "Everyday agent work, priced per member.",
+        "description": "Everyday work, priced per member.",
         "name": "Pro"
       },
       "renews": "Renews {{date}}",
@@ -1247,7 +1247,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "the selected plan",
       "team": {
-        "description": "For a team that keeps agents running all day.",
+        "description": "For a team that keeps Okou working all day.",
         "name": "Team"
       },
       "upgrade": "Upgrade",
@@ -4237,6 +4237,27 @@
       "uploadFailed": "Could not upload the table. Please try again."
     }
   },
+  "myOkou": {
+    "access": "Your access in this workspace",
+    "conflict": "Your saved instructions changed elsewhere. Your draft is kept here. Review or copy it before reloading the latest saved instructions.",
+    "description": "Your instructions for Okou in this workspace",
+    "discard": "Discard",
+    "draftKept": "Your draft is kept in this browser tab when you navigate or switch workspaces.",
+    "instructions": "Instructions",
+    "loadError": "Couldn’t load your instructions. Try again.",
+    "markdown": "Write in plain text or use Markdown",
+    "newChat": "New chat",
+    "placeholder": "Tell Okou how you like to work…",
+    "reload": "Reload saved instructions",
+    "retry": "Retry",
+    "save": "Save",
+    "saved": "Instructions saved",
+    "saveError": "Couldn’t save your instructions. Your draft is kept. Try again.",
+    "saving": "Saving…",
+    "timing": "Used the next time Okou starts working. Work in progress won’t change.",
+    "title": "My Okou",
+    "unsaved": "Unsaved changes"
+  },
   "onboarding": {
     "common": {
       "next": "Next",
@@ -5469,7 +5490,7 @@
         "starting": "Starting export"
       },
       "backToAssistant": "Back to {{assistantName}}",
-      "description": "Download your chats, memory, and the agent and workflow instructions you can access in {{assistantName}}.",
+      "description": "Download your chats, memory, instructions, and accessible workflow instructions in {{assistantName}}.",
       "documentTitle": "Export data",
       "duration": {
         "soon": "soon"

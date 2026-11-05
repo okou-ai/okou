@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { Collapsible } from "@base-ui/react/collapsible";
 import type {
   ComponentProps,
@@ -77,7 +78,7 @@ import {
 } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
-import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
+import { newChatAgentId$ } from "../../signals/agent-chat.ts";
 import { suggestionFeedEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { commitWorkspaceLayout$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
@@ -162,6 +163,7 @@ const FOOTER_NAV: readonly FooterNavItem[] = [
 function useManageNavItems() {
   const { t } = useTranslation();
   const feedEnabled = useGet(suggestionFeedEnabled$);
+  const singleAgent = useGet(singleAgentEnabled$);
   const manageLabel = (id: ManageNavId): string => {
     switch (id) {
       case "feed": {
@@ -194,7 +196,16 @@ function useManageNavItems() {
   return MANAGE_NAV.filter((item) => {
     return item.id !== "feed" || feedEnabled;
   }).map((item) => {
-    return { ...item, label: manageLabel(item.id) };
+    return item.id === "agents" && singleAgent
+      ? {
+          ...item,
+          pathname: ROUTES.myOkou,
+          activeKeys: ["myOkou"] as readonly RouteKey[],
+          label: t(($) => {
+            return $.myOkou.title;
+          }),
+        }
+      : { ...item, label: manageLabel(item.id) };
   });
 }
 
@@ -851,7 +862,7 @@ export function ThreeColumnSearchDialogContainer() {
 const CHAT_LIST_INSET = "px-3";
 
 function ChatListHeader() {
-  const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
+  const currentChatAgentId = useLastResolved(newChatAgentId$) ?? null;
   const navigate = useSet(detachedNavigateTo$);
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();

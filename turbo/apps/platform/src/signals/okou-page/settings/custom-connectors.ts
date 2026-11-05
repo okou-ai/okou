@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../single-agent.ts";
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -30,7 +31,7 @@ import { IN_VITEST } from "../../../env.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
-import { agents$ } from "../../agent.ts";
+import { agents$, defaultAgentId$ } from "../../agent.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { customConnectorAccountProjectionVersion$ } from "../connector-account-projection.ts";
 import {
@@ -193,12 +194,20 @@ const authorizeCustomConnectorForTarget$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    const singleAgent = get(singleAgentEnabled$);
+    const defaultId = singleAgent ? await get(defaultAgentId$) : null;
+    signal.throwIfAborted();
+    if (args.target.kind === "visible-agents" && singleAgent && !defaultId) {
+      throw new Error("Your workspace’s Okou is unavailable. Try again.");
+    }
     const agentIds =
       args.target.kind === "agent"
         ? [args.target.agentId]
-        : (await get(agents$)).map((agent) => {
-            return agent.agentId;
-          });
+        : defaultId
+          ? [defaultId]
+          : (await get(agents$)).map((agent) => {
+              return agent.agentId;
+            });
     signal.throwIfAborted();
     const client = get(apiClient$)(agentCustomConnectorsContract);
     await Promise.all(

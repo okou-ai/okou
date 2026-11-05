@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown } from "lucide-react";
@@ -104,6 +105,16 @@ function AgentOptions() {
 }
 
 export function PwaAgentSwitcher() {
+  const name = useGet(assistantName$);
+  const singleAgent = useGet(singleAgentEnabled$);
+  return singleAgent ? (
+    <span className="px-2 text-base font-semibold">{name}</span>
+  ) : (
+    <LegacyPwaAgentSwitcher />
+  );
+}
+
+function LegacyPwaAgentSwitcher() {
   const { t } = useTranslation();
   const open = useGet(pwaAgentSwitcherOpen$);
   const setOpen = useSet(setPwaAgentSwitcherOpen$);

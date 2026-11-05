@@ -1179,7 +1179,7 @@
       "confirmProCancellation": "Pro プランをキャンセルしてもよろしいですか?",
       "confirmTarget": "{{plan}} にダウングレードしますか?",
       "inProgress": "ダウングレード中...",
-      "proWarning": "Pro アクセスは、現在の請求期間が終了するまで有効のままです。その後、このワークスペースは [プランなし] に移行し、再度アップグレードするまでエージェントは実行できません。",
+      "proWarning": "Pro は現在の請求期間の終了まで利用できます。その後、このワークスペースはプランなしになり、再度アップグレードするまで Okou は仕事を実行できません。",
       "teamWarning": "チームのアクセスは、現在の請求期間が終了するまで有効のままです。その後、このワークスペースは {{plan}} に移動します。",
       "title": "ダウングレード計画"
     },
@@ -1214,15 +1214,15 @@
       },
       "highlights": {
         "addOnConcurrency": "同時実行はいつでも追加できます",
-        "agentFanOut": "1 つのエージェントがエージェントのチームを動かす",
+        "agentFanOut": "Okou が複数の AI ヘルパーに仕事を分担",
         "automations": "スケジュールとイベントの自動化",
         "builtInResearchData": "組み込みの SEO・リード・ウェブ・市場データ",
         "chatIntegrations": "Slack・Telegram 連携",
-        "computerUse": "エージェントがデスクトップの実アプリを操作",
-        "concurrentAgents": "{{slots}} 個のエージェントを同時実行",
+        "computerUse": "Okou がデスクトップの実際のアプリを操作",
+        "concurrentAgents": "{{slots}} 件のタスクを同時実行",
         "everythingInBuiltForTeams": "{{plan}} の全機能をチーム向けに",
         "included": "含まれるもの",
-        "liveBrowser": "エージェントのライブブラウザを見て操作を奪う",
+        "liveBrowser": "Okou のブラウザーをリアルタイムで確認し、操作を引き継げます",
         "moreConnectorsChannels": "カスタムコネクターとチャネル連携をより多く",
         "supportEmail": "メールサポート",
         "supportPriority": "優先サポート",
@@ -1237,7 +1237,7 @@
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
-        "description": "日々のエージェント業務を、メンバー単位の料金で。",
+        "description": "日常業務に。メンバー単位の料金。",
         "name": "プロ"
       },
       "renews": "{{date}} を更新します",
@@ -1245,7 +1245,7 @@
       "sectionTitle": "計画",
       "selectedPlan": "選択したプラン",
       "team": {
-        "description": "エージェントを一日中動かし続けるチームに。",
+        "description": "一日中 Okou と仕事をするチーム向け。",
         "name": "チーム"
       },
       "upgrade": "アップグレード",
@@ -4223,6 +4223,27 @@
       "uploadFailed": "表をアップロードできませんでした。もう一度お試しください。"
     }
   },
+  "myOkou": {
+    "access": "このワークスペースでのアクセス権",
+    "conflict": "保存済みの指示が別の場所で変更されました。下書きは保持されています。内容を確認またはコピーしてから、保存済みの指示を再読み込みしてください。",
+    "description": "このワークスペースでのあなた専用の Okou への指示",
+    "discard": "破棄",
+    "draftKept": "ページやワークスペースを切り替えても、下書きはこのブラウザータブに保持されます。",
+    "instructions": "指示",
+    "loadError": "指示を読み込めませんでした。もう一度お試しください。",
+    "markdown": "プレーンテキストまたは Markdown で記入",
+    "newChat": "新しいチャット",
+    "placeholder": "好みの仕事の進め方を Okou に伝えてください…",
+    "reload": "保存済みの指示を再読み込み",
+    "retry": "再試行",
+    "save": "保存",
+    "saved": "指示を保存しました",
+    "saveError": "保存できませんでした。下書きは保持されています。もう一度お試しください。",
+    "saving": "保存中…",
+    "timing": "Okou が次に仕事を始めるときに使われます。進行中の仕事は変わりません。",
+    "title": "マイ Okou",
+    "unsaved": "未保存の変更"
+  },
   "onboarding": {
     "common": {
       "next": "次へ",
@@ -5454,7 +5475,7 @@
         "starting": "エクスポートの開始"
       },
       "backToAssistant": "{{assistantName}} に戻る",
-      "description": "{{assistantName}} の自分の会話、メモリ、アクセス可能なエージェントとワークフローの指示をダウンロードします。",
+      "description": "{{assistantName}} のチャット、メモリー、指示、アクセス可能なワークフローの指示をダウンロードします。",
       "documentTitle": "データのエクスポート",
       "duration": {
         "soon": "すぐに"

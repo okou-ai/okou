@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { JobDetailPage } from "../../views/team-page/job-detail-page.tsx";
@@ -13,9 +14,6 @@ import { refreshSsh$ } from "../ssh.ts";
 
 export const setupAgentDetailPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(refreshSsh$);
-    set(updatePage$, createElement(JobDetailPage), "sidebar");
-
     const agentId = get(currentAgentId$);
     if (!agentId) {
       throw new Error(
@@ -23,6 +21,18 @@ export const setupAgentDetailPage$ = command(
       );
     }
 
+    if (get(singleAgentEnabled$) && agentId === (await get(defaultAgentId$))) {
+      signal.throwIfAborted();
+      const tab = get(searchParams$).get("tab");
+      set(
+        detachedNavigateTo$,
+        tab === "authorization" || tab === null ? "/connectors" : "/my-okou",
+        { replace: true },
+      );
+      return;
+    }
+    set(refreshSsh$);
+    set(updatePage$, createElement(JobDetailPage), "sidebar");
     const agents = await get(agents$);
     signal.throwIfAborted();
 

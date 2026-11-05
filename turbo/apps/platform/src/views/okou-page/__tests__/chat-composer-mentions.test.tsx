@@ -240,7 +240,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   expect(within(menu).getByText("Archived mention context")).toBeVisible();
 });
 
-async function openAgentMentionWorkspace(newChat = false) {
+async function openAgentMentionWorkspace(newChat = false, singleAgent = false) {
   const current = withAgent(
     continuityThread(62, 1, "Scout planning"),
     AGENT_ID,
@@ -283,6 +283,9 @@ async function openAgentMentionWorkspace(newChat = false) {
     context,
     path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
     ...workspace.pageOptions,
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: singleAgent,
+    },
   });
   return { current, savedMentionThread, workspace };
 }
@@ -606,4 +609,23 @@ test("Mention a chat thread from any agent", async () => {
       }),
     ).toBeTruthy();
   });
+});
+
+test("Personal Okou mentions preserve authorized chat references without Agent destinations", async () => {
+  await openAgentMentionWorkspace(true, true);
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Review @Zeta");
+  const chat = await waitFor(() => {
+    return menuButton("Zeta launch notes");
+  });
+  expect(
+    within(mentionMenu()).queryByText("Zeta Agent"),
+  ).not.toBeInTheDocument();
+  click(chat);
+  await waitFor(() => {
+    expect(composer).toHaveTextContent("Review Zeta launch notes");
+  });
+  expect(
+    composer.querySelector("[data-chat-thread-mention]"),
+  ).toHaveTextContent("Zeta launch notes");
 });

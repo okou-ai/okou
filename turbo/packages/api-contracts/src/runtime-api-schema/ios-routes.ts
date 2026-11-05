@@ -55,6 +55,7 @@ import { sharedThreadVisibilityContract } from "../contracts/shared-thread-visib
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { hostContract } from "../contracts/host";
 import { iosNotificationsContract } from "../contracts/ios-notifications";
+import { instructionsContract } from "../contracts/instructions";
 import { iosPushRegistrationsContract } from "../contracts/ios-push-registrations";
 import { mcpChatSearchContract } from "../contracts/mcp-chat-search";
 import { modelCatalogContract } from "../contracts/model-catalog";
@@ -92,6 +93,8 @@ const iosContracts: readonly {
     readonly responses: Readonly<Record<number, unknown>>;
   };
 }[] = [
+  { id: "ios.instructionsContract.get", route: instructionsContract.get },
+  { id: "ios.instructionsContract.update", route: instructionsContract.update },
   {
     id: "ios.agentConnectorAccessContract.agent",
     route: agentConnectorAccessContract.agent,

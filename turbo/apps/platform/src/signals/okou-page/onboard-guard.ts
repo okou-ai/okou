@@ -18,6 +18,7 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.agentIdeas,
   ROUTES.agentPermissions,
   ROUTES.agents,
+  ROUTES.myOkou,
   ROUTES.artifacts,
   ROUTES.browser,
   ROUTES.browserAuthorize,

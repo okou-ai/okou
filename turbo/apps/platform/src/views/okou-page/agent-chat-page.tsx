@@ -1,3 +1,6 @@
+import { defaultAgentId$ } from "../../signals/agent.ts";
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { HalloweenHomeActivity } from "../halloween/halloween-modal.tsx";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -39,6 +42,7 @@ import {
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
 import {
   AgentAvatarImg,
+  AvatarFromUrl,
   useAgentAvatarTexture,
   useGreetingAvatarCostume,
 } from "./sidebar-shared.tsx";
@@ -259,6 +263,11 @@ function GreetingTokens({
 }
 
 function PinPill() {
+  const singleAgent = useGet(singleAgentEnabled$);
+  return singleAgent ? null : <LegacyPinPill />;
+}
+
+function LegacyPinPill() {
   const { t } = useTranslation("agents");
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
   const pinnedStatus = useLastResolved(currentChatAgentPinned$);
@@ -344,6 +353,26 @@ const AGENT_AVATAR_BORDER = "border border-surface-border";
 const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
 
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
+  const singleAgent = useGet(singleAgentEnabled$);
+  const defaultId = useLastResolved(defaultAgentId$);
+  return singleAgent && agentId === defaultId ? (
+    <div className={AGENT_AVATAR_FRAME}>
+      <AvatarFromUrl
+        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+        alt=""
+        className={AGENT_AVATAR_IMAGE}
+      />
+    </div>
+  ) : (
+    <LegacyChatAgentAvatar agentId={agentId} />
+  );
+}
+
+function LegacyChatAgentAvatar({
+  agentId,
+}: {
+  agentId: string | null | undefined;
+}) {
   const { t } = useTranslation("agents");
   // Not every agent can take a texture: uploaded images and the flat default
   // avatar have no sweater or hair colour to clear. The frame follows that

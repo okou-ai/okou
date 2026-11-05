@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
@@ -103,7 +104,10 @@ function mockConnectedCatalogTarget(
   });
 }
 
-function mockAgentConnectorAccess(connectorSlug: ConnectorSlug): void {
+function mockAgentConnectorAccess(
+  connectorSlug: ConnectorSlug,
+  onAuthorize?: (agentId: string) => void,
+): void {
   const authorizedAgentIds = new Set<string>();
   context.mocks.api(
     userBuiltinConnectorsContract.get,
@@ -125,6 +129,7 @@ function mockAgentConnectorAccess(connectorSlug: ConnectorSlug): void {
   context.mocks.api(
     userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {
+      onAuthorize?.(params.id);
       if (body.enabledConnectorSlugs.includes(connectorSlug)) {
         if (body.operation === "add") {
           authorizedAgentIds.add(params.id);
@@ -1471,4 +1476,77 @@ test("Submit credentials only for the chosen manual method", async () => {
       within(getConnectorCard("Public Axiom")).getByText("Connected"),
     ).toBeInTheDocument();
   });
+});
+
+test("A personal connection authorizes only the default scope while keeping legacy grants separate", async () => {
+  const defaultId = "c0000000-0000-4000-a000-000000000001";
+  const legacyId = "c0000000-0000-4000-a000-000000000002";
+  mockConnectors(context, []);
+  context.mocks.data.agents([
+    listAgent(defaultId, "Shared profile"),
+    listAgent(legacyId, "Research Agent"),
+  ]);
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "axiom",
+      label: "Public Axiom",
+      authMethods: [
+        manualMethod({
+          id: "api-token",
+          label: "Public API Token",
+          fieldId: "apiToken",
+          fieldLabel: "Public API token",
+          placeholder: "public-xaat",
+        }),
+      ],
+    }),
+  ]);
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    ({ respond }) => {
+      const account = storeConnectedConnector("axiom", "api-token");
+      return respond(200, { connectionId: account.id });
+    },
+  );
+  mockAgentConnectorAccess("axiom", (id) => {
+    expect(id).toBe(defaultId);
+  });
+  await setupPage({
+    context,
+    path: "/connectors?keywords=axiom",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+  const connect = await waitFor(() => {
+    return getConnectorAction("button", "Connect Public Axiom");
+  });
+  click(connect);
+  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
+  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-test");
+  click(getConnectorAction("button", "Save", dialog));
+  const naming = await screen.findByRole("dialog", {
+    name: "Name your Public Axiom account",
+  });
+  click(getConnectorAction("button", "Skip", naming));
+  const manage = await waitFor(() => {
+    return getConnectorAction("button", "Manage Public Axiom access");
+  });
+  click(manage);
+  const access = await screen.findByRole("dialog", {
+    name: "Manage Public Axiom access",
+  });
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Revoke Public Axiom access for Okou", access),
+    ).toBeChecked();
+  });
+  // Revoke only the personal/default grant through its real UI.
+  click(getConnectorSwitch("Revoke Public Axiom access for Okou", access));
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Authorize Public Axiom access for Okou", access),
+    ).not.toBeChecked();
+  });
+  expect(
+    within(access).getByText("Your access in this workspace"),
+  ).toBeInTheDocument();
 });

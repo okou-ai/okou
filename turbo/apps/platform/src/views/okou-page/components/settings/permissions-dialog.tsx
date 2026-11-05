@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
@@ -213,13 +214,18 @@ function PermissionsDrawerHeader({
       )}
     </>
   );
-  const description = connectorScope
+  const singleAgent = useGet(singleAgentEnabled$);
+  const description = singleAgent
     ? t(($) => {
-        return $.connectorChatAccess.permissionsDescription;
+        return $.myOkou.access;
       })
-    : t(($) => {
-        return $.connectors.permissions.descriptionAgent;
-      });
+    : connectorScope
+      ? t(($) => {
+          return $.connectorChatAccess.permissionsDescription;
+        })
+      : t(($) => {
+          return $.connectors.permissions.descriptionAgent;
+        });
 
   if (surface === "dialog") {
     return (

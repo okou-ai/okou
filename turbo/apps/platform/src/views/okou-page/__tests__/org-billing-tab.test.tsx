@@ -430,7 +430,7 @@ test("Compare both usage-pack prices before choosing a plan", async () => {
     await openUsagePackPlanSelection();
   expect(choosePlanHeading).toBeInTheDocument();
   expect(
-    within(proPlan).getByText("3 agents running at once"),
+    within(proPlan).getByText("3 tasks running at once"),
   ).toBeInTheDocument();
   expect(
     within(proPlan).getByText("Scheduled and event automations"),
