@@ -25,6 +25,7 @@ mod private_write_diagnostics;
 mod process_exit;
 mod process_timeout_logging;
 mod process_write;
+mod readiness;
 mod running_handoff;
 mod shutdown_closed;
 

@@ -129,6 +129,8 @@ const RUNNER_FRESH_SANDBOX_START_SNAPSHOT_LOAD_RESUME: &str =
     "runner_fresh_sandbox_start_snapshot_load_resume";
 const RUNNER_FRESH_SANDBOX_START_GUEST_CONNECTION_WAIT: &str =
     "runner_fresh_sandbox_start_guest_connection_wait";
+const RUNNER_FRESH_SANDBOX_START_GUEST_HOME_VALIDATION: &str =
+    "runner_fresh_sandbox_start_guest_home_validation";
 const RUNNER_FRESH_SANDBOX_START_GUEST_DNS_READINESS: &str =
     "runner_fresh_sandbox_start_guest_dns_readiness";
 const RUNNER_FRESH_SANDBOX_START_RUNTIME_FINALIZE: &str =
@@ -267,6 +269,7 @@ fn fresh_sandbox_start_stage_action(stage: SandboxStartStage) -> &'static str {
         SandboxStartStage::BackendLaunch => RUNNER_FRESH_SANDBOX_START_BACKEND_LAUNCH,
         SandboxStartStage::SnapshotLoadResume => RUNNER_FRESH_SANDBOX_START_SNAPSHOT_LOAD_RESUME,
         SandboxStartStage::GuestConnectionWait => RUNNER_FRESH_SANDBOX_START_GUEST_CONNECTION_WAIT,
+        SandboxStartStage::GuestHomeValidation => RUNNER_FRESH_SANDBOX_START_GUEST_HOME_VALIDATION,
         SandboxStartStage::GuestDnsReadiness => RUNNER_FRESH_SANDBOX_START_GUEST_DNS_READINESS,
         SandboxStartStage::RuntimeFinalize => RUNNER_FRESH_SANDBOX_START_RUNTIME_FINALIZE,
     }

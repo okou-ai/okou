@@ -55,7 +55,6 @@ use crate::firecracker_process::spawn_firecracker;
 use crate::guest_dns_failure_diagnostics::{
     GuestDnsFailureDiagnosticContext, capture_guest_dns_failure_diagnostics,
 };
-use crate::guest_dns_readiness::wait_for_guest_dns_readiness;
 use crate::guest_operations::{GuestOperationStartError, GuestOperationStartGate};
 use crate::host_cpu_cgroup::{GuestCpuCgroupLease, HostCpuCgroupManager};
 use crate::leaked_resources::LeakedResources;
@@ -74,11 +73,13 @@ use crate::runtime_dirs::{prepare_private_runtime_vsock_dir, set_private_runtime
 use crate::snapshot_mount_namespace::{BindMount, SnapshotMountMode, build_command};
 
 mod guest_connection_timing;
+mod guest_readiness;
 mod park_attempt;
 mod snapshot_restore;
 mod state;
 mod unpark_attempt;
 
+use guest_readiness::{GuestReadinessError, wait_for_guest_readiness};
 use snapshot_restore::{ensure_snapshot_drive_bind_target, load_snapshot_and_apply_rate_limits};
 pub(crate) use state::SandboxState;
 use state::{
@@ -1683,61 +1684,62 @@ impl FirecrackerSandbox {
         // Fresh boot, blank creation, and restored snapshots all observe the
         // actual attached home before user operations become available. The
         // executor repeats this fixed operation for exact reuse and handoff.
-        if self.config.home_drive.is_some()
-            && let Err(error) = validate_guest_home_drive(guest_control_client.as_ref()).await
+        match wait_for_guest_readiness(
+            &guest_control_client,
+            self.config.home_drive.is_some(),
+            self.factory_config.dns_port,
+            &mut timing,
+        )
+        .await
         {
-            self.runtime.kill_process().await;
-            return Err(SandboxError::Start {
-                message: format!("validate attached home drive: {error}"),
-            });
-        }
-
-        if let Some(dns_port) = self.factory_config.dns_port {
-            let dns_started = Instant::now();
-            match wait_for_guest_dns_readiness(&guest_control_client, &mut timing).await {
-                Ok(()) => {
-                    timing.record(SandboxStartStage::GuestDnsReadiness, dns_started, true);
-                }
-                Err(error) => {
-                    timing.record(SandboxStartStage::GuestDnsReadiness, dns_started, false);
-                    capture_guest_dns_failure_diagnostics(
-                        guest_control_client.as_ref(),
-                        GuestDnsFailureDiagnosticContext {
-                            sandbox_id: &self.id,
-                            profile: &self.factory_config.profile,
-                            namespace: self.network.name(),
-                            host_device: self.network.host_device(),
-                            peer_ip: self.network.peer_ip(),
-                            dns_port,
-                            readiness_attempts: error.attempts,
-                            startup_mode: if self.factory_config.snapshot.is_some() {
-                                "snapshot_restore"
-                            } else {
-                                "fresh"
-                            },
+            Ok(()) => {}
+            Err(GuestReadinessError::Home(error)) => {
+                self.runtime.kill_process().await;
+                return Err(SandboxError::Start {
+                    message: format!("validate attached home drive: {error}"),
+                });
+            }
+            Err(GuestReadinessError::Dns {
+                port: dns_port,
+                error,
+            }) => {
+                capture_guest_dns_failure_diagnostics(
+                    guest_control_client.as_ref(),
+                    GuestDnsFailureDiagnosticContext {
+                        sandbox_id: &self.id,
+                        profile: &self.factory_config.profile,
+                        namespace: self.network.name(),
+                        host_device: self.network.host_device(),
+                        peer_ip: self.network.peer_ip(),
+                        dns_port,
+                        readiness_attempts: error.attempts,
+                        startup_mode: if self.factory_config.snapshot.is_some() {
+                            "snapshot_restore"
+                        } else {
+                            "fresh"
                         },
-                    )
-                    .await;
-                    warn!(
-                        id = %self.id,
-                        profile = %self.factory_config.profile,
-                        namespace = %self.network.name(),
-                        peer_ip = %self.network.peer_ip(),
-                        stage = "guest_dns_readiness",
-                        outcome = %error.last_failure,
-                        attempts = error.attempts,
-                        elapsed_ms = duration_ms(error.elapsed),
-                        "guest DNS readiness probe failed"
-                    );
-                    self.runtime.kill_process().await;
-                    return Err(SandboxError::GuestDnsReadiness {
-                        reason: error.last_failure.sandbox_reason(),
-                        message: format!(
-                            "guest DNS readiness for namespace {}: {error}",
-                            self.network.name(),
-                        ),
-                    });
-                }
+                    },
+                )
+                .await;
+                warn!(
+                    id = %self.id,
+                    profile = %self.factory_config.profile,
+                    namespace = %self.network.name(),
+                    peer_ip = %self.network.peer_ip(),
+                    stage = "guest_dns_readiness",
+                    outcome = %error.last_failure,
+                    attempts = error.attempts,
+                    elapsed_ms = duration_ms(error.elapsed),
+                    "guest DNS readiness probe failed"
+                );
+                self.runtime.kill_process().await;
+                return Err(SandboxError::GuestDnsReadiness {
+                    reason: error.last_failure.sandbox_reason(),
+                    message: format!(
+                        "guest DNS readiness for namespace {}: {error}",
+                        self.network.name(),
+                    ),
+                });
             }
         }
 
