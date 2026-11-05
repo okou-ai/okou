@@ -624,7 +624,11 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     apply_guest_instructions(&overrides, guest.path(), 0);
     download.assert_calls(1);
     let actual = fs::read(guest_path(guest.path(), "/home/user/.codex/AGENTS.md")).unwrap();
-    assert_eq!(Sha256::digest(actual), Sha256::digest(content.as_bytes()));
+    assert!(
+        actual.as_slice() == content.as_bytes(),
+        "fresh instructions must match the complete original content"
+    );
+    drop(actual);
     let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
     fs::remove_file(&target).unwrap();
     let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
@@ -664,9 +668,9 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     );
     apply_guest_instructions(&overrides, guest.path(), first_exec);
     download.assert_calls(2);
-    assert_eq!(
-        Sha256::digest(fs::read(target).unwrap()),
-        Sha256::digest(content.as_bytes())
+    assert!(
+        fs::read(target).unwrap().as_slice() == content.as_bytes(),
+        "reused instructions must match the complete original content"
     );
     config.background_fill.shutdown().await;
 }
