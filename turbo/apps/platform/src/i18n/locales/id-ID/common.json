@@ -5355,10 +5355,8 @@
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
         "label": "Penggunaan langganan",
-        "leftSide": "Kiri",
         "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
-        "rightSide": "Kanan",
         "usage": "Penggunaan {{provider}}",
         "usageRemaining": "Sisa {{provider}} {{window}}",
         "weeklyLimit": "Batas mingguan"

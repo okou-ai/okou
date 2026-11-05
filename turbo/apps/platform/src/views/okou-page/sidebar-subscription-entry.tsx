@@ -77,7 +77,6 @@ export function SidebarSubscriptionUsage({
         aria-label={label}
       >
         <AccountMenuSubscriptionsPanel
-          showRingPosition={usage.rows.length === 2}
           loading={false}
           rows={usage.rows}
           resetControl="button"

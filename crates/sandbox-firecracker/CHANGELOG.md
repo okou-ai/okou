@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.70](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.69...sandbox-firecracker-v0.53.70) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
 ## [0.53.69](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.68...sandbox-firecracker-v0.53.69) (2026-11-05)
 
 ## [0.53.68](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.67...sandbox-firecracker-v0.53.68) (2026-11-05)

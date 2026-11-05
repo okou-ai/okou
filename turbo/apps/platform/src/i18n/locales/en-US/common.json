@@ -5370,10 +5370,8 @@
         "credits": "Credits",
         "fiveHourLimit": "5-hour limit",
         "label": "Subscription usage",
-        "leftSide": "Left side",
         "lowUsage": "Subscription usage: less than 20% remaining",
         "resetTimeUnavailable": "Reset time unavailable",
-        "rightSide": "Right side",
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
         "weeklyLimit": "Weekly limit"
