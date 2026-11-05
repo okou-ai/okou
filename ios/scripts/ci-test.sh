@@ -22,6 +22,11 @@ case "$ios_test_phase" in
   all | build | prepare | compile | run) ;;
   *) echo "usage: ci-test.sh [all|build|prepare|compile|run]" >&2; exit 2 ;;
 esac
+ios_test_partition=${IOS_APP_TEST_PARTITION:-all}
+if [[ "$ios_test_partition" != all && "${GITHUB_EVENT_NAME:-}" != workflow_dispatch ]]; then
+  echo "Partial App test selection is manual-only" >&2
+  exit 2
+fi
 
 xcode_args=(
   -project ios/Okou.xcodeproj
@@ -112,13 +117,27 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     exit 1
   fi
   # Keep test results and attachments without failure-triggered simulator sysdiagnoses.
-  xcodebuild -xctestrun "${test_runs[0]}" \
-    -destination "$IOS_TEST_DESTINATION" \
-    -parallel-testing-enabled NO \
-    -maximum-concurrent-test-simulator-destinations 1 \
-    -collect-test-diagnostics never \
-    -resultBundlePath "$build_root/Tests.xcresult" \
-    test-without-building
+  test_args=(
+    -xctestrun "${test_runs[0]}"
+    -destination "$IOS_TEST_DESTINATION"
+    -parallel-testing-enabled NO
+    -maximum-concurrent-test-simulator-destinations 1
+    -collect-test-diagnostics never
+    -resultBundlePath "$build_root/Tests.xcresult"
+  )
+  if [[ "$ios_test_partition" != all ]]; then
+    python3 ios/scripts/app-test-shards.py selectors "$ios_test_partition" > "$build_root/test-selectors.txt"
+    while IFS= read -r selector; do
+      test_args+=("$selector")
+    done < "$build_root/test-selectors.txt"
+  fi
+  if [[ "${IOS_APP_TEST_RECEIPTS:-false}" == true ]]; then
+    xcodebuild "${test_args[@]}" test-without-building 2>&1 | tee "$build_root/AppTests.log"
+    python3 ios/scripts/app-test-shards.py receipt "$build_root/AppTests.log" \
+      "$build_root/app-test-receipt-$ios_test_partition.json"
+  else
+    xcodebuild "${test_args[@]}" test-without-building
+  fi
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS test-without-building: $((SECONDS - ios_phase_started)) seconds"
 fi

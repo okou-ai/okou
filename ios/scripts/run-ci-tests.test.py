@@ -145,6 +145,9 @@ class CIProcessTests(unittest.TestCase):
             executable.write_text(MOCK)
             executable.chmod(0o755)
         self.env = os.environ | {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "IOS_APP_TEST_PARTITION": "all",
+            "IOS_APP_TEST_RECEIPTS": "false",
             "PATH": f"{mock}:{os.environ['PATH']}",
             "RUNNER_TEMP": str(self.root / "work"),
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",

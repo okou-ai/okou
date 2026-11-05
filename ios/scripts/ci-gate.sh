@@ -11,6 +11,13 @@ if [ "${SCRIPT_CHECKS_RESULT:?SCRIPT_CHECKS_RESULT is required}" != success ]; t
   exit 1
 fi
 
+if [ "${APP_TEST_SHARDS:-one}" = two ]; then
+  if [ "$EVENT_NAME" != workflow_dispatch ] || [ "${SHARD_PROOF_RESULT:-}" != success ]; then
+    echo '::error::Manual App shards require successful complete-suite proof' >&2
+    exit 1
+  fi
+fi
+
 case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${PACKAGES_RESULT:-}:${BUILD_RESULT:-}:${ARCHIVE_RESULT:-}:${PUBLISH_RESULT:-}" in
   merge_group:true:success:success:success:success)
     echo 'Swift package tests, simulator tests or exact-input evidence, device archive, and immutable publication passed.'

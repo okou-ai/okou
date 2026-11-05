@@ -100,6 +100,11 @@ Control an existing production clock only for actual scheduling/expiry
 contracts. Do not expose scheduler internals or add a clock to preserve an
 implementation assertion. Native input access belongs on the main actor. Keep
 hosted tests sequential on one simulator, with one heavy local check at a time.
+An explicitly selected manual job-sharding experiment may use separate hosted
+runners, each retaining that single-simulator, serial execution boundary.
+Validate the combined case identities against a complete reference on the same
+head before treating shards as a full suite. Partial experiment receipts do not
+authorize archive promotion or replace ordinary required native validation.
 
 A full suite runs every retained test. Do not use exclusion lists, selected
 happy paths, automatic assertion retries, or skipped required checks to shorten

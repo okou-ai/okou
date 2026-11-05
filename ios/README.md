@@ -251,6 +251,15 @@ CI reports dependency, compilation, simulator, and test durations separately.
 Total preparation sums dependency and simulator setup; startup before tests also
 includes compilation. Cache hits still validate
 current inputs and never replace test execution.
+
+Manual dispatch can compare one App test job with two isolated jobs using
+`app_test_shards`. The two-job mode requires `serial_reference_run_id` from a
+successful complete manual run at the exact same commit. Each job uses the
+existing caches and runs its partition serially on its own simulator. The gate
+requires their observed test IDs to cover the reference exactly once, with
+matching inputs/toolchain. Compact receipts are retained for one day; automatic
+events retain the complete single-job suite and existing release evidence.
+Sampling and the archive-cache experiment cannot be combined with two App jobs.
 Standalone package tests run on a separate macOS runner from the App build and
 simulator suite. Both package and App results are required by the gate. App
 build/tests retain a 30-minute limit; package tests and device archive builds

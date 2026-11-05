@@ -16,6 +16,15 @@ on:
         description: Compare fresh Release archives with and without native caches
         type: boolean
         default: false
+      app_test_shards:
+        description: App test jobs (two requires a successful same-head serial reference)
+        type: choice
+        options: [one, two]
+        default: one
+      serial_reference_run_id:
+        description: Complete manual serial reference run ID for two App jobs
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -73,6 +82,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       needed: ${{ steps.changes.outputs.needed }}
+      reference-attempt: ${{ steps.experiment.outputs.reference-attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,8 +90,19 @@ jobs:
           fetch-depth: 32
           sparse-checkout: |
             /ios/scripts/ci-changed.sh
+            /ios/scripts/app-test-shards.py
             /.github/scripts/checks/changed-base-ref.sh
           sparse-checkout-cone-mode: false
+      - name: Validate manual App test comparison
+        id: experiment
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IOS_APP_TEST_SHARDS: ${{ inputs.app_test_shards }}
+          IOS_SERIAL_REFERENCE_RUN_ID: ${{ inputs.serial_reference_run_id }}
+          IOS_XCODE_STARTUP_SAMPLING: ${{ inputs.sample_xcode_startup }}
+          IOS_ARCHIVE_CACHE_EXPERIMENT: ${{ inputs.archive_cache_experiment }}
+        run: python3 ios/scripts/app-test-shards.py validate-inputs
       - name: Detect iOS changes
         id: changes
         env:
@@ -119,6 +140,7 @@ jobs:
           python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
           python3 ios/scripts/reset-oversized-compilation-cache.test.py
+          python3 ios/scripts/app-test-shards.test.py
 
   test-packages:
     needs: detect
@@ -171,15 +193,23 @@ jobs:
           retention-days: 1
 
   build-test:
+    name: ${{ matrix.partition == 'all' && 'build-test' || format('build-test-{0}', matrix.partition) }}
     needs: [detect, prepare-package-sources]
     # Main pushes consume previously built archives in release-please; never rebuild/test.
     if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
     runs-on: xcode-27
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.app_test_shards == 'two' && '["a","b"]' || '["all"]') }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
+      IOS_APP_TEST_PARTITION: ${{ matrix.partition }}
+      IOS_APP_TEST_RECEIPTS: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+      IOS_ARCHIVE_CACHE_EXPERIMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.archive_cache_experiment && 'true' || 'false' }}
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -250,6 +280,14 @@ jobs:
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
+      - name: Transfer manual App test receipt
+        if: success() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-app-test-receipt-${{ matrix.partition }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/app-test-receipt-${{ matrix.partition }}.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -278,10 +316,45 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ios-test-results-${{ github.run_attempt }}
+          name: ios-test-results-${{ github.run_attempt }}${{ matrix.partition != 'all' && format('-{0}', matrix.partition) || '' }}
           path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
           if-no-files-found: ignore
           retention-days: 7
+
+  verify-test-shards:
+    needs: [detect, build-test]
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.app_test_shards == 'two'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both successful App test jobs
+        env:
+          BUILD_RESULT: ${{ needs.build-test.result }}
+        run: test "$BUILD_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Receive complete serial reference
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.serial_reference_run_id }}
+          name: ios-app-test-receipt-all-${{ needs.detect.outputs.reference-attempt }}
+          path: ${{ runner.temp }}/app-test-reference
+      - name: Receive both current-attempt shards
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ios-app-test-receipt-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/app-test-shards
+          merge-multiple: true
+      - name: Verify exact complete-suite coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IOS_SERIAL_REFERENCE_RUN_ID: ${{ inputs.serial_reference_run_id }}
+          IOS_SERIAL_REFERENCE_ATTEMPT: ${{ needs.detect.outputs.reference-attempt }}
+        run: |
+          python3 ios/scripts/app-test-shards.py verify \
+            "$RUNNER_TEMP/app-test-reference/app-test-receipt-all.json" \
+            "$RUNNER_TEMP/app-test-shards/app-test-receipt-a.json" \
+            "$RUNNER_TEMP/app-test-shards/app-test-receipt-b.json"
 
   build-archive:
     # Compile in parallel with simulator validation to stay inside the queue deadline.
@@ -367,6 +440,7 @@ jobs:
         build-test,
         build-archive,
         publish-archive,
+        verify-test-shards,
       ]
     if: always()
     runs-on: ubuntu-latest
@@ -387,4 +461,6 @@ jobs:
           BUILD_RESULT: ${{ needs.build-test.result }}
           ARCHIVE_RESULT: ${{ needs.build-archive.result }}
           PUBLISH_RESULT: ${{ needs.publish-archive.result }}
+          APP_TEST_SHARDS: ${{ inputs.app_test_shards }}
+          SHARD_PROOF_RESULT: ${{ needs.verify-test-shards.result }}
         run: bash ios/scripts/ci-gate.sh
