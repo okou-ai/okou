@@ -18,6 +18,7 @@ from tests.model_sse_cooperative_helpers import (
     make_model_sse_pipeline_flow,
     model_sse_terminal,
     model_sse_update,
+    model_sse_updates,
 )
 
 
@@ -33,7 +34,7 @@ async def test_gzip_callback_and_heartbeat_bound_usage_across_decoder_deliveries
 ):
     flow = make_model_sse_pipeline_flow(real_flow, tmp_path, protocol=protocol)
     count = 10_000
-    body = b"".join(model_sse_update(protocol, index) for index in range(1, count + 1))
+    body = model_sse_updates(protocol, count)
     body += model_sse_terminal(protocol, count + 1)
     wire = encode_model_sse(body, "gzip")
     assert len(body) > 64 * 1024
@@ -69,7 +70,7 @@ async def test_partitions_preserve_final_usage_and_trailing_event(
 ):
     flow = make_model_sse_pipeline_flow(real_flow, tmp_path, protocol=protocol, encoding=encoding)
     body = b"\xef\xbb\xbf: heartbeat\n\n"
-    body += b"".join(model_sse_update(protocol, index) for index in range(1, 41))
+    body += model_sse_updates(protocol, 40)
     # End with a captured trailing event rather than a blank-line terminator.
     body += model_sse_terminal(protocol, 41).rstrip(b"\n")
     body = body.replace(b"\n", b"\r\n")
@@ -142,7 +143,7 @@ async def test_terminal_hooks_join_pending_usage_and_preserve_decode_error_polic
     real_flow, tmp_path, usage_webhook_api, protocol, interrupted, corrupt
 ):
     flow = make_model_sse_pipeline_flow(real_flow, tmp_path, protocol=protocol, billable=True)
-    body = b"".join(model_sse_update(protocol, index) for index in range(1, 41))
+    body = model_sse_updates(protocol, 40)
     body += model_sse_terminal(protocol, 41)
     wire = encode_model_sse(body, "gzip")
     if corrupt:
