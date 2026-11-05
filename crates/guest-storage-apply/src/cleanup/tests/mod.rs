@@ -251,7 +251,7 @@ fn cleanup_mountpoint_continues_after_protected_root_entry() {
     fs::create_dir_all(&metadata_dir).unwrap();
     fs::write(path.join("agent.txt"), "old").unwrap();
 
-    cleanup_stale_paths_with_options(
+    let success = cleanup_stale_paths_with_options(
         &[path_string(&path)],
         &[],
         &[],
@@ -268,6 +268,7 @@ fn cleanup_mountpoint_continues_after_protected_root_entry() {
         },
     );
 
+    assert!(success);
     assert!(path.exists());
     assert!(metadata_dir.exists());
     assert!(!path.join("agent.txt").exists());
