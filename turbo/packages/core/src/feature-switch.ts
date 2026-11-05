@@ -257,11 +257,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
-  [FeatureSwitchKey.BillConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BILL Spend & Expense connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.BentomlConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the BentoML model serving connector",
