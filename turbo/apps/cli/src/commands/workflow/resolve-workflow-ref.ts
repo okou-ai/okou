@@ -1,4 +1,6 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
 import { listWorkflows } from "../../lib/api/domains/workflows";
+import { workflowAgentScope } from "./mode";
 import { getOkouAgentId } from "../../lib/okou-env";
 
 const UUID_RE =
@@ -17,6 +19,12 @@ export async function resolveWorkflowRef(
   ref: string,
   options: WorkflowRefOptions,
 ): Promise<string> {
+  const singleAgent = await singleAgentEnabled();
+  if (singleAgent && options.agent) {
+    throw new Error(
+      "Workflow Agent targets are unavailable in My Okou. Use the current workspace or an explicit Workflow ID",
+    );
+  }
   if (UUID_RE.test(ref)) {
     return ref;
   }
@@ -27,7 +35,7 @@ export async function resolveWorkflowRef(
     );
   }
 
-  const agentId = options.agent ?? getOkouAgentId();
+  const agentId = (await workflowAgentScope(options.agent)) ?? getOkouAgentId();
   if (!agentId) {
     throw new Error(
       "Workflow name refs require an agent scope. Pass --agent <agent-id>, set OKOU_AGENT_ID, or use a workflow ID",
@@ -45,7 +53,9 @@ export async function resolveWorkflowRef(
   });
   if (matches.length === 0) {
     throw new Error(
-      `Ordinary workflow not found: "${ref}" under agent "${agentId}". Check the name and agent. Use a workflow ID to view or manage an Official Workflow`,
+      singleAgent
+        ? `Workflow not found: "${ref}" in the current workspace. Use a Workflow ID to view or manage an Official Workflow`
+        : `Ordinary workflow not found: "${ref}" under agent "${agentId}". Check the name and agent. Use a workflow ID to view or manage an Official Workflow`,
     );
   }
 
@@ -58,7 +68,9 @@ export async function resolveWorkflowRef(
   const [winner] = winners;
   if (winners.length !== 1 || !winner) {
     throw new Error(
-      `Workflow name "${ref}" did not resolve to exactly one ordinary workflow under agent "${agentId}". Use the workflow ID`,
+      singleAgent
+        ? `Workflow name "${ref}" did not resolve to exactly one workflow in the workspace. Use the Workflow ID`
+        : `Workflow name "${ref}" did not resolve to exactly one ordinary workflow under agent "${agentId}". Use the workflow ID`,
     );
   }
   return winner.id;

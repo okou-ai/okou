@@ -54,7 +54,9 @@ import {
   ROUTES,
   type RouteKey,
 } from "../route-paths.ts";
-import { currentAgentId$ } from "../agent.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { defaultAgentId$, currentAgentId$ } from "../agent.ts";
 import { ensureDraft$ } from "../chat-page/create-chat-thread.ts";
 import {
   reloadWorkflowData$,
@@ -62,6 +64,10 @@ import {
 } from "./workflow-reload.ts";
 import { onRef, settle } from "../utils.ts";
 import { recordRecentWorkflowUse$ } from "../okou-page/recent-workflows.ts";
+
+export const singleAgentWorkflows$ = computed(async (get) => {
+  return (await get(featureSwitch$))[FeatureSwitchKey.SingleAgent];
+});
 
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
@@ -789,7 +795,15 @@ export const allVisibleWorkflows$ = computed(
     get(workflowReloadVersion$);
     const locale = get(locale$);
     const client = get(apiClient$)(workflowsCollectionContract);
-    const result = await accept(client.list({ query: {} }), [200]);
+    const singleAgent = await get(singleAgentWorkflows$);
+    const agentId = singleAgent ? await get(defaultAgentId$) : null;
+    if (singleAgent && !agentId) {
+      throw new Error("Workspace default executor is unavailable");
+    }
+    const result = await accept(
+      client.list({ query: agentId ? { agentId } : {} }),
+      [200],
+    );
     return result.body
       .filter((workflow) => {
         return !isOfficialWorkflow(workflow);
@@ -809,6 +823,11 @@ export const allWorkflowAutomationEntries$ = computed(
   async (get): Promise<readonly WorkflowAutomationEntry[]> => {
     get(workflowReloadVersion$);
     const locale = get(locale$);
+    const singleAgent = await get(singleAgentWorkflows$);
+    const agentId = singleAgent ? await get(defaultAgentId$) : null;
+    if (singleAgent && !agentId) {
+      throw new Error("Workspace default executor is unavailable");
+    }
     const automationClient = get(apiClient$)(workflowAutomationsContract);
     const automationResult = await accept(
       automationClient.listWorkspace(),
@@ -816,7 +835,10 @@ export const allWorkflowAutomationEntries$ = computed(
     );
     return automationResult.body
       .filter((entry) => {
-        return !isOfficialWorkflow(entry.workflow);
+        return (
+          !isOfficialWorkflow(entry.workflow) &&
+          (!singleAgent || entry.workflow.agentId === agentId)
+        );
       })
       .sort((a, b) => {
         if (a.automation.enabled !== b.automation.enabled) {
@@ -1686,5 +1708,62 @@ export const deleteWorkflowAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+  },
+);
+
+/** Resolve conflicts to the existing private record; never overwrite a copy. */
+export const makePrivateWorkflowCopy$ = command(
+  async (
+    { get, set },
+    workflow: WorkflowDetailResponse,
+    signal: AbortSignal,
+  ) => {
+    const agentId = await get(defaultAgentId$);
+    signal.throwIfAborted();
+    if (!agentId || !(await get(singleAgentWorkflows$))) {
+      throw new Error("Workspace Workflow copying is unavailable");
+    }
+    const collection = get(apiClient$)(workflowsCollectionContract);
+    const detail = get(apiClient$)(workflowsDetailContract);
+    const findCopy = async () => {
+      const result = await accept(
+        collection.list({ query: { agentId }, fetchOptions: { signal } }),
+        [200],
+      );
+      return result.body.find((item) => {
+        return (
+          !item.official &&
+          item.name === workflow.name &&
+          item.visibility === "private"
+        );
+      });
+    };
+    let copy = await findCopy();
+    signal.throwIfAborted();
+    if (!copy) {
+      const result = await accept(
+        detail.copy({
+          params: { workflowId: workflow.id },
+          body: { toAgentId: agentId },
+          fetchOptions: { signal },
+        }),
+        [201, 409],
+      );
+      signal.throwIfAborted();
+      if (result.status === 201) {
+        copy = result.body;
+      } else {
+        copy = await findCopy();
+        if (!copy) {
+          return await accept(Promise.resolve(result), [201], signal);
+        }
+      }
+    }
+    signal.throwIfAborted();
+    set(reloadWorkflows$);
+    set(setWorkflowActionDialog$, null);
+    set(detachedNavigateTo$, ROUTES.workflowDetailInstructions, {
+      pathParams: { workflowId: copy.id },
+    });
   },
 );

@@ -7203,6 +7203,16 @@
       },
       "title": "Importa le tue skill",
       "viewWorkflows": "Vedi workflow"
+    },
+    "workspace": {
+      "copyDescription": "Crea il tuo flusso privato in questo spazio di lavoro. Vengono copiate solo le tue automazioni.",
+      "copyExists": "Hai già un flusso privato con questo nome. Aprilo per continuare.",
+      "createDescription": "Crea un flusso con il tuo Okou personale in questo spazio di lavoro.",
+      "makePrivateCopy": "Crea copia privata",
+      "openPrivateCopy": "Apri copia privata",
+      "overridden": "Sostituito per te",
+      "sharedWith": "Condiviso con {{workspace}}",
+      "usedFor": "Usato per /{{name}}"
     }
   },
   "works": {

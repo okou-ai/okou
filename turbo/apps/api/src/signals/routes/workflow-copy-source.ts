@@ -2,6 +2,7 @@ import type {
   OfficialWorkflowAcceptedRevision,
   OfficialWorkflowAcceptedDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 import {
   officialWorkflowCatalogState,
@@ -17,7 +18,10 @@ import { and, asc, eq, inArray, getTableColumns, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isDeepStrictEqual } from "node:util";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgTextDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
 import { workflowAutomationColumns } from "../services/autonomy-budget-schema.service";
 import {
   acceptedCatalogFromRow,
@@ -66,6 +70,7 @@ export interface WorkflowCopyInput {
   readonly member: WorkflowMember;
   readonly sourceWorkflow: WorkflowRow;
   readonly targetAgentId: string;
+  readonly personalCopy?: boolean;
   readonly sourceFiles: WorkflowCopySource["files"];
 }
 
@@ -158,6 +163,12 @@ export function copySourcePlans(args: WorkflowCopyInput) {
         id: agents.id,
         owner: agents.owner,
         visibility: agents.visibility,
+        personalCopyAllowed:
+          sql`${args.personalCopy === true} AND ${agents.visibility} = 'public'
+          AND EXISTS (SELECT 1 FROM ${orgMetadata} WHERE ${orgMetadata.orgId} = ${args.orgId}
+            AND ${orgMetadata.defaultAgentId} = ${agents.id})`
+            .mapWith(pgBooleanDecoder)
+            .as("personal_copy_allowed"),
         xmin: sql`${agents}.xmin::text`.mapWith(pgTextDecoder).as("xmin"),
       })
       .from(agents)
@@ -255,18 +266,23 @@ export function copyWebhooksQuery(
 
 export function requireCopyTarget(
   target:
-    | { readonly owner: string; readonly visibility: "public" | "private" }
+    | {
+        readonly owner: string;
+        readonly visibility: "public" | "private";
+        readonly personalCopyAllowed: boolean;
+      }
     | undefined,
   member: WorkflowMember,
 ): void {
   if (
     !target ||
-    requireAgentPermission(
-      target.owner,
-      member,
-      "copy workflows onto this agent",
-      { visibility: target.visibility },
-    )
+    (!target.personalCopyAllowed &&
+      requireAgentPermission(
+        target.owner,
+        member,
+        "copy workflows onto this agent",
+        { visibility: target.visibility },
+      ))
   ) {
     throw new CopyPreparationConflict();
   }

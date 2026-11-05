@@ -7106,6 +7106,16 @@
       },
       "title": "스킬 가져오기",
       "viewWorkflows": "워크플로 보기"
+    },
+    "workspace": {
+      "copyDescription": "이 워크스페이스에 나만의 비공개 워크플로를 만듭니다. 본인의 자동화만 복사됩니다.",
+      "copyExists": "같은 이름의 비공개 워크플로가 이미 있습니다. 열어서 작업을 계속하세요.",
+      "createDescription": "이 워크스페이스에서 개인 Okou와 워크플로를 만드세요.",
+      "makePrivateCopy": "비공개 사본 만들기",
+      "openPrivateCopy": "비공개 사본 열기",
+      "overridden": "내 비공개 버전 사용 중",
+      "sharedWith": "{{workspace}}와 공유",
+      "usedFor": "/{{name}}에 사용"
     }
   },
   "works": {

@@ -44,6 +44,7 @@ import {
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
+import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -57,6 +58,7 @@ import { brandName$ } from "../../signals/branding.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import {
+  singleAgentWorkflows$,
   allVisibleWorkflows$,
   allWorkflowAutomationEntries$,
   isGoogleCalendarWorkflowAutomation,
@@ -165,7 +167,11 @@ function ConnectorPillMarker({
 
 /** The agent that runs the workflow, drawn as its real avatar. */
 function AgentAvatar({ workflow }: { readonly workflow: WorkflowSummary }) {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const label = agentLabel(workflow);
+  if (singleAgent) {
+    return null;
+  }
   return (
     <AgentAvatarImg
       name={workflow.agentId}
@@ -211,15 +217,25 @@ function MemberAvatar({
 }
 
 function VisibilityIcon({ workflow }: { readonly workflow: WorkflowSummary }) {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
+  const org = useLastResolved(currentOrgInfo$);
   const isPublic = workflow.visibility === "public";
   const Icon = isPublic ? Globe : Lock;
-  const label = isPublic
-    ? i18n.t(($) => {
-        return $.workflows.common.public;
-      })
-    : i18n.t(($) => {
-        return $.workflows.common.private;
-      });
+  const label =
+    isPublic && singleAgent
+      ? i18n.t(
+          ($) => {
+            return $.workflows.workspace.sharedWith;
+          },
+          { workspace: org?.name ?? "" },
+        )
+      : isPublic
+        ? i18n.t(($) => {
+            return $.workflows.common.public;
+          })
+        : i18n.t(($) => {
+            return $.workflows.common.private;
+          });
   return (
     <TooltipProvider delay={200}>
       <Tooltip>
@@ -421,6 +437,7 @@ function WorkflowHoverContent({
   readonly failed: boolean;
 }) {
   useTranslation();
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const title = workflowTitle(workflow);
   const loading = !profile && !failed;
   const ownerLabel =
@@ -487,18 +504,20 @@ function WorkflowHoverContent({
             )}
           </div>
         </div>
-        <div
-          data-slot="workflow-runs-as"
-          className="flex h-6 min-w-0 items-center gap-2"
-        >
-          <span className="w-16 shrink-0 text-muted-foreground">
-            {i18n.t(($) => {
-              return $.workflows.list.runsAs;
-            })}
-          </span>
-          <AgentAvatar workflow={workflow} />
-          <span className="truncate">{agentLabel(workflow)}</span>
-        </div>
+        {!singleAgent && (
+          <div
+            data-slot="workflow-runs-as"
+            className="flex h-6 min-w-0 items-center gap-2"
+          >
+            <span className="w-16 shrink-0 text-muted-foreground">
+              {i18n.t(($) => {
+                return $.workflows.list.runsAs;
+              })}
+            </span>
+            <AgentAvatar workflow={workflow} />
+            <span className="truncate">{agentLabel(workflow)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -575,6 +594,7 @@ function WorkflowRow({
   readonly entries: readonly WorkflowAutomationEntry[];
   readonly displayTimezone: string;
 }) {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const title = workflowTitle(workflow);
   return (
     <article className="flex items-center gap-3 px-5 py-3.5 text-left text-foreground transition-colors hover:bg-state-hover">
@@ -595,6 +615,23 @@ function WorkflowRow({
             <span className="min-w-0 truncate text-sm font-medium underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
               {title}
             </span>
+            {singleAgent && workflow.shadowedBy ? (
+              <Badge className="shrink-0 text-xs text-muted-foreground">
+                {i18n.t(($) => {
+                  return $.workflows.workspace.overridden;
+                })}
+              </Badge>
+            ) : null}
+            {singleAgent && !workflow.shadowedBy ? (
+              <span className="truncate text-xs text-muted-foreground">
+                {i18n.t(
+                  ($) => {
+                    return $.workflows.workspace.usedFor;
+                  },
+                  { name: workflow.name },
+                )}
+              </span>
+            ) : null}
             {workflow.importSource ? (
               <Badge className="shrink-0 text-xs font-medium text-muted-foreground">
                 {workflow.importSource === "codex"
@@ -1302,7 +1339,9 @@ export function WorkflowsPage() {
   const brandName = useGet(brandName$);
   const filter = useGet(workflowFilter$);
   const sortMode = useGet(workflowSortMode$);
-  const agentFilter = useGet(workflowAgentFilter$);
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
+  const storedAgentFilter = useGet(workflowAgentFilter$);
+  const agentFilter = singleAgent ? WORKFLOW_ALL_AGENTS : storedAgentFilter;
   const workflowsLoadable = useLastLoadable(allVisibleWorkflows$);
   const automationEntriesLoadable = useLastLoadable(
     allWorkflowAutomationEntries$,
@@ -1323,7 +1362,8 @@ export function WorkflowsPage() {
   const displayTimezone =
     preferences?.timezone ??
     new Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const agentOptions = workflows ? agentFilterOptions(workflows) : [];
+  const agentOptions =
+    !singleAgent && workflows ? agentFilterOptions(workflows) : [];
   const filteredWorkflows = workflows
     ? sortWorkflows(
         applyAgentFilter(

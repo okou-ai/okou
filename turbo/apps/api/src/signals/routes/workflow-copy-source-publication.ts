@@ -1,3 +1,4 @@
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import {
@@ -170,7 +171,11 @@ export function copySourcePublicationClauses(
   }
   const parentCount = new Set([args.sourceWorkflow.agentId, args.targetAgentId])
     .size;
-  const valid = sql`${revisionExists} AND (SELECT ${count()} FROM copy_source_locked) = 1
+  const personalTarget = args.personalCopy
+    ? sql`EXISTS (SELECT 1 FROM ${orgMetadata} WHERE ${orgMetadata.orgId} = ${args.orgId}
+        AND ${orgMetadata.defaultAgentId} = ${args.targetAgentId})`
+    : sql`true`;
+  const valid = sql`${personalTarget} AND ${revisionExists} AND (SELECT ${count()} FROM copy_source_locked) = 1
     AND ${observed.parents.length === parentCount}
     AND (${versionSetMatches("copy_parents_locked", observed.parents)})
     AND (${versionSetMatches("copy_automations_locked", observed.automations)})

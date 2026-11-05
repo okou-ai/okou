@@ -21,6 +21,7 @@ import {
   type PreparedCopiedWebhook,
   type CopyWorkflowDatabaseResult,
 } from "./workflow-copy-publication-plans";
+import { workflowNamespace$ } from "../services/workflow-namespace.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -251,7 +252,7 @@ const listWorkflowsInner$ = computed(async (get) => {
     workflowList({
       orgId: auth.orgId,
       member: memberFromAuth(auth),
-      ...(query.agentId ? { agentId: query.agentId } : {}),
+      agentId: (await get(workflowNamespace$)) ?? query.agentId,
     }),
   );
   return { status: 200 as const, body: [...workflows] };
@@ -261,7 +262,11 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const { agentId } = get(queryOf(workflowsCollectionContract.composer));
   const workflows = await get(
-    workflowList({ orgId: auth.orgId, member: memberFromAuth(auth), agentId }),
+    workflowList({
+      orgId: auth.orgId,
+      member: memberFromAuth(auth),
+      agentId,
+    }),
   );
   return {
     status: 200 as const,
@@ -771,6 +776,11 @@ const createWorkflowInner$ = command(
       return bodyResult.response;
     }
     const body = bodyResult.data;
+    const namespace = await get(workflowNamespace$);
+    signal.throwIfAborted();
+    if (namespace && body.agentId !== namespace) {
+      return forbidden("Create workflows in the current workspace");
+    }
     const inserted = await set(
       createWorkflowRecord$,
       {
@@ -1220,6 +1230,7 @@ interface CopiedWorkflowPublicationInput {
       }[]
     | null;
   readonly targetAgentId: string;
+  readonly personalCopy?: boolean;
   readonly inheritedAutonomyBudget: number | undefined;
   readonly currentTime: Date;
 }
@@ -1279,6 +1290,7 @@ const publishCopiedWorkflow$ = command(
             sourceWorkflow: args.sourceWorkflow,
             sourceFiles: args.sourceFiles,
             targetAgentId: args.targetAgentId,
+            personalCopy: args.personalCopy,
             targetWorkflowId,
             threadPreparation,
             currentTime: args.currentTime,
@@ -1399,11 +1411,20 @@ const copyWorkflowInner$ = command(
     if (!targetAgent) {
       return notFound(`Agent not found: ${bodyResult.data.toAgentId}`);
     }
-    const permissionError = requireAgentWritePermission(
-      targetAgent,
-      member,
-      "copy workflows onto this agent",
-    );
+    const namespace = await get(workflowNamespace$);
+    signal.throwIfAborted();
+    if (namespace && targetAgent.id !== namespace) {
+      return forbidden("Make a private copy in the current workspace");
+    }
+    const personalCopy =
+      namespace === targetAgent.id && targetAgent.visibility === "public";
+    const permissionError = personalCopy
+      ? null
+      : requireAgentWritePermission(
+          targetAgent,
+          member,
+          "copy workflows onto this agent",
+        );
     if (permissionError) {
       return permissionError;
     }
@@ -1445,6 +1466,7 @@ const copyWorkflowInner$ = command(
         sourceWorkflow: sourceWorkflow,
         sourceFiles,
         targetAgentId: targetAgent.id,
+        personalCopy,
         inheritedAutonomyBudget,
         currentTime: nowDate(),
       },
@@ -1508,7 +1530,9 @@ const prepareWorkflowChatThreadInner$ = command(
       status: 200 as const,
       body: {
         chatThreadId,
-        prompt: workflowRefinePrompt(workflow),
+        prompt: (await get(workflowNamespace$))
+          ? `Help me refine workflow ID ${workflow.id}. Use this exact ID when viewing or editing its definition.`
+          : workflowRefinePrompt(workflow),
       },
     };
   },

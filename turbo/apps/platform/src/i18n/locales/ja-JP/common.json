@@ -7106,6 +7106,16 @@
       },
       "title": "スキルをインポート",
       "viewWorkflows": "ワークフローを表示"
+    },
+    "workspace": {
+      "copyDescription": "このワークスペースに自分専用の非公開ワークフローを作成します。コピーされるのは自分のオートメーションのみです。",
+      "copyExists": "同じ名前の非公開ワークフローが既にあります。開いて作業を続けてください。",
+      "createDescription": "このワークスペースで自分の Okou とワークフローを作成します。",
+      "makePrivateCopy": "非公開コピーを作成",
+      "openPrivateCopy": "非公開コピーを開く",
+      "overridden": "自分の非公開版を使用",
+      "sharedWith": "{{workspace}} と共有",
+      "usedFor": "/{{name}} で使用"
     }
   },
   "works": {

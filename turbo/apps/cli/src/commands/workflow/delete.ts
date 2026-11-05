@@ -1,3 +1,4 @@
+import { workflowHelp } from "./mode";
 import { Command } from "commander";
 import chalk from "chalk";
 import { deleteWorkflow, getWorkflow } from "../../lib/api/domains/workflows";
@@ -15,17 +16,16 @@ export const deleteCommand = new Command()
   .argument("<workflow>", "Workflow ID or name")
   .option("--agent <id>", "Agent ID for resolving workflow names")
   .option("-y, --yes", "Skip confirmation prompt")
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", () => {
+    return workflowHelp(`
 Examples:
   okou workflow delete tell-a-joke --agent <agent-id> -y
   okou workflow delete <workflow-id>
   okou workflow delete <workflow-id> -y
 
 Notes:
-  - Use -y to skip confirmation in non-interactive mode`,
-  )
+  - Use -y to skip confirmation in non-interactive mode`);
+  })
   .action(
     withErrorHandler(
       async (

@@ -1,3 +1,5 @@
+import { workflowHelp, workflowAgentScope } from "./mode";
+import { singleAgentEnabled } from "../../lib/api/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import { readFileSync } from "node:fs";
@@ -27,9 +29,8 @@ export const createCommand = new Command()
   .option("--display-name <name>", "Workflow display name")
   .option("--description <text>", "Workflow description")
   .option("--public", "Create as an org-public workflow")
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", () => {
+    return workflowHelp(`
 Examples:
   okou workflow create my-workflow --agent <agent-id> --instruction "Summarize the inbox"
   okou workflow create my-workflow --instruction-file ./instruction.md
@@ -42,8 +43,8 @@ Notes:
   - --dir uploads supplementary files only; any SKILL.md is rejected
   - This command persists the workflow through the API. Local /home/user/.codex/skills or /home/user/.claude/skills folders are runtime-only and will not sync back
   - New workflows are private by default
-  - Copy a workflow onto another agent: okou workflow copy <workflow-id> --to-agent <agent-id>`,
-  )
+  - Copy a workflow onto another agent: okou workflow copy <workflow-id> --to-agent <agent-id>`);
+  })
   .action(
     withErrorHandler(
       async (
@@ -58,7 +59,9 @@ Notes:
           public?: boolean;
         },
       ) => {
-        const agentId = options.agent ?? getOkouAgentId();
+        const singleAgent = await singleAgentEnabled();
+        const agentId =
+          (await workflowAgentScope(options.agent)) ?? getOkouAgentId();
         if (!agentId) {
           console.error(chalk.red("✗ --agent is required"));
           console.error(
@@ -99,8 +102,10 @@ Notes:
         console.log(chalk.green(`✓ Workflow "${workflow.name}" created`));
         console.log(`  ID:           ${workflow.id}`);
         console.log(`  Name:         ${workflow.name}`);
-        console.log(`  Agent Name:   ${formatWorkflowAgentName(workflow)}`);
-        console.log(`  Agent ID:     ${workflow.agentId}`);
+        if (!singleAgent) {
+          console.log(`  Agent Name:   ${formatWorkflowAgentName(workflow)}`);
+          console.log(`  Agent ID:     ${workflow.agentId}`);
+        }
         console.log(`  Visibility:   ${workflow.visibility}`);
         if (files) {
           console.log(`  Files:        ${files.length} file(s)`);
@@ -113,7 +118,9 @@ Notes:
         }
         console.log();
         console.log(
-          `Copy onto another agent: okou workflow copy ${workflow.id} --to-agent <agent-id>`,
+          singleAgent
+            ? `View it: okou workflow view ${workflow.id}`
+            : `Copy onto another agent: okou workflow copy ${workflow.id} --to-agent <agent-id>`,
         );
       },
     ),

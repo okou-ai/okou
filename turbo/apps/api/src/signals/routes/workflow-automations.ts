@@ -1,3 +1,4 @@
+import { workflowNamespace$ } from "../services/workflow-namespace.service";
 import { command } from "ccstate";
 import {
   GMAIL_LABEL_NOT_FOUND_ERROR_CODE,
@@ -124,12 +125,20 @@ const workspaceWorkflowAutomationEntries$ = command(
 );
 
 const listWorkspaceAutomationsInner$ = command(
-  async ({ set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
+    const namespace = await get(workflowNamespace$);
+    signal.throwIfAborted();
     const entries = await set(workspaceWorkflowAutomationEntries$, signal);
     signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: [...entries],
+      body: entries.filter((entry) => {
+        return (
+          !namespace ||
+          entry.workflow.official !== null ||
+          entry.workflow.agentId === namespace
+        );
+      }),
     };
   },
 );

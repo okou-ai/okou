@@ -779,6 +779,7 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     createdAt: workflow.createdAt,
     canManage: workflow.canManage,
     canPublish: workflow.canPublish,
+    shadowedBy: workflow.shadowedBy,
     official: workflow.official,
     importSource: workflow.importSource,
   };
@@ -4421,5 +4422,164 @@ test("An earlier webhook response preserves a reopened creation form", async () 
   });
   await waitFor(() => {
     expect(buttonByText("Create webhook")).toBeEnabled();
+  });
+});
+
+test("Workspace Workflows ignore stale Agent filters and identify the caller's private override", async () => {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  mockAgentPageApis();
+  mockChatLifecycle(context);
+  const shared = salesResearch();
+  const personal: WorkflowDetailResponse = {
+    ...shared,
+    id: COPIED_WORKFLOW_ID,
+    visibility: "private",
+    displayName: "My sales research",
+    instruction: "My private steps",
+    shadowedBy: null,
+  };
+  const visibleShared = {
+    ...shared,
+    shadowedBy: {
+      id: personal.id,
+      name: personal.name,
+      displayName: personal.displayName,
+    },
+  };
+  mockWorkflowApis([visibleShared, personal, otherAgentWorkflow()]);
+  await setupPage({
+    context,
+    path: `/workflows?agent=${OTHER_AGENT_ID}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+  await expect(
+    screen.findByText("Overridden for you"),
+  ).resolves.toBeInTheDocument();
+  expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
+  expect(linkByAriaLabel("Open My sales research")).toBeInTheDocument();
+  expect(screen.getByText("Used for /sales-research")).toBeInTheDocument();
+  const sharedLink = linkByAriaLabel("Open Sales Research");
+  expect(sharedLink).toHaveAttribute(
+    "href",
+    `/workflows/${SALES_WORKFLOW_ID}/automations`,
+  );
+});
+
+test("Make private copy opens the existing private definition without overwriting it", async () => {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  mockAgentPageApis();
+  mockChatLifecycle(context);
+  const shared = salesResearch();
+  const personal: WorkflowDetailResponse = {
+    ...shared,
+    id: COPIED_WORKFLOW_ID,
+    visibility: "private",
+    displayName: "My saved copy",
+    instruction: "Retained private instructions",
+    shadowedBy: null,
+  };
+  const visibleShared = {
+    ...shared,
+    shadowedBy: {
+      id: personal.id,
+      name: personal.name,
+      displayName: personal.displayName,
+    },
+  };
+  mockWorkflowApis([visibleShared, personal]);
+  await setupWorkflowDetailPage(workflowDetailPath("info"), {
+    [FeatureSwitchKey.SingleAgent]: true,
+  });
+  await waitFor(() => {
+    expect(buttonByText("Make private copy")).toBeEnabled();
+  });
+  click(buttonByText("Make private copy"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Make private copy",
+  });
+  const link = linkByText("Open private copy", dialog);
+  expect(link).toHaveAttribute(
+    "href",
+    `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
+  );
+  click(link);
+  await waitFor(() => {
+    return expect(pathname()).toBe(
+      `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
+    );
+  });
+  await expect(
+    screen.findByText("Retained private instructions"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Make private copy uses the workspace default without a destination or removal step", async () => {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  mockAgentPageApis();
+  mockChatLifecycle(context);
+  const shared = { ...salesResearch(), canManage: false };
+  const workflows = [shared];
+  mockWorkflowApis(workflows);
+  context.mocks.api(
+    workflowsDetailContract.copy,
+    ({ body, params, respond }) => {
+      expect(params.workflowId).toBe(SALES_WORKFLOW_ID);
+      expect(body.toAgentId).toBe(AGENT_ID);
+      const personal: WorkflowDetailResponse = {
+        ...shared,
+        id: COPIED_WORKFLOW_ID,
+        visibility: "private",
+        canManage: true,
+        instruction: "Copied workspace instructions",
+        shadowedBy: null,
+      };
+      workflows.push(personal);
+      return respond(201, summary(personal));
+    },
+  );
+  await setupWorkflowDetailPage(workflowDetailPath("info"), {
+    [FeatureSwitchKey.SingleAgent]: true,
+  });
+  await waitFor(() => {
+    expect(buttonByText("Make private copy")).toBeEnabled();
+  });
+  click(buttonByText("Make private copy"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Make private copy",
+  });
+  click(buttonByText("Make private copy", dialog));
+  await waitFor(() => {
+    return expect(pathname()).toBe(
+      `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
+    );
+  });
+  await expect(
+    screen.findByText("Copied workspace instructions"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("creates a workspace Workflow with the default Okou without choosing an Agent", async () => {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  mockAgentPageApis();
+  mockChatLifecycle(context);
+  mockWorkflowApis([salesResearch()]);
+  await setupPage({
+    context,
+    path: "/workflows",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+  await waitFor(() => {
+    expect(buttonByText("Create in chat")).toBeEnabled();
+  });
+  click(buttonByText("Create in chat"));
+  const dialog = await screen.findByRole("dialog", { name: "Create workflow" });
+  expect(
+    within(dialog).getByText(
+      "Create a workflow with your personal Okou in this workspace.",
+    ),
+  ).toBeInTheDocument();
+  click(buttonByText("Create workflow", dialog));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
   });
 });

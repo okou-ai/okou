@@ -7106,6 +7106,16 @@
       },
       "title": "导入你的技能",
       "viewWorkflows": "查看工作流"
+    },
+    "workspace": {
+      "copyDescription": "在此工作区创建你自己的私有工作流。只会复制你自己的自动化。",
+      "copyExists": "你已有同名私有工作流，可打开它继续编辑。",
+      "createDescription": "在此工作区与个人 Okou 一起创建工作流。",
+      "makePrivateCopy": "创建私有副本",
+      "openPrivateCopy": "打开私有副本",
+      "overridden": "已使用你的私有版本",
+      "sharedWith": "与 {{workspace}} 共享",
+      "usedFor": "用于 /{{name}}"
     }
   },
   "works": {

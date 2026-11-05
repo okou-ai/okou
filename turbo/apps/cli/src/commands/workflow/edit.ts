@@ -1,3 +1,4 @@
+import { workflowHelp } from "./mode";
 import { Command } from "commander";
 import chalk from "chalk";
 import { readFileSync } from "node:fs";
@@ -25,9 +26,8 @@ export const editCommand = new Command()
   )
   .option("--display-name <name>", "New display name")
   .option("--description <text>", "New description")
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", () => {
+    return workflowHelp(`
 Examples:
   okou workflow edit tell-a-joke --agent <agent-id> --instruction "New steps"
   okou workflow edit <workflow-id> --instruction "New steps"
@@ -38,8 +38,8 @@ Examples:
 Notes:
   - SKILL.md is synthesized automatically; --dir uploads supplementary files only and rejects SKILL.md
   - This command persists the update through the API. Editing /home/user/.codex/skills or /home/user/.claude/skills is runtime-only and will not sync back
-  - At least one of --instruction, --instruction-file, --dir, --display-name, or --description is required`,
-  )
+  - At least one of --instruction, --instruction-file, --dir, --display-name, or --description is required`);
+  })
   .action(
     withErrorHandler(
       async (

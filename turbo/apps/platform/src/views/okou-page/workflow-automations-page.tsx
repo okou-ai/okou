@@ -35,7 +35,7 @@ import {
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
-import { agents$ } from "../../signals/agent.ts";
+import { defaultAgentId$, agents$ } from "../../signals/agent.ts";
 import {
   selectedWorkflowAutomationAgentId$,
   setWorkflowAutomationAgentQuery$,
@@ -52,6 +52,7 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { Link as RouterLink } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
+  singleAgentWorkflows$,
   allVisibleWorkflows$,
   setWorkflowAutomationEnabled$,
   workflowWebhookUpgradeDialogSource$,
@@ -753,6 +754,7 @@ function WorkflowSelectionStep({
   readonly onCreateWorkflow: () => void;
 }) {
   const { t } = useTranslation();
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
 
   if (loading) {
     return (
@@ -820,15 +822,28 @@ function WorkflowSelectionStep({
                     {workflowTitle(workflow)}
                   </span>
                   <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                    <WorkflowAgentAvatar agent={agent} label={label} />
-                    <span className="max-w-[10rem] shrink-0 truncate">
-                      {label}
-                    </span>
+                    {!singleAgent && (
+                      <WorkflowAgentAvatar agent={agent} label={label} />
+                    )}
+                    {!singleAgent && (
+                      <span className="max-w-[10rem] shrink-0 truncate">
+                        {label}
+                      </span>
+                    )}
+                    {singleAgent && workflow.shadowedBy ? (
+                      <span>
+                        {t(($) => {
+                          return $.workflows.workspace.overridden;
+                        })}
+                      </span>
+                    ) : null}
                     {workflow.description ? (
                       <>
-                        <span className="select-none text-muted-foreground/50">
-                          ·
-                        </span>
+                        {!singleAgent && (
+                          <span className="select-none text-muted-foreground/50">
+                            ·
+                          </span>
+                        )}
                         <span className="min-w-0 truncate">
                           {workflow.description}
                         </span>
@@ -989,6 +1004,8 @@ function WorkflowAutomationDialogFooter({
 }
 
 export function CreateWorkflowAutomationDialog() {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
+  const defaultAgentId = useLastResolved(defaultAgentId$);
   const { t } = useTranslation();
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
@@ -1053,17 +1070,21 @@ export function CreateWorkflowAutomationDialog() {
                   })}
           </DialogTitle>
           <DialogDescription className="mt-1 text-sm text-muted-foreground">
-            {selectingExistingWorkflow
+            {singleAgent && !selectingExistingWorkflow
               ? t(($) => {
-                  return $.workflows.createDialog.chooseWorkflow;
+                  return $.workflows.workspace.createDescription;
                 })
-              : creatingAutomationInChat
+              : selectingExistingWorkflow
                 ? t(($) => {
-                    return $.workflows.createDialog.chooseAgentAutomation;
+                    return $.workflows.createDialog.chooseWorkflow;
                   })
-                : t(($) => {
-                    return $.workflows.createDialog.chooseAgentWorkflow;
-                  })}
+                : creatingAutomationInChat
+                  ? t(($) => {
+                      return $.workflows.createDialog.chooseAgentAutomation;
+                    })
+                  : t(($) => {
+                      return $.workflows.createDialog.chooseAgentWorkflow;
+                    })}
           </DialogDescription>
         </DialogHeader>
 
@@ -1077,6 +1098,26 @@ export function CreateWorkflowAutomationDialog() {
             }}
             onCreateWorkflow={startCreateWorkflow}
           />
+        ) : singleAgent ? (
+          <div className="px-5 pb-4">
+            <Button
+              variant="neutral"
+              disabled={!defaultAgentId}
+              onClick={() => {
+                if (defaultAgentId) {
+                  selectAgent(defaultAgentId);
+                }
+              }}
+            >
+              {creatingAutomationInChat
+                ? t(($) => {
+                    return $.workflows.createDialog.createAutomation;
+                  })
+                : t(($) => {
+                    return $.workflows.createDialog.createWorkflow;
+                  })}
+            </Button>
+          </div>
         ) : (
           <AgentSelectionStep
             agents={agentChoices}

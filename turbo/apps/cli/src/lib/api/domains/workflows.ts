@@ -4,6 +4,7 @@ import {
   type ServerInferResponseBody,
 } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
+  workflowVisibilityContract,
   workflowsCollectionContract,
   workflowsDetailContract,
   workflowAutomationsContract,
@@ -184,4 +185,23 @@ export async function disableWorkflowAutomation(
   const result = await client.disable({ params: { id } });
   if (result.status === 200) return result.body;
   handleError(result, `Failed to disable workflow automation "${id}"`);
+}
+
+export async function setWorkflowVisibility(
+  workflowId: string,
+  visibility: "public" | "private",
+): Promise<WorkflowSummary> {
+  const client = initClient(
+    workflowVisibilityContract,
+    await getClientConfig(),
+  );
+  const result =
+    visibility === "public"
+      ? await client.publish({ params: { workflowId } })
+      : await client.demote({ params: { workflowId } });
+  if (result.status === 200) return result.body;
+  handleError(
+    result,
+    `Failed to ${visibility === "public" ? "publish" : "unpublish"} workflow "${workflowId}"`,
+  );
 }

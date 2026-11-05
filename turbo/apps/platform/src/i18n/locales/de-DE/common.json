@@ -7128,6 +7128,16 @@
       },
       "title": "Deine Skills importieren",
       "viewWorkflows": "Workflows ansehen"
+    },
+    "workspace": {
+      "copyDescription": "Erstelle deinen eigenen privaten Workflow in diesem Workspace. Nur deine Automatisierungen werden kopiert.",
+      "copyExists": "Du hast bereits einen privaten Workflow mit diesem Namen. Öffne ihn, um weiterzuarbeiten.",
+      "createDescription": "Erstelle einen Workflow mit deinem persönlichen Okou in diesem Workspace.",
+      "makePrivateCopy": "Private Kopie erstellen",
+      "openPrivateCopy": "Private Kopie öffnen",
+      "overridden": "Für dich überschrieben",
+      "sharedWith": "Mit {{workspace}} geteilt",
+      "usedFor": "Verwendet für /{{name}}"
     }
   },
   "works": {
