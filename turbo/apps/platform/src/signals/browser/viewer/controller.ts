@@ -3281,7 +3281,7 @@ function createInitialDiscovery(
     async ({ get, set }, signal: AbortSignal, lifetime: AbortSignal) => {
       // Discovery publishes failures and readiness; remaining native work belongs
       // to the transport after the first proven batch is admitted.
-      detach(
+      detachBrowser(
         Promise.allSettled([
           set(get(get(links$).discovery$)!.start$, lifetime),
         ]),
