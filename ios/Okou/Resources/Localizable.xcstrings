@@ -14775,43 +14775,6 @@
         }
       }
     },
-    "Opens the run's tool calls on the web": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Öffnet die Tool-Aufrufe der Ausführung im Web" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Abre las llamadas a herramientas de la ejecución en la web" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Ouvre les appels d’outils de l’exécution sur le Web" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "रन के टूल कॉल वेब पर खोलता है" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Membuka panggilan alat dari eksekusi ini di web" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Apre le chiamate agli strumenti dell'esecuzione sul web" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "この実行のツール呼び出しをウェブで開きます" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "웹에서 이 실행의 도구 호출을 엽니다" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Abre as chamadas de ferramentas da execução na web" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在网页版打开此次运行的工具调用" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在網頁版開啟此次執行的工具呼叫" }
-        }
-      }
-    },
     "or": {
       "localizations": {
         "de": {
@@ -18342,43 +18305,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "要在 %@ 上執行指令嗎？" }
-        }
-      }
-    },
-    "Run log": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Ausführungsprotokoll" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Registro de ejecución" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Journal d’exécution" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "रन लॉग" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Log eksekusi" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Registro di esecuzione" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "実行ログ" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "실행 로그" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Registro de execução" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "运行日志" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "執行記錄" }
         }
       }
     },
