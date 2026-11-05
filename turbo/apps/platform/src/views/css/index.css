@@ -807,6 +807,9 @@ body {
   --okou-color-theme-ambient-companion: 12.8%;
   --okou-color-theme-ambient-anchor-dark: 4.6%;
   --okou-color-theme-ambient-companion-dark: 4.5%;
+  /* Yellow reads light at any HSL lightness; the shared selection stop
+     washes out on the selected row, so this palette takes a deeper one. */
+  --okou-color-theme-selection: 54.5 60% 72%;
 }
 
 /* Raspberry, not a pure red: a red anchor lands within about 11deg of OKLCH
@@ -855,6 +858,8 @@ body {
   --okou-color-theme-ambient-companion: 25.8%;
   --okou-color-theme-ambient-anchor-dark: 15.1%;
   --okou-color-theme-ambient-companion-dark: 4.4%;
+  /* Blue at the shared dark selection stop sinks into the dark row. */
+  --okou-color-theme-selection-dark: 221.3 40% 40%;
 }
 
 /* 78% lightness: around 74% neither label clears Lc 60 (white 50, Ink 55). */
@@ -871,6 +876,8 @@ body {
   --okou-color-theme-ambient-companion: 10.3%;
   --okou-color-theme-ambient-anchor-dark: 6%;
   --okou-color-theme-ambient-companion-dark: 6.9%;
+  /* See Blue horizon. */
+  --okou-color-theme-selection-dark: 232 45% 42%;
 }
 
 [data-color-theme="deep-lagoon"] {
@@ -1020,8 +1027,18 @@ body {
   }
 }
 
-/* Global selection color. A colour palette supplies its own `--selection`;
-   the product's own palette keeps the brand wash. */
+/* Global selection color. The product's own palette: the brand wash
+   (`--brand-subtle`, #FFEAD3) sits on the selected row's lightness and the
+   dark wash (#31200B) sinks below the dark row, so both read as unselected.
+   A colour palette supplies its own `--selection` further down. */
+:root {
+  --selection: 31.4 100% 78%;
+}
+
+:root:is(.dark, [data-theme="dark"]) {
+  --selection: 33.1 35% 30%;
+}
+
 ::selection {
   background-color: hsl(var(--selection, var(--brand-subtle)));
   color: hsl(var(--foreground));
@@ -1646,7 +1663,10 @@ details > summary {
      as unselected (inline rename on the current chat was the visible case).
      This stop clears 6.5 ΔE against the selected row on every palette and
      keeps the text above 8:1. */
-  --selection: var(--okou-color-theme-hue) 65% 82%;
+  --selection: var(
+    --okou-color-theme-selection,
+    var(--okou-color-theme-hue) 65% 82%
+  );
 
   --gray-0: var(--okou-color-theme-hue) 100% 99.5%;
   --gray-50: var(--okou-color-theme-hue) 38% 98.2%;
@@ -1693,7 +1713,10 @@ details > summary {
   --brand-subtle: var(--okou-color-theme-hue) 25% 22%;
   /* See the light note: at least 6.5 ΔE from the selected row, with the text
      above 5.5:1. */
-  --selection: var(--okou-color-theme-hue) 35% 30%;
+  --selection: var(
+    --okou-color-theme-selection-dark,
+    var(--okou-color-theme-hue) 35% 30%
+  );
 
   --gray-0: var(--okou-color-theme-hue) 5% 10.8%;
   --gray-50: var(--okou-color-theme-hue) 5% 14%;
