@@ -344,17 +344,25 @@ single floating line, and colour is a small accent for status only.
   the reader started (a send or upload that failed, an auth error, Sign-in expired, Limit
   reached) and for destructive verbs, never for a failed read.
 - **Loading inside a list, sheet or card** is `OkouLoadingRow`: a small muted spinner and what
-  is loading, in subheadline. Status is never a bare `ProgressView`.
-- **A status line in a screen's flow** (sync slow or failed, a draft that could not be saved,
+  is loading, in subheadline. Status is never a bare `ProgressView`. A sheet's first load
+  is `ChatSettingsLoadingView`, the same spinner and line centred where the content will
+  appear. A chat's first load is `OkouChatSkeleton`, the web's chat skeleton: two
+  exchanges of a trailing user bubble and an answer under a small avatar in `skeleton`
+  grey, breathing 1 → 0.7 over two seconds (`OkouSkeletonBlock`), shown after 100 ms as
+  on the web — never a spinner in an empty page.
+- **A status line in a screen's flow** (a draft that could not be saved,
   a stop that did not confirm, a voice or attachment error above the composer) is
   `OkouBanner`: a hairline card at chat radius, a 16 pt glyph, one footnote sentence, its
   actions as footnote-semibold text buttons and an optional ✕. `.status` is muted; `.problem`
   only lifts the text to `foreground`. It is never red and never a tinted fill. The composer
   shows these banners and nothing hand-built.
-- **A transient confirmation** ("Chat archived · Undo") is `OkouToast`: Liquid Glass the
-  height of a control, one 15 pt medium line, an optional `brand-text` action and a small ✕,
-  above the composer. It carries no icon. Confirm in place first where possible (a copy
-  glyph turning into a check).
+- **Chat feedback floats under the header** in `ChatFeedbackSurface`: a finished action
+  ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
+  card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
+  medium line, an optional `brand-text` action and a ✕; at accessibility sizes the action
+  moves under the text. Routine synchronization is silent — no "Updating chats…" line —
+  and a failure shows only after it has lasted 300 ms. Confirm in place first where
+  possible (a copy glyph turning into a check).
 
 ### Navigation and lists
 
@@ -422,8 +430,8 @@ single floating line, and colour is a small accent for status only.
   in the neutral `state-hover` layer (`state-pressed` while pressed) with
   `muted-foreground` text at 80 %, card radius, at most two lines. The timestamp is
   the web's chat timestamp ("Sep 8, 6:33 PM").
-- Streamed run text is published at most every 120 ms; the sync banner waits 2.5 s
-  before it appears; "Copied" confirmations last 1.5 s.
+- Streamed run text is published at most every 120 ms; a sync failure surfaces after
+  300 ms; "Copied" confirmations last 1.5 s.
 
 ### Agent profile
 
@@ -531,7 +539,8 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouEmptyState`                                                              | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title |
 | `OkouLoadErrorRow` / `OkouLoadingRow`                                         | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                 |
 | `OkouBanner`                                                                  | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                        |
-| `OkouToast`                                                                   | Floating confirmation: glass, one 15 pt medium line, optional action, ✕                                                                                                          |
+| `ChatFeedbackSurface`                                                         | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                        |
+| `OkouChatSkeleton` / `OkouSkeletonBlock`                                      | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, breathing                                                                                     |
 | `OkouAgentAvatar`, `OkouWorkspaceLogo`                                        | Shared identity artwork with Web-compatible resolution and native sizing                                                                                                         |
 | `OkouWordmark`                                                                | Approved aspect ratio and theme-aware foreground                                                                                                                                 |
 | `OkouCloseButton`, `OkouLabeledValue`                                         | Native toolbar dismissal and width-adaptive label/value information                                                                                                              |

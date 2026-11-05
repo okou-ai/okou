@@ -36,7 +36,7 @@ struct ChatThreadFeedbackView: View {
   var body: some View {
     ChatFeedbackSurface(
       message: feedback.message,
-      systemImage: feedback.kind == .error ? "exclamationmark.circle" : "checkmark.circle",
+      icon: feedback.kind == .error ? "circle-alert" : "circle-check",
       actionTitle: feedback.actionTitle,
       actionEnabled: store.list.canUpdate(feedback.threadID) && !store.needsUpgrade
         && (!feedback.requiresNavigation || !store.isCreating),

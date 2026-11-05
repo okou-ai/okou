@@ -80,6 +80,11 @@ enum OkouControl {
   static let mediaTile: CGFloat = 88
   static let selectionMark: CGFloat = 22
   static let selectionMarkStroke: CGFloat = 1.5
+  /// A loading chat's placeholder user bubble and text line (the web's h-10 and h-4).
+  static let skeletonBubble: CGFloat = 40
+  static let skeletonLine: CGFloat = 16
+  /// The two placeholder exchanges' height.
+  static let skeletonHeight: CGFloat = 360
 }
 
 enum OkouIconSize {
@@ -132,6 +137,9 @@ enum OkouMotion {
   static let sidebarParallax: CGFloat = 0.25
   /// How much of the screen each page's leading edge fades over while the sidebar moves.
   static let sidebarFeather: CGFloat = 0.35
+  /// The web's `okou-skeleton-pulse`: one breath of a loading placeholder, and how far it dims.
+  static let skeletonPulse: Double = 2
+  static let skeletonDim: Double = 0.7
   /// Web `--duration-running-indicator`; list rows trail by 1/12 of a cycle each.
   static let runningCycle: Double = 2.4
   static let runningWaveRows: Double = 12

@@ -196,7 +196,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var refreshTask: Task<Void, Never>?
   private var stopped = false
   private var animatesScroll = false
-  private let loading = UIActivityIndicatorView(style: .medium)
+  /// The web's chat skeleton while the first messages load, not a spinner in an empty page.
+  private let loading = UIHostingController(rootView: OkouChatSkeleton())
   private var loadingTask: Task<Void, Never>?
   private let sleep: @MainActor (Duration) async throws -> Void
 
@@ -310,11 +311,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     source.anchor.isPresentedMarker = { [weak self] marker in
       self?.isPresentedMarker(marker) ?? false
     }
-    loading.hidesWhenStopped = true
-    loading.isUserInteractionEnabled = false
-    loading.isAccessibilityElement = true
-    loading.accessibilityLabel = String(localized: "Loading chat")
-    view.addSubview(loading)
+    loading.view.backgroundColor = .clear
+    loading.view.isUserInteractionEnabled = false
+    loading.view.isHidden = true
+    addChild(loading)
+    view.addSubview(loading.view)
+    loading.didMove(toParent: self)
     source.sidebar?.attach(self)
     registerForTraitChanges([
       UITraitPreferredContentSizeCategory.self, UITraitLayoutDirection.self,
@@ -517,7 +519,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    loading.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+    let inset = ConversationCollectionRow.messageHorizontalInset
+    loading.view.frame = CGRect(
+      x: inset, y: collection.adjustedContentInset.top + OkouSpace.lg,
+      width: max(0, view.bounds.width - inset * 2), height: OkouControl.skeletonHeight)
     if collection.bounds.size != lastViewportSize {
       lastViewportSize = collection.bounds.size
       publishViewportChange()
@@ -806,18 +811,18 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       stopLoading()
       return
     }
-    guard loadingTask == nil, !loading.isAnimating else { return }
+    guard loadingTask == nil, loading.view.isHidden else { return }
     loadingTask = Task { [weak self, sleep] in
       do { try await sleep(.milliseconds(100)) } catch { return }
       guard !Task.isCancelled, let self, needsLoadingIndicator else { return }
-      loading.startAnimating()
+      loading.view.isHidden = false
     }
   }
 
   private func stopLoading() {
     loadingTask?.cancel()
     loadingTask = nil
-    loading.stopAnimating()
+    loading.view.isHidden = true
   }
 
   private func diskLayout(width: CGFloat) -> ConversationHeightDiskCache.Layout {

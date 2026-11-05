@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// Shared native surface for transient feedback and recoverable synchronization.
+/// The one floating surface for chat feedback — a finished action ("Chat archived · Undo") or a
+/// sync failure with Retry — just under the header: Liquid Glass, a 16 pt Lucide glyph (a
+/// small spinner while it works), one 15 pt line, an optional text action and a ✕. Routine
+/// updates never show here. At accessibility sizes the action moves under the text.
 struct ChatFeedbackSurface: View {
   let message: String
-  let systemImage: String
+  let icon: String
   var isWorking = false
   var actionTitle: String?
   var actionEnabled = true
@@ -11,51 +14,52 @@ struct ChatFeedbackSurface: View {
   let action: () -> Void
   let dismiss: () -> Void
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @ScaledMetric(relativeTo: .subheadline) private var fontSize: CGFloat = 14
 
   var body: some View {
     Group {
       if dynamicTypeSize.isAccessibilitySize {
         VStack(alignment: .leading, spacing: 0) {
-          HStack(alignment: .top, spacing: 8) {
-            messageLabel.padding(.top, 10)
+          HStack(alignment: .top, spacing: OkouSpace.sm) {
+            messageLabel.padding(.top, OkouSpace.ten)
             dismissButton
           }
-          if let actionTitle { actionButton(title: actionTitle).padding(.leading, 24) }
+          if let actionTitle {
+            actionButton(title: actionTitle).padding(.leading, OkouSpace.xxl)
+          }
         }
       } else {
-        HStack(spacing: 8) {
+        HStack(spacing: OkouSpace.sm) {
           messageLabel
           if let actionTitle { actionButton(title: actionTitle) }
           dismissButton
         }
       }
     }
-    .font(.system(size: fontSize))
-    .padding(.leading, 12)
-    .padding(.trailing, 2)
-    .padding(.vertical, 2)
-    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
-    .padding(.vertical, 8)
+    .font(.okou(.subheadline))
+    .padding(.leading, OkouSpace.md)
+    .padding(.trailing, OkouSpace.two)
+    .padding(.vertical, OkouSpace.two)
+    .frame(maxWidth: .infinity, minHeight: OkouControl.listRow, alignment: .leading)
+    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
+    .padding(.vertical, OkouSpace.sm)
     .accessibilityElement(children: .contain)
   }
 
   private var messageLabel: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
+    HStack(alignment: .firstTextBaseline, spacing: OkouSpace.sm) {
       Group {
         if isWorking {
-          ProgressView().controlSize(.mini)
+          ProgressView().controlSize(.mini).tint(OkouColor.mutedForeground)
         } else {
-          Image(systemName: systemImage)
-            .font(.system(size: 14))
-            .foregroundStyle(.secondary)
+          OkouIcon(icon, size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground)
         }
       }
-      .frame(width: 16)
+      .frame(width: OkouIconSize.inline)
       .accessibilityHidden(true)
       Text(message)
-        .foregroundStyle(.primary)
+        .font(.okou(.subheadline).weight(.medium))
+        .foregroundStyle(OkouColor.foreground)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -63,10 +67,10 @@ struct ChatFeedbackSurface: View {
 
   private func actionButton(title: String) -> some View {
     Button(title, action: action)
-      .font(.system(size: fontSize, weight: .semibold))
-      .foregroundStyle(.primary)
-      .padding(.horizontal, 6)
-      .frame(minWidth: 44, minHeight: 44)
+      .font(.okou(.subheadline).weight(.semibold))
+      .foregroundStyle(OkouColor.brandText)
+      .padding(.horizontal, OkouSpace.six)
+      .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
       .contentShape(Rectangle())
       .buttonStyle(.plain)
       .disabled(!actionEnabled || isWorking)
@@ -75,10 +79,9 @@ struct ChatFeedbackSurface: View {
 
   private var dismissButton: some View {
     Button(action: dismiss) {
-      Image(systemName: "xmark")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(width: 44, height: 44)
+      OkouIcon("x", size: OkouIconSize.inline)
+        .foregroundStyle(OkouColor.mutedForeground)
+        .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -101,6 +104,6 @@ struct ChatFeedbackBanner: View {
         }
       }
     }
-    .padding(.horizontal, 16)
+    .padding(.horizontal, OkouSpace.lg)
   }
 }

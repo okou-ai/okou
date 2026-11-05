@@ -298,7 +298,9 @@
             ) {
               Button("Try again") {}
             }
-            OkouToast("Chat archived", dismiss: {}) { Button("Undo") {} }
+            ChatFeedbackSurface(
+              message: "Chat archived", icon: "circle-check", actionTitle: "Undo", action: {},
+              dismiss: {})
           }
           section("Workspace identities") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 56))]) {
