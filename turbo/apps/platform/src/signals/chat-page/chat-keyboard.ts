@@ -33,6 +33,7 @@ import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.t
 import { scrollToThread$ } from "./sidebar-chat-thread-scroll.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { projectCreationAgentId$ } from "../projects/project-selected-agent.ts";
 
 type ChatThreadPane = "main" | "side";
 
@@ -600,7 +601,17 @@ export const setChatKeyboardScrollRoot$ = onRef(
         return;
       }
       if (pane === "main") {
-        set(loadLeftThread$, targetId);
+        const projectId = navigation.threadProjectIds.get(targetId);
+        // A Project chat opens with the Agent its Project was entered with,
+        // as a click on its row does.
+        const agentId = projectId
+          ? await get(projectCreationAgentId$)
+          : undefined;
+        set(
+          loadLeftThread$,
+          targetId,
+          projectId && agentId ? { projectId, agentId } : undefined,
+        );
       } else {
         set(loadRightThread$, targetId);
       }

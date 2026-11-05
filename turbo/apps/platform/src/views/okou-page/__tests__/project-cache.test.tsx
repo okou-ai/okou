@@ -82,7 +82,7 @@ function disposeFirstPage() {
   vi.mocked(window.history.back).mockRestore();
 }
 
-test("Project folders load and catch up on a browser without Symbol.dispose", async () => {
+test("Projects load and catch up on a browser without Symbol.dispose", async () => {
   const options = installWorkspace();
   installMetadata();
   const nativeSymbol = Symbol;
@@ -107,8 +107,8 @@ test("Project folders load and catch up on a browser without Symbol.dispose", as
 
   await setupPage({ context, ...options });
 
-  const projects = screen.getByRole("region", { name: "Projects" });
-  expect(within(projects).getByText("Launch ready")).toBeInTheDocument();
+  const list = screen.getByTestId("sidebar-chat-threads-virtual-list");
+  expect(within(list).getByText("Launch ready")).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
 });
 
@@ -152,7 +152,7 @@ test("An empty cached chat list discovers a newly published snapshot", async () 
 });
 
 test.each(["open", "read", "write"] as const)(
-  "Project folders remain available online when IndexedDB cannot %s",
+  "Projects remain available online when IndexedDB cannot %s",
   async (operation) => {
     const options = installWorkspace();
     installMetadata();
@@ -178,7 +178,7 @@ test.each(["open", "read", "write"] as const)(
     await setupPage({ context, ...options });
 
     expect(
-      within(screen.getByRole("region", { name: "Projects" })).getByText(
+      within(screen.getByTestId("sidebar-chat-threads-virtual-list")).getByText(
         "Launch",
       ),
     ).toBeInTheDocument();
@@ -188,7 +188,7 @@ test.each(["open", "read", "write"] as const)(
   },
 );
 
-test("Project folders restore persisted events before an expired cursor is rebuilt", async () => {
+test("Projects restore persisted events before an expired cursor is rebuilt", async () => {
   const options = installWorkspace();
   installMetadata();
   context.mocks.api(projectsContract.events, ({ respond }) => {

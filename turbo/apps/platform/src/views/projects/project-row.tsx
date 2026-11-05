@@ -1,15 +1,12 @@
-import {
-  projectThreadItems$,
-  unreadProjectIds$,
-} from "../../signals/projects/project-threads.ts";
+import { unreadProjectIds$ } from "../../signals/projects/project-threads.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
-  Archive,
   Ellipsis,
   Folder,
   FolderOpen,
+  FolderPlus,
   Pencil,
   Plus,
   Trash,
@@ -24,10 +21,7 @@ import {
   cn,
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
-import {
-  projects$,
-  projectsEnabled$,
-} from "../../signals/projects/projects.ts";
+import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import { newProjectThread$ } from "../../signals/projects/project-new-thread.ts";
 import {
   openProjectEditor$,
@@ -35,21 +29,16 @@ import {
   projectDialog$,
 } from "../../signals/projects/project-ui.ts";
 import {
-  archivedProjectIds$,
-  expandedProjectIds$,
-  projectThreadLimits$,
   showMoreProjectThreads$,
   toggleProject$,
-  toggleProjectArchive$,
-} from "../../signals/projects/project-folders.ts";
-import { projectCreationAgentId$ } from "../../signals/projects/project-selected-agent.ts";
+} from "../../signals/projects/project-expansion.ts";
+import type {
+  ChatThreadListRow,
+  ProjectChatThreadListRow,
+} from "../../signals/chat-page/chat-thread-list-rows.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatThreadItem } from "../okou-page/sidebar-threads.tsx";
 import { ChatThreadStateText } from "../okou-page/sidebar-shared.tsx";
-import { projectThreadDragEventsRef$ } from "../../signals/projects/project-thread-drag.ts";
-import { ProjectThreadDropZone } from "./project-thread-drop-zone.tsx";
-import { ProjectThreadDragHint } from "./project-thread-drag-hint.tsx";
 import {
   cancelProjectInlineRename$,
   commitProjectInlineRename$,
@@ -59,21 +48,26 @@ import {
   type ProjectInlineRename,
 } from "../../signals/projects/project-inline-rename.ts";
 
-function ProjectFolderMenu({
+export type ProjectRowLayout = "sidebar" | "list";
+
+interface ProjectRowProps {
+  readonly project: Project;
+  readonly touch: boolean;
+  readonly layout: ProjectRowLayout;
+}
+
+function ProjectMenu({
   project,
-  archived,
   touch,
   unread,
 }: {
   project: Project;
-  archived: boolean;
   touch: boolean;
   unread: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
   const open = useSet(setProjectDialog$);
-  const toggleArchive = useSet(toggleProjectArchive$);
   const dialog = useGet(projectDialog$);
   return (
     <DropdownMenu>
@@ -125,20 +119,6 @@ function ProjectFolderMenu({
             return $.projects.rename;
           })}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            return toggleArchive(project.id);
-          }}
-        >
-          <Archive size={16} />
-          {archived
-            ? t(($) => {
-                return $.projects.active;
-              })
-            : t(($) => {
-                return $.projects.archived;
-              })}
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
@@ -156,52 +136,14 @@ function ProjectFolderMenu({
   );
 }
 
-type ProjectSidebarLayout = "sidebar" | "list";
-
-function ProjectFolderEmpty({
-  archived,
-  layout,
-}: {
-  archived: boolean;
-  layout: ProjectSidebarLayout;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div
-      className={cn(
-        "py-2 text-xs text-nav-copy-muted",
-        layout === "list" ? "px-3" : "px-2",
-      )}
-    >
-      <p>
-        {archived
-          ? t(($) => {
-              return $.projects.emptyArchive;
-            })
-          : t(($) => {
-              return $.projects.empty;
-            })}
-      </p>
-    </div>
-  );
-}
-
-interface ProjectFolderProps {
-  readonly project: Project;
-  readonly touch: boolean;
-  readonly layout: ProjectSidebarLayout;
-}
-
-function ProjectFolderActions({
+function ProjectActions({
   project,
-  archived,
   touch,
   layout,
   unread,
   creating,
   onNewChat,
-}: ProjectFolderProps & {
-  archived: boolean;
+}: ProjectRowProps & {
   unread: boolean;
   creating: boolean;
   onNewChat: () => void;
@@ -233,23 +175,18 @@ function ProjectFolderActions({
       >
         <Plus />
       </Button>
-      <ProjectFolderMenu
-        project={project}
-        archived={archived}
-        touch={touch}
-        unread={unread}
-      />
+      <ProjectMenu project={project} touch={touch} unread={unread} />
     </div>
   );
 }
 
-function ProjectFolderRenameForm({
+function ProjectRenameForm({
   project,
   touch,
   layout,
   expanded,
   edit,
-}: ProjectFolderProps & {
+}: ProjectRowProps & {
   readonly expanded: boolean;
   readonly edit: ProjectInlineRename;
 }) {
@@ -261,9 +198,9 @@ function ProjectFolderRenameForm({
   const signal = useGet(rootSignal$);
   const Icon = expanded ? FolderOpen : Folder;
 
-  function returnFocusToFolder(form: HTMLFormElement) {
+  function returnFocusToProject(form: HTMLFormElement) {
     form.parentElement
-      ?.querySelector<HTMLElement>("[data-project-folder-trigger]")
+      ?.querySelector<HTMLElement>("[data-project-trigger]")
       ?.focus();
   }
 
@@ -271,12 +208,11 @@ function ProjectFolderRenameForm({
     <form
       className={cn(
         "col-start-1 row-start-1 flex min-w-0 items-center gap-2 rounded-lg px-2 text-sm text-nav-copy ring-2 ring-inset ring-ring",
-        touch ? "min-h-12" : "h-8",
-        layout === "list" && "h-14 px-3 text-base leading-5",
+        layout === "list" ? "h-14 px-3 text-base leading-5" : "h-8",
       )}
       onSubmit={(event) => {
         event.preventDefault();
-        returnFocusToFolder(event.currentTarget);
+        returnFocusToProject(event.currentTarget);
       }}
       onKeyDown={(event) => {
         // Safari can end composition before its confirming Enter keydown.
@@ -291,7 +227,7 @@ function ProjectFolderRenameForm({
         }
         if (event.key === "Escape") {
           cancel(edit);
-          returnFocusToFolder(event.currentTarget);
+          returnFocusToProject(event.currentTarget);
         }
       }}
     >
@@ -306,7 +242,10 @@ function ProjectFolderRenameForm({
         defaultValue={project.name}
         maxLength={120}
         autoComplete="off"
-        className="min-w-0 flex-1 bg-transparent p-0 outline-none"
+        className={cn(
+          "min-w-0 flex-1 bg-transparent p-0 outline-none",
+          touch && "text-base",
+        )}
         onBlur={(event) => {
           detach(
             commit(edit, event.currentTarget.value, signal),
@@ -318,30 +257,29 @@ function ProjectFolderRenameForm({
   );
 }
 
-function ProjectFolderTrigger({
+function ProjectTrigger({
   project,
   touch,
   layout,
   expanded,
-  contentsId,
+  rowId,
   unread,
-}: ProjectFolderProps & {
+}: ProjectRowProps & {
   readonly expanded: boolean;
-  readonly contentsId: string;
+  readonly rowId: string;
   readonly unread: boolean;
 }) {
   const toggle = useSet(toggleProject$);
   const edit = useGet(projectInlineRename$);
-  const renaming = edit?.folderId === contentsId;
+  const renaming = edit?.rowId === rowId;
   const startRename = useSet(startProjectInlineRename$);
   const Icon = expanded ? FolderOpen : Folder;
   return (
     <div className="grid min-w-0 flex-1">
       <button
         type="button"
-        data-project-folder-trigger=""
+        data-project-trigger=""
         aria-expanded={expanded}
-        aria-controls={contentsId}
         onClick={() => {
           return toggle(project.id);
         }}
@@ -354,12 +292,11 @@ function ProjectFolderTrigger({
           ) {
             return;
           }
-          startRename(project.id, contentsId);
+          startRename(project.id, rowId);
         }}
         className={cn(
           "col-start-1 row-start-1 flex min-w-0 items-center gap-2 rounded-lg px-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          touch ? "min-h-12" : "h-8",
-          layout === "list" && "h-14 px-3 text-base leading-5",
+          layout === "list" ? "h-14 px-3 text-base leading-5" : "h-8",
         )}
       >
         <Icon
@@ -372,7 +309,7 @@ function ProjectFolderTrigger({
         <ChatThreadStateText state={unread ? "unread" : null} />
       </button>
       {renaming && (
-        <ProjectFolderRenameForm
+        <ProjectRenameForm
           project={project}
           touch={touch}
           layout={layout}
@@ -384,177 +321,123 @@ function ProjectFolderTrigger({
   );
 }
 
-function ProjectFolder({ project, touch, layout }: ProjectFolderProps) {
+/** A Project's own row: it folds its chats and starts new ones inside it. */
+export function ProjectRow({
+  row,
+  touch,
+  layout,
+}: {
+  readonly row: ProjectChatThreadListRow;
+  readonly touch: boolean;
+  readonly layout: ProjectRowLayout;
+}) {
   const { t } = useTranslation();
-  const agent = useLastResolved(projectCreationAgentId$);
-  const expanded = useGet(expandedProjectIds$).has(project.id);
+  const { project, expanded } = row;
   const unread = useLastResolved(unreadProjectIds$)?.has(project.id) ?? false;
   const showUnread = !expanded && unread;
-  const archived = useGet(archivedProjectIds$).has(project.id);
-  const limit = useGet(projectThreadLimits$)[project.id] ?? 20;
-  const items = useGet(projectThreadItems$).filter(({ thread }) => {
-    return thread.projectId === project.id && thread.archived === archived;
-  });
-  const showMore = useSet(showMoreProjectThreads$);
   const [creation, create] = useLoadableSet(newProjectThread$);
   const signal = useGet(rootSignal$);
-  const contentsId = `project-threads-${touch ? "touch" : "sidebar"}-${project.id}`;
   function newChat() {
     detach(create(project.id, signal), Reason.DomCallback);
   }
   return (
-    <ProjectThreadDropZone project={project} touch={touch}>
-      <div className="group/project flex min-w-0 items-center rounded-lg hover:bg-state-hover">
-        <ProjectFolderTrigger
-          project={project}
-          touch={touch}
-          layout={layout}
-          expanded={expanded}
-          contentsId={contentsId}
-          unread={showUnread}
-        />
-        <ProjectFolderActions
-          project={project}
-          archived={archived}
-          touch={touch}
-          layout={layout}
-          unread={showUnread}
-          creating={creation.state === "loading"}
-          onNewChat={newChat}
-        />
-      </div>
+    <div className="group/project flex min-w-0 items-center rounded-lg hover:bg-state-hover">
+      <ProjectTrigger
+        project={project}
+        touch={touch}
+        layout={layout}
+        expanded={expanded}
+        rowId={`project-${touch ? "touch" : "sidebar"}-${project.id}`}
+        unread={showUnread}
+      />
       {creation.state === "hasError" && (
-        <p role="alert" className="px-3 py-1 text-xs text-destructive">
+        <span role="alert" className="shrink-0 px-1 text-xs text-destructive">
           {t(($) => {
             return $.projects.createChatError;
           })}
-        </p>
+        </span>
       )}
-      {expanded && (
-        <div
-          id={contentsId}
-          className="ml-6 flex min-w-0 flex-col gap-1 py-1"
-          aria-label={project.name}
-        >
-          {archived && (
-            <p
-              className={cn(
-                "py-1 text-xs text-nav-copy-muted",
-                layout === "list" ? "px-3" : "px-2",
-              )}
-            >
-              {t(($) => {
-                return $.projects.archived;
-              })}
-            </p>
-          )}
-          {items.length === 0 ? (
-            <ProjectFolderEmpty archived={archived} layout={layout} />
-          ) : (
-            items.slice(0, limit).map(({ signals }, index) => {
-              return (
-                <ChatThreadItem
-                  key={signals.threadId}
-                  signals={signals}
-                  rowIndex={index}
-                  shortcutNumber={undefined}
-                  touch={touch}
-                  projectContext={
-                    agent
-                      ? { projectId: project.id, agentId: agent }
-                      : undefined
-                  }
-                />
-              );
-            })
-          )}
-          {items.length > limit && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                return showMore(project.id);
-              }}
-            >
-              {t(($) => {
-                return $.projects.showMore;
-              })}
-            </Button>
-          )}
-        </div>
-      )}
-    </ProjectThreadDropZone>
+      <ProjectActions
+        project={project}
+        touch={touch}
+        layout={layout}
+        unread={showUnread}
+        creating={creation.state === "loading"}
+        onNewChat={newChat}
+      />
+    </div>
   );
 }
 
-export function ProjectSidebar({
-  touch = false,
-  layout = "sidebar",
+/** The empty notice or "show more" control that closes a Project's chats. */
+export function ProjectStatusRow({
+  row,
+  layout,
 }: {
-  touch?: boolean;
-  layout?: ProjectSidebarLayout;
+  readonly row: Extract<
+    ChatThreadListRow,
+    { readonly kind: "project-more" | "project-empty" }
+  >;
+  readonly layout: ProjectRowLayout;
 }) {
   const { t } = useTranslation();
+  const showMore = useSet(showMoreProjectThreads$);
+  if (row.kind === "project-empty") {
+    return (
+      <p
+        className={cn(
+          "flex items-center text-xs text-nav-copy-muted",
+          layout === "list" ? "h-14 px-3" : "h-8 px-2",
+        )}
+      >
+        {t(($) => {
+          return $.projects.empty;
+        })}
+      </p>
+    );
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "w-full justify-start text-nav-copy-muted",
+        layout === "list" ? "h-14 px-3" : "h-8 px-2",
+      )}
+      onClick={() => {
+        return showMore(row.projectId);
+      }}
+    >
+      {t(($) => {
+        return $.projects.showMore;
+      })}
+    </Button>
+  );
+}
+
+export function ProjectCreateButton({ touch = false }: { touch?: boolean }) {
+  const { t } = useTranslation();
   const enabled = useGet(projectsEnabled$);
-  const projects = useGet(projects$);
   const open = useSet(openProjectEditor$);
-  const dragEventsRef = useSet(projectThreadDragEventsRef$);
   if (!enabled) {
     return null;
   }
   return (
-    <section
-      ref={touch ? undefined : dragEventsRef}
-      data-project-sidebar=""
+    <Button
+      type="button"
+      variant="quiet"
+      size={touch ? "icon" : "icon-sm"}
+      iconSize={touch ? "lg" : "md"}
+      className={cn("shrink-0", touch && "min-h-11 min-w-11")}
+      data-project-create=""
       aria-label={t(($) => {
-        return $.projects.projects;
+        return $.projects.create;
       })}
-      className={cn(
-        "min-h-0 shrink-0 pb-2",
-        touch && layout === "sidebar" ? "px-2" : "px-3",
-      )}
+      onClick={() => {
+        return open();
+      }}
     >
-      <div
-        className={cn(
-          "flex items-center justify-between",
-          touch ? "min-h-12 pl-2 pr-2" : "h-8 pl-2",
-          layout === "list" && "pl-3 pr-0",
-        )}
-      >
-        <span className="text-[13px] leading-4 text-nav-copy-muted">
-          {t(($) => {
-            return $.projects.projects;
-          })}
-        </span>
-        <Button
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className={cn("shrink-0", touch && "min-h-11 min-w-11")}
-          data-project-create=""
-          aria-label={t(($) => {
-            return $.projects.create;
-          })}
-          onClick={() => {
-            return open();
-          }}
-        >
-          <Plus />
-        </Button>
-      </div>
-      <div className="max-h-[45dvh] overflow-y-auto">
-        {projects.map((project) => {
-          return (
-            <ProjectFolder
-              key={project.id}
-              project={project}
-              touch={touch}
-              layout={layout}
-            />
-          );
-        })}
-      </div>
-      {!touch && <ProjectThreadDragHint />}
-    </section>
+      <FolderPlus />
+    </Button>
   );
 }

@@ -2,13 +2,13 @@ import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { projects$, hydrateProjects$ } from "./projects.ts";
-import { expandProject$ } from "./project-folders.ts";
+import { expandProject$ } from "./project-expansion.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
 import { currentChatAgentId$ } from "../agent-chat.ts";
 import { navigateTo$, searchParams$ } from "../route.ts";
 import { rootSignal$ } from "../root-signal.ts";
 
-// Project URLs are folder deep links; Projects have no separate page.
+// Project URLs are deep links into the chat list; Projects have no separate page.
 export const setupProjectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     await set(hydrateProjects$, signal);

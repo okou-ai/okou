@@ -1,6 +1,6 @@
 import { useLastResolved, useSet } from "ccstate-react";
 import { projectCreationAgentId$ } from "../../signals/projects/project-selected-agent.ts";
-import { locateProjectFolder$ } from "../../signals/projects/project-navigation.ts";
+import { locateProject$ } from "../../signals/projects/project-navigation.ts";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { Link } from "../router/link.tsx";
 export function ProjectReference({
@@ -11,7 +11,7 @@ export function ProjectReference({
   className?: string;
 }) {
   const agent = useLastResolved(projectCreationAgentId$);
-  const locate = useSet(locateProjectFolder$);
+  const locate = useSet(locateProject$);
   return (
     <Link
       pathname="/projects/:projectId"
@@ -23,7 +23,7 @@ export function ProjectReference({
       }}
       onClick={(event) => {
         if (shouldHandleLinkClick(event)) {
-          // The mention locates a folder without leaving the conversation.
+          // The mention locates the Project without leaving the conversation.
           event.preventDefault();
           locate(part.projectId);
         }

@@ -4944,8 +4944,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -4956,7 +4954,6 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",

@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
 import { createNewChatThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import { searchParams$ } from "../route.ts";
-import { expandProject$ } from "./project-folders.ts";
+import { expandProject$ } from "./project-expansion.ts";
 import { waitForProjectCreation$ } from "./projects.ts";
 
 export const newProjectThread$ = command(

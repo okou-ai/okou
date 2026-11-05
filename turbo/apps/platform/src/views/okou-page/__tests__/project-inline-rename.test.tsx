@@ -21,20 +21,23 @@ const projectId = "30000000-0000-4000-8000-000000000071";
 const otherProjectId = "30000000-0000-4000-8000-000000000072";
 const at = "2026-11-02T00:00:00.000Z";
 
-function folder(id = projectId) {
+// A Project's own row holds its trigger, actions and rename field.
+function projectRow(id = projectId) {
   const element = document.querySelector<HTMLElement>(
-    `[data-project-folder-id="${id}"]`,
+    `[data-project-row-id="${id}"]`,
   );
   if (!element) {
-    throw new Error("Project folder not found");
+    throw new Error("Project not found");
   }
   return element;
 }
 
-function folderButton(name: string, id = projectId) {
-  const element = queryAllByRoleFast("button", folder(id)).find((button) => {
-    return button.textContent?.trim() === name;
-  });
+function projectButton(name: string, id = projectId) {
+  const element = queryAllByRoleFast("button", projectRow(id)).find(
+    (button) => {
+      return button.textContent?.trim() === name;
+    },
+  );
   if (!element) {
     throw new Error(`Project button ${name} not found`);
   }
@@ -105,20 +108,20 @@ async function setupProjects({
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  expect(folderButton("Launch")).toBeInTheDocument();
+  expect(projectButton("Launch")).toBeInTheDocument();
   return { current, other };
 }
 
 function findNameField() {
-  return within(folder()).findByRole("textbox", { name: "Project name" });
+  return within(projectRow()).findByRole("textbox", { name: "Project name" });
 }
 
 test("Double-click a Project to select its name and save it in place with Enter", async () => {
   const user = userEvent.setup();
   await setupProjects();
-  expect(folderButton("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(projectButton("Launch")).toHaveAttribute("aria-expanded", "true");
 
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
 
   const input = await findNameField();
   expect(input).toHaveValue("Launch");
@@ -126,21 +129,28 @@ test("Double-click a Project to select its name and save it in place with Enter"
   await user.keyboard("  Launch plan  {Enter}");
 
   await waitFor(() => {
-    expect(folderButton("Launch plan")).toHaveFocus();
+    expect(projectButton("Launch plan")).toHaveFocus();
   });
-  expect(folderButton("Launch plan")).toHaveAttribute("aria-expanded", "true");
-  expect(within(folder()).getByText("Launch planning")).toBeInTheDocument();
-  expect(within(folder()).queryByRole("textbox")).not.toBeInTheDocument();
+  expect(projectButton("Launch plan")).toHaveAttribute("aria-expanded", "true");
+  expect(
+    document.querySelector(
+      `[data-project-row-id="${projectId}"] [data-sidebar-chat-thread-id]`,
+    ),
+  ).toHaveTextContent("Launch planning");
+  expect(within(projectRow()).queryByRole("textbox")).not.toBeInTheDocument();
 
   // A normal click still owns folding after focus returns from the editor.
-  click(folderButton("Launch plan"));
-  expect(folderButton("Launch plan")).toHaveAttribute("aria-expanded", "false");
+  click(projectButton("Launch plan"));
+  expect(projectButton("Launch plan")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
 });
 
 test("Leaving a Project's name to open another conversation still saves it", async () => {
   const user = userEvent.setup();
   const { other } = await setupProjects({ confirmedName: "Launch confirmed" });
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
   await findNameField();
   await user.keyboard("Launch revised");
 
@@ -165,9 +175,9 @@ test("Leaving a Project's name to open another conversation still saves it", asy
   releaseToken.resolve();
 
   await waitFor(() => {
-    expect(folderButton("Launch confirmed")).toBeInTheDocument();
+    expect(projectButton("Launch confirmed")).toBeInTheDocument();
   });
-  expect(within(folder()).queryByRole("textbox")).not.toBeInTheDocument();
+  expect(within(projectRow()).queryByRole("textbox")).not.toBeInTheDocument();
 });
 
 test("Hiding the chat list from the name field saves it without reopening the editor", async () => {
@@ -176,7 +186,7 @@ test("Hiding the chat list from the name field saves it without reopening the ed
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
   );
   await setupProjects({ confirmedName: "Hidden launch confirmed" });
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
   await findNameField();
   await user.keyboard("Hidden launch{Meta>}b{/Meta}");
 
@@ -186,35 +196,35 @@ test("Hiding the chat list from the name field saves it without reopening the ed
   click(await screen.findByLabelText("Show chat list"));
 
   await waitFor(() => {
-    expect(folderButton("Hidden launch confirmed")).toBeInTheDocument();
+    expect(projectButton("Hidden launch confirmed")).toBeInTheDocument();
   });
-  expect(within(folder()).queryByRole("textbox")).not.toBeInTheDocument();
+  expect(within(projectRow()).queryByRole("textbox")).not.toBeInTheDocument();
 });
 
 test("Escape and an empty Project name retain its previous name and return focus", async () => {
   const user = userEvent.setup();
   await setupProjects();
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
   await findNameField();
   await user.keyboard("Discarded{Escape}");
 
   await waitFor(() => {
-    expect(folderButton("Launch")).toHaveFocus();
+    expect(projectButton("Launch")).toHaveFocus();
   });
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
   await findNameField();
   await user.keyboard("   {Enter}");
 
   await waitFor(() => {
-    expect(folderButton("Launch")).toHaveFocus();
+    expect(projectButton("Launch")).toHaveFocus();
   });
-  expect(within(folder()).queryByRole("textbox")).not.toBeInTheDocument();
+  expect(within(projectRow()).queryByRole("textbox")).not.toBeInTheDocument();
 });
 
 test("Project names keep Enter and Escape with the input method while composing", async () => {
   const user = userEvent.setup();
   await setupProjects();
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
   const input = await findNameField();
 
   expect(fireEvent.keyDown(input, { key: "Enter", keyCode: 229 })).toBeFalsy();
@@ -223,19 +233,19 @@ test("Project names keep Enter and Escape with the input method while composing"
 
   await user.keyboard("发布计划{Enter}");
   await waitFor(() => {
-    expect(folderButton("发布计划")).toHaveFocus();
+    expect(projectButton("发布计划")).toHaveFocus();
   });
 });
 
 test("Renaming another Project saves the previous edit without changing its target", async () => {
   const user = userEvent.setup();
   await setupProjects();
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
   await findNameField();
   await user.keyboard("Launch plan");
 
-  await user.dblClick(folderButton("Research", otherProjectId));
-  const input = await within(folder(otherProjectId)).findByRole("textbox", {
+  await user.dblClick(projectButton("Research", otherProjectId));
+  const input = await within(projectRow(otherProjectId)).findByRole("textbox", {
     name: "Project name",
   });
   expect(input).toHaveValue("Research");
@@ -243,23 +253,23 @@ test("Renaming another Project saves the previous edit without changing its targ
   await user.keyboard("Research plan{Enter}");
 
   await waitFor(() => {
-    expect(folderButton("Research plan", otherProjectId)).toHaveFocus();
-    expect(folderButton("Launch plan")).toBeInTheDocument();
+    expect(projectButton("Research plan", otherProjectId)).toHaveFocus();
+    expect(projectButton("Launch plan")).toBeInTheDocument();
   });
 });
 
-test("Modified double-clicks retain folder activation without starting a rename", async () => {
+test("Modified double-clicks retain Project activation without starting a rename", async () => {
   const user = userEvent.setup();
   await setupProjects();
 
   for (const modifier of ["Alt", "Control", "Meta", "Shift"]) {
     await user.keyboard(`{${modifier}>}`);
-    await user.dblClick(folderButton("Launch"));
+    await user.dblClick(projectButton("Launch"));
     await user.keyboard(`{/${modifier}}`);
-    expect(folderButton("Launch")).toHaveAttribute("aria-expanded", "true");
-    expect(within(folder()).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(projectButton("Launch")).toHaveAttribute("aria-expanded", "true");
+    expect(within(projectRow()).queryByRole("textbox")).not.toBeInTheDocument();
   }
 
-  await user.dblClick(folderButton("Launch"));
+  await user.dblClick(projectButton("Launch"));
   await expect(findNameField()).resolves.toHaveValue("Launch");
 });

@@ -10,39 +10,40 @@ import {
   type ChatThreadVirtualListScrollAlign,
 } from "../okou-page/sidebar-state.ts";
 import {
-  currentChatThreadListIds$,
-  currentChatThreadListSignals$,
-  unreadChatThreads$,
+  currentChatThreadList$,
+  unreadChatThreadListSignals$,
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
+import type {
+  ChatThreadListRow,
+  ThreadChatThreadListRow,
+} from "./chat-thread-list-rows.ts";
 import {
   sidebarChatThreadItemSignalsRegistry$,
   type SidebarChatThreadItemSignals,
 } from "./sidebar-chat-thread-item.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
+import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
 
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
 
-export const unreadSidebarChatThreadList$ = computed(async (get) => {
-  const threads = await get(unreadChatThreads$);
-  const threadIds = threads.map((thread) => {
-    return thread.id;
-  });
-  return {
-    items: get(sidebarChatThreadItemSignalsRegistry$).reconcile(threadIds),
-  };
-});
+export type SidebarChatThreadRow =
+  | Exclude<ChatThreadListRow, ThreadChatThreadListRow>
+  | (ThreadChatThreadListRow & {
+      readonly signals: SidebarChatThreadItemSignals;
+    });
 
 export interface SidebarChatThreadWindow {
   readonly startIndex: number;
-  readonly items: readonly SidebarChatThreadItemSignals[];
+  readonly rows: readonly SidebarChatThreadRow[];
   readonly showAllChatsRow: boolean;
 }
 
 export interface SidebarChatThreadListSignals {
   readonly count$: Computed<number>;
   readonly rowCount$: Computed<number>;
+  readonly rows$: Computed<readonly SidebarChatThreadRow[]>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly window$: Computed<SidebarChatThreadWindow>;
@@ -81,22 +82,55 @@ type SidebarChatThreadDomSignals = ReturnType<
   typeof createSidebarChatThreadDomSignals
 >;
 
+function attachItemSignals(
+  rows: readonly ChatThreadListRow[],
+  items: readonly SidebarChatThreadItemSignals[],
+): readonly SidebarChatThreadRow[] {
+  let itemIndex = 0;
+  return rows.map((row): SidebarChatThreadRow => {
+    if (row.kind !== "thread") {
+      return row;
+    }
+    const signals = items[itemIndex];
+    itemIndex += 1;
+    if (signals?.threadId !== row.threadId) {
+      throw new Error("Chat rows and their item signals diverged");
+    }
+    return { ...row, signals };
+  });
+}
+
+// The sidebar's unread list is short and renders every row, so it skips the
+// virtual window and keeps its own loading state.
+export const unreadSidebarChatThreadRows$ = computed(async (get) => {
+  const list = await get(unreadChatThreadListSignals$);
+  return attachItemSignals(
+    get(list.rows$),
+    get(sidebarChatThreadItemSignalsRegistry$).reconcile(
+      get(list.navigation$).listedThreadIds,
+    ),
+  );
+});
+
 function createSidebarChatThreadViewportSignals(
   domSignals: SidebarChatThreadDomSignals,
   list: ChatThreadListSignals,
   showAllChatsRow: boolean,
   rowHeight: number,
 ): SidebarChatThreadListSignals {
-  const itemSignals$ = computed((get) => {
-    return get(sidebarChatThreadItemSignalsRegistry$).reconcile(
-      get(list.threadIds$),
+  const rows$ = computed((get): readonly SidebarChatThreadRow[] => {
+    return attachItemSignals(
+      get(list.rows$),
+      get(sidebarChatThreadItemSignalsRegistry$).reconcile(
+        get(list.navigation$).listedThreadIds,
+      ),
     );
   });
   const rowCount$ = computed((get) => {
-    return get(itemSignals$).length + (showAllChatsRow ? 1 : 0);
+    return get(list.count$) + (showAllChatsRow ? 1 : 0);
   });
   const window$ = computed((get): SidebarChatThreadWindow => {
-    const itemSignals = get(itemSignals$);
+    const rows = get(rows$);
     const rowCount = get(rowCount$);
     const scrollViewport = get(domSignals.scrollViewport$);
     const scrollMetrics = get(domSignals.scrollMetrics$);
@@ -120,24 +154,21 @@ function createSidebarChatThreadViewportSignals(
             startIndex + CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE,
           ),
         );
-    const threadCount = itemSignals.length;
 
     return {
       startIndex,
-      items: itemSignals.slice(
-        startIndex,
-        Math.min(resolvedEndIndex, threadCount),
-      ),
+      rows: rows.slice(startIndex, Math.min(resolvedEndIndex, rows.length)),
       showAllChatsRow:
         showAllChatsRow &&
-        startIndex <= threadCount &&
-        resolvedEndIndex > threadCount,
+        startIndex <= rows.length &&
+        resolvedEndIndex > rows.length,
     };
   });
 
   return {
     count$: list.count$,
     rowCount$,
+    rows$,
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
     window$,
@@ -193,7 +224,7 @@ function createScrollListToIndexCommand(
 }
 
 export function createSidebarChatThreadScrollSignals({
-  source$ = currentChatThreadListSignals$,
+  source$ = currentChatThreadList$,
   rowHeight = CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
   restoreScrollPosition = false,
 }: {
@@ -206,7 +237,9 @@ export function createSidebarChatThreadScrollSignals({
   // adds its own synchronous virtual window over that list.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
     const showAllChatsRow =
-      get(chatThreadOnlyArchived$) || get(chatThreadOnlyMuted$);
+      get(chatThreadOnlyUnread$) ||
+      get(chatThreadOnlyArchived$) ||
+      get(chatThreadOnlyMuted$);
     const list = await get(source$);
     return createSidebarChatThreadViewportSignals(
       domSignals,
@@ -227,10 +260,12 @@ export function createSidebarChatThreadScrollSignals({
     ) => {
       const threadId = typeof request === "string" ? request : request.threadId;
       const align = typeof request === "string" ? "top" : request.align;
-      const threadIds = await get(currentChatThreadListIds$);
+      const list = await get(list$);
       signal.throwIfAborted();
 
-      const index = threadIds.indexOf(threadId);
+      const index = get(list.rows$).findIndex((row) => {
+        return row.kind === "thread" && row.threadId === threadId;
+      });
       if (index === -1) {
         return false;
       }

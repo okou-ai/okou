@@ -1,5 +1,8 @@
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
-import { expandProject$, restoreProjectExpansion$ } from "./project-folders.ts";
+import {
+  expandProject$,
+  restoreProjectExpansion$,
+} from "./project-expansion.ts";
 import { now, nowDate } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
 import { projectsContract } from "@okouai/api-contracts/client/projects";
@@ -127,7 +130,7 @@ export const hydrateProjects$ = command(
     await set(restoreProjectExpansion$, signal);
     signal.throwIfAborted();
     // Cache hydration belongs to the session, not each route. Keep the current
-    // folders mounted while navigation catches up with the canonical stream.
+    // Projects mounted while navigation catches up with the canonical stream.
     if (get(owner.events$) === null) {
       const cached = await get(installedSharedDatabaseBridge$).query(
         {
