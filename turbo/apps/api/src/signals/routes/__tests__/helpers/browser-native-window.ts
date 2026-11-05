@@ -37,6 +37,7 @@ export function createNativeWindowProvider(context: TestContext) {
       readonly params: Readonly<Record<string, unknown>>;
       readonly sessionId?: string;
     }[];
+    connections: number;
     beforeNativeWindowReply?: (windowId: number) => Promise<void> | void;
     afterNativeWindowReply?: (windowId: number) => Promise<void> | void;
     beforeCloseWindowReply?: (windowId: number) => Promise<void> | void;
@@ -69,6 +70,7 @@ export function createNativeWindowProvider(context: TestContext) {
     windowErrors: new Map(),
     nativeWindowErrors: new Map(),
     commands: [],
+    connections: 0,
     bridgeAvailable: true,
     emptySnapshot: false,
     closeSucceeds: true,
@@ -199,6 +201,7 @@ export function createNativeWindowProvider(context: TestContext) {
     sessionId: string().optional(),
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
+    state.connections++;
     const sendResult = (
       id: number,
       result: unknown,

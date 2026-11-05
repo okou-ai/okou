@@ -11,26 +11,18 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   Record<string, FeatureSwitchKey | undefined>
 >({
-  "ahrefs\0oauth": FeatureSwitchKey.AhrefsConnector,
-  "bentoml\0api-token": FeatureSwitchKey.BentomlConnector,
-  "canva\0oauth": FeatureSwitchKey.CanvaConnector,
-  "deel\0oauth": FeatureSwitchKey.DeelConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
-  "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
-  "neon\0oauth": FeatureSwitchKey.NeonConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "reddit\0oauth": FeatureSwitchKey.RedditConnector,
   "spotify\0oauth": FeatureSwitchKey.SpotifyConnector,
-  "supabase\0oauth": FeatureSwitchKey.SupabaseConnector,
   "test-oauth\0api": FeatureSwitchKey.TestOauthConnector,
   "test-oauth\0api-token": FeatureSwitchKey.TestOauthConnector,
   "test-oauth\0oauth": FeatureSwitchKey.TestOauthConnector,
   "test-oauth-device\0api": FeatureSwitchKey.TestOauthConnector,
   "test-oauth-device\0oauth": FeatureSwitchKey.TestOauthConnector,
   "tiktok\0oauth": FeatureSwitchKey.TikTokOAuthConnector,
-  "zapier\0api-token": FeatureSwitchKey.ZapierConnector,
   "zoom\0oauth": FeatureSwitchKey.ZoomConnector,
 });
 

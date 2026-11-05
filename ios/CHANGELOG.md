@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.25.5](https://github.com/okou-ai/okou/compare/ios-v0.25.4...ios-v0.25.5) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ios:** animate voice composer expansion ([#45453](https://github.com/okou-ai/okou/issues/45453)) ([f3f57c7](https://github.com/okou-ai/okou/commit/f3f57c760101f080b294532b36f1f5a4556c099a))
+* **ios:** keep remote control icon neutral during sheet transitions ([#45448](https://github.com/okou-ai/okou/issues/45448)) ([852d563](https://github.com/okou-ai/okou/commit/852d5635416711f6cd56a7bbcf030b9db3ca5313))
+
+## [0.25.4](https://github.com/okou-ai/okou/compare/ios-v0.25.3...ios-v0.25.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ios:** align sidebar menu text and shorten mark all read ([#45446](https://github.com/okou-ai/okou/issues/45446)) ([93d8c4e](https://github.com/okou-ai/okou/commit/93d8c4e181604f652d43356c529c5ca1afd5d667))
+
 ## [0.25.3](https://github.com/okou-ai/okou/compare/ios-v0.25.2...ios-v0.25.3) (2026-11-05)
 
 

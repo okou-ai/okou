@@ -1118,7 +1118,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.48"
+version = "0.12.49"
 dependencies = [
  "chrono",
  "clap",
@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.29.2"
+version = "0.29.3"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -2202,6 +2202,7 @@ dependencies = [
  "tar",
  "tempfile",
  "ureq",
+ "uuid",
 ]
 
 [[package]]
@@ -4046,7 +4047,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.19"
+version = "0.244.21"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4120,7 +4121,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.19.16"
+version = "0.19.17"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4168,7 +4169,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.10.27"
+version = "0.10.28"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4193,7 +4194,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.66"
+version = "0.17.67"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4224,7 +4225,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4256,7 +4257,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.16.11"
+version = "0.16.12"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4300,7 +4301,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.14"
+version = "0.31.15"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4401,7 +4402,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.8.30"
+version = "0.8.31"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4445,7 +4446,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.38"
+version = "0.21.39"
 dependencies = [
  "api-contracts",
  "async-trait",

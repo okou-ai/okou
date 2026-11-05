@@ -3,8 +3,6 @@ import { randomUUID } from "node:crypto";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   customConnectorsContract,
@@ -19,7 +17,6 @@ import { connectorCheckRoutes } from "../connector-check";
 import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddApi } from "./helpers/api-bdd";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
@@ -37,10 +34,9 @@ const routes = Object.freeze([
   ...connectorAccountRoutes,
   ...customConnectorsRoutes,
   ...customConnectorsValuesSetRoutes,
-  ...featureSwitchesRoutes,
 ]);
 
-test("respects catalog discovery feature switches for saved accounts", async () => {
+test("lists saved BentoML accounts", async () => {
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
   const app = setupApp({ context, routes });
   await accept(
@@ -58,21 +54,13 @@ test("respects catalog discovery feature switches for saved accounts", async () 
     }),
     [200],
   );
-  const switches = app(featureSwitchesContract);
-  const client = app(connectedConnectorsContract);
-  for (const enabled of [false, true, false]) {
-    await accept(
-      switches.update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.BentomlConnector]: enabled } },
-      }),
-      [200],
-    );
-    const listed = await accept(client.list({ headers }), [200]);
-    expect(listed.body.builtinConnectors).toStrictEqual(
-      enabled ? [expect.objectContaining({ slug: "bentoml" })] : [],
-    );
-  }
+  const listed = await accept(
+    app(connectedConnectorsContract).list({ headers }),
+    [200],
+  );
+  expect(listed.body.builtinConnectors).toStrictEqual([
+    expect.objectContaining({ slug: "bentoml" }),
+  ]);
 });
 
 test("requires authentication and an organization", async () => {

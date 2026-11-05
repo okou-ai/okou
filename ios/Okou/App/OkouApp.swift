@@ -278,6 +278,9 @@ private struct WorkspaceRootView: View {
                   workflowSource: store.composerWorkflows, agentID: store.selectedAgentID,
                   placeholder: String(localized: "Message \(store.currentAgentName)"))
               }
+              .animation(
+                reduceMotion ? nil : .easeInOut(duration: 0.22),
+                value: store.newComposer.voice?.phase)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

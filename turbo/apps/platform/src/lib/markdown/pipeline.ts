@@ -18,7 +18,6 @@ import {
 } from "../rehype-mermaid.ts";
 import { findHexRgbColors } from "./hex-rgb-color.ts";
 import { createCjkEmphasisExtension } from "./cjk-emphasis.ts";
-import { markEmailQuoteAddresses } from "./email-quote.ts";
 import { createMarkdownMathContext } from "./math.ts";
 import { rehypeRewriteHandle } from "./uiw-nodes.ts";
 
@@ -512,7 +511,5 @@ export function parseMarkdownTree(
   const processor = unified().use(rehypeRaw).use(rehypePlugins(options));
   const parsed = processor.runSync(tree, source);
   math?.embed(parsed);
-  postProcess(parsed);
-  markEmailQuoteAddresses(parsed);
-  return parsed;
+  return postProcess(parsed);
 }

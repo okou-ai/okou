@@ -792,28 +792,6 @@
     "versionFileCount": 1
   },
   {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/canva",
-    "name": "canva",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/canva/b38ed0e91fd2c91a79cac9507bd55369fe054b8d81a828ddd7f6fd7777b705f5",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/canva",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/canva",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 8372,
-    "storageId": "61829132-6a0d-4172-b5ee-177621f68610",
-    "frontmatter": {
-      "name": "canva",
-      "description": "Canva API for design creation. Use when user mentions \"Canva\", \"create design\", \"Canva template\", or asks about design graphics."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/canva",
-    "storageSize": 2316,
-    "versionHash": "b38ed0e91fd2c91a79cac9507bd55369fe054b8d81a828ddd7f6fd7777b705f5",
-    "versionSize": 2316,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/chatwoot",
     "name": "chatwoot",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/chatwoot/c2490be60868a6001d80031a6275419c8e65e150368cb7a5155af044c27bc244",

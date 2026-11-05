@@ -38,7 +38,19 @@ interface QueuedFrame {
 }
 
 async function decodeImage(data: string): Promise<DecodedFrame> {
-  const bytes = (Uint8Array as BrowserByteArrayConstructor).fromBase64(data);
+  const byteArray = Uint8Array as BrowserByteArrayConstructor;
+  let bytes: Uint8Array<ArrayBuffer>;
+  if (byteArray.fromBase64) {
+    bytes = byteArray.fromBase64(data);
+  } else {
+    // CDP sends standard base64. Keep this path until the supported browser
+    // floor supplies fromBase64; modern browsers retain native decoding.
+    const binary = atob(data);
+    bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+  }
   // Decode actual bytes: late frames may still use the previous capture format.
   const image = await createImageBitmap(new Blob([bytes]));
   return {

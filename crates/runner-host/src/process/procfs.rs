@@ -421,22 +421,13 @@ async fn scan_proc_cmdlines_with_reader(
     #[cfg(test)] task_submissions: Option<&std::sync::atomic::AtomicUsize>,
 ) -> ProcCmdlineScan {
     let proc_root = proc_root.to_path_buf();
-    let cancel_on_drop = cancel.clone().drop_guard();
-
-    #[cfg(test)]
-    if let Some(task_submissions) = task_submissions {
-        task_submissions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    let result = tokio::task::spawn_blocking(move || {
-        scan_proc_cmdlines_blocking(&proc_root, entry_reader, &cancel)
-    })
-    .await;
-    let _cancel = cancel_on_drop.disarm();
-    match result {
-        Ok(scan) => scan,
-        Err(error) => std::panic::resume_unwind(error.into_panic()),
-    }
+    crate::blocking::run_cancellable_blocking(
+        cancel,
+        move |cancel| scan_proc_cmdlines_blocking(&proc_root, entry_reader, cancel),
+        #[cfg(test)]
+        task_submissions,
+    )
+    .await
 }
 
 fn scan_proc_cmdlines_blocking(

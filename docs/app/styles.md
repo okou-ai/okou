@@ -251,7 +251,7 @@ The preset also supplies `--primary-400`, because one filled control reads that 
 
 `--brand-text`, `--brand-text-hover` and `--brand-subtle` are the interface's
 accent text and its wash: links, ghost and link button labels, highlighted
-icons, the slash marker, quest counters and the text selection. A preset
+icons, the slash marker and quest counters. A preset
 repoints all three at its own hue, because an Amber accent under a blue or pink
 palette read as a second colour system. A preset has a single anchor and no
 ramp, so the stops are built the way `--nav-copy` is — the preset's hue at a
@@ -263,6 +263,18 @@ follows the preset without an override of its own. Reach for
 `text-selected-foreground` for the label of a control that carries
 `aria-pressed` or a selected state on the primary wash, and for
 `text-brand-text` for other accent text.
+
+Text selection has its own token, `--selection`, read only by the global
+`::selection` rule with `--foreground` as the label. The wash above sits at the
+selected row's lightness, so a highlighted range on the current chat read as
+unselected. `--selection` is set to stay visible on the selected row in Light
+and Dark: the shared values (an Amber stop in Light, a lifted brown in Dark)
+live in `globals.css`, and the App stylesheet gives the gradient palettes a
+shared stop on their hue. HSL lightness is not perceptual, so a palette whose
+hue reads too light or too dark at that stop supplies
+`--okou-color-theme-selection` or `--okou-color-theme-selection-dark` in its
+own block, and the shared stop reads it with its own value as the default.
+The label keeps at least 4.5:1 on the fill in every palette.
 
 The brand neutrals — `brand-charcoal`, `brand-dark-gray`, `brand-gray`,
 `brand-silver`, `brand-light-gray` and `brand-off-white` — are the neutral

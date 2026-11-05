@@ -26,6 +26,7 @@ function mockViewer(
   windowId?: number,
   unavailableTargets?: readonly string[],
   extensionAvailable = true,
+  nativeBase64 = true,
 ) {
   const session: BrowserSession = {
     threadId,
@@ -52,6 +53,7 @@ function mockViewer(
   };
   const cdpUrl = "wss://browser.example/interactions";
   const browser = mockBrowserCdp(context, cdpUrl, {
+    nativeBase64,
     extensionAvailable,
     unavailableTargets,
     targets: [
@@ -85,8 +87,8 @@ function mockViewer(
   return browser;
 }
 
-async function setupViewer(windowId?: number) {
-  const browser = mockViewer(windowId);
+async function setupViewer(windowId?: number, nativeBase64 = true) {
+  const browser = mockViewer(windowId, undefined, true, nativeBase64);
   await setupPage({ context, path: `/browsers/${threadId}` });
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
@@ -581,17 +583,21 @@ test("A created tab with a failed first image retries the image without creating
   expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
 });
 
-test("Submitting an address navigates the selected remote page", async () => {
-  const browser = await setupViewer(0);
-  const address = screen.getByLabelText("Address");
-  await fill(address, "example.test/path");
-  await userEvent.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(address).toHaveValue("http://example.test/path");
-  });
-  expect(browser.targets[0]?.url).toBe("http://example.test/path");
-  expect(browser.targets[1]?.url).toBe("https://other.example.com");
-});
+test.each([true, false])(
+  "Submitting an address navigates the selected remote page (native base64: %s)",
+  async (nativeBase64) => {
+    const browser = await setupViewer(0, nativeBase64);
+    const address = screen.getByLabelText("Address");
+    await fill(address, "example.test/path");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://example.test/path");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(browser.targets[0]?.url).toBe("http://example.test/path");
+    expect(browser.targets[1]?.url).toBe("https://other.example.com");
+  },
+);
 
 test("An address submission waits for its navigation receipt across its own document change", async () => {
   const browser = await setupViewer(0);

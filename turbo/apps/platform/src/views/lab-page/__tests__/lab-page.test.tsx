@@ -175,9 +175,7 @@ test("Maintainer filters narrow the feature list", async () => {
   expect(
     featureSwitchRow(FeatureSwitchKey.PresentationConvert),
   ).toBeInTheDocument();
-  expect(
-    screen.queryByText(FeatureSwitchKey.AhrefsConnector),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByText(FeatureSwitchKey.Banking)).not.toBeInTheDocument();
   const maintainerCount = screen.getAllByRole("switch").length;
   expect(maintainerCount).toBeLessThan(totalCount);
   expect(
@@ -188,16 +186,13 @@ test("Maintainer filters narrow the feature list", async () => {
   await user.click(all);
 
   expect(all).toHaveAttribute("aria-pressed", "true");
-  expect(
-    screen.getByText(FeatureSwitchKey.AhrefsConnector),
-  ).toBeInTheDocument();
+  expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
   expect(screen.getAllByRole("switch")).toHaveLength(totalCount);
 });
 
 test.each([
   [FeatureSwitchKey.TestOauthConnector, false],
   [FeatureSwitchKey.Dummy, true],
-  [FeatureSwitchKey.ChatEmailQuote, false],
   [FeatureSwitchKey.MarkdownCjkEmphasis, true],
 ] as const)(
   "Toggle and reset a Lab override: %s",

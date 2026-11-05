@@ -25,6 +25,7 @@ import type {
 } from "@okouai/api-contracts/contracts/suggestions";
 import {
   Button,
+  buttonVariants,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -39,12 +40,12 @@ import {
   type AgentSuggestionEntry,
   agentSuggestionFeedItems$,
   submitAgentSuggestionFeedback$,
-  suggestionFeedbackConfirmation$,
   suggestionFeedbackReasonOpen$,
-  closeSuggestionFeedback$,
+  closeSettledSuggestion$,
   openSuggestionFeedbackReason$,
   undoSuggestionFeedback$,
   saveSuggestionFeedbackReason$,
+  type SuggestionOutcome,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
   agentSuggestionComposerItem$,
@@ -55,7 +56,9 @@ import {
 } from "../../signals/okou-page/agent-suggestions.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { Link } from "../router/link.tsx";
 import { ChatComposer } from "./chat-composer.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 
@@ -167,33 +170,68 @@ function SuggestionFeedbackReason({
   );
 }
 
-function SuggestionFeedbackNotice() {
+function CloseSettledSuggestion({
+  entry,
+}: {
+  readonly entry: AgentSuggestionEntry;
+}) {
   const { t } = useTranslation();
-  const last = useGet(suggestionFeedbackConfirmation$);
-  const reasonOpen = useGet(suggestionFeedbackReasonOpen$);
+  const close = useSet(closeSettledSuggestion$);
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      size="icon-xs"
+      showTooltip
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.closeFeedback;
+      })}
+      onClick={() => {
+        close(entry);
+      }}
+    >
+      <X />
+    </Button>
+  );
+}
+
+/** Rows below the waiting cards keep their card's title to stay identifiable. */
+function SettledSuggestionTitle({ title }: { readonly title: string }) {
+  return (
+    <p className="mt-1 truncate pl-6 text-xs leading-5 text-muted-foreground">
+      {title}
+    </p>
+  );
+}
+
+function SuggestionFeedbackNotice({
+  entry,
+  feedback,
+}: {
+  readonly entry: AgentSuggestionEntry;
+  readonly feedback: Extract<SuggestionOutcome, { type: "feedback" }>;
+}) {
+  const { t } = useTranslation();
+  const reasonOpen = useGet(suggestionFeedbackReasonOpen$) === entry;
   const openReason = useSet(openSuggestionFeedbackReason$);
-  const close = useSet(closeSuggestionFeedback$);
   const undo = useSet(undoSuggestionFeedback$);
   const save = useSet(saveSuggestionFeedbackReason$);
   const signal = useGet(pageSignal$);
-  if (!last) {
-    return null;
-  }
   const message =
-    last.kind === "already_done"
+    feedback.kind === "already_done"
       ? t(($) => {
           return $.chat.agentSuggestions.doneRecorded;
         })
-      : last.kind === "not_planned"
+      : feedback.kind === "not_planned"
         ? t(($) => {
             return $.chat.agentSuggestions.notPlannedRecorded;
           })
-        : last.kind === "less_like_this"
+        : feedback.kind === "less_like_this"
           ? t(
               ($) => {
                 return $.chat.agentSuggestions.lessRecorded;
               },
-              { scope: last.item.feedbackScope.label },
+              { scope: entry.item.feedbackScope.label },
             )
           : t(($) => {
               return $.chat.agentSuggestions.dismissRecorded;
@@ -213,38 +251,26 @@ function SuggestionFeedbackNotice() {
           variant="quiet"
           size="sm"
           onClick={() => {
-            detach(undo(signal), Reason.DomCallback);
+            detach(undo(entry, signal), Reason.DomCallback);
           }}
         >
           {t(($) => {
             return $.chat.agentSuggestions.undoFeedback;
           })}
         </Button>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          showTooltip
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.closeFeedback;
-          })}
-          onClick={() => {
-            close();
-          }}
-        >
-          <X />
-        </Button>
+        <CloseSettledSuggestion entry={entry} />
       </div>
-      {last.kind !== "dismissed" && !reasonOpen && (
+      <SettledSuggestionTitle title={entry.item.title} />
+      {feedback.kind !== "dismissed" && !reasonOpen && (
         <Button
           type="button"
           variant="quiet"
           size="sm"
           onClick={() => {
-            openReason();
+            openReason(entry);
           }}
         >
-          {last.reasonSaved
+          {feedback.reasonSaved
             ? t(($) => {
                 return $.chat.agentSuggestions.editReason;
               })
@@ -255,14 +281,91 @@ function SuggestionFeedbackNotice() {
       )}
       {reasonOpen && (
         <SuggestionFeedbackReason
-          feedbackId={last.id}
-          initialNote={last.note}
+          feedbackId={feedback.id}
+          initialNote={feedback.note}
           onSave={(note) => {
-            detach(save(note, signal), Reason.DomCallback);
+            detach(save(entry, note, signal), Reason.DomCallback);
           }}
         />
       )}
     </div>
+  );
+}
+
+function SuggestionSentNotice({
+  entry,
+  threadId,
+}: {
+  readonly entry: AgentSuggestionEntry;
+  readonly threadId: string | null;
+}) {
+  const { t } = useTranslation();
+  const sending = useLoadable(entry.sending$);
+  const failed = threadId === null && sending.state === "hasError";
+  return (
+    <div className="rounded-xl border border-border bg-card p-3">
+      <div className="flex items-center gap-2">
+        {threadId === null && !failed ? (
+          <Loader2
+            aria-hidden
+            className="size-4 shrink-0 animate-spin text-muted-foreground"
+          />
+        ) : failed ? (
+          <X aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <Check
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground"
+          />
+        )}
+        <p
+          role={failed ? "alert" : "status"}
+          className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground"
+        >
+          {failed
+            ? sending.error instanceof Error
+              ? sending.error.message
+              : t(($) => {
+                  return $.global.errors.requestFailed;
+                })
+            : threadId === null
+              ? t(($) => {
+                  return $.chat.agentSuggestions.sending;
+                })
+              : t(($) => {
+                  return $.chat.agentSuggestions.messageSent;
+                })}
+        </p>
+        {threadId !== null && (
+          <Link
+            pathname={ROUTES.chat}
+            options={{ pathParams: { threadId } }}
+            className={buttonVariants({ variant: "quiet", size: "sm" })}
+          >
+            {t(($) => {
+              return $.chat.agentSuggestions.openChat;
+            })}
+            <ArrowRight aria-hidden />
+          </Link>
+        )}
+        <CloseSettledSuggestion entry={entry} />
+      </div>
+      <SettledSuggestionTitle title={entry.item.title} />
+    </div>
+  );
+}
+
+function SettledSuggestion({
+  entry,
+  outcome,
+}: {
+  readonly entry: AgentSuggestionEntry;
+  readonly outcome: SuggestionOutcome;
+}) {
+  return outcome.type === "feedback" ? (
+    <SuggestionFeedbackNotice entry={entry} feedback={outcome} />
+  ) : (
+    <SuggestionSentNotice entry={entry} threadId={outcome.threadId} />
   );
 }
 
@@ -531,7 +634,6 @@ function AgentSuggestionCard({
 export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(agentSuggestionFeedItems$);
-  const feedback = useGet(suggestionFeedbackConfirmation$);
   const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
   const finish = useSet(finishAgentSuggestionComposer$);
   const signal = useGet(pageSignal$);
@@ -539,8 +641,8 @@ export function AgentSuggestions() {
     detach(
       openComposer(
         item,
-        () => {
-          detach(finish(item, signal), Reason.DomCallback);
+        (threadId) => {
+          detach(finish(item, threadId, signal), Reason.DomCallback);
         },
         signal,
       ),
@@ -556,18 +658,19 @@ export function AgentSuggestions() {
         return $.chat.agentSuggestions.label;
       })}
     >
+      {/* Handled cards follow the waiting ones in the order handled. */}
       <ul className="flex flex-col gap-4">
-        {result.data.map((item) => {
+        {result.data.map(({ entry, outcome }) => {
           return (
             <li
-              key={item.id}
+              key={entry.item.id}
               className="@container/suggestion relative min-w-0"
             >
-              {feedback?.item.id === item.id ? (
-                <SuggestionFeedbackNotice />
+              {outcome ? (
+                <SettledSuggestion entry={entry} outcome={outcome} />
               ) : (
                 <AgentSuggestionCard
-                  item={item}
+                  item={entry.item}
                   onCustomDirection={openCustomDirection}
                 />
               )}

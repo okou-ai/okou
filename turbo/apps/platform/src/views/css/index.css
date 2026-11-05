@@ -807,6 +807,9 @@ body {
   --okou-color-theme-ambient-companion: 12.8%;
   --okou-color-theme-ambient-anchor-dark: 4.6%;
   --okou-color-theme-ambient-companion-dark: 4.5%;
+  /* Yellow reads light at any HSL lightness; the shared selection stop
+     washes out on the selected row, so this palette takes a deeper one. */
+  --okou-color-theme-selection: 54.5 60% 72%;
 }
 
 /* Raspberry, not a pure red: a red anchor lands within about 11deg of OKLCH
@@ -855,6 +858,8 @@ body {
   --okou-color-theme-ambient-companion: 25.8%;
   --okou-color-theme-ambient-anchor-dark: 15.1%;
   --okou-color-theme-ambient-companion-dark: 4.4%;
+  /* Blue at the shared dark selection stop sinks into the dark row. */
+  --okou-color-theme-selection-dark: 221.3 40% 40%;
 }
 
 /* 78% lightness: around 74% neither label clears Lc 60 (white 50, Ink 55). */
@@ -871,6 +876,8 @@ body {
   --okou-color-theme-ambient-companion: 10.3%;
   --okou-color-theme-ambient-anchor-dark: 6%;
   --okou-color-theme-ambient-companion-dark: 6.9%;
+  /* See Blue horizon. */
+  --okou-color-theme-selection-dark: 232 45% 42%;
 }
 
 [data-color-theme="deep-lagoon"] {
@@ -1020,9 +1027,10 @@ body {
   }
 }
 
-/* Global selection color */
+/* Global selection color. See `--selection` in the UI tokens; a colour
+   palette supplies its own further down. */
 ::selection {
-  background-color: hsl(var(--brand-subtle));
+  background-color: hsl(var(--selection));
   color: hsl(var(--foreground));
 }
 
@@ -1629,7 +1637,7 @@ details > summary {
 
   /* Accent text and its wash on the palette's own hue. Every consumer of these
      is interface accent — links, highlighted icons, the slash marker, quest
-     counters, the selection highlight — not the brand mark, so an Amber value
+     counters — not the brand mark, so an Amber value
      here read as a second colour system under a blue or pink palette. A preset
      supplies one anchor and no ramp, so the text stop is built the way
      `--nav-copy` is: the preset's hue at a fixed saturation and a lightness
@@ -1639,6 +1647,16 @@ details > summary {
   --brand-text: var(--okou-color-theme-hue) 55% 28%;
   --brand-text-hover: var(--okou-color-theme-hue) 55% 22%;
   --brand-subtle: var(--okou-color-theme-hue) 55% 94%;
+
+  /* Selected text. The wash above sits within about 2 OKLab ΔE of the selected
+     sidebar row under every palette, so a highlighted range read
+     as unselected (inline rename on the current chat was the visible case).
+     This stop clears 6.5 ΔE against the selected row on every palette and
+     keeps the text above 8:1. */
+  --selection: var(
+    --okou-color-theme-selection,
+    var(--okou-color-theme-hue) 65% 82%
+  );
 
   --gray-0: var(--okou-color-theme-hue) 100% 99.5%;
   --gray-50: var(--okou-color-theme-hue) 38% 98.2%;
@@ -1683,6 +1701,12 @@ details > summary {
   --brand-text: var(--okou-color-theme-hue) 72% 80%;
   --brand-text-hover: var(--okou-color-theme-hue) 72% 88%;
   --brand-subtle: var(--okou-color-theme-hue) 25% 22%;
+  /* See the light note: at least 6.5 ΔE from the selected row, with the text
+     above 5.5:1. */
+  --selection: var(
+    --okou-color-theme-selection-dark,
+    var(--okou-color-theme-hue) 35% 30%
+  );
 
   --gray-0: var(--okou-color-theme-hue) 5% 10.8%;
   --gray-50: var(--okou-color-theme-hue) 5% 14%;

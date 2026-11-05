@@ -22,7 +22,7 @@ struct ComposerConnectorSheet: View {
           NavigationLink {
             ComposerRemoteControls(store: store)
           } label: {
-            OkouRowLabel("Computers & browser", okouSymbol: "monitor")
+            OkouRowLabel("Remote control", okouSymbol: "monitor")
           }
         }
         Section {

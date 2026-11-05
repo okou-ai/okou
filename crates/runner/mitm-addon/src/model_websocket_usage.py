@@ -185,12 +185,13 @@ def _observe_server_lifecycle(
                 _lifecycle_ambiguity_reason(lifecycle),
             )
             return
-        if lifecycle.response_id in state.ignored_response_diagnostics:
-            # A retained ID only proves duplicate terminal ownership. Reusing it
-            # at a new created boundary cannot be correlated safely.
-            _mark_correlation_ambiguous(flow, state, "invalid_lifecycle")
-            return
-        if state.pending_intent is None or state.active_intent is not None:
+        # A retained ID only proves duplicate terminal ownership. Reusing it
+        # at a new created boundary cannot be correlated safely.
+        if (
+            lifecycle.response_id in state.ignored_response_diagnostics
+            or state.pending_intent is None
+            or state.active_intent is not None
+        ):
             _mark_correlation_ambiguous(flow, state, "invalid_lifecycle")
             return
         state.active_intent = state.pending_intent
@@ -218,10 +219,9 @@ def _observe_server_lifecycle(
             state.active_intent is None
             and state.pending_intent is not None
             and lifecycle.response_id not in state.ignored_response_diagnostics
+        ) or (
+            state.active_intent is not None and lifecycle.response_id != state.active_response_id
         ):
-            _mark_correlation_ambiguous(flow, state, "invalid_lifecycle")
-            return
-        if state.active_intent is not None and lifecycle.response_id != state.active_response_id:
             _mark_correlation_ambiguous(flow, state, "invalid_lifecycle")
         return
     if not lifecycle.is_valid and (
@@ -351,28 +351,21 @@ def feed_usage(
             and (
                 prewarm_state.pending_intent is not None or prewarm_state.active_intent is not None
             )
-        ):
-            if not has_message_id:
-                if lifecycle is None or not lifecycle.is_terminal:
-                    _mark_correlation_ambiguous(
-                        flow,
-                        prewarm_state,
-                        "invalid_lifecycle",
-                    )
-            elif prewarm_state.active_intent is not None:
-                active_id = prewarm_state.active_response_id
-                if active_id != message_id or lifecycle is None or not lifecycle.is_terminal:
-                    _mark_correlation_ambiguous(
-                        flow,
-                        prewarm_state,
-                        "invalid_lifecycle",
-                    )
-            elif lifecycle is None or not lifecycle.is_terminal:
-                _mark_correlation_ambiguous(
-                    flow,
-                    prewarm_state,
-                    "invalid_lifecycle",
+            and (
+                (
+                    has_message_id
+                    and prewarm_state.active_intent is not None
+                    and prewarm_state.active_response_id != message_id
                 )
+                or lifecycle is None
+                or not lifecycle.is_terminal
+            )
+        ):
+            _mark_correlation_ambiguous(
+                flow,
+                prewarm_state,
+                "invalid_lifecycle",
+            )
 
     if not suppressed and usage_result:
         if lifecycle is None or not lifecycle.is_terminal:

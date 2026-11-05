@@ -73,6 +73,7 @@ struct ChatComposerView: View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
       if let voice = draftState?.voice, voice.error != nil || voiceActive {
         ComposerVoiceInputTray(voice: voice)
+          .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
       }
       // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
       // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
@@ -275,6 +276,7 @@ struct ChatComposerView: View {
           ? sendTransition?.composerAnimation : nil,
         value: hasText)
     }
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
     .padding(.horizontal, OkouSpace.lg)
     .padding(.top, OkouSpace.sm)
     .padding(.bottom, isFocused ? 8 : 0)

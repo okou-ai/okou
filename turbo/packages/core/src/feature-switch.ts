@@ -210,13 +210,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatEmailQuote]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat email quote",
-    description: "Offer a Quote action from the email Mail icon in chat.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatThreadInlineRename]: {
     maintainer: "tongx@okou.ai",
     displayName: "Inline chat rename",
@@ -252,26 +245,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Test-only feature switch for flag system validation",
     enabled: true,
   },
-  [FeatureSwitchKey.AhrefsConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Ahrefs SEO connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.BentomlConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BentoML model serving connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.CanvaConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Canva design connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.DeelConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Deel HR connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
@@ -282,24 +255,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Mercury banking connector",
     enabled: false,
   },
-  [FeatureSwitchKey.NeonConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Neon serverless Postgres connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.GarminConnectConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Garmin Connect wellness connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Reddit connector integration",
-    enabled: false,
-  },
-  [FeatureSwitchKey.SupabaseConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Supabase database connector integration",
     enabled: false,
   },
   [FeatureSwitchKey.PayPalConnector]: {
@@ -359,12 +317,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Codex execution (test only)",
     description:
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
-    enabled: false,
-  },
-  [FeatureSwitchKey.ZapierConnector]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Enable the Zapier connector. When disabled, Zapier is hidden from the connectors list and cannot be connected.",
     enabled: false,
   },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
