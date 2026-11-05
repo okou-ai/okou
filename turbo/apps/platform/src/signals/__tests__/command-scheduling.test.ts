@@ -1,8 +1,7 @@
 import { command } from "ccstate";
 import { expect, test } from "vitest";
 import { mockNow } from "../../lib/time.ts";
-import { debounceCommand, throttleCommand } from "../command-scheduling.ts";
-import { resetSignal } from "../utils.ts";
+import { debounceCommand, resetSignal, throttleCommand } from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
 
 const context = testContext();

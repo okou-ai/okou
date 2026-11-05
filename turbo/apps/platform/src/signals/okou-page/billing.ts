@@ -43,7 +43,11 @@ import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
 import { isOrgAdmin$ } from "../org.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
-import { settle, withCleanup } from "../utils.ts";
+import {
+  settle,
+  trackAsyncResource,
+  type TrackedAsyncResource,
+} from "../utils.ts";
 import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
 import {
   setUsagePackMigrationPreview$,
@@ -379,26 +383,6 @@ export const setConcurrencyTargetQuantity$ = command(
     });
   },
 );
-/** Track whether a ccstate-owned async load is still available for joining. */
-interface TrackedAsyncResource<T> {
-  readonly pending: () => boolean;
-  readonly promise: Promise<T>;
-}
-
-function trackAsyncResource<T>(promise: Promise<T>): TrackedAsyncResource<T> {
-  let pending = true;
-  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-  const trackedPromise = withCleanup(promise, () => {
-    pending = false;
-  });
-  return {
-    pending: () => {
-      return pending;
-    },
-    promise: trackedPromise,
-  };
-}
-
 const billingStatusResource$ = computed(
   (get): TrackedAsyncResource<BillingStatusResponse> => {
     get(billingReload$);

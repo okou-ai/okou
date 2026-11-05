@@ -6,11 +6,24 @@ RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const ruleTester = new RuleTester();
+const ruleTester = new RuleTester({
+  linterOptions: { reportUnusedDisableDirectives: "error" },
+});
 const filename = "/project/turbo/apps/platform/src/signals/feature/action.ts";
+const utilsFilename = "/project/turbo/apps/platform/src/signals/utils.ts";
 
 ruleTester.run("no-best-effort", rule, {
   valid: [
+    {
+      filename: utilsFilename,
+      code: "export async function bestEffort(operation) { return await operation; } function other(bestEffort) { return bestEffort(); }",
+    },
+    {
+      filename: utilsFilename,
+      code: `export async function bestEffort(operation) { return await operation; }
+// eslint-disable-next-line @rule-tester/no-best-effort -- Legacy 20261029: existing bestEffort only; do not add new usages.
+const result = bestEffort(operation);`,
+    },
     {
       filename,
       code: 'import * as utils from "../utils.ts"; export type DeferredFactory = typeof utils.createDeferredPromise; export const isAbort = utils.isAbortError;',
@@ -79,6 +92,11 @@ const result = bestEffort(operation, callback);`,
     },
   ],
   invalid: [
+    {
+      filename: utilsFilename,
+      code: "export async function bestEffort(operation) { return await operation; } export function moved(operation) { return bestEffort(operation); }",
+      errors: [{ messageId: "noBestEffort" }],
+    },
     {
       filename,
       code: 'import { bestEffort } from "../utils.ts"; type Callback = typeof bestEffort; bestEffort(operation, callback);',

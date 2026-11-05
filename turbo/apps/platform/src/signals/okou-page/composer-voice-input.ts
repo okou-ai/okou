@@ -4,7 +4,12 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { logger } from "../log.ts";
-import { onRef, resetSignal, settle } from "../utils.ts";
+import {
+  onRef,
+  resetSignal,
+  settle,
+  withVoiceDraftFailureToast,
+} from "../utils.ts";
 import {
   readVoiceDraftRecording,
   createVoiceDraftRecording,
@@ -45,22 +50,13 @@ export interface ComposerVoiceInputOwner {
 
 // Local audio/storage failures need a recovery message. API errors belong to
 // accept and must propagate directly to the action's loadable.
-async function withVoiceDraftFailureToast<T>(
-  operation: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-  const result = await settle(operation, signal);
-  if (result.ok) {
-    return result.value;
-  }
-  L.error("Voice draft transcription failed", result.error);
+function reportVoiceDraftFailure(error: unknown): void {
+  L.error("Voice draft transcription failed", error);
   toast.error(
     i18n.t(($) => {
       return $.chat.voice.transcriptionFailed;
     }),
   );
-  throw result.error;
 }
 function createVoiceDraftData(draftTarget: string) {
   const storageKey$ = computed(async (get): Promise<string> => {
@@ -211,6 +207,7 @@ function createVoiceDraftMutations(
     signal.throwIfAborted();
     await withVoiceDraftFailureToast(
       deleteVoiceDraftRecording(key, recording.id),
+      reportVoiceDraftFailure,
       signal,
     );
     signal.throwIfAborted();
@@ -228,6 +225,7 @@ function createVoiceDraftMutations(
     const id = crypto.randomUUID();
     const recording = await withVoiceDraftFailureToast(
       createVoiceDraftRecording(key, id),
+      reportVoiceDraftFailure,
       signal,
     );
     signal.throwIfAborted();
@@ -258,12 +256,17 @@ function createVoiceDraftMutations(
         },
         signal,
       ),
+      reportVoiceDraftFailure,
       signal,
     );
     signal.throwIfAborted();
   });
   const finish$ = command(async ({ set }, signal: AbortSignal) => {
-    await withVoiceDraftFailureToast(set(capture.finish$, signal), signal);
+    await withVoiceDraftFailureToast(
+      set(capture.finish$, signal),
+      reportVoiceDraftFailure,
+      signal,
+    );
     signal.throwIfAborted();
     await set(transcribe$, signal);
   });

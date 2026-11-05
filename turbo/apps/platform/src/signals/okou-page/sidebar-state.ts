@@ -1,7 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { debounceCommand } from "../command-scheduling.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { onRef, resetSignal } from "../utils.ts";
+import { debounceCommand, onRef, resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
 import { openCreateAgentDialog$ } from "./jobs-page.ts";
 

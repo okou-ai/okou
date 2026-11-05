@@ -6,8 +6,8 @@ import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { currentUserInfo$ } from "./auth.ts";
-import { throttleCommand } from "./command-scheduling.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
+import { throttleCommand } from "./utils.ts";
 
 export function createSharedThreadVisibilitySignals(id: string) {
   const reload$ = state(0);
