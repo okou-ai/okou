@@ -2,9 +2,19 @@ import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import {
   draggingProjectThread$,
   endProjectThreadDrag$,
+  moveDraggedProjectThread$,
   PROJECT_THREAD_DRAG_TYPE,
+  projectThreadDragEventsRef$,
   startProjectThreadDrag$,
 } from "../../signals/projects/project-thread-drag.ts";
+import {
+  ProjectCreateButton,
+  ProjectRow,
+  ProjectStatusRow,
+  type ProjectRowLayout,
+} from "../projects/project-row.tsx";
+import { ProjectThreadDragHint } from "../projects/project-thread-drag-hint.tsx";
+import { useProjectThreadDropTarget } from "../projects/project-thread-drop-target.tsx";
 import {
   openProjectMembership$,
   projectDialog$,
@@ -76,13 +86,13 @@ import {
   type NewChatThreadPane,
 } from "../../signals/chat-page/optimistic-chat-thread-page.ts";
 import {
-  unreadSidebarChatThreadList$,
+  unreadSidebarChatThreadRows$,
   type SidebarChatThreadListSignals,
+  type SidebarChatThreadRow,
   type SidebarChatThreadScrollSignals,
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type {
-  SidebarProjectContext,
   SidebarChatThreadIndicatorState,
   SidebarChatThreadItemSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
@@ -143,19 +153,6 @@ function chatThreadMenuContentClassName(touch: boolean) {
   return cn(
     "min-w-56 whitespace-nowrap",
     touch && "[&_[role=menuitem]]:min-h-11",
-  );
-}
-
-function equalSidebarChatThreadWindows(
-  previous: SidebarChatThreadWindow,
-  next: SidebarChatThreadWindow,
-): boolean {
-  return (
-    previous.startIndex === next.startIndex &&
-    previous.showAllChatsRow === next.showAllChatsRow &&
-    equalArrays(previous.items, next.items, (left, right) => {
-      return left === right;
-    })
   );
 }
 
@@ -427,7 +424,7 @@ function ChatThreadMenuButton({
       variant="quiet"
       size="icon-2xs"
       className={cn(
-        `group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
+        `group/thread-menu pointer-events-auto absolute left-1 top-1 rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
           hasRestingIndicator
             ? ""
             : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
@@ -615,12 +612,10 @@ function ChatThreadItemLink({
   signals,
   shortcutNumber,
   touch,
-  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   touch: boolean;
-  projectContext?: SidebarProjectContext;
 }) {
   const { t } = useTranslation();
   const title = useGet(signals.title$);
@@ -645,12 +640,6 @@ function ChatThreadItemLink({
       pathname="/chats/:threadId"
       options={{
         pathParams: { threadId: signals.threadId },
-        searchParams: projectContext
-          ? new URLSearchParams({
-              project: projectContext.projectId,
-              projectAgent: projectContext.agentId,
-            })
-          : undefined,
       }}
       aria-current={isCurrentPage ? "page" : undefined}
       data-sidebar-chat-thread-id={signals.threadId}
@@ -669,7 +658,7 @@ function ChatThreadItemLink({
         if (e.metaKey || e.ctrlKey || e.shiftKey) {
           return;
         }
-        if (select(e.altKey ? "sidebar" : "main", projectContext)) {
+        if (select(e.altKey ? "sidebar" : "main")) {
           e.preventDefault();
         }
       }}
@@ -832,13 +821,11 @@ export function ChatThreadItem({
   shortcutNumber,
   rowIndex,
   touch = false,
-  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   rowIndex: number;
   touch?: boolean;
-  projectContext?: SidebarProjectContext;
 }) {
   return (
     <div
@@ -849,7 +836,6 @@ export function ChatThreadItem({
         signals={signals}
         shortcutNumber={shortcutNumber}
         touch={touch}
-        projectContext={projectContext}
       />
       <ChatThreadItemRename signals={signals} touch={touch} />
       <div
@@ -1143,46 +1129,21 @@ function VirtualizedChatThreads({
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
   const rowCount = useGet(listSignals.rowCount$);
-  const threadCount = useGet(listSignals.count$);
-  const window = useGet(listSignals.window$, {
-    equalityFn: equalSidebarChatThreadWindows,
-  });
-  const startIndex = window.startIndex;
-  const visibleItems = window.items;
+  const count = useGet(listSignals.count$);
 
-  // Only chat rows have a fixed height. Keep the filter action in normal flow
+  // Only list rows have a fixed height. Keep the filter action in normal flow
   // so its divider and spacing remain reachable at the end of a long list.
   return (
     <div ref={setShortcutRoot} className="w-full">
-      <div
-        className="relative w-full"
-        data-testid="sidebar-chat-threads-virtual-list"
-        style={{ height: threadCount * CHAT_THREAD_VIRTUAL_ROW_HEIGHT }}
-      >
-        {visibleItems.map((signals, visibleOffset) => {
-          const index = startIndex + visibleOffset;
-          return (
-            <div
-              key={signals.threadId}
-              data-index={index}
-              data-testid="sidebar-chat-thread-virtual-row"
-              className="absolute left-0 top-0 w-full pb-1"
-              style={{
-                transform: `translateY(${index * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}px)`,
-              }}
-            >
-              <ChatThreadItem
-                signals={signals}
-                rowIndex={index}
-                shortcutNumber={
-                  !searchOpen && index < 9 ? index + 1 : undefined
-                }
-              />
-            </div>
-          );
-        })}
-      </div>
-      {rowCount > threadCount ? <ShowAllChatsRow /> : null}
+      <ChatThreadListRows
+        listSignals={listSignals}
+        rowHeight={CHAT_THREAD_VIRTUAL_ROW_HEIGHT}
+        touch={false}
+        layout="sidebar"
+        shortcuts={!searchOpen}
+        height={count * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}
+      />
+      {rowCount > count ? <ShowAllChatsRow /> : null}
     </div>
   );
 }
@@ -1197,12 +1158,12 @@ function ChatThreads({
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const threadCount = useGet(listSignals.count$);
+  const rowCount = useGet(listSignals.count$);
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
 
-  if (threadCount === 0) {
+  if (rowCount === 0) {
     const showAllChats = {
       filter: "all",
       label: t(($) => {
@@ -1568,7 +1529,7 @@ function ChatThreadsTitle({
           onClick={() => {
             setCollapsed(!collapsed);
           }}
-          className="h-8 min-w-0 flex-1 cursor-pointer justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
+          className="h-8 min-w-0 flex-1 justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
         >
           <span className="min-w-0 truncate">{titleLabel}</span>
           <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
@@ -1583,6 +1544,7 @@ function ChatThreadsTitle({
         </span>
       )}
       <div className="flex items-center gap-0.5">
+        <ProjectCreateButton />
         <NewChatThreadButton />
         <ChatThreadsListMenu showMarkAllRead={showMarkAllRead} />
       </div>
@@ -1645,18 +1607,18 @@ function ChatThreadsContent({
 }
 
 function UnreadChatThreadScrollMarker({
-  items,
+  rows,
   scrollSignals,
 }: {
-  items: readonly SidebarChatThreadItemSignals[];
+  rows: readonly SidebarChatThreadRow[];
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const currentThreadId = useGet(currentChatThreadId$);
   const scrollCurrentChatThreadOnRef = useSet(
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
-  const listed = items.some((item) => {
-    return item.threadId === currentThreadId;
+  const listed = rows.some((row) => {
+    return row.kind === "thread" && row.threadId === currentThreadId;
   });
 
   return currentThreadId && listed ? (
@@ -1674,21 +1636,21 @@ function UnreadChatThreadsContent({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const { t } = useTranslation();
-  const list = useLastLoadable(unreadSidebarChatThreadList$);
+  const rows = useLastLoadable(unreadSidebarChatThreadRows$);
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
 
-  if (list.state === "loading") {
+  if (rows.state === "loading") {
     return (
       <div className="flex flex-col gap-1">
         <ChatThreadsSkeleton />
       </div>
     );
   }
-  if (list.state === "hasError") {
+  if (rows.state === "hasError") {
     return null;
   }
-  if (list.data.items.length === 0) {
+  if (rows.data.length === 0) {
     return (
       <ChatThreadListEmptyState
         message={t(($) => {
@@ -1707,20 +1669,17 @@ function UnreadChatThreadsContent({
   return (
     <div ref={setShortcutRoot} className="w-full">
       <UnreadChatThreadScrollMarker
-        items={list.data.items}
+        rows={rows.data}
         scrollSignals={scrollSignals}
       />
-      {list.data.items.map((signals, index) => {
-        return (
-          <div key={signals.threadId} className="pb-1">
-            <ChatThreadItem
-              signals={signals}
-              rowIndex={index}
-              shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
-            />
-          </div>
-        );
-      })}
+      <ChatThreadListRowsView
+        rows={rows.data}
+        startIndex={0}
+        rowHeight={null}
+        touch={false}
+        layout="sidebar"
+        shortcuts={!searchOpen}
+      />
       <ShowAllChatsRow />
     </div>
   );
@@ -1862,12 +1821,9 @@ export function ChatThreadsSection({
 }) {
   const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
-  const projectsEnabled = useGet(projectsEnabled$);
 
   return (
-    <div
-      className={cn("flex flex-col min-h-0 flex-1", !projectsEnabled && "mt-4")}
-    >
+    <div className="mt-4 flex min-h-0 flex-1 flex-col">
       <div className={contentClassName}>
         <ChatThreadsTitle
           key={agentScope ?? "no-agent"}
@@ -1884,5 +1840,241 @@ export function ChatThreadsSection({
         collapsible={collapsible}
       />
     </div>
+  );
+}
+
+function equalRows(
+  left: SidebarChatThreadRow,
+  right: SidebarChatThreadRow,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left.kind === "thread" && right.kind === "thread") {
+    return (
+      left.signals === right.signals &&
+      left.projectId === right.projectId &&
+      left.listIndex === right.listIndex &&
+      left.projectEnd === right.projectEnd
+    );
+  }
+  if (left.kind === "project" && right.kind === "project") {
+    return (
+      left.project === right.project &&
+      left.expanded === right.expanded &&
+      left.projectEnd === right.projectEnd
+    );
+  }
+  return (
+    left.kind === right.kind &&
+    left.key === right.key &&
+    left.projectEnd === right.projectEnd
+  );
+}
+
+function equalChatThreadListWindows(
+  previous: SidebarChatThreadWindow,
+  next: SidebarChatThreadWindow,
+): boolean {
+  return (
+    previous.startIndex === next.startIndex &&
+    previous.showAllChatsRow === next.showAllChatsRow &&
+    equalArrays(previous.rows, next.rows, equalRows)
+  );
+}
+
+function ChatThreadListRowContent({
+  row,
+  index,
+  touch,
+  layout,
+  shortcuts,
+}: {
+  row: SidebarChatThreadRow;
+  index: number;
+  touch: boolean;
+  layout: ProjectRowLayout;
+  shortcuts: boolean;
+}) {
+  if (row.kind === "project") {
+    return <ProjectRow row={row} touch={touch} layout={layout} />;
+  }
+  if (row.kind !== "thread") {
+    return <ProjectStatusRow row={row} layout={layout} />;
+  }
+  return (
+    <ChatThreadItem
+      signals={row.signals}
+      rowIndex={index}
+      // Number shortcuts address the chats outside Projects.
+      shortcutNumber={
+        shortcuts && row.listIndex !== null && row.listIndex < 9
+          ? row.listIndex + 1
+          : undefined
+      }
+      touch={touch}
+    />
+  );
+}
+
+function ChatThreadListRowFrame({
+  row,
+  index,
+  rowHeight,
+  touch,
+  moving,
+  moveHere,
+  children,
+}: {
+  row: SidebarChatThreadRow;
+  index: number;
+  /** Virtual rows are positioned by height; a static list stays in flow. */
+  rowHeight: number | null;
+  touch: boolean;
+  moving: boolean;
+  moveHere: (projectId: string) => void;
+  children: ReactNode;
+}) {
+  const drop = useProjectThreadDropTarget({
+    projectId: row.projectId,
+    touch,
+    moving,
+    moveHere,
+  });
+  return (
+    <div
+      {...drop.props}
+      data-index={index}
+      data-testid={
+        rowHeight === null ? undefined : "sidebar-chat-thread-virtual-row"
+      }
+      data-project-row-id={row.projectId ?? undefined}
+      data-project-drop-target={drop.targeted ? "" : undefined}
+      className={cn(
+        "w-full pb-1",
+        rowHeight !== null && "absolute left-0 top-0",
+        row.projectId !== null && row.kind !== "project" && "pl-6",
+        drop.targeted && "bg-state-hover",
+        drop.targeted && row.kind === "project" && "rounded-t-lg",
+        drop.targeted && row.projectEnd && "rounded-b-lg",
+      )}
+      style={
+        rowHeight === null
+          ? undefined
+          : { transform: `translateY(${index * rowHeight}px)` }
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+interface ChatThreadListRowsOptions {
+  touch: boolean;
+  layout: ProjectRowLayout;
+  shortcuts: boolean;
+}
+
+/**
+ * Projects with their expanded chats, then the chats outside Projects. Every
+ * row of a Project accepts a dragged chat for that Project.
+ */
+function ChatThreadListRowsView({
+  rows,
+  startIndex,
+  rowHeight,
+  height,
+  touch,
+  layout,
+  shortcuts,
+  children,
+}: ChatThreadListRowsOptions & {
+  rows: readonly SidebarChatThreadRow[];
+  startIndex: number;
+  rowHeight: number | null;
+  height?: number;
+  children?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
+  const signal = useGet(rootSignal$);
+  const dragEventsRef = useSet(projectThreadDragEventsRef$);
+  function moveHere(projectId: string) {
+    detach(move(projectId, signal), Reason.DomCallback);
+  }
+
+  return (
+    <>
+      <div
+        ref={touch ? undefined : dragEventsRef}
+        className={cn("w-full", rowHeight !== null && "relative")}
+        data-testid={
+          rowHeight === null ? undefined : "sidebar-chat-threads-virtual-list"
+        }
+        style={height === undefined ? undefined : { height }}
+      >
+        {rows.map((row, offset) => {
+          const index = startIndex + offset;
+          return (
+            <ChatThreadListRowFrame
+              key={row.key}
+              row={row}
+              index={index}
+              rowHeight={rowHeight}
+              touch={touch}
+              moving={moving.state === "loading"}
+              moveHere={moveHere}
+            >
+              <ChatThreadListRowContent
+                row={row}
+                index={index}
+                touch={touch}
+                layout={layout}
+                shortcuts={shortcuts}
+              />
+            </ChatThreadListRowFrame>
+          );
+        })}
+        {children}
+      </div>
+      {moving.state === "hasError" && (
+        <p role="alert" className="px-3 py-1 text-xs text-destructive">
+          {t(($) => {
+            return $.projects.moveError;
+          })}
+        </p>
+      )}
+      {!touch && <ProjectThreadDragHint />}
+    </>
+  );
+}
+
+/** The chat list's virtual window, at one fixed row height. */
+export function ChatThreadListRows({
+  listSignals,
+  rowHeight,
+  height,
+  children,
+  ...options
+}: ChatThreadListRowsOptions & {
+  listSignals: SidebarChatThreadListSignals;
+  rowHeight: number;
+  height: number;
+  /** Extra absolutely positioned rows that share the virtual geometry. */
+  children?: ReactNode;
+}) {
+  const window = useGet(listSignals.window$, {
+    equalityFn: equalChatThreadListWindows,
+  });
+  return (
+    <ChatThreadListRowsView
+      {...options}
+      rows={window.rows}
+      startIndex={window.startIndex}
+      rowHeight={rowHeight}
+      height={height}
+    >
+      {children}
+    </ChatThreadListRowsView>
   );
 }

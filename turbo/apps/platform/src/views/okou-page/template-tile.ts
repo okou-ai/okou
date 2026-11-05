@@ -27,8 +27,7 @@ export const TEMPLATE_CARD_SHADOW =
  * Its emphasis width is constant, including while transparent. The tile wrapper
  * owns the local stacking context; the overlay sits with the existing controls.
  */
-export const TEMPLATE_TILE_WRAPPER =
-  "group/tile relative isolate cursor-pointer";
+export const TEMPLATE_TILE_WRAPPER = "group/tile relative isolate";
 export const TEMPLATE_TILE_SELECTION_FRAME =
   "relative rounded-xl after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-xl after:border-(length:--border-width-emphasis) after:border-transparent";
 export const TEMPLATE_TILE_SELECTED = "after:border-primary";

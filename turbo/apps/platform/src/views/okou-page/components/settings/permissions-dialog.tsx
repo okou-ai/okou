@@ -534,7 +534,7 @@ function PermissionAllowDurationDropdown({
             className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium border-surface-border transition-colors ${
               saving
                 ? "cursor-default text-muted-foreground/50"
-                : "cursor-pointer text-muted-foreground hover:bg-state-hover hover:text-foreground"
+                : "text-muted-foreground hover:bg-state-hover hover:text-foreground"
             }`}
           />
         }

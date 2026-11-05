@@ -689,7 +689,7 @@ function NetworkLogRow({
   return (
     <>
       <TableRow
-        className="cursor-pointer"
+        className="cursor-default"
         onClick={(event) => {
           if (
             event.defaultPrevented ||

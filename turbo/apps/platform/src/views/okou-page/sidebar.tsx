@@ -55,7 +55,6 @@ import { OrgSwitcher, OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
-import { ProjectSidebar } from "../projects/project-sidebar.tsx";
 import { ChatThreadDialogs, ChatThreadsSection } from "./sidebar-threads.tsx";
 import {
   responsiveSidebarChatThreadScrollSignals,
@@ -396,7 +395,7 @@ function ExpandedManageSection() {
         size="sm"
         aria-expanded={!manageCollapsed}
         aria-controls={MANAGE_CONTENT_ID}
-        className="group flex h-8 w-full shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
+        className="group flex h-8 w-full shrink-0 items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
         onClick={() => {
           return setManageCollapsed(!manageCollapsed);
         }}
@@ -454,7 +453,6 @@ function ExpandedSidebarSections() {
       <div className="px-2">
         <PinnedAgentListSection />
       </div>
-      <ProjectSidebar touch />
       <ChatThreadsSection
         scrollSignals={responsiveSidebarChatThreadScrollSignals}
         contentClassName="px-2"
@@ -988,7 +986,6 @@ function ChatListColumn() {
         <div className={CHAT_LIST_INSET}>
           <PinnedAgentListSection layout="horizontal" />
         </div>
-        <ProjectSidebar />
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}

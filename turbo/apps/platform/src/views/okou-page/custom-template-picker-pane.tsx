@@ -449,7 +449,6 @@ function CustomTemplateCard({
           type="button"
           className={cn(
             CARD_MEDIA,
-            "cursor-pointer",
             template.kind === "document" ? "aspect-[4/3]" : "aspect-video",
           )}
           aria-label={t(

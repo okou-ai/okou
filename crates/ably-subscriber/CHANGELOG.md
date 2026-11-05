@@ -1,5 +1,7 @@
 # Changelog
 
+## [2.0.5](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.4...ably-subscriber-v2.0.5) (2026-11-05)
+
 ## [2.0.4](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.3...ably-subscriber-v2.0.4) (2026-11-01)
 
 

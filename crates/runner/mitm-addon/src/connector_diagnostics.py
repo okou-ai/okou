@@ -135,6 +135,14 @@ _CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON = "_connector_diagnostic_ownership_reason
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES = "_connector_diagnostic_ownership_candidates"
 
 _EMPTY_RESPONSE_STREAM_CHUNKS: tuple[bytes, ...] = ()
+_DISCARDED_RESPONSE_HEADER_NAMES = (
+    b"content-encoding",
+    b"content-length",
+    b"transfer-encoding",
+)
+_DISCARDED_RESPONSE_HEADER_NAME_LENGTHS = frozenset(
+    len(name) for name in _DISCARDED_RESPONSE_HEADER_NAMES
+)
 _GENERIC_AUTH_HEADER_NAMES = frozenset(
     (
         b"authorization",
@@ -840,9 +848,13 @@ def _replace_response_content(
     flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
     flow.metadata.pop(metadata_keys.STREAM_BUFFER, None)
     flow.metadata.pop(metadata_keys.STREAM_BUFFER_STATE, None)
-    for header in ("content-encoding", "content-length", "transfer-encoding"):
-        if header in flow.response.headers:
-            del flow.response.headers[header]
+    # Mapping membership and deletion decode values that we only need to discard.
+    flow.response.headers.fields = tuple(
+        field
+        for field in flow.response.headers.fields
+        if len(field[0]) not in _DISCARDED_RESPONSE_HEADER_NAME_LENGTHS
+        or field[0].lower() not in _DISCARDED_RESPONSE_HEADER_NAMES
+    )
     flow.response.trailers = None
     return _set_diagnostic_response_content(
         flow,

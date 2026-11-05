@@ -344,7 +344,7 @@ function ThreadMailSelection({
       />
       <label
         htmlFor={`mail-select-all-${thread.threadId}`}
-        className="cursor-pointer text-xs text-muted-foreground"
+        className="cursor-default text-xs text-muted-foreground"
       >
         {t(($) => {
           return $.chat.mail.manager.selectAll;

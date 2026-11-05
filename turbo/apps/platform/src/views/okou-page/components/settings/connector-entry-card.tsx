@@ -67,7 +67,6 @@ export function ConnectorEntryCard({
         surfaceVariants({ interactive }),
         "relative isolate flex flex-col text-left",
         showDescription && "overflow-hidden",
-        interactive && "cursor-pointer",
       )}
     >
       {action}

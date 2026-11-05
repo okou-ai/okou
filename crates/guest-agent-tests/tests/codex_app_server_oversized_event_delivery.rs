@@ -6,6 +6,7 @@ use guest_agent_tests as common;
 
 use base64::Engine as _;
 use guest_agent::masker::SecretMasker;
+use serde::{Serialize, ser::SerializeMap as _};
 use serde_json::Value;
 use std::{
     io::{BufWriter, Write},
@@ -25,6 +26,65 @@ enum CodexOutput<'a> {
     Image { image_url: &'a str },
     #[serde(rename = "input_text")]
     Text { text: &'a str },
+}
+
+// Keep independent original Values while encoding repeated child states once.
+struct DeliveryItem<'a>(&'a Value);
+
+impl Serialize for DeliveryItem<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let Some(fields) = self.0.as_object() else {
+            return self.0.serialize(serializer);
+        };
+        let mut object = serializer.serialize_map(Some(fields.len()))?;
+        for (key, value) in fields {
+            if key == "agentsStates"
+                && let Some(states) = value.as_object()
+            {
+                object.serialize_entry(key, &RepeatedStates(states))?;
+            } else {
+                object.serialize_entry(key, value)?;
+            }
+        }
+        object.end()
+    }
+}
+
+struct RepeatedStates<'a>(&'a serde_json::Map<String, Value>);
+
+impl Serialize for RepeatedStates<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let Some(first) = self
+            .0
+            .values()
+            .next()
+            .and_then(Value::as_object)
+            .filter(|fields| fields.values().all(Value::is_string))
+        else {
+            return self.0.serialize(serializer);
+        };
+        // Value equality ignores object order. Reuse only identical flat fields
+        // in the same order, including when preserve_order is enabled.
+        let same_state = |value: &Value| {
+            value
+                .as_object()
+                .is_some_and(|fields| first.keys().eq(fields.keys()) && first == fields)
+        };
+        if !self.0.values().skip(1).any(same_state) {
+            return self.0.serialize(serializer);
+        }
+        let canonical =
+            serde_json::value::to_raw_value(first).map_err(serde::ser::Error::custom)?;
+        let mut object = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in self.0 {
+            if same_state(value) {
+                object.serialize_entry(key, &canonical)?;
+            } else {
+                object.serialize_entry(key, value)?;
+            }
+        }
+        object.end()
+    }
 }
 
 fn image(url: &str) -> CodexOutput<'_> {
@@ -155,7 +215,13 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     // Batch escaped-string writes while retaining every canonical fixture byte.
     {
         let mut original_items = BufWriter::new(std::fs::File::create(&original_items_path)?);
-        serde_json::to_writer(&mut original_items, &delivery_items)?;
+        let items = delivery_items
+            .as_array()
+            .ok_or("delivery items must be an array")?
+            .iter()
+            .map(DeliveryItem)
+            .collect::<Vec<_>>();
+        serde_json::to_writer(&mut original_items, &items)?;
         original_items.flush()?;
     }
     let items_path = tmp.path().join("delivery-items.json");
@@ -539,7 +605,7 @@ fn collaboration_item(item_id: &str, child_count: usize, repetitions: usize) -> 
 
 #[test]
 fn owned_codex_collaboration_fixture_preserves_canonical_bytes() {
-    for (child_count, repetitions) in [(0, 0), (1, 2), (11, 3)] {
+    for (child_count, repetitions) in [(0, 0), (1, 2), (9, 3), (10, 3), (11, 3)] {
         let message = format!(
             "child-head-{SECRET}-{}-child-tail",
             "α\"\\\n".repeat(repetitions)
@@ -569,6 +635,26 @@ fn owned_codex_collaboration_fixture_preserves_canonical_bytes() {
             collaboration_item("fixture", child_count, repetitions).to_string(),
             expected.to_string()
         );
+        assert_eq!(
+            serde_json::to_string(&DeliveryItem(&collaboration_item(
+                "fixture",
+                child_count,
+                repetitions
+            )))
+            .unwrap(),
+            expected.to_string()
+        );
+    }
+    for item in [
+        Value::Null, serde_json::json!([]), serde_json::json!({}),
+        serde_json::json!({"agentsStates":{}}),
+        serde_json::json!({"extra":"你好\"\\\n\0", "agentsStates":null}),
+        serde_json::json!({"agentsStates":[{"message":"text"}], "extra":[null,true]}),
+        serde_json::json!({"agentsStates":{"a":{"message":true},"b":{"message":true}}}),
+        serde_json::from_str(r#"{"agentsStates":{"a":{"status":"x","message":"你好\"\\\n\u0000"},"b":{"message":"你好\"\\\n\u0000","status":"x"},"c":{"message":null},"d":{"message":""}}}"#).unwrap(),
+        serde_json::from_str(r#"{"agentsStates":{"a":{"nested":{"z":1,"a":2}},"b":{"nested":{"a":2,"z":1}}}}"#).unwrap(),
+    ] {
+        assert_eq!(serde_json::to_string(&DeliveryItem(&item)).unwrap(), item.to_string());
     }
 }
 

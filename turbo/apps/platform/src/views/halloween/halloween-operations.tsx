@@ -63,7 +63,7 @@ function Participant({
       </td>
       <td className="p-4 text-sm">
         <details>
-          <summary className="cursor-pointer">
+          <summary className="cursor-default">
             {p.rounds.length} {copy.rounds}
           </summary>
           <ul className="mt-2 space-y-2 text-xs">

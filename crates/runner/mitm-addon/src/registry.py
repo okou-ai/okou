@@ -283,6 +283,88 @@ def _builtin_firewall_catalog_cache_path() -> str | None:
     return registry_firewalls.configured_catalog_cache_path()
 
 
+def _classify_registry_sandbox_fields(
+    sandbox: object,
+) -> InvalidSandboxEntry | tuple[frozenset[str], frozenset[str]]:
+    """Classify raw fields before catalog resolution or batch publication."""
+    if not isinstance(sandbox, dict):
+        return InvalidSandboxEntry(
+            "invalid_sandbox_entry",
+            "proxy registry sandbox entry must be an object",
+        )
+
+    if "runId" not in sandbox:
+        return InvalidSandboxEntry(
+            "missing_run_id",
+            "proxy registry sandbox entry is missing runId",
+        )
+
+    run_id = sandbox["runId"]
+    if not isinstance(run_id, str):
+        return InvalidSandboxEntry(
+            "invalid_run_id",
+            "proxy registry sandbox entry runId must be a string",
+        )
+    if not run_id.strip():
+        return InvalidSandboxEntry(
+            "empty_run_id",
+            "proxy registry sandbox entry runId must be non-empty",
+        )
+    if run_id != run_id.strip():
+        return InvalidSandboxEntry(
+            "invalid_run_id",
+            "proxy registry sandbox entry runId must not include leading or trailing whitespace",
+        )
+
+    billable_firewalls = sandbox.get("billableFirewalls")
+    if not isinstance(billable_firewalls, list) or any(
+        not isinstance(firewall_name, str) for firewall_name in billable_firewalls
+    ):
+        return InvalidSandboxEntry(
+            "invalid_billable_firewalls",
+            "proxy registry sandbox entry billableFirewalls must be a list of strings",
+        )
+
+    if "cliAgentType" not in sandbox:
+        return InvalidSandboxEntry(
+            "missing_cli_agent_type",
+            "proxy registry sandbox entry is missing cliAgentType",
+        )
+
+    cli_agent_type = sandbox["cliAgentType"]
+    if not isinstance(cli_agent_type, str):
+        return InvalidSandboxEntry(
+            "invalid_cli_agent_type",
+            "proxy registry sandbox entry cliAgentType must be a string",
+        )
+    if not cli_agent_type:
+        return InvalidSandboxEntry(
+            "empty_cli_agent_type",
+            "proxy registry sandbox entry cliAgentType must be non-empty",
+        )
+
+    if (
+        "firewalls" in sandbox
+        and sandbox["firewalls"] is not None
+        and not isinstance(sandbox["firewalls"], list)
+    ):
+        return InvalidSandboxEntry(
+            "invalid_firewalls",
+            "proxy registry sandbox entry firewalls must be a list",
+        )
+
+    try:
+        explicit_omitted_builtins = _omitted_runtime_intents(sandbox, "omittedBuiltinFirewalls")
+        explicit_omitted_custom_ids = _omitted_runtime_intents(sandbox, "omittedCustomConnectorIds")
+    except ValueError as e:
+        return InvalidSandboxEntry("invalid_omitted_intents", str(e))
+    try:
+        _validate_connector_routing_variables(sandbox)
+    except (TypeError, ValueError) as e:
+        return InvalidSandboxEntry("invalid_connector_routing_variables", str(e))
+    return explicit_omitted_builtins, explicit_omitted_custom_ids
+
+
 def _classify_registry_sandboxes(
     raw_registry: dict,
     *,
@@ -305,98 +387,11 @@ def _classify_registry_sandboxes(
     omitted_builtin_firewalls: dict[str, frozenset[str]] = {}
     omitted_custom_connector_ids: dict[str, frozenset[str]] = {}
     for client_ip, sandbox in raw_registry.items():
-        if not isinstance(sandbox, dict):
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "invalid_sandbox_entry",
-                "proxy registry sandbox entry must be an object",
-            )
+        field_classification = _classify_registry_sandbox_fields(sandbox)
+        if isinstance(field_classification, InvalidSandboxEntry):
+            invalid_sandboxes[client_ip] = field_classification
             continue
-
-        if "runId" not in sandbox:
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "missing_run_id",
-                "proxy registry sandbox entry is missing runId",
-            )
-            continue
-
-        run_id = sandbox["runId"]
-        if not isinstance(run_id, str):
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "invalid_run_id",
-                "proxy registry sandbox entry runId must be a string",
-            )
-            continue
-        if not run_id.strip():
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "empty_run_id",
-                "proxy registry sandbox entry runId must be non-empty",
-            )
-            continue
-        if run_id != run_id.strip():
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "invalid_run_id",
-                "proxy registry sandbox entry runId must not include leading or "
-                "trailing whitespace",
-            )
-            continue
-
-        billable_firewalls = sandbox.get("billableFirewalls")
-        if not isinstance(billable_firewalls, list) or any(
-            not isinstance(firewall_name, str) for firewall_name in billable_firewalls
-        ):
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "invalid_billable_firewalls",
-                "proxy registry sandbox entry billableFirewalls must be a list of strings",
-            )
-            continue
-
-        if "cliAgentType" not in sandbox:
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "missing_cli_agent_type",
-                "proxy registry sandbox entry is missing cliAgentType",
-            )
-            continue
-
-        cli_agent_type = sandbox["cliAgentType"]
-        if not isinstance(cli_agent_type, str):
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "invalid_cli_agent_type",
-                "proxy registry sandbox entry cliAgentType must be a string",
-            )
-            continue
-        if not cli_agent_type:
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "empty_cli_agent_type",
-                "proxy registry sandbox entry cliAgentType must be non-empty",
-            )
-            continue
-
-        if (
-            "firewalls" in sandbox
-            and sandbox["firewalls"] is not None
-            and not isinstance(sandbox["firewalls"], list)
-        ):
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "invalid_firewalls",
-                "proxy registry sandbox entry firewalls must be a list",
-            )
-            continue
-
-        try:
-            explicit_omitted_builtins = _omitted_runtime_intents(sandbox, "omittedBuiltinFirewalls")
-            explicit_omitted_custom_ids = _omitted_runtime_intents(
-                sandbox, "omittedCustomConnectorIds"
-            )
-        except ValueError as e:
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry("invalid_omitted_intents", str(e))
-            continue
-        try:
-            _validate_connector_routing_variables(sandbox)
-        except (TypeError, ValueError) as e:
-            invalid_sandboxes[client_ip] = InvalidSandboxEntry(
-                "invalid_connector_routing_variables", str(e)
-            )
-            continue
+        explicit_omitted_builtins, explicit_omitted_custom_ids = field_classification
 
         raw_firewalls = sandbox.get("firewalls")
         sandbox_uses_builtin_catalog_dependency = isinstance(raw_firewalls, list) and any(

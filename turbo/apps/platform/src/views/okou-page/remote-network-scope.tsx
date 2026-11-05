@@ -111,7 +111,7 @@ export function RemoteNetworkScopeField({
           return (
             <label
               key={value}
-              className="flex cursor-pointer items-start gap-3 rounded-lg border border-divider p-3.5 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50 has-data-disabled:cursor-not-allowed has-data-disabled:opacity-50"
+              className="flex cursor-default items-start gap-3 rounded-lg border border-divider p-3.5 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50 has-data-disabled:cursor-not-allowed has-data-disabled:opacity-50"
             >
               <Radio
                 value={value}

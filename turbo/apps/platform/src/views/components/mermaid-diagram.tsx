@@ -113,7 +113,7 @@ export function MermaidDiagramView({
         )}
       </button>
       <details data-slot="mermaid-diagram-source">
-        <summary className="cursor-pointer text-muted-foreground text-[0.8125rem]">
+        <summary className="cursor-default text-muted-foreground text-[0.8125rem]">
           {t(($) => {
             return $.shared.mermaid.viewSource;
           })}

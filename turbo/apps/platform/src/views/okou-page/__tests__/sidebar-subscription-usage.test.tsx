@@ -98,10 +98,10 @@ test("Open subscriptions by clicking the rail and open Models in Settings", asyn
   const codex = within(panel).getByRole("region", { name: "ChatGPT usage" });
   const claude = within(panel).getByRole("region", { name: "Claude usage" });
   expect(
-    within(codex).getByRole("heading", { name: "ChatGPT Left side" }),
+    within(codex).getByRole("heading", { name: "ChatGPT" }),
   ).toBeInTheDocument();
   expect(
-    within(claude).getByRole("heading", { name: "Claude Right side" }),
+    within(claude).getByRole("heading", { name: "Claude" }),
   ).toBeInTheDocument();
   expect(within(codex).getAllByRole("meter")).toHaveLength(1);
   expect(within(claude).getAllByRole("meter")).toHaveLength(2);
@@ -126,9 +126,7 @@ test("Open subscriptions by clicking the rail and open Models in Settings", asyn
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  await user.hover(
-    within(claude).getByRole("heading", { name: "Claude Right side" }),
-  );
+  await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
   await waitFor(() => {
     expectVisibleText(
       formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),

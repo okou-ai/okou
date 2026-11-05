@@ -240,7 +240,7 @@ function GuidedSshConnectionName() {
   const setup = useGet(remoteSetup$);
   return (
     <details className="text-sm">
-      <summary className="w-fit cursor-pointer rounded-md py-1 text-muted-foreground hover:text-foreground">
+      <summary className="w-fit cursor-default rounded-md py-1 text-muted-foreground hover:text-foreground">
         {t(($) => {
           return $.remoteControlSetup.optionalName;
         })}
@@ -285,7 +285,7 @@ function GuidedSshAdvancedFields({
     editor.mode === "cloudflare_access" || editor.mode === "tailscale_ssh";
   return (
     <details>
-      <summary className="w-fit cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground">
+      <summary className="w-fit cursor-default rounded-md py-1 text-sm text-muted-foreground hover:text-foreground">
         {t(($) => {
           return $.remoteControlSetup.more;
         })}
@@ -1271,7 +1271,7 @@ function SshHostFields({
         <>
           <SshConnectionName connection={dialog.connection} />
           <details className="border-t border-divider pt-4">
-            <summary className="cursor-pointer text-sm font-medium">
+            <summary className="cursor-default text-sm font-medium">
               {t(($) => {
                 return $.remoteControlSetup.connectionSettings;
               })}
@@ -1677,7 +1677,7 @@ export function SshHostCard({
     <article className="grid gap-4">
       <SshHostOverview connection={connection} />
       <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer text-sm text-muted-foreground">
+        <summary className="cursor-default text-sm text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.securityAndPermissions;
           })}

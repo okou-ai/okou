@@ -118,8 +118,6 @@ type LaunchGatedDirectOkouCase = {
   // The authorization URL carries a PKCE challenge and the token exchange
   // replays the verifier.
   readonly pkce?: true;
-  // The provider rejects a redirect URI on the token request.
-  readonly omitsTokenRedirectUri?: true;
   // Webflow posts a JSON token request instead of a form body.
   readonly jsonTokenRequest?: true;
   // Datadog resolves its token host from a callback query parameter.
@@ -386,32 +384,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
             id: "figma-user-123",
             email: "figma@example.test",
             handle: "figma-test-user",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "garmin-connect",
-    label: "Garmin Connect",
-    clientEnvPrefix: "GARMIN_CONNECT",
-    authorizationEndpoint: "https://connect.garmin.com/oauth2Confirm",
-    tokenUrl: "https://diauth.garmin.com/di-oauth2-service/oauth/token",
-    pkce: true,
-    // Garmin Connect authenticates the exchange with the PKCE verifier and
-    // state instead of replaying the redirect URI.
-    omitsTokenRedirectUri: true,
-    tokenResponse: {
-      access_token: "garmin-connect-test-token",
-      refresh_token: "garmin-connect-refresh-token",
-      expires_in: 86_400,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://apis.garmin.com/wellness-api/rest/user/id", () => {
-          return HttpResponse.json({
-            userId: "garmin-user-123",
-            displayName: "Garmin Test User",
           });
         }),
       );
@@ -2212,16 +2184,10 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
 
       expect(location.origin).toBe("https://app.okou.ai");
       expect(location.pathname).toBe("/connector/success");
-      // A `null` expectation also proves Garmin Connect still replays no
-      // redirect URI on its token request.
-      const expectedTokenRedirectUri =
-        providerCase.omitsTokenRedirectUri === true ? null : redirectUri;
       const expectedCodeVerifier =
         providerCase.pkce === true ? pkceValue : null;
       expect(tokenBodies).toHaveLength(1);
-      expect(tokenBodies[0]?.get("redirect_uri")).toBe(
-        expectedTokenRedirectUri,
-      );
+      expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
       expect(tokenBodies[0]?.get("code_verifier")).toStrictEqual(
         expectedCodeVerifier,
       );

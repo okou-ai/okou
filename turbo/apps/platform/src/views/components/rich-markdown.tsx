@@ -137,7 +137,7 @@ function MediaImage({
   const showPlaceholder = imageStatus !== "loaded";
 
   const className =
-    "my-1 inline-grid aspect-[10/9] w-[200px] max-w-full cursor-pointer grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] align-top overflow-hidden rounded-lg border border-foreground/10 bg-muted/30";
+    "my-1 inline-grid aspect-[10/9] w-[200px] max-w-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] align-top overflow-hidden rounded-lg border border-foreground/10 bg-muted/30";
   const preview = (
     <>
       {showPlaceholder && (
