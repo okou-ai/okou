@@ -17,6 +17,7 @@ import {
 import { formatAppNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { ApiError } from "../../lib/api-error.ts";
 import { isNetworkRequestError } from "../../lib/network-error.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import {
@@ -32,29 +33,83 @@ import {
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
+import { threadComputerAccessVersion } from "./chat-thread-event-sourcing.ts";
 
 // One heartbeat per minute keeps an open browser panel comfortably inside its
 // ten-minute idle lease without making the lease itself stackable.
 const LEASE_HEARTBEAT_INTERVAL_MS = 60_000;
 const L = logger("BrowserHeartbeat");
+const AUTHORIZATION_OPTIONS = {
+  expectedErrors: { 403: ["BROWSER_AUTHORIZATION_REQUIRED"] },
+  showExpectedErrorToast: false,
+} as const;
+
+interface BrowserAuthorizationRequired {
+  readonly status: "unauthorized";
+}
+
+const UNAUTHORIZED = { status: "unauthorized" } as const;
+type BrowserSessionResult =
+  BrowserSession | BrowserAuthorizationRequired | null;
+
+export function isBrowserUnauthorized(
+  value: unknown,
+): value is BrowserAuthorizationRequired {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    value.status === "unauthorized"
+  );
+}
+
+function isBrowserAuthorizationError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.status === 403 &&
+    error.code === "BROWSER_AUTHORIZATION_REQUIRED"
+  );
+}
+
+async function browserAuthorizationResult<T>(
+  request: Promise<T>,
+): Promise<T | BrowserAuthorizationRequired> {
+  const [result] = await Promise.allSettled([request]);
+  if (result.status === "fulfilled") {
+    return result.value;
+  }
+  if (isBrowserAuthorizationError(result.reason)) {
+    return UNAUTHORIZED;
+  }
+  throw result.reason;
+}
+
+interface BrowserSessionLifetime {
+  readonly sessionOverride$: State<BrowserSessionResult | undefined>;
+  readonly leaseOverride$: State<BrowserSession | undefined>;
+}
 
 export interface BrowserSessionDescriptor {
   readonly threadId: string;
   readonly href: string;
 }
 
-export interface BrowserSessionPanelState {
-  readonly status: BrowserSession["status"];
-  readonly screenshotUrl: BrowserSession["screenshotUrl"];
-  readonly liveUrl: BrowserSession["liveUrl"];
-  readonly instanceId: string | undefined;
-  readonly windowId: number | undefined;
-}
+export type BrowserSessionPanelState =
+  | BrowserAuthorizationRequired
+  | {
+      readonly status: BrowserSession["status"];
+      readonly screenshotUrl: BrowserSession["screenshotUrl"];
+      readonly liveUrl: BrowserSession["liveUrl"];
+      readonly instanceId: string | undefined;
+      readonly windowId: number | undefined;
+    };
 
 export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   /** Load state of the session's screenshot thumbnail. */
   readonly screenshotImageLoad: ImageLoadSignals;
-  readonly session$: Computed<Promise<BrowserSession | null>>;
+  /** A new authorization grant owns a new native viewer, even for the same window. */
+  readonly authorizationScope$: Computed<string>;
+  readonly session$: Computed<Promise<BrowserSessionResult>>;
   readonly panelSession$: Computed<Promise<BrowserSessionPanelState | null>>;
   readonly viewerConnection$: Computed<
     Promise<
@@ -62,6 +117,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
           readonly requestedSession: BrowserSession;
         })
       | null
+      | BrowserAuthorizationRequired
     >
   >;
   readonly browser: BrowserSignals;
@@ -100,13 +156,20 @@ export function parseBrowserSessionUrl(
 async function fetchBrowserSession(
   createClient: ApiClientFactory,
   threadId: string,
-): Promise<BrowserSession | null> {
-  const response = await accept(
-    createClient(browserContract).get({
-      params: { threadId },
-    }),
-    [200, 404],
+): Promise<BrowserSessionResult> {
+  const response = await browserAuthorizationResult(
+    accept(
+      createClient(browserContract).get({
+        params: { threadId },
+      }),
+      [200, 404],
+      undefined,
+      AUTHORIZATION_OPTIONS,
+    ),
   );
+  if (isBrowserUnauthorized(response)) {
+    return response;
+  }
   return response.status === 200 ? response.body.browser : null;
 }
 
@@ -124,6 +187,7 @@ async function requestBrowserSessionLease(
       }),
       [200, 404, 409, 500, 502, 503, 504],
       signal,
+      AUTHORIZATION_OPTIONS,
     ),
   ]);
   signal.throwIfAborted();
@@ -132,6 +196,9 @@ async function requestBrowserSessionLease(
   }
   const error: unknown = lease.reason;
   throwIfAbort(error);
+  if (isBrowserAuthorizationError(error)) {
+    return UNAUTHORIZED;
+  }
   if (!isNetworkRequestError(error)) {
     throw error;
   }
@@ -152,7 +219,7 @@ function sameBrowserWindow(
 
 interface BrowserMutationSignalContext {
   readonly descriptor: BrowserSessionDescriptor;
-  readonly sessionOverride$: State<BrowserSession | null | undefined>;
+  readonly lifetime$: Computed<BrowserSessionLifetime>;
   readonly reload$: Command<void, []>;
   readonly connectionChanged$: BrowserSignals["connectionChanged$"];
 }
@@ -160,35 +227,53 @@ interface BrowserMutationSignalContext {
 function createStartBrowserSignals(
   {
     descriptor,
-    sessionOverride$,
+    lifetime$,
     reload$,
     connectionChanged$,
   }: BrowserMutationSignalContext,
   measureInitialDisplay$: BrowserSignals["measureInitialDisplay$"],
-  session$: Computed<Promise<BrowserSession | null>>,
+  session$: Computed<Promise<BrowserSessionResult>>,
 ): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const lifetime = get(lifetime$);
     const current = await get(session$);
     signal.throwIfAborted();
+    if (get(lifetime$) !== lifetime || isBrowserUnauthorized(current)) {
+      return;
+    }
     const initialDisplay =
       current?.status === "active" ? null : set(measureInitialDisplay$);
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    const started = await withCleanup(
-      accept(
-        get(apiClient$)(browserContract).open({
-          params: { threadId: descriptor.threadId },
-          body: initialDisplay ? { initialDisplay } : {},
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
+    const [started] = await Promise.allSettled([
+      browserAuthorizationResult(
+        accept(
+          get(apiClient$)(browserContract).open({
+            params: { threadId: descriptor.threadId },
+            body: initialDisplay ? { initialDisplay } : {},
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+          AUTHORIZATION_OPTIONS,
+        ),
       ),
-      () => {
-        set(reload$);
-      },
-    );
+    ]);
     signal.throwIfAborted();
-    set(sessionOverride$, started.body.browser);
+    if (started.status === "rejected") {
+      if (get(lifetime$) === lifetime) {
+        set(reload$);
+      }
+      throw started.reason;
+    }
+    if (get(lifetime$) !== lifetime) {
+      return;
+    }
+    set(reload$);
+    set(
+      get(lifetime$).sessionOverride$,
+      isBrowserUnauthorized(started.value)
+        ? UNAUTHORIZED
+        : started.value.body.browser,
+    );
     set(connectionChanged$);
   });
   return { start$: openBrowser$ };
@@ -201,14 +286,17 @@ function createCloseBrowserSignals({
   const close$ = command(async ({ get, set }, signal: AbortSignal) => {
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
-      accept(
-        get(apiClient$)(browserContract).close({
-          params: { threadId: descriptor.threadId },
-          body: {},
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
+      browserAuthorizationResult(
+        accept(
+          get(apiClient$)(browserContract).close({
+            params: { threadId: descriptor.threadId },
+            body: {},
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+          AUTHORIZATION_OPTIONS,
+        ),
       ),
       () => {
         set(reload$);
@@ -263,23 +351,93 @@ function createBrowserSessionSubscriptionSignals(
 function createBrowserSessionKeepAliveSignals(
   descriptor: BrowserSessionDescriptor,
   session$: BrowserSessionSignals["session$"],
-  leaseOverride$: State<BrowserSession | undefined>,
+  lifetime$: Computed<BrowserSessionLifetime>,
   reload$: BrowserSessionSignals["reload$"],
+  connectionChanged$: BrowserSignals["connectionChanged$"],
 ): Pick<BrowserSessionSignals, "keepAliveRef$"> {
+  const applyLease$ = command(
+    async (
+      { get, set },
+      lifetime: BrowserSessionLifetime,
+      mountedSession: BrowserSession | null,
+      response: NonNullable<
+        Awaited<ReturnType<typeof requestBrowserSessionLease>>
+      >,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      if (isBrowserUnauthorized(response)) {
+        set(lifetime.leaseOverride$, undefined);
+        set(lifetime.sessionOverride$, UNAUTHORIZED);
+        set(connectionChanged$);
+        return true;
+      }
+      const currentSession = await get(session$);
+      signal.throwIfAborted();
+      if (get(lifetime$) !== lifetime) {
+        return false;
+      }
+      if (isBrowserUnauthorized(currentSession)) {
+        return true;
+      }
+      // A response from the previous lifetime cannot replace a reopened window.
+      if (
+        currentSession?.liveUrl !== mountedSession?.liveUrl ||
+        !sameBrowserWindow(currentSession?.window, mountedSession?.window)
+      ) {
+        return false;
+      }
+      if (
+        response.status === 200 &&
+        sameBrowserWindow(response.body.browser.window, currentSession?.window)
+      ) {
+        set(
+          lifetime.leaseOverride$,
+          currentSession
+            ? { ...response.body.browser, liveUrl: currentSession.liveUrl }
+            : response.body.browser,
+        );
+        return false;
+      }
+      // Confirm reclaimed state rather than treating failed renewal as expiry.
+      set(reload$);
+      const reloadedLifetime = get(lifetime$);
+      const reloadedSession = await get(session$);
+      signal.throwIfAborted();
+      return (
+        get(lifetime$) === reloadedLifetime &&
+        reloadedSession?.status !== "active"
+      );
+    },
+  );
   const keepAliveRef$ = onRef(
     command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
       let reportedFailure = false;
       setLoop(
         async () => {
+          const lifetime = get(lifetime$);
           const mountedSession = await get(session$);
           signal.throwIfAborted();
+          if (get(lifetime$) !== lifetime) {
+            return false;
+          }
+          if (isBrowserUnauthorized(mountedSession)) {
+            return true;
+          }
           const response = await requestBrowserSessionLease(
             get(apiClient$),
             descriptor.threadId,
             signal,
           );
           signal.throwIfAborted();
-          if (!response || response.status >= 500) {
+          // Authorization and reload transitions create a new request owner,
+          // even when a re-enabled chat retains the same native window.
+          if (get(lifetime$) !== lifetime) {
+            return false;
+          }
+          if (
+            !response ||
+            (!isBrowserUnauthorized(response) && response.status >= 500)
+          ) {
             // Only this idempotent renewal can continue at the normal interval.
             // An outage must not replay input or invalidate the mounted viewer.
             if (!reportedFailure) {
@@ -296,42 +454,7 @@ function createBrowserSessionKeepAliveSignals(
             return false;
           }
           reportedFailure = false;
-          const currentSession = await get(session$);
-          signal.throwIfAborted();
-          // A response from the previous lifetime cannot replace a reopened
-          // window or a newly admitted shared instance.
-          if (
-            currentSession?.liveUrl !== mountedSession?.liveUrl ||
-            !sameBrowserWindow(currentSession?.window, mountedSession?.window)
-          ) {
-            return false;
-          }
-          if (
-            response.status === 200 &&
-            sameBrowserWindow(
-              response.body.browser.window,
-              currentSession?.window,
-            )
-          ) {
-            set(
-              leaseOverride$,
-              currentSession
-                ? {
-                    ...response.body.browser,
-                    // Lease responses intentionally omit the provider live
-                    // URL, so retain the one loaded by the viewer endpoint.
-                    liveUrl: currentSession.liveUrl,
-                  }
-                : response.body.browser,
-            );
-            return false;
-          }
-          // Reclaimed windows pause the panel, but a concurrent reopen keeps
-          // the mounted panel's heartbeat alive for its new lifetime.
-          set(reload$);
-          const reloadedSession = await get(session$);
-          signal.throwIfAborted();
-          return reloadedSession?.status !== "active";
+          return set(applyLease$, lifetime, mountedSession, response, signal);
         },
         LEASE_HEARTBEAT_INTERVAL_MS,
         signal,
@@ -341,35 +464,45 @@ function createBrowserSessionKeepAliveSignals(
   return { keepAliveRef$ };
 }
 
-export function createBrowserSessionSignals(
-  threadId: string,
-  onPageInput$?: Command<void, []>,
-): BrowserSessionSignals {
-  const descriptor: BrowserSessionDescriptor = {
-    threadId,
-    href: `/browsers/${threadId}`,
-  };
+function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
   const reloadVersion$ = state(0);
-  const screenshotImageLoad = createImageLoadSignals();
-  const sessionOverride$ = state<BrowserSession | null | undefined>(undefined);
-  const leaseOverride$ = state<BrowserSession | undefined>(undefined);
+  const accessVersion$ = threadComputerAccessVersion(descriptor.threadId);
+  const authorizationScope$ = computed((get) => {
+    return get(accessVersion$) ?? "initial";
+  });
+  const lifetime$ = computed((get) => {
+    get(reloadVersion$);
+    get(authorizationScope$);
+    // These are lifetime-local resource outcomes, not independent UI flags.
+    return {
+      sessionOverride$: state<BrowserSessionResult | undefined>(undefined),
+      leaseOverride$: state<BrowserSession | undefined>(undefined),
+    };
+  });
   const lifecycleSession$ = computed(
-    async (get): Promise<BrowserSession | null> => {
-      get(reloadVersion$);
-      const override = get(sessionOverride$);
+    async (get): Promise<BrowserSessionResult> => {
+      const lifetime = get(lifetime$);
+      const override = get(lifetime.sessionOverride$);
       return override === undefined
         ? await fetchBrowserSession(get(apiClient$), descriptor.threadId)
         : override;
     },
   );
-  const session$ = computed(async (get): Promise<BrowserSession | null> => {
-    return get(leaseOverride$) ?? (await get(lifecycleSession$));
+  const session$ = computed(async (get): Promise<BrowserSessionResult> => {
+    const lifetime = get(lifetime$);
+    const session = await get(lifecycleSession$);
+    return isBrowserUnauthorized(session)
+      ? session
+      : (get(lifetime.leaseOverride$) ?? session);
   });
   // Lease timestamps remain authoritative in session$, but do not change the
   // panel's presentation or the mounted viewer's connection identity.
   const panelSession$ = computed(
     async (get): Promise<BrowserSessionPanelState | null> => {
       const session = await get(session$);
+      if (isBrowserUnauthorized(session)) {
+        return session;
+      }
       return session
         ? {
             status: session.status,
@@ -388,12 +521,19 @@ export function createBrowserSessionSignals(
     if (lifecycleSession?.status !== "active") {
       return null;
     }
-    const response = await accept(
-      get(apiClient$)(browserContract).viewerConnection({
-        params: { threadId: descriptor.threadId },
-      }),
-      [200],
+    const response = await browserAuthorizationResult(
+      accept(
+        get(apiClient$)(browserContract).viewerConnection({
+          params: { threadId: descriptor.threadId },
+        }),
+        [200],
+        undefined,
+        AUTHORIZATION_OPTIONS,
+      ),
     );
+    if (isBrowserUnauthorized(response)) {
+      return response;
+    }
     return {
       ...response.body,
       // This snapshot identifies the request for retained-panel visibility;
@@ -405,7 +545,7 @@ export function createBrowserSessionSignals(
   const browserConnection$ = computed(
     async (get): Promise<BrowserConnection | null> => {
       const connection = await get(viewerConnection$);
-      return connection
+      return connection && !isBrowserUnauthorized(connection)
         ? {
             cdpUrl: connection.cdpUrl,
             instanceId: connection.browser.window?.instanceId ?? null,
@@ -415,9 +555,35 @@ export function createBrowserSessionSignals(
         : null;
     },
   );
+  return {
+    reloadVersion$,
+    authorizationScope$,
+    lifetime$,
+    lifecycleSession$,
+    session$,
+    panelSession$,
+    viewerConnection$,
+    browserConnection$,
+  };
+}
+
+export function createBrowserSessionSignals(
+  threadId: string,
+  onPageInput$?: Command<void, []>,
+): BrowserSessionSignals {
+  const descriptor = { threadId, href: `/browsers/${threadId}` };
+  const screenshotImageLoad = createImageLoadSignals();
+  const {
+    reloadVersion$,
+    authorizationScope$,
+    lifetime$,
+    lifecycleSession$,
+    session$,
+    panelSession$,
+    viewerConnection$,
+    browserConnection$,
+  } = createBrowserSessionReadSignals(descriptor);
   const reload$ = command(({ set }) => {
-    set(leaseOverride$, undefined);
-    set(sessionOverride$, undefined);
     set(reloadVersion$, (version) => {
       return version + 1;
     });
@@ -430,7 +596,7 @@ export function createBrowserSessionSignals(
   );
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
-    sessionOverride$,
+    lifetime$,
     reload$,
     connectionChanged$: browser.connectionChanged$,
   };
@@ -449,13 +615,15 @@ export function createBrowserSessionSignals(
   const keepAliveSignals = createBrowserSessionKeepAliveSignals(
     descriptor,
     session$,
-    leaseOverride$,
+    lifetime$,
     reload$,
+    browser.connectionChanged$,
   );
 
   return {
     ...descriptor,
     screenshotImageLoad,
+    authorizationScope$,
     session$,
     panelSession$,
     viewerConnection$,
