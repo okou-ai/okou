@@ -176,7 +176,7 @@ test("Maintainer filters narrow the feature list", async () => {
     featureSwitchRow(FeatureSwitchKey.PresentationConvert),
   ).toBeInTheDocument();
   expect(
-    screen.queryByText(FeatureSwitchKey.AhrefsConnector),
+    screen.queryByText(FeatureSwitchKey.BillConnector),
   ).not.toBeInTheDocument();
   const maintainerCount = screen.getAllByRole("switch").length;
   expect(maintainerCount).toBeLessThan(totalCount);
@@ -188,9 +188,7 @@ test("Maintainer filters narrow the feature list", async () => {
   await user.click(all);
 
   expect(all).toHaveAttribute("aria-pressed", "true");
-  expect(
-    screen.getByText(FeatureSwitchKey.AhrefsConnector),
-  ).toBeInTheDocument();
+  expect(screen.getByText(FeatureSwitchKey.BillConnector)).toBeInTheDocument();
   expect(screen.getAllByRole("switch")).toHaveLength(totalCount);
 });
 

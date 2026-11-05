@@ -106,7 +106,7 @@ function mockAuthenticatedSession(): void {
   );
 }
 
-// #30570 pre-stages twenty launch-gated OAuth connectors on the direct Okou App
+// #30570 pre-stages launch-gated OAuth connectors on the direct Okou App
 // callback. Each case pins the provider-specific authorization and token
 // exchange contract that must survive the callback change.
 type LaunchGatedDirectOkouCase = {
@@ -130,32 +130,6 @@ type LaunchGatedDirectOkouCase = {
 );
 
 const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
-  {
-    connectorSlug: "ahrefs",
-    label: "Ahrefs",
-    clientEnvPrefix: "AHREFS",
-    authorizationEndpoint: "https://app.ahrefs.com/api/auth",
-    tokenUrl: "https://app.ahrefs.com/api/token",
-    tokenResponse: {
-      access_token: "ahrefs-test-token",
-      refresh_token: "ahrefs-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get(
-          "https://api.ahrefs.com/v3/subscription-info/limits-and-usage",
-          () => {
-            return HttpResponse.json({
-              subscription: { usage_type: "Enterprise" },
-              rows_limit: 1000,
-              rows_left: 900,
-            });
-          },
-        ),
-      );
-    },
-  },
   {
     connectorSlug: "cal-com",
     label: "Cal.com",
