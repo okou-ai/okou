@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.15...runner-rs-v0.244.16) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** centralize expression branch enumeration ([#45351](https://github.com/okou-ai/okou/issues/45351)) ([d529f39](https://github.com/okou-ai/okou/commit/d529f393ce0bf89bdc18fa1c6bdbc122a384d24d))
+
 ## [0.244.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.14...runner-rs-v0.244.15) (2026-11-05)
 
 ### Release Dependencies
