@@ -249,7 +249,7 @@ private struct WorkspaceRootView: View {
               topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
                 agentID: conversation.thread.agentID, agents: store.list.agents,
-                threads: store.list.threads),
+                threads: store.list.threads, includesAgents: !store.list.singleAgentEnabled),
               onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
             )
             .id(conversation.thread.id)
@@ -274,7 +274,7 @@ private struct WorkspaceRootView: View {
                   connectorSelection: store.newModelSelection.connectors,
                   mentionSource: ComposerMentionSource(
                     agentID: store.selectedAgentID, agents: store.list.agents,
-                    threads: store.list.threads),
+                    threads: store.list.threads, includesAgents: !store.list.singleAgentEnabled),
                   workflowSource: store.composerWorkflows, agentID: store.selectedAgentID,
                   placeholder: String(localized: "Message \(store.currentAgentName)"))
               }
@@ -360,6 +360,7 @@ private struct WorkspaceRootView: View {
         topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
       )
     }
+    .environment(\.singleAgentExperience, store.usesPersonalOkou)
     .overlay(alignment: .top) {
       ChatFeedbackBanner(store: store)
         .padding(.top, headerHeight)
@@ -435,9 +436,11 @@ private struct WorkspaceRootView: View {
       Spacer(minLength: 24)
       // Restarts the web's word-by-word entrance for each agent and each return home.
       NewChatGreeting(
-        avatarURL: agent?.avatarUrl, agentName: agent?.displayName ?? "Okou",
-        isDefaultAgent: agent?.isDefaultAgent ?? true, text: greetingText,
-        openAgent: { showsAgent = true }
+        avatarURL: store.usesPersonalOkou ? nil : agent?.avatarUrl,
+        agentName: store.usesPersonalOkou ? "Okou" : (agent?.displayName ?? "Okou"),
+        isDefaultAgent: store.usesPersonalOkou || (agent?.isDefaultAgent ?? true),
+        text: greetingText,
+        openAgent: store.usesPersonalOkou ? nil : { showsAgent = true }
       )
       .id("\(store.selectedAgentID ?? "")-\(taglineIndex)")
       // A custom agent says what it is for under its greeting.

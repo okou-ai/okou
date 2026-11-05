@@ -55,7 +55,12 @@ export function PwaBackToChats() {
 // Agents, Workflows and Works are opened from Me, so each page steps back one
 // level toward it. Tab roots have no parent.
 function pwaParentPathname(route: RouteKey | null): PwaParentPathname | null {
-  if (route === "agents" || route === "workflows" || route === "works") {
+  if (
+    route === "myOkou" ||
+    route === "agents" ||
+    route === "workflows" ||
+    route === "works"
+  ) {
     return ROUTES.me;
   }
   if (route === "agentDetail" || route === "agentPermissions") {

@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "./single-agent.ts";
 /**
  * Fundamental agent signals used across the platform.
  *
@@ -63,6 +64,9 @@ export const reloadAgentById$ = command(({ set }) => {
 });
 
 export const defaultAgentName$ = computed(async (get) => {
+  if (get(singleAgentEnabled$)) {
+    return get(assistantName$);
+  }
   const defaultAgent = await get(defaultAgent$);
   return defaultAgent?.displayName ?? get(assistantName$);
 });

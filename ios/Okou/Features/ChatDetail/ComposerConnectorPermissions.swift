@@ -60,7 +60,7 @@ struct ComposerConnectorPermissions: View {
           Text(
             state.connectorScoped
               ? "These permissions apply to this connector across your chats and accounts."
-              : "These permissions apply to this Agent across its chats."
+              : "These permissions apply to Okou across chats with the same access."
           )
           .okouSectionNote()
         }
@@ -107,7 +107,7 @@ struct ComposerConnectorPermissions: View {
     .confirmationDialog(
       state?.connectorScoped == true
         ? "Reset this connector's permissions?"
-        : "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
+        : "Reset this connector's permissions for Okou in this chat?", isPresented: $confirmsReset
     ) {
       Button("Reset to defaults", role: .destructive) { Task { await save([], reset: true) } }
         .disabled(store.isSaving || store.uncertain)

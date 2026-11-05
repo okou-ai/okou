@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "./single-agent.ts";
 import { command, computed, state, type Computed } from "ccstate";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
@@ -74,6 +75,13 @@ export const currentChatAgentId$ = computed(
   },
 );
 
+/** Fresh enabled chats always use the default executor; existing threads keep theirs. */
+export const newChatAgentId$ = computed(async (get) => {
+  return get(singleAgentEnabled$)
+    ? await get(defaultAgentId$)
+    : await get(currentChatAgentId$);
+});
+
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -103,6 +111,12 @@ export const currentChatAgent$ = computed(async (get) => {
 
 export const currentChatAgentDisplayName$ = computed(
   async (get): Promise<string | null> => {
+    if (
+      get(singleAgentEnabled$) &&
+      (await get(currentChatAgentId$)) === (await get(defaultAgentId$))
+    ) {
+      return "Okou";
+    }
     // A missing agent and a missing name both mean "no display name".
     return (await get(currentChatAgent$))?.displayName ?? null;
   },

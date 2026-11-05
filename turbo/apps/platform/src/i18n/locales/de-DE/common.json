@@ -1181,7 +1181,7 @@
       "confirmProCancellation": "Sind Sie sicher, dass Sie Ihren Pro-Plan kündigen möchten?",
       "confirmTarget": "Downgrade auf {{plan}}?",
       "inProgress": "Herabstufung...",
-      "proWarning": "Ihr Pro-Zugang bleibt bis zum Ende des aktuellen Abrechnungszeitraums aktiv. Danach wird dieser Arbeitsbereich auf „Kein Plan“ verschoben und die Agenten können erst ausgeführt werden, wenn Sie erneut ein Upgrade durchführen.",
+      "proWarning": "Dein Pro-Zugang bleibt bis zum Ende des Abrechnungszeitraums aktiv. Danach hat dieser Arbeitsbereich keinen Tarif. Okou kann erst nach einem Upgrade wieder arbeiten.",
       "teamWarning": "Ihr Team-Zugang bleibt bis zum Ende des aktuellen Abrechnungszeitraums aktiv. Danach wird dieser Arbeitsbereich nach {{plan}} verschoben.",
       "title": "Downgrade-Plan"
     },
@@ -1216,15 +1216,15 @@
       },
       "highlights": {
         "addOnConcurrency": "Parallelität jederzeit aufstocken",
-        "agentFanOut": "Ein Agent steuert ein ganzes Team von Agents",
+        "agentFanOut": "Okou verteilt Arbeit an ein Team von KI-Helfern",
         "automations": "Zeit- und ereignisgesteuerte Automationen",
         "builtInResearchData": "Integrierte SEO-, Lead-, Web- und Marktdaten",
         "chatIntegrations": "Slack- und Telegram-Integration",
-        "computerUse": "Agents bedienen echte Apps auf deinem Desktop",
-        "concurrentAgents": "{{slots}} Agents gleichzeitig",
+        "computerUse": "Okou steuert echte Desktop-Apps",
+        "concurrentAgents": "{{slots}} Aufgaben gleichzeitig",
         "everythingInBuiltForTeams": "Alles aus {{plan}}, gemacht für Teams",
         "included": "Enthalten",
-        "liveBrowser": "Dem Live-Browser eines Agents zusehen und übernehmen",
+        "liveBrowser": "Verfolge Okous Live-Browser und übernimm die Kontrolle",
         "moreConnectorsChannels": "Mehr Custom Connectors & Kanal-Integrationen",
         "supportEmail": "E-Mail-Support",
         "supportPriority": "Priorisierter Support",
@@ -1239,7 +1239,7 @@
       "perMonth": "/Monat",
       "pricePerMonth": "{{price}}/Monat",
       "pro": {
-        "description": "Tägliche Agent-Arbeit, pro Mitglied abgerechnet.",
+        "description": "Tägliche Arbeit, pro Mitglied abgerechnet.",
         "name": "Pro"
       },
       "renews": "Erneuert {{date}}",
@@ -1247,7 +1247,7 @@
       "sectionTitle": "Planen",
       "selectedPlan": "den ausgewählten Plan",
       "team": {
-        "description": "Für ein Team, das Agents den ganzen Tag laufen lässt.",
+        "description": "Für Teams, die den ganzen Tag mit Okou arbeiten.",
         "name": "Team"
       },
       "upgrade": "Upgrade",
@@ -4228,6 +4228,27 @@
       "uploadFailed": "Die Tabelle konnte nicht hochgeladen werden. Versuche es erneut."
     }
   },
+  "myOkou": {
+    "access": "Dein Zugriff in diesem Arbeitsbereich",
+    "conflict": "Deine gespeicherten Anweisungen wurden anderswo geändert. Dein Entwurf bleibt erhalten. Prüfe oder kopiere ihn, bevor du die gespeicherten Anweisungen neu lädst.",
+    "description": "Deine Anweisungen für Okou in diesem Arbeitsbereich",
+    "discard": "Verwerfen",
+    "draftKept": "Dein Entwurf bleibt in diesem Browser-Tab erhalten, wenn du die Seite oder den Arbeitsbereich wechselst.",
+    "instructions": "Anweisungen",
+    "loadError": "Deine Anweisungen konnten nicht geladen werden. Versuche es erneut.",
+    "markdown": "Schreibe in Klartext oder Markdown",
+    "newChat": "Neuer Chat",
+    "placeholder": "Sag Okou, wie du gerne arbeitest…",
+    "reload": "Gespeicherte Anweisungen neu laden",
+    "retry": "Erneut versuchen",
+    "save": "Speichern",
+    "saved": "Anweisungen gespeichert",
+    "saveError": "Speichern fehlgeschlagen. Dein Entwurf bleibt erhalten. Versuche es erneut.",
+    "saving": "Wird gespeichert…",
+    "timing": "Wird verwendet, wenn Okou das nächste Mal mit der Arbeit beginnt. Laufende Arbeit bleibt unverändert.",
+    "title": "Mein Okou",
+    "unsaved": "Ungespeicherte Änderungen"
+  },
   "onboarding": {
     "common": {
       "next": "Nächste",
@@ -5460,7 +5481,7 @@
         "starting": "Export wird gestartet"
       },
       "backToAssistant": "Zurück zu {{assistantName}}",
-      "description": "Laden Sie Ihre Unterhaltungen, Erinnerungen und die Anweisungen der Agenten und Workflows herunter, auf die Sie in {{assistantName}} zugreifen können.",
+      "description": "Lade deine Chats, Erinnerungen, Anweisungen und zugänglichen Workflow-Anweisungen in {{assistantName}} herunter.",
       "documentTitle": "Daten exportieren",
       "duration": {
         "soon": "bald"

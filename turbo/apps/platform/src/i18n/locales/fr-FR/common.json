@@ -1203,7 +1203,7 @@
       "confirmProCancellation": "Êtes-vous sûr de vouloir annuler votre plan Pro ?",
       "confirmTarget": "Rétrograder vers {{plan}} ?",
       "inProgress": "Rétrogradation en cours...",
-      "proWarning": "Votre accès Pro reste actif jusqu'à la fin de la période de facturation en cours. Après cela, cet espace de travail passe à Aucun plan et les agents ne pourront pas fonctionner tant que vous ne mettez pas à niveau de nouveau.",
+      "proWarning": "Votre accès Pro reste actif jusqu’à la fin de la période de facturation. Ensuite, cet espace passe sans forfait et Okou ne peut plus travailler jusqu’à une nouvelle souscription.",
       "teamWarning": "Votre accès Équipe reste actif jusqu'à la fin de la période de facturation en cours. Après cela, cet espace de travail passe à {{plan}}.",
       "title": "Rétrograder le plan"
     },
@@ -1238,15 +1238,15 @@
       },
       "highlights": {
         "addOnConcurrency": "Ajoutez de la simultanéité quand vous voulez",
-        "agentFanOut": "Un agent peut piloter toute une équipe d'agents",
+        "agentFanOut": "Okou délègue le travail à une équipe d’assistants IA",
         "automations": "Automatisations planifiées et sur événement",
         "builtInResearchData": "Données SEO, leads, web et marché intégrées",
         "chatIntegrations": "Intégration Slack et Telegram",
-        "computerUse": "Les agents pilotent de vraies applis sur votre poste",
-        "concurrentAgents": "{{slots}} agents en parallèle",
+        "computerUse": "Okou contrôle de vraies applications sur votre ordinateur",
+        "concurrentAgents": "{{slots}} tâches en parallèle",
         "everythingInBuiltForTeams": "Tout {{plan}}, conçu pour les équipes",
         "included": "Inclus",
-        "liveBrowser": "Suivez le navigateur d'un agent et prenez la main",
+        "liveBrowser": "Suivez le navigateur d’Okou en direct et prenez la main",
         "moreConnectorsChannels": "Plus de connecteurs personnalisés et d'intégrations de canaux",
         "supportEmail": "Assistance par e-mail",
         "supportPriority": "Assistance prioritaire",
@@ -1261,7 +1261,7 @@
       "perMonth": "/mois",
       "pricePerMonth": "{{price}}/mois",
       "pro": {
-        "description": "Du travail quotidien avec des agents, au prix par membre.",
+        "description": "Le travail quotidien, facturé par membre.",
         "name": "Pro"
       },
       "renews": "Renouvelle le {{date}}",
@@ -1269,7 +1269,7 @@
       "sectionTitle": "Forfait",
       "selectedPlan": "le forfait sélectionné",
       "team": {
-        "description": "Pour une équipe qui fait tourner des agents toute la journée.",
+        "description": "Pour une équipe qui travaille avec Okou toute la journée.",
         "name": "Team"
       },
       "upgrade": "Mettre à niveau",
@@ -4283,6 +4283,27 @@
       "uploadFailed": "Impossible d’importer le tableau. Réessaie."
     }
   },
+  "myOkou": {
+    "access": "Votre accès dans cet espace de travail",
+    "conflict": "Vos instructions enregistrées ont été modifiées ailleurs. Votre brouillon est conservé. Consultez-le ou copiez-le avant de recharger les instructions enregistrées.",
+    "description": "Vos instructions pour Okou dans cet espace de travail",
+    "discard": "Abandonner",
+    "draftKept": "Votre brouillon reste dans cet onglet lorsque vous changez de page ou d’espace de travail.",
+    "instructions": "Instructions",
+    "loadError": "Impossible de charger vos instructions. Réessayez.",
+    "markdown": "Écrivez en texte brut ou en Markdown",
+    "newChat": "Nouvelle conversation",
+    "placeholder": "Indiquez à Okou comment vous aimez travailler…",
+    "reload": "Recharger les instructions enregistrées",
+    "retry": "Réessayer",
+    "save": "Enregistrer",
+    "saved": "Instructions enregistrées",
+    "saveError": "Échec de l’enregistrement. Votre brouillon est conservé. Réessayez.",
+    "saving": "Enregistrement…",
+    "timing": "Utilisées la prochaine fois qu’Okou commence à travailler. Le travail en cours ne change pas.",
+    "title": "Mon Okou",
+    "unsaved": "Modifications non enregistrées"
+  },
   "onboarding": {
     "common": {
       "next": "Suivant",
@@ -5521,7 +5542,7 @@
         "starting": "Démarrage de l'exportation"
       },
       "backToAssistant": "Retour à {{assistantName}}",
-      "description": "Téléchargez vos conversations, votre mémoire et les instructions des agents et workflows auxquels vous avez accès dans {{assistantName}}.",
+      "description": "Téléchargez vos conversations, souvenirs, instructions et les instructions des workflows accessibles dans {{assistantName}}.",
       "documentTitle": "Exporter les données",
       "duration": {
         "soon": "bientôt"

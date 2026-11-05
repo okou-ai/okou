@@ -77,6 +77,9 @@ final class WorkspaceStore {
     await refresh()
   }
 
+  @ObservationIgnored lazy var personalInstructions = PersonalInstructionsStore(
+    client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
+
   @ObservationIgnored lazy var modelStore = ChatModelStore(
     client: client, webURL: webURL, readRetrySleep: readRetrySleep,
     didFail: { [weak self] in self?.handle($0) })
@@ -157,7 +160,7 @@ final class WorkspaceStore {
     }
     await list.restoreCached()
     guard canContinueStartup(generation) else { return }
-    if selectedAgentID == nil {
+    if selectedAgentID == nil || (list.singleAgentEnabled && selectedThreadID == nil) {
       selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
     }
     await refreshNavigation()
@@ -182,13 +185,20 @@ final class WorkspaceStore {
   func refreshNavigation() async {
     await list.refreshNavigation()
     guard !closed, !Task.isCancelled else { return }
-    if selectedAgentID == nil {
+    if selectedAgentID == nil || (list.singleAgentEnabled && selectedThreadID == nil) {
       selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
     }
   }
 
+  var usesPersonalOkou: Bool {
+    list.singleAgentEnabled
+      && (selectedConversation?.thread.agentID ?? selectedAgentID)
+        == list.agents.first(where: \.isDefaultAgent)?.agentId
+  }
+
   var currentAgentName: String {
-    list.agents.first(where: { $0.agentId == selectedAgentID })?.displayName ?? "Okou"
+    if usesPersonalOkou { return "Okou" }
+    return list.agents.first(where: { $0.agentId == selectedAgentID })?.displayName ?? "Okou"
   }
 
   private(set) var selectedConversation: ConversationStore?
@@ -233,6 +243,7 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    personalInstructions.close()
     threadFeedback = nil
     search.close()
     for conversation in conversations.values { conversation.close() }
@@ -617,7 +628,9 @@ final class WorkspaceStore {
     chatLinkThreadID = nil
     selectedThreadID = nil
     selectedAgentID =
-      agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
+      list.singleAgentEnabled
+      ? list.agents.first(where: \.isDefaultAgent)?.agentId
+      : (agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId)
     newComposer.requestSync()
     newModelSelection.resetNewChat()
     error = nil
@@ -644,7 +657,9 @@ final class WorkspaceStore {
       }
       do {
         let thread = try await commands.createThread(
-          agentID: agentID, modelSelection: selection, reasoningEffort: effort,
+          agentID: list.singleAgentEnabled
+            ? list.agents.first(where: \.isDefaultAgent)?.agentId : agentID,
+          modelSelection: selection, reasoningEffort: effort,
           composerOptions: composerOptions)
         try Task.checkCancellation()
         guard !closed else { return nil }
@@ -751,7 +766,11 @@ final class WorkspaceStore {
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
     didRefreshReadState()
-    if selectedAgentID == nil { selectedAgentID = threads.first?.agentID }
+    if list.singleAgentEnabled && selectedThreadID == nil {
+      selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
+    } else if selectedAgentID == nil {
+      selectedAgentID = threads.first?.agentID
+    }
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {
       if let thread = threads.first(where: { $0.id == selectedThreadID }) {

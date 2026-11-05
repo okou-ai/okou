@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
@@ -26,7 +27,7 @@ interface ThreeColumnAgentSearchResult {
 export const threeColumnAgentSearchResults$ = computed(
   async (get): Promise<ThreeColumnAgentSearchResult> => {
     const query = get(chatListQuery$).trim().toLowerCase();
-    if (!query) {
+    if (!query || get(singleAgentEnabled$)) {
       return { query, agents: [] };
     }
     const agents = await get(agents$);

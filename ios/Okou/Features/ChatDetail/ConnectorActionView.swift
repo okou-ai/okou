@@ -77,7 +77,7 @@ struct ConnectorActionCard: View {
           status.account?.label
             ?? (status.chatAccountAccess
               ? String(localized: "Connect an account")
-              : String(localized: "Connect an account for this Agent"))
+              : String(localized: "Connect an account for this chat"))
         )
         .lineLimit(1, reservesSpace: true).textSelection(.enabled)
         (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
@@ -98,7 +98,7 @@ struct ConnectorActionCard: View {
     case .select: return "Use this account"
     case .reconnect: return "Reconnect"
     default:
-      if status.connected { return status.chatAccountAccess ? "Connected" : "Authorize Agent" }
+      if status.connected { return status.chatAccountAccess ? "Connected" : "Authorize access" }
       return status.account == nil ? "Connect" : "Reconnect"
     }
   }
@@ -109,9 +109,9 @@ struct ConnectorActionCard: View {
     default:
       if status.complete {
         return status.chatAccountAccess
-          ? "Account connected." : "Connected and authorized for this Agent."
+          ? "Account connected." : "Connected and authorized for this chat."
       }
-      if status.connected { return "Allow this Agent to use the connected account." }
+      if status.connected { return "Allow Okou to use this account in the current chat." }
       if let reconnectReason = status.account?.reconnectReason {
         if reconnectReason == "configuration_incomplete"
           || reconnectReason == "configuration_invalid"
@@ -148,7 +148,7 @@ struct ConnectorAuthorizationSheet: View {
           Text(
             flow.status.chatAccountAccess
               ? "Connect this account to make it available in your account settings."
-              : "Authorization applies to the Agent in this chat."
+              : "Authorization applies to Okou in this chat."
           )
           .okouSectionNote()
         }

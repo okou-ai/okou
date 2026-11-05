@@ -42,7 +42,7 @@ struct ComposerConnectorSheet: View {
               Text(
                 store.chatAccountAccess
                   ? "Connect a service to use it in this chat."
-                  : "Connect a service to make it available to this Agent."
+                  : "Connect a service to make it available in this chat."
               )
               .foregroundStyle(OkouColor.mutedForeground)
             }
@@ -107,7 +107,7 @@ struct ComposerConnectorSheet: View {
   }
 
   /// With chat account access a service opens the accounts this chat may use; otherwise it
-  /// is a switch for this Agent with account and permission shortcuts.
+  /// is a switch for Okou in this chat with account and permission shortcuts.
   @ViewBuilder
   private func connectorRow(_ connector: ChatComposerConnector) -> some View {
     if store.chatAccountAccess {
@@ -144,7 +144,7 @@ struct ComposerConnectorSheet: View {
   }
 
   /// One line per service: its logo and name, account and permission shortcuts once it is
-  /// allowed, and the switch that allows it for this Agent.
+  /// allowed, and the switch that allows it for Okou in this chat.
   private func legacyConnectorRow(_ connector: ChatComposerConnector) -> some View {
     HStack(spacing: OkouSpace.md) {
       OkouRowLabel(
@@ -191,7 +191,7 @@ struct ComposerConnectorSheet: View {
       .tint(OkouColor.primary400)
       .fixedSize(horizontal: true, vertical: false)
       .labelsHidden().disabled(store.isSaving || store.uncertain)
-      .accessibilityLabel("Allow \(connector.label) for this Agent")
+      .accessibilityLabel("Allow \(connector.label) for Okou in this chat")
     }
     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
   }

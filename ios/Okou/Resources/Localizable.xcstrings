@@ -25671,6 +25671,270 @@
           "stringUnit": { "state": "translated", "value": "縮小" }
         }
       }
+    },
+    "My Okou": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My Okou"
+          }
+        }
+      }
+    },
+    "Your instructions for Okou in this workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your instructions for Okou in this workspace"
+          }
+        }
+      }
+    },
+    "Instructions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instructions"
+          }
+        }
+      }
+    },
+    "Loading instructions…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading instructions…"
+          }
+        }
+      }
+    },
+    "Write in plain text or use Markdown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write in plain text or use Markdown"
+          }
+        }
+      }
+    },
+    "Used the next time Okou starts working. Work in progress won’t change.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used the next time Okou starts working. Work in progress won’t change."
+          }
+        }
+      }
+    },
+    "Retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        }
+      }
+    },
+    "Reload saved instructions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload saved instructions"
+          }
+        }
+      }
+    },
+    "Your saved instructions changed elsewhere. Your draft is kept. Review or copy it before reloading.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your saved instructions changed elsewhere. Your draft is kept. Review or copy it before reloading."
+          }
+        }
+      }
+    },
+    "Your draft is kept on this device when you close this page or switch workspaces.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your draft is kept on this device when you close this page or switch workspaces."
+          }
+        }
+      }
+    },
+    "Unsaved changes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsaved changes"
+          }
+        }
+      }
+    },
+    "Discard": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discard"
+          }
+        }
+      }
+    },
+    "Save": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "Connect an account for this chat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect an account for this chat"
+          }
+        }
+      }
+    },
+    "Authorize access": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authorize access"
+          }
+        }
+      }
+    },
+    "Connected and authorized for this chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected and authorized for this chat."
+          }
+        }
+      }
+    },
+    "Allow Okou to use this account in the current chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Okou to use this account in the current chat."
+          }
+        }
+      }
+    },
+    "Authorization applies to Okou in this chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authorization applies to Okou in this chat."
+          }
+        }
+      }
+    },
+    "Connect a service to make it available in this chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect a service to make it available in this chat."
+          }
+        }
+      }
+    },
+    "Service access applies to Okou in this chat. Account choices apply to this chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service access applies to Okou in this chat. Account choices apply to this chat."
+          }
+        }
+      }
+    },
+    "These permissions apply to your account for Okou in this chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These permissions apply to your account for Okou in this chat."
+          }
+        }
+      }
+    },
+    "These permissions apply to Okou across chats with the same access.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These permissions apply to Okou across chats with the same access."
+          }
+        }
+      }
+    },
+    "Reset this connector's permissions for Okou in this chat?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset this connector's permissions for Okou in this chat?"
+          }
+        }
+      }
+    },
+    "Instructions saved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instructions saved"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

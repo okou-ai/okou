@@ -1203,7 +1203,7 @@
       "confirmProCancellation": "Sei sicuro di voler annullare il tuo piano Pro?",
       "confirmTarget": "Downgrade a {{plan}}?",
       "inProgress": "Declassamento...",
-      "proWarning": "Il tuo accesso Pro rimane attivo fino al termine del periodo di fatturazione corrente. Successivamente, quest'area di lavoro passa a Nessun piano e gli agenti non possono essere eseguiti finché non si esegue nuovamente l'aggiornamento.",
+      "proWarning": "L’accesso Pro rimane attivo fino alla fine del periodo di fatturazione. Poi questo spazio passa senza piano e Okou non può lavorare finché non effettui un nuovo upgrade.",
       "teamWarning": "L'accesso al team rimane attivo fino al termine del periodo di fatturazione corrente. Successivamente, questa area di lavoro verrà spostata in {{plan}}.",
       "title": "Piano di downgrade"
     },
@@ -1238,15 +1238,15 @@
       },
       "highlights": {
         "addOnConcurrency": "Aggiungi concorrenza quando vuoi",
-        "agentFanOut": "Un agente può guidare un'intera squadra di agenti",
+        "agentFanOut": "Okou delega il lavoro a un gruppo di assistenti IA",
         "automations": "Automazioni pianificate e su evento",
         "builtInResearchData": "Dati SEO, lead, web e di mercato integrati",
         "chatIntegrations": "Integrazione con Slack e Telegram",
-        "computerUse": "Gli agenti usano app reali sul tuo desktop",
-        "concurrentAgents": "{{slots}} agenti in parallelo",
+        "computerUse": "Okou controlla vere app sul tuo desktop",
+        "concurrentAgents": "{{slots}} attività contemporaneamente",
         "everythingInBuiltForTeams": "Tutto di {{plan}}, pensato per i team",
         "included": "Incluso",
-        "liveBrowser": "Guarda il browser live di un agente e prendi il comando",
+        "liveBrowser": "Segui il browser di Okou in diretta e prendi il controllo",
         "moreConnectorsChannels": "Più connettori personalizzati e integrazioni di canale",
         "supportEmail": "Assistenza via e-mail",
         "supportPriority": "Assistenza prioritaria",
@@ -1261,7 +1261,7 @@
       "perMonth": "/mese",
       "pricePerMonth": "{{price}}/mese",
       "pro": {
-        "description": "Lavoro quotidiano con gli agenti, al prezzo per membro.",
+        "description": "Lavoro quotidiano, con prezzo per membro.",
         "name": "Pro"
       },
       "renews": "Rinnova {{date}}",
@@ -1269,7 +1269,7 @@
       "sectionTitle": "Piano",
       "selectedPlan": "il piano selezionato",
       "team": {
-        "description": "Per un team che tiene gli agenti attivi tutto il giorno.",
+        "description": "Per team che lavorano con Okou tutto il giorno.",
         "name": "Team"
       },
       "upgrade": "Aggiorna",
@@ -4283,6 +4283,27 @@
       "uploadFailed": "Impossibile caricare la tabella. Riprova."
     }
   },
+  "myOkou": {
+    "access": "Il tuo accesso in questo spazio di lavoro",
+    "conflict": "Le istruzioni salvate sono state modificate altrove. La bozza è conservata. Rivedila o copiala prima di ricaricare le istruzioni salvate.",
+    "description": "Le tue istruzioni per Okou in questo spazio di lavoro",
+    "discard": "Scarta",
+    "draftKept": "La bozza rimane in questa scheda quando cambi pagina o spazio di lavoro.",
+    "instructions": "Istruzioni",
+    "loadError": "Impossibile caricare le istruzioni. Riprova.",
+    "markdown": "Scrivi in testo semplice o Markdown",
+    "newChat": "Nuova chat",
+    "placeholder": "Spiega a Okou come preferisci lavorare…",
+    "reload": "Ricarica le istruzioni salvate",
+    "retry": "Riprova",
+    "save": "Salva",
+    "saved": "Istruzioni salvate",
+    "saveError": "Salvataggio non riuscito. La bozza è conservata. Riprova.",
+    "saving": "Salvataggio…",
+    "timing": "Saranno usate la prossima volta che Okou inizia a lavorare. Il lavoro in corso non cambia.",
+    "title": "Il mio Okou",
+    "unsaved": "Modifiche non salvate"
+  },
   "onboarding": {
     "common": {
       "next": "Avanti",
@@ -5521,7 +5542,7 @@
         "starting": "Avvio dell'esportazione"
       },
       "backToAssistant": "Torna a {{assistantName}}",
-      "description": "Scarica le tue conversazioni, la memoria e le istruzioni degli agenti e dei flussi di lavoro a cui puoi accedere in {{assistantName}}.",
+      "description": "Scarica chat, memoria, istruzioni e istruzioni dei workflow accessibili in {{assistantName}}.",
       "documentTitle": "Esporta dati",
       "duration": {
         "soon": "presto"

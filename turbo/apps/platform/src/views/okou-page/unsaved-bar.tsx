@@ -26,6 +26,7 @@ interface UnsavedBarProps {
   message?: string;
   discardLabel?: string;
   saveLabel?: string;
+  saveClassName?: string;
 }
 
 export function UnsavedBar({
@@ -38,6 +39,7 @@ export function UnsavedBar({
   message,
   discardLabel,
   saveLabel,
+  saveClassName,
 }: UnsavedBarProps) {
   const { t } = useTranslation();
 
@@ -81,7 +83,10 @@ export function UnsavedBar({
           <Button
             data-testid="save-button"
             size="sm"
-            className="h-9 rounded-lg px-4 bg-primary text-primary-foreground hover:bg-primary-hover"
+            className={cn(
+              "h-9 rounded-lg px-4 bg-primary text-primary-foreground hover:bg-primary-hover",
+              saveClassName,
+            )}
             onClick={onSave}
             disabled={saving || saveDisabled}
           >

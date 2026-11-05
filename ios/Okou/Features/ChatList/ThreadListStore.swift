@@ -9,6 +9,7 @@ final class ThreadListStore {
   private(set) var threads: [ChatThread] = []
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
+  private(set) var singleAgentEnabled = false
   private(set) var unreadAgentIDs: Set<String> = []
   private var archivingEnabled: Bool?
   var canArchiveChats: Bool { archivingEnabled == true }
@@ -169,11 +170,13 @@ final class ThreadListStore {
   }
 
   private func applySwitches(_ switches: SidebarFeatureSwitches) {
+    singleAgentEnabled = switches.effectiveSwitches["singleAgent"] == true
     archivingEnabled = switches.effectiveSwitches["chatThreadArchiving"] == true
     canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }
 
   var visiblePinnedAgents: [AgentRecord] {
+    guard !singleAgentEnabled else { return [] }
     let defaultID = agents.first(where: \.isDefaultAgent)?.agentId
     let ids = [defaultID].compactMap { $0 } + pinnedAgentIDs.filter { $0 != defaultID }
     return ids.compactMap { id in agents.first(where: { $0.agentId == id }) }

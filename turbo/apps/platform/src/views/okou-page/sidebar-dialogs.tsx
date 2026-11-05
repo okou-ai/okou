@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
@@ -862,6 +863,7 @@ function SpotlightSearchFilterBar({
   readonly resultCount: number;
   readonly onSelect: (filter: ThreeColumnSearchFilter) => void;
 }) {
+  const singleAgent = useGet(singleAgentEnabled$);
   const { t } = useTranslation("agents");
   const options: readonly {
     readonly value: ThreeColumnSearchFilter;
@@ -922,29 +924,33 @@ function SpotlightSearchFilterBar({
         }}
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
-        {options.map((option) => {
-          return (
-            <Toggle
-              key={option.value}
-              value={option.value}
-              variant="quiet"
-              size="xs"
-              className={({ pressed }) => {
-                return cn(
-                  buttonVariants({
-                    variant: pressed ? "outline" : "quiet",
-                    size: "xs",
-                  }),
-                  // Reserve the border and keep keyboard focus visible in the scroller.
-                  "shrink-0 border focus-visible:ring-inset focus-visible:ring-offset-0",
-                  !pressed && "border-transparent",
-                );
-              }}
-            >
-              {option.label}
-            </Toggle>
-          );
-        })}
+        {options
+          .filter((option) => {
+            return !singleAgent || option.value !== "agents";
+          })
+          .map((option) => {
+            return (
+              <Toggle
+                key={option.value}
+                value={option.value}
+                variant="quiet"
+                size="xs"
+                className={({ pressed }) => {
+                  return cn(
+                    buttonVariants({
+                      variant: pressed ? "outline" : "quiet",
+                      size: "xs",
+                    }),
+                    // Reserve the border and keep keyboard focus visible in the scroller.
+                    "shrink-0 border focus-visible:ring-inset focus-visible:ring-offset-0",
+                    !pressed && "border-transparent",
+                  );
+                }}
+              >
+                {option.label}
+              </Toggle>
+            );
+          })}
       </ToggleGroup>
       <span
         className="ml-2 shrink-0 text-xs text-muted-foreground"

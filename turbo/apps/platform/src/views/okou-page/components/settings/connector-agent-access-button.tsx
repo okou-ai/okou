@@ -1,5 +1,6 @@
+import { useGet, type LoadableState } from "ccstate-react";
+import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 import { useTranslation } from "react-i18next";
-import type { LoadableState } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 
@@ -31,6 +32,7 @@ export function ConnectorAgentAccessButton({
   readonly onClick: () => void;
 }) {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   const unnamed = t(($) => {
     return $.connectors.catalog.unnamedAgent;
   });
@@ -57,7 +59,11 @@ export function ConnectorAgentAccessButton({
       disabled={status !== "ready"}
       onClick={onClick}
     >
-      {status === "loading" ? (
+      {singleAgent && status === "ready" ? (
+        t(($) => {
+          return $.myOkou.access;
+        })
+      ) : status === "loading" ? (
         <span className="block h-3 w-20 animate-pulse rounded bg-muted" />
       ) : status === "unavailable" ? (
         <span className="truncate text-muted-foreground">

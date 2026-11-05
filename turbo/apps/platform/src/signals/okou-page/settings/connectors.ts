@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../single-agent.ts";
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -58,7 +59,7 @@ import {
   settle,
 } from "../../utils.ts";
 import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
-import { agents$ } from "../../agent.ts";
+import { agents$, defaultAgentId$ } from "../../agent.ts";
 import { connectedConnectorTargetKeys$ } from "../connector-accounts.ts";
 import { sanitizeTokenInputRecord } from "./token-input.ts";
 import { IN_VITEST } from "../../../env.ts";
@@ -521,7 +522,7 @@ export const connectorsConnectionFilter$ = computed(
     // The directory browses a catalog, and category is the only dimension that
     // organises it. The scope you already own is organised by who uses those
     // connectors instead, so that is the one place this control applies.
-    if (get(connectorsScope$) !== "connected") {
+    if (get(singleAgentEnabled$) || get(connectorsScope$) !== "connected") {
       return { kind: "all" };
     }
     const raw = get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM);
@@ -962,7 +963,21 @@ const authorizeConnectorForVisibleAgents$ = command(
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleAgents = await get(agents$);
+    const singleAgent = get(singleAgentEnabled$);
+    const allAgents = await get(agents$);
+    signal.throwIfAborted();
+    const defaultId = singleAgent ? await get(defaultAgentId$) : null;
+    signal.throwIfAborted();
+    const visibleAgents = singleAgent
+      ? allAgents.filter((agent) => {
+          return agent.agentId === defaultId;
+        })
+      : allAgents;
+    if (singleAgent && visibleAgents.length !== 1) {
+      throw new ConnectorConnectionError(
+        "Your workspace’s Okou is unavailable. Try again.",
+      );
+    }
     signal.throwIfAborted();
     const client = get(apiClient$)(userBuiltinConnectorsContract);
     await Promise.all(

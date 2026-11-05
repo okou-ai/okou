@@ -1,3 +1,5 @@
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectReference } from "../projects/project-reference.tsx";
 import {
   MessageShareMenu,
@@ -387,7 +389,7 @@ import {
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
 import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
-import { agents$ } from "../../signals/agent.ts";
+import { agents$, defaultAgentId$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
@@ -6212,6 +6214,22 @@ function AssistantErrorState({
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
+  const singleAgent = useGet(singleAgentEnabled$);
+  const defaultId = useLastResolved(defaultAgentId$);
+  return singleAgent && thread.agentId === defaultId ? (
+    <span className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}>
+      <AvatarFromUrl
+        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+        alt=""
+        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
+      />
+    </span>
+  ) : (
+    <LegacyAssistantBubbleAvatar thread={thread} />
+  );
+}
+
+function LegacyAssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const agentId = thread.agentId;
   return (
@@ -6235,6 +6253,17 @@ function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
 // The visible agent name is the link's accessible name, so voice control and
 // screen readers address the line by what it shows.
 function AssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
+  const name = useGet(assistantName$);
+  const singleAgent = useGet(singleAgentEnabled$);
+  const defaultId = useLastResolved(defaultAgentId$);
+  return singleAgent && thread.agentId === defaultId ? (
+    <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>
+  ) : (
+    <LegacyAssistantNameLine thread={thread} />
+  );
+}
+
+function LegacyAssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
   const agentId = thread.agentId;
   const agents = useLastResolved(agents$);
   const assistantName = useGet(assistantName$);

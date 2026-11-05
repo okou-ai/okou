@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { projects$ } from "../projects/projects.ts";
 import { computed, type Computed } from "ccstate";
 import { agents$ } from "../agent.ts";
@@ -94,7 +95,7 @@ export function createComposerChatThreadSuggestions(
     return {
       agentId,
       query: range.query,
-      agents: agentSuggestions,
+      agents: get(singleAgentEnabled$) ? [] : agentSuggestions,
       chatThreads,
     };
   });

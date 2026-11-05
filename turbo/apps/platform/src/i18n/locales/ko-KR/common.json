@@ -1179,7 +1179,7 @@
       "confirmProCancellation": "Pro 플랜을 취소하시겠습니까?",
       "confirmTarget": "{{plan}}으로 다운그레이드하시겠습니까?",
       "inProgress": "다운그레이드 중...",
-      "proWarning": "Pro 액세스는 현재 청구 기간 종료 시까지 유지됩니다. 이후 이 워크스페이스는 플랜 없음으로 전환되며 에이전트 실행이 불가능합니다.",
+      "proWarning": "Pro는 현재 결제 기간이 끝날 때까지 유지됩니다. 이후 워크스페이스는 요금제 없음으로 변경되며, 다시 업그레이드할 때까지 Okou가 작업할 수 없습니다.",
       "teamWarning": "Team 액세스는 현재 청구 기간 종료 시까지 유지됩니다. 이후 이 워크스페이스는 {{plan}}으로 전환됩니다.",
       "title": "플랜 다운그레이드"
     },
@@ -1214,15 +1214,15 @@
       },
       "highlights": {
         "addOnConcurrency": "동시 실행은 언제든 추가",
-        "agentFanOut": "한 에이전트가 에이전트 팀 전체를 지휘",
+        "agentFanOut": "Okou가 여러 AI 도우미에게 작업을 나눕니다",
         "automations": "일정 및 이벤트 자동화",
         "builtInResearchData": "기본 제공 SEO·리드·웹·시장 데이터",
         "chatIntegrations": "Slack·Telegram 연동",
-        "computerUse": "에이전트가 데스크톱의 실제 앱을 조작",
-        "concurrentAgents": "에이전트 {{slots}}개 동시 실행",
+        "computerUse": "Okou가 데스크톱의 실제 앱을 조작합니다",
+        "concurrentAgents": "{{slots}}개 작업 동시 실행",
         "everythingInBuiltForTeams": "{{plan}}의 모든 기능을 팀 규모로",
         "included": "포함 사항",
-        "liveBrowser": "에이전트의 라이브 브라우저를 보고 조작을 넘겨받기",
+        "liveBrowser": "Okou의 실시간 브라우저를 보고 직접 제어하세요",
         "moreConnectorsChannels": "더 많은 커스텀 커넥터와 채널 연동",
         "supportEmail": "이메일 지원",
         "supportPriority": "우선 지원",
@@ -1237,7 +1237,7 @@
       "perMonth": "/월",
       "pricePerMonth": "{{price}}/월",
       "pro": {
-        "description": "일상적인 에이전트 작업, 멤버 단위 요금제.",
+        "description": "일상 업무를 위한 멤버별 요금.",
         "name": "Pro"
       },
       "renews": "{{date}}에 갱신됨",
@@ -1245,7 +1245,7 @@
       "sectionTitle": "플랜",
       "selectedPlan": "선택한 플랜",
       "team": {
-        "description": "하루 종일 에이전트를 돌리는 팀을 위해.",
+        "description": "하루 종일 Okou와 일하는 팀을 위해.",
         "name": "팀"
       },
       "upgrade": "업그레이드",
@@ -4212,6 +4212,27 @@
       "uploadFailed": "표를 업로드하지 못했습니다. 다시 시도해 주세요."
     }
   },
+  "myOkou": {
+    "access": "이 워크스페이스에서의 내 접근 권한",
+    "conflict": "저장된 지침이 다른 곳에서 변경되었습니다. 초안은 유지됩니다. 저장된 지침을 다시 불러오기 전에 초안을 검토하거나 복사하세요.",
+    "description": "이 워크스페이스에서 Okou에게 전달할 나만의 지침",
+    "discard": "취소",
+    "draftKept": "페이지나 워크스페이스를 전환해도 초안은 이 브라우저 탭에 유지됩니다.",
+    "instructions": "지침",
+    "loadError": "지침을 불러오지 못했습니다. 다시 시도하세요.",
+    "markdown": "일반 텍스트 또는 Markdown으로 작성",
+    "newChat": "새 채팅",
+    "placeholder": "선호하는 업무 방식을 Okou에게 알려주세요…",
+    "reload": "저장된 지침 다시 불러오기",
+    "retry": "다시 시도",
+    "save": "저장",
+    "saved": "지침이 저장되었습니다",
+    "saveError": "저장하지 못했습니다. 초안은 유지됩니다. 다시 시도하세요.",
+    "saving": "저장 중…",
+    "timing": "Okou가 다음 작업을 시작할 때 사용됩니다. 진행 중인 작업은 바뀌지 않습니다.",
+    "title": "내 Okou",
+    "unsaved": "저장하지 않은 변경 사항"
+  },
   "onboarding": {
     "common": {
       "next": "다음",
@@ -5443,7 +5464,7 @@
         "starting": "내보내기 시작 중"
       },
       "backToAssistant": "{{assistantName}}로 돌아가기",
-      "description": "{{assistantName}}에서 내 대화와 메모리, 접근할 수 있는 에이전트 및 워크플로의 지침을 다운로드하세요.",
+      "description": "{{assistantName}}의 채팅, 메모리, 지침 및 접근 가능한 워크플로 지침을 다운로드하세요.",
       "documentTitle": "데이터 내보내기",
       "duration": {
         "soon": "곧"

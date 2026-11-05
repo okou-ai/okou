@@ -1,9 +1,18 @@
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
+import { defaultAgentId$ } from "../../../../signals/agent.ts";
 import type { ReactNode } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { ConnectorPermissionsDialog } from "./connector-permissions-dialog.tsx";
 
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { SlidersHorizontal, Loader2, Search, X } from "lucide-react";
@@ -164,13 +173,14 @@ function AgentAccessRow({
   readonly onManage: (row: ConnectorAgentAccessRow) => void;
 }) {
   const { t } = useTranslation();
-  const name = agentName(row.agent);
+  const singleAgent = useGet(singleAgentEnabled$);
+  const name = singleAgent ? "Okou" : agentName(row.agent);
   const canManage = row.authorized && hasPermissions;
 
   return (
     <div className="flex items-center gap-2 px-1 py-4">
       <AvatarFromUrl
-        avatarUrl={row.agent.avatarUrl}
+        avatarUrl={singleAgent ? DEFAULT_AGENT_AVATAR_URL : row.agent.avatarUrl}
         alt={name}
         className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
       />
@@ -399,6 +409,13 @@ function ConnectorAccessDialog({
   readonly footer?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
+  const defaultAgentId = useLastResolved(defaultAgentId$);
+  const visibleRows = singleAgent
+    ? rows.filter((row) => {
+        return row.agent.agentId === defaultAgentId;
+      })
+    : filterRows(rows, search);
   return (
     <Dialog
       open
@@ -426,17 +443,23 @@ function ConnectorAccessDialog({
                 )}
               </DialogTitle>
               <DialogDescription>
-                {t(($) => {
-                  return $.connectors.access.description;
-                })}
+                {singleAgent
+                  ? t(($) => {
+                      return $.myOkou.access;
+                    })
+                  : t(($) => {
+                      return $.connectors.access.description;
+                    })}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="shrink-0">
-          <ConnectorAccessSearch value={search} onChange={onSearchChange} />
-        </div>
+        {!singleAgent && (
+          <div className="shrink-0">
+            <ConnectorAccessSearch value={search} onChange={onSearchChange} />
+          </div>
+        )}
 
         <div
           className={cn(
@@ -447,8 +470,8 @@ function ConnectorAccessDialog({
         >
           {rowsLoaded ? (
             <AgentAccessList
-              rows={rows}
-              search={search}
+              rows={visibleRows}
+              search={singleAgent ? "" : search}
               renderRow={renderRow}
             />
           ) : (
@@ -480,6 +503,7 @@ function AgentPermissionDialog({
   readonly applyGrantPolicies: ApplyUserPermissionGrants;
   readonly onClose: () => void;
 }) {
+  const singleAgent = useGet(singleAgentEnabled$);
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   if (!row || !metadata || !grants) {
@@ -494,7 +518,7 @@ function AgentPermissionDialog({
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}
       metadata$={metadata$}
-      displayName={agentName(row.agent)}
+      displayName={singleAgent ? "Okou" : agentName(row.agent)}
       initialPolicies={initialPolicies}
       initialGrants={activeSnapshot.grants}
       readOnly={false}
@@ -577,7 +601,7 @@ function LegacyConnectorAccessManagementDialog({
         onClose={onClose}
         connectorLabel={connectorLabel}
         headerIcon={<ConnectorIcon icon={metadata?.icon} size={22} />}
-        rows={filterRows(rows, search)}
+        rows={rows}
         rowsLoaded={rowsLoadable.state === "hasData"}
         search={search}
         onSearchChange={setSearch}
@@ -665,6 +689,7 @@ function CustomConnectorAccessPermissionsDrawer({
   readonly loadError: boolean;
   readonly onClose: () => void;
 }) {
+  const singleAgent = useGet(singleAgentEnabled$);
   if (!draft || !agent) {
     return null;
   }
@@ -673,7 +698,7 @@ function CustomConnectorAccessPermissionsDrawer({
       agentId={draft.agentId}
       connectorId={connector.id}
       connectorName={connector.displayName}
-      agentName={agentName(agent)}
+      agentName={singleAgent ? "Okou" : agentName(agent)}
       bundle={bundle}
       loading={loading}
       loadError={loadError}
@@ -768,7 +793,7 @@ function LegacyCustomConnectorAccessManagementDialog({
             size={22}
           />
         }
-        rows={filterRows(rows, search)}
+        rows={rows}
         rowsLoaded={rowsLoaded}
         search={search}
         onSearchChange={setSearch}

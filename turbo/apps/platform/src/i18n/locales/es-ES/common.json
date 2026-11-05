@@ -1203,7 +1203,7 @@
       "confirmProCancellation": "¿Estás seguro de que quieres cancelar tu plan Pro?",
       "confirmTarget": "¿Cambiar al plan {{plan}}?",
       "inProgress": "Cambiando de plan...",
-      "proWarning": "Tu acceso Pro permanece activo hasta que termine el periodo de facturación actual. Después de eso, este espacio de trabajo pasa a Sin plan y los agentes no pueden funcionar hasta que actualices.",
+      "proWarning": "Tu acceso Pro seguirá activo hasta el final del período de facturación. Después, este espacio quedará sin plan y Okou no podrá trabajar hasta que vuelvas a suscribirte.",
       "teamWarning": "El acceso de tu equipo permanece activo hasta que termine el periodo de facturación actual. Después de eso, este espacio de trabajo se traslada a {{plan}}.",
       "title": "Cambiar a un plan inferior"
     },
@@ -1238,15 +1238,15 @@
       },
       "highlights": {
         "addOnConcurrency": "Añade concurrencia cuando quieras",
-        "agentFanOut": "Un agente puede dirigir a todo un equipo de agentes",
+        "agentFanOut": "Okou delega el trabajo a un equipo de asistentes de IA",
         "automations": "Automatizaciones programadas y por eventos",
         "builtInResearchData": "Datos SEO, de leads, web y de mercado integrados",
         "chatIntegrations": "Integración con Slack y Telegram",
-        "computerUse": "Los agentes manejan apps reales en tu escritorio",
-        "concurrentAgents": "{{slots}} agentes a la vez",
+        "computerUse": "Okou controla aplicaciones reales en tu escritorio",
+        "concurrentAgents": "{{slots}} tareas a la vez",
         "everythingInBuiltForTeams": "Todo lo de {{plan}}, creado para equipos",
         "included": "Incluido",
-        "liveBrowser": "Mira el navegador de un agente y toma el control",
+        "liveBrowser": "Observa el navegador de Okou en directo y toma el control",
         "moreConnectorsChannels": "Más conectores personalizados e integraciones de canal",
         "supportEmail": "Soporte por correo",
         "supportPriority": "Soporte prioritario",
@@ -1261,7 +1261,7 @@
       "perMonth": "/mes",
       "pricePerMonth": "{{price}}/mes",
       "pro": {
-        "description": "Trabajo diario con agentes, con precio por miembro.",
+        "description": "Trabajo diario, con precio por miembro.",
         "name": "Pro"
       },
       "renews": "Renueva {{date}}",
@@ -1269,7 +1269,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "El plan seleccionado",
       "team": {
-        "description": "Para un equipo que mantiene agentes en marcha todo el día.",
+        "description": "Para equipos que trabajan con Okou todo el día.",
         "name": "Equipo"
       },
       "upgrade": "Actualización",
@@ -4283,6 +4283,27 @@
       "uploadFailed": "No se pudo subir la tabla. Inténtalo de nuevo."
     }
   },
+  "myOkou": {
+    "access": "Tu acceso en este espacio de trabajo",
+    "conflict": "Tus instrucciones guardadas cambiaron en otro lugar. Se conserva tu borrador. Revísalo o cópialo antes de recargar las instrucciones guardadas.",
+    "description": "Tus instrucciones para Okou en este espacio de trabajo",
+    "discard": "Descartar",
+    "draftKept": "Tu borrador permanece en esta pestaña al cambiar de página o espacio de trabajo.",
+    "instructions": "Instrucciones",
+    "loadError": "No se pudieron cargar tus instrucciones. Inténtalo de nuevo.",
+    "markdown": "Escribe en texto sin formato o Markdown",
+    "newChat": "Nuevo chat",
+    "placeholder": "Dile a Okou cómo te gusta trabajar…",
+    "reload": "Recargar instrucciones guardadas",
+    "retry": "Reintentar",
+    "save": "Guardar",
+    "saved": "Instrucciones guardadas",
+    "saveError": "No se pudo guardar. Tu borrador se conserva. Inténtalo de nuevo.",
+    "saving": "Guardando…",
+    "timing": "Se usarán la próxima vez que Okou empiece a trabajar. El trabajo en curso no cambia.",
+    "title": "Mi Okou",
+    "unsaved": "Cambios sin guardar"
+  },
   "onboarding": {
     "common": {
       "next": "Siguiente",
@@ -5521,7 +5542,7 @@
         "starting": "Iniciando la exportación"
       },
       "backToAssistant": "Volver a {{assistantName}}",
-      "description": "Descarga tus conversaciones, memoria y las instrucciones de los agentes y flujos de trabajo a los que tienes acceso en {{assistantName}}.",
+      "description": "Descarga tus chats, memoria, instrucciones e instrucciones de workflows accesibles en {{assistantName}}.",
       "documentTitle": "Exportar datos",
       "duration": {
         "soon": "Pronto"
