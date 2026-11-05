@@ -34,7 +34,7 @@ async function openSubscriptionUsage(): Promise<HTMLElement> {
   const entry = await within(
     screen.getByTestId("labeled-nav-rail"),
   ).findByLabelText(/^Subscription usage/);
-  await userEvent.setup().hover(entry);
+  click(entry);
   return screen.findByTestId("account-menu-subscriptions");
 }
 
@@ -67,7 +67,7 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
   ).not.toBeInTheDocument();
 });
 
-test("Preview subscriptions from the rail and open Models in Settings", async () => {
+test("Open subscriptions by clicking the rail and open Models in Settings", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
@@ -453,7 +453,7 @@ test.each(["Escape", "Cancel"])(
     expect(
       screen.queryByTestId("account-menu-subscriptions"),
     ).not.toBeInTheDocument();
-    await user.hover(entry);
+    click(entry);
     await expect(
       screen.findByTestId("account-menu-subscriptions"),
     ).resolves.toBeInTheDocument();
