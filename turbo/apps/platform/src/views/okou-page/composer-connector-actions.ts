@@ -1,26 +1,24 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { useGet, useSet } from "ccstate-react";
+import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ComposerConnectorSignals } from "../../signals/okou-page/connectors.ts";
+import { builtinPollingOAuthDeviceAuthSlug$ } from "../../signals/okou-page/settings/connectors.ts";
 import {
-  builtinPollingOAuthDeviceAuthSlug$,
-  connectBuiltinConnectorNoAuthAndSettle$,
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  runBuiltinConnectorConnectSuccess$,
-} from "../../signals/okou-page/settings/connectors.ts";
+  connectBuiltinConnectorNoAuthAndContinue$,
+  connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+} from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 
 export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
   const [authorization, setAuthorization] = useLoadableSet(
     signals.setConnectorAuthorization$,
   );
   const [browserAuth, connectBrowserAuth] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
   const [noAuth, connectNoAuth] = useLoadableSet(
-    connectBuiltinConnectorNoAuthAndSettle$,
+    connectBuiltinConnectorNoAuthAndContinue$,
   );
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
   return {
     savingAuthorization: authorization.state === "loading",
     setAuthorization,
@@ -30,7 +28,6 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
     },
     connectBrowserAuth,
     connectNoAuth,
-    runConnectSuccess,
   };
 }
 

@@ -400,6 +400,9 @@ test("Add an AWS account through external-code authorization", async () => {
   const naming = await screen.findByRole("dialog", {
     name: "Name your AWS account",
   });
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
   click(getConnectorAction("button", "Skip", naming));
 
   const awsCard = getConnectorCard("AWS");
@@ -727,6 +730,9 @@ test("Connect through device authorization", async () => {
   approval.resolve();
   const naming = await screen.findByRole("dialog", {
     name: "Name your Base44 account",
+  });
+  await waitFor(() => {
+    expect(approvalDialog).not.toBeInTheDocument();
   });
   click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {

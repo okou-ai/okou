@@ -37,7 +37,7 @@ export const setupProjectPage$ = command(
     set(setChatAgentId$, agentId);
     const agentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft, projectId });
-    set(get(agentChatComposerSignals$).voice.setup$, signal);
+    set(get(agentChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
     set(resetChatPageModelSelection$);
     set(updatePage$, createElement(ProjectPage), "sidebar");

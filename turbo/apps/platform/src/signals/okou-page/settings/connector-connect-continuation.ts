@@ -1,47 +1,101 @@
-import { command, type Command } from "ccstate";
+import { command, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../../i18n/index.ts";
+import { agents$ } from "../../agent.ts";
 import { captureSourceOnboardingConnected$ } from "../../bootstrap/source-onboarding-telemetry.ts";
 import {
   routeChatActionCallback$,
   type ChatActionCallback,
 } from "../../chat-page/action-callback.ts";
-import { completeDirectedConnectorAction$ } from "../../connectors-page/directed-connector-callback.ts";
-import { setManualGrantDialogKey$ } from "../../connectors-page/directed-connect-slug.ts";
 import {
+  activeChatConnectorAction$,
+  closeChatConnectorActionConnectDialog$,
+  completeCatalogConnectorChatAction$,
+  completeExactReconnectChatAction$,
+} from "../../chat-page/connector-action-block.ts";
+import {
+  completeDirectedConnectorAuthorization$,
+  setDirectedAuthorizeConnectModalKey$,
+} from "../../connectors-page/directed-authorize-slug.ts";
+import { completeDirectedConnectorAction$ } from "../../connectors-page/directed-connector-callback.ts";
+import {
+  setDirectedConnectModalKey$,
+  setManualGrantDialogKey$,
+} from "../../connectors-page/directed-connect-slug.ts";
+import {
+  closeGoogleCalendarReconnect$,
+  finishGoogleCalendarReconnect$,
+  googleCalendarRecoveryTarget$,
+} from "../../workflows-page/google-calendar-recovery.ts";
+import {
+  composerConnectHosts$,
+  type ComposerConnectHost,
+} from "../composer-connect-hosts.ts";
+import type { ComposerConnectorData } from "../connectors.ts";
+import {
+  closeBuiltinAccountConnectDialog$,
   finishConnectorAccountConnection$,
   type ConnectorAccountConnectMode,
 } from "./connector-account-dialogs.ts";
 import {
+  clearBuiltinConnectorExternalCode$,
+  clearBuiltinConnectorOAuthDeviceAuth$,
+  completeBuiltinConnectorExternalCodeAndSettle$,
   connectBuiltinConnectorNoAuthAndSettle$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
+  setSelectedBuiltinConnectorSlug$,
   submitBuiltinManualGrantAndSettle$,
 } from "./connectors.ts";
 
 /**
  * Where a built-in connector connection was started. The connect command
- * derives what follows an accepted connection from it, so a view describes
- * its surface instead of passing a continuation.
+ * derives what follows an accepted connection from it, and which surface to
+ * close, so a view describes where it is instead of passing a continuation.
  */
-type ConnectorConnectOrigin =
+export type ConnectorConnectOrigin =
   /** Nothing follows beyond the connection itself. */
   | { readonly kind: "none" }
   /** Connector settings: add or reconnect an account of this connector. */
   | { readonly kind: "account"; readonly mode: ConnectorAccountConnectMode }
-  /** The onboarding source step. */
-  | { readonly kind: "onboarding-source" }
+  /** A surface that tracks its connector as the selected built-in connector. */
+  | {
+      readonly kind: "selected-connector";
+      /** The onboarding source step records the connection. */
+      readonly captureOnboardingSource: boolean;
+    }
+  /** The chat connector action that opened the connect dialog. */
+  | { readonly kind: "chat-action" }
+  /** The Google Calendar automation being recovered. */
+  | { readonly kind: "google-calendar-recovery" }
   /** The standalone connect route that a chat action linked to. */
-  | { readonly kind: "directed-connect"; readonly agentId: string | null };
+  | { readonly kind: "directed-connect"; readonly agentId: string | null }
+  /** The standalone authorize route that a chat action linked to. */
+  | { readonly kind: "directed-authorize"; readonly agentId: string }
+  /** The composer registered under this key. */
+  | { readonly kind: "composer"; readonly hostKey: string };
 
 /**
  * The form surface that started the connection. A dialog surface is closed by
  * the command once the origin's continuation has settled.
  */
-type ConnectorConnectSurface = "inline" | "directed-manual-grant-dialog";
+type ConnectorConnectSurface =
+  "inline" | "connect-modal" | "directed-manual-grant-dialog";
 
 interface ConnectedConnector {
   readonly slug: ConnectorSlug;
   readonly label?: string;
 }
+
+type ResolvedValue<Target> =
+  Target extends Computed<infer Value> ? Awaited<Value> : never;
+type ActiveChatConnectorAction = NonNullable<
+  ResolvedValue<typeof activeChatConnectorAction$>
+>;
+type GoogleCalendarRecoveryTarget = NonNullable<
+  ResolvedValue<typeof googleCalendarRecoveryTarget$>
+>;
 
 /** An origin resolved against the state it continues, captured at start. */
 type ConnectorConnectPlan =
@@ -52,18 +106,39 @@ type ConnectorConnectPlan =
       readonly mode: ConnectorAccountConnectMode;
     }
   | {
-      readonly kind: "onboarding-source";
+      readonly kind: "selected-connector";
       readonly connectorSlug: ConnectorSlug;
+      readonly captureOnboardingSource: boolean;
+    }
+  | { readonly kind: "chat-action"; readonly action: ActiveChatConnectorAction }
+  | {
+      readonly kind: "google-calendar-recovery";
+      readonly recovery: GoogleCalendarRecoveryTarget;
     }
   | {
       readonly kind: "directed-connect";
       readonly agentId: string | null;
       readonly callback: ChatActionCallback;
+    }
+  | {
+      readonly kind: "directed-authorize";
+      readonly agentId: string;
+      readonly callback: ChatActionCallback;
+    }
+  | {
+      readonly kind: "composer";
+      readonly host: ComposerConnectHost;
+      readonly connector: ConnectedConnector;
+      /** The composer's connector data before this connection changed it. */
+      readonly dataAtStart: Promise<
+        [PromiseSettledResult<ComposerConnectorData>]
+      >;
     };
 
 /**
  * Resolves the origin when the connection starts, so the continuation follows
- * the surface the member acted on even if the route changes meanwhile.
+ * the surface the member acted on even if another one opens meanwhile. It must
+ * stay synchronous: browser authorization opens its window from this event.
  */
 const resolveConnectorConnectPlan$ = command(
   (
@@ -73,13 +148,27 @@ const resolveConnectorConnectPlan$ = command(
   ): ConnectorConnectPlan => {
     switch (origin.kind) {
       case "none": {
-        return origin;
+        return { kind: "none" };
       }
       case "account": {
         return { kind: "account", connector, mode: origin.mode };
       }
-      case "onboarding-source": {
-        return { kind: "onboarding-source", connectorSlug: connector.slug };
+      case "selected-connector": {
+        return {
+          kind: "selected-connector",
+          connectorSlug: connector.slug,
+          captureOnboardingSource: origin.captureOnboardingSource,
+        };
+      }
+      case "chat-action": {
+        const action = get(activeChatConnectorAction$);
+        return action ? { kind: "chat-action", action } : { kind: "none" };
+      }
+      case "google-calendar-recovery": {
+        const recovery = get(googleCalendarRecoveryTarget$);
+        return recovery
+          ? { kind: "google-calendar-recovery", recovery }
+          : { kind: "none" };
       }
       case "directed-connect": {
         return {
@@ -88,7 +177,75 @@ const resolveConnectorConnectPlan$ = command(
           callback: get(routeChatActionCallback$),
         };
       }
+      case "directed-authorize": {
+        return {
+          kind: "directed-authorize",
+          agentId: origin.agentId,
+          callback: get(routeChatActionCallback$),
+        };
+      }
+      case "composer": {
+        const host = get(composerConnectHosts$).get(origin.hostKey);
+        if (!host) {
+          return { kind: "none" };
+        }
+        return {
+          kind: "composer",
+          host,
+          connector,
+          // Settled at once, so a failed read cannot reject unobserved while
+          // the connection is in progress.
+          dataAtStart: Promise.allSettled([get(host.connector.data$)]),
+        };
+      }
     }
+  },
+);
+
+const finishComposerConnectorAddition$ = command(
+  async (
+    { get, set },
+    plan: Extract<ConnectorConnectPlan, { kind: "composer" }>,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const [dataAtStart] = await plan.dataAtStart;
+    signal.throwIfAborted();
+    // An unreadable authorization reads as not yet authorized, as the composer
+    // showed before this connection.
+    const authorization =
+      dataAtStart.status === "fulfilled"
+        ? dataAtStart.value.authorization
+        : undefined;
+    const alreadyAuthorized =
+      authorization?.agentId === plan.host.agentId &&
+      authorization.enabledConnectorSlugs.includes(plan.connector.slug);
+    const newlyAuthorized = await set(
+      plan.host.completeConnectorAddition$,
+      plan.connector.slug,
+      alreadyAuthorized,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (newlyAuthorized) {
+      const agents = await get(agents$);
+      signal.throwIfAborted();
+      toast.success(
+        i18n.t(
+          ($) => {
+            return $.chat.connectors.authorized;
+          },
+          {
+            connectorName: plan.connector.label ?? plan.connector.slug,
+            agentName:
+              agents.find((agent) => {
+                return agent.agentId === plan.host.agentId;
+              })?.displayName ?? "",
+          },
+        ),
+        { id: `connector-connected-${plan.connector.slug}` },
+      );
+    }
+    set(plan.host.connector.updateConnectorUiState$, { showAddDialog: false });
   },
 );
 
@@ -116,8 +273,32 @@ const continueConnectorConnectPlan$ = command(
         );
         return;
       }
-      case "onboarding-source": {
-        set(captureSourceOnboardingConnected$, plan.connectorSlug);
+      case "selected-connector": {
+        if (plan.captureOnboardingSource) {
+          set(captureSourceOnboardingConnected$, plan.connectorSlug);
+        }
+        return;
+      }
+      case "chat-action": {
+        if (plan.action.kind === "catalog-reconnect") {
+          await set(
+            completeExactReconnectChatAction$,
+            plan.action,
+            connectionId,
+            signal,
+          );
+        } else if (plan.action.kind === "catalog") {
+          await set(completeCatalogConnectorChatAction$, plan.action, signal);
+        }
+        return;
+      }
+      case "google-calendar-recovery": {
+        await set(
+          finishGoogleCalendarReconnect$,
+          plan.recovery,
+          connectionId,
+          signal,
+        );
         return;
       }
       case "directed-connect": {
@@ -127,6 +308,63 @@ const continueConnectorConnectPlan$ = command(
           plan.callback,
           signal,
         );
+        return;
+      }
+      case "directed-authorize": {
+        await set(
+          completeDirectedConnectorAuthorization$,
+          plan.agentId,
+          plan.callback,
+          signal,
+        );
+        return;
+      }
+      case "composer": {
+        await set(finishComposerConnectorAddition$, plan, signal);
+        return;
+      }
+    }
+  },
+);
+
+/** Closes the connect dialog of the origin's surface after a connection. */
+const closeConnectorConnectModal$ = command(
+  ({ set }, plan: ConnectorConnectPlan, signal: AbortSignal): void => {
+    set(clearBuiltinConnectorOAuthDeviceAuth$);
+    set(clearBuiltinConnectorExternalCode$);
+    switch (plan.kind) {
+      case "none": {
+        return;
+      }
+      case "account": {
+        set(closeBuiltinAccountConnectDialog$);
+        return;
+      }
+      case "selected-connector": {
+        set(setSelectedBuiltinConnectorSlug$, null);
+        return;
+      }
+      case "chat-action": {
+        set(closeChatConnectorActionConnectDialog$);
+        return;
+      }
+      case "google-calendar-recovery": {
+        set(closeGoogleCalendarReconnect$, plan.recovery);
+        return;
+      }
+      case "directed-connect": {
+        set(setDirectedConnectModalKey$, null, signal);
+        return;
+      }
+      case "directed-authorize": {
+        set(setDirectedAuthorizeConnectModalKey$, null, signal);
+        return;
+      }
+      case "composer": {
+        set(plan.host.connector.updateConnectorUiState$, {
+          selectedConnectorSlug: null,
+          selectedConnector: null,
+        });
         return;
       }
     }
@@ -144,7 +382,9 @@ const finishConnectorConnect$ = command(
   ): Promise<void> => {
     await set(continueConnectorConnectPlan$, plan, connectionId, signal);
     signal.throwIfAborted();
-    if (surface === "directed-manual-grant-dialog") {
+    if (surface === "connect-modal") {
+      set(closeConnectorConnectModal$, plan, signal);
+    } else if (surface === "directed-manual-grant-dialog") {
       set(setManualGrantDialogKey$, null, signal);
     }
   },
@@ -163,6 +403,12 @@ type ManualGrantArgs = ContinuedArgs<typeof submitBuiltinManualGrantAndSettle$>;
 type NoAuthArgs = ContinuedArgs<typeof connectBuiltinConnectorNoAuthAndSettle$>;
 type OAuthAuthCodeArgs = ContinuedArgs<
   typeof connectBuiltinConnectorOAuthAuthCodeAndSettle$
+>;
+type OAuthDeviceAuthArgs = ContinuedArgs<
+  typeof connectBuiltinConnectorOAuthDeviceAuthAndSettle$
+>;
+type ExternalCodeArgs = ContinuedArgs<
+  typeof completeBuiltinConnectorExternalCodeAndSettle$
 >;
 
 /** Each command stays busy until the origin's continuation has settled. */
@@ -236,6 +482,64 @@ export const connectBuiltinConnectorOAuthAuthCodeAndContinue$ = command(
     });
     await set(
       connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+      {
+        ...args,
+        onSuccess: (connectionId, attemptSignal) => {
+          return set(
+            finishConnectorConnect$,
+            plan,
+            surface,
+            connectionId,
+            attemptSignal,
+          );
+        },
+      },
+      signal,
+    );
+  },
+);
+
+export const connectBuiltinConnectorOAuthDeviceAuthAndContinue$ = command(
+  async (
+    { set },
+    { origin, surface = "inline", ...args }: OAuthDeviceAuthArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const plan = set(resolveConnectorConnectPlan$, origin, {
+      slug: args.connectorSlug,
+      label: args.options.connectorLabel,
+    });
+    await set(
+      connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
+      {
+        ...args,
+        onSuccess: (connectionId, attemptSignal) => {
+          return set(
+            finishConnectorConnect$,
+            plan,
+            surface,
+            connectionId,
+            attemptSignal,
+          );
+        },
+      },
+      signal,
+    );
+  },
+);
+
+export const completeBuiltinConnectorExternalCodeAndContinue$ = command(
+  async (
+    { set },
+    { origin, surface = "inline", ...args }: ExternalCodeArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const plan = set(resolveConnectorConnectPlan$, origin, {
+      slug: args.connectorSlug,
+      label: args.options.connectorLabel,
+    });
+    await set(
+      completeBuiltinConnectorExternalCodeAndSettle$,
       {
         ...args,
         onSuccess: (connectionId, attemptSignal) => {

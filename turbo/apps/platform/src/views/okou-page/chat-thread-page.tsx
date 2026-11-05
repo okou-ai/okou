@@ -199,10 +199,8 @@ import type {
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
-  completeExactReconnectChatAction$,
   completeCustomConnectorChatAction$,
   refreshCustomConnectorChatAccount$,
-  completeCatalogConnectorChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -4651,31 +4649,14 @@ function ChatConnectorActionConnectModal() {
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
-  const completeExactReconnect = useSet(completeExactReconnectChatAction$);
   const completeCustomConnector = useSet(completeCustomConnectorChatAction$);
   const refreshCustomAccount = useSet(refreshCustomConnectorChatAccount$);
-  const completeCatalogConnector = useSet(completeCatalogConnectorChatAction$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
 
   if (!active) {
     return null;
   }
-
-  const onSuccess = async (
-    connectionId: string,
-    attemptSignal: AbortSignal,
-  ) => {
-    if (active.kind === "catalog-reconnect") {
-      await completeExactReconnect(active, connectionId, attemptSignal);
-      return;
-    }
-    if (active.kind === "custom") {
-      await completeCustomConnector(active, attemptSignal);
-      return;
-    }
-    await completeCatalogConnector(active, attemptSignal);
-  };
 
   if (active.kind === "custom") {
     const connector = customConnectors?.find((candidate) => {
@@ -4693,7 +4674,9 @@ function ActiveChatConnectorActionConnectModal() {
         onConnected={async (_connectionId, attemptSignal) => {
           await refreshCustomAccount(active, attemptSignal);
         }}
-        onSuccess={onSuccess}
+        onSuccess={async (_connectionId, attemptSignal) => {
+          await completeCustomConnector(active, attemptSignal);
+        }}
       />
     ) : null;
   }
@@ -4713,7 +4696,7 @@ function ActiveChatConnectorActionConnectModal() {
           account: { intent: "reconnect", connectionId: active.account.id },
         }}
         onClose={close}
-        onSuccess={onSuccess}
+        origin={{ kind: "chat-action" }}
       />
     );
   }
@@ -4736,7 +4719,7 @@ function ActiveChatConnectorActionConnectModal() {
       accountOptions={accountOptions}
       reconnectAuthMethod={reconnectAuthMethod}
       onClose={close}
-      onSuccess={onSuccess}
+      origin={{ kind: "chat-action" }}
     />
   );
 }

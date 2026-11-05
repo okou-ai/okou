@@ -219,7 +219,7 @@ export const openAgentSuggestionComposer$ = command(
     if (!graph) {
       throw new Error("Suggestion composer is unavailable");
     }
-    set(graph.composer.voice.setup$, signal);
+    set(graph.composer.setup$, signal);
     await set(
       graph.draft.seed$,
       {

@@ -145,7 +145,6 @@ import {
   builtinAccountManager$,
   closeBuiltinAccountConnectDialog$,
   closeBuiltinAccountManager$,
-  finishConnectorAccountConnection$,
   openBuiltinAccountConnectDialog$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
@@ -1595,7 +1594,6 @@ function ConnectorsDirectoryPage() {
 function BuiltinAccountConnectDialog() {
   const accountConnect = useGet(builtinAccountConnectDialog$);
   const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
-  const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   return accountConnect ? (
     <ConnectModal
       item={accountConnect.connector}
@@ -1613,20 +1611,7 @@ function BuiltinAccountConnectDialog() {
       onClose={() => {
         closeAccountConnect();
       }}
-      onSuccess={async (connectionId, attemptSignal) => {
-        await finishAccountConnection(
-          {
-            target: {
-              kind: "builtin",
-              connectorSlug: accountConnect.connector.slug,
-            },
-            connectionId,
-            connectorLabel: accountConnect.connector.label,
-            mode: accountConnect.mode,
-          },
-          attemptSignal,
-        );
-      }}
+      origin={{ kind: "account", mode: accountConnect.mode }}
     />
   ) : null;
 }

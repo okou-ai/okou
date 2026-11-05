@@ -294,7 +294,6 @@ function DirectedConnectModal({
   reconnectAuthMethod,
   agentId,
   onClose,
-  onSuccess,
 }: {
   readonly open: boolean;
   readonly item: PlatformConnectorCatalogStatusItem | undefined;
@@ -302,7 +301,6 @@ function DirectedConnectModal({
   readonly reconnectAuthMethod: ConnectorAuthMethodId | undefined;
   readonly agentId: string | null;
   readonly onClose: () => void;
-  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   if (!open || !item || !accountOptions) {
     return null;
@@ -315,7 +313,7 @@ function DirectedConnectModal({
       reconnectAuthMethod={reconnectAuthMethod}
       authorizeVisibleAgentsOnConnect={!agentId}
       onClose={onClose}
-      onSuccess={onSuccess}
+      origin={{ kind: "directed-connect", agentId }}
     />
   );
 }
@@ -333,7 +331,6 @@ function DirectedConnectDialogs({
   agentId,
   connectModalOpen,
   setConnectModalOpen,
-  onSuccess,
 }: {
   readonly connectorSlug: ConnectorSlug;
   readonly item: PlatformConnectorCatalogStatusItem | undefined;
@@ -347,7 +344,6 @@ function DirectedConnectDialogs({
   readonly agentId: string | null | undefined;
   readonly connectModalOpen: boolean;
   readonly setConnectModalOpen: (open: boolean) => void;
-  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   return (
     <>
@@ -370,7 +366,6 @@ function DirectedConnectDialogs({
         onClose={() => {
           setConnectModalOpen(false);
         }}
-        onSuccess={onSuccess}
       />
     </>
   );
@@ -626,8 +621,6 @@ function DirectedConnectCard() {
   const { item, presentation } = useDirectedConnectPresentation(connectorSlug);
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
   const setDirectedConnectModalKey = useSet(setDirectedConnectModalKey$);
-  const completeAction = useSet(completeDirectedConnectorAction$);
-  const actionCallback = useGet(routeChatActionCallback$);
   const { manualGrantDialogOpen, connectModalOpen } =
     useDirectedConnectDialogOpenState(connectorSlug, agentId, signal);
 
@@ -658,12 +651,6 @@ function DirectedConnectCard() {
   const canConnect = authMethods.length > 0 && accountOptions !== null;
   const connectorLabel = item?.label ?? connectorSlug;
   const connectorDescription = item?.description ?? "";
-  const handleConnectSuccess: ConnectorConnectSuccess = (
-    _connectionId,
-    attemptSignal,
-  ) => {
-    return completeAction(agentId, actionCallback, attemptSignal);
-  };
 
   const handleConnect = () => {
     if (!canConnect || !item) {
@@ -709,7 +696,6 @@ function DirectedConnectCard() {
             signal,
           );
         }}
-        onSuccess={handleConnectSuccess}
       />
     </>
   );

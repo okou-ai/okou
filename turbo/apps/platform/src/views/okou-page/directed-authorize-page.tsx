@@ -7,7 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import type { ConnectorConnectSuccess } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   directedAuthorizeCatalogItem$,
@@ -16,12 +15,10 @@ import {
   directedAuthorizeAgentName$,
   agentEnabledConnectorSlugs$,
   authorizeDirectedConnector$,
-  completeDirectedConnectorAuthorization$,
   directedAuthorizeConnectModalKey$,
   setDirectedAuthorizeConnectModalKey$,
 } from "../../signals/connectors-page/directed-authorize-slug.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { routeChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import { Check, CircleAlert, Loader2 } from "lucide-react";
 import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
@@ -189,13 +186,11 @@ function DirectedAuthorizeConnectModal({
   open,
   item,
   agentId,
-  onSuccess,
   close,
 }: {
   open: boolean;
   item: PlatformConnectorCatalogStatusItem | null | undefined;
   agentId: string;
-  onSuccess: ConnectorConnectSuccess;
   close: () => void;
 }) {
   if (!open || !item) {
@@ -210,8 +205,8 @@ function DirectedAuthorizeConnectModal({
       item={item}
       agentId={agentId}
       accountOptions={accountOptions}
-      onSuccess={onSuccess}
       onClose={close}
+      origin={{ kind: "directed-authorize", agentId }}
     />
   );
 }
@@ -221,8 +216,6 @@ function useDirectedAuthorizeCardState() {
   const [authorizeLoadable, authorize] = useLoadableSet(
     authorizeDirectedConnector$,
   );
-  const completeAuthorization = useSet(completeDirectedConnectorAuthorization$);
-  const actionCallback = useGet(routeChatActionCallback$);
   const signal = useGet(pageSignal$);
   const modalKey = useGet(directedAuthorizeConnectModalKey$);
   const setModalKey = useSet(setDirectedAuthorizeConnectModalKey$);
@@ -241,8 +234,6 @@ function useDirectedAuthorizeCardState() {
     params,
     authorizeLoadable,
     authorize,
-    completeAuthorization,
-    actionCallback,
     signal,
     setModalKey,
     agentName,
@@ -280,8 +271,6 @@ function DirectedAuthorizeCard() {
     params,
     authorizeLoadable,
     authorize,
-    completeAuthorization,
-    actionCallback,
     signal,
     setModalKey,
     agentName,
@@ -307,12 +296,6 @@ function DirectedAuthorizeCard() {
     isConnected || (item ? item.authMethods.length > 0 : false);
   const completedAuthorization =
     isAuthorized && authorizeLoadable.state !== "hasError";
-  const handleAuthorizeSuccess: ConnectorConnectSuccess = (
-    _connectionId,
-    attemptSignal,
-  ) => {
-    return completeAuthorization(agentId, actionCallback, attemptSignal);
-  };
   return (
     <>
       <DirectedCardShell
@@ -354,7 +337,6 @@ function DirectedAuthorizeCard() {
         open={connectModalOpen}
         item={item}
         agentId={agentId}
-        onSuccess={handleAuthorizeSuccess}
         close={() => {
           return setModalKey(null, signal);
         }}

@@ -205,10 +205,7 @@ import {
   type DefaultConnectorAccountMutationOptions,
   type CustomConnectorAccountMutationOptions,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
-import {
-  matchesConnectorSearch,
-  type ConnectorConnectSuccess,
-} from "../../signals/okou-page/settings/connectors.ts";
+import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
 import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
@@ -6573,8 +6570,8 @@ function ComposerConnectorConnectDialogs({
   selectedCustomConnector,
   selectedCustomConnectorAccountOptions,
   agentId,
+  connectHostKey,
   onBuiltinClose,
-  onBuiltinSuccess,
   onCustomClose,
   onCustomSuccess,
 }: {
@@ -6583,8 +6580,9 @@ function ComposerConnectorConnectDialogs({
   readonly selectedCustomConnector: CustomConnectorResponse | undefined;
   readonly selectedCustomConnectorAccountOptions: CustomConnectorAccountMutationOptions | null;
   readonly agentId: string;
+  /** The composer's registration as the origin of its connections. */
+  readonly connectHostKey: string;
   readonly onBuiltinClose: () => void;
-  readonly onBuiltinSuccess: ConnectorConnectSuccess;
   readonly onCustomClose: () => void;
   readonly onCustomSuccess: () => void;
 }) {
@@ -6596,7 +6594,7 @@ function ComposerConnectorConnectDialogs({
           agentId={agentId}
           accountOptions={selectedConnectorAccountOptions}
           onClose={onBuiltinClose}
-          onSuccess={onBuiltinSuccess}
+          origin={{ kind: "composer", hostKey: connectHostKey }}
         />
       ) : null}
       {selectedCustomConnector && selectedCustomConnectorAccountOptions ? (
@@ -6751,7 +6749,6 @@ function ComposerConnectorDialogsSlot({
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
 }) {
-  const { t } = useTranslation();
   const lastAuthorization = useLastResolved(
     signals.connector.data$,
   )?.authorization;
@@ -6774,97 +6771,41 @@ function ComposerConnectorDialogsSlot({
     addDialogBrowseCatalog,
     addDialogCatalogItems,
   );
-  const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const openConnectorPermissions = useSet(
     signals.connector.openConnectorPermissions$,
   );
   const directoryFinalFocus = useSet(signals.connector.directoryFinalFocus$);
-  const completeAddition = useSet(
-    signals.connectorCompletion.completeConnectorAddition$,
-  );
   const completeCustomAddition = useSet(
     signals.connectorCompletion.completeCustomConnectorAddition$,
   );
 
   const pageSignal = useGet(pageSignal$);
-  const selectedConnectorSlug = connectorUi.selectedConnectorSlug;
   const selectedCustomConnectorId = connectorUi.selectedCustomConnectorId;
   const agentRecordId = signals.agentId;
-  const displayName =
-    agents.find((agent) => {
-      return agent.agentId === agentRecordId;
-    })?.displayName ?? "";
 
-  const { authorizedSet, connectorMap, selectedCustomConnector } =
-    resolveComposerConnectorCollections({
-      addDialogCatalogItems,
-      addDialogCustomConnectors,
-      authorizedConnectorSlugs: authorization?.enabledConnectorSlugs ?? null,
-      selectedCustomConnectorId,
-    });
+  const { selectedCustomConnector } = resolveComposerConnectorCollections({
+    addDialogCatalogItems,
+    addDialogCustomConnectors,
+    authorizedConnectorSlugs: authorization?.enabledConnectorSlugs ?? null,
+    selectedCustomConnectorId,
+  });
   const selectedConnector = connectorUi.selectedConnector ?? undefined;
   const selectedConnectorAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
   const selectedCustomConnectorAccountOptions =
     defaultCustomConnectorAccountOptions(selectedCustomConnector);
 
-  const showConnectSuccess = (connectorSlug: ConnectorSlug) => {
-    const label = connectorMap.get(connectorSlug)?.label ?? connectorSlug;
-    toast.success(
-      t(
-        ($) => {
-          return $.chat.connectors.authorized;
-        },
-        {
-          connectorName: label,
-          agentName: displayName,
-        },
-      ),
-      {
-        id: `connector-connected-${connectorSlug}`,
-      },
-    );
-  };
-
-  const completeConnectorAddition = async (
-    connectorSlug: ConnectorSlug,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const newlyAuthorized = await completeAddition(
-      connectorSlug,
-      authorization?.agentId === agentRecordId &&
-        authorizedSet.has(connectorSlug),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (newlyAuthorized) {
-      showConnectSuccess(connectorSlug);
-    }
-    updateConnectorUi({
-      showAddDialog: false,
-    });
-  };
-
   const connectorConnectHandlers = (
     connector: PlatformConnectorCatalogStatusItem,
   ): ConnectorConnectHandlers => {
     const connectorSlug = connector.slug;
     const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
-    const completeDirectConnection: ConnectorConnectSuccess = (
-      connectionId,
-      signal,
-    ) => {
-      return actions.runConnectSuccess(
-        (_completedConnectionId, continuationSignal) => {
-          return completeConnectorAddition(connectorSlug, continuationSignal);
-        },
-        connectionId,
-        connectorSlug,
-        signal,
-      );
-    };
+    const origin = {
+      kind: "composer",
+      hostKey: signals.connectorCompletion.connectHostKey,
+    } as const;
     return {
       openModal: () => {
         updateConnectorUi({
@@ -6887,7 +6828,7 @@ function ComposerConnectorDialogsSlot({
               agentId: agentRecordId,
               ...accountOptions,
             },
-            onSuccess: completeDirectConnection,
+            origin,
           },
           pageSignal,
         );
@@ -6900,7 +6841,7 @@ function ComposerConnectorDialogsSlot({
           {
             connectorSlug,
             authMethod,
-            onSuccess: completeDirectConnection,
+            origin,
             options: {
               connectorLabel: connector.label,
               agentId: agentRecordId,
@@ -6923,17 +6864,12 @@ function ComposerConnectorDialogsSlot({
           selectedCustomConnectorAccountOptions
         }
         agentId={agentRecordId}
+        connectHostKey={signals.connectorCompletion.connectHostKey}
         onBuiltinClose={() => {
           updateConnectorUi({
             selectedConnectorSlug: null,
             selectedConnector: null,
           });
-        }}
-        onBuiltinSuccess={async (_connectionId, signal) => {
-          const connectorSlug = selectedConnectorSlug;
-          if (connectorSlug) {
-            await completeConnectorAddition(connectorSlug, signal);
-          }
         }}
         onCustomClose={() => {
           updateConnectorUi({ selectedCustomConnectorId: null });

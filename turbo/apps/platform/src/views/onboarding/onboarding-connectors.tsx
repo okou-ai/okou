@@ -45,7 +45,8 @@ interface ConnectorSetupBaseProps {
    * other flows and pass neither.
    */
   readonly onConnectStart?: (connectorSlug: ConnectorSlug) => void;
-  readonly onConnected?: (connectorSlug: ConnectorSlug) => void;
+  /** The sources step records each connection it completes. */
+  readonly captureSourceConnections?: boolean;
 }
 
 /** The source step's grid: its connectors come from the onboarding sources. */
@@ -245,7 +246,7 @@ function useSelectedConnector(): {
 
 function useSourceConnectorActivate(
   onConnectStart: ConnectorSetupProps["onConnectStart"],
-  onConnected: ConnectorSetupProps["onConnected"],
+  captureSourceConnections: boolean,
 ) {
   const pageSignal = useGet(pageSignal$);
   const selectConnector = useSet(setSelectedBuiltinConnectorSlug$);
@@ -273,9 +274,10 @@ function useSourceConnectorActivate(
               authorizeVisibleAgents: true,
               ...accountOptions,
             },
-            origin: onConnected
-              ? { kind: "onboarding-source" }
-              : { kind: "none" },
+            origin: {
+              kind: "selected-connector",
+              captureOnboardingSource: captureSourceConnections,
+            },
           },
           pageSignal,
         ),
@@ -308,7 +310,7 @@ function ConnectorCatalogReadError() {
 function SourcesConnectorGrid({
   connectorSlugs,
   onConnectStart,
-  onConnected,
+  captureSourceConnections = false,
 }: SourcesConnectorSetupProps) {
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const connectorCatalogItemsLoadable = useLastLoadable(
@@ -319,7 +321,7 @@ function SourcesConnectorGrid({
     useSelectedConnector();
   const { activate, busy } = useSourceConnectorActivate(
     onConnectStart,
-    onConnected,
+    captureSourceConnections,
   );
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectorCatalogItems =
@@ -373,11 +375,12 @@ function SourcesConnectorGrid({
           item={selectedConnector}
           accountOptions={selectedAccountOptions}
           authorizeVisibleAgentsOnConnect
-          onSuccess={() => {
-            onConnected?.(selectedConnector.slug);
-          }}
           onClose={() => {
             setSelectedConnectorSlug(null);
+          }}
+          origin={{
+            kind: "selected-connector",
+            captureOnboardingSource: captureSourceConnections,
           }}
         />
       ) : null}
@@ -529,6 +532,10 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
           authorizeVisibleAgentsOnConnect
           onClose={() => {
             setSelectedConnectorSlug(null);
+          }}
+          origin={{
+            kind: "selected-connector",
+            captureOnboardingSource: false,
           }}
         />
       ) : null}
