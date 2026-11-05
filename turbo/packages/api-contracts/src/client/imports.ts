@@ -1381,6 +1381,16 @@ export const clientContractImportManifest = [
     contracts: ["platformRealtimeTokenContract", "runnerRealtimeTokenContract"],
     bindings: [
       {
+        name: "artifactChangedPayloadSchema",
+        source: "validators/realtime",
+        imported: "artifactChangedPayloadSchema",
+      },
+      {
+        name: "artifactChangedTopic",
+        source: "validators/realtime",
+        imported: "artifactChangedTopic",
+      },
+      {
         name: "browserSessionChangedPayloadSchema",
         source: "validators/realtime",
         imported: "browserSessionChangedPayloadSchema",
