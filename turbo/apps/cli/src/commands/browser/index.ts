@@ -698,7 +698,7 @@ Notes:
   - input-request --json errors are one JSON object on stderr and exit nonzero
   - Every input-request requires --title and --reason in the user's language: identify the task and explain why the website needs their input. Use field description for account, format, or code-source details you have verified; never include secret values in this metadata
   - When native input is enabled, prefer input-request for user-held values in supported exact controls, including passwords and one-time codes; use agent-browser for ordinary form values
-  - Never put user-held credentials or codes in CLI arguments, the callback prompt, or chat; input-request fills controls but does not submit the website form
+  - Never put user-held credentials or codes in CLI arguments, the callback prompt, or chat. Exception: OTP/MFA codes, including number-match digits, may be shared in chat with the requesting user; input-request fills controls but does not submit the website form
   - After input-request succeeds, return its exact URL and run no later Browser command in this turn; on callback, use safe tab list/select to find the existing page before submitting at most once, then verify the website's result
   - Tab IDs are valid only for the current agent-browser attachment. Safe tab metadata cannot distinguish same-origin pages; stop if the intended page is ambiguous
   - Do not print raw agent-browser tab listings or tab-switch results: they may contain full URLs, OAuth parameters, or titles
