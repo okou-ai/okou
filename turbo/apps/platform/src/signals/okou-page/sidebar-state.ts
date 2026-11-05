@@ -2,6 +2,7 @@ import { command, computed, state } from "ccstate";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { debounceCommand, onRef, resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
+import { requestChatListLayout$ } from "../chat-page/chat-list-layout.ts";
 import { openCreateAgentDialog$ } from "./jobs-page.ts";
 
 // ---------------------------------------------------------------------------
@@ -164,6 +165,8 @@ export const manageSectionCollapsed$ = computed((get) => {
 export const setManageSectionCollapsed$ = command(
   ({ set }, collapsed: boolean) => {
     set(manageSectionCollapsedStorage.set$, String(collapsed));
+    // The section sits above the mobile drawer's chat list.
+    set(requestChatListLayout$);
   },
 );
 

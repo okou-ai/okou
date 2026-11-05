@@ -1,7 +1,8 @@
 import type { CSSProperties, ReactNode, UIEvent } from "react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import { cn, ScrollBar } from "@okouai/ui";
-import { useSet } from "ccstate-react";
+import { cn, RequestCommit, ScrollBar } from "@okouai/ui";
+import { useGet, useSet } from "ccstate-react";
+import { chatListLayoutRequest$ } from "../../signals/chat-page/chat-list-layout.ts";
 import type { SidebarChatThreadScrollSignals } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 
 interface OverlayScrollAreaProps {
@@ -14,6 +15,29 @@ interface OverlayScrollAreaProps {
   readonly style?: CSSProperties;
   readonly "data-testid"?: string;
   readonly tabIndex?: number;
+}
+
+/**
+ * A layout request is written together with the state that changes the space
+ * around the chat list, so its commit already carries that change. A leaf after
+ * the viewport keeps the request from re-rendering the list.
+ */
+function ChatListLayoutCommit({
+  scrollSignals,
+}: {
+  readonly scrollSignals: SidebarChatThreadScrollSignals;
+}) {
+  const request = useGet(chatListLayoutRequest$);
+  const commitLayoutRequest = useSet(scrollSignals.commitLayoutRequest$);
+  return (
+    <RequestCommit
+      request={request}
+      commitKey="chat-list-viewport"
+      onCommit={commitLayoutRequest}
+    >
+      {null}
+    </RequestCommit>
+  );
 }
 
 /** Sidebar scroll state with shadcn's Base UI scrollbar styling. */
@@ -59,6 +83,7 @@ export function OverlayScrollArea({
           {children}
         </ScrollArea.Content>
       </ScrollArea.Viewport>
+      <ChatListLayoutCommit scrollSignals={scrollSignals} />
       <ScrollBar data-testid="sidebar-scrollbar" />
     </ScrollArea.Root>
   );

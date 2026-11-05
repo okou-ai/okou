@@ -5,18 +5,29 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
 import {
   click,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import {
   mockChatThreadSnapshotResponse,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
+import { pwaChatThreadScrollSignals$ } from "../../../signals/okou-page/pwa-chat-list.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -458,5 +469,159 @@ test("Refresh virtualization after pinning adds a grid row and unpinning removes
   await waitFor(() => {
     expect(within(sidebar).getAllByTestId("pinned-agent-card")).toHaveLength(4);
     expect(rows()).toHaveLength(25);
+  });
+});
+
+function openDrawerChatList(): HTMLElement {
+  click(screen.getByLabelText("Open menu"));
+  return screen.getByRole("dialog", { name: "Sidebar" });
+}
+
+function fastControl(container: HTMLElement, name: string): HTMLElement {
+  const control = queryAllByRoleFast("button", container).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+  if (!control) {
+    throw new Error(`${name} button is missing`);
+  }
+  return control;
+}
+
+test("Remeasure the drawer chat list when the Manage section collapses and expands", async () => {
+  context.mocks.browser.matchMedia(false);
+  mockThreads(120);
+  mockViewportHeight(() => {
+    const manage = document.getElementById("sidebar-manage-content");
+    return manage?.hidden ? 12 * ROW_HEIGHT : 5 * ROW_HEIGHT;
+  });
+  await setupPage({ context, path: "/agents" });
+  await screen.findByText("Nova");
+
+  const drawer = openDrawerChatList();
+  const rows = () => {
+    return within(drawer).getAllByTestId("sidebar-chat-thread-virtual-row");
+  };
+  await waitFor(() => {
+    expect(rows()).toHaveLength(13);
+  });
+
+  click(fastControl(drawer, "Manage"));
+  await waitFor(() => {
+    expect(rows()).toHaveLength(20);
+  });
+  click(fastControl(drawer, "Manage"));
+  await waitFor(() => {
+    expect(rows()).toHaveLength(13);
+  });
+});
+
+test("Remeasure the drawer chat list when a service notice arrives and is dismissed", async () => {
+  context.mocks.browser.matchMedia(false);
+  mockThreads(120);
+  const incident = createDeferredPromise<void>(context.signal);
+  context.mocks.http.get("https://api.instatus.com/issues", async () => {
+    await incident.promise;
+    return HttpResponse.json({
+      activeIncidents: [
+        {
+          id: "incident-api-latency",
+          name: "API requests are delayed",
+          status: "INVESTIGATING",
+        },
+      ],
+    });
+  });
+  mockViewportHeight(() => {
+    const notice = document.querySelector(
+      '[role="region"][aria-label="Service status updates"]',
+    );
+    return notice ? 5 * ROW_HEIGHT : 12 * ROW_HEIGHT;
+  });
+  await setupPage({ context, host: "app.okou.ai", path: "/agents" });
+  await screen.findByText("Nova");
+
+  const drawer = openDrawerChatList();
+  const rows = () => {
+    return within(drawer).getAllByTestId("sidebar-chat-thread-virtual-row");
+  };
+  await waitFor(() => {
+    expect(rows()).toHaveLength(20);
+  });
+
+  incident.resolve();
+  await within(drawer).findByRole("region", {
+    name: "Service status updates",
+  });
+  await waitFor(() => {
+    expect(rows()).toHaveLength(13);
+  });
+
+  click(fastControl(drawer, "Dismiss service update"));
+  await waitFor(() => {
+    expect(rows()).toHaveLength(20);
+  });
+});
+
+test("Measure the mobile chat list only after the main stylesheet bounds it", async () => {
+  const pwaRowHeight = 60;
+  const threadCount = 120;
+  const stylesheet = createDeferredPromise<"loaded">(context.signal);
+  const originalStylesheetLoaded = window.__mainStylesheetLoaded;
+  window.__mainStylesheetLoaded = stylesheet.promise;
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      if (originalStylesheetLoaded) {
+        window.__mainStylesheetLoaded = originalStylesheetLoaded;
+      } else {
+        delete window.__mainStylesheetLoaded;
+      }
+    },
+    { once: true },
+  );
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(display-mode: standalone)";
+  });
+  mockThreads(threadCount);
+  let stylesheetActive = false;
+  // Without the stylesheet the viewport grows to the whole list.
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.dataset.slot !== "scroll-area-viewport") {
+        return 0;
+      }
+      return stylesheetActive ? 5 * pwaRowHeight : threadCount * pwaRowHeight;
+    },
+  );
+
+  const page = await startPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+  });
+  await screen.findByRole("navigation", { name: "Main navigation" });
+  // The list's rows are ready; only the stylesheet holds the viewport back.
+  const scrollSignals = context.store.get(pwaChatThreadScrollSignals$);
+  const list = await act(async () => {
+    return await context.store.get(scrollSignals.list$);
+  });
+  await waitFor(() => {
+    expect(context.store.get(list.count$)).toBe(threadCount);
+  });
+  expect(
+    screen.queryAllByTestId("sidebar-chat-thread-virtual-row"),
+  ).toHaveLength(0);
+
+  stylesheetActive = true;
+  stylesheet.resolve("loaded");
+  await page.ready;
+  await screen.findByText("History 1");
+  await waitFor(() => {
+    expect(
+      screen.getAllByTestId("sidebar-chat-thread-virtual-row"),
+    ).toHaveLength(13);
   });
 });

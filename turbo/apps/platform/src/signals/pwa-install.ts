@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { localStorageSignals } from "./external/local-storage.ts";
+import { requestChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 import { isStandaloneMode } from "./okou-page/settings/connectors.ts";
 
 /**
@@ -58,4 +59,6 @@ export const closeIosInstallModal$ = command(({ set }) => {
 
 export const dismissInstallBanner$ = command(({ set }) => {
   set(setDismissed$, "1");
+  // The banner sits above the mobile chat list.
+  set(requestChatListLayout$);
 });
