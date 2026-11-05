@@ -94,15 +94,9 @@ export interface BrowserSessionDescriptor {
   readonly href: string;
 }
 
-export type BrowserSessionPanelState =
-  | BrowserAuthorizationRequired
-  | {
-      readonly status: BrowserSession["status"];
-      readonly screenshotUrl: BrowserSession["screenshotUrl"];
-      readonly liveUrl: BrowserSession["liveUrl"];
-      readonly instanceId: string | undefined;
-      readonly windowId: number | undefined;
-    };
+/** What the panel shows: authorization, the session lifecycle, or nothing. */
+export type BrowserSessionPanelStatus =
+  "unauthorized" | BrowserSession["status"] | null;
 
 export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   /** Load state of the session's screenshot thumbnail. */
@@ -110,7 +104,14 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   /** A new authorization grant owns a new native viewer, even for the same window. */
   readonly authorizationScope$: Computed<string>;
   readonly session$: Computed<Promise<BrowserSessionResult>>;
-  readonly panelSession$: Computed<Promise<BrowserSessionPanelState | null>>;
+  /**
+   * Panel presentation as primitives. Lease renewals rewrite the session
+   * object but leave these values unchanged, so they do not render the panel.
+   */
+  readonly panelStatus$: Computed<Promise<BrowserSessionPanelStatus>>;
+  readonly panelLiveUrl$: Computed<Promise<BrowserSession["liveUrl"] | null>>;
+  readonly panelInstanceId$: Computed<Promise<string | undefined>>;
+  readonly panelWindowId$: Computed<Promise<number | undefined>>;
   readonly viewerConnection$: Computed<
     Promise<
       | (BrowserViewerConnection & {
@@ -497,23 +498,35 @@ function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
   });
   // Lease timestamps remain authoritative in session$, but do not change the
   // panel's presentation or the mounted viewer's connection identity.
-  const panelSession$ = computed(
-    async (get): Promise<BrowserSessionPanelState | null> => {
+  const panelStatus$ = computed(
+    async (get): Promise<BrowserSessionPanelStatus> => {
       const session = await get(session$);
       if (isBrowserUnauthorized(session)) {
-        return session;
+        return "unauthorized";
       }
-      return session
-        ? {
-            status: session.status,
-            screenshotUrl: session.screenshotUrl,
-            liveUrl: session.liveUrl,
-            instanceId: session.window?.instanceId,
-            windowId: session.window?.primaryWindowId,
-          }
-        : null;
+      return session?.status ?? null;
     },
   );
+  const panelLiveUrl$ = computed(
+    async (get): Promise<BrowserSession["liveUrl"] | null> => {
+      const session = await get(session$);
+      return isBrowserUnauthorized(session) ? null : (session?.liveUrl ?? null);
+    },
+  );
+  const panelInstanceId$ = computed(
+    async (get): Promise<string | undefined> => {
+      const session = await get(session$);
+      return isBrowserUnauthorized(session)
+        ? undefined
+        : session?.window?.instanceId;
+    },
+  );
+  const panelWindowId$ = computed(async (get): Promise<number | undefined> => {
+    const session = await get(session$);
+    return isBrowserUnauthorized(session)
+      ? undefined
+      : session?.window?.primaryWindowId;
+  });
   // Lifecycle reloads (including open/close) can replace the connection. Lease
   // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
@@ -561,7 +574,10 @@ function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
     lifetime$,
     lifecycleSession$,
     session$,
-    panelSession$,
+    panelStatus$,
+    panelLiveUrl$,
+    panelInstanceId$,
+    panelWindowId$,
     viewerConnection$,
     browserConnection$,
   };
@@ -579,7 +595,10 @@ export function createBrowserSessionSignals(
     lifetime$,
     lifecycleSession$,
     session$,
-    panelSession$,
+    panelStatus$,
+    panelLiveUrl$,
+    panelInstanceId$,
+    panelWindowId$,
     viewerConnection$,
     browserConnection$,
   } = createBrowserSessionReadSignals(descriptor);
@@ -625,7 +644,10 @@ export function createBrowserSessionSignals(
     screenshotImageLoad,
     authorizationScope$,
     session$,
-    panelSession$,
+    panelStatus$,
+    panelLiveUrl$,
+    panelInstanceId$,
+    panelWindowId$,
     viewerConnection$,
     browser,
     ...startSignals,
