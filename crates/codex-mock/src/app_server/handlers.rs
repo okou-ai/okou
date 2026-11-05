@@ -559,6 +559,7 @@ impl AppServerState {
             if matches!(
                 self.scenario,
                 Scenario::RuntimeOutputTokenLimitError
+                    | Scenario::RuntimeAccessProgramError
                     | Scenario::RuntimeRequestSendError
                     | Scenario::RuntimeUnsupportedModelError
             ) {
