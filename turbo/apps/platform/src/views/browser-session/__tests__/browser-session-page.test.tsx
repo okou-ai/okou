@@ -1010,6 +1010,53 @@ test("Losing authorization while starting replaces the stopped state with the au
   ).not.toBeInTheDocument();
 });
 
+test("A renewed grant can start a stopped Browser while an older start is pending", async () => {
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
+  const { session } = mockSharedViewer();
+  let currentSession = browserSession({
+    status: "suspended",
+    liveUrl: null,
+    idleExpiresAt: null,
+    suspendedAt: "2026-09-01T10:10:00.000Z",
+    suspensionReason: "idle",
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  const oldStart = context.mocks.deferred<void>();
+  const oldStartStarted = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(browserContract.open, async ({ respond }) => {
+    if (initial) {
+      initial = false;
+      oldStartStarted.resolve();
+      await oldStart.promise;
+    }
+    currentSession = session;
+    return respond(200, { browser: session });
+  });
+  const hold = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
+  await screen.findByText("Browser not live");
+  click(getButton("Start browser"));
+  await oldStartStarted.promise;
+  authorize(false);
+  authorize(true);
+  await waitFor(() => {
+    expect(getButton("Start browser")).toBeEnabled();
+  });
+  click(getButton("Start browser"));
+  await expectStreamingViewer();
+});
+
 test("An unrelated permission failure remains an observable error", async () => {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(403, {
@@ -1101,6 +1148,45 @@ test("A denied renewal from a previous reload cannot revoke the current same-win
   await renewed.promise;
   expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test("A renewed grant starts renewal without waiting for an older pending lease", async () => {
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const oldLease = context.mocks.deferred<void>();
+  const oldLeaseStarted = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (initial) {
+      initial = false;
+      oldLeaseStarted.resolve();
+      await oldLease.promise;
+      return respond(200, { browser: session });
+    }
+    return respond(403, {
+      error: {
+        code: "BROWSER_AUTHORIZATION_REQUIRED",
+        message: AUTHORIZATION_REQUIRED,
+      },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
+  await expectStreamingViewer();
+  await oldLeaseStarted.promise;
+  authorize(false);
+  authorize(true);
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+  expect(
+    document.querySelector("[data-browser-session-panel]"),
+  ).toBeInTheDocument();
 });
 
 test("A renewed grant revalidates a healthy viewer and ignores a previous grant's denied renewal", async () => {

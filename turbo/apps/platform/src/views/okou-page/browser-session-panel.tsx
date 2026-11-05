@@ -341,7 +341,7 @@ function equalPanelSessions(
   );
 }
 
-export function BrowserSessionPanel({
+function BrowserSessionPanelContent({
   signals,
   actions,
   overlay,
@@ -350,9 +350,6 @@ export function BrowserSessionPanel({
     equalityFn: equalPanelSessions,
   });
   const connection = useLoadable(signals.viewerConnection$);
-  // A replaced grant needs a fresh DOM owner to reconcile its descriptor.
-  // Lease timestamps and ordinary session reloads preserve that owner.
-  const authorizationScope = useGet(signals.authorizationScope$);
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
@@ -390,7 +387,6 @@ export function BrowserSessionPanel({
   if (session?.status !== "active") {
     return (
       <PausedBrowserSession
-        key={authorizationScope}
         signals={signals}
         starting={starting}
         onStart={() => {
@@ -405,7 +401,6 @@ export function BrowserSessionPanel({
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
-        key={authorizationScope}
         signals={signals}
         liveUrl={session.liveUrl}
         instanceId={session.instanceId}
@@ -424,4 +419,11 @@ export function BrowserSessionPanel({
       )}
     </PanelFrame>
   );
+}
+
+export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
+  // A grant owns operation state as well as mounted native/heartbeat resources.
+  // Lease timestamps and ordinary session reloads preserve this owner.
+  const authorizationScope = useGet(props.signals.authorizationScope$);
+  return <BrowserSessionPanelContent key={authorizationScope} {...props} />;
 }
