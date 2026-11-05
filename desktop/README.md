@@ -13,7 +13,7 @@ transport, command executor, host lifecycle, and preferences. `ComputerUse/`
 contains the existing native Accessibility and ScreenCaptureKit backend.
 
 ```bash
-swift test --package-path desktop -j 4
+swift test --package-path desktop -j 4 --disable-automatic-resolution
 swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 CLERK_PUBLISHABLE_KEY=pk_test_example \
   OKOU_DESKTOP_PLATFORM_URL=https://staging-app.omby.ai \

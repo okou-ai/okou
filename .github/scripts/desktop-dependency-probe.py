@@ -21,6 +21,20 @@ def storage(path):
     resolved = path.resolve()
     size = int(command("du", "-sk", str(resolved)).split()[0]) * 1024
     result = {"path": str(path), "resolved": str(resolved), "bytes": size}
+    if (
+        path.parent == Path.home() / "Library/Caches/org.swift.swiftpm"
+        and path.name
+        in (
+            "repositories",
+            "artifacts",
+        )
+    ):
+        result["logicalBytes"] = sum(
+            (Path(directory) / name).stat().st_size
+            for directory, _, files in os.walk(path, followlinks=False)
+            for name in files
+            if not (Path(directory) / name).is_symlink()
+        )
     if path.is_dir():
         result["entries"] = sorted(p.name for p in path.iterdir())[:25]
     return result

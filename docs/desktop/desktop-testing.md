@@ -8,7 +8,7 @@ transport real.
 ## Automated Checks
 
 ```bash
-swift test --package-path desktop -j 4
+swift test --package-path desktop -j 4 --disable-automatic-resolution
 swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 ```
 

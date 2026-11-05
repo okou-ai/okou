@@ -7,6 +7,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/desktop.yml"
+      - ".github/actions/setup-desktop-dependency-cache/**"
+      - ".github/scripts/desktop/**"
       - ".github/scripts/artifacts/build-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/fetch-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/r2-copy.sh"
@@ -23,6 +25,8 @@ on:
       - main
     paths:
       - ".github/workflows/desktop.yml"
+      - ".github/actions/setup-desktop-dependency-cache/**"
+      - ".github/scripts/desktop/**"
       - ".github/scripts/artifacts/build-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/fetch-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/r2-copy.sh"
@@ -106,14 +110,32 @@ jobs:
       - name: Observe cold dependency inputs
         run: python3 .github/scripts/desktop-dependency-probe.py before
 
+      - name: Select cache experiment mode
+        id: experiment
+        run: echo "warm=$((GITHUB_RUN_ATTEMPT % 2 == 0))" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Desktop dependencies
+        id: dependencies
+        if: steps.experiment.outputs.warm == '1'
+        uses: ./.github/actions/setup-desktop-dependency-cache
+
+      - name: Require exact warm dependency hit
+        if: steps.experiment.outputs.warm == '1'
+        env:
+          CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+
       - name: Test native Desktop runtime
-        run: swift test --package-path desktop -j 4
+        run: swift test --package-path desktop -j 4 --disable-automatic-resolution
 
       - name: Test Computer Use helper
         run: swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 
       - name: Test native debug symbol pipeline
         run: python3 desktop/scripts/debug_symbols_test.py
+
+      - name: Verify locked Desktop dependencies
+        run: git diff --exit-code -- desktop/Package.resolved desktop/ComputerUse/Package.resolved desktop/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
       - name: Observe native dependency stores
         if: ${{ !cancelled() }}
@@ -136,6 +158,21 @@ jobs:
 
       - name: Observe cold dependency inputs
         run: python3 .github/scripts/desktop-dependency-probe.py before
+
+      - name: Select cache experiment mode
+        id: experiment
+        run: echo "warm=$((GITHUB_RUN_ATTEMPT % 2 == 0))" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Desktop dependencies
+        id: dependencies
+        if: steps.experiment.outputs.warm == '1'
+        uses: ./.github/actions/setup-desktop-dependency-cache
+
+      - name: Require exact warm dependency hit
+        if: steps.experiment.outputs.warm == '1'
+        env:
+          CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
 
       - name: Build production-configured native app
         env:
@@ -181,6 +218,9 @@ jobs:
           print(result.stdout)
           PY
 
+      - name: Verify locked Desktop dependencies
+        run: git diff --exit-code -- desktop/Package.resolved desktop/ComputerUse/Package.resolved desktop/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
       - name: Observe package dependency stores
         if: ${{ !cancelled() }}
         run: python3 .github/scripts/desktop-dependency-probe.py after-packages
@@ -195,6 +235,21 @@ jobs:
             desktop/out/Okou Dev-darwin-arm64/dSYMs
           if-no-files-found: error
           retention-days: 1
+
+      # Temporary diagnostic writer: GitHub scopes this seed to the PR merge ref.
+      - name: Identify cold seed dependencies
+        id: seed
+        if: github.event_name == 'pull_request' && github.run_attempt == '1'
+        run: bash .github/scripts/desktop/dependency-cache-key.sh >> "$GITHUB_OUTPUT"
+
+      - name: Save PR-scoped dependency experiment
+        if: github.event_name == 'pull_request' && github.run_attempt == '1'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm/repositories
+            ~/Library/Caches/org.swift.swiftpm/artifacts
+          key: ${{ steps.seed.outputs.key }}
 
   build-macos:
     name: build-macos-arm64
@@ -333,10 +388,14 @@ jobs:
             exit "$status"
           fi
 
+      - name: Restore Desktop dependencies
+        if: steps.existing.outputs.exists != 'true'
+        uses: ./.github/actions/setup-desktop-dependency-cache
+
       - name: Verify native runtime and helper
         if: steps.existing.outputs.exists != 'true'
         run: |
-          swift test --package-path desktop -j 4
+          swift test --package-path desktop -j 4 --disable-automatic-resolution
           swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
           python3 desktop/scripts/debug_symbols_test.py
 
@@ -347,6 +406,10 @@ jobs:
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
           OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
         run: python3 desktop/scripts/build.py
+
+      - name: Verify locked Desktop dependencies
+        if: steps.existing.outputs.exists != 'true'
+        run: git diff --exit-code -- desktop/Package.resolved desktop/ComputerUse/Package.resolved desktop/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
       - name: Create canonical Desktop artifact
         if: steps.existing.outputs.exists != 'true'
