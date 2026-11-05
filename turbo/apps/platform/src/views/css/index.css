@@ -1644,8 +1644,8 @@ details > summary {
   /* Selected text. The wash above sits within about 2 OKLab ΔE of the selected
      sidebar row under every palette, so a highlighted range read
      as unselected (inline rename on the current chat was the visible case).
-     This stop clears 6.5 ΔE against the selected row and 9.5 against the card
-     on every palette, and keeps the text above 8:1. */
+     This stop clears 6.5 ΔE against the selected row on every palette and
+     keeps the text above 8:1. */
   --selection: var(--okou-color-theme-hue) 65% 82%;
 
   --gray-0: var(--okou-color-theme-hue) 100% 99.5%;
@@ -1691,8 +1691,8 @@ details > summary {
   --brand-text: var(--okou-color-theme-hue) 72% 80%;
   --brand-text-hover: var(--okou-color-theme-hue) 72% 88%;
   --brand-subtle: var(--okou-color-theme-hue) 25% 22%;
-  /* See the light note: at least 8 ΔE from the selected row and 10 from the
-     card, with the text above 5.5:1. */
+  /* See the light note: at least 6.5 ΔE from the selected row, with the text
+     above 5.5:1. */
   --selection: var(--okou-color-theme-hue) 35% 30%;
 
   --gray-0: var(--okou-color-theme-hue) 5% 10.8%;
