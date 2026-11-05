@@ -7138,6 +7138,19 @@
       },
       "title": "匯入你的技能",
       "viewWorkflows": "查看工作流程"
+    },
+    "workspace": {
+      "copyDescription": "在此工作區建立你自己的私有工作流程。只會複製你自己的自動化。",
+      "copyExists": "你已有同名私有工作流程，可開啟它繼續編輯。",
+      "createDescription": "在此工作區與個人 Okou 一起建立工作流程。",
+      "descriptionHelp": "告訴 Okou 何時使用這個工作流程。",
+      "makePrivateCopy": "建立私有副本",
+      "openPrivateCopy": "開啟私有副本",
+      "overridden": "已使用你的私有版本",
+      "overrideHelp": "/{{name}} 使用你的私有副本。你正在查看共用定義。",
+      "publicationPermissionRequired": "你沒有在此工作區發佈工作流程的權限。",
+      "sharedWith": "與 {{workspace}} 共用",
+      "usedFor": "用於 /{{name}}"
     }
   },
   "works": {

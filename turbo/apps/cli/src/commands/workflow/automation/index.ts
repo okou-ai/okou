@@ -1,3 +1,4 @@
+import { workflowHelp } from "../mode";
 import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { Command } from "commander";
 import chalk from "chalk";
@@ -2031,9 +2032,8 @@ function createAutomationAddCommand(): Command {
       "Optional * wildcard matched against the finished run's final assistant text",
     )
     .option("--agent <id>", "Agent ID for resolving a workflow name")
-    .addHelpText(
-      "after",
-      `
+    .addHelpText("after", () => {
+      return workflowHelp(`
 Examples:
   okou workflow automation add tell-a-joke --agent <agent-id> cron --expr "0 9 * * *" -z Asia/Shanghai
   okou workflow automation add tell-a-joke --agent <agent-id> once --at "2026-06-10T09:00" -z Asia/Shanghai
@@ -2067,8 +2067,8 @@ Notes:
   - Each match starts a new run in the workflow's automation thread; it does not resume the watched or creating run
   - An automation stays enabled for future matches until explicitly disabled or removed
   - Webhook automations print the signing secret only once after creation
-  - Use the workflow ID when a name is ambiguous`,
-    )
+  - Use the workflow ID when a name is ambiguous`);
+    })
     .action(
       withErrorHandler(
         async (workflowRef: string, kind: string, options: AddOptions) => {
@@ -2117,9 +2117,8 @@ const updateCommand = addGithubAutomationOptions(
       .option("-z, --timezone <tz>", "IANA timezone for --expr / --at"),
   ),
 )
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", () => {
+    return workflowHelp(`
 Examples:
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --expr "0 9 * * *" -z Asia/Shanghai
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --at "2026-06-10T09:00" -z UTC
@@ -2129,8 +2128,8 @@ Examples:
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --label "Support"
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --actor anyone
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --conclusion failure,timed_out --branch main
-  okou workflow automation update 22222222-2222-4222-8222-222222222222 --actor any`,
-  )
+  okou workflow automation update 22222222-2222-4222-8222-222222222222 --actor any`);
+  })
   .action(
     withErrorHandler(async (id: string, options: UpdateOptions) => {
       const existing = await getWorkflowAutomation(id);
@@ -2150,13 +2149,12 @@ const listCommand = new Command()
   .description("List a workflow's automations")
   .argument("<workflow>", "Workflow ID or name")
   .option("--agent <id>", "Agent ID for resolving a workflow name")
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", () => {
+    return workflowHelp(`
 Examples:
   okou workflow automation list tell-a-joke --agent <agent-id>
-  okou workflow automation list <workflow-id>`,
-  )
+  okou workflow automation list <workflow-id>`);
+  })
   .action(
     withErrorHandler(
       async (workflowRef: string, options: WorkflowRefOptions) => {
@@ -2254,9 +2252,8 @@ export const automationCommand = new Command()
   .addCommand(rmCommand)
   .addCommand(enableCommand)
   .addCommand(disableCommand)
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", () => {
+    return workflowHelp(`
 Examples:
   Add an automation:     okou workflow automation add <workflow-id> cron --expr "0 9 * * *"
   Add a Notion page:     okou workflow automation add <workflow-id> notion-child-page-created --parent-page-url "https://www.notion.so/..."
@@ -2272,5 +2269,5 @@ chat-run-finished:
   starts a new run in the workflow's automation thread rather than resuming the
   watched run. It remains enabled for future matches until disabled or removed.
   chat messages is only a point-in-time read; use this event when completion
-  should trigger work instead of polling.`,
-  );
+  should trigger work instead of polling.`);
+  });

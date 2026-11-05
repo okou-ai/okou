@@ -7138,6 +7138,19 @@
       },
       "title": "Impor skill Anda",
       "viewWorkflows": "Lihat alur kerja"
+    },
+    "workspace": {
+      "copyDescription": "Buat alur kerja pribadi Anda di ruang kerja ini. Hanya otomatisasi Anda yang disalin.",
+      "copyExists": "Anda sudah memiliki alur kerja pribadi dengan nama ini. Buka untuk melanjutkan.",
+      "createDescription": "Buat alur kerja bersama Okou pribadi Anda di ruang kerja ini.",
+      "descriptionHelp": "Beri tahu Okou kapan menggunakan alur kerja ini.",
+      "makePrivateCopy": "Buat salinan pribadi",
+      "openPrivateCopy": "Buka salinan pribadi",
+      "overridden": "Menggunakan versi pribadi Anda",
+      "overrideHelp": "/{{name}} menggunakan salinan pribadi Anda. Anda sedang melihat definisi bersama.",
+      "publicationPermissionRequired": "Anda tidak memiliki izin untuk menerbitkan alur kerja di ruang kerja ini.",
+      "sharedWith": "Dibagikan dengan {{workspace}}",
+      "usedFor": "Digunakan untuk /{{name}}"
     }
   },
   "works": {

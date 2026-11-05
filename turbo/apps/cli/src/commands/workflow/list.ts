@@ -1,3 +1,5 @@
+import { workflowHelp, workflowAgentScope } from "./mode";
+import { singleAgentEnabled } from "../../lib/api/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import { listWorkflows } from "../../lib/api/domains/workflows";
@@ -9,27 +11,30 @@ export const listCommand = new Command()
   .alias("ls")
   .description("List visible workflows, optionally scoped to one agent")
   .option("--agent <id>", "Only list workflows hosted by this agent")
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", () => {
+    return workflowHelp(`
 Examples:
   okou workflow list
-  okou workflow list --agent <agent-id>`,
-  )
+  okou workflow list --agent <agent-id>`);
+  })
   .action(
     withErrorHandler(async (options: { agent?: string }) => {
+      const singleAgent = await singleAgentEnabled();
+      const agentId = await workflowAgentScope(options.agent);
       // Official Workflows are system-managed and never listed as user Workflows.
-      const workflows = (
-        await listWorkflows({ agentId: options.agent })
-      ).filter((workflow) => {
-        return !workflow.official;
-      });
+      const workflows = (await listWorkflows({ agentId })).filter(
+        (workflow) => {
+          return !workflow.official;
+        },
+      );
 
       if (workflows.length === 0) {
         console.log(chalk.dim("No workflows found"));
         console.log(
           chalk.dim(
-            "  Create one with: okou workflow create <name> --agent <agent-id> --instruction <text>",
+            singleAgent
+              ? "  Create one with: okou workflow create <name> --instruction <text>"
+              : "  Create one with: okou workflow create <name> --agent <agent-id> --instruction <text>",
           ),
         );
         return;
@@ -64,8 +69,9 @@ Examples:
         "ID".padEnd(idWidth),
         "NAME".padEnd(nameWidth),
         "VISIBILITY".padEnd(10),
-        "AGENT NAME".padEnd(agentWidth),
-        "AGENT ID".padEnd(agentIdWidth),
+        ...(singleAgent
+          ? ["SLASH RESOLUTION"]
+          : ["AGENT NAME".padEnd(agentWidth), "AGENT ID".padEnd(agentIdWidth)]),
         "DESCRIPTION",
       ].join("  ");
       console.log(chalk.dim(header));
@@ -75,8 +81,16 @@ Examples:
           workflow.id.padEnd(idWidth),
           workflow.name.padEnd(nameWidth),
           workflow.visibility.padEnd(10),
-          formatWorkflowAgentName(workflow).padEnd(agentWidth),
-          workflow.agentId.padEnd(agentIdWidth),
+          ...(singleAgent
+            ? [
+                workflow.shadowedBy
+                  ? `Overridden for you by ${workflow.shadowedBy.id}`
+                  : `/${workflow.name}`,
+              ]
+            : [
+                formatWorkflowAgentName(workflow).padEnd(agentWidth),
+                workflow.agentId.padEnd(agentIdWidth),
+              ]),
           workflow.description ?? "-",
         ].join("  ");
         console.log(row);

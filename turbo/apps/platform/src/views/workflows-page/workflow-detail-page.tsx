@@ -101,12 +101,15 @@ import { useTranslation } from "react-i18next";
 
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { ApiError } from "../../lib/api-error.ts";
+import { currentOrgInfo$, user$ } from "../../signals/auth.ts";
 import { agents$ } from "../../signals/agent.ts";
-import { user$ } from "../../signals/auth.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import {
   changeWorkflowVisibility$,
   createNotionPageContentUpdatedScope$,
+  singleAgentWorkflows$,
+  makePrivateWorkflowCopy$,
+  allVisibleWorkflows$,
   createWorkflowChatRunFinishedAutomation$,
   createWorkflowGithubWebhookAutomation$,
   createWorkflowGithubWorkflowRunCompletedAutomation$,
@@ -1253,11 +1256,12 @@ function WorkflowChatButton({
   const pageSignal = useGet(pageSignal$);
   const [openLoadable, openWorkflowChat] = useLoadableSet(openWorkflowChat$);
   const opening = openLoadable.state === "loading";
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const chatLabel = i18n.t(
     ($) => {
       return $.workflows.detail.refineWith;
     },
-    { agent: agentLabel(detail) },
+    { agent: singleAgent ? "Okou" : agentLabel(detail) },
   );
 
   return (
@@ -1320,6 +1324,7 @@ function WorkflowInfoTab({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const actionDialog = useGet(workflowActionDialog$);
   const setActionDialog = useSet(setWorkflowActionDialog$);
   return (
@@ -1328,12 +1333,24 @@ function WorkflowInfoTab({
       <div className={surfaceVariants({ className: "overflow-hidden" })}>
         <div className="p-4 sm:p-5">
           <InlineSettingsRow
-            label={i18n.t(($) => {
-              return $.workflows.detail.info.copyTitle;
-            })}
-            description={i18n.t(($) => {
-              return $.workflows.detail.info.copyDescription;
-            })}
+            label={
+              singleAgent
+                ? i18n.t(($) => {
+                    return $.workflows.workspace.makePrivateCopy;
+                  })
+                : i18n.t(($) => {
+                    return $.workflows.detail.info.copyTitle;
+                  })
+            }
+            description={
+              singleAgent
+                ? i18n.t(($) => {
+                    return $.workflows.workspace.copyDescription;
+                  })
+                : i18n.t(($) => {
+                    return $.workflows.detail.info.copyDescription;
+                  })
+            }
             alignControls="center"
           >
             <Button
@@ -1346,9 +1363,13 @@ function WorkflowInfoTab({
               }}
             >
               <Copy size={14} />
-              {i18n.t(($) => {
-                return $.workflows.common.copyWorkflow;
-              })}
+              {singleAgent
+                ? i18n.t(($) => {
+                    return $.workflows.workspace.makePrivateCopy;
+                  })
+                : i18n.t(($) => {
+                    return $.workflows.common.copyWorkflow;
+                  })}
             </Button>
           </InlineSettingsRow>
         </div>
@@ -1440,19 +1461,22 @@ function WorkflowMetadataFields({
 }) {
   const copy = workflowMetadataCopy();
   const slugCommand = `/${values.name.trim() || "slug"}`;
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const ownerAgentLabel = agentLabel(detail);
 
   return (
     <div className="p-4 sm:p-5">
-      <InlineSettingsRow
-        label={copy.agent}
-        description={copy.agentDescription}
-        wideControls
-      >
-        <div className="flex h-9 w-full items-center rounded-lg border border-[hsl(var(--gray-400))] bg-gray-50 px-3 text-sm text-muted-foreground">
-          <span className="truncate">{ownerAgentLabel}</span>
-        </div>
-      </InlineSettingsRow>
+      {!singleAgent && (
+        <InlineSettingsRow
+          label={copy.agent}
+          description={copy.agentDescription}
+          wideControls
+        >
+          <div className="flex h-9 w-full items-center rounded-lg border border-[hsl(var(--gray-400))] bg-gray-50 px-3 text-sm text-muted-foreground">
+            <span className="truncate">{ownerAgentLabel}</span>
+          </div>
+        </InlineSettingsRow>
+      )}
       <InlineSettingsRow
         label={copy.name}
         description={copy.nameHelp}
@@ -1474,12 +1498,21 @@ function WorkflowMetadataFields({
       </InlineSettingsRow>
       <InlineSettingsRow
         label={copy.slug}
-        description={`${i18n.t(
-          ($) => {
-            return $.workflows.detail.metadata.slugHelp;
-          },
-          { command: slugCommand },
-        )} ${copy.slugTitle}`}
+        description={
+          singleAgent && detail.shadowedBy
+            ? i18n.t(
+                ($) => {
+                  return $.workflows.workspace.overrideHelp;
+                },
+                { name: detail.name },
+              )
+            : `${i18n.t(
+                ($) => {
+                  return $.workflows.detail.metadata.slugHelp;
+                },
+                { command: slugCommand },
+              )} ${copy.slugTitle}`
+        }
         wideControls
       >
         <Input
@@ -1507,7 +1540,13 @@ function WorkflowMetadataFields({
       </InlineSettingsRow>
       <InlineSettingsRow
         label={copy.description}
-        description={copy.descriptionHelp}
+        description={
+          singleAgent
+            ? i18n.t(($) => {
+                return $.workflows.workspace.descriptionHelp;
+              })
+            : copy.descriptionHelp
+        }
         wideControls
       >
         <Textarea
@@ -1643,8 +1682,33 @@ function ShadowWarning({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   if (!detail.shadowedBy) {
     return null;
+  }
+  if (singleAgent) {
+    return (
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+        <AlertTriangle size={16} className="shrink-0" />
+        <span>
+          {i18n.t(
+            ($) => {
+              return $.workflows.workspace.overrideHelp;
+            },
+            { name: detail.name },
+          )}
+        </span>
+        <Link
+          pathname={ROUTES.workflowDetailInstructions}
+          options={{ pathParams: { workflowId: detail.shadowedBy.id } }}
+          className="font-medium underline hover:text-foreground"
+        >
+          {i18n.t(($) => {
+            return $.workflows.workspace.openPrivateCopy;
+          })}
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -1678,7 +1742,19 @@ function WorkflowPublicToggle({
   const setDemoteConfirmOpen = useSet(setWorkflowDemoteConfirmOpen$);
   const busy = changeLoadable.state === "loading";
   const isPublic = detail.visibility === "public";
-  const statusLabel = isPublic ? copy.public : copy.private;
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
+  const org = useLastResolved(currentOrgInfo$);
+  const statusLabel =
+    isPublic && singleAgent
+      ? i18n.t(
+          ($) => {
+            return $.workflows.workspace.sharedWith;
+          },
+          { workspace: org?.name ?? "" },
+        )
+      : isPublic
+        ? copy.public
+        : copy.private;
   const publishBlocked =
     detail.visibility === "private" && detail.canManage && !detail.canPublish;
   const toggleAction: Parameters<typeof changeVisibility>[0]["action"] | null =
@@ -1721,7 +1797,11 @@ function WorkflowPublicToggle({
       </div>
       {publishBlocked ? (
         <p className="text-xs leading-5 text-muted-foreground">
-          {copy.adminRequired}
+          {singleAgent
+            ? i18n.t(($) => {
+                return $.workflows.workspace.publicationPermissionRequired;
+              })
+            : copy.adminRequired}
         </p>
       ) : null}
       <Dialog open={demoteConfirmOpen} onOpenChange={setDemoteConfirmOpen}>
@@ -1953,7 +2033,7 @@ function WorkflowCopyForm({
   );
 }
 
-function WorkflowCopyDialog({
+function LegacyWorkflowCopyDialog({
   detail,
   open,
   onOpenChange,
@@ -9006,5 +9086,81 @@ function DetailSkeleton() {
         </div>
       </DetailPageHeader>
     </DetailPageShell>
+  );
+}
+
+function WorkflowCopyDialog(props: {
+  readonly detail: WorkflowDetailResponse;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
+  return singleAgent ? (
+    <PrivateWorkflowCopyDialog {...props} />
+  ) : (
+    <LegacyWorkflowCopyDialog {...props} />
+  );
+}
+
+function PrivateWorkflowCopyDialog({
+  detail,
+  open,
+  onOpenChange,
+}: {
+  readonly detail: WorkflowDetailResponse;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const signal = useGet(pageSignal$);
+  const workflows = useLastResolved(allVisibleWorkflows$);
+  const existing = workflows?.find((workflow) => {
+    return workflow.name === detail.name && workflow.visibility === "private";
+  });
+  const [operation, copy] = useLoadableSet(makePrivateWorkflowCopy$);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {i18n.t(($) => {
+              return $.workflows.workspace.makePrivateCopy;
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {existing
+              ? i18n.t(($) => {
+                  return $.workflows.workspace.copyExists;
+                })
+              : i18n.t(($) => {
+                  return $.workflows.workspace.copyDescription;
+                })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          {existing ? (
+            <Link
+              pathname={ROUTES.workflowDetailInstructions}
+              options={{ pathParams: { workflowId: existing.id } }}
+              className="text-sm underline hover:text-muted-foreground"
+            >
+              {i18n.t(($) => {
+                return $.workflows.workspace.openPrivateCopy;
+              })}
+            </Link>
+          ) : (
+            <Button
+              disabled={operation.state === "loading"}
+              onClick={() => {
+                return detach(copy(detail, signal), Reason.DomCallback);
+              }}
+            >
+              {i18n.t(($) => {
+                return $.workflows.workspace.makePrivateCopy;
+              })}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
