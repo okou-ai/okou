@@ -1,6 +1,7 @@
 mod diagnostics;
 pub(crate) mod gateway;
 pub(crate) mod kdc;
+mod kerberos_admission;
 mod profiles;
 
 use super::{

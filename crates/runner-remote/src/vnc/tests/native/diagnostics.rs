@@ -179,7 +179,7 @@ async fn native_kdc_trust_failure_keeps_separate_rfb_and_kdc_configuration_recei
     h.run.enable_checks(&h.runtime, &["vnc:write"]).await;
     let gateway = Gateway::new(h.peer.address, false, false, HOST).await;
     connect_gateway(&h, &gateway).await;
-    let _resolve = h.resolve_response(json!({
+    let _resolve = h.resolve_kerberos(CONNECTION, json!({
         "outcome":"resolved_kerberos", "host":HOST,"port":443,"generation":7,
         "credentialRevision":3,"serverName":"vnc.example.test","transport":route(None),
         "authentication":{"method":"qemu_kerberos_password","initiator":{"realm":"EXAMPLE.TEST","components":["operator"]},"password":"kdc-password-canary"},

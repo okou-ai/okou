@@ -283,7 +283,8 @@ jobs:
           set -euo pipefail
           find .github/actions .github/scripts \
             crates/runner/tests/behavior crates/sandbox-firecracker/tests/native \
-            crates/nbd-cow/tests crates/kerberos-worker/tests crates/rfb-client/tests -type f -name '*.sh' -print0 |
+            crates/nbd-cow/tests crates/kerberos-worker/tests crates/rfb-client/tests \
+            crates/runner-remote/tests -type f -name '*.sh' -print0 |
             xargs -0 -r -n 1 bash -n
           # Syntax checks recursively cover the owned directories above.
           # ShellCheck keeps an explicit allowlist, with source-aware checks below.
@@ -395,6 +396,7 @@ jobs:
           shellcheck crates/kerberos-worker/native/build.sh crates/kerberos-worker/native/build-dependencies.sh \
             crates/kerberos-worker/tests/infrastructure/kerberos-native-cache-test.sh .github/scripts/tests/kerberos-native-cache-workflow-test.sh \
             .github/scripts/tests/crates-parallel-checks-workflow-test.sh
+          shellcheck -x crates/runner-remote/tests/check-native-vnc-kerberos.sh
           shellcheck -x -P .github/scripts/runner/runner-binary-build .github/scripts/runner/runner-binary-build/*.sh
           shellcheck -x -P .github/scripts/artifacts \
             .github/scripts/artifacts/r2-copy.sh \

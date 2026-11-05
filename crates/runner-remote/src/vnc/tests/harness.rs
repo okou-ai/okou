@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     future::Future,
     io,
     net::SocketAddr,
@@ -63,6 +64,7 @@ pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {
 
 pub(crate) struct TestNetwork {
     pub(super) target: Mutex<SocketAddr>,
+    pub(crate) routes: Mutex<HashMap<SocketAddr, SocketAddr>>,
     pub(crate) answers: Mutex<Vec<SocketAddr>>,
     pub(crate) attempts: Mutex<Vec<SocketAddr>>,
     pub(crate) queries: Mutex<Vec<(String, u16)>>,
@@ -82,7 +84,13 @@ impl Network for TestNetwork {
 
     async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
         self.attempts.lock().unwrap().push(address);
-        let target = *self.target.lock().unwrap();
+        let target = self
+            .routes
+            .lock()
+            .unwrap()
+            .get(&address)
+            .copied()
+            .unwrap_or_else(|| *self.target.lock().unwrap());
         TcpStream::connect(target).await
     }
 }
@@ -486,6 +494,7 @@ impl Harness {
             .unwrap();
         let network = Arc::new(TestNetwork {
             target: Mutex::new(peer.address),
+            routes: Mutex::new(HashMap::new()),
             answers: Mutex::new(vec!["93.184.216.34:5900".parse().unwrap()]),
             attempts: Mutex::new(Vec::new()),
             queries: Mutex::new(Vec::new()),
@@ -545,6 +554,50 @@ impl Harness {
     pub(crate) async fn resolve_response(&self, response: Value) -> Mock<'_> {
         self.resolve_response_with_created_at(response, Some(CREATED_AT))
             .await
+    }
+
+    pub(super) async fn resolve_profiles(
+        &self,
+        connection: &str,
+        response: Value,
+        kerberos: bool,
+    ) -> Mock<'_> {
+        let mut request = json!({"connectionId":connection,"runnerIdentity":{
+            "runnerId":self.identity.runner_id(),"heartbeatGeneration":27},
+            "supportedProfiles":supported_profiles()});
+        if kerberos {
+            request = crate::test_fixtures::vnc::with_kerberos_profiles(request, false);
+        }
+        self.api
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
+                    .header("authorization", format!("Bearer {TOKEN}"))
+                    .json_body(request);
+                let then = then.status(200);
+                let then = if response["outcome"]
+                    .as_str()
+                    .is_some_and(|outcome| outcome.starts_with("resolved_"))
+                {
+                    then.header("X-VNC-Connection-Created-At", CREATED_AT)
+                } else {
+                    then
+                };
+                then.json_body(response);
+            })
+            .await
+    }
+
+    pub(super) async fn resolve_kerberos(
+        &self,
+        connection: &str,
+        response: Value,
+    ) -> (Mock<'_>, Mock<'_>) {
+        let ordinary = self
+            .resolve_profiles(connection, json!({"outcome":"unsupported_profile"}), false)
+            .await;
+        let native = self.resolve_profiles(connection, response, true).await;
+        (ordinary, native)
     }
 
     pub(super) async fn resolve_response_with_created_at(
