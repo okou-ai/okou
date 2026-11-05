@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { HttpResponse } from "msw";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   type GoogleDriveUploadMode,
@@ -90,7 +89,6 @@ async function openTables(source = SOURCE) {
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownTableExport]: true },
   });
   await screen.findAllByRole("table");
   return chat;
