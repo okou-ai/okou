@@ -124,6 +124,7 @@ test("recovers a confirmed stopped provider without reusing its old instance", a
     if (!providerId) {
       throw new Error("Expected an accepted provider session");
     }
+    f.provider.sessionIds.delete(providerId);
     f.provider.stoppedSessionIds.add(providerId);
     f.provider.native.targets.clear();
     const recovered = await open(a);
@@ -278,6 +279,69 @@ test("rejects a late healthy result for a replaced native binding", async () => 
     expect((await view(a)).window).toStrictEqual(replacement.value.window);
     expect((await view(b)).window).toStrictEqual(sibling.window);
     expect(f.provider.sessionRequests).toHaveLength(1);
+  });
+});
+
+test("rejects an old instance's late health result when the replacement reuses its window number", async () => {
+  const f = await fixture();
+  await f.owned.run(async () => {
+    const a = await f.start();
+    const first = await open(a);
+    const [providerId] = f.provider.sessionIds;
+    if (!providerId || !first.window) {
+      throw new Error("Expected the first provider instance and native window");
+    }
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let hold = true;
+    f.provider.native.beforeNativeWindowReply = async (windowId) => {
+      if (hold && windowId === first.window?.primaryWindowId) {
+        hold = false;
+        entered.resolve();
+        await release.promise;
+      }
+    };
+    mockNow(START + MINUTE);
+    const earlier = settleIncludingAbort(request(a));
+    const replacement = await settleIncludingAbort(async () => {
+      await Promise.race([
+        entered.promise,
+        earlier.then((result) => {
+          if (!result.ok) {
+            throw result.error;
+          }
+          throw new Error("Expected the old instance's health check to wait");
+        }),
+      ]);
+      f.provider.sessionIds.delete(providerId);
+      f.provider.stoppedSessionIds.add(providerId);
+      f.provider.native.targets.clear();
+      return await open(a);
+    });
+    mockNow(START + 2 * MINUTE);
+    release.resolve();
+    const completed = await earlier;
+    if (!replacement.ok) {
+      throw replacement.error;
+    }
+    if (!completed.ok) {
+      throw completed.error;
+    }
+    expect(replacement.value.window?.instanceId).not.toBe(
+      first.window.instanceId,
+    );
+    expect(replacement.value.window?.primaryWindowId).toBe(
+      first.window.primaryWindowId,
+    );
+    expect(completed.value).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_RECLAIMING" } },
+    });
+    const current = await view(a);
+    expect(current.window).toStrictEqual(replacement.value.window);
+    expect(current.idleExpiresAt).toBe(replacement.value.idleExpiresAt);
+    expect(f.provider.sessionRequests).toHaveLength(2);
+    expect(f.provider.createdIds).toHaveLength(1);
   });
 });
 
