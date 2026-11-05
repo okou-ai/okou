@@ -13,13 +13,11 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
 >({
   "ahrefs\0oauth": FeatureSwitchKey.AhrefsConnector,
   "bentoml\0api-token": FeatureSwitchKey.BentomlConnector,
-  "bill\0api-token": FeatureSwitchKey.BillConnector,
   "deel\0oauth": FeatureSwitchKey.DeelConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,
-  "netsuite\0api-token": FeatureSwitchKey.NetSuiteConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "reddit\0oauth": FeatureSwitchKey.RedditConnector,
@@ -31,7 +29,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "test-oauth-device\0api": FeatureSwitchKey.TestOauthConnector,
   "test-oauth-device\0oauth": FeatureSwitchKey.TestOauthConnector,
   "tiktok\0oauth": FeatureSwitchKey.TikTokOAuthConnector,
-  "workday\0api-token": FeatureSwitchKey.WorkdayConnector,
   "zapier\0api-token": FeatureSwitchKey.ZapierConnector,
   "zoom\0oauth": FeatureSwitchKey.ZoomConnector,
 });

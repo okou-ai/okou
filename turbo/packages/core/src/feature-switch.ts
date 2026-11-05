@@ -257,11 +257,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
-  [FeatureSwitchKey.BillConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BILL Spend & Expense connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.BentomlConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the BentoML model serving connector",
@@ -285,11 +280,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.NeonConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Neon serverless Postgres connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.NetSuiteConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Oracle NetSuite ERP connector",
     enabled: false,
   },
   [FeatureSwitchKey.GarminConnectConnector]: {
@@ -351,11 +341,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description:
       "Enable the Zoom connector (OAuth 2.0) for meetings, past participants, and cloud recordings access",
-    enabled: false,
-  },
-  [FeatureSwitchKey.WorkdayConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Workday HCM and finance connector",
     enabled: false,
   },
   [FeatureSwitchKey.RealAgentInPreview]: {
