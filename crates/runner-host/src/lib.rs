@@ -1,5 +1,7 @@
 //! Runner host filesystem, process registry, local control IPC, locks, paths, and logging primitives.
 
+mod blocking;
+
 pub mod bounded_command;
 pub mod byte_size;
 pub mod child_cleanup;

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.19...runner-rs-v0.244.20) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** isolate registry sandbox field classification ([#45435](https://github.com/okou-ai/okou/issues/45435)) ([b9abea1](https://github.com/okou-ai/okou/commit/b9abea1a566a620ef64c660b07afd84610ca287e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.18...runner-rs-v0.244.19) (2026-11-05)
 
 

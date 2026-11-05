@@ -201,12 +201,12 @@ describe("isFeatureEnabled", () => {
   });
 
   it("should return false for disabled switch without context", () => {
-    expect(isFeatureEnabled(FeatureSwitchKey.AhrefsConnector, {})).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.Banking, {})).toBe(false);
   });
 
   it("should return false for disabled switch with non-matching userId", () => {
     expect(
-      isFeatureEnabled(FeatureSwitchKey.AhrefsConnector, {
+      isFeatureEnabled(FeatureSwitchKey.Banking, {
         userId: "some-user",
       }),
     ).toBe(false);
@@ -278,7 +278,7 @@ describe("getAllFeatureStates", () => {
     // Globally enabled should still be true
     expect(states[FeatureSwitchKey.Dummy]).toBe(true);
     // Switches without org hashes should remain false
-    expect(states[FeatureSwitchKey.AhrefsConnector]).toBe(false);
+    expect(states[FeatureSwitchKey.Banking]).toBe(false);
   });
 
   it("should return false for switches with orgId hashes when orgId does not match", () => {
@@ -310,9 +310,9 @@ describe("getAllFeatureStates", () => {
 
   it("should apply overrides to enable disabled features", () => {
     const states = getAllFeatureStates({
-      overrides: { [FeatureSwitchKey.AhrefsConnector]: true },
+      overrides: { [FeatureSwitchKey.Banking]: true },
     });
-    expect(states[FeatureSwitchKey.AhrefsConnector]).toBe(true);
+    expect(states[FeatureSwitchKey.Banking]).toBe(true);
     // Non-overridden disabled feature stays false
     expect(states[FeatureSwitchKey.TestOauthConnector]).toBe(false);
   });
@@ -323,7 +323,7 @@ describe("getAllFeatureStates", () => {
     });
     expect(states[FeatureSwitchKey.Dummy]).toBe(false);
     // Non-overridden disabled feature stays false
-    expect(states[FeatureSwitchKey.AhrefsConnector]).toBe(false);
+    expect(states[FeatureSwitchKey.Banking]).toBe(false);
   });
 
   it("should ignore override keys that are no longer registered", () => {
@@ -401,17 +401,15 @@ describe("getFeatureSwitchMetadata", () => {
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
     ).toBe("beta");
-    expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
-      "alpha",
-    );
+    expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
   });
 });
 
 describe("overrides", () => {
   it("should enable a disabled feature when override is true", () => {
     expect(
-      isFeatureEnabled(FeatureSwitchKey.AhrefsConnector, {
-        overrides: { [FeatureSwitchKey.AhrefsConnector]: true },
+      isFeatureEnabled(FeatureSwitchKey.Banking, {
+        overrides: { [FeatureSwitchKey.Banking]: true },
       }),
     ).toBe(true);
   });
@@ -427,14 +425,14 @@ describe("overrides", () => {
   it("should not affect keys without overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.TestOauthConnector, {
-        overrides: { [FeatureSwitchKey.AhrefsConnector]: true },
+        overrides: { [FeatureSwitchKey.Banking]: true },
       }),
     ).toBe(false);
   });
 
   it("should behave identically when no overrides provided", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
-    expect(isFeatureEnabled(FeatureSwitchKey.AhrefsConnector, {})).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.Banking, {})).toBe(false);
     expect(
       isFeatureEnabled(FeatureSwitchKey.Dummy, { userId: "any-user" }),
     ).toBe(true);

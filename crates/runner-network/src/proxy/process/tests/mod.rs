@@ -9,6 +9,9 @@ use tracing::Level;
 use tracing_test_support::CapturedEvent;
 use tracing_test_support::capture_future_events as capture_mitmdump_monitor_events;
 
+mod ca_fixture;
+use ca_fixture::prepare_test_ca;
+
 static ADDON_FILES: std::sync::LazyLock<Vec<(String, String)>> =
     std::sync::LazyLock::new(load_test_addon_files);
 
@@ -687,7 +690,7 @@ async fn wait_for_path_absent(path: &Path) -> bool {
 async fn initial_start_retries_an_occupied_selected_port() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let fake_mitmdump = dir.path().join("fake-mitmdump");
     write_fake_listening_mitmdump(&fake_mitmdump);
     let config = test_proxy_config(dir.path(), &home, fake_mitmdump);
@@ -723,7 +726,7 @@ async fn initial_and_replacement_readiness_join_catalog_initialization() {
 
     let directory = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(directory.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let executable = directory.path().join("fake-mitmdump");
     write_fake_listening_mitmdump(&executable);
     let config = test_proxy_config(directory.path(), &home, executable);
@@ -986,7 +989,7 @@ async fn wait_for_ready_rejects_unresponsive_control_when_port_is_open() {
 async fn spawn_mitmdump_passes_runner_options_and_preserves_ca() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let original_cert = std::fs::read(home.ca_dir().join(crate::ca::CA_CERT)).unwrap();
     std::fs::remove_file(home.ca_dir().join("mitmproxy-ca.pem")).unwrap();
     let fake_mitmdump = dir.path().join("fake-mitmdump");
@@ -1156,7 +1159,7 @@ async fn spawn_mitmdump_rejects_unrecoverable_ca_before_spawn() {
 async fn spawn_mitmdump_kills_child_when_handle_is_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let fake_mitmdump = dir.path().join("fake-mitmdump");
     write_fake_listening_mitmdump(&fake_mitmdump);
 
@@ -1221,7 +1224,7 @@ fn dropped_mitmdump_without_current_runtime_preserves_launch_for_recovery() {
         .build()
         .unwrap();
     let (child, pid, starttime, launch_path) = tokio_runtime.block_on(async {
-        crate::ca::ensure(&home).await.unwrap();
+        prepare_test_ca(&home).await;
         let runtime = acquire_test_runtime(&config).await;
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));
@@ -1272,7 +1275,7 @@ fn dropped_mitmdump_without_current_runtime_preserves_launch_for_recovery() {
 async fn startup_failure_kills_forked_descendant_and_removes_launch_directory() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let fake_mitmdump = dir.path().join("failing-mitmdump");
     write_forking_failing_mitmdump(&fake_mitmdump);
     let config = test_proxy_config(dir.path(), &home, fake_mitmdump.clone());
@@ -1317,7 +1320,7 @@ async fn startup_failure_kills_forked_descendant_and_removes_launch_directory() 
 async fn restart_kills_forked_descendant_and_replaces_launch_directory() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let fake_mitmdump = dir.path().join("forking-mitmdump");
     write_forking_ready_mitmdump(&fake_mitmdump);
     let config = test_proxy_config(dir.path(), &home, fake_mitmdump.clone());
@@ -1405,7 +1408,7 @@ async fn assert_graceful_stop_with_cleanup_stat(
 ) {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let fake_mitmdump = dir.path().join("graceful-parent-mitmdump");
     write_graceful_parent_with_descendant_mitmdump(&fake_mitmdump);
     let config = test_proxy_config(dir.path(), &home, fake_mitmdump.clone());
@@ -1485,7 +1488,7 @@ async fn assert_graceful_stop_with_cleanup_stat(
 async fn repeated_start_keeps_the_active_process_and_launch_directory() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
+    prepare_test_ca(&home).await;
     let fake_mitmdump = dir.path().join("fake-mitmdump");
     write_fake_listening_mitmdump(&fake_mitmdump);
     let config = test_proxy_config(dir.path(), &home, fake_mitmdump.clone());

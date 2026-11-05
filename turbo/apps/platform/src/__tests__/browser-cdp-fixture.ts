@@ -67,10 +67,11 @@ export function mockBrowserCdp(
     readonly crashedTargets?: readonly string[];
     readonly extensionAvailable?: boolean;
     readonly extensionRuntimeId?: string;
+    readonly nativeBase64?: boolean;
   } = {},
 ) {
   context.mocks.browser.canvasRendering();
-  context.mocks.browser.uint8ArrayFromBase64();
+  context.mocks.browser.uint8ArrayFromBase64(options.nativeBase64 ?? true);
   const bitmap =
     options.streaming === false
       ? null

@@ -50,7 +50,6 @@ import {
   type ConnectorAuthProviderClientContract,
   type ConnectorAuthProviderMethodContract,
 } from "./provider-capabilities";
-import { ahrefsProvider } from "./connectors/ahrefs/provider";
 import { airtableProvider } from "./connectors/airtable/provider";
 import { asanaProvider } from "./connectors/asana/provider";
 import { awsProvider } from "./connectors/aws/provider";
@@ -61,12 +60,10 @@ import { calendlyProvider } from "./connectors/calendly/provider";
 import { closeProvider } from "./connectors/close/provider";
 import { copperProvider } from "./connectors/copper/provider";
 import { cloudflareProvider } from "./connectors/cloudflare/provider";
-import { deelProvider } from "./connectors/deel/provider";
 import { datadogProvider } from "./connectors/datadog/provider";
 import { docusignProvider } from "./connectors/docusign/provider";
 import { dropboxProvider } from "./connectors/dropbox/provider";
 import { figmaProvider } from "./connectors/figma/provider";
-import { garminConnectProvider } from "./connectors/garmin-connect/provider";
 import { gumroadProvider } from "./connectors/gumroad/provider";
 import { githubProvider } from "./connectors/github/provider";
 import { gmailProvider } from "./connectors/gmail/provider";
@@ -113,7 +110,6 @@ import {
 import { todoistProvider } from "./connectors/todoist/provider";
 import { vercelProvider } from "./connectors/vercel/provider";
 import { webflowProvider } from "./connectors/webflow/provider";
-import { supabaseProvider } from "./connectors/supabase/provider";
 import { metaAdsProvider } from "./connectors/meta-ads/provider";
 import { posthogProvider } from "./connectors/posthog/provider";
 import { paypalProvider } from "./connectors/paypal/provider";
@@ -973,7 +969,6 @@ function assertDeclaredProviderInputs(args: {
 }
 
 const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
-  authCodeRefreshProviderEntry("ahrefs", "oauth", ahrefsProvider),
   authCodeRefreshProviderEntry("airtable", "oauth", airtableProvider),
   authCodeRefreshProviderEntry("asana", "oauth", asanaProvider),
   externalCodeRefreshProviderEntry("aws", "cli", awsProvider),
@@ -992,16 +987,10 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
     "oauth",
     cloudflareProvider,
   ),
-  authCodeRefreshProviderEntry("deel", "oauth", deelProvider),
   authCodeRefreshProviderEntry("datadog", "oauth", datadogProvider),
   authCodeRefreshProviderEntry("docusign", "oauth", docusignProvider),
   authCodeRefreshProviderEntry("dropbox", "oauth", dropboxProvider),
   authCodeRefreshProviderEntry("figma", "oauth", figmaProvider),
-  authCodeRefreshProviderEntry(
-    "garmin-connect",
-    "oauth",
-    garminConnectProvider,
-  ),
   authCodeTokenRevokeProviderEntry("github", "oauth", githubProvider),
   authCodeRefreshProviderEntry("gmail", "oauth", gmailProvider),
   authCodeRefreshProviderEntry("google-ads", "oauth", googleAdsProvider),
@@ -1084,7 +1073,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("strava", "oauth", stravaProvider),
   authCodeRefreshProviderEntry("stripe", "oauth", stripeProvider),
   deviceAuthProviderEntry("stripe", "cli", stripeCliProvider),
-  authCodeRefreshProviderEntry("supabase", "oauth", supabaseProvider),
   authCodeRefreshProviderEntry("test-oauth", "oauth", testOauthProvider),
   refreshProviderEntry("test-oauth", "api-token", testOauthApiTokenProvider),
   authCodeRefreshProviderEntry("test-oauth", "api", testOauthApiProvider),

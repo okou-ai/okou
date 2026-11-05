@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.4](https://github.com/okou-ai/okou/compare/ios-v0.25.3...ios-v0.25.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ios:** align sidebar menu text and shorten mark all read ([#45446](https://github.com/okou-ai/okou/issues/45446)) ([93d8c4e](https://github.com/okou-ai/okou/commit/93d8c4e181604f652d43356c529c5ca1afd5d667))
+
 ## [0.25.3](https://github.com/okou-ai/okou/compare/ios-v0.25.2...ios-v0.25.3) (2026-11-05)
 
 
