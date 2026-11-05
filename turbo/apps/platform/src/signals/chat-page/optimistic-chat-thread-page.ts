@@ -8,6 +8,8 @@ import type {
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
+import type { PendingChatConnectorAccess } from "../okou-page/chat-connector-access.ts";
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserModelPreferenceResponse } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -67,6 +69,11 @@ import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 
 export type NewChatThreadPane = "main" | "sidebar";
 
+interface NewChatThreadTarget {
+  readonly agentId: string;
+  readonly projectId?: string;
+}
+
 const SIDEBAR_PARAM = "sidebar";
 const PWA_COMPOSE_PARAM = "compose";
 
@@ -78,6 +85,8 @@ export const newChatThreadDisabled$ = computed(() => {
 
 interface SendNewThreadMessageRequest {
   agentId: string;
+  /** The Project the new thread starts in. */
+  projectId?: string;
   draft?: DraftSignals;
   /** Send from an isolated draft without clearing the Agent's saved composer. */
   preserveAgentDraft?: boolean;
@@ -95,6 +104,7 @@ interface SendNewThreadMessageRequest {
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
+  initialConnectorAccess?: PendingChatConnectorAccess;
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
 
@@ -344,6 +354,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly threadId: string;
       readonly eventId: string;
       readonly agentId: string;
+      readonly projectId?: string;
       readonly selectedModel: string | null;
       readonly serviceTier: "priority" | null;
       readonly modelSettings: ModelSettings;
@@ -362,6 +373,7 @@ const mintOptimisticThreadWithEvent$ = command(
       kind: "created",
       chatThreadId: args.threadId,
       agentId: args.agentId,
+      projectId: args.projectId,
       selectedModel: args.selectedModel,
       modelSettings: args.modelSettings,
       serviceTier: args.serviceTier,
@@ -375,6 +387,7 @@ async function createChatThread(
   args: {
     readonly createClient: ApiClientFactory;
     readonly agentId: string;
+    readonly projectId?: string;
     readonly title: string | undefined;
     readonly clientThreadId: string;
     readonly eventId: string;
@@ -383,6 +396,7 @@ async function createChatThread(
     readonly catalog: ModelCatalog;
     readonly codexExecution: boolean;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
+    readonly initialConnectorAccess?: PendingChatConnectorAccess;
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
   signal: AbortSignal,
@@ -401,6 +415,7 @@ async function createChatThread(
     client.create({
       body: {
         agentId: args.agentId,
+        projectId: args.projectId,
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,
         model: selectedModel,
@@ -430,17 +445,48 @@ async function createChatThread(
     { expectedErrors: { 400: ["CONNECTOR_ACCOUNT_UNAVAILABLE"] } },
   );
   signal.throwIfAborted();
+  // The Chat must exist before its scoped preferences can be saved, and all
+  // preferences must be accepted before its first event starts a Run.
+  if (args.initialConnectorAccess) {
+    const accessClient = args.createClient(chatConnectorAccessContract);
+    for (const override of args.initialConnectorAccess.overrides) {
+      await accept(
+        accessClient.setThreadOverride({
+          params: {
+            threadId: args.clientThreadId,
+            connectionId: override.connectionId,
+          },
+          body: { target: override.target, enabled: override.enabled },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+    }
+    for (const selection of args.initialConnectorAccess.selections) {
+      await accept(
+        accessClient.setThreadCurrent({
+          params: { threadId: args.clientThreadId },
+          body: selection,
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+    }
+  }
 }
 
 const startNewChatThreadCreate$ = command(
   async (
     { get, set },
-    agentId: string,
+    target: NewChatThreadTarget,
     signal: AbortSignal,
   ): Promise<{
     readonly threadId: string;
     readonly createResult: Promise<void>;
   }> => {
+    const { agentId, projectId } = target;
     const threadId = crypto.randomUUID();
     const eventId = crypto.randomUUID();
     const models = await get(availableRunModels$);
@@ -464,6 +510,7 @@ const startNewChatThreadCreate$ = command(
         threadId,
         eventId,
         agentId,
+        projectId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
         serviceTier: apiServiceTierFromSelection(modelSelection),
@@ -480,6 +527,7 @@ const startNewChatThreadCreate$ = command(
         {
           createClient,
           agentId,
+          projectId,
           title: undefined,
           clientThreadId: threadId,
           eventId,
@@ -501,13 +549,13 @@ const startNewChatThreadCreate$ = command(
 export const createNewChatThread$ = command(
   async (
     { get, set },
-    agentId: string,
+    target: NewChatThreadTarget,
     pane: NewChatThreadPane,
     signal: AbortSignal,
   ) => {
     const targetPane =
       pane === "sidebar" && get(currentChatThreadId$) ? "sidebar" : "main";
-    const result = await set(startNewChatThreadCreate$, agentId, signal);
+    const result = await set(startNewChatThreadCreate$, target, signal);
 
     await set(
       routeChatThread$,
@@ -535,7 +583,7 @@ const mintNewThreadSubmission$ = command(
     { set },
     request: Pick<
       SendNewThreadMessageRequest,
-      "agentId" | "computerUseHostId" | "cloudBrowserEnabled"
+      "agentId" | "projectId" | "computerUseHostId" | "cloudBrowserEnabled"
     >,
     identity: Omit<PendingThreadIdentity, "intent">,
     submission: {
@@ -562,6 +610,7 @@ const mintNewThreadSubmission$ = command(
         threadId: identity.threadId,
         eventId: identity.chatThreadEventId,
         agentId: request.agentId,
+        projectId: request.projectId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
         serviceTier: apiServiceTierFromSelection(modelSelection),
@@ -631,11 +680,13 @@ const reserveNewThreadSubmissionIdentity$ = command(
           draft.reserveThreadIdentity$,
           JSON.stringify({
             agentId: request.agentId,
+            projectId: request.projectId,
             userMessage,
             modelSelection,
             computerUseHostId: request.computerUseHostId,
             cloudBrowserEnabled: request.cloudBrowserEnabled,
             connectorSelections: request.connectorSelections,
+            initialConnectorAccess: request.initialConnectorAccess,
             initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
           }),
         );
@@ -691,6 +742,7 @@ function newThreadRecordOptions(args: {
   return {
     createClient,
     agentId: request.agentId,
+    projectId: request.projectId,
     title: undefined,
     clientThreadId: identity.threadId,
     eventId: identity.chatThreadEventId,
@@ -699,6 +751,7 @@ function newThreadRecordOptions(args: {
     catalog: resolved.catalog,
     codexExecution,
     connectorSelections: request.connectorSelections,
+    initialConnectorAccess: request.initialConnectorAccess,
     initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
   };
 }
@@ -765,7 +818,9 @@ const sendNewThreadMessage$ = command(
       codexExecution: features[FeatureSwitchKey.CodexExecution],
     });
     const createResult =
-      request.connectorSelections?.length || customDirection
+      request.connectorSelections?.length ||
+      request.initialConnectorAccess ||
+      customDirection
         ? createNewThreadRecord(creation, signal)
         : null;
     // An explicit account choice must be accepted before publishing an

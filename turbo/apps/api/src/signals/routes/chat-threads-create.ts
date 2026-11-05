@@ -308,7 +308,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       cloudBrowserEnabled: defaults.cloudBrowserEnabled,
       codexServiceTier,
       connectorSelections: body.data.connectorSelections ?? [],
-      connectorSelectionPolicy: body.data.connectorSelectionPolicy,
       committedThread: await get(committedClientThread$),
       initialRemoteAccessOverrides,
     },

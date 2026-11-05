@@ -20,7 +20,8 @@ public struct ChatConnectorDiscovery: Decodable, Sendable {
 
 public struct ChatConnectorPermissionState: Sendable {
   public let metadata: ChatPermissionMetadata
-  public let grants: [ChatPermissionGrant]
+  public let grants: [ChatPermissionRule]
+  public let connectorScoped: Bool
 }
 
 public struct ChatPermissionEdit: Encodable, Sendable {
@@ -74,6 +75,15 @@ extension ChatComposerAccess {
   public func permissions(slug: String, agentID: String) async throws
     -> ChatConnectorPermissionState
   {
+    if try await chatAccountAccessEnabled() {
+      let result = try await ChatPermissions(client: client).connectorPermissions(slug: slug)
+      guard let metadata = result.metadata else {
+        throw APIClientError.http(
+          status: 404, message: "Connector permission metadata is unavailable.")
+      }
+      return ChatConnectorPermissionState(
+        metadata: metadata, grants: result.grants, connectorScoped: true)
+    }
     struct Metadata: Decodable, Sendable { let permissions: ChatPermissionMetadata }
     async let metadata: Metadata = client.request("/api/connector-catalog/\(slug)/permissions")
     async let grants: [ChatPermissionGrant] = client.request(
@@ -83,12 +93,18 @@ extension ChatComposerAccess {
       current.allSatisfy({ $0.agentId.lowercased() == agentID.lowercased() })
     else { throw APIClientError.invalidResponse }
     return ChatConnectorPermissionState(
-      metadata: detail.permissions, grants: current.filter { $0.connectorSlug == slug })
+      metadata: detail.permissions,
+      grants: current.filter { $0.connectorSlug == slug }.map(\.rule), connectorScoped: false)
   }
 
   public func savePermissions(
     slug: String, agentID: String, edits: [ChatPermissionEdit], reset: Bool = false
   ) async throws {
+    if try await chatAccountAccessEnabled() {
+      _ = try await ChatPermissions(client: client).applyConnectorPermissions(
+        slug: slug, edits: edits, reset: reset)
+      return
+    }
     struct Body: Encodable {
       let agentId: String
       let connectorSlug: String

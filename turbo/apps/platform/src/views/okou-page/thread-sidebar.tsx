@@ -467,18 +467,12 @@ function ThreadMailDraftPanel({
     closeDraft(thread, signals);
   };
   const backLinkRef = useSet(thread.mail.backLinkRef$);
-  const listOpen = useGet(thread.mail.open$);
   const { t } = useTranslation();
   if (!fromMailList) {
     return <MailDraftPanel signals={signals} onClose={close} />;
   }
   return (
-    <div
-      className={cn(
-        "flex h-full w-full min-h-0 min-w-0 flex-col bg-background",
-        !listOpen && "[view-transition-name:thread-email-panel]",
-      )}
-    >
+    <div className="flex h-full w-full min-h-0 min-w-0 flex-col bg-background">
       <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3">
         <ThreadMailLink
           ref={backLinkRef}

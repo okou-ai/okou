@@ -8,7 +8,7 @@ import {
 } from "./chat-thread-pane-state.ts";
 
 /** Both panes share the composer/sidebar layout, but keep separate reading anchors. */
-const restoreChatLayoutScroll$ = command(
+export const restoreChatLayoutScroll$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
     const threads = new Set([
@@ -53,7 +53,8 @@ function createChatLayoutSignals(): ChatLayoutSignals {
       };
       const handleTransition = onDomEventFn(async (event: TransitionEvent) => {
         if (
-          !event.target ||
+          !(event.target instanceof HTMLElement) ||
+          !event.target.matches("[data-sidebar-layout-owner]") ||
           !["width", "flex-basis"].includes(event.propertyName)
         ) {
           return;

@@ -25,7 +25,6 @@ struct ChatComposerView: View {
   var workflowSource: ComposerWorkflowSource? = nil
   var agentID: String? = nil
   var sendTransition: ConversationSendTransition? = nil
-  var voice: VoiceInputStore? = nil
   /// "Message <agent>", so the field names who will do the work.
   var placeholder: String? = nil
 
@@ -42,6 +41,8 @@ struct ChatComposerView: View {
   @State private var trailingWidth: CGFloat = 106
   @State private var sendFeedback = 0
   @State private var stopFeedback = 0
+  @State private var mountedVoice: ComposerVoiceInputStore?
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private let actionSize = OkouControl.minimumTarget
 
@@ -53,28 +54,26 @@ struct ChatComposerView: View {
     hasText || attachments.hasAttachments || draftState?.hasContent == true
   }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
-  /// one truncated line under the controls.
-  /// Dictating collapses the composer to the one-line voice bar, whatever it held.
+  /// one truncated line under the controls. Voice input opens it too.
   private var expandsInput: Bool {
-    if isDictating { return false }
-    return isFocused || hasText || draftState?.document.hasFeedback == true
+    isFocused || hasText || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+      || voiceActive
   }
-  private var isDictating: Bool { voice?.isActive == true }
   private var showsStop: Bool { canStop && !hasContent }
-  /// The mic stays beside send once there is a draft, so a typed message can go on by voice.
-  private var showsMic: Bool {
-    voice != nil && !showsStop && !showsProgress && !needsUpgrade
+  private var voiceActive: Bool {
+    guard let voice = draftState?.voice else { return false }
+    return voice.phase == .recording || voice.phase == .processing || voice.phase == .saved
   }
-  private var showsSend: Bool { voice == nil || hasContent || showsStop || showsProgress }
-  private var canSendDictation: Bool {
-    attachments.isReady && !isBusy && !needsUpgrade && draftState?.canSend != false
-      && modelSelection?.canSend != false
-  }
+  /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
+  private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
+      if let voice = draftState?.voice, voice.error != nil || voiceActive {
+        ComposerVoiceInputTray(voice: voice)
+      }
       // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
       // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
       if let state = draftState {
@@ -130,10 +129,6 @@ struct ChatComposerView: View {
           Text(importError), icon: "circle-alert", tone: .problem,
           dismiss: { attachments.error = nil })
       }
-      if let voice, let voiceError = voice.error {
-        OkouBanner(
-          Text(voiceError), icon: "mic", tone: .problem, dismiss: { voice.error = nil })
-      }
       if let error {
         OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
           if let refresh {
@@ -171,8 +166,6 @@ struct ChatComposerView: View {
         }
       }
       .accessibilityIdentifier("message-input")
-      .opacity(isDictating ? 0 : 1)
-      .allowsHitTesting(!isDictating)
       .padding(
         .leading, expandsInput ? 18 : 58
       )
@@ -215,29 +208,18 @@ struct ChatComposerView: View {
         }
         .padding(.leading, actionInset)
         .padding(.bottom, expandsInput ? actionInset : 0)
-        .opacity(isDictating ? 0 : 1)
-        .allowsHitTesting(!isDictating)
       }
       .overlay(alignment: expandsInput ? .bottomTrailing : .trailing) {
         HStack(spacing: OkouSpace.xs) {
-          if showsMic, let voice {
-            Button {
-              // The keyboard goes away with the text field: the bar replaces both.
-              UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-              Task { await voice.start() }
-            } label: {
-              OkouToolbarIcon("mic")
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .disabled(isBusy || voice.isActive)
-            .accessibilityLabel("Dictate a message")
-            .accessibilityIdentifier("dictate-message")
-            .frame(width: actionSize, height: actionSize)
-            .contentShape(Circle())
+          // The mic sits beside send once there is a draft; on an empty one it takes send's place.
+          if let voice = draftState?.voice, expandsInput && !replacesSendWithMic && !voiceActive {
+            ComposerVoiceInputButton(voice: voice)
+              .disabled(isBusy || needsUpgrade || draftState?.canEditVoice != true)
           }
-          if showsSend {
+          if replacesSendWithMic, let voice = draftState?.voice {
+            ComposerVoiceInputButton(voice: voice)
+              .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
+          } else {
             Button {
               if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
               // The send operation captures native text for motion before ending editing.
@@ -265,6 +247,7 @@ struct ChatComposerView: View {
             .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
             .disabled(
               (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
+                || voiceActive
                 || draftState?.canSend == false
                 || (!showsStop && modelSelection?.canSend == false)
             )
@@ -282,18 +265,7 @@ struct ChatComposerView: View {
         .padding(.leading, expandsInput ? actionSize + actionInset + OkouSpace.xs : 0)
         .padding(.trailing, actionInset)
         .padding(.bottom, expandsInput ? actionInset : 0)
-        .opacity(isDictating ? 0 : 1)
-        .allowsHitTesting(!isDictating)
       }
-      .overlay {
-        if let voice, voice.isActive {
-          VoiceRecordingBar(voice: voice, canSend: canSendDictation) { send in
-            finishDictation(voice, send: send)
-          }
-          .transition(.opacity)
-        }
-      }
-      .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: isDictating)
       .animation(
         reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
         value: isFocused
@@ -341,9 +313,16 @@ struct ChatComposerView: View {
       _, _ in
       draftState?.editor.workflows.configure(source: workflowSource, agentID: agentID)
     }
+    .onChange(of: draftState.map(ObjectIdentifier.init), initial: true) { _, _ in
+      mountedVoice?.suspend()
+      mountedVoice = draftState?.voice
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .background { mountedVoice?.suspend() }
+    }
     .onDisappear {
       draftState?.editor.workflows.dismiss()
-      voice?.cancel()
+      mountedVoice?.suspend()
     }
     .fullScreenCover(isPresented: $showsCamera) {
       ComposerCamera { url in attachments.importFiles([url]) }
@@ -387,24 +366,6 @@ struct ChatComposerView: View {
     case .scan: showsScanner = true
     case .files: showsFiles = true
     case .connectors: showsConnectors = true
-    }
-  }
-
-  /// Stop puts the words into the draft to edit; send sends them as heard, like ChatGPT.
-  private func finishDictation(_ voice: VoiceInputStore, send: Bool) {
-    Task {
-      guard let text = await voice.finish() else { return }
-      if let editor = draftState?.editor {
-        editor.appendText(text)
-      } else if draft.isEmpty {
-        draft = text
-      } else {
-        draft += " " + text
-      }
-      if send {
-        sendFeedback += 1
-        await submit()
-      }
     }
   }
 }

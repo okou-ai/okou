@@ -195,6 +195,7 @@ fn unavailable_native_source(error: AgentError) -> Result<bool, AgentError> {
         | AgentError::SessionHistoryAmbiguous { .. }
         | AgentError::SessionHistoryNotRegular { .. }
         | AgentError::SessionHistoryLookupBudgetExceeded { .. }
+        | AgentError::SessionHistoryEncodedTooLarge { .. }
         | AgentError::SessionHistoryTooLarge { .. } => Ok(false),
         AgentError::Io(ref source) | AgentError::SessionHistoryRead(ref source)
             if matches!(

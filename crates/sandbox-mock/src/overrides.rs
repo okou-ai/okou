@@ -6,10 +6,9 @@ use ::sandbox::*;
 use tokio_util::sync::CancellationToken;
 
 use crate::call_records::{
-    CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall, GuestStateRestoreCall,
-    ProcessCancelCall, ProcessControlCall, ReadFileCall, SessionHistoryIdentityVerifyCall,
-    StartAgentProcessCall, StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall,
-    WriteFilesCall,
+    AgentInstructionsCall, CopyFileCall, ExecCall, ExecMatcher, GuestStateRestoreCall,
+    ProcessCancelCall, ProcessControlCall, ReadFileCall, StartAgentProcessCall, StartProcessCall,
+    StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
 };
 use crate::lifecycle::{DestroyBehavior, LifecycleBehaviors, MockLifecycleGate};
 use crate::support::LockIgnoringPoison;
@@ -46,6 +45,8 @@ impl GuestStateRestoreBehavior {
 
 #[derive(Default)]
 pub(crate) struct ExecOverrideState {
+    /// Typed instruction operations never appear in generic exec observations.
+    pub(crate) agent_instructions_calls: Mutex<Vec<AgentInstructionsCall>>,
     /// Pattern-matched exec behaviors. First matching pattern wins and is
     /// consumed (one-shot).
     pub(crate) matchers: Mutex<Vec<ExecMatcherBehavior>>,
@@ -69,8 +70,6 @@ pub(crate) struct ExecOverrideState {
     /// Optional gate entered after every fixed home-drive mount call is
     /// recorded but before its configured result is selected.
     pub(crate) home_drive_mount_lifecycle_gate: Mutex<Option<MockLifecycleGate>>,
-    /// Recorded fixed live identity verifier calls across attached sandboxes.
-    pub(crate) session_history_identity_verify_calls: Mutex<Vec<SessionHistoryIdentityVerifyCall>>,
     /// Recorded fixed guest-state restore calls across all attached sandboxes.
     pub(crate) guest_state_restore_calls: Mutex<Vec<GuestStateRestoreCall>>,
     /// FIFO behaviors for fixed guest-state restore operations.
@@ -94,12 +93,6 @@ pub(crate) struct FileOverrideState {
     pub(crate) write_file_results: Mutex<VecDeque<Result<()>>>,
     /// Optional gate entered after recording a write_file call.
     pub(crate) write_file_gate: Mutex<Option<MockLifecycleGate>>,
-    /// Recorded staged-file finalizer calls across attached sandboxes.
-    pub(crate) finalize_staged_file_calls: Mutex<Vec<FinalizeStagedFileCall>>,
-    /// FIFO staged-file finalizer results.
-    pub(crate) finalize_staged_file_results: Mutex<VecDeque<Result<StagedFileFinalizeOutcome>>>,
-    /// Optional gate entered after recording a staged-file finalizer call.
-    pub(crate) finalize_staged_file_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded write_files calls across all sandboxes built from this override set.
     pub(crate) write_files_calls: Mutex<Vec<WriteFilesCall>>,
     /// Recorded write_private_file calls across all sandboxes built from this override set.
@@ -338,14 +331,6 @@ impl MockSandboxOverrides {
         }
     }
 
-    /// Queue one staged-file finalizer result shared by attached sandboxes.
-    pub fn push_finalize_staged_file_result(&self, result: Result<StagedFileFinalizeOutcome>) {
-        self.file
-            .finalize_staged_file_results
-            .lock_ignoring_poison()
-            .push_back(result);
-    }
-
     /// Queue one ordinary-write result shared by attached sandboxes.
     /// Both `write_file` and nonempty `write_files` consume one result per call
     /// after any sandbox-local result queue has been checked.
@@ -354,19 +339,6 @@ impl MockSandboxOverrides {
             .write_file_results
             .lock_ignoring_poison()
             .push_back(result);
-    }
-
-    /// Return recorded staged-file finalizer calls.
-    pub fn finalize_staged_file_calls(&self) -> Vec<FinalizeStagedFileCall> {
-        self.file
-            .finalize_staged_file_calls
-            .lock_ignoring_poison()
-            .clone()
-    }
-
-    /// Block staged-file finalization after call recording.
-    pub fn set_finalize_staged_file_lifecycle_gate(&self, gate: MockLifecycleGate) {
-        *self.file.finalize_staged_file_gate.lock_ignoring_poison() = Some(gate);
     }
 
     /// Block `write_file` and nonempty `write_files` after call recording.
@@ -602,6 +574,14 @@ impl MockSandboxOverrides {
             .clone()
     }
 
+    /// Return typed instruction operations across attached sandboxes.
+    pub fn agent_instructions_calls(&self) -> Vec<AgentInstructionsCall> {
+        self.exec
+            .agent_instructions_calls
+            .lock_ignoring_poison()
+            .clone()
+    }
+
     /// Block fixed storage-manifest operations until the gate is released.
     pub fn set_storage_manifest_lifecycle_gate(&self, gate: MockLifecycleGate) {
         *self.exec.storage_manifest_gate.lock_ignoring_poison() = Some(gate);
@@ -627,14 +607,6 @@ impl MockSandboxOverrides {
     /// sandboxes.
     pub fn home_drive_mount_calls(&self) -> u32 {
         *self.exec.home_drive_mount_calls.lock_ignoring_poison()
-    }
-
-    /// Return fixed live session-history identity verifier calls.
-    pub fn session_history_identity_verify_calls(&self) -> Vec<SessionHistoryIdentityVerifyCall> {
-        self.exec
-            .session_history_identity_verify_calls
-            .lock_ignoring_poison()
-            .clone()
     }
 
     /// Queue a result for the next fixed guest-state restore operation.
@@ -671,75 +643,35 @@ impl MockSandboxOverrides {
         expected: usize,
         timeout: Duration,
     ) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let notified = self.exec.guest_state_restore_call_notify.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self
-                .exec
-                .guest_state_restore_calls
-                .lock_ignoring_poison()
-                .len()
-                >= expected
-            {
-                return true;
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
-            if tokio::time::timeout(remaining, notified).await.is_err() {
-                return false;
-            }
-        }
+        wait_for_call_count_with_deadline(
+            &self.exec.guest_state_restore_call_notify,
+            timeout,
+            || {
+                self.exec
+                    .guest_state_restore_calls
+                    .lock_ignoring_poison()
+                    .len()
+                    >= expected
+            },
+        )
+        .await
     }
 
     /// Wait until at least `expected` exec calls have been recorded.
     pub async fn wait_exec_call_count(&self, expected: usize, timeout: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let notified = self.exec.call_notify.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self.exec.calls.lock_ignoring_poison().len() >= expected {
-                return true;
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
-            if tokio::time::timeout(remaining, notified).await.is_err() {
-                return false;
-            }
-        }
+        wait_for_call_count_with_deadline(&self.exec.call_notify, timeout, || {
+            self.exec.calls.lock_ignoring_poison().len() >= expected
+        })
+        .await
     }
 
     /// Wait until at least `expected` fixed home-drive mount calls have
     /// been recorded.
     pub async fn wait_home_drive_mount_call_count(&self, expected: u32, timeout: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let notified = self.exec.home_drive_mount_call_notify.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self.home_drive_mount_calls() >= expected {
-                return true;
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
-            if tokio::time::timeout(remaining, notified).await.is_err() {
-                return false;
-            }
-        }
+        wait_for_call_count_with_deadline(&self.exec.home_drive_mount_call_notify, timeout, || {
+            self.home_drive_mount_calls() >= expected
+        })
+        .await
     }
 
     /// Return recorded write-file calls across all sandboxes built from this
@@ -1163,44 +1095,26 @@ impl MockSandboxOverrides {
 
     /// Wait until at least `expected` process cancel calls have been recorded.
     pub async fn wait_for_process_cancel_calls(&self, expected: usize, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                let notified = self.process.process_cancel_notify.notified();
-                if self
-                    .process
-                    .process_cancel_calls
-                    .lock_ignoring_poison()
-                    .len()
-                    >= expected
-                {
-                    return;
-                }
-                notified.await;
-            }
+        wait_for_call_count_with_timeout(&self.process.process_cancel_notify, timeout, || {
+            self.process
+                .process_cancel_calls
+                .lock_ignoring_poison()
+                .len()
+                >= expected
         })
         .await
-        .is_ok()
     }
 
     /// Wait until at least `expected` process-control calls have been recorded.
     pub async fn wait_for_process_control_calls(&self, expected: usize, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                let notified = self.process.process_control_notify.notified();
-                if self
-                    .process
-                    .process_control_calls
-                    .lock_ignoring_poison()
-                    .len()
-                    >= expected
-                {
-                    return;
-                }
-                notified.await;
-            }
+        wait_for_call_count_with_timeout(&self.process.process_control_notify, timeout, || {
+            self.process
+                .process_control_calls
+                .lock_ignoring_poison()
+                .len()
+                >= expected
         })
         .await
-        .is_ok()
     }
 
     /// Queue a process cancel send error consumed by the next cancel handle.
@@ -1279,4 +1193,49 @@ impl Default for MockSandboxOverrides {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// Keep the explicit deadline and pre-check registration policy of exec-family waits.
+async fn wait_for_call_count_with_deadline(
+    notify: &tokio::sync::Notify,
+    timeout: Duration,
+    ready: impl Fn() -> bool,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let notified = notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+
+        if ready() {
+            return true;
+        }
+
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        if tokio::time::timeout(remaining, notified).await.is_err() {
+            return false;
+        }
+    }
+}
+
+// Process-call waits retain their whole-future timeout and notification policy.
+async fn wait_for_call_count_with_timeout(
+    notify: &tokio::sync::Notify,
+    timeout: Duration,
+    ready: impl Fn() -> bool,
+) -> bool {
+    tokio::time::timeout(timeout, async {
+        loop {
+            let notified = notify.notified();
+            if ready() {
+                return;
+            }
+            notified.await;
+        }
+    })
+    .await
+    .is_ok()
 }

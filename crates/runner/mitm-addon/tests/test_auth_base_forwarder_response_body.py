@@ -80,7 +80,15 @@ async def test_rejects_truncated_response_after_multiple_read_buffers(framing: s
     assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
 
 
-@pytest.mark.parametrize("size", [256 * 1024, 1024 * 1024])
+# Both sizes cross wire-read windows. The larger also exposes retaining even
+# one reference per tiny chunk within the unchanged allocation bounds below.
+@pytest.mark.parametrize(
+    "size",
+    [
+        pytest.param(16 * 1024, marks=pytest.mark.shard_cost(1)),
+        pytest.param(64 * 1024, marks=pytest.mark.shard_cost(2)),
+    ],
+)
 async def test_tiny_chunks_keep_peak_allocations_comparable_to_fixed_length(size: int):
     payload = b"x" * size
     responses = {

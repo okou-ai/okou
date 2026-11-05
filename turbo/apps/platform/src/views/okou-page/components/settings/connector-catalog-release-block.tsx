@@ -1,5 +1,5 @@
 import { useLoadable } from "ccstate-react";
-import { Database } from "lucide-react";
+import { Plug } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { connectorCatalogRelease$ } from "../../../../signals/okou-page/settings/connector-catalog-release.ts";
@@ -24,7 +24,7 @@ export function ConnectorCatalogReleaseBlock() {
       className="flex items-start gap-4 rounded-xl bg-card p-4 border border-surface-border"
     >
       <div className="flex h-7 w-7 shrink-0 items-center justify-center">
-        <Database size={22} className="text-muted-foreground" />
+        <Plug size={22} className="text-muted-foreground" />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <h3

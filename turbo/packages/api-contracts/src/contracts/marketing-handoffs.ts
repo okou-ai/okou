@@ -15,6 +15,14 @@ import { artifactUrlSchema } from "./artifact-references";
 export const MARKETING_HANDOFF_MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const MARKETING_HANDOFF_MAX_FILES = 10;
 export const marketingContentHashSchema = string().regex(/^[a-f0-9]{64}$/u);
+const marketingHandoffShortHashSchema = string().regex(/^[a-f0-9]{12}$/u);
+const marketingHandoffHashSchema = string().regex(
+  /^(?:[a-f0-9]{12}|[a-f0-9]{64})$/u,
+);
+const marketingHandoffCreatedSchema = object({
+  hash: marketingContentHashSchema,
+  shortHash: marketingHandoffShortHashSchema,
+});
 export const marketingHandoffFileSchema = object({
   hash: marketingContentHashSchema,
   filename: string()
@@ -132,13 +140,17 @@ export const marketingHandoffsContract = c.router({
     path: "/api/marketing-handoffs",
     headers: authHeadersSchema,
     body: marketingHandoffManifestSchema,
-    responses: { 200: object({ hash: marketingContentHashSchema }), ...errors },
+    responses: {
+      200: marketingHandoffCreatedSchema,
+      409: apiErrorSchema,
+      ...errors,
+    },
   },
   resolve: {
     method: "POST",
     path: "/api/marketing-handoffs/:hash/resolve",
     headers: authHeadersSchema,
-    pathParams: object({ hash: marketingContentHashSchema }),
+    pathParams: object({ hash: marketingHandoffHashSchema }),
     body: object({}),
     responses: { 200: marketingHandoffManifestSchema, ...errors },
   },
@@ -146,7 +158,7 @@ export const marketingHandoffsContract = c.router({
     method: "POST",
     path: "/api/marketing-handoffs/:hash/import",
     headers: authHeadersSchema,
-    pathParams: object({ hash: marketingContentHashSchema }),
+    pathParams: object({ hash: marketingHandoffHashSchema }),
     body: object({ intentId: uuid() }).strict(),
     responses: { 200: object({ files: array(importedFileSchema) }), ...errors },
   },
@@ -155,7 +167,39 @@ export const marketingHandoffsContract = c.router({
     path: "/api/marketing-handoffs/publish",
     headers: authHeadersSchema,
     body: marketingHandoffManifestSchema,
-    responses: { 200: object({ hash: marketingContentHashSchema }), ...errors },
+    responses: {
+      200: marketingHandoffCreatedSchema,
+      409: apiErrorSchema,
+      ...errors,
+    },
+  },
+  publishStatus: {
+    method: "POST",
+    path: "/api/marketing-handoffs/publish/status",
+    headers: authHeadersSchema,
+    body: object({
+      hashes: array(marketingContentHashSchema).min(1).max(500),
+    }).strict(),
+    responses: {
+      200: object({
+        missing: array(marketingContentHashSchema),
+        shortAddressesVerified: literal(true),
+      }),
+      ...errors,
+    },
+  },
+  publishBatch: {
+    method: "POST",
+    path: "/api/marketing-handoffs/publish/batch",
+    headers: authHeadersSchema,
+    body: object({
+      manifests: array(marketingHandoffManifestSchema).min(1).max(100),
+    }).strict(),
+    responses: {
+      200: object({ hashes: array(marketingContentHashSchema) }),
+      409: apiErrorSchema,
+      ...errors,
+    },
   },
   publishFile: {
     method: "POST",

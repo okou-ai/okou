@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.10.27](https://github.com/okou-ai/okou/compare/runner-host-v0.10.26...runner-host-v0.10.27) (2026-11-05)
+
+## [0.10.26](https://github.com/okou-ai/okou/compare/runner-host-v0.10.25...runner-host-v0.10.26) (2026-11-05)
+
+## [0.10.25](https://github.com/okou-ai/okou/compare/runner-host-v0.10.24...runner-host-v0.10.25) (2026-11-04)
+
+## [0.10.24](https://github.com/okou-ai/okou/compare/runner-host-v0.10.23...runner-host-v0.10.24) (2026-11-04)
+
+## [0.10.23](https://github.com/okou-ai/okou/compare/runner-host-v0.10.22...runner-host-v0.10.23) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** retain service artifacts until shutdown is confirmed ([#44990](https://github.com/okou-ai/okou/issues/44990)) ([73f9c29](https://github.com/okou-ai/okou/commit/73f9c29a1b9378daad63d5b4c425240051afd7c4))
+
+## [0.10.22](https://github.com/okou-ai/okou/compare/runner-host-v0.10.21...runner-host-v0.10.22) (2026-11-03)
+
+## [0.10.21](https://github.com/okou-ai/okou/compare/runner-host-v0.10.20...runner-host-v0.10.21) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share blocking-worker release ownership in tests ([#44912](https://github.com/okou-ai/okou/issues/44912)) ([0c873d8](https://github.com/okou-ai/okou/commit/0c873d8254326de823cf8d42f5fe06489e555299))
+
 ## [0.10.20](https://github.com/okou-ai/okou/compare/runner-host-v0.10.19...runner-host-v0.10.20) (2026-11-03)
 
 ## [0.10.19](https://github.com/okou-ai/okou/compare/runner-host-v0.10.18...runner-host-v0.10.19) (2026-11-03)

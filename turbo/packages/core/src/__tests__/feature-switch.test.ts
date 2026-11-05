@@ -27,32 +27,17 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("defaults home task discovery to staff and honors explicit overrides", () => {
-    const key = FeatureSwitchKey.HomeTaskDiscovery;
-    for (const [context, enabledByDefault] of [
-      [{}, false],
-      [{ userId: "external-user", orgId: "external-org" }, false],
-      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
-      [{ email: "BINGJIE@OKOU.AI" }, false],
-    ] as const) {
-      expect(isFeatureEnabled(key, context)).toBe(enabledByDefault);
-      expect(getAllFeatureStates(context)[key]).toBe(enabledByDefault);
-      for (const enabled of [true, false]) {
-        const overridden = { ...context, overrides: { [key]: enabled } };
-        expect(isFeatureEnabled(key, overridden)).toBe(enabled);
-        expect(getAllFeatureStates(overridden)[key]).toBe(enabled);
-      }
-    }
-  });
-
-  it("defaults CJK emphasis to staff and honors explicit overrides", () => {
+  it("defaults CJK emphasis on for everyone and honors explicit overrides", () => {
     const key = FeatureSwitchKey.MarkdownCjkEmphasis;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
-      [{}, false],
-      [{ orgId: "external-org" }, false],
+      [{}, true],
+      [{ userId: "external-user" }, true],
+      [{ orgId: "external-org" }, true],
+      [{ userId: "external-user", orgId: "external-org" }, true],
       [staff, true],
       [{ ...staff, overrides: { [key]: false } }, false],
+      [{ orgId: "external-org", overrides: { [key]: false } }, false],
       [{ orgId: "external-org", overrides: { [key]: true } }, true],
     ] as const) {
       expect(isFeatureEnabled(key, context)).toBe(enabled);
@@ -60,8 +45,10 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults chat email quoting to staff and honors Lab overrides", () => {
-    const key = FeatureSwitchKey.ChatEmailQuote;
+  it.each([
+    FeatureSwitchKey.ChatEmailQuote,
+    FeatureSwitchKey.ConnectorChatAccountAccess,
+  ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
       [{}, false],
@@ -414,9 +401,6 @@ describe("getFeatureSwitchMetadata", () => {
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
     ).toBe("beta");
-    expect(metadata[FeatureSwitchKey.HomeTaskDiscovery].rolloutStage).toBe(
-      "beta",
-    );
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );

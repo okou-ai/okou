@@ -1,32 +1,18 @@
 import type { ReactNode } from "react";
-import { useSet } from "ccstate-react";
-import {
-  PRESENTATION_ARTIFACT_VIEWPORT_HEIGHT,
-  PRESENTATION_ARTIFACT_VIEWPORT_WIDTH,
-  presentationArtifactViewportRef$,
-} from "../../signals/okou-page/presentation-artifact-viewport.ts";
 
 export function PresentationArtifactViewport({
   children,
 }: {
   readonly children: ReactNode;
 }) {
-  const viewportRef = useSet(presentationArtifactViewportRef$);
-
   return (
     <div
-      ref={viewportRef}
-      className="relative h-full w-full overflow-hidden bg-background"
+      className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-background [container-type:size]"
       data-testid="presentation-artifact-viewport"
     >
       <div
-        data-presentation-artifact-canvas
         data-testid="presentation-artifact-canvas"
-        className="invisible absolute left-0 top-0 origin-top-left"
-        style={{
-          height: PRESENTATION_ARTIFACT_VIEWPORT_HEIGHT,
-          width: PRESENTATION_ARTIFACT_VIEWPORT_WIDTH,
-        }}
+        className="absolute left-1/2 top-1/2 h-[1080px] w-[1920px] origin-center [--okou-presentation-fit-width:100cqw] [--okou-presentation-fit-height:100cqh] [transform:translate(-50%,-50%)_scale(calc(min(tan(atan2(var(--okou-presentation-fit-width),1920px)),tan(atan2(var(--okou-presentation-fit-height),1080px)))))] [@container(width:0px)]:invisible [@container(height:0px)]:invisible"
       >
         {children}
       </div>

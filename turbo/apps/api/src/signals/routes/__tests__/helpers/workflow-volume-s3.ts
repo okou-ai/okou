@@ -133,6 +133,12 @@ export function installWorkflowVolumeS3Fixture(
       beforeNextArchiveWrite = undefined;
       await callback(key, body);
     }
+    if (command.input.IfNoneMatch === "*" && objects.has(key)) {
+      throw Object.assign(new Error("Object already exists"), {
+        name: "PreconditionFailed",
+        $metadata: { httpStatusCode: 412 },
+      });
+    }
     objects.set(key, body);
     writes.push({ key, body });
     return {};

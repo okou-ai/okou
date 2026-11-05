@@ -1,11 +1,15 @@
 import { sql } from "drizzle-orm";
-import { check, pgTable, primaryKey } from "drizzle-orm/pg-core";
+import { boolean, check, pgTable, primaryKey } from "drizzle-orm/pg-core";
 import { orgMembersMetadataColumns } from "../columns/org-members-metadata";
 
 /** Per-member preferences and their database constraints. */
 export const orgMembersMetadata = pgTable(
   "org_members_metadata",
-  orgMembersMetadataColumns(),
+  {
+    ...orgMembersMetadataColumns(),
+    // Migration-owned history; shared outgoing API readers still select this column.
+    retiredProactiveActionEnabled: boolean("proactive_action_enabled"),
+  },
   (table) => {
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),

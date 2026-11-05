@@ -7,9 +7,14 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
-pub(crate) fn materialize(files: &[StorageFile], target: &Path) -> io::Result<()> {
+pub(crate) fn materialize(
+    files: &[StorageFile],
+    target: &Path,
+    concurrency: usize,
+) -> io::Result<()> {
+    debug_assert!(concurrency > 0);
     #[cfg(target_os = "linux")]
-    let mut rooted = crate::archive::rooted::RootedWriter::new(target);
+    let mut rooted = crate::archive::rooted::RootedWriter::new(target, concurrency);
     for entry in files {
         #[cfg(target_os = "linux")]
         let file = match rooted.create_new(Path::new(&entry.path)) {

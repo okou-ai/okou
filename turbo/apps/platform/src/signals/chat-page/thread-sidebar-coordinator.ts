@@ -11,7 +11,12 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { animationFrame, delay } from "signal-timers";
+import { onRef } from "../utils.ts";
+import { shellDocumentAttributesRef$ } from "../theme.ts";
+import type { TabStripMotion } from "../browser/tab-strip.ts";
+import { createThreadSidebarLayoutMotion } from "./thread-sidebar-layout-motion.ts";
+import { createWorkspaceLayoutCommit } from "./workspace-layout-commit.ts";
+import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
   threadMailLocation$,
@@ -68,15 +73,42 @@ export const activeThreadSidebarFullscreen$ = computed((get) => {
   return active ? get(active.thread.sidebar.fullscreen$) : false;
 });
 
-/** The sidebar shell acknowledges its committed panel layout to embedded viewports. */
-export const syncActiveSidebarLayout$ = command(({ get, set }) => {
-  const active = get(activeThreadSidebar$);
-  if (active?.target.type === "artifact") {
-    set(active.thread.sidebar.imageCanvas.syncLayout$);
-  } else if (active?.target.type === "browser") {
-    set(active.thread.browserSessionSignals.browser.syncLayout$);
-  }
-});
+/** Geometry is acknowledged by its hosts, independently of remote connections. */
+const syncSidebarViewport$ = command(
+  ({ get, set }, motion: TabStripMotion | null): void => {
+    const active = get(activeThreadSidebar$);
+    if (active?.target.type === "artifact") {
+      set(active.thread.sidebar.imageCanvas.syncLayout$);
+    } else if (active?.target.type === "browser") {
+      set(active.thread.browserSessionSignals.browser.syncLayout$, motion);
+    }
+  },
+);
+const sidebarMotion = createThreadSidebarLayoutMotion(syncSidebarViewport$);
+const workspaceLayout = createWorkspaceLayoutCommit(
+  sidebarMotion.commit$,
+  sidebarMotion.root$,
+);
+export const commitWorkspaceLayout$ = workspaceLayout.commit$;
+
+/** The shared shell owns the sibling list and utility-panel transition listeners. */
+export const threadSidebarLayoutRootRef$ = onRef(
+  command(({ get, set }, root: HTMLDivElement, signal: AbortSignal): void => {
+    set(workspaceLayout.reset$);
+    const releaseAttributes = set(shellDocumentAttributesRef$, root);
+    signal.addEventListener(
+      "abort",
+      () => {
+        releaseAttributes?.();
+        if (get(sidebarMotion.root$) === root) {
+          set(workspaceLayout.reset$);
+        }
+      },
+      { once: true },
+    );
+    set(sidebarMotion.mount$, root, signal);
+  }),
+);
 
 const closeOtherThreadSidebars$ = command(
   ({ get, set }, thread: ChatPanelSignals): void => {
@@ -162,7 +194,8 @@ export const openThreadCatalogArtifact$ = command(
   },
 );
 
-const changeThreadMailLocation$ = command(
+/** Mail navigation changes URL state without waiting for rendering or data. */
+export const navigateThreadMail$ = command(
   (
     { get, set },
     thread: ChatPanelSignals,
@@ -197,7 +230,7 @@ const changeThreadMailLocation$ = command(
 
 export const openThreadMailList$ = command(
   ({ get, set }, thread: ChatPanelSignals) => {
-    set(changeThreadMailLocation$, thread, { view: "list" }, get(pageSignal$));
+    set(navigateThreadMail$, thread, { view: "list" }, get(pageSignal$));
   },
 );
 
@@ -211,46 +244,12 @@ export const openThreadMailDraft$ = command(
     );
     if (thread) {
       set(
-        changeThreadMailLocation$,
+        navigateThreadMail$,
         thread,
         { view: "detail", mailDraftId: signals.mailDraftId },
         get(pageSignal$),
       );
     }
-  },
-);
-
-async function waitForMailLayout(signal: AbortSignal): Promise<void> {
-  // View Transitions pause animation frames while React and Floating UI commit.
-  await delay(0, { signal });
-  signal.throwIfAborted();
-  await delay(0, { signal });
-  signal.throwIfAborted();
-}
-
-/** Navigation commits before the destination reads its data. */
-export const navigateThreadMail$ = command(
-  async (
-    { set },
-    thread: ChatPanelSignals,
-    destination: ThreadMailDestination,
-    signal: AbortSignal,
-  ) => {
-    if (
-      !("startViewTransition" in document) ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      set(changeThreadMailLocation$, thread, destination, signal);
-      return;
-    }
-    await document.startViewTransition({
-      types: ["thread-mail"],
-      update: async () => {
-        set(changeThreadMailLocation$, thread, destination, signal);
-        await waitForMailLayout(signal);
-      },
-    }).finished;
-    signal.throwIfAborted();
   },
 );
 

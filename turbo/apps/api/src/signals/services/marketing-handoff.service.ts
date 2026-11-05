@@ -15,11 +15,14 @@ import {
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import { conflict } from "../../lib/error";
 import { db$, writeDb$ } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
+  isS3NotFoundError,
   putImmutableS3Object,
 } from "../external/s3";
+import { settle } from "../utils";
 import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
@@ -136,6 +139,37 @@ export const canReadMarketingContent$ = command(
   },
 );
 
+/** Public grants are publication receipts, written only after immutable storage. */
+export const publicMarketingContentHashes$ = command(
+  async (
+    { get },
+    args: { resourceType: "manifest" | "file"; hashes: readonly string[] },
+    signal: AbortSignal,
+  ) => {
+    if (args.hashes.length === 0) {
+      return new Set<string>();
+    }
+    const table = marketingContentGrants;
+    const grants = await get(db$)
+      .select({ hash: table.resourceHash })
+      .from(table)
+      .where(
+        and(
+          eq(table.resourceType, args.resourceType),
+          inArray(table.resourceHash, args.hashes),
+          eq(table.subject, "public"),
+          isNull(table.expiresAt),
+        ),
+      );
+    signal.throwIfAborted();
+    return new Set(
+      grants.map(({ hash }) => {
+        return hash;
+      }),
+    );
+  },
+);
+
 /** Bind a guest grant to one signed-in identity without consuming a shared hash. */
 export const claimMarketingManifest$ = command(
   async (
@@ -220,6 +254,71 @@ export const claimMarketingManifest$ = command(
   },
 );
 
+const reserveMarketingManifestAddress$ = command(
+  async (
+    { get, set },
+    args: { bucket: string; hash: string; body: string },
+    signal: AbortSignal,
+  ) => {
+    const shortHash = args.hash.slice(0, 12);
+    await get(
+      putImmutableS3Object(
+        args.bucket,
+        `manifest/${shortHash}.json`,
+        args.body,
+        "application/json",
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    const stored = await set(
+      readMarketingManifest$,
+      { bucket: args.bucket, hash: shortHash },
+      signal,
+    );
+    return stored?.hash === args.hash;
+  },
+);
+
+/** A full-digest receipt alone does not establish its short-address binding. */
+export const publicMarketingManifestHashes$ = command(
+  async (
+    { set },
+    args: { bucket: string; hashes: readonly string[] },
+    signal: AbortSignal,
+  ) => {
+    const published = await set(
+      publicMarketingContentHashes$,
+      { resourceType: "manifest", hashes: args.hashes },
+      signal,
+    );
+    const hashes = [...published];
+    const verified = new Set<string>();
+    for (let offset = 0; offset < hashes.length; offset += 4) {
+      const results = await Promise.allSettled(
+        hashes.slice(offset, offset + 4).map(async (hash) => {
+          const stored = await set(
+            readMarketingManifest$,
+            { bucket: args.bucket, hash: hash.slice(0, 12) },
+            signal,
+          );
+          if (stored?.hash === hash) {
+            verified.add(hash);
+          }
+        }),
+      );
+      signal.throwIfAborted();
+      const failure = results.find((result) => {
+        return result.status === "rejected";
+      });
+      if (failure) {
+        throw failure.reason;
+      }
+    }
+    return verified;
+  },
+);
+
 export const storeMarketingManifest$ = command(
   async (
     { get, set },
@@ -232,6 +331,18 @@ export const storeMarketingManifest$ = command(
   ) => {
     const body = serializeMarketingHandoff(args.manifest);
     const hash = marketingContentHash(body);
+    const shortHash = hash.slice(0, 12);
+    // Conditional writes reserve the short address; compare full digests before granting access.
+    const reserved = await set(
+      reserveMarketingManifestAddress$,
+      { bucket: args.bucket, hash, body },
+      signal,
+    );
+    if (!reserved) {
+      return conflict(
+        "This handoff address is already in use. Edit your request and try again.",
+      );
+    }
     await get(
       putImmutableS3Object(
         args.bucket,
@@ -247,7 +358,121 @@ export const storeMarketingManifest$ = command(
       { resourceType: "manifest", resourceHash: hash, subject: args.subject },
       signal,
     );
-    return hash;
+    return { hash, shortHash };
+  },
+);
+
+export const publishMarketingManifests$ = command(
+  async (
+    { get, set },
+    args: { bucket: string; manifests: readonly MarketingHandoffManifest[] },
+    signal: AbortSignal,
+  ) => {
+    const publications = new Map(
+      args.manifests.map((manifest) => {
+        const body = serializeMarketingHandoff(manifest);
+        return [marketingContentHash(body), { body, manifest }] as const;
+      }),
+    );
+    const hashes = [...publications.keys()];
+    const published = await set(
+      publicMarketingManifestHashes$,
+      { bucket: args.bucket, hashes },
+      signal,
+    );
+    const missing = [...publications].filter(([hash]) => {
+      return !published.has(hash);
+    });
+    if (missing.length === 0) {
+      return hashes;
+    }
+    const fileHashes = [
+      ...new Set(
+        missing.flatMap(([, { manifest }]) => {
+          return manifest.files.map((file) => {
+            return file.hash;
+          });
+        }),
+      ),
+    ];
+    const publicFiles = await set(
+      publicMarketingContentHashes$,
+      { resourceType: "file", hashes: fileHashes },
+      signal,
+    );
+    if (
+      fileHashes.some((hash) => {
+        return !publicFiles.has(hash);
+      })
+    ) {
+      return null;
+    }
+    // Bound R2 pressure and settle every owned write before failing the request.
+    // Failed batches publish no grants; retry safely reuses any immutable objects.
+    for (let offset = 0; offset < missing.length; offset += 4) {
+      signal.throwIfAborted();
+      const results = await Promise.allSettled(
+        missing.slice(offset, offset + 4).map(async ([hash, { body }]) => {
+          const reserved = await set(
+            reserveMarketingManifestAddress$,
+            { bucket: args.bucket, hash, body },
+            signal,
+          );
+          if (!reserved) {
+            return false;
+          }
+          await get(
+            putImmutableS3Object(
+              args.bucket,
+              `manifest/${hash}.json`,
+              body,
+              "application/json",
+              signal,
+            ),
+          );
+          signal.throwIfAborted();
+          return true;
+        }),
+      );
+      signal.throwIfAborted();
+      const failure = results.find((result) => {
+        return result.status === "rejected";
+      });
+      if (failure) {
+        throw failure.reason;
+      }
+      if (
+        results.some((result) => {
+          return result.status === "fulfilled" && !result.value;
+        })
+      ) {
+        return conflict(
+          "This handoff address is already in use. Edit your request and try again.",
+        );
+      }
+    }
+    await set(writeDb$)
+      .insert(marketingContentGrants)
+      .values(
+        missing.map(([hash]) => {
+          return {
+            resourceType: "manifest" as const,
+            resourceHash: hash,
+            subject: "public",
+            expiresAt: null,
+          };
+        }),
+      )
+      .onConflictDoUpdate({
+        target: [
+          marketingContentGrants.resourceType,
+          marketingContentGrants.resourceHash,
+          marketingContentGrants.subject,
+        ],
+        set: { expiresAt: null },
+      });
+    signal.throwIfAborted();
+    return hashes;
   },
 );
 
@@ -256,22 +481,35 @@ export const readMarketingManifest$ = command(
     { get },
     args: { bucket: string; hash: string },
     signal: AbortSignal,
-  ): Promise<MarketingHandoffManifest> => {
-    const body = await get(
-      downloadS3BufferWithMaxBytes(
-        args.bucket,
-        `manifest/${args.hash}.json`,
-        128 * 1024,
-        signal,
+  ): Promise<{ hash: string; manifest: MarketingHandoffManifest } | null> => {
+    const downloaded = await settle(
+      get(
+        downloadS3BufferWithMaxBytes(
+          args.bucket,
+          `manifest/${args.hash}.json`,
+          128 * 1024,
+          signal,
+        ),
       ),
+      signal,
     );
-    signal.throwIfAborted();
-    if (marketingContentHash(body) !== args.hash) {
+    if (!downloaded.ok) {
+      if (isS3NotFoundError(downloaded.error)) {
+        return null;
+      }
+      throw downloaded.error;
+    }
+    const body = downloaded.value;
+    const hash = marketingContentHash(body);
+    if (hash.slice(0, args.hash.length) !== args.hash) {
       throw new Error("Marketing manifest digest mismatch");
     }
-    return marketingHandoffManifestSchema.parse(
-      JSON.parse(body.toString("utf8")),
-    );
+    return {
+      hash,
+      manifest: marketingHandoffManifestSchema.parse(
+        JSON.parse(body.toString("utf8")),
+      ),
+    };
   },
 );
 

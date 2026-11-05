@@ -9,7 +9,6 @@ import {
   projectAgentDraftRoutes,
 } from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
-import { jobsRoutes } from "./routes/jobs";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -118,6 +117,7 @@ import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
+import { friendReferralRoutes } from "./routes/friend-referrals";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
 import { hostRoutes } from "./routes/host";
@@ -169,7 +169,6 @@ import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import {
   proactiveSuggestionsRoutes,
-  proactiveJobsRoutes,
   proactiveLearningRoutes,
 } from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
@@ -256,6 +255,7 @@ import { workflowsRoutes } from "./routes/workflows";
 export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
+  ...friendReferralRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,
@@ -319,7 +319,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
   ...suggestionsRoutes,
-  ...jobsRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,
@@ -428,7 +427,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
-  ...proactiveJobsRoutes,
   ...proactiveLearningRoutes,
   ...emailSubscriptionRoutes,
   ...halloweenRoutes,

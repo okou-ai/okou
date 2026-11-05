@@ -1,6 +1,6 @@
 [package]
 name = "guest-agent"
-version = "0.109.34"
+version = "0.109.43"
 edition.workspace = true
 
 [dependencies]
@@ -35,6 +35,7 @@ zstd.workspace = true
 guest-telemetry = { workspace = true, features = ["test-support"] }
 cli-test-support = { workspace = true, features = ["test-support"] }
 httpmock = { workspace = true, features = ["cookies"] }
+raw-http-test-support = { workspace = true, features = ["test-support"] }
 rustix = { workspace = true, features = ["event"] }
 shell-quote.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

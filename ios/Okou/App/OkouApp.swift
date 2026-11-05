@@ -186,12 +186,12 @@ private struct WorkspaceRootView: View {
     self.userID = userID
     _accountError = accountError
     self.notifications = notifications
+    let cacheScope = ChatCacheScope(
+      apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)
     _store = State(
       initialValue: WorkspaceStore(
         client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
-        draftStorage: ChatDraftStorage(
-          scope: ChatCacheScope(
-            apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)),
+        draftStorage: ChatDraftStorage(scope: cacheScope), measurementScope: cacheScope,
         didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
   }
 
@@ -219,7 +219,7 @@ private struct WorkspaceRootView: View {
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
           notifications: notifications,
-          headerHeight: headerHeight, showsSynchronizationStatus: sidebar.isOpen,
+          headerHeight: headerHeight,
           accountError: $accountError,
           close: closeSidebar,
           newChat: startNewChat
@@ -245,7 +245,6 @@ private struct WorkspaceRootView: View {
             ChatDetailView(
               conversation: conversation,
               agents: store.list,
-              voice: store.voice,
               didSend: { await notifications.requestAfterSend() },
               topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
@@ -277,7 +276,6 @@ private struct WorkspaceRootView: View {
                     agentID: store.selectedAgentID, agents: store.list.agents,
                     threads: store.list.threads),
                   workflowSource: store.composerWorkflows, agentID: store.selectedAgentID,
-                  voice: store.voice,
                   placeholder: String(localized: "Message \(store.currentAgentName)"))
               }
           }
@@ -302,14 +300,12 @@ private struct WorkspaceRootView: View {
         }
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
+            // Sync problems float below the header with the rest of the chat feedback.
             ChatWorkspaceHeader(
               store: store, height: headerHeight, openSidebar: openSidebar,
               openAgent: { showsAgent = true },
               modelSelection: store.selectedConversation.map { $0.modelSelection }
                 ?? store.newModelSelection)
-            ChatSyncStatusView(state: sidebar.isOpen ? nil : store.synchronizationState) {
-              await store.retrySynchronization()
-            }
           }
           .onGeometryChange(for: CGFloat.self) {
             $0.size.height
@@ -358,16 +354,15 @@ private struct WorkspaceRootView: View {
           })
       )
       .composerWorkflowOverlay(
-        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil)
+        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
+      )
+    }
+    .overlay(alignment: .top) {
+      ChatFeedbackBanner(store: store)
+        .padding(.top, headerHeight)
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
-    .overlay(alignment: .bottom) {
-      if let feedback = store.threadFeedback {
-        ChatThreadFeedbackView(store: store, feedback: feedback)
-          .padding(.bottom, 100)
-      }
-    }
     .task {
       let target = store
       notifications.didSynchronize = { [weak target] in

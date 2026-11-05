@@ -4,6 +4,7 @@ const ACTIVE_INPUT_SMOKE_MARKER: &str = "@active-input-smoke:";
 const ACTIVE_INPUT_SMOKE_READY_MARKER: &str = "@active-input-smoke-ready:";
 const ECHO_HANG_MARKER: &str = "@ECHO-HANG@";
 const ECHO_MARKER: &str = "@ECHO@";
+const ECHO_FILE_MARKER: &str = "@ECHO-FILE@";
 const FAIL_NO_NEWLINE_MARKER: &str = "@fail-no-newline:";
 const FAIL_INVALID_UTF8_MARKER: &str = "@fail-invalid-utf8";
 const FAIL_INVALID_UTF8_LONG_MARKER: &str = "@fail-invalid-utf8-long";
@@ -40,6 +41,7 @@ pub(crate) enum MockScenario<'a> {
     InvalidActiveInputSmokeReadyCount(&'a str),
     EchoJsonl(&'a str),
     EchoJsonlAndHang(&'a str),
+    EchoJsonlFile(&'a str),
     FailNoNewline(&'a str),
     FailInvalidUtf8,
     FailInvalidUtf8Long,
@@ -80,6 +82,7 @@ enum ScenarioKind {
     ActiveInputSmokeReady,
     EchoJsonl,
     EchoJsonlAndHang,
+    EchoJsonlFile,
     FailNoNewline,
     FailInvalidUtf8,
     FailInvalidUtf8Long,
@@ -137,6 +140,11 @@ const SCENARIO_RULES: &[ScenarioRule] = &[
         marker: ECHO_MARKER,
         match_kind: ScenarioMatchKind::FirstLinePayload,
         scenario_kind: ScenarioKind::EchoJsonl,
+    },
+    ScenarioRule {
+        marker: ECHO_FILE_MARKER,
+        match_kind: ScenarioMatchKind::FirstLinePayload,
+        scenario_kind: ScenarioKind::EchoJsonlFile,
     },
     ScenarioRule {
         marker: FAIL_NO_NEWLINE_MARKER,
@@ -314,6 +322,9 @@ impl ScenarioKind {
             (Self::EchoJsonl, ScenarioMatch::Payload(payload)) => MockScenario::EchoJsonl(payload),
             (Self::EchoJsonlAndHang, ScenarioMatch::Payload(payload)) => {
                 MockScenario::EchoJsonlAndHang(payload)
+            }
+            (Self::EchoJsonlFile, ScenarioMatch::Payload(path)) => {
+                MockScenario::EchoJsonlFile(path)
             }
             (Self::FailNoNewline, ScenarioMatch::Payload(msg)) => MockScenario::FailNoNewline(msg),
             (Self::Fail, ScenarioMatch::Payload(msg)) => MockScenario::Fail(msg),

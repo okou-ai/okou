@@ -72,10 +72,10 @@
       "text": "Comment prononce-t-on Okou ?"
     },
     "QUIZ-02": {
-      "explanation": "Huit pétales autour d'un milieu ouvert. C’est une fleur, pas un équipement de costume.",
+      "explanation": "Quatre pétales autour d'un milieu ouvert. C’est une fleur, pas un équipement de costume.",
       "options": {
         "A": "Six",
-        "B": "Huit",
+        "B": "Quatre",
         "C": "Des pétales ? N'est-ce pas juste un cercle ?"
       },
       "text": "Combien de pétales le symbole de fleur de Okou possède-t-il ?"

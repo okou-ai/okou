@@ -153,8 +153,9 @@ class RootfsUsageTests(unittest.TestCase):
         for location in ("tmp", "var", "usr", "opt", "root"):
             target = self.root / location
             target.mkdir(parents=True, exist_ok=True)
+            # Every name is new; skip touch's attempt to update timestamps first.
             for index in range(6000):
-                (target / str(index)).touch()
+                (target / str(index)).touch(exist_ok=False)
         output = self.sample()
         counts = [
             int(item.removeprefix("entries="))

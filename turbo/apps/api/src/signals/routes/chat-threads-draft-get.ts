@@ -1,5 +1,3 @@
-import { projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/contracts/project-readers";
-import { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { computed } from "ccstate";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -17,17 +15,7 @@ const getThreadDraftInner$ = computed(async (get) => {
   );
   return {
     status: 200 as const,
-    body: {
-      ...draft,
-      draftUserMessage:
-        draft.draftUserMessage === null
-          ? null
-          : userMessageInputDocumentSchema.parse(
-              projectAwareUserMessageDocumentSchema.parse(
-                draft.draftUserMessage,
-              ),
-            ),
-    },
+    body: draft,
   };
 });
 

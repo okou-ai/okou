@@ -1,8 +1,9 @@
 import {
-  projectMessageDocumentSchema as userMessageDocumentSchema,
-  projectInputDocumentSchema as userMessageInputDocumentSchema,
+  userMessageDocumentSchema,
+  userMessageInputDocumentSchema,
   projectMentionSchema,
-} from "@okouai/api-contracts/validators/project-message";
+  generationTemplateRequestSchema,
+} from "@okouai/api-contracts/validators/chat-threads";
 import {
   readSuggestionContext,
   suggestionContextPart,
@@ -11,7 +12,6 @@ import {
 } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { JSONContent } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { generationTemplateRequestSchema } from "@okouai/api-contracts/validators/chat-threads";
 import type {
   FeedbackNotePart,
   GenerationTemplateRequest,
@@ -550,6 +550,37 @@ export function createEditorDocumentSnapshot(
     toDraft(context: EditorDocumentContext = {}) {
       return editorDocToDraftDocument(document, context);
     },
+  });
+}
+
+/**
+ * Freezes a prepared business document for a send that has no mounted editor.
+ * File parts follow the draft's usable attachments, as an unmounted draft does.
+ */
+export function createMessageDocumentSnapshot(
+  document: UserMessageDocument,
+): EditorDocumentSnapshot {
+  const toDraft = (
+    context: EditorDocumentContext = {},
+  ): EditorDraftDocument | null => {
+    const userMessage = restoredMessageToDraftDocument(
+      document,
+      context.attachments ?? [],
+    );
+    return userMessage ? { userMessage } : null;
+  };
+  return Object.freeze({
+    toEditorDocument() {
+      const editorDocument = draftToEditorDoc(document);
+      if (!editorDocument) {
+        throw new Error("Invalid prepared message document");
+      }
+      return editorDocument;
+    },
+    toMessageDocument(context: EditorDocumentContext = {}) {
+      return toDraft(context)?.userMessage ?? null;
+    },
+    toDraft,
   });
 }
 

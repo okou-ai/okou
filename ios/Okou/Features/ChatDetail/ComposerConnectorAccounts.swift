@@ -4,6 +4,18 @@ import SwiftUI
 struct ComposerConnectorAccounts: View {
   let store: ComposerConnectorStore
   let connector: ChatComposerConnector
+  var body: some View {
+    if store.chatAccountAccess {
+      ComposerChatConnectorAccounts(store: store, connector: connector)
+    } else {
+      LegacyComposerConnectorAccounts(store: store, connector: connector)
+    }
+  }
+}
+
+private struct LegacyComposerConnectorAccounts: View {
+  let store: ComposerConnectorStore
+  let connector: ChatComposerConnector
   @State private var accounts: [ChatConnectorAccount] = []
   @State private var defaultAccount: ChatConnectorAccount?
   @State private var selection: String?
@@ -47,7 +59,6 @@ struct ComposerConnectorAccounts: View {
             }
           }
         }
-        if loading { OkouLoadingRow("Loading accounts…") }
         if !loading, selection != nil, !accounts.contains(where: { $0.id == selection }) {
           Text("The selected account is unavailable. Choose an account or use default.")
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
@@ -66,6 +77,11 @@ struct ComposerConnectorAccounts: View {
 
         }
         .okouSectionNote()
+      }
+    }
+    .overlay {
+      if loading && accounts.isEmpty && defaultAccount == nil && error == nil {
+        ChatSettingsLoadingView(title: "Loading accounts…")
       }
     }
     .searchable(text: $search, prompt: "Find accounts")

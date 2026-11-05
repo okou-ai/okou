@@ -1,9 +1,4 @@
-import {
-  screen,
-  waitFor,
-  waitForElementToBeRemoved,
-  within,
-} from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -35,6 +30,14 @@ import {
 const context = testContext();
 const { mockAdminAccountSidebar } = createSidebarAccountHelpers(context);
 
+async function openSubscriptionUsage(): Promise<HTMLElement> {
+  const entry = await within(
+    screen.getByTestId("labeled-nav-rail"),
+  ).findByLabelText(/^Subscription usage/);
+  click(entry);
+  return screen.findByTestId("account-menu-subscriptions");
+}
+
 test("Hide subscription usage when the account-menu feature is off", async () => {
   mockAdminAccountSidebar();
   context.mocks.data.personalModelProviders([
@@ -60,11 +63,11 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
     expect(within(menu).getByText("12,500 credits")).toBeInTheDocument();
   });
   expect(
-    within(menu).queryByTestId("account-menu-subscriptions"),
+    screen.queryByLabelText(/^Subscription usage/),
   ).not.toBeInTheDocument();
 });
 
-test("Review personal subscription usage in the account menu", async () => {
+test("Open subscriptions by clicking the rail and open Models in Settings", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
@@ -90,8 +93,7 @@ test("Review personal subscription usage in the account menu", async () => {
     featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
-  const menu = await openAccountMenu();
-  const panel = await within(menu).findByTestId("account-menu-subscriptions");
+  const panel = await openSubscriptionUsage();
 
   const codex = within(panel).getByRole("region", { name: "ChatGPT usage" });
   const claude = within(panel).getByRole("region", { name: "Claude usage" });
@@ -110,46 +112,120 @@ test("Review personal subscription usage in the account menu", async () => {
   expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
   expect(within(panel).queryByText(/Resets in /)).not.toBeInTheDocument();
 
-  // Keyboard focus exposes details for the entire information block.
+  const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+    "Subscription usage",
+  );
+  expect(entry).toHaveAccessibleDescription(
+    "ChatGPT: 55% left; Claude: 76% left",
+  );
   const codexInformation = within(codex).getByLabelText("ChatGPT usage");
-  await user.keyboard("ChatGPT");
-  expect(codexInformation).toHaveFocus();
+  await user.hover(codexInformation);
   await waitFor(() => {
     expectVisibleText("Resets in 5d 23h");
     expectVisibleText(
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  await user.keyboard("{ArrowDown}");
-  expect(within(claude).getByLabelText("Claude usage")).toHaveFocus();
-  // The heading is part of the hover target, alongside both Claude meters.
   await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
   await waitFor(() => {
     expectVisibleText(
       formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
     );
-    expectVisibleText(
-      formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
-    );
   });
   click(within(claude).getByLabelText("Claude usage"));
-  expect(menu).toBeInTheDocument();
-  await user.keyboard("{ArrowDown}");
-  await waitFor(() => {
-    expect(screen.queryByText("Resets in 4h 12m")).not.toBeInTheDocument();
-  });
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  await expect(
+    within(settings).findByRole("heading", { name: "Use more models" }),
+  ).resolves.toBeInTheDocument();
   await user.keyboard("{Escape}");
-  const accountTrigger = queryAllByRoleFast("button").find((button) => {
-    return (
-      (button.getAttribute("aria-label") ?? button.textContent)?.trim() ===
-      "Alex Rivera"
-    );
-  });
   await waitFor(() => {
-    expect(accountTrigger).toHaveAttribute("aria-expanded", "false");
-    expect(accountTrigger).toHaveFocus();
+    expect(entry).toHaveFocus();
+    expect(entry).toHaveAttribute("aria-expanded", "false");
   });
+  expect(
+    screen.queryByTestId("account-menu-subscriptions"),
+  ).not.toBeInTheDocument();
+  await user.keyboard("{Enter}");
+  await expect(
+    screen.findByRole("dialog", { name: "Subscription usage" }),
+  ).resolves.toBeInTheDocument();
+  expect(entry).toHaveFocus();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(entry).toHaveFocus();
+    expect(entry).toHaveAttribute("aria-expanded", "false");
+  });
+  await user.keyboard(" ");
+  const reopenedPreview = await screen.findByRole("dialog", {
+    name: "Subscription usage",
+  });
+  const chatGpt = within(
+    within(reopenedPreview).getByRole("region", { name: "ChatGPT usage" }),
+  ).getByLabelText("ChatGPT usage");
+  chatGpt.focus();
+  expect(chatGpt).toHaveFocus();
+  await user.keyboard("{Enter}");
+  const reopenedSettings = await screen.findByRole("dialog", {
+    name: "Settings",
+  });
+  await expect(
+    within(reopenedSettings).findByRole("heading", { name: "Use more models" }),
+  ).resolves.toBeInTheDocument();
 });
+
+test.each(["Escape", "Close"])(
+  "Keep the usage preview closed after dismissing Settings with %s",
+  async (dismiss) => {
+    const user = userEvent.setup();
+    mockAdminAccountSidebar();
+    context.mocks.data.personalModelProviders([
+      connectedPersonalCodexProvider(),
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+
+    const entry = await within(
+      screen.getByTestId("labeled-nav-rail"),
+    ).findByLabelText("Subscription usage");
+    await user.click(entry);
+    const preview = await screen.findByRole("dialog", {
+      name: "Subscription usage",
+    });
+    click(
+      within(
+        within(preview).getByRole("region", { name: "ChatGPT usage" }),
+      ).getByLabelText("ChatGPT usage"),
+    );
+    const settings = await screen.findByRole("dialog", { name: "Settings" });
+    if (dismiss === "Escape") {
+      await user.keyboard("{Escape}");
+    } else {
+      click(within(settings).getByLabelText("Close"));
+    }
+    await waitFor(() => {
+      expect(entry).toHaveFocus();
+      expect(entry).toHaveAttribute("aria-expanded", "false");
+    });
+    expect(
+      screen.queryByTestId("account-menu-subscriptions"),
+    ).not.toBeInTheDocument();
+
+    // A fresh keyboard activation still opens the preview.
+    act(() => {
+      entry.blur();
+      entry.focus();
+    });
+    expect(entry).toHaveAttribute("aria-expanded", "false");
+    await user.keyboard("{Enter}");
+    await expect(
+      screen.findByTestId("account-menu-subscriptions"),
+    ).resolves.toBeInTheDocument();
+    expect(entry).toHaveFocus();
+  },
+);
 
 test.each<{
   name: string;
@@ -197,13 +273,11 @@ test.each<{
       auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
       featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
-    const menu = await openAccountMenu();
-    const panel = await within(menu).findByTestId("account-menu-subscriptions");
+    const panel = await openSubscriptionUsage();
     // Page tests use en-US copy through the shared locale-resource fixture.
     expect(document.documentElement).toHaveAttribute("lang", "zh-Hans");
     expect(within(panel).getByText("Credits")).toBeInTheDocument();
     expect(within(panel).getByText(expected)).toBeInTheDocument();
-    expect(within(menu).getByText("12,500 credits")).toBeInTheDocument();
   },
 );
 
@@ -242,8 +316,7 @@ test("Keep ChatGPT summary and actions tied to its weekly limit", async () => {
     featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
-  const menu = await openAccountMenu();
-  const panel = await within(menu).findByTestId("account-menu-subscriptions");
+  const panel = await openSubscriptionUsage();
   const codex = within(panel).getByRole("region", {
     name: "ChatGPT usage",
   });
@@ -254,6 +327,16 @@ test("Keep ChatGPT summary and actions tied to its weekly limit", async () => {
     }),
   ).toHaveAttribute("aria-valuenow", "47");
   expect(within(codex).getByText("47% left")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      "Subscription usage",
+    ),
+  ).toHaveAccessibleDescription("ChatGPT: 47% left; Claude: 76% left");
+  expect(
+    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      "Subscription usage",
+    ),
+  ).toBeInTheDocument();
   expect(within(codex).queryByText("Reset usage")).not.toBeInTheDocument();
   expect(within(codex).queryByText(/Resets in /)).not.toBeInTheDocument();
 });
@@ -294,14 +377,18 @@ test("Show an exhausted week with its own reset time", async () => {
     featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
-  const menu = await openAccountMenu();
-  const panel = await within(menu).findByTestId("account-menu-subscriptions");
+  const panel = await openSubscriptionUsage();
   const week = within(panel).getByRole("meter", {
     name: "ChatGPT Weekly limit remaining",
   });
   expect(week).toHaveAttribute("aria-valuenow", "0");
   expect(within(panel).getAllByRole("meter")).toHaveLength(1);
   expect(within(panel).getByText("0% left")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      /^Subscription usage/,
+    ),
+  ).toHaveAccessibleDescription("ChatGPT: 0% left");
   expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
   expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
   await userEvent.setup().hover(week);
@@ -312,7 +399,66 @@ test("Show an exhausted week with its own reset time", async () => {
   });
 });
 
-test("Keep Codex reset pending until refreshed account-menu usage is ready", async () => {
+test.each(["Escape", "Cancel"])(
+  "Keep the usage preview closed after dismissing reset confirmation with %s",
+  async (dismiss) => {
+    const user = userEvent.setup();
+    mockAdminAccountSidebar();
+    context.mocks.data.personalModelProviders([
+      connectedPersonalCodexProvider({
+        subscriptionUsage: {
+          fiveHour: null,
+          weekly: {
+            usedPercent: 100,
+            remainingPercent: 0,
+            resetAt: "2030-01-07T00:00:00.000Z",
+            windowSeconds: 604_800,
+          },
+        },
+      }),
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+
+    const panel = await openSubscriptionUsage();
+    const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      /^Subscription usage/,
+    );
+    click(within(panel).getByText("Reset usage"));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Reset Codex usage?",
+    });
+    if (dismiss === "Escape") {
+      await user.keyboard("{Escape}");
+    } else {
+      const cancel = queryAllByRoleFast("button", confirmation).find(
+        (button) => {
+          return button.textContent === "Cancel";
+        },
+      );
+      if (!cancel) {
+        throw new Error("Cancel button not found");
+      }
+      click(cancel);
+    }
+    await waitFor(() => {
+      expect(entry).toHaveFocus();
+      expect(entry).toHaveAttribute("aria-expanded", "false");
+    });
+    expect(
+      screen.queryByTestId("account-menu-subscriptions"),
+    ).not.toBeInTheDocument();
+    click(entry);
+    await expect(
+      screen.findByTestId("account-menu-subscriptions"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test("Keep Codex reset pending until refreshed sidebar usage is ready", async () => {
   mockAdminAccountSidebar();
   const refreshStarted = context.mocks.deferred<void>();
   const finishRefresh = context.mocks.deferred<void>();
@@ -364,8 +510,7 @@ test("Keep Codex reset pending until refreshed account-menu usage is ready", asy
     featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
-  let menu = await openAccountMenu();
-  let panel = await within(menu).findByTestId("account-menu-subscriptions");
+  let panel = await openSubscriptionUsage();
   const resetCredits = within(panel).getByText("Reset usage");
   expect(within(panel).getByText("Credits")).toBeInTheDocument();
   expect(resetCredits).toBeInTheDocument();
@@ -374,7 +519,11 @@ test("Keep Codex reset pending until refreshed account-menu usage is ready", asy
   const confirmDialog = await screen.findByRole("dialog", {
     name: "Reset Codex usage?",
   });
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      /^Subscription usage/,
+    ),
+  ).toHaveAttribute("aria-expanded", "false");
   expect(within(confirmDialog).getByText(/2 resets left/)).toBeInTheDocument();
   const resetButton = queryAllByRoleFast("button", confirmDialog).find(
     (button) => {
@@ -402,9 +551,15 @@ test("Keep Codex reset pending until refreshed account-menu usage is ready", asy
       screen.queryByRole("dialog", { name: "Reset Codex usage?" }),
     ).not.toBeInTheDocument();
   });
+  await waitFor(() => {
+    const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+      /^Subscription usage/,
+    );
+    expect(entry).toHaveFocus();
+    expect(entry).toHaveAttribute("aria-expanded", "false");
+  });
 
-  menu = await openAccountMenu();
-  panel = await within(menu).findByTestId("account-menu-subscriptions");
+  panel = await openSubscriptionUsage();
   expect(within(panel).getByText("100% left")).toBeInTheDocument();
   expect(within(panel).queryByText("Credits")).not.toBeInTheDocument();
   expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
@@ -434,8 +589,7 @@ test.each([0, null, undefined])(
       auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
       featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
-    const menu = await openAccountMenu();
-    const panel = await within(menu).findByTestId("account-menu-subscriptions");
+    const panel = await openSubscriptionUsage();
     expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
     expect(within(panel).getByText(/Resets in /)).toBeInTheDocument();
   },
@@ -446,15 +600,10 @@ test.each([null] as const)(
   async (locale) => {
     mockAdminAccountSidebar();
     context.mocks.data.userPreferences({ locale });
-    const providerResponse = context.mocks.deferred<void>();
-    let menuOpened = false;
 
     context.mocks.api(
       thirdPartySubscriptionsMainContract.list,
-      async ({ respond }) => {
-        if (menuOpened) {
-          await providerResponse.promise;
-        }
+      ({ respond }) => {
         return respond(401, {
           error: {
             code: "UNAUTHORIZED",
@@ -478,14 +627,7 @@ test.each([null] as const)(
     });
 
     const workflows = await screen.findByRole("heading", { name: "Workflows" });
-    menuOpened = true;
     const menu = await openAccountMenu();
-    const loadingSubscriptions = await within(menu).findByTestId(
-      "account-menu-subscriptions",
-    );
-
-    providerResponse.resolve();
-    await waitForElementToBeRemoved(loadingSubscriptions);
     await expect(
       within(menu).findByText("12,500 credits"),
     ).resolves.toBeInTheDocument();
@@ -500,3 +642,115 @@ test.each([null] as const)(
     ).resolves.toBeInTheDocument();
   },
 );
+
+test.each([
+  { type: "codex-oauth-token" as const, window: "weekly" as const },
+  { type: "claude-code-oauth-token" as const, window: "fiveHour" as const },
+  { type: "claude-code-oauth-token" as const, window: "weekly" as const },
+])(
+  "Warn when $type $window has little remaining usage",
+  async ({ type, window }) => {
+    mockAdminAccountSidebar();
+    const provider =
+      type === "codex-oauth-token"
+        ? connectedPersonalCodexProvider()
+        : connectedPersonalClaudeCodeProvider();
+    context.mocks.data.personalModelProviders([
+      {
+        ...provider,
+        subscriptionUsage: {
+          fiveHour: null,
+          weekly: null,
+          ...provider.subscriptionUsage,
+          [window]: {
+            usedPercent: 88,
+            remainingPercent: 12,
+            resetAt: "2030-01-07T00:00:00.000Z",
+            windowSeconds: 604_800,
+          },
+        },
+      },
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+    const entry = await screen.findByLabelText(
+      "Subscription usage: less than 20% remaining",
+    );
+    click(entry);
+    const panel = await screen.findByRole("dialog", {
+      name: "Subscription usage",
+    });
+    expect(within(panel).getByText("12% left")).toBeInTheDocument();
+    click(entry);
+    await waitFor(() => {
+      expect(entry).toHaveAttribute("aria-expanded", "false");
+    });
+    click(entry);
+    await waitFor(() => {
+      expect(entry).toHaveAttribute("aria-expanded", "true");
+    });
+    const reopenedPanel = await screen.findByRole("dialog", {
+      name: "Subscription usage",
+    });
+    const providerLabel =
+      type === "codex-oauth-token" ? "ChatGPT usage" : "Claude usage";
+    click(
+      within(
+        within(reopenedPanel).getByRole("region", { name: providerLabel }),
+      ).getByLabelText(providerLabel),
+    );
+    const settings = await screen.findByRole("dialog", { name: "Settings" });
+    await expect(
+      within(settings).findByRole("heading", { name: "Use more models" }),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test("Keep the account menu available without a subscription entry", async () => {
+  mockAdminAccountSidebar();
+  context.mocks.data.personalModelProviders([]);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+  });
+  const menu = await openAccountMenu();
+  await expect(
+    within(menu).findByText("12,500 credits"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText(/^Subscription usage/),
+  ).not.toBeInTheDocument();
+});
+
+test("Describe connected usage with an unknown percentage without treating it as empty", async () => {
+  mockAdminAccountSidebar();
+  context.mocks.data.personalModelProviders([
+    connectedPersonalClaudeCodeProvider({
+      subscriptionUsage: {
+        fiveHour: null,
+        weekly: {
+          usedPercent: null,
+          remainingPercent: null,
+          resetAt: "2030-01-07T00:00:00.000Z",
+          windowSeconds: 604_800,
+        },
+      },
+    }),
+  ]);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+  });
+  const entry = await within(
+    screen.getByTestId("labeled-nav-rail"),
+  ).findByLabelText("Subscription usage");
+  expect(entry).toHaveAccessibleDescription("Claude: —");
+  const panel = await openSubscriptionUsage();
+  expect(within(panel).getByText("—")).toBeInTheDocument();
+});

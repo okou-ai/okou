@@ -7,7 +7,6 @@ struct ChatSidebarView: View {
   let workspaceID: String
   let notifications: NotificationService
   let headerHeight: CGFloat
-  var showsSynchronizationStatus = true
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: (String?) -> Void
@@ -85,7 +84,8 @@ struct ChatSidebarView: View {
       }
       if store.list.isLoading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
-          .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
+          .frame(maxWidth: .infinity)
+          .listRowInsets(.horizontal, 0)
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
@@ -114,10 +114,8 @@ struct ChatSidebarView: View {
     .scrollEdgeEffectStyle(.soft, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
       VStack(spacing: 0) {
+        // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
         header.padding(.horizontal, rowInset)
-        ChatSyncStatusView(state: showsSynchronizationStatus ? store.synchronizationState : nil) {
-          await store.retrySynchronization()
-        }
       }
       .background {
         OkouColor.sidebar
@@ -414,7 +412,7 @@ struct ChatSidebarView: View {
       .pickerStyle(.inline)
       if let agentID = store.selectedAgentID {
         Divider()
-        Button("Mark all read", okouSymbol: "check-check") {
+        Button("Mark all as read") {
           Task { await store.list.markAgentRead(agentID) }
         }
         .disabled(

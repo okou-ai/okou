@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { resolveSlackMessageSendFooter$ } from "../services/slack-message-context.service";
 import { command } from "ccstate";
 import {
   integrationsSlackUploadCompleteContract,
@@ -136,12 +138,19 @@ const completeDirectUpload$ = command(
       return target;
     }
     const channel = target.channelId;
+    const footerText = await set(
+      resolveSlackMessageSendFooter$,
+      target.workspaceId,
+      signal,
+    );
     const completeResult = await target.client.completeUploadExternal({
       fileId: body.fileId,
       channel,
       threadTs: body.threadTs,
       title: body.title,
-      initialComment: body.initialComment,
+      initialComment:
+        appendIntegrationMessageFooter(body.initialComment, footerText) ||
+        undefined,
     });
     signal.throwIfAborted();
     if (completeResult.kind === "slack_error") {

@@ -73,6 +73,12 @@ struct RpcSandbox {
 }
 #[async_trait]
 impl Sandbox for RpcSandbox {
+    async fn run_agent_instructions(
+        &self,
+        request: &sandbox::AgentInstructionsRequest<'_>,
+    ) -> sandbox::Result<sandbox::ExecResult> {
+        self.inner.run_agent_instructions(request).await
+    }
     async fn apply_storage_manifest(
         &self,
         request: &sandbox::StorageManifestRequest<'_>,

@@ -7,15 +7,15 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES,
-    GuestStateRestoreTimezone,
+    ExecTermination, GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES, GuestStateRestoreTimezone,
 };
 
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_input::FixedInputWriter;
+use crate::helper_output::{captured_or_empty, truncate_utf8};
 use crate::log::log;
-use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
+use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
     WaitOutcome, await_drain_deadline, wait_with_kill_timeout_or_connection_cancelled,
@@ -208,7 +208,7 @@ fn handle_request(
         connection_cancel,
         drain_deadline,
     });
-    let stderr = captured_output(&output.stderr);
+    let stderr = captured_or_empty(&output.stderr);
     let mut frame = Vec::new();
     guest_control_proto::encode_guest_state_restore_result_frame_into(
         &mut frame,
@@ -358,20 +358,8 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
         stderr.captured = Some(Vec::new());
     }
 
-    let (termination, diagnostic) = match outcome {
-        WaitOutcome::Exited(status) => (
-            ExecTermination::Exited {
-                exit_code: extract_exit_code(status),
-            },
-            String::new(),
-        ),
-        WaitOutcome::TimedOut => (ExecTermination::TimedOut, String::new()),
-        WaitOutcome::Cancelled => (ExecTermination::Cancelled, String::new()),
-        WaitOutcome::WaitFailed(message) => (
-            ExecTermination::WaitFailed,
-            format!("failed to wait for guest state helper: {message}"),
-        ),
-    };
+    let (termination, diagnostic) =
+        outcome.into_exec_result("failed to wait for guest state helper");
     if let Err(error) = stdin_result
         && matches!(termination, ExecTermination::Exited { .. })
     {
@@ -410,22 +398,6 @@ fn failed_output(
     }
 }
 
-fn captured_output(result: &BoundedDrainResult) -> ExecCapturedOutput<'_> {
-    ExecCapturedOutput::Captured {
-        bytes: result.captured.as_deref().unwrap_or_default(),
-        truncated: result.capture_truncated,
-    }
-}
-
 fn elapsed_ms(started: Instant) -> u32 {
     u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX)
-}
-
-fn truncate_utf8(mut value: String, limit: usize) -> String {
-    if value.len() <= limit {
-        return value;
-    }
-    let end = value.floor_char_boundary(limit);
-    value.truncate(end);
-    value
 }

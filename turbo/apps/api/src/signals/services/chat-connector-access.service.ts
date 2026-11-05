@@ -24,6 +24,7 @@ import {
   connectorAccessAccountOwner,
   type ConnectorAccessOwner,
 } from "./connector-access-owner";
+import { synchronizeChatConnectorAutomationAccounts$ } from "./chat-connector-automation-accounts.service";
 
 function accountColumns() {
   return {
@@ -162,6 +163,7 @@ export const updateConnectorAccountDefaultEnabled$ = command(
     }
     await db.execute(repairChatConnectorSelectionsSql(owner));
     signal.throwIfAborted();
+    await set(synchronizeChatConnectorAutomationAccounts$, owner, signal);
     return {
       connectionId: row.id,
       displayName: row.display_name,
@@ -226,6 +228,7 @@ export const setChatConnectorAccessOverride$ = command(
       repairChatConnectorSelectionsSql(owner, owner.chatThreadId),
     );
     signal.throwIfAborted();
+    await set(synchronizeChatConnectorAutomationAccounts$, owner, signal);
     return true;
   },
 );
@@ -243,6 +246,10 @@ export const setChatConnectorCurrent$ = command(
       await db.execute(saveChatConnectorCurrentSql(owner, connectionId)),
     );
     signal.throwIfAborted();
-    return rows.length > 0;
+    if (rows.length === 0) {
+      return false;
+    }
+    await set(synchronizeChatConnectorAutomationAccounts$, owner, signal);
+    return true;
   },
 );

@@ -236,274 +236,272 @@ def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
     flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finalizer.finish
 
 
-def _configure_response_inspection_stream(
+def _configure_model_sse_inspection(
     flow: http.HTTPFlow,
+    response: http.Response,
     *,
+    model_protocol: usage.ModelUsageProtocol,
+    is_billable_flow: bool,
+    is_billable_model_provider: bool,
+) -> _ResponseStreamSetup:
+    openai_recoverable_usage: dict = {}
+    observed_terminal = False
+
+    def observe_usage(quantities: dict, terminal: bool = False) -> None:
+        nonlocal observed_terminal
+        observed_terminal = observed_terminal or terminal
+        run_usage.observe(flow, quantities)
+
+    def observe_done() -> None:
+        nonlocal observed_terminal
+        observed_terminal = True
+
+    if model_protocol == "openai_responses":
+        usage_protocol = _OPENAI_RESPONSES_SSE_PROTOCOL
+        log_parse_error = _make_model_sse_parse_error_logger(
+            flow,
+            usage_protocol=usage_protocol,
+        )
+
+        def record_openai_terminal_usage(terminal_usage: dict) -> None:
+            usage.merge_openai_responses_usage_result(
+                openai_recoverable_usage,
+                terminal_usage,
+            )
+
+        parser_fn, usage_dict = usage.create_openai_responses_sse_usage_extractor(
+            on_parse_error=log_parse_error,
+            on_observation=observe_usage,
+            on_terminal_usage=record_openai_terminal_usage,
+        )
+    elif model_protocol == "openai_chat_completions":
+        usage_protocol = _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL
+        log_parse_error = _make_model_sse_parse_error_logger(
+            flow,
+            usage_protocol=usage_protocol,
+        )
+        parser_fn, usage_dict = usage.create_openai_chat_completions_sse_usage_extractor(
+            on_parse_error=log_parse_error,
+            on_usage=observe_usage,
+            on_done=observe_done,
+        )
+    else:
+        usage_protocol = _ANTHROPIC_MESSAGES_SSE_PROTOCOL
+        log_parse_error = _make_model_sse_parse_error_logger(
+            flow,
+            usage_protocol=usage_protocol,
+        )
+
+        def observe_anthropic_event(event: str) -> None:
+            observe_usage(usage_dict, event == "message_stop")
+
+        parser_fn, usage_dict = usage.create_anthropic_messages_sse_usage_extractor(
+            on_parse_error=log_parse_error,
+            on_accounting_event=observe_anthropic_event,
+        )
+    decode_session = _make_response_decode_session(parser_fn, response.headers)
+    if decode_session is None:
+        run_usage.mark(flow, "parse_error")
+        return _ResponseStreamSetup(
+            None,
+            False,
+            reject_uninspectable=(
+                is_billable_flow
+                and is_billable_model_provider
+                and _HTTP_STATUS_OK_MIN <= response.status_code < _HTTP_STATUS_REDIRECT_MIN
+            ),
+        )
+
+    finished = False
+    inspection_failed = False
+
+    def fail_sse_inspection(error: str) -> None:
+        nonlocal inspection_failed
+        inspection_failed = True
+        run_usage.observe(flow, usage_dict)
+        run_usage.mark(flow, "parse_error")
+        run_usage.mark(flow, "interrupted")
+        log_usage_underbilling(
+            flow_metadata.proxy_log_path(flow.metadata),
+            "Deferred model SSE response inspection was interrupted",
+            "response_inspection_interrupted",
+            "risk",
+            run_id=flow_metadata.run_id(flow.metadata),
+            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            usage_protocol=usage_protocol,
+            parse_error=error,
+        )
+
+    sse_inspection = response_inspection.CooperativeResponseInspection(
+        lambda chunk: response_inspection.decoded_steps(
+            decode_session.iter_chunks, parser_fn.feed_steps, chunk
+        ),
+        fail_sse_inspection,
+    )
+    flow.metadata[_RESPONSE_INSPECTION] = sse_inspection
+
+    def finish_sse_response() -> None:
+        nonlocal finished
+        if inspection_failed:
+            # Only accepted prefix events survive abandonment. Finishing
+            # the scanner here could turn an uninspected suffix into usage.
+            finished = True
+            return
+        if not finished:
+            decode_error = decode_session.finish_error()
+            if decode_error is None:
+                parser_fn.finish()
+                run_usage.observe(flow, usage_dict)
+            else:
+                run_usage.observe(flow, usage_dict)
+                log_parse_error("compressed_body", decode_error)
+                usage_dict.clear()
+                if (
+                    usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
+                    and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
+                ):
+                    usage.merge_openai_responses_usage_result(
+                        usage_dict,
+                        openai_recoverable_usage,
+                    )
+            if not observed_terminal:
+                run_usage.mark(flow, "interrupted")
+            finished = True
+
+    flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = usage_dict
+    flow.metadata[_MODEL_SSE_USAGE_FINISH] = finish_sse_response
+    return _ResponseStreamSetup(sse_inspection.feed, False)
+
+
+def _configure_model_json_inspection(
+    flow: http.HTTPFlow,
+    response: http.Response,
+    *,
+    model_protocol: usage.ModelUsageProtocol,
+    is_billable_flow: bool,
+    is_billable_model_provider: bool,
     websocket_header_work_limit: int,
 ) -> _ResponseStreamSetup:
-    # Set up model inspection or connector usage extraction for response classes
-    # that need it. Parsers consume chunks separately from the optional buffer.
-    response = flow.response
-    if response is None:
-        return _ResponseStreamSetup(None, False)
-
-    # Billing admission remains separate from model usage observation.
-    # Connector extraction remains gated by the billing flag.
-    is_billable_flow = flow_metadata.is_firewall_billable(flow.metadata)
-    is_billable_model_provider = usage.is_model_provider_usage_billable(flow)
-    extract_model_usage = flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
-    model_protocol = model_usage_protocol(flow) if extract_model_usage else None
-    if model_protocol == "openai_responses" and is_confirmed_websocket_upgrade_response(
-        flow,
-        websocket_header_work_limit=websocket_header_work_limit,
-    ):
-        model_websocket_usage.activate(flow)
-        return _ResponseStreamSetup(None, False)
-    if not http_response_classification.can_have_body(flow, response):
-        return _ResponseStreamSetup(None, False)
-    if model_protocol is not None:
-        if http_response_classification.has_event_stream_media_type(response):
-            openai_recoverable_usage: dict = {}
-            observed_terminal = False
-
-            def observe_usage(quantities: dict, terminal: bool = False) -> None:
-                nonlocal observed_terminal
-                observed_terminal = observed_terminal or terminal
-                run_usage.observe(flow, quantities)
-
-            def observe_done() -> None:
-                nonlocal observed_terminal
-                observed_terminal = True
-
-            if model_protocol == "openai_responses":
-                usage_protocol = _OPENAI_RESPONSES_SSE_PROTOCOL
-                log_parse_error = _make_model_sse_parse_error_logger(
-                    flow,
-                    usage_protocol=usage_protocol,
-                )
-
-                def record_openai_terminal_usage(terminal_usage: dict) -> None:
-                    usage.merge_openai_responses_usage_result(
-                        openai_recoverable_usage,
-                        terminal_usage,
-                    )
-
-                parser_fn, usage_dict = usage.create_openai_responses_sse_usage_extractor(
-                    on_parse_error=log_parse_error,
-                    on_observation=observe_usage,
-                    on_terminal_usage=record_openai_terminal_usage,
-                )
-            elif model_protocol == "openai_chat_completions":
-                usage_protocol = _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL
-                log_parse_error = _make_model_sse_parse_error_logger(
-                    flow,
-                    usage_protocol=usage_protocol,
-                )
-                parser_fn, usage_dict = usage.create_openai_chat_completions_sse_usage_extractor(
-                    on_parse_error=log_parse_error,
-                    on_usage=observe_usage,
-                    on_done=observe_done,
-                )
-            else:
-                usage_protocol = _ANTHROPIC_MESSAGES_SSE_PROTOCOL
-                log_parse_error = _make_model_sse_parse_error_logger(
-                    flow,
-                    usage_protocol=usage_protocol,
-                )
-
-                def observe_anthropic_event(event: str) -> None:
-                    observe_usage(usage_dict, event == "message_stop")
-
-                parser_fn, usage_dict = usage.create_anthropic_messages_sse_usage_extractor(
-                    on_parse_error=log_parse_error,
-                    on_accounting_event=observe_anthropic_event,
-                )
-            decode_session = _make_response_decode_session(parser_fn, response.headers)
-            if decode_session is None:
-                run_usage.mark(flow, "parse_error")
-                return _ResponseStreamSetup(
-                    None,
-                    False,
-                    reject_uninspectable=(
-                        is_billable_flow
-                        and is_billable_model_provider
-                        and _HTTP_STATUS_OK_MIN <= response.status_code < _HTTP_STATUS_REDIRECT_MIN
-                    ),
-                )
-
-            finished = False
-            inspection_failed = False
-
-            def fail_sse_inspection(error: str) -> None:
-                nonlocal inspection_failed
-                inspection_failed = True
-                run_usage.observe(flow, usage_dict)
-                run_usage.mark(flow, "parse_error")
-                run_usage.mark(flow, "interrupted")
-                log_usage_underbilling(
-                    flow_metadata.proxy_log_path(flow.metadata),
-                    "Deferred model SSE response inspection was interrupted",
-                    "response_inspection_interrupted",
-                    "risk",
-                    run_id=flow_metadata.run_id(flow.metadata),
-                    firewall_name=flow_metadata.firewall_name(flow.metadata),
-                    usage_protocol=usage_protocol,
-                    parse_error=error,
-                )
-
-            sse_inspection = response_inspection.CooperativeResponseInspection(
-                lambda chunk: response_inspection.decoded_steps(
-                    decode_session.iter_chunks, parser_fn.feed_steps, chunk
-                ),
-                fail_sse_inspection,
-            )
-            flow.metadata[_RESPONSE_INSPECTION] = sse_inspection
-
-            def finish_sse_response() -> None:
-                nonlocal finished
-                if inspection_failed:
-                    # Only accepted prefix events survive abandonment. Finishing
-                    # the scanner here could turn an uninspected suffix into usage.
-                    finished = True
-                    return
-                if not finished:
-                    decode_error = decode_session.finish_error()
-                    if decode_error is None:
-                        parser_fn.finish()
-                        run_usage.observe(flow, usage_dict)
-                    else:
-                        run_usage.observe(flow, usage_dict)
-                        log_parse_error("compressed_body", decode_error)
-                        usage_dict.clear()
-                        if (
-                            usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
-                            and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
-                        ):
-                            usage.merge_openai_responses_usage_result(
-                                usage_dict,
-                                openai_recoverable_usage,
-                            )
-                    if not observed_terminal:
-                        run_usage.mark(flow, "interrupted")
-                    finished = True
-
-            flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = usage_dict
-            flow.metadata[_MODEL_SSE_USAGE_FINISH] = finish_sse_response
-            return _ResponseStreamSetup(sse_inspection.feed, False)
-
-        extractor = usage.create_model_json_response_inspector(model_protocol)
-        decode_session = _make_response_decode_session(
-            extractor.feed,
-            response.headers,
-            should_continue=extractor.accepts_more_input,
+    extractor = usage.create_model_json_response_inspector(model_protocol)
+    decode_session = _make_response_decode_session(
+        extractor.feed,
+        response.headers,
+        should_continue=extractor.accepts_more_input,
+    )
+    needs_buffered_fallback = False
+    if decode_session is None:
+        needs_buffered_fallback = body_decoding.can_decode_json_usage_body(
+            response.headers
+        ) and uses_model_json_fallback(
+            flow,
+            websocket_header_work_limit=websocket_header_work_limit,
         )
-        needs_buffered_fallback = False
-        if decode_session is None:
-            needs_buffered_fallback = body_decoding.can_decode_json_usage_body(
-                response.headers
-            ) and uses_model_json_fallback(
-                flow,
-                websocket_header_work_limit=websocket_header_work_limit,
-            )
-            if not needs_buffered_fallback:
-                run_usage.mark(flow, "parse_error")
-                return _ResponseStreamSetup(
-                    None,
-                    False,
-                    reject_uninspectable=(
-                        is_billable_flow
-                        and is_billable_model_provider
-                        and _HTTP_STATUS_OK_MIN <= response.status_code < _HTTP_STATUS_REDIRECT_MIN
-                    ),
-                )
-
-        inspection: usage.ModelJsonResponseInspection | None = None
-        decode_error: str | None = None
-        finished = False
-
-        def fail_json_inspection(error: str) -> None:
-            nonlocal decode_error, finished
-            # A selected prefix is never authoritative for a JSON document.
-            # Do not finish it after closing the pending decoder/parser iterator.
-            decode_error = error
-            finished = True
+        if not needs_buffered_fallback:
             run_usage.mark(flow, "parse_error")
-            run_usage.mark(flow, "interrupted")
-            log_usage_underbilling(
-                flow_metadata.proxy_log_path(flow.metadata),
-                "Deferred model JSON response inspection was interrupted",
-                "response_inspection_interrupted",
-                "risk",
-                run_id=flow_metadata.run_id(flow.metadata),
-                firewall_name=flow_metadata.firewall_name(flow.metadata),
-                usage_protocol=model_protocol,
-                parse_error=error,
-            )
-
-        if decode_session is not None:
-            json_inspection = response_inspection.CooperativeResponseInspection(
-                lambda chunk: response_inspection.decoded_steps(
-                    decode_session.iter_chunks, extractor.feed_steps, chunk
+            return _ResponseStreamSetup(
+                None,
+                False,
+                reject_uninspectable=(
+                    is_billable_flow
+                    and is_billable_model_provider
+                    and _HTTP_STATUS_OK_MIN <= response.status_code < _HTTP_STATUS_REDIRECT_MIN
                 ),
-                fail_json_inspection,
-            )
-        else:
-
-            def inspect_buffered_body(_chunk: bytes) -> Generator[None]:
-                nonlocal decode_error, finished
-                stream_body = stream_capture.captured_response_stream_body(flow)
-                if stream_body is None:
-                    raise RuntimeError(
-                        "buffered model JSON inspection requires a response stream buffer"
-                    )
-                decoded_body, decode_error = body_decoding.decode_captured_json_usage_body(
-                    stream_body, response.headers
-                )
-                if decode_error is None:
-                    if stream_body.buffer:
-                        yield from extractor.feed_steps(decoded_body)
-                    else:
-                        finished = True
-
-            json_inspection = response_inspection.CooperativeResponseInspection(
-                inspect_buffered_body, fail_json_inspection
             )
 
-            def start_inspection() -> None:
-                json_inspection.feed(b"")
+    inspection: usage.ModelJsonResponseInspection | None = None
+    decode_error: str | None = None
+    finished = False
 
-            flow.metadata[_BUFFERED_MODEL_INSPECTION_START] = start_inspection
-
-        flow.metadata[_RESPONSE_INSPECTION] = json_inspection
-
-        def finish_json_response() -> None:
-            nonlocal decode_error, finished, inspection
-            if not finished:
-                if decode_session is not None:
-                    decode_error = decode_session.finish_error()
-                if not finished and decode_error is None:
-                    inspection = extractor.finish()
-                    run_usage.observe(flow, inspection.usage)
-                    if inspection.usage_error is not None:
-                        run_usage.mark(flow, "parse_error")
-                if decode_error is not None:
-                    run_usage.mark(flow, "parse_error")
-                finished = True
-
-        def finish_json_usage() -> tuple[dict | None, str | None]:
-            finish_json_response()
-            if decode_error is not None:
-                return None, decode_error
-            if inspection is None:
-                return None, None
-            return inspection.usage, inspection.usage_error
-
-        flow.metadata[_MODEL_JSON_USAGE_FINISH] = finish_json_usage
-        return _ResponseStreamSetup(
-            json_inspection.feed if decode_session is not None else None,
-            needs_buffered_fallback,
+    def fail_json_inspection(error: str) -> None:
+        nonlocal decode_error, finished
+        # A selected prefix is never authoritative for a JSON document.
+        # Do not finish it after closing the pending decoder/parser iterator.
+        decode_error = error
+        finished = True
+        run_usage.mark(flow, "parse_error")
+        run_usage.mark(flow, "interrupted")
+        log_usage_underbilling(
+            flow_metadata.proxy_log_path(flow.metadata),
+            "Deferred model JSON response inspection was interrupted",
+            "response_inspection_interrupted",
+            "risk",
+            run_id=flow_metadata.run_id(flow.metadata),
+            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            usage_protocol=model_protocol,
+            parse_error=error,
         )
 
+    if decode_session is not None:
+        json_inspection = response_inspection.CooperativeResponseInspection(
+            lambda chunk: response_inspection.decoded_steps(
+                decode_session.iter_chunks, extractor.feed_steps, chunk
+            ),
+            fail_json_inspection,
+        )
+    else:
+
+        def inspect_buffered_body(_chunk: bytes) -> Generator[None]:
+            nonlocal decode_error, finished
+            stream_body = stream_capture.captured_response_stream_body(flow)
+            if stream_body is None:
+                raise RuntimeError(
+                    "buffered model JSON inspection requires a response stream buffer"
+                )
+            decoded_body, decode_error = body_decoding.decode_captured_json_usage_body(
+                stream_body, response.headers
+            )
+            if decode_error is None:
+                if stream_body.buffer:
+                    yield from extractor.feed_steps(decoded_body)
+                else:
+                    finished = True
+
+        json_inspection = response_inspection.CooperativeResponseInspection(
+            inspect_buffered_body, fail_json_inspection
+        )
+
+        def start_inspection() -> None:
+            json_inspection.feed(b"")
+
+        flow.metadata[_BUFFERED_MODEL_INSPECTION_START] = start_inspection
+
+    flow.metadata[_RESPONSE_INSPECTION] = json_inspection
+
+    def finish_json_response() -> None:
+        nonlocal decode_error, finished, inspection
+        if not finished:
+            if decode_session is not None:
+                decode_error = decode_session.finish_error()
+            if not finished and decode_error is None:
+                inspection = extractor.finish()
+                run_usage.observe(flow, inspection.usage)
+                if inspection.usage_error is not None:
+                    run_usage.mark(flow, "parse_error")
+            if decode_error is not None:
+                run_usage.mark(flow, "parse_error")
+            finished = True
+
+    def finish_json_usage() -> tuple[dict | None, str | None]:
+        finish_json_response()
+        if decode_error is not None:
+            return None, decode_error
+        if inspection is None:
+            return None, None
+        return inspection.usage, inspection.usage_error
+
+    flow.metadata[_MODEL_JSON_USAGE_FINISH] = finish_json_usage
+    return _ResponseStreamSetup(
+        json_inspection.feed if decode_session is not None else None,
+        needs_buffered_fallback,
+    )
+
+
+def _configure_connector_response_inspection(
+    flow: http.HTTPFlow,
+    response: http.Response,
+    *,
+    is_billable_flow: bool,
+) -> _ResponseStreamSetup:
     if not is_billable_flow:
         return _ResponseStreamSetup(None, False)
     if not body_decoding.can_stream_decode_usage(response.headers):
@@ -561,6 +559,55 @@ def _configure_response_inspection_stream(
         )
 
     return _ResponseStreamSetup(None, False)
+
+
+def _configure_response_inspection_stream(
+    flow: http.HTTPFlow,
+    *,
+    websocket_header_work_limit: int,
+) -> _ResponseStreamSetup:
+    # Set up model inspection or connector usage extraction for response classes
+    # that need it. Parsers consume chunks separately from the optional buffer.
+    response = flow.response
+    if response is None:
+        return _ResponseStreamSetup(None, False)
+
+    # Billing admission remains separate from model usage observation.
+    # Connector extraction remains gated by the billing flag.
+    is_billable_flow = flow_metadata.is_firewall_billable(flow.metadata)
+    is_billable_model_provider = usage.is_model_provider_usage_billable(flow)
+    extract_model_usage = flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
+    model_protocol = model_usage_protocol(flow) if extract_model_usage else None
+    if model_protocol == "openai_responses" and is_confirmed_websocket_upgrade_response(
+        flow,
+        websocket_header_work_limit=websocket_header_work_limit,
+    ):
+        model_websocket_usage.activate(flow)
+        return _ResponseStreamSetup(None, False)
+    if not http_response_classification.can_have_body(flow, response):
+        return _ResponseStreamSetup(None, False)
+    if model_protocol is not None:
+        if http_response_classification.has_event_stream_media_type(response):
+            return _configure_model_sse_inspection(
+                flow,
+                response,
+                model_protocol=model_protocol,
+                is_billable_flow=is_billable_flow,
+                is_billable_model_provider=is_billable_model_provider,
+            )
+        return _configure_model_json_inspection(
+            flow,
+            response,
+            model_protocol=model_protocol,
+            is_billable_flow=is_billable_flow,
+            is_billable_model_provider=is_billable_model_provider,
+            websocket_header_work_limit=websocket_header_work_limit,
+        )
+    return _configure_connector_response_inspection(
+        flow,
+        response,
+        is_billable_flow=is_billable_flow,
+    )
 
 
 def is_confirmed_websocket_upgrade_response(
@@ -712,6 +759,11 @@ def has_pending_response_inspection(flow: http.HTTPFlow) -> bool:
     )
 
 
+def _require_response_inspection_complete(flow: http.HTTPFlow) -> None:
+    if has_pending_response_inspection(flow):
+        raise RuntimeError("pending response inspection must be joined before finalization")
+
+
 async def drain_response_inspection(flow: http.HTTPFlow) -> None:
     inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
@@ -745,8 +797,7 @@ def finalize_model_json_usage(flow: http.HTTPFlow, proxy_log_path: str) -> None:
     On success, writes ``metadata_keys.MODEL_PROVIDER_USAGE``. Parse failures
     are logged to ``proxy_log_path``.
     """
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     if finish is None:
         return
@@ -773,8 +824,7 @@ def finalize_model_sse_usage(flow: http.HTTPFlow) -> None:
     The registered parser finalizer mutates the usage dictionary stored in
     ``metadata_keys.MODEL_PROVIDER_USAGE`` during response stream setup.
     """
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     if finish is not None:
         finish()
@@ -782,16 +832,14 @@ def finalize_model_sse_usage(flow: http.HTTPFlow) -> None:
 
 def observe_interrupted_model_json(flow: http.HTTPFlow) -> None:
     """Preserve complete JSON evidence on errors without changing billing admission."""
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     if finish is not None:
         finish()
 
 
 def _finish_connector_response_state(flow: http.HTTPFlow) -> None:
-    if has_pending_response_inspection(flow):
-        raise RuntimeError("pending response inspection must be joined before finalization")
+    _require_response_inspection_complete(flow)
     finish = flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
     if finish is not None:
         finish()

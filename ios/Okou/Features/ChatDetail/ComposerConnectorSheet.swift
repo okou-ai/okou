@@ -5,6 +5,7 @@ struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
   @State private var destination: ConnectorDestination?
+  @State private var savingConnectorID: String?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
 
@@ -27,7 +28,7 @@ struct ComposerConnectorSheet: View {
         Section {
           if let error = store.connectorError, store.error == nil {
             ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
-          } else if store.isLoading && store.connectors.isEmpty {
+          } else if store.isLoading && store.connectors.isEmpty && store.error == nil {
             OkouLoadingRow("Loading connectors…")
           } else {
             ForEach(
@@ -38,8 +39,12 @@ struct ComposerConnectorSheet: View {
               connectorRow(connector)
             }
             if store.connectors.isEmpty && !store.isLoading {
-              Text("Connect a service to make it available to this Agent.").foregroundStyle(
-                OkouColor.mutedForeground)
+              Text(
+                store.chatAccountAccess
+                  ? "Connect a service to use it in this chat."
+                  : "Connect a service to make it available to this Agent."
+              )
+              .foregroundStyle(OkouColor.mutedForeground)
             }
           }
           NavigationLink {
@@ -51,12 +56,19 @@ struct ComposerConnectorSheet: View {
           // The rule belongs above the switches it explains, not under a long list.
           VStack(alignment: .leading, spacing: OkouSpace.two) {
             Text("Services").okouSectionHeader()
-            Text("Switches apply to this Agent. Account choices apply to this chat.")
-              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-              .textCase(nil)
+            Group {
+              if store.chatAccountAccess {
+                Text("Account choices apply to this chat.")
+              } else {
+                Text("Switches apply to this Agent. Account choices apply to this chat.")
+              }
+            }
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+            .textCase(nil)
           }
         }
       }
+      .listSectionSpacing(16)
       .searchable(text: $search, prompt: "Find connectors")
       .okouGroupedBackground()
       .navigationTitle("Connectors")
@@ -94,9 +106,46 @@ struct ComposerConnectorSheet: View {
     .onDisappear { store.authorization.cancel() }
   }
 
+  /// With chat account access a service opens the accounts this chat may use; otherwise it
+  /// is a switch for this Agent with account and permission shortcuts.
+  @ViewBuilder
+  private func connectorRow(_ connector: ChatComposerConnector) -> some View {
+    if store.chatAccountAccess {
+      NavigationLink {
+        ComposerChatConnectorAccounts(store: store, connector: connector)
+      } label: {
+        HStack(spacing: OkouSpace.md) {
+          ConnectorLogo(
+            icon: connector.icon, fallback: connector.target.kind == "custom" ? "puzzle" : "plug"
+          )
+          .frame(width: OkouControl.rowLeadingSlot, height: OkouControl.rowLeadingSlot)
+          VStack(alignment: .leading, spacing: OkouSpace.two) {
+            Text(connector.label)
+              .font(.okou(.body)).foregroundStyle(OkouColor.foreground).lineLimit(1)
+            if let access = connector.access {
+              Group {
+                if let account = connector.currentAccount {
+                  Text("\(account.label) · \(access.enabledCount) enabled")
+                } else if access.available {
+                  Text("Account unavailable")
+                } else {
+                  Text("Off")
+                }
+              }
+              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
+            }
+          }
+        }
+      }
+      .disabled(store.isSaving)
+    } else {
+      legacyConnectorRow(connector)
+    }
+  }
+
   /// One line per service: its logo and name, account and permission shortcuts once it is
   /// allowed, and the switch that allows it for this Agent.
-  private func connectorRow(_ connector: ChatComposerConnector) -> some View {
+  private func legacyConnectorRow(_ connector: ChatComposerConnector) -> some View {
     HStack(spacing: OkouSpace.md) {
       OkouRowLabel(
         Text(connector.label)
@@ -108,6 +157,9 @@ struct ComposerConnectorSheet: View {
       .truncationMode(.tail)
       .layoutPriority(1)
       Spacer(minLength: OkouSpace.sm)
+      if store.isSaving && savingConnectorID == connector.id {
+        ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
+      }
       if connector.authorized && !connector.managed {
         rowAction("circle-user-round", label: "Account for \(connector.label)") {
           destination = .accounts(connector.id)
@@ -126,7 +178,12 @@ struct ComposerConnectorSheet: View {
             if enabled && connector.permissionBundleRef != nil {
               store.openWeb(path: "connectors")
             } else {
-              Task { await store.setAuthorized(connector, enabled: enabled) }
+              Task {
+                guard !store.isSaving, !store.uncertain else { return }
+                savingConnectorID = connector.id
+                defer { savingConnectorID = nil }
+                await store.setAuthorized(connector, enabled: enabled)
+              }
             }
           })
       )
@@ -136,6 +193,7 @@ struct ComposerConnectorSheet: View {
       .labelsHidden().disabled(store.isSaving || store.uncertain)
       .accessibilityLabel("Allow \(connector.label) for this Agent")
     }
+    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
   }
 
   private func rowAction(

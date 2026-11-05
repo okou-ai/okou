@@ -160,11 +160,4 @@ export const chatEventsContract = c.router({
 });
 
 export type ChatEventsContract = typeof chatEventsContract;
-type PreparedSend<T> = T extends { userMessage: unknown }
-  ? Omit<T, "userMessage"> & {
-      userMessage: import("../validators/project-message").ProjectMessageDocument;
-    }
-  : T;
-export type ChatEventSendBody = PreparedSend<
-  zInfer<typeof chatEventsContract.send.body>
->;
+export type ChatEventSendBody = zInfer<typeof chatEventsContract.send.body>;

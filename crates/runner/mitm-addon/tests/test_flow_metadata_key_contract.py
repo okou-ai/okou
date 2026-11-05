@@ -92,6 +92,7 @@ def test_registered_flow_metadata_keys_are_unique():
     assert flow_metadata_key_linter.duplicate_registered_metadata_keys() == {}
 
 
+@pytest.mark.shard_cost(2)
 def test_registered_flow_metadata_keys_use_registry_constants():
     assert flow_metadata_key_linter.repository_metadata_key_violations() == []
 
@@ -152,6 +153,8 @@ def test_check_flow_metadata_keys_cli_passes_clean_addon(tmp_path):
         ("flow.metadata", "[(meta := flow.metadata) for _ in [1] if (meta := {})]", False),
         ("{}", "[(meta := {}) for _ in rows]", False),
         ("{}", "list((meta := flow.metadata) for _ in [1])", True),
+        ("{}", "{**(meta := flow.metadata) for _ in [1]}", True),
+        ("flow.metadata", "{**(meta := {}) for _ in [1]}", False),
     ],
 )
 def test_check_flow_metadata_keys_cli_tracks_optional_comprehension_rebindings(

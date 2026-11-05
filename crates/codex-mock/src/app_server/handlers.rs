@@ -17,7 +17,7 @@ use super::persistence::{InputEventContext, persist_input_events, session_rollou
 use super::scenario::{Scenario, TurnStartRpcError};
 use super::{AppServerState, INVALID_REQUEST, PendingResponse, ServerAction, spawn_stderr_holder};
 use serde_json::{Value, json};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::process::Command;
@@ -559,6 +559,7 @@ impl AppServerState {
             if matches!(
                 self.scenario,
                 Scenario::RuntimeOutputTokenLimitError
+                    | Scenario::RuntimeAccessProgramError
                     | Scenario::RuntimeRequestSendError
                     | Scenario::RuntimeUnsupportedModelError
             ) {
@@ -586,7 +587,28 @@ impl AppServerState {
             let release =
                 UnixListener::bind(PathBuf::from(home).join(EVENT_DELIVERY_LARGE_RELEASE_SOCKET))?;
             write_json_line(output, &turn_started_notification(&thread_id, &turn_id))?;
-            for index in 0..EVENT_DELIVERY_LARGE_EVENT_COUNT {
+            write_json_line(
+                output,
+                &large_warning_notification(&thread_id, 0, EVENT_DELIVERY_LARGE_EVENT_BYTES),
+            )?;
+            let (mut gate, _) = release.accept()?;
+            let mut mode = [0];
+            gate.read_exact(&mut mode)?;
+            // Recovery keeps its original cadence; pressure already holds HTTP.
+            let paced = match mode[0] {
+                b'p' => true,
+                b'b' => false,
+                _ => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "invalid large-event release mode",
+                    ));
+                }
+            };
+            for index in 1..EVENT_DELIVERY_LARGE_EVENT_COUNT {
+                if paced {
+                    thread::sleep(std::time::Duration::from_millis(50));
+                }
                 write_json_line(
                     output,
                     &large_warning_notification(
@@ -595,9 +617,8 @@ impl AppServerState {
                         EVENT_DELIVERY_LARGE_EVENT_BYTES,
                     ),
                 )?;
-                if index == 0 {
-                    release.accept()?;
-                }
+            }
+            if paced {
                 thread::sleep(std::time::Duration::from_millis(50));
             }
             write_json_line(output, &turn_completed_notification(&thread_id, &turn_id))?;

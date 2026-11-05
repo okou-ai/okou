@@ -1,16 +1,9 @@
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import { db$ } from "../external/db";
-import {
-  runModelSelectionColumns,
-  runModelSelectionCondition,
-  runModelSelectionFromRow,
-} from "./run-model-selection.service";
 
 /** Names the responding agent only when it is not the org default. */
 const resolveNonDefaultAgentLabel$ = command(
@@ -46,30 +39,6 @@ const resolveNonDefaultAgentLabel$ = command(
   },
 );
 
-const resolveModelLabel$ = command(
-  async (
-    { get },
-    args: {
-      readonly runId: string;
-    },
-  ): Promise<string | undefined> => {
-    const db = get(db$);
-    const runId = args.runId;
-    const runModel = await (async () => {
-      const [row] = await db
-        .select(runModelSelectionColumns())
-        .from(agentRuns)
-        .where(runModelSelectionCondition(runId))
-        .limit(1);
-      return runModelSelectionFromRow(row);
-    })();
-    const model = runModel?.selectedModel;
-    return model
-      ? getRunModelDisplayName(model, runModel?.codexServiceTier)
-      : undefined;
-  },
-);
-
 export const resolveIntegrationAgentResponsePresentation$ = command(
   async (
     { set },
@@ -84,21 +53,15 @@ export const resolveIntegrationAgentResponsePresentation$ = command(
   ): Promise<{
     readonly footerText: string | undefined;
   }> => {
-    const [agentLabel, modelLabel] = await Promise.all([
-      set(resolveNonDefaultAgentLabel$, {
-        orgId: args.orgId,
-        composeId: args.agentId,
-        defaultAgentId: args.defaultAgentId,
-      }),
-      set(resolveModelLabel$, {
-        runId: args.runId,
-      }),
-    ]);
+    const agentLabel = await set(resolveNonDefaultAgentLabel$, {
+      orgId: args.orgId,
+      composeId: args.agentId,
+      defaultAgentId: args.defaultAgentId,
+    });
     signal.throwIfAborted();
 
     return integrationAgentResponsePresentation({
       agentLabel,
-      modelLabel,
       replyToMention: args.replyToMention,
     });
   },
@@ -150,7 +113,6 @@ export function integrationAdmissionFailurePresentation(args: {
 
 export function integrationAgentResponsePresentation(args: {
   readonly agentLabel: string | undefined;
-  readonly modelLabel: string | undefined;
   readonly replyToMention?: string;
 }): { readonly footerText: string | undefined } {
   const parts: string[] = [];
@@ -159,9 +121,6 @@ export function integrationAgentResponsePresentation(args: {
   }
   if (args.replyToMention) {
     parts.push(`Reply to ${args.replyToMention}`);
-  }
-  if (args.modelLabel) {
-    parts.push(args.modelLabel);
   }
 
   return {

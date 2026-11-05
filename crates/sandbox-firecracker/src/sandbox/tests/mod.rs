@@ -13,6 +13,7 @@ use tokio::net::UnixStream;
 use tokio::time::Instant;
 use tracing::Level;
 use tracing_subscriber::prelude::*;
+use tracing_test_support::capture_current_thread_events as capture_async_log_events;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
 mod backing_process;
@@ -3082,77 +3083,6 @@ async fn mount_home_drive_maps_paired_layout_request_and_terminal_metadata() {
 }
 
 #[tokio::test]
-async fn verify_session_history_identity_maps_fixed_request_and_terminal_metadata() {
-    let sandbox = test_sandbox_with_state(SandboxState::Running);
-    let mut guest = attach_mock_shutdown_guest(&sandbox).await;
-    let session_id_hash = "a".repeat(64);
-    let history_hash = "b".repeat(64);
-    let request = SessionHistoryIdentityVerifyRequest {
-        metadata_path: "/run/vm0/runs/previous/final.json",
-        runtime_dir: "/run/vm0/runs/previous",
-        framework: "claude-code",
-        session_id_hash: &session_id_hash,
-        history_ref_kind: "blob",
-        history_hash: &history_hash,
-        history_size_bytes: 42,
-        timeout: Duration::from_secs(5),
-    };
-
-    let verify = sandbox.verify_session_history_identity(&request);
-    let respond = async {
-        let request = read_vsock_message(&mut guest).await;
-        assert_eq!(request.msg_type, guest_control_proto::MSG_EXEC_START);
-        let decoded = guest_control_proto::decode_exec_start(&request.payload).unwrap();
-        assert_eq!(
-            decoded.role,
-            guest_control_proto::ExecProcessRole::SessionHistoryIdentityVerifier
-        );
-        assert_eq!(
-            decoded.timeout,
-            guest_control_proto::ExecTimeoutPolicy::Duration { timeout_ms: 5_000 }
-        );
-        let verifier: guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest =
-            serde_json::from_str(decoded.command).unwrap();
-        assert_eq!(verifier.metadata_path, "/run/vm0/runs/previous/final.json");
-        assert_eq!(verifier.runtime_dir, "/run/vm0/runs/previous");
-        assert_eq!(verifier.expectation.session_id_hash, session_id_hash);
-        assert_eq!(verifier.expectation.history_hash, history_hash);
-
-        let payload = guest_control_proto::encode_exec_result(
-            guest_control_proto::ExecTermination::Exited { exit_code: 8 },
-            19,
-            guest_control_proto::ExecCapturedOutput::Captured {
-                bytes: b"out",
-                truncated: true,
-            },
-            guest_control_proto::ExecCapturedOutput::Captured {
-                bytes: b"err",
-                truncated: false,
-            },
-            "identity mismatch",
-        )
-        .unwrap();
-        let response = guest_control_proto::encode(
-            guest_control_proto::MSG_EXEC_RESULT,
-            request.seq,
-            &payload,
-        )
-        .unwrap();
-        guest.write_all(&response).await.unwrap();
-    };
-    let (result, ()) = tokio::join!(verify, respond);
-    let result = result.unwrap();
-
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 8 });
-    assert_eq!(result.guest_duration_ms, Some(19));
-    assert_eq!(result.stdout, b"out");
-    assert_eq!(result.stderr, b"err");
-    assert!(result.stdout_truncated);
-    assert!(!result.stderr_truncated);
-    assert_eq!(result.diagnostic, "identity mismatch");
-}
-
-#[tokio::test]
 async fn restore_guest_state_preserves_fixed_request_and_terminal_metadata() {
     let sandbox = test_sandbox_with_state(SandboxState::Running);
     let mut guest = attach_mock_shutdown_guest(&sandbox).await;
@@ -4910,19 +4840,6 @@ fn patches(reqs: &[MockRequest]) -> Vec<&MockRequest> {
 fn mock_request_body_json(request: &MockRequest) -> serde_json::Value {
     serde_json::from_str(&request.body)
         .unwrap_or_else(|error| panic!("invalid JSON body: {error}; request: {request:?}"))
-}
-
-async fn capture_async_log_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-    let output = future.await;
-    drop(guard);
-    (output, captured.entries())
 }
 
 async fn capture_balloon_timeout_after_sample<F>(future: F) -> (F::Output, Vec<CapturedEvent>)

@@ -1,7 +1,7 @@
-import type { ProjectAwareChatThreadEvent as ChatThreadEvent } from "@okouai/api-contracts/contracts/project-readers";
 import { command, computed, state, type Command } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import type {
+  ChatThreadEvent,
   ChatThreadMetadata,
   ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
@@ -345,6 +345,40 @@ export const chatThreadMetaMap$ = computed((get) => {
 export function threadMeta(threadId: string) {
   return computed((get): ThreadMeta | null => {
     return get(chatThreadMetaMap$).get(threadId) ?? null;
+  });
+}
+
+/** Access changes invalidate Browser reads; only server responses authorize. */
+export function threadComputerAccessVersion(threadId: string) {
+  return computed((get): string | null => {
+    const snapshot = get(chatThreadEventState$).snapshot;
+    // A snapshot can confirm a grant without retaining its event. Only a
+    // snapshot containing this thread supplies its authorization baseline.
+    const baseline = snapshot?.chatThreads.some((thread) => {
+      return thread.id === threadId;
+    })
+      ? `snapshot:${snapshot.latestSeqId ?? "empty"}`
+      : null;
+    let serverVersion = baseline;
+    let optimisticVersion: string | null = null;
+    for (const event of get(allChatThreadsEvents$)) {
+      if (
+        event.chatThreadId === threadId &&
+        (event.kind === "computer_use_host_updated" || event.kind === "created")
+      ) {
+        if (event.seqId === undefined) {
+          optimisticVersion = event.id;
+        } else {
+          // A server acknowledgement keeps the optimistic UUID. Its sequence
+          // still revalidates a denial received before the grant committed.
+          serverVersion = `${baseline ?? "initial"}:${event.id}:${event.seqId}`;
+        }
+      }
+    }
+    // A retained optimistic event cannot hide later canonical access changes.
+    return optimisticVersion === null
+      ? serverVersion
+      : `${serverVersion ?? "initial"}:${optimisticVersion}:optimistic`;
   });
 }
 

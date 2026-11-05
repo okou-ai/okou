@@ -8,6 +8,7 @@ use std::process::{Command, Output};
 use tempfile::TempDir;
 
 mod attribution;
+mod cleanup;
 mod connection_observation;
 mod empty_artifact;
 mod http_failure;
@@ -140,6 +141,24 @@ pub(super) fn assert_action_types_present(actions: &[String], expected_actions: 
             "missing {expected} in {actions:?}"
         );
     }
+}
+
+pub(crate) fn assert_cleanup_phase(ops: &[Value], action: &str, success: bool, requested: &str) {
+    let assert_operation = |name: &str, is_wall: bool| {
+        let matching: Vec<_> = ops.iter().filter(|op| op["action_type"] == name).collect();
+        assert_eq!(matching.len(), 1, "expected one {name}: {ops:?}");
+        for entry in matching {
+            assert_eq!(entry["success"], success);
+            assert_eq!(entry["reason"], requested);
+            assert!(entry["duration_ms"].is_u64());
+            assert!(entry.get("error").is_none());
+            if is_wall {
+                assert_eq!(entry["outcome"], "cpu_measured");
+            }
+        }
+    };
+    assert_operation(action, true);
+    assert_operation(&format!("{action}_cpu"), false);
 }
 
 pub(super) fn assert_default_zero_task_attribution(actions: &[String]) {

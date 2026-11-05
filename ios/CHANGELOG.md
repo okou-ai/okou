@@ -1,5 +1,102 @@
 # Changelog
 
+## [0.25.3](https://github.com/okou-ai/okou/compare/ios-v0.25.2...ios-v0.25.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ios:** start voice capture before quota checks complete ([#45324](https://github.com/okou-ai/okou/issues/45324)) ([768172f](https://github.com/okou-ai/okou/commit/768172f593d9488da5dfaef0b1608f5e148b16ed))
+
+## [0.25.2](https://github.com/okou-ai/okou/compare/ios-v0.25.1...ios-v0.25.2) (2026-11-05)
+
+
+### Performance Improvements
+
+* **ios:** retain rendered conversation rows across scrolls ([#45307](https://github.com/okou-ai/okou/issues/45307)) ([391bc36](https://github.com/okou-ai/okou/commit/391bc364ce508c365e6ae333126e26b367a0ffd0))
+
+## [0.25.1](https://github.com/okou-ai/okou/compare/ios-v0.25.0...ios-v0.25.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **ios:** float shared feedback below navigation ([#45254](https://github.com/okou-ai/okou/issues/45254)) ([c9e8665](https://github.com/okou-ai/okou/commit/c9e8665af07485f33289a79e41481e24785be625))
+
+## [0.25.0](https://github.com/okou-ai/okou/compare/ios-v0.24.2...ios-v0.25.0) (2026-11-04)
+
+
+### Features
+
+* **ios:** add recoverable voice input ([#45177](https://github.com/okou-ai/okou/issues/45177)) ([2395272](https://github.com/okou-ai/okou/commit/23952723a3d5d2433d3462a20aacdbd5854df8a9))
+
+
+### Performance Improvements
+
+* **ios:** reuse conversation content with upstream textual ([#45154](https://github.com/okou-ai/okou/issues/45154)) ([4047328](https://github.com/okou-ai/okou/commit/4047328fc87ad57ae71c29b8b32f2c99f0afb2e3))
+
+## [0.24.2](https://github.com/okou-ai/okou/compare/ios-v0.24.1...ios-v0.24.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **ios:** reserve space for feedback outside the sliding sidebar ([#45142](https://github.com/okou-ai/okou/issues/45142)) ([689d91e](https://github.com/okou-ai/okou/commit/689d91e8d5066e871d203902cedba10f38f90c3e))
+
+## [0.24.1](https://github.com/okou-ai/okou/compare/ios-v0.24.0...ios-v0.24.1) (2026-11-04)
+
+
+### CI
+
+* **ios:** reuse verified validation for release metadata ([#45104](https://github.com/okou-ai/okou/issues/45104)) ([d762b49](https://github.com/okou-ai/okou/commit/d762b4926a3c13c56f592d11e0f9dc7b26314a73))
+
+## [0.24.0](https://github.com/okou-ai/okou/compare/ios-v0.23.5...ios-v0.24.0) (2026-11-04)
+
+
+### Features
+
+* **ios:** add native batch permission approvals ([#45039](https://github.com/okou-ai/okou/issues/45039)) ([74b6c4d](https://github.com/okou-ai/okou/commit/74b6c4dde9d1851dc819dacc7157a2457e380750))
+* **ios:** adopt chat connector account access ([#45032](https://github.com/okou-ai/okou/issues/45032)) ([046f3c4](https://github.com/okou-ai/okou/commit/046f3c4a2d530844dc7a06da9179d30ebbd3310a))
+
+
+### Bug Fixes
+
+* **ios:** keep connector loading in the services list ([#45034](https://github.com/okou-ai/okou/issues/45034)) ([0243414](https://github.com/okou-ai/okou/commit/02434140b4095d3feb434265fc285cd50d1da0fc))
+
+## [0.23.5](https://github.com/okou-ai/okou/compare/ios-v0.23.4...ios-v0.23.5) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** suspend sidebar gestures while the account menu is open ([#44987](https://github.com/okou-ai/okou/issues/44987)) ([086ce99](https://github.com/okou-ai/okou/commit/086ce99e20d4057c356bc869f31125eb954c307f))
+
+
+### CI
+
+* **ios:** skip simulator job when release test evidence matches ([#44998](https://github.com/okou-ai/okou/issues/44998)) ([fefb76e](https://github.com/okou-ai/okou/commit/fefb76e40cdcf255ecc2aa057edbb7ad8f67514b))
+
+## [0.23.4](https://github.com/okou-ai/okou/compare/ios-v0.23.3...ios-v0.23.4) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** streamline sheet loading and information density ([#44918](https://github.com/okou-ai/okou/issues/44918)) ([e1b713b](https://github.com/okou-ai/okou/commit/e1b713b0273253223c5290466b53d460ddefdf11))
+* **ios:** unify chat feedback in a top glass overlay ([#44971](https://github.com/okou-ai/okou/issues/44971)) ([82158b6](https://github.com/okou-ai/okou/commit/82158b6342e9cf228ec43089db4a9880fc0617bf))
+
+
+### Refactoring
+
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Performance Improvements
+
+* **ios:** reuse chat row heights across launches ([#44951](https://github.com/okou-ai/okou/issues/44951)) ([53cf861](https://github.com/okou-ai/okou/commit/53cf861c00b3befb8d05f4618bec7d90bae5aff6))
+
+## [0.23.3](https://github.com/okou-ai/okou/compare/ios-v0.23.2...ios-v0.23.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ios:** separate sync status from navigation controls ([#44893](https://github.com/okou-ai/okou/issues/44893)) ([2df6c92](https://github.com/okou-ai/okou/commit/2df6c922e318c3eb0eddf3c69a06ae7d87eb2f22))
+
 ## [0.23.2](https://github.com/okou-ai/okou/compare/ios-v0.23.1...ios-v0.23.2) (2026-11-03)
 
 

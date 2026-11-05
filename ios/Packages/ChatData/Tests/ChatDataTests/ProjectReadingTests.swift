@@ -26,7 +26,7 @@ final class ProjectReadingTests: XCTestCase {
         let membership = leaving ? "null" : "\"\(project)\""
         return ChatHTTPResponse(
           body: """
-            {"events":[{"id":"30000000-0000-4000-8000-00000000001\(sequence)","seqId":\(sequence),"kind":"sort_touched","projectMembershipUpdated":true,"chatThreadId":"\(thread)","agentId":"\(agent)","projectId":\(membership),"createdAt":"2026-11-02T01:00:00Z"}],"hasMore":false}
+            {"events":[{"id":"30000000-0000-4000-8000-00000000001\(sequence)","seqId":\(sequence),"kind":"project_updated","chatThreadId":"\(thread)","agentId":"\(agent)","projectId":\(membership),"createdAt":"2026-11-02T01:00:00Z"}],"hasMore":false}
             """)
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
@@ -36,7 +36,13 @@ final class ProjectReadingTests: XCTestCase {
     let directory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "project-reader", workspaceID: "project-workspace")
-    let service = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let cache = directory.cache(scope: scope)
+    try await cache.replaceThreadList(
+      snapshot: Data(#"{"chatThreads":[]}"#.utf8),
+      cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
+    let service = ChatSync(client: fixture.client, cache: cache)
+    let previousCache = await service.cachedThreads()
+    XCTAssertNil(previousCache)
     let members = try await service.threads()
     XCTAssertEqual(members.first?.projectId, project)
     XCTAssertEqual(members.first?.agentID, agent)

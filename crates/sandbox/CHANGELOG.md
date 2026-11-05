@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.28.10](https://github.com/okou-ai/okou/compare/sandbox-v0.28.9...sandbox-v0.28.10) (2026-11-04)
+
+
+### Refactoring
+
+* **sandbox:** retire orphaned staged-file finalization ([#45133](https://github.com/okou-ai/okou/issues/45133)) ([e397ac6](https://github.com/okou-ai/okou/commit/e397ac62f05a037478f6135ecb231f665ab76afe))
+
+## [0.28.9](https://github.com/okou-ai/okou/compare/sandbox-v0.28.8...sandbox-v0.28.9) (2026-11-04)
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.28.8](https://github.com/okou-ai/okou/compare/sandbox-v0.28.7...sandbox-v0.28.8) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
 ## [0.28.7](https://github.com/okou-ai/okou/compare/sandbox-v0.28.6...sandbox-v0.28.7) (2026-11-02)
 
 

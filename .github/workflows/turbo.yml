@@ -534,16 +534,17 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
         run: .github/scripts/checks/check-db-boundary.sh
-      - name: Check deletion-only database transaction inventory
+      - name: Check reduction-only database dependency inventories
         working-directory: turbo
         shell: bash
         env:
-          TRANSACTION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          POLICY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          [[ "$TRANSACTION_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
-          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA"
-          pnpm lint:transactions "$TRANSACTION_BASE_SHA"
+          [[ "$POLICY_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
+          git fetch --no-tags --depth=1 origin "$POLICY_BASE_SHA"
+          pnpm lint:transactions "$POLICY_BASE_SHA"
+          pnpm lint:storage "$POLICY_BASE_SHA"
       - name: Validate oxlintrc.json react allowImportNames
         working-directory: turbo
         run: |

@@ -3,6 +3,7 @@ import {
   readContentBundle,
 } from "@okouai/core/content-bundle";
 import { randomUUID } from "node:crypto";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -2605,7 +2606,11 @@ describe("workflows", () => {
     const originalBundle = [...s3.writes].reverse().find((write) => {
       return write.key.startsWith("bundles/v1/");
     });
+    if (!originalBundle) {
+      throw new Error("Expected the published Workflow bundle");
+    }
     s3.clearWrites();
+    context.mocks.s3.send.mockClear();
     const previous = process.umask(0o077);
     onTestFinished(() => {
       process.umask(previous);
@@ -2614,11 +2619,17 @@ describe("workflows", () => {
       files: [...files].reverse(),
     });
     process.umask(previous);
-    const repeatedBundle = [...s3.writes].reverse().find((write) => {
-      return write.key.startsWith("bundles/v1/");
+    const reusedKeys = context.mocks.s3.send.mock.calls.flatMap(([request]) => {
+      return request instanceof HeadObjectCommand &&
+        request.input.Key?.startsWith("bundles/v1/")
+        ? [request.input.Key]
+        : [];
     });
-    expect(repeatedBundle?.key).toBe(originalBundle?.key);
-    expect(repeatedBundle?.body.equals(originalBundle!.body)).toBeTruthy();
+    expect(reusedKeys).toStrictEqual([originalBundle.key]);
+    expect(s3.objects.get(originalBundle.key)).toStrictEqual(
+      originalBundle.body,
+    );
+    expect(s3.writes).toHaveLength(0);
     const second = await accept(
       detailClient().get({
         headers: authHeaders(actor),

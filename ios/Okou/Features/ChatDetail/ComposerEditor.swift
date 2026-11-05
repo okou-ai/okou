@@ -1,3 +1,4 @@
+import ChatData
 import ChatDomain
 import Observation
 import UIKit
@@ -5,6 +6,51 @@ import UIKit
 /// Commands use mounted native editors; UIKit owns selection, undo and marked text.
 @MainActor @Observable
 final class ComposerEditor {
+  struct VoiceInsertion {
+    weak var view: ComposerTextView?
+    let document: ChatDraftDocument
+    let text: String
+    let range: NSRange
+    let context: VoiceEditorContext
+  }
+
+  func voiceInsertion() -> VoiceInsertion? {
+    let current = mounted
+    guard
+      let view =
+        (current.first { $0.view?.isFirstResponder == true }
+        ?? current.last(where: \.canAppend))?.view,
+      view.markedTextRange == nil, !view.isSettlingComposition
+    else { return nil }
+    let text = view.text ?? ""
+    let value = text as NSString
+    let range =
+      view.isFirstResponder ? view.selectedRange : NSRange(location: value.length, length: 0)
+    guard range.location <= value.length, NSMaxRange(range) <= value.length else { return nil }
+    return VoiceInsertion(
+      view: view, document: view.composerDocument, text: text, range: range,
+      context: VoiceEditorContext(
+        before: value.substring(to: range.location), selected: value.substring(with: range),
+        after: value.substring(from: NSMaxRange(range))))
+  }
+
+  func insertVoiceText(_ text: String, at target: VoiceInsertion) -> Bool {
+    guard let view = target.view, let input = inputs[ObjectIdentifier(view)],
+      input.isCurrent(), view.window != nil, view.isEditable,
+      view.markedTextRange == nil, !view.isSettlingComposition,
+      view.text == target.text, view.composerDocument == target.document
+    else { return false }
+    view.replaceCharacters(
+      in: target.range,
+      with: NSAttributedString(string: text, attributes: view.composerTextAttributes),
+      selection: NSRange(location: target.range.location + text.utf16.count, length: 0))
+    view.undoManager?.setActionName("Voice input")
+    view.setFocused(true)
+    input.focusRequested()
+    view.scrollRangeToVisible(view.selectedRange)
+    return true
+  }
+
   let workflows = ComposerWorkflowSuggestions()
   private struct Input {
     weak var view: ComposerTextView?

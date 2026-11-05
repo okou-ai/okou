@@ -7,6 +7,7 @@ import {
   fireEvent,
   screen,
   waitFor,
+  waitForElementToBeRemoved,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -84,18 +85,19 @@ async function openViewer() {
 async function enterRemoteText(
   viewer: HTMLElement,
   browser: ReturnType<typeof mockViewer>,
+  text = "live text",
 ) {
   const input = within(viewer).getByLabelText("Remote browser input");
   await userEvent.click(input);
   fireEvent.input(input, {
-    target: { value: "live text" },
-    data: "live text",
+    target: { value: text },
+    data: text,
     inputType: "insertText",
   });
   await waitFor(() => {
     expect(browser.input).toContainEqual({
       method: "Input.insertText",
-      params: { text: "live text" },
+      params: { text },
       sessionId: "example-page-session",
     });
   });
@@ -148,6 +150,12 @@ test("A history failure has local feedback without disabling live input", async 
   expect(within(viewer).getByLabelText("Address")).toBeEnabled();
   await enterRemoteText(viewer, browser);
   expect(alert).toBeInTheDocument();
+  // Observe the actual three-second notice lifetime with real timers.
+  await waitForElementToBeRemoved(alert, { timeout: 4000 });
+  await enterRemoteText(viewer, browser, "after notice expired");
+  expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
+  expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  expect(within(viewer).getByLabelText("Address")).toBeEnabled();
 });
 
 test.each(["successful submission", "another tab"] as const)(

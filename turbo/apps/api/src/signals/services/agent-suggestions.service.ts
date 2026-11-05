@@ -45,16 +45,14 @@ import {
 } from "./agent-suggestions-lifecycle";
 import {
   storedSuggestion$,
+  storedSuggestions$,
   suggestionOwner,
 } from "./agent-suggestion-read.service";
 import {
   hasValidSuggestionConsumeToken,
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
-import {
-  PROACTIVE_LEARNING_DEFINITION_NAME,
-  PROACTIVE_PLANNING_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
 
 interface Owner {
   readonly userId: string;
@@ -155,17 +153,14 @@ export const suggestionAccess$ = command(
         );
       }
       if (
-        run.provenance?.definitions.some((definition) => {
-          return definition.name === PROACTIVE_PLANNING_DEFINITION_NAME;
-        }) ||
-        ((run.triggerSource === "automation-schedule" ||
+        (run.triggerSource === "automation-schedule" ||
           run.triggerSource === "automation-event") &&
-          run.provenance?.definitions.some((definition) => {
-            return (
-              definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
-              isMorningBriefDefinitionName(definition.name)
-            );
-          }))
+        run.provenance?.definitions.some((definition) => {
+          return (
+            definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
+            isMorningBriefDefinitionName(definition.name)
+          );
+        })
       ) {
         const preference = await set(
           loadProactiveWorkflowsEligibility$,
@@ -811,13 +806,18 @@ export const validateSuggestionFollowup$ = command(
     ) {
       return null;
     }
-    for (const { context, part } of suggestionFeedbacks(document)) {
-      const entry = await set(
-        storedSuggestion$,
-        owner,
-        context.suggestionId,
-        signal,
-      );
+    const feedbacks = suggestionFeedbacks(document);
+    // One read serves every quoted card; parts are still checked in order.
+    const stored = await set(
+      storedSuggestions$,
+      owner,
+      feedbacks.map(({ context }) => {
+        return context.suggestionId;
+      }),
+      signal,
+    );
+    for (const { context, part } of feedbacks) {
+      const entry = stored.get(context.suggestionId);
       const item = entry?.status === "active" ? entry : null;
       // A saved quote is self-contained and can outlive its disposable card.
       // Retired or absent cards grant no new authority and keep their receipt.

@@ -1,5 +1,177 @@
 # Changelog
 
+## [10.17.13](https://github.com/okou-ai/okou/compare/cli-v10.17.12...cli-v10.17.13) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.4
+    * @okouai/core bumped to 8.818.5
+    * @okouai/pi-agent-runtime bumped to 1.51.69
+
+## [10.17.12](https://github.com/okou-ai/okou/compare/cli-v10.17.11...cli-v10.17.12) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.818.4
+    * @okouai/pi-agent-runtime bumped to 1.51.68
+
+## [10.17.11](https://github.com/okou-ai/okou/compare/cli-v10.17.10...cli-v10.17.11) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.3
+    * @okouai/connectors bumped to 3.21.3
+    * @okouai/core bumped to 8.818.3
+    * @okouai/pi-agent-runtime bumped to 1.51.67
+
+## [10.17.10](https://github.com/okou-ai/okou/compare/cli-v10.17.9...cli-v10.17.10) (2026-11-05)
+
+
+### Refactoring
+
+* **teams:** switch upload cli to the v2 contract ([#45183](https://github.com/okou-ai/okou/issues/45183)) ([33b9a03](https://github.com/okou-ai/okou/commit/33b9a0319a0c877c77a0a7bb6c82a0c731af767e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.2
+    * @okouai/core bumped to 8.818.2
+    * @okouai/pi-agent-runtime bumped to 1.51.66
+
+## [10.17.9](https://github.com/okou-ai/okou/compare/cli-v10.17.8...cli-v10.17.9) (2026-11-05)
+
+
+### Refactoring
+
+* remove proactive planning and tasks ([#45210](https://github.com/okou-ai/okou/issues/45210)) ([222d861](https://github.com/okou-ai/okou/commit/222d8618346194b5af227c5e147a0076181ee3e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.1
+    * @okouai/core bumped to 8.818.1
+    * @okouai/pi-agent-runtime bumped to 1.51.65
+
+## [10.17.8](https://github.com/okou-ai/okou/compare/cli-v10.17.7...cli-v10.17.8) (2026-11-04)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#45244](https://github.com/okou-ai/okou/issues/45244)) ([a1933e5](https://github.com/okou-ai/okou/commit/a1933e593f4c66bce81c0ac201cd40c5826a07f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.0
+    * @okouai/core bumped to 8.818.0
+    * @okouai/pi-agent-runtime bumped to 1.51.64
+
+## [10.17.7](https://github.com/okou-ai/okou/compare/cli-v10.17.6...cli-v10.17.7) (2026-11-04)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.41.0
+    * @okouai/core bumped to 8.817.0
+    * @okouai/pi-agent-runtime bumped to 1.51.63
+
+## [10.17.6](https://github.com/okou-ai/okou/compare/cli-v10.17.5...cli-v10.17.6) (2026-11-04)
+
+
+### Refactoring
+
+* inject suggestions feedback into run context ([#45160](https://github.com/okou-ai/okou/issues/45160)) ([c1968cc](https://github.com/okou-ai/okou/commit/c1968ccdb16c1371d660e5fa7d54002400102e63))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.40.1
+    * @okouai/core bumped to 8.816.0
+    * @okouai/pi-agent-runtime bumped to 1.51.62
+
+## [10.17.5](https://github.com/okou-ai/okou/compare/cli-v10.17.4...cli-v10.17.5) (2026-11-04)
+
+
+### Documentation
+
+* **cli:** remove incorrect listener account promise ([#45091](https://github.com/okou-ai/okou/issues/45091)) ([d9c4522](https://github.com/okou-ai/okou/commit/d9c4522622d8754eec8045f2952615d7a9644528))
+
+## [10.17.4](https://github.com/okou-ai/okou/compare/cli-v10.17.3...cli-v10.17.4) (2026-11-04)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.40.0
+    * @okouai/core bumped to 8.815.0
+    * @okouai/pi-agent-runtime bumped to 1.51.61
+
+## [10.17.3](https://github.com/okou-ai/okou/compare/cli-v10.17.2...cli-v10.17.3) (2026-11-03)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.39.0
+    * @okouai/connectors bumped to 3.21.2
+    * @okouai/core bumped to 8.814.0
+    * @okouai/pi-agent-runtime bumped to 1.51.60
+
+## [10.17.2](https://github.com/okou-ai/okou/compare/cli-v10.17.1...cli-v10.17.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **cli:** release browser proxy output capture after foreground exit ([#44964](https://github.com/okou-ai/okou/issues/44964)) ([482abbb](https://github.com/okou-ai/okou/commit/482abbbf7df432eed52994e40b1c1ba90a7c66c4))
+
+
+### Refactoring
+
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.38.1
+    * @okouai/browser-extension-client bumped to 0.4.4
+    * @okouai/core bumped to 8.813.1
+    * @okouai/pi-agent-runtime bumped to 1.51.59
+
+## [10.17.1](https://github.com/okou-ai/okou/compare/cli-v10.17.0...cli-v10.17.1) (2026-11-03)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.38.0
+    * @okouai/connectors bumped to 3.21.1
+    * @okouai/core bumped to 8.813.0
+    * @okouai/pi-agent-runtime bumped to 1.51.58
+
 ## [10.17.0](https://github.com/okou-ai/okou/compare/cli-v10.16.1...cli-v10.17.0) (2026-11-03)
 
 

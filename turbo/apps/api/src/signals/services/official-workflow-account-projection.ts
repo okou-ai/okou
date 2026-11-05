@@ -38,6 +38,7 @@ export function officialAccountProjectionReadPlan(
       ? sql`SELECT NULL::uuid AS "connectorId"`
       : workflowAutomationConnectorSelectionSql({
           ...args,
+          workflowId: sql`${args.workflowId}`,
           connectorSlug: nextConnectorSlug,
         });
   return {

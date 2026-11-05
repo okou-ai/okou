@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.109.43](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.42...guest-agent-v0.109.43) (2026-11-05)
+
+## [0.109.42](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.41...guest-agent-v0.109.42) (2026-11-05)
+
+## [0.109.41](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.40...guest-agent-v0.109.41) (2026-11-05)
+
+## [0.109.40](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.39...guest-agent-v0.109.40) (2026-11-05)
+
+## [0.109.39](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.38...guest-agent-v0.109.39) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** preserve system sbin directories in agent path ([#45143](https://github.com/okou-ai/okou/issues/45143)) ([42e1307](https://github.com/okou-ai/okou/commit/42e1307f32e3518faa32019c65356b8476216a8a))
+
+
+### Refactoring
+
+* **guest-agent:** share pi rpc message acknowledgements ([#45159](https://github.com/okou-ai/okou/issues/45159)) ([41b635c](https://github.com/okou-ai/okou/commit/41b635ca97d9177c72e613dda9de87fb6e938a8b))
+
+## [0.109.38](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.37...guest-agent-v0.109.38) (2026-11-04)
+
+## [0.109.37](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.36...guest-agent-v0.109.37) (2026-11-04)
+
+## [0.109.36](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.35...guest-agent-v0.109.36) (2026-11-03)
+
+
+### Performance Improvements
+
+* **guest-agent:** wake event retry backoff on close ([#44991](https://github.com/okou-ai/okou/issues/44991)) ([223ec53](https://github.com/okou-ai/okou/commit/223ec5304cb8bb2b52abaf48611876d35487ca42))
+
+## [0.109.35](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.34...guest-agent-v0.109.35) (2026-11-03)
+
+
+### Performance Improvements
+
+* **guest-agent:** bound encoded session history reads ([#44944](https://github.com/okou-ai/okou/issues/44944)) ([345c6d2](https://github.com/okou-ai/okou/commit/345c6d253e5128e170cbb16b76a7a90a0af07014))
+
 ## [0.109.34](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.33...guest-agent-v0.109.34) (2026-11-03)
 
 

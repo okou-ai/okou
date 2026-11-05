@@ -27,10 +27,11 @@ import {
 } from "../../signals/projects/projects.ts";
 import {
   setProjectEditorName$,
-  projectDialog$,
+  projectDialogSession$,
   projectEditorName$,
   openProjectEditor$,
   closeProjectDialog$,
+  completeProjectDialogClose$,
   projectSearch$,
   setProjectSearch$,
   projectDialogHasSuccessor$,
@@ -39,8 +40,9 @@ import {
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-// A rename keeps its folder trigger; deleting a folder returns to the section's
+// A rename keeps its Project menu; deleting a Project returns to the list's
 // create control. Creating from a chat returns to that chat's surviving row.
 function projectDialogFocusTarget(dialog: ProjectDialog) {
   const threadId =
@@ -68,27 +70,33 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const name = useGet(projectEditorName$);
   const setName = useSet(setProjectEditorName$);
   const close = useSet(closeProjectDialog$);
+  const completeClose = useSet(completeProjectDialogClose$);
   const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [creation, create] = useLoadableSet(createProject$);
   const [renaming, rename] = useLoadableSet(renameProject$);
   const signal = useGet(pageSignal$);
+  const creationSignal = useGet(rootSignal$);
   const pending = creation.state === "loading" || renaming.state === "loading";
   const error = creation.state === "hasError" || renaming.state === "hasError";
   async function submit() {
-    if (dialog.projectId) {
-      await rename(dialog.projectId, name, signal);
-    } else {
-      await create(name, dialog.fromThreadId, signal);
-    }
-    signal.throwIfAborted();
+    // A newly visible Project can be used while its creation is still in flight.
+    const completion = dialog.projectId
+      ? rename(dialog.projectId, name, signal)
+      : create(name, dialog.fromThreadId, creationSignal);
     close(dialog);
+    await completion;
   }
   return (
     <Dialog
-      open
+      open={dialog.open}
       onOpenChange={(open) => {
         if (!open) {
           close(dialog);
+        }
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open) {
+          completeClose(dialog);
         }
       }}
     >
@@ -172,18 +180,24 @@ function MembershipSurface({
   mobile,
   finalFocus,
   onOpenChange,
+  onOpenChangeComplete,
   children,
 }: {
   dialog: Extract<ProjectDialog, { kind: "membership" }>;
   mobile: boolean;
   finalFocus: () => HTMLElement | false;
   onOpenChange: (open: boolean) => void;
+  onOpenChangeComplete: (open: boolean) => void;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   if (mobile) {
     return (
-      <Drawer open onOpenChange={onOpenChange}>
+      <Drawer
+        open={dialog.open}
+        onOpenChange={onOpenChange}
+        onOpenChangeComplete={onOpenChangeComplete}
+      >
         <DrawerContent
           closeLabel={t(($) => {
             return $.projects.close;
@@ -203,7 +217,11 @@ function MembershipSurface({
     );
   }
   return (
-    <Popover open onOpenChange={onOpenChange}>
+    <Popover
+      open={dialog.open}
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={onOpenChangeComplete}
+    >
       <PopoverContent
         anchor={dialog.anchor}
         align="end"
@@ -281,6 +299,7 @@ function ProjectMembershipPicker({
   })?.projectId;
   const mobile = useGet(mobileChatViewport$);
   const close = useSet(closeProjectDialog$);
+  const completeClose = useSet(completeProjectDialogClose$);
   const [moving, move] = useLoadableSet(moveProjectThread$);
   const signal = useGet(pageSignal$);
   const hasSuccessor = useSet(projectDialogHasSuccessor$);
@@ -291,9 +310,9 @@ function ProjectMembershipPicker({
       .includes(search.trim().toLocaleLowerCase());
   });
   async function select(id: string | null) {
-    await move(dialog.threadId, id, signal);
-    signal.throwIfAborted();
+    const completion = move(dialog.threadId, id, signal);
     close(dialog);
+    await completion;
   }
   function onOpenChange(open: boolean) {
     if (!open) {
@@ -381,6 +400,11 @@ function ProjectMembershipPicker({
       mobile={mobile}
       finalFocus={finalFocus}
       onOpenChange={onOpenChange}
+      onOpenChangeComplete={(open) => {
+        if (!open) {
+          completeClose(dialog);
+        }
+      }}
     >
       {content}
     </MembershipSurface>
@@ -452,7 +476,7 @@ function DeleteProjectDialog({
 }
 export function ProjectDialogs() {
   const enabled = useGet(projectsEnabled$);
-  const dialog = useGet(projectDialog$);
+  const dialog = useGet(projectDialogSession$);
   if (!enabled || !dialog) {
     return null;
   }

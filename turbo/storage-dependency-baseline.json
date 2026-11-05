@@ -1,0 +1,880 @@
+{
+  "version": 1,
+  "sites": [
+    {
+      "file": "turbo/apps/api/src/scripts/dev-seed.ts",
+      "uses": 6,
+      "dependency": "module:turbo/packages/db/src/schema/skill"
+    },
+    {
+      "file": "turbo/apps/api/src/scripts/dev-seed.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 1
+    },
+    {
+      "file": "turbo/apps/api/src/scripts/dev-seed.ts",
+      "dependency": "sql:storages",
+      "uses": 4
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/agent-connector-access.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/agents.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/cli-auth.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/user-data.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/connected-connectors.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/connector-agent-access.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/cron-materialize-pi-resource-indexes.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/cron-sync-skills.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/cron-sync-skills.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/feishu-browser-connect.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/feishu-oauth-publication.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/image-io-generate.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/user-data.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/runners.ts",
+      "uses": 4,
+      "dependency": "module:turbo/apps/api/src/signals/services/workflow-claim.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/user-model-preference.ts",
+      "uses": 4,
+      "dependency": "module:turbo/apps/api/src/signals/services/user-data.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/user-preferences.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/member-memory-initialization.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/user-preferences.ts",
+      "uses": 5,
+      "dependency": "module:turbo/apps/api/src/signals/services/user-data.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/webhooks-agent-storage.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-write.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/webhooks-clerk.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/member-memory-initialization.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/workflow-copy-source-publication.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/workflow-copy-source.ts",
+      "uses": 6,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/workflows.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/workflow-update.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/routes/workflows.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/workflow-visibility-publication-sql"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/agent-connector-scope.service.ts",
+      "uses": 9,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/agent-data.service.ts",
+      "uses": 4,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/agent-run-context.signals.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/agent-storage-context.service.ts",
+      "uses": 9,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/canonical-feishu-ingress-processor.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
+      "uses": 58,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-account-setup.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-catalog-immutable.service.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/connector-catalog-skill-registration.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-catalog-runtime-wakeup.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-catalog-skill-registration.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-catalog-skill-registration.service.ts",
+      "uses": 22,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-catalog-wakeup-plan.ts",
+      "uses": 11,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/connector-permissions.service.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
+      "uses": 4,
+      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
+      "uses": 40,
+      "dependency": "module:turbo/packages/db/src/schema/skill"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
+      "uses": 40,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-automatic-oauth.service.ts",
+      "uses": 12,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-credential-access.service.ts",
+      "uses": 43,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-credential-storage.service.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-definition-selection.ts",
+      "uses": 21,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-list.service.ts",
+      "uses": 6,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth-write.service.ts",
+      "uses": 23,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
+      "uses": 28,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector-skill-volume.service.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication-sql"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
+      "uses": 87,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-oauth-connection-publication.ts",
+      "uses": 10,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/custom-runtime-snapshot-query.ts",
+      "uses": 16,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/execution-agent-selection-context.service.ts",
+      "uses": 7,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/execution-connector-sources.service.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/execution-global-model-context.service.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/skill"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/execution-storage.service.ts",
+      "uses": 4,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/feishu-connect.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication-sql"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
+      "uses": 42,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/feishu-disconnect-plan.ts",
+      "uses": 6,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/feishu-disconnect-publication.ts",
+      "uses": 6,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/member-connector-selection.ts",
+      "uses": 7,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
+      "uses": 10,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
+      "uses": 16,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/morning-brief-workflow-selection.service.ts",
+      "uses": 4,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-publication.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-read.service.ts",
+      "uses": 18,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
+      "uses": 15,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-context.signals.ts",
+      "uses": 12,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-installation.service.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation-sql.ts",
+      "uses": 20,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation-worker.service.ts",
+      "uses": 31,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
+      "uses": 74,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-schedule-recovery.service.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/official-workflow-thread.service.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/onboarding.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/member-memory-initialization.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/pending-launch-official-plan.ts",
+      "uses": 4,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
+      "uses": 47,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/presentation-template-publish.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-upload.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/run-mcp-connectors.service.ts",
+      "uses": 7,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/run-storage-manifest.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/run-storage-manifest.service.ts",
+      "uses": 39,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/runner-claim-transition.ts",
+      "uses": 6,
+      "dependency": "module:turbo/apps/api/src/signals/services/workflow-claim.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-index.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-index.service.ts",
+      "uses": 19,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-publication-fence.service.ts",
+      "uses": 9,
+      "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-publication-sql.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-publication-sql.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-publication-sql.ts",
+      "uses": 4,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-publication-sql.ts",
+      "uses": 10,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-publication.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-publication.service.ts",
+      "uses": 10,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-publication.service.ts",
+      "uses": 23,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
+      "uses": 7,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
+      "uses": 7,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
+      "uses": 37,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write-conditions.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write-conditions.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
+      "uses": 4,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-write-conditions"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
+      "uses": 18,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-write.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
+      "uses": 7,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
+      "uses": 53,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-write-conditions"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
+      "uses": 9,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-write-publication-plan"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
+      "uses": 26,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
+      "uses": 3,
+      "dependency": "module:turbo/apps/api/src/signals/services/thread-storage.signals"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/thread-storage.signals.ts",
+      "uses": 5,
+      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/thread-storage.signals.ts",
+      "uses": 7,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-index.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/thread-storage.signals.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-connectors.service.ts",
+      "uses": 13,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-custom-connector-grant-persistence.service.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-data.service.ts",
+      "uses": 6,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-export-authorization.service.ts",
+      "uses": 10,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
+      "uses": 4,
+      "dependency": "module:turbo/apps/api/src/signals/services/user-export-authorization.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/user-export-source.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-export-source.service.ts",
+      "uses": 17,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-template-publish.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-upload.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/user-template-repackage.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-upload.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/welcome-chat-thread.service.ts",
+      "uses": 2,
+      "dependency": "module:turbo/apps/api/src/signals/services/user-data.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/workflow-claim.service.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/workflow-data.service.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/workflow-update.service.ts",
+      "uses": 5,
+      "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/workflow-visibility-publication-sql.ts",
+      "uses": 8,
+      "dependency": "module:turbo/apps/api/src/signals/services/storage-publication-fence.service"
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/workflow-visibility-publication-sql.ts",
+      "uses": 9,
+      "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/024-workflow-attachments/backfill.ts",
+      "dependency": "sql:storage_publication_tokens",
+      "uses": 2
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/024-workflow-attachments/backfill.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 4
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/024-workflow-attachments/backfill.ts",
+      "dependency": "sql:storages",
+      "uses": 3
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/025-presentation-template-copy/copy.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 5
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/025-presentation-template-copy/copy.ts",
+      "dependency": "sql:storages",
+      "uses": 5
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/cleanup.ts",
+      "uses": 6,
+      "dependency": "module:turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries.ts",
+      "dependency": "sql:storage_publication_tokens",
+      "uses": 2
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries.ts",
+      "dependency": "sql:storage_version_lineage",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 4
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries.ts",
+      "dependency": "sql:storages",
+      "uses": 7
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-command.ts",
+      "uses": 9,
+      "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-index.ts",
+      "uses": 10,
+      "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-index.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 2
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-index.ts",
+      "dependency": "sql:storages",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-objects.ts",
+      "uses": 7,
+      "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-plan.ts",
+      "uses": 7,
+      "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-index"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/inventory.ts",
+      "uses": 17,
+      "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 2
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source.ts",
+      "dependency": "sql:storages",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/src/index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
+    },
+    {
+      "file": "turbo/packages/db/src/index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/packages/db/src/index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
+    },
+    {
+      "file": "turbo/packages/db/src/index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/skill"
+    },
+    {
+      "file": "turbo/packages/db/src/index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/packages/db/src/index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
+    },
+    {
+      "file": "turbo/packages/db/src/index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/connector-oauth-state.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/connector-permission-grant.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/connector.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/feishu-org-installation.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/official-workflow-catalog.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/org-custom-connector-dcr-registration.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/org-custom-connector-oauth-config.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/org-custom-connector.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/pi-resource-version-index.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/skill.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/storage-publication-fence.ts",
+      "dependency": "sql:storage_publication_generations",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/src/schema/storage-publication-fence.ts",
+      "dependency": "sql:storage_publication_tokens",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/src/schema/storage-version-lineage.ts",
+      "uses": 2,
+      "dependency": "module:turbo/packages/db/src/schema/storage"
+    },
+    {
+      "file": "turbo/packages/db/src/schema/storage-version-lineage.ts",
+      "dependency": "sql:storage_version_lineage",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/src/schema/storage.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/src/schema/storage.ts",
+      "dependency": "sql:storages",
+      "uses": 1
+    },
+    {
+      "file": "turbo/packages/db/src/schema/user-custom-connector.ts",
+      "uses": 3,
+      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
+    }
+  ]
+}

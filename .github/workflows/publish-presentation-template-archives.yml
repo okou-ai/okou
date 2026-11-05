@@ -145,15 +145,19 @@ jobs:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      R2_USER_STORAGES_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      R2_PRIVATE_ARTIFACTS_BUCKET_NAME: ${{ vars.R2_PRIVATE_ARTIFACTS_BUCKET_NAME }}
+      R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID }}
+      R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY }}
     steps:
       - name: Check out dispatched vm0 commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify independent Registry reader
+        run: bash .github/scripts/release/verify-registry-publisher-cutover.sh
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -189,15 +193,19 @@ jobs:
           node "${{ steps.tooling.outputs.path }}/publish-presentation-template-archives.mjs" verify \
             --output-dir "$RUNNER_TEMP/presentation-template-output"
 
-      - name: Publish immutable R2 archives and register versions
+      - name: Publish immutable Registry archives and update HEADs
         run: |
           set -euo pipefail
           : "${NEON_API_KEY:?NEON_API_KEY is required}"
           : "${NEON_PROJECT_ID:?NEON_PROJECT_ID is required}"
           : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID is required}"
-          : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
-          : "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}"
-          : "${R2_USER_STORAGES_BUCKET_NAME:?R2_USER_STORAGES_BUCKET_NAME is required}"
+          : "${R2_PRIVATE_ARTIFACTS_BUCKET_NAME:?R2_PRIVATE_ARTIFACTS_BUCKET_NAME is required}"
+          : "${R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID:?R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID is required}"
+          : "${R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY:?R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY is required}"
+          if [[ "$R2_PRIVATE_ARTIFACTS_BUCKET_NAME" != user-artifact-private-prod ]]; then
+            echo "::error::Registry publication requires the approved private production bucket."
+            exit 1
+          fi
 
           branches=$(curl -fsS \
             "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
@@ -228,5 +236,5 @@ jobs:
         env:
           SOURCE_COMMIT: ${{ needs.build.outputs.source_commit }}
         run: |
-          printf '### Production publication complete\n\n- Source commit: %s\n- Immutable R2 objects and production storage heads verified.\n' \
+          printf '### Production publication complete\n\n- Source commit: %s\n- Private immutable archives and independent Registry index/HEADs verified.\n' \
             "$SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,7 @@
 """Exercise the real cache/lock/filesystem with small external build fixtures."""
 
 import fcntl
+from functools import cache
 import hashlib
 import io
 import os
@@ -22,6 +23,17 @@ LIBRARIES = ["gssapi_krb5", "krb5", "k5crypto", "com_err", "krb5support"]
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@cache
+def fixture_helper_bytes():
+    # Share only immutable bytes; corruption cases keep their own writable file.
+    with tempfile.TemporaryDirectory() as directory:
+        binary = Path(directory) / "fixture-helper"
+        subprocess.run(["cc", "-static", "-x", "c", "-o", str(binary), "-"],
+                       input=b"int main(void) { return 0; }\n", check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return binary.read_bytes()
 
 
 class CacheTest(unittest.TestCase):
@@ -345,9 +357,8 @@ exit 73
         self.native = self.root / "native"
         shutil.copytree(RECIPE.parent, self.native)
         binary = self.root / "fixture-helper"
-        subprocess.run(["cc", "-static", "-x", "c", "-o", str(binary), "-"],
-                       input=b"int main(void) { return 0; }\n", check=True,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        binary.write_bytes(fixture_helper_bytes())
+        binary.chmod(0o755)
         zig = f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
 set -eu
 context=$(cd -- "$(dirname -- "$0")/../.." && pwd -P)

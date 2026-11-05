@@ -60,6 +60,16 @@ fn message_type_wire_values_are_stable() {
             0x1F,
         ),
         ("MSG_ERROR", MSG_ERROR, 0xFF),
+        (
+            "MSG_GUEST_AGENT_INSTRUCTIONS",
+            MSG_GUEST_AGENT_INSTRUCTIONS,
+            0x26,
+        ),
+        (
+            "MSG_GUEST_AGENT_INSTRUCTIONS_RESULT",
+            MSG_GUEST_AGENT_INSTRUCTIONS_RESULT,
+            0x27,
+        ),
         ("MSG_FILE_WRITE_STATUS", MSG_FILE_WRITE_STATUS, 0x20),
         (
             "MSG_FILE_WRITE_STATUS_RESULT",

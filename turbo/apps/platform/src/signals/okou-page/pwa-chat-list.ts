@@ -1,12 +1,5 @@
 import { command, computed, state } from "ccstate";
-import {
-  currentChatAgentId$,
-  currentChatAgentScope$,
-  currentChatThreadId$,
-  currentChatThreadListSignals$,
-  unreadChatThreads$,
-  type ChatThreadListSignals,
-} from "../agent-chat.ts";
+import { currentChatAgentId$, currentChatAgentScope$ } from "../agent-chat.ts";
 import { sortedAgents$ } from "../agent.ts";
 import { unreadAgentIds$ } from "../chat-page/chat-thread-indicators-from-worker.ts";
 import { chatThreadOnlyArchived$ } from "../chat-page/chat-thread-only-archived.ts";
@@ -19,42 +12,6 @@ import { rankAgentsForSearch } from "./workspace-chat-search.ts";
 // A 56px touch row and its 4px gutter share one virtual geometry.
 export const PWA_CHAT_THREAD_ROW_HEIGHT = 60;
 
-const noHiddenArchivedThreads$ = computed(() => {
-  return false;
-});
-
-const pwaChatThreadListSource$ = computed(
-  async (get): Promise<ChatThreadListSignals> => {
-    if (!get(chatThreadOnlyUnread$)) {
-      return await get(currentChatThreadListSignals$);
-    }
-
-    const threads = await get(unreadChatThreads$);
-    const threadIds = threads.map((thread) => {
-      return thread.id;
-    });
-    const threadIds$ = computed(() => {
-      return threadIds;
-    });
-
-    return {
-      threads$: computed(() => {
-        return threads;
-      }),
-      allThreadIds$: threadIds$,
-      threadIds$,
-      count$: computed(() => {
-        return threadIds.length;
-      }),
-      currentThreadListed$: computed((get): boolean => {
-        const threadId = get(currentChatThreadId$);
-        return threadId !== null && threadIds.includes(threadId);
-      }),
-      hasHiddenArchivedThreads$: noHiddenArchivedThreads$,
-    };
-  },
-);
-
 export const pwaChatThreadScrollSignals$ = computed((get) => {
   // Returning from a conversation retains this graph and its scroll position.
   // A different agent or filter starts a new list at the top.
@@ -63,7 +20,6 @@ export const pwaChatThreadScrollSignals$ = computed((get) => {
   get(chatThreadOnlyArchived$);
   get(chatThreadOnlyMuted$);
   return createSidebarChatThreadScrollSignals({
-    source$: pwaChatThreadListSource$,
     rowHeight: PWA_CHAT_THREAD_ROW_HEIGHT,
     restoreScrollPosition: true,
   });

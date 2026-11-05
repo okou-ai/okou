@@ -1,5 +1,4 @@
 use std::io::{self, Read};
-use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::Arc;
@@ -9,11 +8,10 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use cli_test_support::readiness::wait_for_path_event;
 use guest_control_client::{ExecOperationResult, ExecOwnedCapturedOutput, GuestControlClient};
 use guest_control_proto::{ExecTermination, VSOCK_PORT};
-use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 pub(crate) use shell_quote::quote_shell_arg as shell_quote;
-use tokio::io::unix::AsyncFd;
 
 static WRITE_FILE_HELPER: Once = Once::new();
 const WRITE_FILE_HELPER_BIN: &str = env!("CARGO_BIN_EXE_guest-write-file-test-helper");
@@ -316,57 +314,6 @@ async fn wait_for_path_result(path: &Path, timeout: Duration) -> io::Result<()> 
     tokio::time::timeout(timeout, wait_for_path_event(path))
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "path wait timed out"))?
-}
-
-async fn wait_for_path_event(path: &Path) -> io::Result<()> {
-    if tokio::fs::try_exists(path).await? {
-        return Ok(());
-    }
-
-    let dir = path.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("path has no parent directory: {}", path.display()),
-        )
-    })?;
-    let inotify = Inotify::init(InitFlags::IN_NONBLOCK)
-        .map_err(|error| io::Error::other(format!("inotify init: {error}")))?;
-    inotify
-        .add_watch(dir, AddWatchFlags::IN_CREATE | AddWatchFlags::IN_MOVED_TO)
-        .map_err(|error| io::Error::other(format!("inotify watch: {error}")))?;
-
-    if tokio::fs::try_exists(path).await? {
-        return Ok(());
-    }
-
-    let async_fd = async_inotify_fd(inotify)?;
-    loop {
-        let mut guard = async_fd.readable().await?;
-        drain_inotify_fd(async_fd.get_ref().as_fd());
-        guard.clear_ready();
-
-        if tokio::fs::try_exists(path).await? {
-            return Ok(());
-        }
-    }
-}
-
-fn async_inotify_fd(inotify: Inotify) -> io::Result<AsyncFd<OwnedFd>> {
-    let fd: OwnedFd = inotify.into();
-    // SAFETY: AsyncFd owns fd and keeps its descriptor unchanged until drop.
-    unsafe { AsyncFd::register(fd) }.map_err(|error| io::Error::other(format!("AsyncFd: {error}")))
-}
-
-fn drain_inotify_fd(fd: std::os::fd::BorrowedFd<'_>) {
-    let mut buf = [0u8; 4096];
-    loop {
-        // SAFETY: fd is a valid non-blocking inotify descriptor borrowed from
-        // AsyncFd. The stack buffer is valid for the requested byte length.
-        let result = unsafe { libc::read(fd.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
-        if result <= 0 {
-            break;
-        }
-    }
 }
 
 impl Drop for Harness {

@@ -179,15 +179,11 @@ export function createSharedBrowserFixtures(context: TestContext) {
     return setupApp({ context, routes: browserRoutes })(browserContract);
   }
 
-  async function fixture(
-    enabled = true,
-    provider = profileProvider(),
-    clockTime: number | (() => number) = START,
-  ) {
+  async function fixture(enabled = true, provider = profileProvider()) {
     mockEnv("OKOU_BROWSER_USE_API_KEY", "owner-profile-test-key");
     server.use(...provider.handlers);
     const owned = await publicChatActor(context, {
-      clockTime,
+      clockTime: START,
       optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
     });
     const featureActor = { ...owned.actor, orgId: requireOrgId(owned.actor) };
@@ -200,13 +196,12 @@ export function createSharedBrowserFixtures(context: TestContext) {
         });
       });
     }
-    async function start(browserEnabled = true, threadId?: string) {
+    async function start(browserEnabled = true) {
       return await owned.run(async () => {
         const sent = await chat.sendAndLaunch(owned.actor, {
           agentId: owned.agentId,
           prompt: "Prepare my chat-owned Browser lifetime",
           cloudBrowserEnabled: browserEnabled,
-          ...(threadId ? { threadId } : {}),
         });
         const runnerIdentity = {
           runnerId: randomUUID(),

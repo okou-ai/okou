@@ -163,6 +163,8 @@ def _priority(form: str) -> tuple[int, ...]:
         "/files/prefix{id}",
         "/files/%7Badmin%7D",
         "/files/%E7%AE%A1",
+        "/files/管",
+        "/files/plain",
     ],
 )
 @pytest.mark.parametrize(
@@ -178,6 +180,7 @@ def _priority(form: str) -> tuple[int, ...]:
         "/files/{admin}",
         "/files/管",
         "/files/%E7%AE%A1",
+        "/files/plain",
     ],
 )
 def test_public_language_proof_matches_independent_concrete_model(
@@ -316,6 +319,8 @@ def test_new_api_tie_cannot_hide_a_binding_conflict_behind_source_order():
 def test_work_exhaustion_is_explicit_not_a_missing_match():
     with pytest.raises(AnalysisLimitError, match="work limit"):
         request_language("/files/%2564elegations%2Ffoo", WorkBudget(10))
+    with pytest.raises(AnalysisLimitError, match="work limit"):
+        PathCompiler(budget=WorkBudget(20)).compile("/files")
 
 
 @pytest.mark.parametrize(
@@ -374,6 +379,8 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model(refere
         "/files/" + left + "{id}" + right for left, right in itertools.product(alphabet, repeat=2)
     ]
     forms_by_pattern = {pattern: _source_forms(pattern) for pattern in patterns}
+    # Declaration inputs are immutable; each request still owns its proof state.
+    compiled_by_pattern = {pattern: compiler.compile(pattern) for pattern in patterns}
     for path in (
         "/files/" + left + "x" + right for left, right in itertools.product(alphabet, repeat=2)
     ):
@@ -385,7 +392,7 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model(refere
             priorities = [
                 _priority(form) for form in forms if any(reference_matches(p, form) for p in views)
             ]
-            result = analysis.applicability(compiler.compile(pattern))
+            result = analysis.applicability(compiled_by_pattern[pattern])
             assert result.possible == any(outcomes), (pattern, path)
             assert result.certain == all(outcomes), (pattern, path)
             assert result.minimum == (min(priorities) if priorities else None), (pattern, path)

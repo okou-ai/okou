@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.31.14](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.13...runner-remote-v0.31.14) (2026-11-05)
+
+## [0.31.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.12...runner-remote-v0.31.13) (2026-11-05)
+
+## [0.31.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.11...runner-remote-v0.31.12) (2026-11-05)
+
+
+### Bug Fixes
+
+* **runner-remote:** defer kerberos probing until profile negotiation ([#45360](https://github.com/okou-ai/okou/issues/45360)) ([f349335](https://github.com/okou-ai/okou/commit/f34933575dafe014a66707377b4e230826384aac))
+
+## [0.31.11](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.10...runner-remote-v0.31.11) (2026-11-05)
+
+## [0.31.10](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.9...runner-remote-v0.31.10) (2026-11-05)
+
+## [0.31.9](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.8...runner-remote-v0.31.9) (2026-11-04)
+
+## [0.31.8](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.7...runner-remote-v0.31.8) (2026-11-04)
+
+## [0.31.7](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.6...runner-remote-v0.31.7) (2026-11-04)
+
+## [0.31.6](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.5...runner-remote-v0.31.6) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+
+## [0.31.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.4...runner-remote-v0.31.5) (2026-11-03)
+
+## [0.31.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.3...runner-remote-v0.31.4) (2026-11-03)
+
+## [0.31.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.2...runner-remote-v0.31.3) (2026-11-03)
+
 ## [0.31.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.1...runner-remote-v0.31.2) (2026-11-03)
 
 ## [0.31.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.0...runner-remote-v0.31.1) (2026-11-03)

@@ -6,8 +6,10 @@ and fails (rather than skips) when it is missing. No external service is contact
 
 import hashlib
 import http.client
+import importlib.metadata
 import json
 import os
+import platform
 import shutil
 import socket
 import ssl
@@ -32,10 +34,62 @@ from tests.control_helpers import (
     status_request,
 )
 from tests.managed_openrouter_helpers import PATHS, sandbox
+from tests.packaged_dependency_helpers import runtime_lock_versions
 from tests.pending_helpers import result_data
 from tests.registry_builtin_helpers import write_catalog_cache
 from tests.request_handler_helpers import _write_registry
 from tests.usage_helpers import UsageWebhookServer
+
+
+def test_packaged_runtime_dependencies_match_the_released_lock(tmp_path):
+    addon_root = Path(__file__).parents[1]
+    python_version = (addon_root / ".python-version").read_text().strip()
+    assert platform.python_version() == python_version
+    mitmproxy_version = importlib.metadata.version("mitmproxy")
+    upstream_lock = Path(os.environ["MITMPROXY_CONTROL_TEST_UPSTREAM_LOCK"])
+    expected = runtime_lock_versions(upstream_lock, mitmproxy_version)
+    assert runtime_lock_versions(addon_root / "uv.lock", mitmproxy_version) == expected
+    assert {name: importlib.metadata.version(name) for name in expected} == expected
+
+    probe = tmp_path / "runtime_probe.py"
+    shutil.copyfile(Path(__file__).with_name("packaged_runtime_probe.py"), probe)
+    binary = Path(os.environ["MITMDUMP_CONTROL_TEST_BINARY"]).resolve(strict=True)
+    result = subprocess.run(  # noqa: S603
+        [
+            str(binary),
+            "--quiet",
+            "--set",
+            "server=false",
+            "--set",
+            f"confdir={tmp_path / 'certificates'}",
+            "--scripts",
+            str(probe),
+        ],
+        env={"PATH": os.defpath, "TMPDIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    observed = json.loads(probe.with_suffix(".json").read_text())
+    assert observed["python"] == python_version
+    # Extra frozen build-tool metadata is outside the mitmproxy runtime closure.
+    frozen_versions = {
+        name: value for name, value in observed["versions"].items() if name in expected
+    }
+    assert {name: expected[name] for name in frozen_versions} == frozen_versions
+    assert {
+        "mitmproxy",
+        "cffi",
+        "brotli",
+        "certifi",
+        "cryptography",
+        "h11",
+        "h2",
+        "pyopenssl",
+        "wsproto",
+    } <= frozen_versions.keys()
 
 
 @contextmanager

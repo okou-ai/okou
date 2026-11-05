@@ -120,13 +120,18 @@ export function createCanvasRenderer(
   }
 
   function reset(): void {
+    if (disposed) {
+      return;
+    }
     invalidate();
     context.clearRect(0, 0, canvas.width, canvas.height);
   }
 
   function dispose(): void {
     disposed = true;
-    reset();
+    // Pixel lifetime belongs to the mounted presentation. Retiring a decoder
+    // must neither erase its last frame nor clear a successor's canvas.
+    invalidate();
   }
 
   /** Decoding, validation and painting fail as one frame; images close here. */

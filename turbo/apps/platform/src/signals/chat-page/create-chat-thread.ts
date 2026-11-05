@@ -1,4 +1,7 @@
-import { projectMessageDocumentSchema as projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
+import {
+  userMessageDocumentSchema,
+  resolveChatEventRecommendedFollowups,
+} from "@okouai/api-contracts/validators/chat-threads";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -13,7 +16,6 @@ import {
   revokedChatEventIds,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/client/chat-threads";
-import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
 import type {
   ChatRunOptionsRequest,
   ChatThreadArtifactRun,
@@ -46,7 +48,7 @@ import {
   type DraftSignals,
 } from "../okou-page/chat-draft.ts";
 import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { resetSignal, settle } from "../utils.ts";
+import { debounceCommand, resetSignal, settle } from "../utils.ts";
 import type {
   ChatEvent,
   OptimisticChatEvent,
@@ -87,7 +89,6 @@ import {
 import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { apiClient$ } from "../api-client.ts";
-import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
@@ -1144,8 +1145,7 @@ const registerUserMessageRenderDocument$ = command(
     document: UserMessageDocument,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderDocument => {
-    const readableDocument =
-      projectAwareUserMessageDocumentSchema.parse(document);
+    const readableDocument = userMessageDocumentSchema.parse(document);
     return {
       // Registration uses the raw document identity across window updates.
       document,
@@ -3948,7 +3948,7 @@ export function createChatPanelSignals(
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$:
-      composer.connector.accounts.reloadPreference$,
+      composer.connector.reloadAccountPreference$,
     resourceCatalog: artifact.resourceCatalog,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);

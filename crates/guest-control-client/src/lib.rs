@@ -106,6 +106,7 @@ use connection::{
     normal_operation_transition_error, normal_request_on_shared_with_timing_frame_builder,
     normal_request_on_shared_with_write_observer_frame_builder,
     request_on_shared_with_composite_operation_and_observer_frame_builder,
+    validate_fixed_helper_response,
 };
 #[cfg(test)]
 use connection::{request_on_shared, write_request_frame_with_builder};
@@ -117,9 +118,8 @@ pub use connection::{
 pub use exec_operation::{
     ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus, ExecControlHandle,
     ExecControlOutcome, ExecOperationHandle, ExecOperationRequest, ExecOperationResult,
-    ExecOutputEvent, ExecOwnedCapturedOutput, ExecStreamRequest,
-    SessionHistoryIdentityVerifyRequest, SupervisedExecCancelHandle, SupervisedExecControl,
-    SupervisedExecHandle, SupervisedExecRequest, SupervisedExecStartTiming,
+    ExecOutputEvent, ExecOwnedCapturedOutput, ExecStreamRequest, SupervisedExecCancelHandle,
+    SupervisedExecControl, SupervisedExecHandle, SupervisedExecRequest, SupervisedExecStartTiming,
 };
 pub use file::{COPY_FILE_STREAM_MAX_BYTES, CopyFileOptions, CopyFileResult, WriteFileEntry};
 pub use guest_dns_readiness::GuestDnsReadinessResult;
@@ -513,14 +513,6 @@ impl GuestControlClient {
         request: ExecCaptureRequest<'_>,
     ) -> io::Result<ExecOperationResult> {
         exec_operation::exec_operation_capture_on_shared(&self.shared, request).await
-    }
-
-    /// Run the fixed live session-history identity verifier without a guest shell.
-    pub async fn verify_session_history_identity(
-        &self,
-        request: SessionHistoryIdentityVerifyRequest<'_>,
-    ) -> io::Result<ExecOperationResult> {
-        exec_operation::session_history_identity_verify_on_shared(&self.shared, request).await
     }
 
     /// Run a capture-only exec operation with a synchronous admission check at

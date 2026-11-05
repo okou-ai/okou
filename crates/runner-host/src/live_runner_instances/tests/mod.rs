@@ -624,23 +624,34 @@ async fn read_valid_record_ignores_malformed_json() {
 }
 
 #[tokio::test]
-async fn read_valid_record_ignores_oversized_file() {
+async fn try_list_enforces_record_size_limit_for_live_identity() {
     let registry = TestRegistry::new();
-    registry.ensure_dir();
-    let path = registry
-        .home
-        .live_runner_instances_dir()
-        .join("oversized.json");
-    crate::state_file::write_private_atomic(
-        &path,
-        &vec![b'a'; (LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES + 1) as usize],
-    )
-    .await
-    .unwrap();
+    let handle = publish(&registry.home, registry.metadata()).await.unwrap();
+    let mut content = tokio::fs::read(&handle.path).await.unwrap();
+    // Keep the JSON valid so only the registry's 64 KiB limit rejects it.
+    content.resize(64 * 1024, b' ');
+    crate::state_file::write_private_atomic(&handle.path, &content)
+        .await
+        .unwrap();
 
-    let result = read_valid_record(&path).await;
+    let instances = try_list(&registry.home).await.unwrap();
 
-    assert!(result.is_none());
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].pid, handle.identity.pid);
+    assert_eq!(instances[0].starttime, handle.identity.starttime);
+
+    content.push(b' ');
+    crate::state_file::write_private_atomic(&handle.path, &content)
+        .await
+        .unwrap();
+
+    let error = try_list(&registry.home).await.unwrap_err();
+
+    assert!(
+        error.to_string().contains("live process identity"),
+        "{error}"
+    );
+    assert_eq!(tokio::fs::read(&handle.path).await.unwrap(), content);
 }
 
 #[tokio::test]

@@ -21,7 +21,6 @@ struct ComposerConnectorPermissions: View {
           await load()
         }
       }
-      if loading { OkouLoadingRow("Loading permissions…") }
       if let state {
         Section {
           Picker("Allow for", selection: $duration) {
@@ -58,10 +57,11 @@ struct ComposerConnectorPermissions: View {
           }.disabled(
             store.isSaving || store.uncertain || filteredPermissions(state.metadata).isEmpty)
         } footer: {
-          Group {
-            Text("These permissions apply to this Agent across its chats.")
-
-          }
+          Text(
+            state.connectorScoped
+              ? "These permissions apply to this connector across your chats and accounts."
+              : "These permissions apply to this Agent across its chats."
+          )
           .okouSectionNote()
         }
         Section {
@@ -94,12 +94,20 @@ struct ComposerConnectorPermissions: View {
       }
     }
     .okouGroupedBackground()
+    .listSectionSpacing(OkouSpace.lg)
+    .overlay {
+      if loading && state == nil && error == nil {
+        ChatSettingsLoadingView(title: "Loading permissions…")
+      }
+    }
     .navigationTitle(label + " permissions")
     .navigationBarTitleDisplayMode(.inline)
     .searchable(text: $search, prompt: "Find permissions")
     .task { await load() }
     .confirmationDialog(
-      "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
+      state?.connectorScoped == true
+        ? "Reset this connector's permissions?"
+        : "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
     ) {
       Button("Reset to defaults", role: .destructive) { Task { await save([], reset: true) } }
         .disabled(store.isSaving || store.uncertain)

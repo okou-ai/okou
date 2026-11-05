@@ -5,7 +5,8 @@ import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
-  syncActiveSidebarLayout$,
+  commitWorkspaceLayout$,
+  threadSidebarLayoutRootRef$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import type { ReactNode } from "react";
@@ -61,15 +62,17 @@ import { AttachmentLightbox } from "./attachment-chips.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
-import {
-  paletteColorTheme$,
-  shellDocumentAttributesRef$,
-} from "../../signals/theme.ts";
+import { paletteColorTheme$ } from "../../signals/theme.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
+import {
+  type ChatHeaderActionsState,
+  useChatHeaderActions,
+} from "./chat-header-actions.ts";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import {
   pwaChatListVisible$,
   pwaNavigationEnabled$,
@@ -146,6 +149,7 @@ function MobileResourcesButtonLeaf() {
 function MobileAutomationButtonLeaf() {
   const thread = useCurrentThread();
   const { t } = useTranslation();
+  const header = useChatHeaderActions(thread);
 
   if (!thread) {
     return null;
@@ -154,6 +158,7 @@ function MobileAutomationButtonLeaf() {
   return (
     <AutomationMenuButton
       thread={thread}
+      header={header}
       ariaLabel={t(($) => {
         return $.appShell.sidebar.mobile.openAutomations;
       })}
@@ -172,6 +177,7 @@ function MobileShareButtonInner({
   const phase = useGet(thread.sharing.phase$);
   const start = useSet(thread.sharing.start$);
   const pageSignal = useGet(pageSignal$);
+  const { transitioning } = useChatHeaderActions(thread);
   if (phase !== "idle") {
     return null;
   }
@@ -179,6 +185,8 @@ function MobileShareButtonInner({
     <Button
       showTooltip
       type="button"
+      disabled={transitioning}
+      focusableWhenDisabled
       onClick={() => {
         detach(
           start(pageSignal),
@@ -247,7 +255,13 @@ function MobileSharingOverlayLeaf() {
   return thread ? <MobileSharingOverlayInner thread={thread} /> : null;
 }
 
-function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
+function MobileChatThreadActions({
+  thread,
+  header,
+}: {
+  thread: ChatPanelSignals;
+  header: ChatHeaderActionsState;
+}) {
   const phase = useGet(thread.sharing.phase$);
   if (phase !== "idle") {
     return null;
@@ -255,7 +269,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
-      <ThreadMailButton thread={thread} />
+      <ThreadMailButton thread={thread} header={header} />
       <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
@@ -264,10 +278,11 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
 
 function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
   const thread = useCurrentThread();
+  const header = useChatHeaderActions(thread);
   if (activeId === "chat" && thread) {
     return (
       <SettledChatThreadActions thread={thread}>
-        <MobileChatThreadActions thread={thread} />
+        <MobileChatThreadActions thread={thread} header={header} />
       </SettledChatThreadActions>
     );
   }
@@ -289,6 +304,7 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
 
 function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
   const { t } = useTranslation();
+  const sessionKey = useGet(authenticatedSessionKey$);
 
   const breadcrumbLoadable = useLastLoadable(mobileBreadcrumb$);
   const breadcrumb =
@@ -359,7 +375,7 @@ function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
       ) : (
         <div className="flex-1" />
       )}
-      <MobileTopBarActions activeId={activeId} />
+      <MobileTopBarActions key={sessionKey} activeId={activeId} />
     </div>
   );
 }
@@ -410,7 +426,7 @@ function ChatWorkspace({
 }) {
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
-  const syncSidebarLayout = useSet(syncActiveSidebarLayout$);
+  const syncSidebarLayout = useSet(commitWorkspaceLayout$);
   const joinedToChatList =
     useGet(unifiedChatWorkspace$) && beside === "chat-list";
   return (
@@ -418,7 +434,8 @@ function ChatWorkspace({
       layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
-      onSidebarLayoutCommit={syncSidebarLayout}
+      onWorkspaceLayoutCommit={syncSidebarLayout}
+      ownerKey={active ? `${active.thread.threadId}:${active.target.type}` : ""}
       sidebar={<ChatThreadSidebarPane />}
       // The browser scales a 1440px screen into the panel and wants room;
       // every other panel shares one remembered width.
@@ -529,13 +546,13 @@ function SidebarWorkspace({
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
-  const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
+  const shellRef = useSet(threadSidebarLayoutRootRef$);
   const pwaNavigation = useGet(pwaNavigationEnabled$);
   const unified = useGet(unifiedChatWorkspace$);
 
   return withChatScrollLayout(
     <div
-      ref={shellDocumentAttributesRef}
+      ref={shellRef}
       data-slot="app-shell"
       className={cn(
         "box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0",

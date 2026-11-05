@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.24.77](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.76...guest-control-server-v0.24.77) (2026-11-05)
+
+
+### Refactoring
+
+* **guest-control:** centralize captured-output projection policies ([#45363](https://github.com/okou-ai/okou/issues/45363)) ([143de08](https://github.com/okou-ai/okou/commit/143de0848688c231cf3dc41b440b59087826be53))
+
+## [0.24.76](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.75...guest-control-server-v0.24.76) (2026-11-05)
+
+## [0.24.75](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.74...guest-control-server-v0.24.75) (2026-11-05)
+
+
+### Refactoring
+
+* **guest-control:** share exec wait-result projection ([#45296](https://github.com/okou-ai/okou/issues/45296)) ([97bb9ef](https://github.com/okou-ai/okou/commit/97bb9ef3ce34518d2fd7747b02637572dd9691a8))
+
+## [0.24.74](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.73...guest-control-server-v0.24.74) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** preserve system sbin directories in agent path ([#45143](https://github.com/okou-ai/okou/issues/45143)) ([42e1307](https://github.com/okou-ai/okou/commit/42e1307f32e3518faa32019c65356b8476216a8a))
+
+## [0.24.73](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.72...guest-control-server-v0.24.73) (2026-11-04)
+
+## [0.24.72](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.71...guest-control-server-v0.24.72) (2026-11-04)
+
+
+### Refactoring
+
+* **guest-control:** share helper diagnostic byte bounds ([#45065](https://github.com/okou-ai/okou/issues/45065)) ([952833e](https://github.com/okou-ai/okou/commit/952833e7630ac4170dd99d842c68cc717a059930))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.24.71](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.70...guest-control-server-v0.24.71) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
 ## [0.24.70](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.69...guest-control-server-v0.24.70) (2026-11-03)
 
 ## [0.24.69](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.68...guest-control-server-v0.24.69) (2026-11-03)

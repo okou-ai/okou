@@ -10,91 +10,10 @@ use tokio::sync::Notify;
 use crate::StorageManifestTiming;
 use crate::error::{Result, SandboxError, SandboxIdleTransition};
 use crate::types::{
-    CopyFileOptions, CopyFileResult, ExecRequest, ExecResult, GuestAgentProcessHandle,
-    GuestProcessHandle, GuestStateRestoreRequest, ProcessExit, SessionHistoryIdentityVerifyRequest,
+    AgentInstructionsRequest, CopyFileOptions, CopyFileResult, ExecRequest, ExecResult,
+    GuestAgentProcessHandle, GuestProcessHandle, GuestStateRestoreRequest, ProcessExit,
     StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
 };
-
-/// Requested terminal disposition for one completed guest staging file.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StagedFileDisposition<'a> {
-    /// Publish the staging file at the supplied final guest path.
-    Publish { destination: &'a str },
-    /// Remove the staging file without publishing it.
-    Discard,
-}
-
-/// Request to finalize one guest staging file.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StagedFileFinalizeRequest<'a> {
-    /// Absolute guest path of the completed staging file.
-    pub staging_path: &'a str,
-    /// Terminal action to perform for the staging file.
-    pub disposition: StagedFileDisposition<'a>,
-}
-
-/// Filesystem path used to publish a completed staging file.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StagedFilePublicationMode {
-    /// Source and destination parent share a device, so publication renamed the source inode.
-    SameDeviceRename,
-    /// Publication copied to a destination sibling before the final atomic rename.
-    CrossDeviceCopyRename,
-}
-
-/// Bounded reason why a terminal finalizer did not publish the destination.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StagedFileNotPublishedReason {
-    /// The staging path did not resolve to a regular file.
-    InvalidSource,
-    /// The destination parent could not be prepared or safely resolved.
-    InvalidDestinationParent,
-    /// The destination resolved to an unsupported entry type.
-    InvalidDestination,
-    /// Existing destination metadata could not be preserved safely.
-    MetadataPreparationFailed,
-    /// A same-device rename failed before publication.
-    RenameFailed,
-    /// A cross-device copy failed before publication.
-    CopyFailed,
-    /// Discard cleanup failed without publishing a destination.
-    DiscardFailed,
-    /// The helper returned a bounded but otherwise unclassified pre-publication failure.
-    Other,
-}
-
-/// Host-observed timing for one terminal staged-file finalizer operation.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct StagedFileFinalizeMeasurements {
-    /// Complete finalizer duration, including validation performed in the guest helper.
-    pub elapsed: Duration,
-    /// Cross-device copy duration when reported by the helper.
-    pub copy_elapsed: Duration,
-    /// Final atomic rename duration when reported by the helper.
-    pub publication_elapsed: Duration,
-}
-
-/// Terminal, trustworthy result of finalizing one guest staging file.
-///
-/// An outer [`SandboxError`] does not prove whether publication happened and
-/// must not be treated as [`NotPublished`](Self::NotPublished).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StagedFileFinalizeOutcome {
-    /// The complete staging file was published at its final destination.
-    Published {
-        mode: StagedFilePublicationMode,
-        measurements: StagedFileFinalizeMeasurements,
-    },
-    /// The staging file was discarded without publishing a destination.
-    Discarded {
-        measurements: StagedFileFinalizeMeasurements,
-    },
-    /// A terminal helper result proved that final publication did not occur.
-    NotPublished {
-        reason: StagedFileNotPublishedReason,
-        measurements: StagedFileFinalizeMeasurements,
-    },
-}
 
 /// Eligibility result after a sandbox successfully reaches the parked state.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -939,6 +858,15 @@ pub trait Sandbox: Send + Sync + Any {
         request: &StorageManifestRequest<'_>,
     ) -> Result<ExecResult>;
 
+    /// Execute a bounded fixed instruction helper as the sandbox user.
+    ///
+    /// Providers retain workload containment, cancellation/cleanup, bounded
+    /// capture and backend-crash classification. No shell fallback is allowed.
+    async fn run_agent_instructions(
+        &self,
+        request: &AgentInstructionsRequest<'_>,
+    ) -> Result<ExecResult>;
+
     /// Apply storage with fixed Host phases and optional content-free Guest
     /// timing/resource observations from the terminal result.
     ///
@@ -965,24 +893,6 @@ pub trait Sandbox: Send + Sync + Any {
             operation: crate::SandboxOperation::MountHomeDrive,
             reason: crate::SandboxOperationReason::Other,
             message: "fixed home drive mount is unsupported".to_string(),
-        })
-    }
-
-    /// Verify live final session-history identity through the provider's fixed
-    /// Guest Agent helper operation.
-    ///
-    /// Implementations select the executable and fixed subcommand and must not
-    /// expose arbitrary command, environment, sudo, stdin, output, or lifecycle
-    /// authority. Helper and transport failures remain ordinary typed results
-    /// or sandbox errors for the lifecycle owner to fail closed.
-    async fn verify_session_history_identity(
-        &self,
-        _request: &SessionHistoryIdentityVerifyRequest<'_>,
-    ) -> Result<ExecResult> {
-        Err(SandboxError::Operation {
-            operation: crate::SandboxOperation::VerifySessionHistoryIdentity,
-            reason: crate::SandboxOperationReason::Other,
-            message: "fixed session history identity verifier is unsupported".to_string(),
         })
     }
 
@@ -1047,22 +957,6 @@ pub trait Sandbox: Send + Sync + Any {
     ///
     /// The guest path must be non-empty and must not contain NUL bytes.
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
-
-    /// Publish or discard one completed guest staging file.
-    ///
-    /// A successful [`StagedFileFinalizeOutcome::NotPublished`] is the only
-    /// failure result that proves no destination was published. An outer error
-    /// is ambiguous and callers must not retry publication blindly.
-    async fn finalize_staged_file(
-        &self,
-        _request: &StagedFileFinalizeRequest<'_>,
-    ) -> Result<StagedFileFinalizeOutcome> {
-        Err(SandboxError::Operation {
-            operation: crate::SandboxOperation::FinalizeStagedFile,
-            reason: crate::SandboxOperationReason::Other,
-            message: "staged-file finalization is not supported by this sandbox provider".into(),
-        })
-    }
 
     /// Write multiple ordinary files inside the guest.
     ///

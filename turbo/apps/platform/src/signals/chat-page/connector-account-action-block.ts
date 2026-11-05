@@ -216,6 +216,7 @@ function customActionConnector(
 function createConnectorAccountConfirmSignal(
   descriptor: ConnectorAccountActionDescriptor,
   status$: ConnectorAccountActionSignals["status$"],
+  connector: ComposerConnectorSignals,
 ): ConnectorAccountActionSignals["confirm$"] {
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const status = await get(status$);
@@ -239,6 +240,7 @@ function createConnectorAccountConfirmSignal(
         [200],
         signal,
       );
+      set(connector.reloadAccountPreference$);
     } else {
       await accept(
         get(apiClient$)(chatThreadConnectorSelectionContract).update({
@@ -310,7 +312,11 @@ function createConnectorAccountActionSignals(
     ...descriptor,
     status$,
     connector$,
-    confirm$: createConnectorAccountConfirmSignal(descriptor, status$),
+    confirm$: createConnectorAccountConfirmSignal(
+      descriptor,
+      status$,
+      connector,
+    ),
   };
 }
 

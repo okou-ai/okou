@@ -132,7 +132,7 @@ case "$operation" in
       exit 9
     fi
     if [ -f "$object" ]; then
-      echo 'PreconditionFailed: 412' >&2
+      echo '{"Code":"PreconditionFailed"}' >&2
       exit 1
     fi
     cp "$body" "$object"

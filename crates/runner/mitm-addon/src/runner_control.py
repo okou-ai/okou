@@ -242,12 +242,7 @@ class ControlServer:
                 return self._error(request_id, "not_ready")
         except ValueError, RecursionError:
             return self._error(request_id, "invalid_request")
-        return {
-            "requestId": request_id,
-            "generation": self._generation,
-            "type": "result",
-            "data": {"state": "running"},
-        }
+        return self._result(request_id, {"state": "running"})
 
     def _result(self, request_id: str, data: dict[str, object]) -> dict[str, object]:
         return {
@@ -350,18 +345,16 @@ class ControlServer:
             if remaining <= 0:
                 break
             await asyncio.sleep(min(LOG_FLUSH_POLL_SECONDS, remaining))
-        return {
-            "requestId": request_id,
-            "generation": self._generation,
-            "type": "result",
-            "data": {
+        return self._result(
+            request_id,
+            {
                 "runId": run_id,
                 "path": path,
                 "boundary": boundary.sequence,
                 "pending": pending,
                 "state": "deadline" if pending else "processed",
             },
-        }
+        )
 
     def _error(self, request_id: str | None, code: str) -> dict[str, object]:
         return {

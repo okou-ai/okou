@@ -23,6 +23,13 @@ public struct ChatPermissionAction: Hashable, Sendable {
 
   /// Recognizes only permission routes on configured platform origins or the PWA's trusted hosts.
   public static func trustedURL(_ value: String, webURL: URL) -> URL? {
+    guard let url = trustedPlatformURL(value, webURL: webURL),
+      url.path.range(of: #"^/agents/[^/]+/permissions$"#, options: .regularExpression) != nil
+    else { return nil }
+    return url
+  }
+
+  static func trustedPlatformURL(_ value: String, webURL: URL) -> URL? {
     guard let url = URL(string: value, relativeTo: webURL)?.absoluteURL,
       ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
       url.user == nil, url.password == nil, let host = url.host?.lowercased()
@@ -45,8 +52,7 @@ public struct ChatPermissionAction: Hashable, Sendable {
       (host == domain || host.hasSuffix(".\(domain)"))
         && host.range(of: #"(^|-)(platform|app|www|api)\."#, options: .regularExpression) != nil
     }
-    guard configuredOrigin || host == "app.okou.ai" || previewHost,
-      url.path.range(of: #"^/agents/[^/]+/permissions$"#, options: .regularExpression) != nil
+    guard configuredOrigin || host == "app.okou.ai" || previewHost
     else { return nil }
     return url
   }

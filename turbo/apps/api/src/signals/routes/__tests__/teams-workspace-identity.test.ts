@@ -748,7 +748,9 @@ test.each([
         );
         expect(messages).toContainEqual({
           conversationId: sender.teamsConversationId,
-          text: "Run-scoped result",
+          text: expect.stringMatching(
+            /^Run-scoped result\n\nSent via .+ · Triggered by <at>.+<\/at>$/u,
+          ),
         });
         await accept(
           clients()(integrationsTeamsMessageContract).sendMessage({
@@ -790,6 +792,7 @@ test.each([
               contentType: "text/plain",
               length: bytes.length,
               canonical: {
+                version: 2,
                 operationId,
                 checksumSha256: createHash("sha256")
                   .update(bytes)
@@ -851,6 +854,7 @@ test.each([
               contentType: "text/plain",
               length: bytes.length,
               canonical: {
+                version: 2,
                 operationId: uncertainOperation,
                 checksumSha256: createHash("sha256")
                   .update(bytes)

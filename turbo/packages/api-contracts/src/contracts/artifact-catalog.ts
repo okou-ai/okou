@@ -45,7 +45,7 @@ interface ArtifactThumbnail {
   url: string;
 }
 
-export interface ArtifactSummary {
+interface ArtifactSummaryBase {
   id: string;
   kind: ArtifactCatalogKind;
   title: string;
@@ -60,6 +60,12 @@ export interface ArtifactSummary {
   createdAt: string;
   updatedAt: string;
 }
+
+export type ArtifactSummary = ArtifactSummaryBase &
+  (
+    | { kind: "shared-thread"; sharedThreadId: string }
+    | { kind: Exclude<ArtifactCatalogKind, "shared-thread"> }
+  );
 
 interface ArtifactFile {
   id: string;
@@ -80,7 +86,7 @@ interface ArtifactHostedSite {
   spaFallback: boolean;
 }
 
-interface ArtifactDetailCommon extends ArtifactSummary {
+interface ArtifactDetailCommon extends ArtifactSummaryBase {
   googleDriveConnectionId?: string;
   googleDriveSync?: ChatThreadArtifactGoogleDriveSync;
 }
@@ -123,6 +129,7 @@ interface PresentationArtifactDetail extends ArtifactDetailCommon {
 
 interface SharedThreadArtifactDetail extends ArtifactDetailCommon {
   kind: "shared-thread";
+  sharedThreadId: string;
   sharedThread: { id: string };
 }
 
@@ -273,7 +280,7 @@ const artifactThumbnailSchema = object({
  * conversations include their destination identity so native links need no
  * detail request. The list query never joins a kind table.
  */
-const artifactSummarySchema = object({
+const artifactSummaryBaseSchema = object({
   id: uuid(),
   kind: artifactKindSchema,
   title: string(),
@@ -285,6 +292,16 @@ const artifactSummarySchema = object({
   createdAt: string(),
   updatedAt: string(),
 });
+
+const artifactSummarySchema = discriminatedUnion("kind", [
+  artifactSummaryBaseSchema.extend({
+    kind: literal("shared-thread"),
+    sharedThreadId: uuid(),
+  }),
+  artifactSummaryBaseSchema.extend({
+    kind: artifactKindSchema.exclude(["shared-thread"]),
+  }),
+]);
 
 const artifactCatalogListQuerySchema = object({
   limit: coerce.number().int().positive().max(200).optional(),
@@ -331,7 +348,7 @@ const artifactHostedSiteSchema = object({
 });
 
 // Drive metadata is loaded lazily for detail requests with thread context only.
-const artifactDetailBaseSchema = artifactSummarySchema.extend({
+const artifactDetailBaseSchema = artifactSummaryBaseSchema.extend({
   googleDriveConnectionId: uuid().optional(),
   googleDriveSync: chatThreadArtifactGoogleDriveSyncSchema.optional(),
 });
@@ -369,6 +386,7 @@ const artifactDetailSchema = discriminatedUnion("kind", [
   }),
   artifactDetailBaseSchema.extend({
     kind: literal("shared-thread"),
+    sharedThreadId: uuid(),
     sharedThread: object({ id: uuid() }),
   }),
 ]);

@@ -67,9 +67,6 @@ export function createSidebarHelpers(context: TestContext) {
     mockMobileLayout: () => {
       return mockMobileLayout(context);
     },
-    stubSidebarTitleLayout: () => {
-      return stubSidebarTitleLayout(context);
-    },
     mockSidebarThreadStory: (
       firstPageThreads: SidebarThread[],
       extraThreads?: SidebarThread[],
@@ -494,6 +491,9 @@ export function createDataTransferStub(
     get dragImage() {
       return dragImage;
     },
+    get types() {
+      return [...values.keys()];
+    },
     effectAllowed: "none",
     dropEffect: "none",
     clearData: (format?: string) => {
@@ -569,73 +569,39 @@ export async function renderTailwindUtilities(
   );
 }
 
-const SIDEBAR_TITLE_BOX_WIDTH = 160;
-const SIDEBAR_TITLE_CHARACTER_WIDTH = 9;
-
-function restoreElementProperty(
-  name: string,
-  descriptor: PropertyDescriptor | undefined,
+/** Supplies explicit pixel geometry for title intent in layout-free happy-dom. */
+export function mockSidebarTitleLayout(
+  layouts: Readonly<
+    Record<string, { readonly textWidth: number; readonly clipWidth: number }>
+  >,
 ): void {
-  if (descriptor) {
-    Object.defineProperty(HTMLElement.prototype, name, descriptor);
-    return;
-  }
-  Reflect.deleteProperty(HTMLElement.prototype, name);
-}
-
-/** The clipping box a sidebar thread title is faded and scrolled inside. */
-function isSidebarTitleBox(element: HTMLElement): boolean {
-  return element.dataset.slot === "sidebar-thread-title";
-}
-
-/**
- * Gives the title box a fixed width and its text a width per character, so one
- * title overflows the box and the other fits inside it.
- */
-export function stubSidebarTitleLayout(context: TestContext): void {
-  const clientWidth = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "clientWidth",
-  );
-  const scrollWidth = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "scrollWidth",
-  );
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-    configurable: true,
-    get(this: HTMLElement): number {
-      return isSidebarTitleBox(this) ? SIDEBAR_TITLE_BOX_WIDTH : 0;
-    },
-  });
-  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
-    configurable: true,
-    get(this: HTMLElement): number {
-      if (!isSidebarTitleBox(this)) {
-        return 0;
-      }
-      return Math.max(
-        SIDEBAR_TITLE_BOX_WIDTH,
-        (this.textContent?.length ?? 0) * SIDEBAR_TITLE_CHARACTER_WIDTH,
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement): DOMRect {
+      const clip = this.closest<HTMLElement>(
+        '[data-slot="sidebar-thread-title"]',
       );
+      const layout = layouts[clip?.textContent ?? ""];
+      if (clip && layout) {
+        if (this === clip) {
+          return new DOMRect(0, 0, layout.clipWidth, 20);
+        }
+        if (this === clip.firstElementChild) {
+          return new DOMRect(0, 0, layout.textWidth, 20);
+        }
+      }
+      return original.call(this);
     },
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      restoreElementProperty("clientWidth", clientWidth);
-      restoreElementProperty("scrollWidth", scrollWidth);
-    },
-    { once: true },
   );
 }
 
-/** The clipping box a title is faded and scrolled inside. */
-export function titleFadeBox(title: string): HTMLElement {
-  const box = within(sidebar()).getByText(title).parentElement;
-  if (!box) {
-    throw new Error(`${title} title fade box not found`);
+/** The DOM-to-CSS reveal boundary inside the semantic thread link. */
+export function titleRevealClip(link: HTMLElement): HTMLElement {
+  const clip = link.querySelector<HTMLElement>("[data-title-reveal]");
+  if (!clip) {
+    throw new Error("Thread title reveal clip not found");
   }
-  return box;
+  return clip;
 }
 
 export function threadRowByTitle(

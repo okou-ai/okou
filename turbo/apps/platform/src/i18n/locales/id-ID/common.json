@@ -625,12 +625,15 @@
       "loadFailed": "Gagal memuat izin",
       "loadingPermissions": "Memuat izin",
       "onlyMe": "Hanya saya",
+      "onlyMeDescription": "Hanya Anda yang bisa membukanya",
       "onlyMeOption": "Hanya saya",
       "organization": "Organisasi",
+      "organizationDescription": "Rekan tim bisa melihat",
       "organizationOption": "Siapa pun di {{organization}}",
       "organizationOptionUnnamed": "Siapa pun di organisasi Anda",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
+      "publicDescription": "Tanpa perlu masuk",
       "publicOption": "Siapa pun yang memiliki tautan",
       "updateFailed": "Tidak dapat memperbarui akses"
     },
@@ -951,6 +954,27 @@
     },
     "homeLink": "Buka beranda {{brandName}}",
     "loading": "Memuat autentikasi",
+    "signup": {
+      "alreadyHaveAccount": "Sudah punya akun?",
+      "apple": "Apple",
+      "continue": "Lanjutkan",
+      "email": "Alamat email",
+      "emailPlaceholder": "Masukkan alamat email Anda",
+      "failed": "Permintaan gagal",
+      "google": "Google",
+      "hidePassword": "Sembunyikan kata sandi",
+      "legalAnd": "dan",
+      "legalPrefix": "Saya menyetujui",
+      "or": "atau",
+      "password": "Kata sandi",
+      "passwordPlaceholder": "Buat kata sandi",
+      "privacy": "Kebijakan Privasi",
+      "showPassword": "Tampilkan kata sandi",
+      "signIn": "Masuk",
+      "subtitle": "Selamat datang! Silakan isi detail untuk memulai.",
+      "terms": "Ketentuan Layanan",
+      "title": "Buat akun Anda"
+    },
     "theme": {
       "darkEnabled": "Tema gelap diaktifkan",
       "lightEnabled": "Tema terang diaktifkan"
@@ -1364,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "Masukkan URL",
+    "authorizationRequired": "Browser cloud belum diaktifkan untuk chat ini",
     "blankPage": {
       "description": "{{assistantName}} membuka halaman di sini saat bekerja. Masukkan URL di atas untuk menjelajah sendiri.",
       "title": "Belum ada yang dibuka"
@@ -1390,8 +1415,8 @@
       "takeOver": "Ambil alih",
       "takeOverMessage": "Saya mengambil alih browser. Jangan gunakan sampai saya menyerahkannya kembali."
     },
-    "reclaimHint_one": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
-    "reclaimHint_other": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
+    "reclaimHint_one": "Dipertahankan selama panel terbuka; dilepas setelah {{formattedCount}} menit tidak aktif.",
+    "reclaimHint_other": "Dipertahankan selama panel terbuka; dilepas setelah {{formattedCount}} menit tidak aktif.",
     "status": {
       "live": "Live",
       "starting": "Memulai",
@@ -1429,6 +1454,7 @@
     "paused": "Tampilan dijeda",
     "quality": "Kualitas gambar",
     "reconnect": "Hubungkan kembali",
+    "reconnecting": "Menghubungkan ulang…",
     "reload": "Muat ulang",
     "remoteInput": "Input browser jarak jauh",
     "resolution": "Resolusi",
@@ -1537,7 +1563,7 @@
           "unit": "per anggota"
         },
         "pendingState": "{{amount}} tertunda",
-        "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
+        "rewardsNote": "Hadiah tugas kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
         "slack": {
           "action": "Tambahkan",
           "description": "Tempat tim kamu sudah bekerja",
@@ -1608,6 +1634,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "Dikirim ke chat baru",
       "undoFeedback": "Undo",
       "useSuggestion": "Gunakan saran"
     },
@@ -1966,47 +1993,6 @@
       "useDefault": "Gunakan default"
     },
     "documentTitle": "Chat",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "Pembaruan sumber",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
       "loadMessages": "Gagal memuat pesan",
@@ -2099,78 +2085,6 @@
       "sent": "Berhasil diteruskan",
       "threads": "Chat",
       "title": "Teruskan ke"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Dokumen",
-        "image": "Gambar",
-        "presentation": "Presentation",
-        "visualization": "Grafik",
-        "website": "Situs web"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "Bantu saya menyiapkan ringkasan pagi tentang email yang perlu saya perhatikan; konfirmasikan kotak masuk dan waktu pengirimannya terlebih dahulu",
-            "second": "Bantu saya menyiapkan ringkasan mingguan tentang kompetitor; konfirmasikan perusahaan, sumber, dan jadwalnya terlebih dahulu",
-            "third": "Bantu saya menyiapkan ringkasan penjualan harian; konfirmasikan sumber data, metrik, dan waktu pengirimannya terlebih dahulu"
-          },
-          "label": "Ringkasan",
-          "placeholder": "Jelaskan isi ringkasan yang Anda inginkan dan seberapa sering ingin menerimanya…",
-          "title": "Ringkasan apa yang ingin Anda terima?"
-        },
-        "general": {
-          "examples": {
-            "first": "Cari agensi desain merek yang cocok untuk tim yang baru merintis",
-            "second": "Bandingkan alat manajemen pelanggan berdasarkan fitur dan harga",
-            "third": "Teliti tren terbaru dan perusahaan terkemuka dalam suatu industri"
-          },
-          "label": "Umum",
-          "placeholder": "Jelaskan pertanyaan Anda atau hal yang ingin Anda ketahui…",
-          "title": "Apa yang ingin Anda ketahui?"
-        },
-        "information": {
-          "examples": {
-            "first": "Cari riset terbaru tentang adopsi AI di usaha kecil, beserta sumber aslinya",
-            "second": "Kumpulkan contoh peluncuran produk yang sukses dari sumber publik dan jelaskan apa yang berhasil",
-            "third": "Cari data industri yang tepercaya untuk presentasi, lengkap dengan tanggal dan tautan sumber"
-          },
-          "label": "Informasi",
-          "placeholder": "Jelaskan topik, rentang waktu, atau tujuan penggunaan informasinya…",
-          "title": "Apa yang ingin Anda teliti?"
-        },
-        "monitor": {
-          "examples": {
-            "first": "Bantu saya mengikuti perubahan harga kompetitor; konfirmasikan perusahaan, sumber, dan waktu pemberitahuannya terlebih dahulu",
-            "second": "Bantu saya memantau balasan atas email yang dikirim ke klien; konfirmasikan email dan cara pemberitahuannya terlebih dahulu",
-            "third": "Bantu saya mengikuti perkembangan penting dalam suatu industri; sepakati sumber, frekuensi, dan hal yang penting terlebih dahulu"
-          },
-          "label": "Pantau",
-          "placeholder": "Jelaskan apa yang ingin Anda pantau dan perubahan yang penting…",
-          "title": "Perubahan apa yang ingin Anda ikuti?"
-        },
-        "people": {
-          "examples": {
-            "first": "Cari 5 pembicara untuk acara pemasaran AI, beserta alasan kecocokan dan sumber publiknya",
-            "second": "Cari kreator yang menjangkau pemilik bisnis dan jelaskan kecocokan audiens mereka",
-            "third": "Cari calon pelanggan untuk layanan konsultasi saya, beserta informasi latar belakang yang relevan dari sumber publik"
-          },
-          "label": "Orang",
-          "placeholder": "Jelaskan jabatan, bidang, perusahaan, atau lokasi…",
-          "title": "Siapa yang Anda cari?"
-        }
-      },
-      "groups": {
-        "automate": "Otomatiskan",
-        "create": "Buat",
-        "search": "Cari"
-      },
-      "label": "Jelajahi kemampuan Okou",
-      "placeholder": "Jelaskan apa yang ingin Anda kerjakan…",
-      "sources": {
-        "trigger": "Alat"
-      },
-      "workflows": "Alur kerja"
     },
     "mail": {
       "bcc": "bcc",
@@ -2688,7 +2602,6 @@
       "tasks": {
         "document": "Dokumen",
         "image": "Gambar",
-        "jobs": "Tasks",
         "presentation": "Slide",
         "visualization": "Visualisasi",
         "website": "Situs web",
@@ -3168,6 +3081,17 @@
     "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",
     "unused": "Tidak digunakan oleh host Anda",
     "usedBy_other": "Digunakan oleh {{count}} host Anda:"
+  },
+  "connectorChatAccess": {
+    "accountAccess": "Akses {{account}}",
+    "enableByDefault": "Aktifkan {{account}} secara default",
+    "enabledAccounts": "{{value}} aktif",
+    "manageAccounts": "Kelola akun",
+    "noAccount": "Tidak ada akun dipilih",
+    "noEnabledAccount": "Tidak ada akun aktif untuk chat ini",
+    "permissions": "Izin",
+    "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
+    "settingsDescription": "Pilih akun yang aktif secara default dan akun default untuk chat baru."
   },
   "connectors": {
     "access": {
@@ -4072,20 +3996,24 @@
     "actionFailed": "Tidak dapat memperbarui otorisasi.",
     "allow": "Izinkan selama 1 jam",
     "approved": "Diizinkan",
-    "deadline": "Berakhir {{date}}",
+    "blocked": {
+      "chatBusy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
+      "computerChanged": "Pilih kembali {{computer}} sebelum menyetujui.",
+      "runActive": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
+      "runUnavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini."
+    },
     "denied": "Permintaan ditolak",
     "deny": "Tolak",
     "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
     "expired": "Otorisasi kedaluwarsa",
     "loading": "Memuat otorisasi…",
-    "pending": "Siap disetujui",
+    "reasonTitle": "Alasan akses",
+    "requestExpired": "Permintaan kedaluwarsa",
     "revoke": "Cabut akses",
     "revoked": "Akses Shell dicabut",
-    "scope": "Hanya chat dan komputer ini",
-    "terminalNotice": "Terminal yang ada tetap terbuka saat akses berakhir.",
-    "title": "Akses Desktop Shell",
+    "title": "Akses Shell",
     "unavailable": "Otorisasi tidak tersedia",
-    "waiting": "Persetujuan tidak tersedia saat Run aktif atau komputer yang dipilih telah berubah."
+    "viewReason": "Lihat alasan lengkap"
   },
   "documentTemplates": {
     "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
@@ -4157,6 +4085,28 @@
     "emptyDescription": "Saran baru akan muncul di sini.",
     "emptyTitle": "Semua sudah terkini",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "checkingCode": "Memeriksa kode undangan…",
+    "codeApplied": "Kode undangan diterapkan",
+    "codeCheckFailed": "Kode tidak dapat diperiksa. Coba lagi atau kosongkan untuk melanjutkan.",
+    "codeLabel": "Kode undangan Anda",
+    "codeUnavailable": "Kode undangan ini tidak tersedia. Periksa atau kosongkan untuk melanjutkan.",
+    "copied": "Disalin",
+    "copyCode": "Salin kode",
+    "copyFailed": "Gagal menyalin. Coba lagi.",
+    "copyLink": "Salin tautan",
+    "description": "Dapatkan credits senilai $20 saat teman mendaftar dengan kode undangan Anda, membeli usage pack, dan meningkatkan ke Pro atau lebih tinggi.",
+    "earned": "Kredit diperoleh",
+    "invalidCode": "Gunakan 6 huruf atau angka, atau kosongkan untuk melanjutkan.",
+    "loadFailed": "Kode undangan tidak dapat dimuat. Coba lagi.",
+    "loading": "Mengambil kode undangan Anda…",
+    "registered": "Teman terdaftar",
+    "retry": "Coba lagi",
+    "signupLabel": "Kode undangan (opsional)",
+    "signupPlaceholder": "Masukkan kode undangan",
+    "terms": "Hanya untuk pengguna baru. Satu hadiah per teman. Kredit masuk ke saldo pribadi Anda di ruang kerja ini dan kedaluwarsa satu bulan setelah diberikan.",
+    "title": "Undang teman Anda"
   },
   "global": {
     "errors": {
@@ -4981,8 +4931,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -4993,11 +4941,11 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
+    "moveTo": "Pindahkan ke {{name}}",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",
@@ -5011,6 +4959,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {
@@ -5403,6 +5352,8 @@
       "subscriptions": {
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
+        "label": "Penggunaan langganan",
+        "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
         "usageRemaining": "Sisa {{provider}} {{window}}",
@@ -5463,7 +5414,7 @@
           "description": "Personalisasi tampilan dan perilaku aplikasi.",
           "title": "Preferensi"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Pilih cara Okou bekerja secara proaktif.",
           "title": "Proactive"
         },
@@ -5847,15 +5798,6 @@
         "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
         "title": "Pembelajaran"
-      },
-      "proactivePlanningAction": {
-        "description": "Rencanakan dan kerjakan tugas yang Anda delegasikan, serta beri tahu saat masukan Anda diperlukan.",
-        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
-        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
-        "preparing": "Menyiapkan alur kerja ini.",
-        "title": "Perencanaan & tindakan"
       },
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",

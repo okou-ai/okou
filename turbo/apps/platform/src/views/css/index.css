@@ -220,10 +220,12 @@
      Coral 500 is written as its exact value rather than through `--interrupt`,
      so the stop action's colour can change without recolouring usage. The
      consumer sizes it to the whole track, so a fuller bar shows the warmer end. */
+  --color-usage-meter-start: hsl(var(--primary-300));
+  --color-usage-meter-end: hsl(13.9 100% 59.4%);
   --background-image-usage-meter-fill: linear-gradient(
     in oklch to right,
-    hsl(var(--primary-300)),
-    hsl(13.9 100% 59.4%)
+    var(--color-usage-meter-start),
+    var(--color-usage-meter-end)
   );
   --background-image-usage-meter-recharge: repeating-linear-gradient(
     -45deg,
@@ -331,6 +333,12 @@
     hsl(var(--muted-foreground) / 0.8) 65%,
     hsl(var(--muted-foreground) / 0.8) 100%
   );
+
+  /* A paused endpoint selector, not motion. Inline resolves the delay against
+     each pager's boundary input rather than :root. Keep it active under
+     reduced motion: hidden controls must stay out of pointer and Tab order. */
+  --animate-rail-pager-visibility: okou-rail-pager-visibility 1s steps(1, end)
+    calc(-1s * var(--rail-can-travel)) 1 both paused;
 }
 
 /* Safe area insets as CSS custom properties — more reliable than direct env() in inline
@@ -711,6 +719,15 @@ body {
   }
 }
 
+@keyframes okou-rail-pager-visibility {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+
 @keyframes okou-chat-skeleton-reveal {
   to {
     opacity: 1;
@@ -936,16 +953,27 @@ body {
   --okou-composer-focus-veil: none;
 }
 
-/* The travel a title is scrolled by while its control is hovered or
-   focused. `HoverScrollTitle` composes the mask and the travel as Tailwind
-   utilities and reads this property from both; it is registered here because a
-   registered property is what lets a transition interpolate a length, and
-   because `inherits: true` is what carries the animated value down to the text
-   span inside the clipping box. Registration is an at-rule, not a class
-   selector, so it stays with the other document-level declarations. */
-@property --okou-nav-title-shift {
-  syntax: "<length>";
+/* Reveal progress is inherited by the max-content text. Its Tailwind mask
+   and transform resolve the live width difference against the clipping
+   container, without publishing measured layout back into CSS. */
+@property --okou-nav-title-progress {
+  syntax: "<number>";
   inherits: true;
+  initial-value: 0;
+}
+
+/* Resolve container units to lengths before atan2 converts them into scale
+   ratios. The canvas scales visually while its iframe keeps a 1920x1080 layout
+   viewport; typed division of lengths is not supported by all target browsers. */
+@property --okou-presentation-fit-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --okou-presentation-fit-height {
+  syntax: "<length>";
+  inherits: false;
   initial-value: 0px;
 }
 

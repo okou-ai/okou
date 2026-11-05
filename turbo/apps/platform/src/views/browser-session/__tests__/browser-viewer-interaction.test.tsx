@@ -361,7 +361,9 @@ test("Selecting another tab clears a delayed creation's blank presentation", asy
     await created.received;
   });
   await screen.findByText("Nothing open yet");
-  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await userEvent.click(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  );
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
@@ -382,6 +384,41 @@ test("Selecting another tab clears a delayed creation's blank presentation", asy
   ).toHaveAttribute("aria-selected", "true");
   expect(screen.queryByText("Nothing open yet")).toBeNull();
   expect(screen.queryByText("Browser view unavailable")).toBeNull();
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveFocus();
+});
+
+test("A pending creation preserves a later toolbar-control focus choice", async () => {
+  const browser = await setupViewer(0);
+  const create = screen.getByLabelText("New tab", { selector: "button" });
+  const created = browser.holdNextNative("createTab");
+  const image = browser.holdTargetFrames("created-1");
+  await userEvent.click(create);
+  await created.received;
+  const settings = screen.getByLabelText("Browser settings");
+  await userEvent.click(settings);
+  await screen.findByRole("menu");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(settings).toHaveFocus();
+  });
+  await act(async () => {
+    await created.release();
+  });
+  await image.received;
+  expect(screen.getByLabelText("Address")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toBeEnabled();
+    expect(create).toBeEnabled();
+  });
+  expect(settings).toHaveFocus();
+  expect(
+    screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test.each(["created", "existing"] as const)(
@@ -524,7 +561,9 @@ test("A created tab with a failed first image retries the image without creating
   await waitFor(() => {
     expect(retry).toBeEnabled();
   });
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "The browser frame could not be decoded.",
+  );
   expect(newTab).toBeDisabled();
   click(retry);
   await waitFor(() => {
@@ -742,11 +781,19 @@ test("An empty assigned window can create a native tab without a source document
   browser.targets.splice(0, 1);
   await setupPage({ context, path: `/browsers/${threadId}` });
   await screen.findByText("No tabs open");
-  await userEvent.click(
-    screen.getByLabelText("New tab", { selector: "button" }),
-  );
+  const create = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "New tab";
+  });
+  if (!create) {
+    throw new Error("Missing empty-state New tab control");
+  }
+  await waitFor(() => {
+    expect(create).toBeEnabled();
+  });
+  await userEvent.click(create);
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveFocus();
   });
   expect(screen.getByLabelText("Address")).toHaveValue("");
   expect(
@@ -2042,6 +2089,90 @@ test("Closing a tab preserves address focus chosen while the close is pending", 
   ).toStrictEqual(["Example"]);
 });
 
+test.each(["latest-close", "address-choice"] as const)(
+  "An older close failure preserves the %s focus while its selected trigger is disabled",
+  async (choice) => {
+    const browser = await setupViewer();
+    browser.failNext("Target.closeTarget", "The first close was refused");
+    const older = browser.holdNext("Target.closeTarget");
+    await userEvent.click(screen.getByLabelText("Close Example"));
+    await older.received;
+    const latest = browser.holdNext("Target.closeTarget");
+    await userEvent.click(screen.getByLabelText("Close Other"));
+    await latest.received;
+    await act(async () => {
+      await latest.release();
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByLabelText("Other", { selector: '[role="tab"]' }),
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-disabled", "true");
+    if (choice === "address-choice") {
+      await fill(screen.getByLabelText("Address"), "chosen.example/draft");
+    }
+    await act(async () => {
+      await older.release();
+    });
+    await screen.findByRole("alert");
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    const destination =
+      choice === "address-choice"
+        ? screen.getByLabelText("Address")
+        : screen.getByLabelText("Example", { selector: '[role="tab"]' });
+    await waitFor(() => {
+      expect(destination).toHaveFocus();
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      choice === "address-choice"
+        ? "chosen.example/draft"
+        : "https://example.com",
+    );
+  },
+);
+
+test("A removed keyboard-focus origin recovers once without reclaiming a later address draft", async () => {
+  const browser = await setupViewer();
+  await userEvent.click(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  );
+  await userEvent.keyboard("{ArrowRight}");
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveFocus();
+  expect(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  act(() => {
+    browser.event("Target.targetDestroyed", { targetId: "other-page" });
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+    ).toHaveFocus();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "chosen.example/draft");
+  const target = browser.targets[0]!;
+  act(() => {
+    target.title = "Updated Example";
+    browser.event("Target.targetInfoChanged", {
+      targetInfo: { ...target, type: "page" },
+    });
+    browser.nativeEvent("tab-updated", target);
+  });
+  await screen.findByLabelText("Updated Example", { selector: '[role="tab"]' });
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("chosen.example/draft");
+});
+
 test("A close receipt returns focus before the successor has a live image", async () => {
   const browser = await setupViewer();
   const image = browser.holdFrames("other-page-session");
@@ -3195,7 +3326,7 @@ test("Losing the last scoped target keeps foreign tabs excluded and permits a na
 });
 
 test.each(["present target", "failed inventory", "unsupported membership"])(
-  "A selected membership failure with %s retains the connection-wide failure boundary",
+  "A selected membership failure with %s revokes input until fresh proof",
   async (failure) => {
     const browser = await setupViewer(0);
     const membership = browser.holdNextMembership("example-page");
@@ -3216,6 +3347,26 @@ test.each(["present target", "failed inventory", "unsupported membership"])(
     expect(
       screen.getByLabelText("New tab", { selector: "button" }),
     ).toBeDisabled();
+    const reconnect = queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.trim() === "Reconnect";
+    });
+    expect(reconnect).toBeDefined();
+    click(reconnect!);
+    if (failure === "failed inventory") {
+      await screen.findByText("No tabs open");
+    }
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("New tab", { selector: "button" }),
+      ).toBeEnabled();
+      expect(screen.getByLabelText("Remote browser input")).toHaveProperty(
+        "disabled",
+        failure === "failed inventory",
+      );
+    });
+    expect(browser.connections()).toBe(
+      failure === "unsupported membership" ? 2 : 1,
+    );
   },
 );
 
@@ -3382,7 +3533,7 @@ test("The overflow menu keeps hidden tabs reachable through shared controls", as
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
-      return this.getAttribute("role") === "tablist"
+      return Object.hasOwn(this.dataset, "browserTabBudget")
         ? new DOMRect(0, 0, 70, 36)
         : original.call(this);
     },
@@ -3403,6 +3554,51 @@ test("The overflow menu keeps hidden tabs reachable through shared controls", as
     );
   });
   expect(screen.getByLabelText("All tabs")).toHaveFocus();
+});
+
+test("Widening restores a removed focused picker only to the committed selected tab", async () => {
+  let budget = 70;
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return Object.hasOwn(this.dataset, "browserTabBudget")
+        ? new DOMRect(0, 0, budget, 36)
+        : original.call(this);
+    },
+  );
+  await setupViewer();
+  const picker = screen.getByLabelText("All tabs");
+  await userEvent.click(picker);
+  await screen.findByRole("menu");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(picker).toHaveFocus();
+  });
+  act(() => {
+    budget = 800;
+    window.dispatchEvent(new Event("resize"));
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+    ).toHaveFocus();
+  });
+  expect(screen.queryByLabelText("All tabs")).not.toBeInTheDocument();
+
+  const address = screen.getByLabelText("Address");
+  await fill(address, "chosen.example/draft");
+  act(() => {
+    budget = 70;
+    window.dispatchEvent(new Event("resize"));
+  });
+  await screen.findByLabelText("All tabs");
+  act(() => {
+    budget = 800;
+    window.dispatchEvent(new Event("resize"));
+  });
+  await screen.findByLabelText("Example", { selector: '[role="tab"]' });
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("chosen.example/draft");
 });
 
 test("Capture controls apply the selected format to the remote browser", async () => {

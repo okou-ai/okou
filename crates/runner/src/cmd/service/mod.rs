@@ -34,8 +34,9 @@ use drain_override_cleanup::reconcile_drain_restart_override_removal;
 use gate::{ActiveJobsGateOps, check_active_jobs_gate};
 use reload::{SystemdReloadPolicy, SystemdReloadRequirement, coordinate_systemd_reload};
 use runner_host::service::{
-    BoundedSystemctlQuery, all_units_pattern, is_unit_active_bounded_query, journalctl_logs_status,
-    read_unit_config_path_bounded, run_systemctl,
+    BoundedSystemctlQuery, all_units_pattern, cleanup_unit_active_state,
+    is_unit_active_bounded_query, journalctl_logs_status, read_unit_config_path_bounded,
+    run_systemctl,
 };
 use unit_file::{
     RUNNER_SERVICE_CONTROL_SUBGROUP_DIRECTIVE, RUNNER_SERVICE_CPU_DELEGATION_DIRECTIVE,
@@ -362,7 +363,7 @@ async fn start(args: ServiceRunArgs) -> RunnerResult<()> {
 /// Stop + disable + remove the unit file for the given service unit.
 ///
 /// Best-effort for already-stopped or missing services, but refuses to remove
-/// unit files when `systemctl stop` fails and the service still appears active.
+/// unit files when `systemctl stop` fails and shutdown is incomplete or unknown.
 ///
 /// Callers that can race with install/uninstall/GC must hold the service lock.
 pub(crate) async fn uninstall_service_unit(unit: &RunnerServiceUnit) -> RunnerResult<()> {
@@ -373,17 +374,18 @@ pub(crate) async fn uninstall_service_unit(unit: &RunnerServiceUnit) -> RunnerRe
     }
     match stop_result {
         Ok(()) => {}
-        Err(_) => match is_unit_active(unit).await {
-            Ok(false) => {}
-            Ok(true) => {
+        Err(stop_error) => match cleanup_unit_active_state(unit).await {
+            Ok(state) if !state.is_active_like() => {}
+            Ok(state) => {
                 return Err(RunnerError::Internal(format!(
-                    "failed to stop active service {}; refusing to remove unit files",
-                    unit.unit_name()
+                    "failed to stop service {}: {stop_error}; service remains {}; refusing to remove unit files",
+                    unit.unit_name(),
+                    state.active_state()
                 )));
             }
             Err(e) => {
                 return Err(RunnerError::Internal(format!(
-                    "failed to stop service {} and could not verify it is inactive; refusing to remove unit files: {e}",
+                    "failed to stop service {}: {stop_error}; could not verify it is inactive; refusing to remove unit files: {e}",
                     unit.unit_name()
                 )));
             }

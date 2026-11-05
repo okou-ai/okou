@@ -1,14 +1,19 @@
 import { createHmac, randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { webhookNotionContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
+import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
+import { nowDate } from "../../../lib/time";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {
   createWorkflowsBddApi,
@@ -16,6 +21,8 @@ import {
 } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { runConnectorAccountRoutes } from "../run-connector-accounts";
 import { webhooksNotionRoutes } from "../webhooks-notion";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
@@ -1132,5 +1139,317 @@ describe("POST /api/webhooks/notion", () => {
     expect(selectedCreation.body.eventConfig).toMatchObject({
       connectorId: secondAccount.id,
     });
+  });
+
+  it("follows an allowance replacement before the Chat's first explicit account selection", async () => {
+    const {
+      actor,
+      threadId,
+      firstAccount,
+      secondAccount,
+      expectAutomationConnector,
+    } = await setupNotionAccountLifecycle();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    const changed = await accept(
+      setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      ).setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: firstAccount.id },
+        body: {
+          target: { kind: "builtin", connectorSlug: "notion" },
+          enabled: false,
+        },
+      }),
+      [200],
+    );
+    expect(changed.body.currentConnectionId).toBe(secondAccount.id);
+    await expectAutomationConnector(secondAccount.id);
+  });
+
+  it.each(["selected", "default"] as const)(
+    "keeps an allowed Notion listener after deleting the %s account",
+    async (deletedAccount) => {
+      const {
+        actor,
+        agentId,
+        threadId,
+        firstAccount,
+        secondAccount,
+        expectAutomationConnector,
+      } = await setupNotionAccountLifecycle();
+      await connectorsApi.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: true,
+      });
+      const thirdOwner = randomUUID();
+      mockNotionConnectorOAuth({
+        accessToken: "notion-third-access-token",
+        ownerId: thirdOwner,
+        ownerName: "Third Notion User",
+      });
+      const oauth = await connectorsApi.startOauth(
+        actor,
+        "notion",
+        "oauth",
+        agentId,
+        { intent: "add", displayName: "Third Notion" },
+      );
+      const state = new URL(oauth.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected third Notion account OAuth state");
+      }
+      await connectorsApi.completeOauthCallback("notion", {
+        code: "notion-third-code",
+        state,
+      });
+      const thirdAccount = (
+        await connectorsApi.listBuiltinConnectorAccounts(actor, "notion")
+      ).find((account) => {
+        return account.externalId === thirdOwner;
+      });
+      if (!thirdAccount) {
+        throw new Error("Expected the third Notion account");
+      }
+      const target = { kind: "builtin", connectorSlug: "notion" } as const;
+      const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      );
+      const denied =
+        deletedAccount === "selected" ? firstAccount : secondAccount;
+      const selected =
+        deletedAccount === "selected" ? thirdAccount : firstAccount;
+      const expected =
+        deletedAccount === "selected" ? secondAccount : thirdAccount;
+      await accept(
+        access.setThreadOverride({
+          headers: authHeaders(),
+          params: { threadId, connectionId: denied.id },
+          body: { target, enabled: false },
+        }),
+        [200],
+      );
+      await accept(
+        access.setThreadCurrent({
+          headers: authHeaders(),
+          params: { threadId },
+          body: { target, connectionId: selected.id },
+        }),
+        [200],
+      );
+      await expectAutomationConnector(selected.id);
+      await connectorsApi.deleteBuiltinConnectorAccount(
+        actor,
+        "notion",
+        selected.id,
+      );
+      const current = await accept(
+        access.getThread({
+          headers: authHeaders(),
+          params: { threadId },
+          query: target,
+        }),
+        [200],
+      );
+      expect(current.body.currentConnectionId).toBe(expected.id);
+      await expectAutomationConnector(expected.id);
+    },
+  );
+
+  it("does not reactivate a denied Notion default when deletion leaves no allowed account", async () => {
+    const webhook = (
+      await setupApp({
+        context,
+        routes: webhooksNotionRoutes,
+        isolatePg: true,
+      })
+    )(webhookNotionContract);
+    await verifyNotionWebhook(webhook);
+    const {
+      actor,
+      threadId,
+      automationId,
+      entities,
+      firstAccount,
+      secondAccount,
+    } = await setupNotionAccountLifecycle();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    const target = { kind: "builtin", connectorSlug: "notion" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const selected = await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: firstAccount.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    expect(selected.body.currentConnectionId).toBe(secondAccount.id);
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      actor,
+      "notion",
+      secondAccount.id,
+    );
+    const current = await accept(
+      access.getThread({
+        headers: authHeaders(),
+        params: { threadId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      currentConnectionId: null,
+      available: false,
+    });
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [400],
+    );
+    const event = notionPageEvent({
+      entities,
+      type: "page.created",
+      timestamp: nowDate().toISOString(),
+    });
+    await expect(
+      postNotionWebhook(
+        { rawBody: event.rawBody, signature: notionSignature(event.rawBody) },
+        webhook,
+      ),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { kind: "event", pending: 0 },
+    });
+  });
+
+  it("synchronizes Notion listeners after Chat, Run, approval and account allowance changes", async () => {
+    const {
+      actor,
+      agentId,
+      threadId,
+      runnerGroup,
+      firstAccount,
+      secondAccount,
+      expectAutomationConnector,
+    } = await setupNotionAccountLifecycle();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    const target = { kind: "builtin", connectorSlug: "notion" } as const;
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const runAccounts = setupApp({
+      context,
+      routes: runConnectorAccountRoutes,
+    })(runConnectorAccountsContract);
+    const switched = await accept(
+      access.setThreadCurrent({
+        headers: authHeaders(),
+        params: { threadId },
+        body: { target, connectionId: secondAccount.id },
+      }),
+      [200],
+    );
+    expect(switched.body.currentConnectionId).toBe(secondAccount.id);
+    await expectAutomationConnector(secondAccount.id);
+
+    const run = await runsApi.createThreadRun(actor, {
+      agentId,
+      threadId,
+      model: "claude-fable-5-1",
+      prompt: "Switch this automation Chat's Notion account",
+    });
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.runId);
+    onTestFinished(async () => {
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 0,
+          completion: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: `notion-workflow-cli-${run.runId}`,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+    });
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected an Okou token from the Runner claim");
+    }
+    await accept(
+      runAccounts.select({
+        headers: { authorization: `Bearer ${token}` },
+        body: { target, connectionId: firstAccount.id },
+      }),
+      [200],
+    );
+    await expectAutomationConnector(firstAccount.id);
+
+    await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: secondAccount.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    await accept(
+      access.setThreadCurrent({
+        headers: authHeaders(),
+        params: { threadId },
+        body: { target, connectionId: secondAccount.id },
+      }),
+      [400],
+    );
+    await expectAutomationConnector(firstAccount.id);
+    await accept(
+      runAccounts.approve({
+        headers: authHeaders(),
+        params: { threadId },
+        body: { target, connectionId: secondAccount.id },
+      }),
+      [200],
+    );
+    await expectAutomationConnector(secondAccount.id);
+
+    await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: secondAccount.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    await expectAutomationConnector(firstAccount.id);
+    await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: secondAccount.id },
+        body: { target, enabled: null },
+      }),
+      [200],
+    );
+    await accept(
+      access.updateAccountDefault({
+        headers: authHeaders(),
+        params: { connectionId: firstAccount.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    await expectAutomationConnector(secondAccount.id);
   });
 });

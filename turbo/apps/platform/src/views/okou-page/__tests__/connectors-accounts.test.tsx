@@ -5,6 +5,8 @@ import {
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -32,6 +34,212 @@ import {
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
+
+async function openRepairableDefaultAccountManager({
+  defaultAccount,
+  enabledAccounts,
+}: {
+  readonly defaultAccount: "Work" | "Personal";
+  readonly enabledAccounts: readonly ("Work" | "Personal")[];
+}) {
+  const [connector] = mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "work" },
+  ]);
+  if (!connector) {
+    throw new Error("Expected GitHub connector");
+  }
+  let accounts = [
+    builtinAccount({
+      id: connector.id,
+      displayName: "Work",
+      isDefault: defaultAccount === "Work",
+      externalUsername: "work",
+    }),
+    builtinAccount({
+      id: crypto.randomUUID(),
+      displayName: "Personal",
+      isDefault: defaultAccount === "Personal",
+      externalUsername: "personal",
+    }),
+  ];
+  const enabled = new Set(
+    accounts
+      .filter((account) => {
+        return enabledAccounts.some((name) => {
+          return account.displayName === name;
+        });
+      })
+      .map((account) => {
+        return account.id;
+      }),
+  );
+  const readDefault = (connectionId: string) => {
+    const account = accounts.find((candidate) => {
+      return candidate.id === connectionId;
+    });
+    if (!account) {
+      throw new Error("Expected saved account");
+    }
+    return {
+      connectionId: account.id,
+      displayName: account.displayName,
+      defaultEnabled: enabled.has(account.id),
+      isDefault: account.isDefault,
+    };
+  };
+  const repairDefault = () => {
+    const current =
+      accounts.find((account) => {
+        return account.isDefault && enabled.has(account.id);
+      }) ??
+      accounts.find((account) => {
+        return enabled.has(account.id);
+      });
+    accounts = accounts.map((account) => {
+      return { ...account, isDefault: account.id === current?.id };
+    });
+  };
+  mockSavedConnectorAccounts(context, () => {
+    return accounts;
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.accountDefaults,
+    ({ respond }) => {
+      return respond(
+        200,
+        accounts.map((account) => {
+          return readDefault(account.id);
+        }),
+      );
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.updateAccountDefault,
+    ({ params, body, respond }) => {
+      if (body.enabled) {
+        enabled.add(params.connectionId);
+      } else {
+        enabled.delete(params.connectionId);
+      }
+      repairDefault();
+      return respond(200, readDefault(params.connectionId));
+    },
+  );
+  context.mocks.api(
+    connectorAccountsContract.deletionImpact,
+    ({ params, respond }) => {
+      return respond(200, {
+        connectionId: params.connectionId,
+        explicitSelectionCount: 0,
+        hasSibling: accounts.length > 1,
+      });
+    },
+  );
+  context.mocks.api(connectorAccountsContract.delete, ({ params, respond }) => {
+    accounts = accounts.filter((account) => {
+      return account.id !== params.connectionId;
+    });
+    repairDefault();
+    return respond(200, {
+      deletedConnectionId: params.connectionId,
+      resolvedSelectionCount: 0,
+      promotedDefaultConnectionId:
+        accounts.find((account) => {
+          return account.isDefault;
+        })?.id ?? null,
+    });
+  });
+  await setupPage({
+    context,
+    path: "/connectors",
+    locale: "en-US",
+    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+  });
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Manage GitHub accounts");
+    }),
+  );
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  const toggle = (name: string) => {
+    return waitFor(() => {
+      const control = within(manager).getByRole("switch", {
+        name: `Enable ${name} by default`,
+      });
+      expect(control).toBeEnabled();
+      return control;
+    });
+  };
+  return { manager, toggle };
+}
+
+test("Disabling the default promotes an enabled sibling", async () => {
+  const { manager, toggle } = await openRepairableDefaultAccountManager({
+    defaultAccount: "Work",
+    enabledAccounts: ["Work", "Personal"],
+  });
+  await waitFor(() => {
+    expect(accountRadio(manager, "Work")).toBeChecked();
+  });
+  click(await toggle("Work"));
+  await waitFor(() => {
+    expect(accountRadio(manager, "Personal")).toBeChecked();
+  });
+});
+
+test("Enabling the first account after disabling the last restores a default", async () => {
+  const { manager, toggle } = await openRepairableDefaultAccountManager({
+    defaultAccount: "Personal",
+    enabledAccounts: ["Personal"],
+  });
+  await waitFor(() => {
+    expect(accountRadio(manager, "Personal")).toBeChecked();
+  });
+  click(await toggle("Personal"));
+  await waitFor(() => {
+    expect(accountRadio(manager, "Personal")).not.toBeChecked();
+    expect(accountRadio(manager, "Work")).not.toBeChecked();
+  });
+  click(await toggle("Work"));
+  await waitFor(() => {
+    expect(accountRadio(manager, "Work")).toBeChecked();
+  });
+});
+
+test("Deleting the default promotes a sibling enabled in the open manager", async () => {
+  const { manager, toggle } = await openRepairableDefaultAccountManager({
+    defaultAccount: "Work",
+    enabledAccounts: ["Work"],
+  });
+  await waitFor(() => {
+    expect(accountRadio(manager, "Work")).toBeChecked();
+  });
+  click(await toggle("Personal"));
+  await waitFor(() => {
+    expect(
+      within(manager).getByRole("switch", {
+        name: "Enable Personal by default",
+      }),
+    ).toBeChecked();
+  });
+  const workRow = within(manager).getByRole("group", { name: "Work" });
+  click(getConnectorAction("button", "Account actions", workRow));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("menuitem", "Disconnect");
+    }),
+  );
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Disconnect Work?",
+  });
+  click(getConnectorAction("button", "Disconnect account", confirmation));
+  await waitFor(() => {
+    expect(accountRadio(manager, "Personal")).toBeChecked();
+  });
+  await expect(toggle("Personal")).resolves.toBeChecked();
+});
 
 function createAuthWindow(): Window {
   const authWindow = context.mocks.browser.authWindow();

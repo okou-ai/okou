@@ -1,10 +1,13 @@
-import { projectAwareChatThreadEventSchema as chatThreadEventSchema } from "@okouai/api-contracts/contracts/project-readers";
+import { chatThreadEventSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadSnapshotProjectionSchema,
+  type ChatThreadEvent,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
   replayChatThreadEvents,
   type EventDrivenChatThread,
@@ -13,12 +16,11 @@ import {
 import {
   getChatThreadSnapshot,
   listChatThreadEvents,
-  type ChatThreadEvent,
   type ChatThreadSnapshot,
 } from "../../lib/api/domains/chat";
 import { decodeSandboxTokenPayload, getApiUrl } from "../../lib/api/config";
 
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 const MAX_EVENT_PAGES_PER_SYNC = 1000;
 
 interface ChatThreadCache {

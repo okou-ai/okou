@@ -5,7 +5,8 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { user$ } from "../../signals/auth.ts";
-import { Pin } from "lucide-react";
+import { FolderOpen, Pin } from "lucide-react";
+import type { Project } from "@okouai/api-contracts/validators/projects";
 import {
   Button,
   Tooltip,
@@ -376,7 +377,6 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                   })}
                   className={cn(
                     AGENT_AVATAR_FRAME,
-                    "cursor-pointer",
                     textureUrl || costume
                       ? // The frame's background is behind the texture and a
                         // textured frame has no border to recolour, so hover
@@ -454,7 +454,33 @@ function GreetingAvatarHat({ url }: { url: string }) {
   );
 }
 
-function AgentComposerPage() {
+function ProjectComposerHeading({ project }: { project: Project }) {
+  return (
+    <div
+      data-testid="project-page-heading"
+      className="flex max-w-full items-center gap-3"
+    >
+      <FolderOpen
+        aria-hidden="true"
+        className="size-7 shrink-0 text-muted-foreground"
+      />
+      <h2 className="min-w-0 truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        {project.name}
+      </h2>
+    </div>
+  );
+}
+
+/**
+ * The new-chat page of an Agent, or of a Project when one is given: the
+ * Project's heading takes the greeting's place above the same composer. A
+ * Project that is still loading reserves the heading row.
+ */
+export function AgentComposerPage({
+  project,
+}: {
+  project?: Project | null;
+} = {}) {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
   const user = useLastResolved(user$);
@@ -462,7 +488,6 @@ function AgentComposerPage() {
     user === undefined ? undefined : (user.firstName ?? null);
 
   const composerSignals = useGet(agentChatComposerSignals$);
-  const homeDiscoveryEnabled = useGet(composerSignals.homeDiscovery.enabled$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
   const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
@@ -522,10 +547,7 @@ function AgentComposerPage() {
             as a form to fill in. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className={cn(
-            "mx-auto w-full max-w-3xl flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0",
-            homeDiscoveryEnabled && "gap-0",
-          )}
+          className="mx-auto w-full max-w-3xl flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0"
         >
           <div aria-hidden className="hidden sm:block sm:min-h-8 sm:flex-1" />
 
@@ -535,18 +557,14 @@ function AgentComposerPage() {
               it and the line lands in the middle of what is left. The row is at
               its final width on the first frame, so it is centered once and
               never moves again. */}
-          <div
-            className={cn(
-              "flex min-h-14 w-full justify-center my-auto sm:mt-0 sm:mb-10",
-              homeDiscoveryEnabled &&
-                "mt-0 mb-7 justify-start sm:justify-center",
-            )}
-          >
+          <div className="flex min-h-14 w-full justify-center my-auto sm:mt-0 sm:mb-10">
             {/* The async agent identity and user profile leave the first
                 renders incomplete. Reserve the finished row's height, but do
                 not let the avatar run a throwaway entrance before the real
                 greeting can mount under its final identity. */}
-            {currentChatAgentId === undefined || tagline === "" ? null : (
+            {project !== undefined ? (
+              project && <ProjectComposerHeading project={project} />
+            ) : currentChatAgentId === undefined || tagline === "" ? null : (
               <div
                 key={greetingIdentity}
                 data-slot="chat-greeting"
@@ -589,10 +607,7 @@ function AgentComposerPage() {
               keyboard. */}
           <div
             data-chat-composer
-            className={cn(
-              "order-3 pb-safe-or-2 sm:order-none sm:pb-0",
-              homeDiscoveryEnabled && "order-none",
-            )}
+            className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
           >
             <ChatComposer signals={composerSignals} />
           </div>
@@ -615,12 +630,7 @@ function AgentComposerPage() {
               before the page needs to scroll. Allowing this box to shrink
               below its contents creates overflow even when the whole panel
               could fit in the viewport. */}
-          <div
-            className={cn(
-              "contents sm:flex sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28",
-              homeDiscoveryEnabled && "flex flex-col pt-5",
-            )}
-          >
+          <div className="contents sm:flex sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28">
             {/* Keep the final row clear of the scrollport's bottom edge. */}
             <div className="order-2 sm:order-none sm:pb-10">
               <ComposerTaskChips signals={composerSignals} />

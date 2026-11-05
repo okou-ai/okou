@@ -15,7 +15,7 @@ import {
   hostedSiteUrlChanges$,
 } from "../../signals/hosted-site-url-changes.ts";
 import { isHostedSiteUrl } from "../../signals/chat-page/parse-body-blocks.ts";
-import type { MouseEvent, ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -122,18 +122,6 @@ async function shareArtifactUrl(url: string): Promise<void> {
   await copyAttachmentLinkToClipboard(url);
 }
 
-function isPlainPrimaryLinkClick(
-  event: MouseEvent<HTMLAnchorElement>,
-): boolean {
-  return (
-    event.button === 0 &&
-    !event.altKey &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    !event.shiftKey
-  );
-}
-
 function iconButtonClassName(className?: string): string {
   return cn(
     "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground",
@@ -224,13 +212,9 @@ export function ArtifactShareButton({
   }
   return (
     <ArtifactActionTooltip label={label}>
-      <a
-        href={shareUrl}
-        onClick={(event) => {
-          if (!isPlainPrimaryLinkClick(event)) {
-            return;
-          }
-          event.preventDefault();
+      <button
+        type="button"
+        onClick={() => {
           detach(
             shareArtifactUrl(shareUrl),
             Reason.DomCallback,
@@ -241,7 +225,7 @@ export function ArtifactShareButton({
         className={iconButtonClassName(className)}
       >
         <Share2 size={iconSize} />
-      </a>
+      </button>
     </ArtifactActionTooltip>
   );
 }

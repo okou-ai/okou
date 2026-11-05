@@ -8,7 +8,9 @@ import type { BrowserNavigationAction } from "./navigation/action.ts";
 import type { DisplayModeResult, DisplayState } from "./display/sync.ts";
 import type { DisplaySize } from "./display/geometry.ts";
 import type { ImageRecovery } from "./viewer/image-recovery.ts";
+import type { BrowserRecoveryResult } from "./recovery.ts";
 import type { layoutTabs } from "./viewer/tab-layout.ts";
+import type { TabStripMotion } from "./tab-strip.ts";
 import type {
   NavigationReceipt,
   ViewerCaptureOptions,
@@ -60,6 +62,8 @@ export interface BrowserPresentation {
   readonly status: ViewerStatus;
   readonly error: ViewerError | null;
   readonly loadingPreview: boolean;
+  /** A same-scope presented frame can remain visible without input authority. */
+  readonly retainedFrame: boolean;
   /** Empty content can be shown before the selected tab accepts remote input. */
   readonly blank: boolean;
 }
@@ -81,10 +85,25 @@ export interface BrowserControls {
   readonly retryingImage: boolean;
 }
 
+/** A successful action or displaced user-focus origin awaits this exact DOM commit. */
+export type BrowserFocusHandoff = {
+  readonly request: object;
+  readonly mount: object;
+  readonly selection: object;
+} & (
+  | { readonly kind: "tab"; readonly targetId: string }
+  | { readonly kind: "address"; readonly targetId: string }
+  | {
+      readonly kind: "toolbar";
+      readonly destination: "picker" | "new-tab";
+    }
+);
+
 type Ref<E extends HTMLElement> = Command<(() => void) | undefined, [E | null]>;
 
 /** Read-only observations and finite domain actions; resource plumbing is private. */
 export interface BrowserSignals {
+  readonly recoveryOperation$: Computed<Promise<BrowserRecoveryResult> | null>;
   readonly tabs$: Computed<readonly BrowserTab[]>;
   readonly selectedTabId$: Computed<string | null>;
   readonly navigation$: Computed<ViewerNavigation | null>;
@@ -102,6 +121,8 @@ export interface BrowserSignals {
   readonly displayRecovery$: Computed<ViewerError | null>;
   readonly clipboardRecovery$: Computed<ClipboardRecovery | null>;
   readonly tabLayout$: Computed<ReturnType<typeof layoutTabs>>;
+  readonly focusHandoff$: Computed<BrowserFocusHandoff | null>;
+  readonly acknowledgeFocusCommit$: Command<void, [BrowserFocusHandoff]>;
   readonly rejectFavicon$: Command<void, [targetId: string, url: string]>;
   readonly selectTab$: Command<Promise<void>, [string, AbortSignal]>;
   readonly createTab$: Command<Promise<string>, [AbortSignal]>;
@@ -133,8 +154,8 @@ export interface BrowserSignals {
   readonly dismissClipboardRecovery$: Command<void, []>;
   /** Notify after the owner invalidates/publishes connection$; not for lease-only updates. */
   readonly connectionChanged$: Command<void, []>;
-  /** Re-measure after an application layout commit changes the viewer's box. */
-  readonly syncLayout$: Command<void, []>;
+  /** Refresh geometry; only an explicit null acknowledges all host motion settled. */
+  readonly syncLayout$: Command<void, [motion?: TabStripMotion | null]>;
   /** Sample the mounted surface even before a remote connection exists. */
   readonly measureInitialDisplay$: Command<DisplaySize | null, []>;
   readonly refs: {

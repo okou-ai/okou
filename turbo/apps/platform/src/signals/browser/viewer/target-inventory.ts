@@ -1,5 +1,5 @@
 import { CdpFault } from "../cdp/errors.ts";
-import type { ViewerTarget } from "./types.ts";
+import type { ViewerInventory, ViewerTarget } from "./types.ts";
 
 // Retained UTF-16 text plus an allowance for each entry's bookkeeping. This is
 // resource accounting, not a heap measurement or a browser target-count limit.
@@ -36,7 +36,8 @@ export interface TargetInventory {
   readonly epoch: number;
   readonly entries: ReadonlyMap<string, InventoryEntry>;
   readonly round: InventoryRound | null;
-  readonly ready: boolean;
+  /** Publication proof; round identity separately fences asynchronous observations. */
+  readonly coverage: "pending" | "partial" | "complete";
 }
 
 export type InventoryEvent =
@@ -46,7 +47,10 @@ export type InventoryEvent =
       readonly round: InventoryRound;
       readonly targets: readonly ViewerTarget[];
     }
-  | { readonly type: "complete-round"; readonly round: InventoryRound }
+  | {
+      readonly type: "admit-round" | "complete-round";
+      readonly round: InventoryRound;
+    }
   | {
       readonly type: "metadata";
       readonly target: ViewerTarget;
@@ -73,7 +77,7 @@ export function initialInventory(): TargetInventory {
     epoch: 0,
     entries: new Map(),
     round: null,
-    ready: false,
+    coverage: "pending",
   };
 }
 
@@ -96,17 +100,26 @@ export function currentObservation(
   );
 }
 
-export function inventoryTargets(
-  state: TargetInventory,
-): readonly ViewerTarget[] {
-  if (!state.ready) {
-    return Object.freeze([]);
+export function inventorySnapshot(state: TargetInventory): ViewerInventory {
+  if (state.coverage === "pending") {
+    return { status: "pending", targets: Object.freeze([]) };
   }
-  return Object.freeze(
-    [...state.entries.values()].flatMap((entry) => {
-      return entry.target && entry.membership?.member ? [entry.target] : [];
-    }),
-  );
+  const targets: ViewerTarget[] = [];
+  let unproved = false;
+  for (const entry of state.entries.values()) {
+    if (!entry.target) {
+      continue;
+    }
+    if (!entry.membership) {
+      unproved = true;
+    } else if (entry.membership.member) {
+      targets.push(entry.target);
+    }
+  }
+  return {
+    status: state.coverage === "complete" && !unproved ? "complete" : "partial",
+    targets: Object.freeze(targets),
+  };
 }
 
 function journal(state: TargetInventory, id: string): InventoryRound | null {
@@ -151,12 +164,18 @@ export function transitionInventory(
       return { ...state, sequence: order };
     }
     case "invalidate-round": {
-      return { ...state, sequence: order, round: null };
+      return {
+        ...state,
+        sequence: order,
+        round: null,
+        coverage: state.coverage === "pending" ? "pending" : "partial",
+      };
     }
     case "begin-round": {
       return {
         ...state,
         sequence: order,
+        coverage: state.coverage === "pending" ? "pending" : "partial",
         round: {
           order,
           epoch: state.epoch,
@@ -184,13 +203,14 @@ export function transitionInventory(
     case "listed": {
       return listInventory(state, event);
     }
+    case "admit-round":
     case "complete-round": {
       return currentRound(state, event.round)
         ? {
             ...state,
             sequence: order,
-            round: null,
-            ready: true,
+            round: event.type === "complete-round" ? null : state.round,
+            coverage: event.type === "complete-round" ? "complete" : "partial",
           }
         : state;
     }
@@ -326,6 +346,10 @@ function updateInventoryMembership(
     sequence: order,
     entries,
     round: event.type === "created" ? null : state.round,
+    coverage:
+      event.type === "created" && state.coverage !== "pending"
+        ? "partial"
+        : state.coverage,
   };
 }
 

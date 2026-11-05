@@ -98,9 +98,8 @@ describe("POST /api/integrations/slack/message", () => {
   }
 
   /**
-   * Creates a real run for an agent named "My Assistant" through the product
-   * agent + run APIs, so the message footer can resolve the agent label from
-   * the run. Run admission needs org credits (Stripe webhook grant).
+   * Creates a run through the product APIs with literal markup in the agent's
+   * display name. Run admission needs org credits (Stripe webhook grant).
    */
   async function seedAgentRun(base: {
     readonly orgId: string;
@@ -115,7 +114,7 @@ describe("POST /api/integrations/slack/message", () => {
     bdd.acceptAgentStorageWrites();
     await api.grantProEntitlement(actor);
     const agent = await bdd.createAgent(actor, {
-      displayName: "My Assistant",
+      displayName: "My <Assistant> & Reports",
       visibility: "private",
     });
     await api.ensurePersonalSubscriptionModel(actor, {
@@ -751,7 +750,7 @@ describe("POST /api/integrations/slack/message", () => {
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
     expect(footerCtx.elements![0]!.text).toMatch(
-      /^Sent via My Assistant · Triggered by <@U_.+> · Claude Sonnet 5\.5$/u,
+      /^Sent via My &lt;Assistant&gt; &amp; Reports · Triggered by <@U_.+>$/u,
     );
   });
 
@@ -793,7 +792,7 @@ describe("POST /api/integrations/slack/message", () => {
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
     expect(footerCtx.elements![0]!.text).toBe(
-      `Sent via My Assistant · Triggered by <@${slackUserId}> · Claude Sonnet 5.5`,
+      `Sent via My &lt;Assistant&gt; &amp; Reports · Triggered by <@${slackUserId}>`,
     );
   });
 });

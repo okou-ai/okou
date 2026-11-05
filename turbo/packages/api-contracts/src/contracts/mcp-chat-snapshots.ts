@@ -15,9 +15,19 @@ import {
 
 const nativeEvent =
   chatThreadsContract.events.responses[200].shape.events.element;
-const mcpThreadEventSchema = nativeEvent
-  .omit({ id: true, chatThreadId: true })
-  .extend({ eventId: mcpEventIdSchema, threadId: mcpThreadIdSchema });
+const [ordinaryThreadEvent, projectThreadEvent] = nativeEvent.options;
+const mcpThreadReferences = {
+  eventId: mcpEventIdSchema,
+  threadId: mcpThreadIdSchema,
+};
+const mcpThreadEventSchema = discriminatedUnion("kind", [
+  ordinaryThreadEvent
+    .omit({ id: true, chatThreadId: true })
+    .extend(mcpThreadReferences),
+  projectThreadEvent
+    .omit({ id: true, chatThreadId: true })
+    .extend(mcpThreadReferences),
+]);
 
 const [firstRow, ...remainingRows] = chatEventRowSchema.options;
 const mcpRowReferences = {

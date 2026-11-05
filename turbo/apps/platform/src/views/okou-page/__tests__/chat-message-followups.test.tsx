@@ -95,7 +95,9 @@ function followupButtons(group: ParentNode): HTMLElement[] {
   return queryAllByRoleFast("button", group);
 }
 
-test("Valid recommended follow-ups still appear when delivered late", async () => {
+function installLateFollowupChat(options: {
+  currentFollowupInitiallyPresent: boolean;
+}) {
   const currentThreadId = context.resourceId;
   const currentRunId = "d0000000-0000-4000-a000-000000000063";
   const handoffRunId = "d0000000-0000-4000-a000-000000000064";
@@ -121,7 +123,7 @@ test("Valid recommended follow-ups still appear when delivered late", async () =
     id: "handoff-late-followup",
     runId: handoffRunId,
   };
-  let currentIncludesFollowup = false;
+  let currentIncludesFollowup = options.currentFollowupInitiallyPresent;
   let handoffIncludesFollowup = false;
   let handoffInitialResponseSent = false;
   const control = installMessageExperienceChat({
@@ -174,14 +176,44 @@ test("Valid recommended follow-ups still appear when delivered late", async () =
     },
   );
 
+  return {
+    currentThreadId,
+    deliverCurrentFollowup: () => {
+      currentIncludesFollowup = true;
+      createChatEvent(currentThreadId);
+    },
+  };
+}
+
+test("A late recommendation appears in the current chat", async () => {
+  const { currentThreadId, deliverCurrentFollowup } = installLateFollowupChat({
+    currentFollowupInitiallyPresent: false,
+  });
   await setupPage({ context, path: `/chats/${currentThreadId}` });
 
   await expect(
     screen.findByText("The launch plan is ready."),
   ).resolves.toBeVisible();
   expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
-  currentIncludesFollowup = true;
-  createChatEvent(currentThreadId);
+  deliverCurrentFollowup();
+  const group = await keepGoingGroup();
+  expect(
+    followupButtons(group).find((button) => {
+      return button.textContent?.trim() === PRESENTATION_PROMPT;
+    }),
+  ).toBeVisible();
+  expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
+});
+
+test("A late recommendation appears after navigating to another chat", async () => {
+  const { currentThreadId } = installLateFollowupChat({
+    currentFollowupInitiallyPresent: true,
+  });
+  await setupPage({ context, path: `/chats/${currentThreadId}` });
+
+  await expect(
+    screen.findByText("The launch plan is ready."),
+  ).resolves.toBeVisible();
   let group = await keepGoingGroup();
   expect(
     followupButtons(group).find((button) => {

@@ -10,15 +10,26 @@ import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 export function artifact(
   overrides: Partial<ArtifactSummary> = {},
 ): ArtifactSummary {
-  return {
+  const result = {
     id: "a0000000-0000-4000-a000-000000000001",
-    kind: "file",
+    kind: "file" as const,
     title: "launch-plan.txt",
     thumbnail: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
+  if (result.kind === "shared-thread") {
+    if (!result.sharedThreadId) {
+      throw new Error("Shared conversation fixtures require a destination");
+    }
+    return {
+      ...result,
+      kind: result.kind,
+      sharedThreadId: result.sharedThreadId,
+    };
+  }
+  return { ...result, kind: result.kind };
 }
 
 export function setupArtifactCatalogPage(

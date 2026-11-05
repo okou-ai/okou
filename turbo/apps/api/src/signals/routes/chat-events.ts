@@ -7,10 +7,15 @@ import {
 
 import { authRoute } from "../auth/auth-route";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { resourceUnavailable, badRequestMessage } from "../../lib/error";
+import {
+  resourceUnavailable,
+  badRequestMessage,
+  notFound,
+} from "../../lib/error";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { handleSendChatEvent$ } from "../services/chat-events.command";
+import { projectReferencesAvailable } from "../services/project-reference.service";
 import {
   hasEmptySuggestionNote,
   suggestionFeedbacks,
@@ -32,6 +37,10 @@ export const sendValidatedChatEvent$ = command(
     if (auth.tokenType === "oauth" && !auth.scopes.includes(scope)) {
       return resourceUnavailable("Insufficient scope");
     }
+    if (!(await get(projectReferencesAvailable(auth, data.userMessage)))) {
+      return notFound("Project or conversation not found");
+    }
+    signal.throwIfAborted();
     const candidate =
       auth.tokenType === "session" &&
       data.userMessage &&

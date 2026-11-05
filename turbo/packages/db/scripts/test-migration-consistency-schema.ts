@@ -50,6 +50,7 @@ import { validatePermanentAgentInstructions } from "./test-agent-instructions-pe
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
+import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
@@ -1445,7 +1446,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "5cacef0ce10a7514862772fa0b51cc81",
+    bodyHash: "91c7e4000e63fc2b8c901635c53304bd",
   },
   {
     schemaName: "public",
@@ -3088,6 +3089,12 @@ async function main(): Promise<void> {
   let migrationsBackedUp = false;
 
   try {
+    console.log(
+      execCommand("tsx scripts/test-migration-cli-stderr.ts", {
+        cwd: PACKAGE_DIR,
+      }),
+    );
+
     // Step 0: Validate snapshot files
     await validateSnapshotFiles();
 
@@ -3133,6 +3140,22 @@ async function main(): Promise<void> {
     console.log(
       execCommand(
         "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
+    console.log("=== Registry resource dual publication CLI ===");
+    console.log(
+      execCommand("node scripts/test-registry-publication.mjs", {
+        cwd: PACKAGE_DIR,
+        env: { DATABASE_URL: dbUrl1 },
+      }),
+    );
+
+    console.log("=== Registry resource backfill CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
         { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
       ),
     );
@@ -3194,6 +3217,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateSeedSkillBundleSchema(dbUrl1);
+    await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
@@ -3244,6 +3268,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateSeedSkillBundleSchema(dbUrl2);
+    await validateConnectorSkillBundleSchema(dbUrl2);
     await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);
     await validateOfficialAutomationBindingSchema(dbUrl2);

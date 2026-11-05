@@ -5,6 +5,7 @@ use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
 use serde_json::Value;
+use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
@@ -105,10 +106,12 @@ async fn run_retry_case(recover_before_eviction: bool) -> Result<(), Box<dyn std
     if recover_before_eviction {
         accepted_sequences.extend(common::event_request_sequences(&retry.request)?);
         retry.respond(200)?;
-        UnixStream::connect(&release_socket)?;
+        let mut gate = UnixStream::connect(&release_socket)?;
+        gate.write_all(b"p")?;
     } else {
         // Keep the HTTP response in flight while the producer fills the byte budget.
-        UnixStream::connect(&release_socket)?;
+        let mut gate = UnixStream::connect(&release_socket)?;
+        gate.write_all(b"b")?;
         common::wait_for_file_contains(
             &system_log_file,
             "Event delivery drain started:",

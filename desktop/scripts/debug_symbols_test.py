@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("debug_symbols.py")
+BUILD = Path(__file__).with_name("build.py")
 
 
 def run(*args):
@@ -29,12 +30,30 @@ def make_app(directory, value):
     symbols.mkdir(parents=True)
     contents = app / "Contents"
     contents.mkdir(parents=True)
+    resources = contents / "Resources"
+    (resources / "Clerk_ClerkKit.bundle").mkdir(parents=True)
+    (resources / "desktop-runtime-config.json").write_text(
+        json.dumps(
+            {
+                "product": "okou",
+                "platformUrl": "https://app.okou.ai",
+                "clerkPublishableKey": "pk_live_fixture",
+            }
+        )
+    )
     (contents / "Info.plist").write_bytes(
         plistlib.dumps(
             {
                 "CFBundleExecutable": "Okou",
-                "CFBundleIdentifier": "ai.okou.debug-symbols-test",
+                "CFBundleIdentifier": "ai.okou.desktop",
+                "CFBundleName": "Okou",
+                "CFBundleDisplayName": "Okou",
                 "CFBundlePackageType": "APPL",
+                "CFBundleURLTypes": [{"CFBundleURLSchemes": ["ai.okou.desktop"]}],
+                "CFBundleShortVersionString": "1.2.3",
+                "CFBundleVersion": "1.2.3",
+                "LSMinimumSystemVersion": "14.0",
+                "OkouSentryDSN": "https://example.invalid/1",
             }
         )
     )
@@ -46,9 +65,11 @@ def make_app(directory, value):
     ):
         source = directory / f"main-{index}.c"
         source.write_text(f"int main(void) {{ return {value + index}; }}\n")
+        object_file = source.with_suffix(".o")
         binary = contents / relative
         binary.parent.mkdir(parents=True)
-        run("xcrun", "clang", "-arch", "arm64", "-g", source, "-o", binary)
+        run("xcrun", "clang", "-arch", "arm64", "-g", "-c", source, "-o", object_file)
+        run("xcrun", "clang", "-arch", "arm64", object_file, "-o", binary)
         run("dsymutil", binary, "-o", symbols / bundle)
     return app, symbols
 
@@ -61,17 +82,32 @@ class DebugSymbolsTests(unittest.TestCase):
         cls.root = Path(cls.fixtures.name)
         cls.base_app, cls.base_symbols = make_app(cls.root / "base", 0)
         cls.other_app, _ = make_app(cls.root / "other", 1)
-        cls.archive = cls.root / "Okou.zip"
         # Signing changes code-signature bytes, but must preserve LC_UUID.
         run("codesign", "--force", "--sign", "-", cls.base_app)
-        run("ditto", "-c", "-k", "--keepParent", cls.base_app, cls.archive)
-        cls.dmg = cls.root / "Okou.dmg"
+        packages = cls.root / "packages"
+        # The real build CLI supplies the ZIP/DMG used by the symbol tests,
+        # covering default distribution packaging without a second fixture set.
+        run(
+            sys.executable,
+            BUILD,
+            "--app",
+            cls.base_app,
+            "--version",
+            "1.2.3",
+            "--verify-only",
+            "--package",
+            "--output",
+            packages,
+        )
+        cls.archive = packages / "Okou-darwin-arm64-1.2.3.zip"
+        cls.dmg = cls.archive.with_suffix(".dmg")
         cls.other_dmg = cls.root / "Other.dmg"
-        for app, dmg in ((cls.base_app, cls.dmg), (cls.other_app, cls.other_dmg)):
-            staging = cls.root / f"image-{dmg.stem}"
-            staging.mkdir()
-            run("ditto", app, staging / "Okou.app")
-            run("hdiutil", "create", "-format", "UDZO", "-srcfolder", staging, dmg)
+        staging = cls.root / "image-other"
+        staging.mkdir()
+        run("ditto", cls.other_app, staging / "Okou.app")
+        run(
+            "hdiutil", "create", "-format", "UDZO", "-srcfolder", staging, cls.other_dmg
+        )
         cls.other_archive = cls.root / "Other.zip"
         run("ditto", "-c", "-k", "--keepParent", cls.other_app, cls.other_archive)
 
@@ -134,6 +170,34 @@ if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
 
     def test_signed_app_and_both_distribution_packages_match(self):
         self.command("--zip", self.archive, "--dmg", self.dmg)
+        self.assert_dmg_detached(self.dmg)
+
+    def test_zip_only_packaging_preserves_the_verified_app(self):
+        output = self.case / "packages"
+        run(
+            sys.executable,
+            BUILD,
+            "--app",
+            self.app,
+            "--version",
+            "1.2.3",
+            "--verify-only",
+            "--package",
+            "zip",
+            "--output",
+            output,
+        )
+        archive = output / "Okou-darwin-arm64-1.2.3.zip"
+        self.assertEqual(list(output.iterdir()), [archive])
+        self.command("--zip", archive)
+
+    def assert_dmg_detached(self, dmg):
+        output = run("hdiutil", "info", "-plist").stdout
+        images = plistlib.loads(output.encode())["images"]
+        self.assertNotIn(
+            dmg.resolve(),
+            [Path(image["image-path"]).resolve() for image in images],
+        )
 
     def test_missing_symbols_stop_upload(self):
         shutil.rmtree(self.symbols / "Okou.app.dSYM")
@@ -166,8 +230,12 @@ if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
         self.assertFalse(self.log.exists())
 
     def test_published_dmg_from_another_build_stops_upload(self):
-        self.command("--dmg", self.other_dmg, "--upload", success=False)
+        result = self.command("--dmg", self.other_dmg, "--upload", success=False)
+        self.assertRegex(
+            result.stderr, r"ValueError: Binary/dSYM UUID mismatch: [^\n]+\n\Z"
+        )
         self.assertFalse(self.log.exists())
+        self.assert_dmg_detached(self.other_dmg)
 
     def test_upload_requires_all_verified_ids_and_waits_for_processing(self):
         self.command("--upload")

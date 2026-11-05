@@ -35,8 +35,10 @@ export async function launchWindowProxy(config: ProxyConfiguration) {
       process.execPath,
       [...runtimeArguments, entrypoint, "__browser-proxy"],
       {
-        stdout: 2,
-        stderr: 2,
+        // A detached proxy must not keep the foreground command's capture pipes open.
+        // Startup readiness and errors are carried by the private IPC channel.
+        stdout: "ignore",
+        stderr: "ignore",
         env: process.env,
         onSpawn(child) {
           child.once("error", reject);

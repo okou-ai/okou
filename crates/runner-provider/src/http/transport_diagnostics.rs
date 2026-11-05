@@ -102,8 +102,15 @@ struct ObservedConnection {
     registered_for: Arc<str>,
     ambiguous: bool,
     responses: u64,
-    last_response: Option<Instant>,
+    last_response: Option<ObservedResponse>,
     last_payload: Option<Instant>,
+}
+
+#[derive(Clone)]
+struct ObservedResponse {
+    observed: Instant,
+    version: reqwest::Version,
+    cf_ray: Option<Arc<str>>,
 }
 
 impl ObservedConnection {
@@ -151,6 +158,16 @@ struct Packet {
     acknowledgment: u32,
     window: u16,
     payload_bytes: u32,
+    ip_ttl: Option<u8>,
+    ipv4_id: Option<u16>,
+    ipv6_hop_limit: Option<u8>,
+    capture_origin: Option<CaptureOrigin>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CaptureOrigin {
+    interface_index: u32,
+    packet_type: u8,
 }
 
 #[derive(Clone)]
@@ -311,7 +328,13 @@ impl TransportDiagnostics {
                     return;
                 }
                 connection.responses = connection.responses.saturating_add(1);
-                connection.last_response = Some(Instant::now());
+                // Replace the whole observation: missing/invalid headers must
+                // not inherit another response's edge identity.
+                connection.last_response = Some(ObservedResponse {
+                    observed: Instant::now(),
+                    version: response.version(),
+                    cf_ray: super::response_cf_ray(response.headers()).map(Arc::from),
+                });
             }
         } else {
             self.0
@@ -370,6 +393,7 @@ impl TransportDiagnostics {
             });
         drop(state);
         let facts = connection.as_ref().filter(|_| !ambiguous);
+        let last_response = facts.and_then(|c| c.last_response.as_ref());
         info!(
             target: TARGET,
             client_request_id = %context.client_request_id,
@@ -389,7 +413,9 @@ impl TransportDiagnostics {
             connection_generation_status = if connection_id.is_none() { "unavailable" } else if ambiguous { "ambiguous" } else { "registered" },
             connection_registered_age_ms = facts.map(|c| millis(c.registered.elapsed())),
             responses_observed = facts.map(|c| c.responses),
-            last_response_headers_age_ms = facts.and_then(|c| c.last_response.map(|t| millis(t.elapsed()))),
+            last_response_headers_age_ms = last_response.map(|r| millis(r.observed.elapsed())),
+            last_response_http_version = last_response.map(|r| format!("{:?}", r.version)),
+            last_response_cf_ray = last_response.and_then(|r| r.cf_ray.as_deref()),
             last_payload_observed_age_ms = facts.and_then(|c| c.last_payload.map(|t| millis(t.elapsed()))),
             capture_status,
             capture_filter_current,

@@ -689,7 +689,7 @@ function BankingAccountOption({
     .filter(Boolean)
     .join(" · ");
   return (
-    <label className="flex cursor-pointer items-center gap-3 rounded-md border border-border/70 px-3 py-2">
+    <label className="flex cursor-default items-center gap-3 rounded-md border border-border/70 px-3 py-2">
       <Checkbox
         checked={checked}
         disabled={busy}

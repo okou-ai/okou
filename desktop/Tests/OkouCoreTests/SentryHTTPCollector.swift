@@ -26,6 +26,7 @@ final class SentryHTTPCollector {
                   body = gzip.decompress(body)
               header, _, remaining = body.partition(b'\n')
               envelope = json.loads(header)
+              events = []
               while remaining:
                   line, _, remaining = remaining.partition(b'\n')
                   item = json.loads(line)
@@ -33,15 +34,18 @@ final class SentryHTTPCollector {
                   payload, remaining = remaining[:length], remaining[length:].lstrip(b'\n')
                   if item['type'] == 'event':
                       event = json.loads(payload)
-                      target = root / (event['event_id'] + '.json')
-                      temporary = target.with_suffix('.tmp')
-                      temporary.write_bytes(payload)
-                      temporary.replace(target)
+                      events.append((event['event_id'], payload))
                   elif item['type'] == 'attachment':
                       directory = root / envelope['event_id']
                       directory.mkdir(exist_ok=True)
                       target = directory / pathlib.Path(item['filename']).name
                       target.write_bytes(payload)
+              # A visible event receipt means its attachments are also complete.
+              for event_id, payload in events:
+                  target = root / (event_id + '.json')
+                  temporary = target.with_suffix('.tmp')
+                  temporary.write_bytes(payload)
+                  temporary.replace(target)
               self.send_response(200)
               self.send_header('Content-Type', 'application/json')
               self.send_header('Content-Length', '2')

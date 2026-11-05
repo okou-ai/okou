@@ -54,7 +54,7 @@ export async function openResourceArtifact(
 
 export function artifactSummary(
   id: string,
-  kind: ArtifactSummary["kind"],
+  kind: Exclude<ArtifactSummary["kind"], "shared-thread">,
   title: string,
 ): ArtifactSummary {
   return {

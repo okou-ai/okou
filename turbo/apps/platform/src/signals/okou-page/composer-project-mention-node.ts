@@ -2,7 +2,7 @@ import { inlineReferenceVariants } from "@okouai/ui";
 import { Node } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { PROJECT_MENTION_NODE_NAME } from "./user-message-document-codec.ts";
-import { projectMentionSchema } from "@okouai/api-contracts/validators/project-message";
+import { projectMentionSchema } from "@okouai/api-contracts/validators/chat-threads";
 export function projectMentionText(node: ProseMirrorNode) {
   const p = projectMentionSchema.parse({
     type: "project",

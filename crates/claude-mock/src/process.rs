@@ -110,6 +110,7 @@ fn run_scenario(scenario: MockScenario<'_>, prompt: &str, output_format: &str) -
         }
         MockScenario::EchoJsonl(payload) => fixtures::run_echo_jsonl_mode(payload, false),
         MockScenario::EchoJsonlAndHang(payload) => fixtures::run_echo_jsonl_mode(payload, true),
+        MockScenario::EchoJsonlFile(path) => fixtures::run_echo_jsonl_file_mode(path),
         MockScenario::FailNoNewline(msg) => fixtures::run_fail_no_newline(msg),
         MockScenario::FailInvalidUtf8 => fixtures::run_fail_invalid_utf8(),
         MockScenario::FailInvalidUtf8Long => fixtures::run_fail_invalid_utf8_long(),

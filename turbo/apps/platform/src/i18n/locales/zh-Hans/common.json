@@ -625,12 +625,15 @@
       "loadFailed": "无法加载权限",
       "loadingPermissions": "正在加载权限",
       "onlyMe": "仅自己",
+      "onlyMeDescription": "只有你能打开",
       "onlyMeOption": "仅自己",
       "organization": "组织",
+      "organizationDescription": "团队成员可查看",
       "organizationOption": "{{organization}}的所有成员",
       "organizationOptionUnnamed": "组织内的所有成员",
       "permissionsUpdated": "访问权限已更新",
       "publicAccess": "公开访问",
+      "publicDescription": "无需登录",
       "publicOption": "知道链接的所有人",
       "updateFailed": "无法更新访问权限"
     },
@@ -951,6 +954,27 @@
     },
     "homeLink": "前往 {{brandName}} 首页",
     "loading": "正在加载身份验证",
+    "signup": {
+      "alreadyHaveAccount": "已经有账户了？",
+      "apple": "Apple",
+      "continue": "继续",
+      "email": "电子邮件地址",
+      "emailPlaceholder": "请输入您的电子邮件地址",
+      "failed": "请求失败",
+      "google": "Google",
+      "hidePassword": "隐藏密码",
+      "legalAnd": "和",
+      "legalPrefix": "我同意",
+      "or": "或者",
+      "password": "密码",
+      "passwordPlaceholder": "创建密码",
+      "privacy": "隐私政策",
+      "showPassword": "显示密码",
+      "signIn": "登录",
+      "subtitle": "继续使用 {{applicationName}}",
+      "terms": "服务条款",
+      "title": "创建您的账户"
+    },
     "theme": {
       "darkEnabled": "已开启深色主题",
       "lightEnabled": "已开启浅色主题"
@@ -1364,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "输入网址",
+    "authorizationRequired": "此对话未启用云端浏览器",
     "blankPage": {
       "description": "{{assistantName}} 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
       "title": "还没有打开网页"
@@ -1390,8 +1415,8 @@
       "takeOver": "接管",
       "takeOverMessage": "我先接管浏览器，在我交还之前请不要操作它。"
     },
-    "reclaimHint_one": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
-    "reclaimHint_other": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
+    "reclaimHint_one": "面板打开时保留，闲置 {{formattedCount}} 分钟后回收。",
+    "reclaimHint_other": "面板打开时保留，闲置 {{formattedCount}} 分钟后回收。",
     "status": {
       "live": "运行中",
       "starting": "启动中",
@@ -1429,6 +1454,7 @@
     "paused": "画面已暂停",
     "quality": "图像质量",
     "reconnect": "重新连接",
+    "reconnecting": "正在重连…",
     "reload": "刷新",
     "remoteInput": "远程浏览器输入",
     "resolution": "分辨率",
@@ -1537,7 +1563,7 @@
           "unit": "每位成员"
         },
         "pendingState": "{{amount}} 待发放",
-        "rewardsNote": "奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
+        "rewardsNote": "任务奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
         "slack": {
           "action": "添加",
           "description": "团队日常办公的地方",
@@ -1608,6 +1634,7 @@
       "notPlannedRecorded": "已记下，这件事暂无计划",
       "reasonLabel": "补充原因（选填）",
       "saveReason": "保存",
+      "sent": "已发送到新聊天",
       "undoFeedback": "撤销",
       "useSuggestion": "使用建议"
     },
@@ -1966,47 +1993,6 @@
       "useDefault": "使用默认"
     },
     "documentTitle": "聊天",
-    "entrustedJobs": {
-      "archive": "归档任务",
-      "authorize": "授权",
-      "currentGrant": "当前权限：{{scope}} · {{expiry}}",
-      "decline": "拒绝",
-      "declined": "已拒绝授权",
-      "details": "任务详情",
-      "detailsDescription": "在这里查看进展、回复和交付结果。",
-      "duration": "授权有效期",
-      "durations": {
-        "1h": "1 小时",
-        "24h": "24 小时",
-        "7d": "7 天",
-        "always": "长期"
-      },
-      "empty": "这里还没有任务。把任务交给 Okou，它会持续推进，并在需要你处理或有结果时通知你。",
-      "filters": {
-        "archived": "已归档",
-        "history": "历史",
-        "home": "当前"
-      },
-      "granted": "已保存授权结果",
-      "loading": "正在加载任务",
-      "next": "下一页",
-      "noExpiry": "长期有效",
-      "previous": "上一页",
-      "progress": "最新进展",
-      "replies": "你的回复",
-      "reply": "回复",
-      "result": "交付结果",
-      "saved": "已保存，等待下一轮评估",
-      "saveReply": "保存回复",
-      "sourceUpdate": "来源更新",
-      "states": {
-        "active": "进行中",
-        "archived": "已归档",
-        "completed": "已完成",
-        "waiting_authorization": "等你授权",
-        "waiting_decision": "等你决定"
-      }
-    },
     "errors": {
       "genericTitle": "这次运行没能完成",
       "loadMessages": "消息加载失败",
@@ -2099,78 +2085,6 @@
       "sent": "转发成功",
       "threads": "聊天",
       "title": "转发到"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Document",
-        "image": "Image",
-        "presentation": "Presentation",
-        "visualization": "Chart",
-        "website": "Website"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "帮我设置晨间邮件简报，汇总需要我处理的邮件；先确认收件箱和发送时间",
-            "second": "帮我设置每周竞品简报；先确认关注的公司、信息来源和发送安排",
-            "third": "帮我设置每日销售摘要；先确认数据来源、指标和发送时间"
-          },
-          "label": "Briefs",
-          "placeholder": "描述简报要包含的内容，以及接收频率…",
-          "title": "希望定期收到什么简报？"
-        },
-        "general": {
-          "examples": {
-            "first": "寻找适合初创团队的品牌设计机构",
-            "second": "按功能和价格对比客户管理工具",
-            "third": "调研某个行业的近期趋势和领先企业"
-          },
-          "label": "综合",
-          "placeholder": "描述你的问题，或想了解的内容…",
-          "title": "想查些什么？"
-        },
-        "information": {
-          "examples": {
-            "first": "寻找近期关于小企业采用 AI 的研究，并附上原始来源",
-            "second": "收集成功发布产品的公开案例，并说明哪些做法起了作用",
-            "third": "寻找可用于演示文稿的可靠行业数据，附上日期和来源链接"
-          },
-          "label": "信息",
-          "placeholder": "描述主题、时间范围，或资料的用途…",
-          "title": "想找哪方面的资料？"
-        },
-        "monitor": {
-          "examples": {
-            "first": "帮我关注竞争对手的价格变化；先确认公司、信息来源和通知时间",
-            "second": "帮我关注发给客户的邮件是否收到回复；先确认具体邮件和通知方式",
-            "third": "帮我关注某个行业的重要动态；先商定信息来源、检查频率和关注重点"
-          },
-          "label": "Monitor",
-          "placeholder": "描述想持续关注的对象，以及哪些变化值得留意…",
-          "title": "想持续关注什么变化？"
-        },
-        "people": {
-          "examples": {
-            "first": "为一场 AI 营销活动寻找 5 位演讲嘉宾，说明适合的理由并附上公开来源",
-            "second": "寻找能触达企业主的内容创作者，并说明其受众为什么合适",
-            "third": "为我的咨询服务寻找潜在客户，并附上相关的公开背景信息"
-          },
-          "label": "人物",
-          "placeholder": "描述职位、领域、公司或地区…",
-          "title": "找什么样的人？"
-        }
-      },
-      "groups": {
-        "automate": "Automate",
-        "create": "Create",
-        "search": "Search"
-      },
-      "label": "探索 Okou 能做什么",
-      "placeholder": "描述你想完成的事…",
-      "sources": {
-        "trigger": "工具"
-      },
-      "workflows": "Workflows"
     },
     "mail": {
       "bcc": "密送",
@@ -2688,7 +2602,6 @@
       "tasks": {
         "document": "文档",
         "image": "图片",
-        "jobs": "任务",
         "presentation": "演示文稿",
         "visualization": "可视化",
         "website": "网站",
@@ -3168,6 +3081,17 @@
     "unavailable": "该账号无法使用 Cloudflare Access。",
     "unused": "还没有设备连接使用此网络。",
     "usedBy_other": "你的 {{count}} 台主机正在使用："
+  },
+  "connectorChatAccess": {
+    "accountAccess": "{{account}} 的访问权限",
+    "enableByDefault": "默认启用 {{account}}",
+    "enabledAccounts": "{{value}} 个已启用",
+    "manageAccounts": "管理账号",
+    "noAccount": "未选择账号",
+    "noEnabledAccount": "当前聊天未启用任何账号",
+    "permissions": "权限",
+    "permissionsDescription": "这些规则适用于你所有聊天和账号中的此连接器。",
+    "settingsDescription": "选择默认启用的账号，以及新聊天的默认账号。"
   },
   "connectors": {
     "access": {
@@ -4072,20 +3996,24 @@
     "actionFailed": "无法更新授权。",
     "allow": "允许 1 小时",
     "approved": "已授权",
-    "deadline": "到期时间：{{date}}",
+    "blocked": {
+      "chatBusy": "当前聊天正在运行，结束后即可批准。",
+      "computerChanged": "已切换电脑，请选回 {{computer}} 后再批准。",
+      "runActive": "发起申请的运行尚未结束，结束后即可批准。",
+      "runUnavailable": "发起申请的运行已不可用，请在聊天中重新申请。"
+    },
     "denied": "已拒绝申请",
     "deny": "拒绝",
     "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
     "expired": "授权已到期",
     "loading": "正在加载授权…",
-    "pending": "等待批准",
+    "reasonTitle": "申请用途",
+    "requestExpired": "申请已过期",
     "revoke": "撤销授权",
     "revoked": "已撤销 Shell 授权",
-    "scope": "仅限当前 Chat 和电脑",
-    "terminalNotice": "授权结束后，已有终端仍保持打开。",
-    "title": "Desktop Shell 授权",
+    "title": "Shell 访问",
     "unavailable": "授权不可用",
-    "waiting": "Run 仍在运行或已切换电脑，暂时无法批准。"
+    "viewReason": "查看完整说明"
   },
   "documentTemplates": {
     "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
@@ -4157,6 +4085,28 @@
     "emptyDescription": "新的建议会显示在这里。",
     "emptyTitle": "已全部处理",
     "title": "动态"
+  },
+  "friendReferrals": {
+    "checkingCode": "正在验证邀请码…",
+    "codeApplied": "邀请码已生效",
+    "codeCheckFailed": "无法验证邀请码，请重试或留空继续。",
+    "codeLabel": "你的邀请码",
+    "codeUnavailable": "此邀请码不可用，请检查或留空继续。",
+    "copied": "已复制",
+    "copyCode": "复制邀请码",
+    "copyFailed": "复制失败，请重试。",
+    "copyLink": "复制邀请链接",
+    "description": "朋友使用你的邀请码注册、购买 usage pack 并升级至 Pro 或以上后，你将获得价值 $20 的 credits。",
+    "earned": "累计获得的 credits",
+    "invalidCode": "请输入 6 位字母或数字，也可留空继续。",
+    "loadFailed": "无法加载邀请码，请重试。",
+    "loading": "正在获取你的邀请码…",
+    "registered": "已注册的朋友",
+    "retry": "重试",
+    "signupLabel": "邀请码（选填）",
+    "signupPlaceholder": "输入邀请码",
+    "terms": "仅限新用户，每位朋友仅奖励一次。奖励将发至你在此工作区的个人余额，并于到账 1 个月后过期。",
+    "title": "邀请朋友"
   },
   "global": {
     "errors": {
@@ -4981,8 +4931,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "已归档的聊天",
     "close": "Close",
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
@@ -4993,11 +4941,11 @@
     "deleteTitle": "删除 Project？",
     "description": "将不同 Agent 的相关聊天归到一起",
     "empty": "暂无聊天",
-    "emptyArchive": "No archived chats",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
     "moveError": "无法移动聊天",
     "moveTitle": "移动聊天",
+    "moveTo": "移至 {{name}}",
     "name": "Project 名称",
     "newChat": "新建聊天",
     "noMatches": "No projects found",
@@ -5011,6 +4959,7 @@
     "saving": "正在保存…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
   "queue": {
@@ -5403,6 +5352,8 @@
       "subscriptions": {
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
+        "label": "订阅用量",
+        "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩余用量",
@@ -5463,7 +5414,7 @@
           "description": "个性化应用的外观和使用方式。",
           "title": "偏好设置"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "选择 Okou 主动工作的方式。",
           "title": "Proactive"
         },
@@ -5847,15 +5798,6 @@
         "preparationFailed": "此工作流暂不可用。",
         "preparing": "正在准备此工作流。",
         "title": "主动学习"
-      },
-      "proactivePlanningAction": {
-        "description": "在你交办的范围内规划并推进任务，需要你处理时提醒你。",
-        "errorMessage": "无法加载或更新此设置。",
-        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
-        "missingTimezone": "请在偏好设置中设置时区。",
-        "preparationFailed": "此工作流暂不可用。",
-        "preparing": "正在准备此工作流。",
-        "title": "规划与执行"
       },
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",

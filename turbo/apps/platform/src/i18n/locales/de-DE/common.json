@@ -626,12 +626,15 @@
       "loadFailed": "Berechtigungen konnten nicht geladen werden",
       "loadingPermissions": "Berechtigungen werden geladen",
       "onlyMe": "Nur ich",
+      "onlyMeDescription": "Nur du kannst es öffnen",
       "onlyMeOption": "Nur ich",
       "organization": "Organisation",
+      "organizationDescription": "Teammitglieder können es ansehen",
       "organizationOption": "Alle in {{organization}}",
       "organizationOptionUnnamed": "Alle in Ihrer Organisation",
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
+      "publicDescription": "Keine Anmeldung nötig",
       "publicOption": "Alle mit dem Link",
       "updateFailed": "Zugriff konnte nicht aktualisiert werden"
     },
@@ -952,6 +955,27 @@
     },
     "homeLink": "Zur {{brandName}}-Startseite",
     "loading": "Authentifizierung wird geladen",
+    "signup": {
+      "alreadyHaveAccount": "Haben Sie ein Konto?",
+      "apple": "Apple",
+      "continue": "Fortsetzen",
+      "email": "E-Mail-Adresse",
+      "emailPlaceholder": "E-Mail-Adresse eingeben",
+      "failed": "Die Anfrage ist fehlgeschlagen",
+      "google": "Google",
+      "hidePassword": "Passwort verbergen",
+      "legalAnd": "und die",
+      "legalPrefix": "Ich akzeptiere die",
+      "or": "oder",
+      "password": "Passwort",
+      "passwordPlaceholder": "Passwort eingeben",
+      "privacy": "Datenschutzerklärung",
+      "showPassword": "Passwort anzeigen",
+      "signIn": "Einloggen",
+      "subtitle": "weiter zu {{applicationName}}",
+      "terms": "Nutzungsbedingungen",
+      "title": "Erstellen Sie Ihr Konto"
+    },
     "theme": {
       "darkEnabled": "Dunkles Design aktiviert",
       "lightEnabled": "Helles Design aktiviert"
@@ -1366,6 +1390,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "URL eingeben",
+    "authorizationRequired": "Cloud-Browser ist für diesen Chat nicht aktiviert",
     "blankPage": {
       "description": "{{assistantName}} öffnet hier Seiten, während es arbeitet. Gib oben eine URL ein, um selbst zu surfen.",
       "title": "Noch nichts geöffnet"
@@ -1392,8 +1417,8 @@
       "takeOver": "Übernehmen",
       "takeOverMessage": "Ich habe den Browser übernommen. Bitte nutze ihn nicht, bis ich ihn zurückgebe."
     },
-    "reclaimHint_one": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minute Inaktivität zurück.",
-    "reclaimHint_other": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minuten Inaktivität zurück.",
+    "reclaimHint_one": "Bleibt bei offenem Panel; Freigabe nach {{formattedCount}} Minute Inaktivität.",
+    "reclaimHint_other": "Bleibt bei offenem Panel; Freigabe nach {{formattedCount}} Minuten Inaktivität.",
     "status": {
       "live": "Live",
       "starting": "Beginnt",
@@ -1431,6 +1456,7 @@
     "paused": "Ansicht pausiert",
     "quality": "Bildqualität",
     "reconnect": "Erneut verbinden",
+    "reconnecting": "Verbindung wird wiederhergestellt…",
     "reload": "Neu laden",
     "remoteInput": "Remote-Browsereingabe",
     "resolution": "Auflösung",
@@ -1539,7 +1565,7 @@
           "unit": "pro Mitglied"
         },
         "pendingState": "{{amount}} ausstehend",
-        "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
+        "rewardsNote": "Aufgabenprämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "slack": {
           "action": "Hinzufügen",
           "description": "Da, wo dein Team schon arbeitet",
@@ -1610,6 +1636,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "An einen neuen Chat gesendet",
       "undoFeedback": "Undo",
       "useSuggestion": "Vorschlag verwenden"
     },
@@ -1973,47 +2000,6 @@
       "useDefault": "Standard verwenden"
     },
     "documentTitle": "Chat",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "Quellenaktualisierung",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
       "loadMessages": "Nachrichten konnten nicht geladen werden",
@@ -2106,78 +2092,6 @@
       "sent": "Erfolgreich weitergeleitet",
       "threads": "Chats",
       "title": "Weiterleiten an"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Dokument",
-        "image": "Bild",
-        "presentation": "Presentation",
-        "visualization": "Diagramm",
-        "website": "Website"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "Hilf mir, eine morgendliche Übersicht der E-Mails einzurichten, die meine Aufmerksamkeit erfordern; bestätige zuerst das Postfach und die Zustellzeit",
-            "second": "Hilf mir, ein wöchentliches Wettbewerber-Briefing einzurichten; bestätige zuerst die Unternehmen, Quellen und den Zeitplan",
-            "third": "Hilf mir, eine tägliche Vertriebsübersicht einzurichten; bestätige zuerst die Datenquelle, Kennzahlen und die Zustellzeit"
-          },
-          "label": "Briefings",
-          "placeholder": "Beschreibe, welche Inhalte du in deinem Briefing möchtest und wie oft…",
-          "title": "Welches Briefing möchtest du erhalten?"
-        },
-        "general": {
-          "examples": {
-            "first": "Finde Agenturen für Markendesign, die zu einem Team in der Gründungsphase passen",
-            "second": "Vergleiche Kundenmanagement-Tools nach Funktionen und Preis",
-            "third": "Recherchiere aktuelle Trends und führende Unternehmen einer Branche"
-          },
-          "label": "Allgemein",
-          "placeholder": "Beschreibe deine Frage oder was du erfahren möchtest…",
-          "title": "Was möchtest du herausfinden?"
-        },
-        "information": {
-          "examples": {
-            "first": "Finde aktuelle Studien zum Einsatz von KI in kleinen Unternehmen mit Originalquellen",
-            "second": "Sammle öffentlich zugängliche Beispiele erfolgreicher Produkteinführungen und erkläre, was gut funktioniert hat",
-            "third": "Finde verlässliche Branchendaten für eine Präsentation mit Datumsangaben und Quellenlinks"
-          },
-          "label": "Informationen",
-          "placeholder": "Beschreibe das Thema, den Zeitraum oder wofür du die Informationen brauchst…",
-          "title": "Was möchtest du recherchieren?"
-        },
-        "monitor": {
-          "examples": {
-            "first": "Hilf mir, Preisänderungen bei Wettbewerbern zu verfolgen; bestätige zuerst die Unternehmen, Quellen und wann ich benachrichtigt werden soll",
-            "second": "Hilf mir, eine Antwort auf eine E-Mail an einen Kunden im Blick zu behalten; bestätige zuerst die E-Mail und die Art der Benachrichtigung",
-            "third": "Hilf mir, wichtige Entwicklungen in einer Branche zu verfolgen; stimme zuerst die Quellen, Häufigkeit und relevanten Themen mit mir ab"
-          },
-          "label": "Beobachten",
-          "placeholder": "Beschreibe, was du verfolgen möchtest und welche Änderungen wichtig sind…",
-          "title": "Welche Änderungen möchtest du verfolgen?"
-        },
-        "people": {
-          "examples": {
-            "first": "Finde 5 Vortragende für eine Veranstaltung zu KI im Marketing, mit Begründungen für ihre Eignung und öffentlich zugänglichen Quellen",
-            "second": "Finde Content-Creator, die Unternehmer erreichen, und erkläre, warum ihre Zielgruppe passt",
-            "third": "Finde potenzielle Kunden für meine Beratungsleistungen mit relevanten, öffentlich zugänglichen Hintergrundinformationen"
-          },
-          "label": "Personen",
-          "placeholder": "Beschreibe die Position, das Fachgebiet, das Unternehmen oder den Standort…",
-          "title": "Wen suchst du?"
-        }
-      },
-      "groups": {
-        "automate": "Automatisieren",
-        "create": "Erstellen",
-        "search": "Suchen"
-      },
-      "label": "Entdecke, was Okou kann",
-      "placeholder": "Beschreibe, was du erledigen möchtest…",
-      "sources": {
-        "trigger": "Werkzeuge"
-      },
-      "workflows": "Workflows"
     },
     "mail": {
       "bcc": "BCC",
@@ -2699,7 +2613,6 @@
       "tasks": {
         "document": "Dokument",
         "image": "Bild",
-        "jobs": "Tasks",
         "presentation": "Folien",
         "visualization": "Visualisierung",
         "website": "Website",
@@ -3181,6 +3094,17 @@
     "unused": "Von keinem deiner Hosts verwendet",
     "usedBy_one": "Von {{count}} deiner Hosts verwendet:",
     "usedBy_other": "Von {{count}} deiner Hosts verwendet:"
+  },
+  "connectorChatAccess": {
+    "accountAccess": "Zugriff für {{account}}",
+    "enableByDefault": "{{account}} standardmäßig aktivieren",
+    "enabledAccounts": "{{value}} aktiviert",
+    "manageAccounts": "Konten verwalten",
+    "noAccount": "Kein Konto ausgewählt",
+    "noEnabledAccount": "Für diesen Chat ist kein Konto aktiviert",
+    "permissions": "Berechtigungen",
+    "permissionsDescription": "Diese Regeln gelten für diesen Connector in allen deinen Chats und Konten.",
+    "settingsDescription": "Wähle die standardmäßig aktivierten Konten und das Standardkonto für neue Chats."
   },
   "connectors": {
     "access": {
@@ -4086,20 +4010,24 @@
     "actionFailed": "Autorisierung konnte nicht aktualisiert werden.",
     "allow": "Für 1 Stunde erlauben",
     "approved": "Erlaubt",
-    "deadline": "Läuft ab: {{date}}",
+    "blocked": {
+      "chatBusy": "Warte vor der Genehmigung, bis der aktuelle Run in diesem Chat beendet ist.",
+      "computerChanged": "Wähle vor der Genehmigung erneut {{computer}} aus.",
+      "runActive": "Warte vor der Genehmigung, bis der anfragende Run beendet ist.",
+      "runUnavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage."
+    },
     "denied": "Anfrage abgelehnt",
     "deny": "Ablehnen",
     "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
     "expired": "Autorisierung abgelaufen",
     "loading": "Autorisierung wird geladen…",
-    "pending": "Bereit zur Genehmigung",
+    "reasonTitle": "Grund für den Zugriff",
+    "requestExpired": "Anfrage abgelaufen",
     "revoke": "Zugriff widerrufen",
     "revoked": "Shell-Zugriff widerrufen",
-    "scope": "Nur dieser Chat und Computer",
-    "terminalNotice": "Bestehende Terminals bleiben nach Ablauf geöffnet.",
-    "title": "Desktop-Shell-Zugriff",
+    "title": "Shell-Zugriff",
     "unavailable": "Autorisierung nicht verfügbar",
-    "waiting": "Eine Genehmigung ist während eines aktiven Runs oder nach einem Computerwechsel nicht möglich."
+    "viewReason": "Vollständige Begründung ansehen"
   },
   "documentTemplates": {
     "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",
@@ -4171,6 +4099,28 @@
     "emptyDescription": "Neue Vorschläge erscheinen hier.",
     "emptyTitle": "Du bist auf dem neuesten Stand",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "checkingCode": "Einladungscode wird geprüft…",
+    "codeApplied": "Einladungscode angewendet",
+    "codeCheckFailed": "Der Code konnte nicht geprüft werden. Versuche es erneut oder fahre ohne Code fort.",
+    "codeLabel": "Dein Einladungscode",
+    "codeUnavailable": "Dieser Einladungscode ist nicht verfügbar. Prüfe ihn oder fahre ohne Code fort.",
+    "copied": "Kopiert",
+    "copyCode": "Code kopieren",
+    "copyFailed": "Kopieren fehlgeschlagen. Bitte erneut versuchen.",
+    "copyLink": "Link kopieren",
+    "description": "Erhalte Credits im Wert von $20, wenn sich ein Freund mit deinem Einladungscode registriert, ein Usage Pack kauft und auf Pro oder höher umsteigt.",
+    "earned": "Verdiente Credits",
+    "invalidCode": "Gib 6 Buchstaben oder Ziffern ein oder fahre ohne Code fort.",
+    "loadFailed": "Dein Einladungscode konnte nicht geladen werden. Bitte erneut versuchen.",
+    "loading": "Dein Einladungscode wird geladen…",
+    "registered": "Registrierte Freunde",
+    "retry": "Erneut versuchen",
+    "signupLabel": "Einladungscode (optional)",
+    "signupPlaceholder": "Einladungscode eingeben",
+    "terms": "Nur für neue Nutzer. Pro Freund gibt es eine Prämie. Credits gehen an dein persönliches Guthaben in diesem Workspace und verfallen einen Monat nach der Gutschrift.",
+    "title": "Freunde einladen"
   },
   "global": {
     "errors": {
@@ -4998,8 +4948,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -5010,11 +4958,11 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
+    "moveTo": "Nach {{name}} verschieben",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",
@@ -5028,6 +4976,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {
@@ -5420,6 +5369,8 @@
       "subscriptions": {
         "credits": "Credits",
         "fiveHourLimit": "5-Stunden-Limit",
+        "label": "Abonnementnutzung",
+        "lowUsage": "Abonnementnutzung: weniger als 20 % verbleibend",
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",
         "usage": "{{provider}} Nutzung",
         "usageRemaining": "{{provider}} {{window}} übrig",
@@ -5480,7 +5431,7 @@
           "description": "Personalisieren Sie das Aussehen und Verhalten der App.",
           "title": "Einstellungen"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Wähle, wie Okou proaktiv arbeitet.",
           "title": "Proactive"
         },
@@ -5865,15 +5816,6 @@
         "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
         "preparing": "Dieser Workflow wird vorbereitet.",
         "title": "Lernen"
-      },
-      "proactivePlanningAction": {
-        "description": "Okou plant und erledigt deine übertragenen Aufgaben und benachrichtigt dich, wenn deine Eingabe nötig ist.",
-        "errorMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
-        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
-        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
-        "preparing": "Dieser Workflow wird vorbereitet.",
-        "title": "Planung & Ausführung"
       },
       "proactiveSuggestions": {
         "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",

@@ -642,12 +642,15 @@
       "loadFailed": "Impossibile caricare le autorizzazioni",
       "loadingPermissions": "Caricamento delle autorizzazioni",
       "onlyMe": "Solo io",
+      "onlyMeDescription": "Solo tu puoi aprirlo",
       "onlyMeOption": "Solo io",
       "organization": "Organizzazione",
+      "organizationDescription": "Il tuo team può vederlo",
       "organizationOption": "Chiunque in {{organization}}",
       "organizationOptionUnnamed": "Chiunque nella tua organizzazione",
       "permissionsUpdated": "Accesso aggiornato",
       "publicAccess": "Accesso pubblico",
+      "publicDescription": "Nessun accesso richiesto",
       "publicOption": "Chiunque abbia il link",
       "updateFailed": "Impossibile aggiornare l’accesso"
     },
@@ -969,6 +972,27 @@
     },
     "homeLink": "Vai alla home di {{brandName}}",
     "loading": "Caricamento dell'autenticazione",
+    "signup": {
+      "alreadyHaveAccount": "Hai già un account?",
+      "apple": "Apple",
+      "continue": "Continua",
+      "email": "Indirizzo email",
+      "emailPlaceholder": "Inserisci l'indirizzo email",
+      "failed": "Richiesta non riuscita",
+      "google": "Google",
+      "hidePassword": "Nascondi password",
+      "legalAnd": "e l’",
+      "legalPrefix": "Accetto i",
+      "or": "oppure",
+      "password": "Password",
+      "passwordPlaceholder": "Inserisci la tua password",
+      "privacy": "Informativa sulla privacy",
+      "showPassword": "Mostra password",
+      "signIn": "Accedi",
+      "subtitle": "per continuare su {{applicationName}}",
+      "terms": "Termini di servizio",
+      "title": "Crea il tuo account"
+    },
     "theme": {
       "darkEnabled": "Tema scuro attivato",
       "lightEnabled": "Tema chiaro attivato"
@@ -1388,6 +1412,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "Inserisci un URL",
+    "authorizationRequired": "Il browser cloud non è abilitato per questa chat",
     "blankPage": {
       "description": "{{assistantName}} apre qui le pagine mentre lavora. Inserisci un URL qui sopra per navigare da solo.",
       "title": "Ancora niente di aperto"
@@ -1414,9 +1439,9 @@
       "takeOver": "Prendi il controllo",
       "takeOverMessage": "Ho preso il controllo del browser. Non usarlo finché non te lo restituisco."
     },
-    "reclaimHint_one": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuto di inattività.",
-    "reclaimHint_many": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
-    "reclaimHint_other": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
+    "reclaimHint_one": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuto di inattività.",
+    "reclaimHint_many": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuti di inattività.",
+    "reclaimHint_other": "Mantenuto con il pannello aperto; rilasciato dopo {{formattedCount}} minuti di inattività.",
     "status": {
       "live": "Attivo",
       "starting": "Avvio",
@@ -1454,6 +1479,7 @@
     "paused": "Vista in pausa",
     "quality": "Qualità immagine",
     "reconnect": "Riconnetti",
+    "reconnecting": "Riconnessione…",
     "reload": "Ricarica",
     "remoteInput": "Input del browser remoto",
     "resolution": "Risoluzione",
@@ -1562,7 +1588,7 @@
           "unit": "per membro"
         },
         "pendingState": "{{amount}} in sospeso",
-        "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
+        "rewardsNote": "I premi delle attività scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "slack": {
           "action": "Aggiungi",
           "description": "Dove il tuo team lavora già",
@@ -1633,6 +1659,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "Inviato in una nuova chat",
       "undoFeedback": "Undo",
       "useSuggestion": "Usa suggerimento"
     },
@@ -2004,47 +2031,6 @@
       "useDefault": "Usa predefinito"
     },
     "documentTitle": "Chat",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "Aggiornamento della fonte",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "Non è stato possibile completare questa esecuzione",
       "loadMessages": "Impossibile caricare i messaggi",
@@ -2140,78 +2126,6 @@
       "sent": "Inoltrato correttamente",
       "threads": "Chat",
       "title": "Inoltra a"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Documento",
-        "image": "Immagine",
-        "presentation": "Presentation",
-        "visualization": "Grafico",
-        "website": "Sito web"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "Aiutami a impostare un riepilogo mattutino delle email che richiedono la mia attenzione; prima conferma la casella di posta e l'orario di invio",
-            "second": "Aiutami a impostare un riepilogo settimanale sui concorrenti; prima conferma le aziende, le fonti e la programmazione",
-            "third": "Aiutami a impostare un riepilogo giornaliero delle vendite; prima conferma la fonte dei dati, le metriche e l'orario di invio"
-          },
-          "label": "Riepiloghi",
-          "placeholder": "Descrivi cosa vorresti nel riepilogo e con quale frequenza riceverlo…",
-          "title": "Quale riepilogo vorresti ricevere?"
-        },
-        "general": {
-          "examples": {
-            "first": "Trova agenzie di brand design adatte a un team agli inizi",
-            "second": "Confronta gli strumenti di gestione clienti per funzionalità e prezzo",
-            "third": "Cerca le tendenze recenti e le aziende leader di un settore"
-          },
-          "label": "Generale",
-          "placeholder": "Descrivi la tua domanda o cosa vorresti sapere…",
-          "title": "Cosa vorresti scoprire?"
-        },
-        "information": {
-          "examples": {
-            "first": "Trova studi recenti sull'adozione dell'IA nelle piccole imprese, con le fonti originali",
-            "second": "Raccogli esempi pubblici di lanci di prodotto di successo e spiega cosa ha funzionato",
-            "third": "Trova dati di settore affidabili per una presentazione, con date e link alle fonti"
-          },
-          "label": "Informazioni",
-          "placeholder": "Descrivi l'argomento, il periodo o a cosa ti servono le informazioni…",
-          "title": "Su cosa vorresti fare una ricerca?"
-        },
-        "monitor": {
-          "examples": {
-            "first": "Aiutami a seguire le variazioni dei prezzi dei concorrenti; prima conferma le aziende, le fonti e quando avvisarmi",
-            "second": "Aiutami a tenere d'occhio la risposta a un'email inviata a un cliente; prima conferma l'email e come avvisarmi",
-            "third": "Aiutami a seguire gli aggiornamenti importanti di un settore; concordiamo prima le fonti, la frequenza e gli aspetti rilevanti"
-          },
-          "label": "Monitora",
-          "placeholder": "Descrivi cosa vuoi seguire e quali cambiamenti sono importanti…",
-          "title": "Quali cambiamenti vorresti seguire?"
-        },
-        "people": {
-          "examples": {
-            "first": "Trova 5 relatori per un evento sul marketing con l'IA, con i motivi per cui sono adatti e fonti pubbliche",
-            "second": "Trova creator che raggiungono i titolari d'impresa e spiega perché il loro pubblico è adatto",
-            "third": "Trova potenziali clienti per i miei servizi di consulenza, con informazioni pubbliche pertinenti sul loro profilo"
-          },
-          "label": "Persone",
-          "placeholder": "Descrivi il ruolo, il settore, l'azienda o la località…",
-          "title": "Chi stai cercando?"
-        }
-      },
-      "groups": {
-        "automate": "Automatizza",
-        "create": "Crea",
-        "search": "Cerca"
-      },
-      "label": "Scopri cosa può fare Okou",
-      "placeholder": "Descrivi cosa vuoi fare…",
-      "sources": {
-        "trigger": "Strumenti"
-      },
-      "workflows": "Flussi di lavoro"
     },
     "mail": {
       "bcc": "bcc",
@@ -2745,7 +2659,6 @@
       "tasks": {
         "document": "Documento",
         "image": "Immagine",
-        "jobs": "Tasks",
         "presentation": "Diapositive",
         "visualization": "Visualizzazione",
         "website": "Sito web",
@@ -3229,6 +3142,17 @@
     "usedBy_one": "Usata da {{count}} dei tuoi host:",
     "usedBy_many": "Usata da {{count}} dei tuoi host:",
     "usedBy_other": "Usata da {{count}} dei tuoi host:"
+  },
+  "connectorChatAccess": {
+    "accountAccess": "Accesso di {{account}}",
+    "enableByDefault": "Attiva {{account}} per impostazione predefinita",
+    "enabledAccounts": "{{value}} attivi",
+    "manageAccounts": "Gestisci account",
+    "noAccount": "Nessun account selezionato",
+    "noEnabledAccount": "Nessun account attivo per questa chat",
+    "permissions": "Autorizzazioni",
+    "permissionsDescription": "Queste regole si applicano a questo connettore in tutte le tue chat e account.",
+    "settingsDescription": "Scegli gli account attivi per impostazione predefinita e l'account predefinito per le nuove chat."
   },
   "connectors": {
     "access": {
@@ -4139,20 +4063,24 @@
     "actionFailed": "Impossibile aggiornare l’autorizzazione.",
     "allow": "Consenti per 1 ora",
     "approved": "Consentito",
-    "deadline": "Scade il {{date}}",
+    "blocked": {
+      "chatBusy": "Attendi la fine del Run in corso in questa chat prima di approvare.",
+      "computerChanged": "Seleziona di nuovo {{computer}} prima di approvare.",
+      "runActive": "Attendi la fine del Run che ha inviato la richiesta prima di approvare.",
+      "runUnavailable": "Il Run che ha inviato la richiesta non è disponibile. Chiedi una nuova richiesta in questa chat."
+    },
     "denied": "Richiesta rifiutata",
     "deny": "Rifiuta",
     "description": "L’agente richiede il permesso di utilizzare Shell sul tuo computer.",
     "expired": "Autorizzazione scaduta",
     "loading": "Caricamento autorizzazione…",
-    "pending": "Pronta per l’approvazione",
+    "reasonTitle": "Motivo dell’accesso",
+    "requestExpired": "Richiesta scaduta",
     "revoke": "Revoca accesso",
     "revoked": "Accesso a Shell revocato",
-    "scope": "Solo questa chat e questo computer",
-    "terminalNotice": "I terminali esistenti restano aperti al termine dell’accesso.",
-    "title": "Accesso a Desktop Shell",
+    "title": "Accesso Shell",
     "unavailable": "Autorizzazione non disponibile",
-    "waiting": "Non è possibile approvare mentre un Run è attivo o se il computer selezionato è cambiato."
+    "viewReason": "Visualizza il motivo completo"
   },
   "documentTemplates": {
     "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
@@ -4224,6 +4152,28 @@
     "emptyDescription": "I nuovi suggerimenti appariranno qui.",
     "emptyTitle": "Sei in pari",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "checkingCode": "Verifica del codice invito…",
+    "codeApplied": "Codice invito applicato",
+    "codeCheckFailed": "Impossibile verificare il codice. Riprova o lascia vuoto per continuare.",
+    "codeLabel": "Il tuo codice invito",
+    "codeUnavailable": "Questo codice non è disponibile. Controllalo o lascia vuoto per continuare.",
+    "copied": "Copiato",
+    "copyCode": "Copia codice",
+    "copyFailed": "Copia non riuscita. Riprova.",
+    "copyLink": "Copia link",
+    "description": "Ottieni $20 in crediti quando un amico si registra con il tuo codice invito, acquista un usage pack e passa a Pro o superiore.",
+    "earned": "Crediti guadagnati",
+    "invalidCode": "Usa 6 lettere o numeri, oppure lascia vuoto per continuare.",
+    "loadFailed": "Impossibile caricare il codice invito. Riprova.",
+    "loading": "Recupero del codice invito…",
+    "registered": "Amici registrati",
+    "retry": "Riprova",
+    "signupLabel": "Codice invito (facoltativo)",
+    "signupPlaceholder": "Inserisci il codice di invito",
+    "terms": "Solo per nuovi utenti. Un premio per amico. I crediti vengono aggiunti al tuo saldo personale in questo spazio e scadono un mese dopo l’assegnazione.",
+    "title": "Invita i tuoi amici"
   },
   "global": {
     "errors": {
@@ -5054,8 +5004,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -5066,11 +5014,11 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
+    "moveTo": "Sposta in {{name}}",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",
@@ -5084,6 +5032,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {
@@ -5481,6 +5430,8 @@
       "subscriptions": {
         "credits": "Crediti",
         "fiveHourLimit": "Limite di 5 ore",
+        "label": "Utilizzo degli abbonamenti",
+        "lowUsage": "Utilizzo degli abbonamenti: meno del 20% rimanente",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
         "usageRemaining": "{{provider}} {{window}} rimanente",
@@ -5541,7 +5492,7 @@
           "description": "Personalizza l'aspetto e il comportamento dell'app.",
           "title": "Preferenza"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Scegli come Okou lavora in modo proattivo.",
           "title": "Proactive"
         },
@@ -5929,15 +5880,6 @@
         "preparationFailed": "Questo flusso è temporaneamente non disponibile.",
         "preparing": "Preparazione del flusso di lavoro.",
         "title": "Apprendimento"
-      },
-      "proactivePlanningAction": {
-        "description": "Pianifica e svolge il lavoro che deleghi e ti avvisa quando è necessario il tuo intervento.",
-        "errorMessage": "Impossibile caricare o aggiornare questa impostazione.",
-        "missingDefaultAgent": "Okou non è disponibile in quest’area di lavoro. Contatta un amministratore.",
-        "missingTimezone": "Imposta il fuso orario nelle preferenze.",
-        "preparationFailed": "Questo flusso è temporaneamente non disponibile.",
-        "preparing": "Preparazione del flusso di lavoro.",
-        "title": "Pianificazione e azione"
       },
       "proactiveSuggestions": {
         "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",

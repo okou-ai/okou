@@ -3,7 +3,10 @@ import {
   type BrowserSession,
   type BrowserViewerConnection,
 } from "@okouai/api-contracts/contracts/browser";
-import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadByIdContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
   act,
   fireEvent,
@@ -21,16 +24,60 @@ import {
   fill,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockBrowserCdp,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
+import {
+  cachedChatListEvents,
+  chatListEvent,
+  chatListThread,
+  installChatListStream,
+} from "../../okou-page/__tests__/chat-list-test-helpers.ts";
 
 const context = testContext();
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 const INSTANCE_ID = "22222222-2222-4222-8222-222222222222";
+const AUTHORIZATION_REQUIRED = "Cloud browser is not enabled for this chat";
+
+function mockChatAuthorization(enabled: boolean) {
+  const events: ReturnType<typeof chatListEvent>[] = [];
+  const snapshot = [
+    chatListThread(1, "Browser authorization", {
+      id: THREAD_ID,
+      cloudBrowserEnabled: enabled,
+    }),
+  ];
+  const stream = installChatListStream(context, {
+    caseId: 5312,
+    snapshot,
+  });
+  const authorize = (authorized: boolean) => {
+    events.push(
+      chatListEvent(
+        5312,
+        events.length + 2,
+        "computer_use_host_updated",
+        THREAD_ID,
+        {
+          cloudBrowserEnabled: authorized,
+        },
+      ),
+    );
+    stream.setEvents(events);
+    context.mocks.ably.trigger("threadListChanged");
+  };
+  return {
+    authorize,
+    cachedChatThreadEvents: cachedChatListEvents(5312, snapshot),
+  };
+}
 
 function browserSession(
   overrides: Partial<BrowserSession> = {},
@@ -291,7 +338,7 @@ test("A reclaimed connection shows an unavailable state", async () => {
     path: `/browsers/${THREAD_ID}`,
   });
   await expect(
-    screen.findByText("Browser unavailable"),
+    screen.findByText("Browser view unavailable"),
   ).resolves.toBeInTheDocument();
 });
 
@@ -369,7 +416,7 @@ test.each(["url", "instance", "window"] as const)(
     });
     releaseConnection.resolve();
     await expect(
-      screen.findByText("Browser unavailable"),
+      screen.findByText("Browser view unavailable"),
     ).resolves.toBeInTheDocument();
   },
 );
@@ -741,6 +788,554 @@ function mockSharedViewer(liveUrl: string | null = null) {
   });
   return { session, cdpUrl, browser };
 }
+
+test.each(["session", "connection"] as const)(
+  "An authorization denial from the %s keeps the panel with a distinct placeholder",
+  async (source) => {
+    const { session } = mockSharedViewer();
+    mockBrowserSession(session);
+    if (source === "session") {
+      context.mocks.api(browserContract.get, ({ respond }) => {
+        return respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: AUTHORIZATION_REQUIRED,
+          },
+        });
+      });
+    } else {
+      context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+        return respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: AUTHORIZATION_REQUIRED,
+          },
+        });
+      });
+    }
+    const hold = context.mocks.deferred<void>();
+    context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+      await hold.promise;
+      return respond(200, { browser: session });
+    });
+    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await expect(
+      screen.findByText(AUTHORIZATION_REQUIRED),
+    ).resolves.toBeInTheDocument();
+    expect(
+      document.querySelector("[data-browser-session-panel]"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Remote browser input"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Browser not live")).not.toBeInTheDocument();
+    expect(screen.queryByText("Start browser")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "This browser does not belong to this chat or has been removed.",
+      ),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("A granted initial snapshot revalidates an earlier authorization denial", async () => {
+  const snapshot = context.mocks.deferred<void>();
+  installChatListStream(context, {
+    caseId: 5314,
+    snapshot: [
+      chatListThread(1, "Browser authorization", {
+        id: THREAD_ID,
+        cloudBrowserEnabled: true,
+      }),
+    ],
+    remoteGate: snapshot.promise,
+  });
+  const { session } = mockSharedViewer();
+  let granted = false;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return granted
+      ? respond(200, { browser: session })
+      : respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: AUTHORIZATION_REQUIRED,
+          },
+        });
+  });
+  const hold = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  const page = await startPage({ context, path: `/browsers/${THREAD_ID}` });
+  await page.content;
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  granted = true;
+  snapshot.resolve();
+  await page.ready;
+  await expectStreamingViewer();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test("A replacement snapshot revalidates a renewed grant with unchanged cached authorization", async () => {
+  const thread = chatListThread(1, "Browser snapshot grant", {
+    id: THREAD_ID,
+    cloudBrowserEnabled: true,
+  });
+  installChatListStream(context, { caseId: 5315, snapshot: [thread] });
+  let revision = 1;
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [thread],
+        latestEventId: chatListEvent(
+          5315,
+          revision,
+          "computer_use_host_updated",
+          THREAD_ID,
+        ).id,
+        latestSeqId: revision,
+      }),
+    );
+  });
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    return (query.sinceSeqId ?? 0) < revision
+      ? respond(410, {
+          error: {
+            code: "CHAT_THREAD_EVENTS_EXPIRED",
+            message: "Chat thread events cursor has expired",
+          },
+        })
+      : respond(200, { events: [], hasMore: false });
+  });
+  const { session } = mockSharedViewer();
+  let allowed = true;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return allowed
+      ? respond(200, { browser: session })
+      : respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: AUTHORIZATION_REQUIRED,
+          },
+        });
+  });
+  const deny = context.mocks.deferred<void>();
+  const hold = context.mocks.deferred<void>();
+  let first = true;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (first) {
+      first = false;
+      await deny.promise;
+      allowed = false;
+      return respond(403, {
+        error: {
+          code: "BROWSER_AUTHORIZATION_REQUIRED",
+          message: AUTHORIZATION_REQUIRED,
+        },
+      });
+    }
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents: cachedChatListEvents(5315, [thread]),
+  });
+  await expectStreamingViewer();
+  deny.resolve();
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  allowed = true;
+  revision = 2;
+  context.mocks.ably.trigger("threadListChanged");
+  await expectStreamingViewer();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test("A denied renewal revokes a healthy viewer without waiting for native disconnection", async () => {
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const deny = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await deny.promise;
+    return respond(403, {
+      error: {
+        code: "BROWSER_AUTHORIZATION_REQUIRED",
+        message: AUTHORIZATION_REQUIRED,
+      },
+    });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  const input = screen.getByLabelText("Remote browser input");
+  deny.resolve();
+  await expect(
+    screen.findByText(AUTHORIZATION_REQUIRED),
+  ).resolves.toBeInTheDocument();
+  expect(input).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Live browser view")).not.toBeInTheDocument();
+  expect(screen.queryByText("Browser not live")).not.toBeInTheDocument();
+});
+
+test("Losing authorization while starting replaces the stopped state with the authorization placeholder", async () => {
+  mockBrowserSession(
+    browserSession({
+      status: "suspended",
+      liveUrl: null,
+      idleExpiresAt: null,
+      suspendedAt: "2026-09-01T10:10:00.000Z",
+      suspensionReason: "idle",
+    }),
+  );
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    return respond(403, {
+      error: {
+        code: "BROWSER_AUTHORIZATION_REQUIRED",
+        message: "Browser authorization was revoked",
+      },
+    });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await screen.findByText("Browser not live");
+  click(getButton("Start browser"));
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  expect(screen.queryByText("Start browser")).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Browser authorization was revoked"),
+  ).not.toBeInTheDocument();
+});
+
+test("A renewed grant can start a stopped Browser while an older start is pending", async () => {
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
+  const { session } = mockSharedViewer();
+  let currentSession = browserSession({
+    status: "suspended",
+    liveUrl: null,
+    idleExpiresAt: null,
+    suspendedAt: "2026-09-01T10:10:00.000Z",
+    suspensionReason: "idle",
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  const oldStart = context.mocks.deferred<void>();
+  const oldStartStarted = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(browserContract.open, async ({ respond }) => {
+    if (initial) {
+      initial = false;
+      oldStartStarted.resolve();
+      await oldStart.promise;
+    }
+    currentSession = session;
+    return respond(200, { browser: session });
+  });
+  const hold = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
+  await screen.findByText("Browser not live");
+  click(getButton("Start browser"));
+  await oldStartStarted.promise;
+  authorize(false);
+  authorize(true);
+  await waitFor(() => {
+    expect(getButton("Start browser")).toBeEnabled();
+  });
+  click(getButton("Start browser"));
+  await expectStreamingViewer();
+});
+
+test("An unrelated permission failure remains an observable error", async () => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Access denied for another reason" },
+    });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await screen.findByText("Access denied for another reason");
+  expect(screen.getByText("Browser unavailable")).toBeInTheDocument();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test.each(["active", "suspended"] as const)(
+  "Restoring chat authorization revalidates an existing %s Browser",
+  async (status) => {
+    const { authorize, cachedChatThreadEvents } = mockChatAuthorization(false);
+    const { session } = mockSharedViewer();
+    const currentSession =
+      status === "active"
+        ? session
+        : browserSession({
+            status: "suspended",
+            liveUrl: null,
+            idleExpiresAt: null,
+            suspendedAt: "2026-09-01T10:10:00.000Z",
+            suspensionReason: "idle",
+          });
+    let enabled = false;
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return enabled
+        ? respond(200, { browser: currentSession })
+        : respond(403, {
+            error: {
+              code: "BROWSER_AUTHORIZATION_REQUIRED",
+              message: AUTHORIZATION_REQUIRED,
+            },
+          });
+    });
+    const hold = context.mocks.deferred<void>();
+    context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+      await hold.promise;
+      return respond(200, { browser: session });
+    });
+    await setupPage({
+      context,
+      path: `/browsers/${THREAD_ID}`,
+      cachedChatThreadEvents,
+    });
+    await screen.findByText(AUTHORIZATION_REQUIRED);
+    enabled = true;
+    authorize(true);
+    if (status === "active") {
+      await expectStreamingViewer();
+    } else {
+      await screen.findByText("Browser not live");
+    }
+    expect(screen.queryByText("Start browser") !== null).toBe(
+      status === "suspended",
+    );
+    expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+    enabled = false;
+    authorize(false);
+    await screen.findByText(AUTHORIZATION_REQUIRED);
+    expect(
+      screen.queryByLabelText("Remote browser input"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Browser not live")).not.toBeInTheDocument();
+  },
+);
+
+test("A denied renewal from a previous reload cannot revoke the current same-window viewer", async () => {
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const first = context.mocks.deferred<void>();
+  const deny = context.mocks.deferred<void>();
+  const renewed = context.mocks.deferred<void>();
+  const hold = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (initial) {
+      initial = false;
+      first.resolve();
+      await deny.promise;
+      return respond(403, {
+        error: {
+          code: "BROWSER_AUTHORIZATION_REQUIRED",
+          message: AUTHORIZATION_REQUIRED,
+        },
+      });
+    }
+    renewed.resolve();
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  await first.promise;
+  context.mocks.ably.trigger("browserSessionChanged", { threadId: THREAD_ID });
+  await expectStreamingViewer();
+  deny.resolve();
+  await renewed.promise;
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test("A renewed grant starts renewal without waiting for an older pending lease", async () => {
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const oldLease = context.mocks.deferred<void>();
+  const oldLeaseStarted = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (initial) {
+      initial = false;
+      oldLeaseStarted.resolve();
+      await oldLease.promise;
+      return respond(200, { browser: session });
+    }
+    return respond(403, {
+      error: {
+        code: "BROWSER_AUTHORIZATION_REQUIRED",
+        message: AUTHORIZATION_REQUIRED,
+      },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
+  await expectStreamingViewer();
+  await oldLeaseStarted.promise;
+  authorize(false);
+  authorize(true);
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+  expect(
+    document.querySelector("[data-browser-session-panel]"),
+  ).toBeInTheDocument();
+});
+
+test("A renewed grant revalidates a healthy viewer and ignores a previous grant's denied renewal", async () => {
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const deny = context.mocks.deferred<void>();
+  const leaseRequested = context.mocks.deferred<void>();
+  const hold = context.mocks.deferred<void>();
+  const revalidate = context.mocks.deferred<void>();
+  const connectionRequested = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    if (initial) {
+      initial = false;
+    } else {
+      connectionRequested.resolve();
+      await revalidate.promise;
+    }
+    return respond(200, {
+      browser: session,
+      cdpUrl: "wss://cdp.browser-use.com/shared-viewer",
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  let initialLease = true;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (initialLease) {
+      initialLease = false;
+      leaseRequested.resolve();
+      await deny.promise;
+      return respond(403, {
+        error: {
+          code: "BROWSER_AUTHORIZATION_REQUIRED",
+          message: AUTHORIZATION_REQUIRED,
+        },
+      });
+    }
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
+  await expectStreamingViewer();
+  await leaseRequested.promise;
+  authorize(false);
+  authorize(true);
+  await connectionRequested.promise;
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  });
+  deny.resolve();
+  revalidate.resolve();
+  await expectStreamingViewer();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test("A batched disable and re-enable clears a denied lease even when cached authorization was true", async () => {
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const deny = context.mocks.deferred<void>();
+  const hold = context.mocks.deferred<void>();
+  let denied = false;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (!denied) {
+      denied = true;
+      await deny.promise;
+      return respond(403, {
+        error: {
+          code: "BROWSER_AUTHORIZATION_REQUIRED",
+          message: AUTHORIZATION_REQUIRED,
+        },
+      });
+    }
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
+  await expectStreamingViewer();
+  deny.resolve();
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  authorize(false);
+  authorize(true);
+  await expectStreamingViewer();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test("Confirmed expiry after a failed renewal displays the stopped state", async () => {
+  const failures = recordHeartbeatFailures();
+  const { session } = mockSharedViewer();
+  let currentSession = session;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  const fail = context.mocks.deferred<void>();
+  const expire = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (initial) {
+      initial = false;
+      await fail.promise;
+      return respond(503, {
+        error: { code: "UNAVAILABLE", message: "Temporary outage" },
+      });
+    }
+    await expire.promise;
+    return respond(409, {
+      error: { code: "BROWSER_NOT_LIVE", message: "Browser expired" },
+    });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  fail.resolve();
+  await waitFor(() => {
+    return expect(failures).toHaveLength(1);
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  currentSession = browserSession({
+    status: "suspended",
+    liveUrl: null,
+    idleExpiresAt: null,
+    suspendedAt: "2026-09-01T10:10:00.000Z",
+    suspensionReason: "idle",
+  });
+  expire.resolve();
+  await screen.findByText("Browser not live");
+  expect(getButton("Start browser")).toBeEnabled();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
 
 test.each([
   502,

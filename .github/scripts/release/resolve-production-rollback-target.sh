@@ -7,9 +7,16 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 # #43433 publishes each default Agent with its reference and never adopts an
 # existing custom Agent. Atomic configuration updates rely on that identity.
 readonly IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT=01d21f7c5857795104c27cd54e724f2ced2d683e
+# App saves now require #44980's reserved twelve-character address in responses.
+readonly MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT=046a7bac03cc5f5a94cc67394756f69be2eaf111
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
+# Project lifecycle events require the CLI reader installed by #44617.
+readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
+readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
+readonly TEAMS_IDENTITY_PREPARATION_PATH=.github/rollback-floors/teams-identity-retirement-preparation
+readonly TEAMS_UPLOAD_V2_CLI_PATH=.github/rollback-floors/teams-upload-v2-cli
 # #40206 migrates encrypted Link grants before requiring their metadata. Old
 # writers must never recreate the retired shape after the migration.
 readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
@@ -115,6 +122,7 @@ readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
+readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
@@ -203,6 +211,9 @@ fi
 
 if ! git merge-base --is-ancestor "$IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates immutable default Agent identity: ${IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Marketing handoff short-address responses: ${MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then
@@ -806,6 +817,28 @@ if ! git merge-base --is-ancestor "$storage_debug_contracts_commit" "$TARGET_COM
   fail "Rollback target predates the Storage debug contract cleanup: ${storage_debug_contracts_commit}."
 fi
 
+# Canonical Project parts now use ordinary chat/draft contracts. Earlier APIs
+# reject those writes and restore reader floors below the prepared clients.
+project_wire_contracts_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PROJECT_WIRE_CONTRACTS_PATH" | sed -n '1p')
+if [[ ! "$project_wire_contracts_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Project wire contract activation on main."
+fi
+if ! git merge-base --is-ancestor "$project_wire_contracts_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Project wire contract activation: ${project_wire_contracts_commit}."
+fi
+
+# The v2 CLI needs the prepared non-Run reader and writer. Keep the application
+# mapping that omits the discriminator eligible for the later DB contraction.
+teams_identity_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$TEAMS_IDENTITY_PREPARATION_PATH" | sed -n '1p')
+if [[ ! "$teams_identity_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Teams identity preparation on main."
+fi
+if ! git merge-base --is-ancestor "$teams_identity_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Teams identity preparation: ${teams_identity_preparation_commit}."
+fi
+
 # Pi memory's private tables no longer exist. Earlier APIs still name them
 # during ordinary native memory writes, even though producers were retired.
 pi_memory_retired_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
@@ -895,6 +928,21 @@ if ! git merge-base --is-ancestor "$official_workflow_bundle_reader_commit" orig
 fi
 if ! git merge-base --is-ancestor "$official_workflow_bundle_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates Official Workflow bundle reader preparation: ${official_workflow_bundle_reader_commit}."
+fi
+
+# Independent Registry publication no longer advances legacy Storage HEADs.
+# Read the floor from current main before resolving any provider artifacts.
+if ! registry_archive_reader_commit=$(git show "origin/main:${REGISTRY_ARCHIVE_READER_PATH}"); then
+  fail "Cannot read the Registry archive reader rollback floor from main."
+fi
+if [[ ! "$registry_archive_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Registry archive reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$registry_archive_reader_commit" origin/main; then
+  fail "Registry archive reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$registry_archive_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates independent Registry archive reads: ${registry_archive_reader_commit}."
 fi
 
 # Reference-only claims require the corrected archive reader. Keep the API
@@ -1028,8 +1076,19 @@ runner_tag_commit=$(git rev-list -n 1 "$runner_tag" || true)
 if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_commit" "$TARGET_COMMIT"; then
   fail "Runner release ${runner_tag} is not reachable from ${TARGET_COMMIT}."
 fi
+teams_upload_v2_cli_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$TEAMS_UPLOAD_V2_CLI_PATH" | sed -n '1p')
+if [[ ! "$teams_upload_v2_cli_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Teams v2 upload CLI on main."
+fi
+if ! git merge-base --is-ancestor "$teams_upload_v2_cli_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the Teams v2 upload CLI: ${teams_upload_v2_cli_commit}."
+fi
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates DAV firewall method support: ${DAV_FIREWALL_READER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PROJECT_READER_PREPARATION_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the Project CLI readers: ${PROJECT_READER_PREPARATION_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the blank sandbox status reader: ${BLANK_SANDBOX_STATUS_READER_COMMIT}."

@@ -46,6 +46,15 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.FriendReferrals]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Friend referrals",
+    description:
+      "Earn credits when a referred friend buys a usage pack on Pro or above.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.TikTokOAuthConnector]: {
     maintainer: "yuma@okou.ai",
     displayName: "TikTok OAuth connector",
@@ -60,7 +69,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Marketing content handoff",
     description:
       "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.ConnectorChatAccountAccess]: {
     maintainer: "liangyou@okou.ai",
@@ -68,6 +77,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Configure Chat connector accounts and shared member connector permissions.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
@@ -132,6 +142,20 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
     enabled: false,
   },
+  [FeatureSwitchKey.ShareAudienceDescriptions]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Share audience descriptions",
+    description:
+      "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.HostedSiteShareRows]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Website share rows",
+    description:
+      "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -146,11 +170,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ProactiveAgent]: {
+  [FeatureSwitchKey.ProactiveLearning]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Proactive",
-    description:
-      "Review activity, learn, plan next steps and advance entrusted Tasks.",
+    displayName: "Proactive learning",
+    description: "Review activity overnight and improve personal memory.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -169,8 +192,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "CJK Markdown emphasis",
     description:
       "Render paired bold and italic markers next to Chinese, Japanese, and Korean punctuation without showing literal asterisks.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.MarkdownTableExport]: {
     maintainer: "bingjie@okou.ai",
@@ -202,13 +224,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.HomeTaskDiscovery]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Home task discovery",
-    description: "Discover tasks from the redesigned homepage.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatHomeCompliance]: {
     maintainer: "tongx@okou.ai",
     displayName: "Chat home compliance",
@@ -230,6 +245,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Share website logins across chats with a separate window for each chat",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
@@ -239,11 +255,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.AhrefsConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ahrefs SEO connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.BillConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BILL Spend & Expense connector",
     enabled: false,
   },
   [FeatureSwitchKey.BentomlConnector]: {
@@ -256,11 +267,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Canva design connector",
     enabled: false,
   },
-  [FeatureSwitchKey.DatadogConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Datadog observability connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.DeelConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Deel HR connector",
@@ -271,11 +277,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the DocuSign e-signature connector",
     enabled: false,
   },
-  [FeatureSwitchKey.ExpensifyConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Expensify accounting connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.MercuryConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Mercury banking connector",
@@ -284,11 +285,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.NeonConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Neon serverless Postgres connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.NetSuiteConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Oracle NetSuite ERP connector",
     enabled: false,
   },
   [FeatureSwitchKey.GarminConnectConnector]: {
@@ -306,16 +302,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Supabase database connector integration",
     enabled: false,
   },
-  [FeatureSwitchKey.CloseConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Close CRM connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.WebflowConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Webflow site management connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",
@@ -324,11 +310,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.RampConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ramp spend management connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.ResendConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Resend email service connector",
     enabled: false,
   },
   [FeatureSwitchKey.SpotifyConnector]: {
@@ -361,25 +342,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable the test-oauth connector, a synthetic OAuth 2.0 provider used only for automated tests. Off in prod.",
     enabled: false,
   },
-  [FeatureSwitchKey.FreshdeskConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Freshdesk helpdesk connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.StabilityAiConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Stability AI image generation connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.ZoomConnector]: {
     maintainer: "yuma@okou.ai",
     description:
       "Enable the Zoom connector (OAuth 2.0) for meetings, past participants, and cloud recordings access",
-    enabled: false,
-  },
-  [FeatureSwitchKey.WorkdayConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Workday HCM and finance connector",
     enabled: false,
   },
   [FeatureSwitchKey.RealAgentInPreview]: {
@@ -446,7 +412,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Auto-continue busy chats",
     description:
-      "Continue chats interrupted by a busy model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
+      "Continue chats interrupted by a busy or rate-limited model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
     enabled: false,
     enabledUserHashes: ["032a75d8"],
   },
@@ -455,6 +421,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",

@@ -1,5 +1,5 @@
 import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { eq } from "drizzle-orm";
 import { command, computed, type Computed } from "ccstate";
@@ -18,6 +18,7 @@ interface TeamsInstallation {
 }
 
 interface TeamsMessageTarget {
+  readonly recipientId?: string;
   readonly conversationId: string;
   readonly activityId: string | undefined;
 }
@@ -103,6 +104,8 @@ export const resolveTeamsMessageTarget$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly mode?: "read" | "write";
+      /** Trusted persisted DM recipient, never taken from completion input. */
+      readonly recipientId?: string;
       readonly body: {
         readonly conversationId?: string;
         readonly user?: string;
@@ -124,7 +127,7 @@ export const resolveTeamsMessageTarget$ = command(
       );
     }
     let conversationId = args.body.conversationId;
-    let memberId = connection.teamsUserId;
+    let memberId = args.recipientId ?? connection.teamsUserId;
     if (!conversationId) {
       if (
         !args.installation.botId ||
@@ -182,6 +185,10 @@ export const resolveTeamsMessageTarget$ = command(
         "NOT_FOUND",
       );
     }
-    return { conversationId, activityId: args.body.activityId };
+    return {
+      conversationId,
+      activityId: args.body.activityId,
+      recipientId: args.body.user ? memberId : args.recipientId,
+    };
   },
 );

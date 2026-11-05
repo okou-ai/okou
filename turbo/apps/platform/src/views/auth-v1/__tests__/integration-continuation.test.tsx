@@ -2,8 +2,14 @@ import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { signupControl } from "./signup-test-helpers.ts";
 
 const context = testContext();
 const ENTRIES = [
@@ -153,6 +159,17 @@ test.each(ENTRIES)(
         window.location.assign(to);
       },
     });
+    await screen.findByLabelText("Invitation code (optional)");
+    await fill(
+      screen.getByLabelText("Email address"),
+      "new-friend@example.com",
+    );
+    await fill(
+      screen.getByLabelText("Password", { exact: true }),
+      "SignupTest!45113",
+    );
+    click(screen.getByRole("checkbox"));
+    click(signupControl("button", "Continue"));
     const signUp = await screen.findByTestId("clerk-sign-up");
     expectContinuation(signUp.dataset.clerkForceRedirectUrl, target);
   },

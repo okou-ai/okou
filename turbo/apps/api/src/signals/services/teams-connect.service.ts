@@ -3,7 +3,7 @@ import type { TeamsConnectStatus } from "@okouai/api-contracts/contracts/teams-c
 import { command, computed, type Computed } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import type { TeamsInboundActivity } from "@okouai/api-contracts/contracts/teams-bot";
 import { and, eq, isNull, sql, or } from "drizzle-orm";

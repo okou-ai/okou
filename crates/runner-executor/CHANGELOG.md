@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.19.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.15...runner-executor-v0.19.16) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
+## [0.19.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.14...runner-executor-v0.19.15) (2026-11-05)
+
+## [0.19.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.13...runner-executor-v0.19.14) (2026-11-05)
+
+## [0.19.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.12...runner-executor-v0.19.13) (2026-11-05)
+
+## [0.19.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.11...runner-executor-v0.19.12) (2026-11-05)
+
+
+### Refactoring
+
+* **executor:** share diagnostic exit-code projection ([#45277](https://github.com/okou-ai/okou/issues/45277)) ([b96fa89](https://github.com/okou-ai/okou/commit/b96fa89625931a826284d3fec522eea09a38f319))
+
+## [0.19.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.10...runner-executor-v0.19.11) (2026-11-04)
+
+## [0.19.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.9...runner-executor-v0.19.10) (2026-11-04)
+
+## [0.19.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.8...runner-executor-v0.19.9) (2026-11-04)
+
+## [0.19.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.7...runner-executor-v0.19.8) (2026-11-04)
+
+## [0.19.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.6...runner-executor-v0.19.7) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.19.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.5...runner-executor-v0.19.6) (2026-11-03)
+
+## [0.19.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.4...runner-executor-v0.19.5) (2026-11-03)
+
+## [0.19.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.3...runner-executor-v0.19.4) (2026-11-03)
+
 ## [0.19.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.2...runner-executor-v0.19.3) (2026-11-03)
 
 ## [0.19.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.1...runner-executor-v0.19.2) (2026-11-03)

@@ -271,36 +271,34 @@ the race is closed once the publishers and cleanup owners use the updated binary
 ### API active-input read recovery
 
 The Runner reads the run's next steerable input prompt from
-`GET /api/runners/runs/:runId/steerable-inputs/next` after a `runner-group`
-notification or the 30s recheck, and forwards at most one input at a time to the
-Guest. The Guest declares an accepted input steered through
+`GET /api/runners/runs/:runId/steerable-inputs/next` initially and after a wakeup:
+an `active-input` push for that run, or an Ably subscription connection or
+reconnection that wakes all active runs. A lagged notification receiver also
+wakes its reader because it may have missed a matching push. There is no periodic
+API recheck or automatic read retry; the 250 ms polling delay applies only to the
+local queue.
+
+A failed read emits `active-input source read failed; waiting for the next wakeup`
+at ERROR, then waits for another wakeup. Without one, the input can remain unread
+for the rest of the run. There is no read-failure backoff or degradation/recovery
+episode log. The HTTP request deadline remains 10s; cancellation and run
+completion still interrupt reads and wakeup waits.
+
+Reading a pending prompt does not prove Guest acceptance or a steered declaration.
+The Runner forwards at most one input at a time to the Guest and does not resend
+an accepted input or one with an uncertain Guest control outcome on subsequent
+reads. An input the Guest definitely did not accept can be offered again after a
+later wakeup. The Guest declares a backend-accepted input steered through
 `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`; a `409`
 (`INPUT_ALREADY_CONSUMED` or `RUN_NOT_RUNNING`) is final and ignored. The Runner
-never forwards the same event twice, including after an uncertain Guest control
-outcome, and neither side retries a declaration.
+does not make this declaration; the Guest makes a single attempt without retry.
 
-The Runner retries failed next-input reads with the existing jittered backoff
-(200–250ms initially, capped at 3.2–4s). The HTTP request deadline remains 10s.
-Notifications cannot bypass a pending failure delay; cancellation and run
-completion still interrupt reads and retry waits.
-
-For a send-stage timeout or TCP connection reset, the first failure is INFO.
-If reads continue failing for at least 30s after that first observed failure,
-the next failed response emits one `active-input source reads degraded; retrying`
-WARN. This is an operational threshold, not an input-delivery deadline: the
-initial failed request and subsequent request/backoff durations are separate.
-The threshold does not add a timer, change retries, or stop the run. Other read
-errors retain an immediate WARN, including when they follow an INFO-only
-transient failure. Further consecutive failures retain local retry scheduling
-records without repeating the episode warning.
-
-A successful read resets the episode and emits
-`active-input source read recovered` at INFO, including `next_outcome` (`input`
-or `empty`), `recovered_after_failures`, `failure_elapsed_ms` and
-`was_degraded`. An `input` outcome proves only a readable pending prompt, not
-Guest acceptance or a steered declaration. Cancellation never fabricates read
-recovery. Runner INFO records remain local; Axiom continues ingesting WARN+
-only.
+The [provider source](runner-provider/src/active_input.rs),
+[Ably wakeup routing](runner-provider/src/provider/api_ably_supervisor.rs),
+[executor](runner-executor/src/executor/active_input.rs), and
+[Guest declaration worker](guest-agent/src/steered_inputs.rs) own these boundaries.
+The [active-input regression tests](runner-executor/src/executor/tests/agent_run_tests/active_input.rs)
+cover failed-read waits, the absence of periodic API reads, and reconnect wakeups.
 
 ### API heartbeat delivery recovery
 
@@ -423,10 +421,18 @@ Request transport failures are INFO and remain in local Runner logs. Each
 Runner process maintains an exact five-minute rolling window of eligible upload
 sessions. A session is an eligible success only when it sends at least one HTTP
 request, every response is a confirmed 2xx, and the session completes normally;
-a request transport failure is an eligible failure. Confirmed rejection,
-request construction, malformed input, capacity or source truncation, deadline
-cancellation, and sessions that send no request are excluded even if an earlier
-batch received 2xx.
+malformed input prevents an otherwise completed upload from qualifying as an
+eligible success. A terminal typed request transport failure is an eligible
+failure, even if malformed lines were skipped earlier. Confirmed rejection,
+request construction failure, capacity or source truncation, deadline cancellation,
+and sessions that send no request are excluded even if an earlier batch received 2xx.
+
+For example, a JSONL file contains one malformed line and one valid entry. If
+the valid entry's upload returns 2xx and the session completes normally, the
+session is excluded because of the malformed input. If that request instead ends
+in a typed transport failure before the overall deadline, the session is an
+eligible failure. Three such failed sessions in an otherwise empty five-minute
+window meet the alert threshold.
 
 When the window contains at least three eligible failures and a failure rate of
 at least 20%, the Runner emits one `network log uploads degraded` ERROR with

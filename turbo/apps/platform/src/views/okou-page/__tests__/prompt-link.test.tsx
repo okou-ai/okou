@@ -474,29 +474,32 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   expect(draftUpdates).toHaveLength(0);
 });
 
-test("An onboarded visitor starts the received task using only its content hash", async () => {
-  enableMarketingHandoff();
-  const received: MarketingHandoffManifest = {
-    version: 1,
-    prompt: "Summarize the customer feedback",
-    options: {},
-    files: [],
-  };
-  context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
-    return respond(200, received);
-  });
-  context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
-    return respond(200, { files: [] });
-  });
-  const capture = capturePromptLaunch();
-  await setupPage({
-    context,
-    path: `/onboarding?handoff=${"a".repeat(64)}&prompt=Untrusted%20extra%20text&template=retired-template`,
-  });
-  const sent = await waitForPromptLaunch(received.prompt, capture);
-  expect(sent.prompt).toBe(received.prompt);
-  expect(search()).toBe("");
-});
+test.each([12, 64])(
+  "An onboarded visitor starts the received task using a %i-character hash",
+  async (length) => {
+    enableMarketingHandoff();
+    const received: MarketingHandoffManifest = {
+      version: 1,
+      prompt: "Summarize the customer feedback",
+      options: {},
+      files: [],
+    };
+    context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
+      return respond(200, received);
+    });
+    context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
+      return respond(200, { files: [] });
+    });
+    const capture = capturePromptLaunch();
+    await setupPage({
+      context,
+      path: `/onboarding?handoff=${"a".repeat(length)}&prompt=Untrusted%20extra%20text&template=retired-template`,
+    });
+    const sent = await waitForPromptLaunch(received.prompt, capture);
+    expect(sent.prompt).toBe(received.prompt);
+    expect(search()).toBe("");
+  },
+);
 
 test.each([true, false])(
   "A received task can be edited during onboarding without putting its text back in a URL (admin: %s)",
@@ -519,13 +522,13 @@ test.each([true, false])(
       ({ params, respond }) => {
         return respond(
           200,
-          params.hash === "b".repeat(64) && edited ? edited : received,
+          params.hash === "b".repeat(12) && edited ? edited : received,
         );
       },
     );
     context.mocks.api(marketingHandoffsContract.create, ({ body, respond }) => {
       edited = body;
-      return respond(200, { hash: "b".repeat(64) });
+      return respond(200, { hash: "b".repeat(64), shortHash: "b".repeat(12) });
     });
     context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
       return respond(200, { files: [] });
@@ -612,7 +615,7 @@ test("An edited hash is retained while onboarding completion is still pending", 
     return respond(200, received);
   });
   context.mocks.api(marketingHandoffsContract.create, ({ respond }) => {
-    return respond(200, { hash: "b".repeat(64) });
+    return respond(200, { hash: "b".repeat(64), shortHash: "b".repeat(12) });
   });
   context.mocks.api(onboardingCompleteContract.complete, async ({ never }) => {
     return await never();
@@ -631,7 +634,7 @@ test("An edited hash is retained while onboarding completion is still pending", 
   );
   click(await findButton("Next"));
   await waitFor(() => {
-    return expect(search()).toBe(`?handoff=${"b".repeat(64)}`);
+    return expect(search()).toBe(`?handoff=${"b".repeat(12)}`);
   });
   expect(
     screen.getByRole("textbox", { name: "Onboarding prompt" }),

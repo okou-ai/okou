@@ -1,20 +1,14 @@
 import { command } from "ccstate";
-import { and, asc, desc, eq, gt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
 import {
   SUGGESTION_RETENTION_MS,
   suggestionReceiptSchema,
   suggestionSchema,
 } from "@okouai/api-contracts/contracts/suggestions";
-import { pendingSuggestionFeedback as learningInputs } from "@okouai/api-contracts/contracts/suggestion-memory";
 import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import {
-  liveSuggestion,
-  pendingSuggestionFeedback,
-  retainedSuggestion,
-  suggestionRow,
-} from "./agent-suggestions-lifecycle";
+import { liveSuggestion, suggestionRow } from "./agent-suggestions-lifecycle";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
 
 interface Owner {
@@ -36,6 +30,48 @@ export const storedSuggestion$ = command(
       .limit(1);
     signal.throwIfAborted();
     return row ? suggestionRow(row) : null;
+  },
+);
+type StoredSuggestion = ReturnType<typeof suggestionRow>;
+/**
+ * Reads several owned suggestions in one statement, keyed by each requested
+ * id; absent ids map to null. PostgreSQL compares hyphenated UUID text
+ * case-insensitively and returns stored ids in lowercase.
+ */
+export const storedSuggestions$ = command(
+  async (
+    { get },
+    owner: Owner,
+    ids: readonly string[],
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, StoredSuggestion | null>> => {
+    const canonicalIds = [
+      ...new Set(
+        ids.map((id) => {
+          return id.toLowerCase();
+        }),
+      ),
+    ];
+    if (canonicalIds.length === 0) {
+      return new Map<string, StoredSuggestion | null>();
+    }
+    const rows = await get(db$)
+      .select()
+      .from(agentSuggestions)
+      .where(
+        and(suggestionOwner(owner), inArray(agentSuggestions.id, canonicalIds)),
+      );
+    signal.throwIfAborted();
+    const stored = new Map(
+      rows.map((row) => {
+        return [row.id, suggestionRow(row)] as const;
+      }),
+    );
+    return new Map(
+      ids.map((id) => {
+        return [id, stored.get(id.toLowerCase()) ?? null] as const;
+      }),
+    );
   },
 );
 const recentSuggestionReceipts$ = command(
@@ -134,26 +170,5 @@ export const readSuggestionManagement$ = command(
         nextAfter: rows.length > 100 ? (page.at(-1)?.id ?? null) : null,
       },
     };
-  },
-);
-export const pendingSuggestionInputs$ = command(
-  async ({ get }, owner: Owner, signal: AbortSignal) => {
-    const rows = await get(db$)
-      .select({
-        id: agentSuggestions.id,
-        feedbacks: agentSuggestions.feedbacks,
-      })
-      .from(agentSuggestions)
-      .where(
-        and(
-          suggestionOwner(owner),
-          pendingSuggestionFeedback(),
-          retainedSuggestion(nowDate()),
-        ),
-      )
-      .orderBy(asc(agentSuggestions.updatedAt), asc(agentSuggestions.id))
-      .limit(100);
-    signal.throwIfAborted();
-    return learningInputs(rows);
   },
 );

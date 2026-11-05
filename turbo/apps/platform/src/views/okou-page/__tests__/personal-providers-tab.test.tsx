@@ -559,9 +559,11 @@ test("Review personal subscriptions through account switching", async () => {
   await waitFor(() => {
     expect(settings).not.toBeInTheDocument();
   });
-  click(activationButton("Test User"));
-  const menu = await screen.findByRole("menu");
-  const panel = await within(menu).findByTestId("account-menu-subscriptions");
+  const usageEntry = await within(
+    screen.getByTestId("labeled-nav-rail"),
+  ).findByLabelText(/^Subscription usage/);
+  click(usageEntry);
+  const panel = await screen.findByTestId("account-menu-subscriptions");
   expect(within(panel).getByText("0% left")).toBeInTheDocument();
   expect(within(panel).getByText("Credits")).toBeInTheDocument();
   expect(within(panel).getByText("0")).toBeInTheDocument();

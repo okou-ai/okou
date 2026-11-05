@@ -47,8 +47,6 @@ import {
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
-import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/proactive-jobs";
-import { runnableJobsExistSql } from "./user-jobs-query";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { calculateNextRun } from "./time-automation";
@@ -366,16 +364,17 @@ const commitProactiveWorkflowInput$ = command(
     const at = nowDate();
     const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
     const kind = proactiveWorkflowKind(args.automationContext.workflowName);
-    if (kind === null || kind === "suggestions") {
-      throw new Error("Expected a Tasks, Learning or Planning schedule");
+    if (kind !== "learning") {
+      throw new Error("Expected a Learning schedule");
     }
-    if (kind !== "jobs" && automation.cronExpression === null) {
+    if (automation.cronExpression === null) {
       throw new Error("Nightly workflow is missing its cron schedule");
     }
-    const next =
-      automation.cronExpression === null
-        ? null
-        : calculateNextRun(automation.cronExpression, automation.timezone, at);
+    const next = calculateNextRun(
+      automation.cronExpression,
+      automation.timezone,
+      at,
+    );
     const claim = database
       .update(workflowAutomations)
       .set({ nextRunAt: next, lastRunAt: at, updatedAt: at })
@@ -392,9 +391,7 @@ const commitProactiveWorkflowInput$ = command(
             : eq(workflowAutomations.nextRunAt, automation.nextRunAt),
           sql`${workflowAutomations.lastRunAt} IS NOT DISTINCT FROM ${automation.lastRunAt}::timestamp`,
           proactiveWorkflowOwnerEnabledSql(owner, agentId, kind),
-          kind === "jobs"
-            ? runnableJobsExistSql(owner)
-            : sql`EXISTS (SELECT 1 FROM org_members_metadata AS preference
+          sql`EXISTS (SELECT 1 FROM org_members_metadata AS preference
                 WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
                   AND preference.timezone = ${automation.timezone})`,
           sql`NOT EXISTS (SELECT 1 FROM agent_runs AS running WHERE running.workflow_automation_id = ${automation.id}::uuid AND running.status IN ('pending', 'running'))`,
@@ -425,16 +422,14 @@ const commitProactiveWorkflowInput$ = command(
   },
 );
 
-function usesProactiveWorkflowInput(input: PreparedWorkflowInputCommit) {
+function usesProactiveWorkflowInput(args: RunWorkflowAutomationNowArgs) {
   const proactiveKind =
-    input.args.due.automation.officialBlueprintKey === null
+    args.due.automation.officialBlueprintKey === null
       ? null
-      : proactiveWorkflowKind(input.args.automationContext.workflowName);
+      : proactiveWorkflowKind(args.automationContext.workflowName);
   return (
-    input.args.due.automation.officialBlueprintKey ===
-      PROACTIVE_JOBS_BLUEPRINT_KEY ||
-    (input.args.automationContext.eventType === "schedule" &&
-      (proactiveKind === "learning" || proactiveKind === "planning"))
+    args.automationContext.eventType === "schedule" &&
+    proactiveKind === "learning"
   );
 }
 
@@ -444,7 +439,7 @@ const commitWorkflowInput$ = command(
     input: PreparedWorkflowInputCommit,
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
-    if (usesProactiveWorkflowInput(input)) {
+    if (usesProactiveWorkflowInput(input.args)) {
       return await set(commitProactiveWorkflowInput$, input, signal);
     }
     signal.throwIfAborted();
@@ -699,10 +694,7 @@ export const runWorkflowAutomationNow$ = command(
                 }
                 throw attempt.error;
               }
-              if (
-                attempt.value === null &&
-                automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY
-              ) {
+              if (attempt.value === null && usesProactiveWorkflowInput(args)) {
                 admissionOutcome = "superseded";
                 return false;
               }
@@ -762,8 +754,7 @@ export const runWorkflowAutomationNow$ = command(
       waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
     return workflowEnqueueResult(
-      scheduleClaim !== undefined ||
-        automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY,
+      scheduleClaim !== undefined || usesProactiveWorkflowInput(args),
       enqueued,
     );
   },

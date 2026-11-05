@@ -103,6 +103,7 @@ const CONNECTOR_POPULARITY_RANKING = [
   "linear",
   "jira",
   "atlassian",
+  "atlassian-mcp",
   "asana",
   "trello",
   "clickup",

@@ -90,6 +90,39 @@ fn retained_history_admission_bounds_json_allocation() {
 }
 
 #[test]
+fn retained_codex_history_becomes_unavailable_when_encoded_work_exceeds_budget() {
+    use std::io::{Seek, SeekFrom, Write};
+
+    let home = tempfile::tempdir().unwrap();
+    let day = home.path().join("sessions/2026/11/03");
+    std::fs::create_dir_all(&day).unwrap();
+    let thread = "00000000-0000-4000-8000-000000000001";
+    let path = day.join("rollout-00000000000040008000000000000001.jsonl.zst");
+    let history = format!(
+        "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{thread}\"}}}}\n{{\"type\":\"response_item\",\"payload\":{{\"role\":\"user\",\"content\":\"context\"}}}}\n"
+    );
+    let mut writer = std::fs::File::create(path).unwrap();
+    writer
+        .write_all(&zstd::encode_all(history.as_bytes(), 0).unwrap())
+        .unwrap();
+    assert!(
+        retained_session_is_usable(Framework::Codex, thread, "", home.path().to_str().unwrap(),)
+            .unwrap()
+    );
+
+    let padding = 256 * 1024 * 1024u32;
+    writer.write_all(&0x184D2A50u32.to_le_bytes()).unwrap();
+    writer.write_all(&padding.to_le_bytes()).unwrap();
+    let end = writer.seek(SeekFrom::Current(i64::from(padding))).unwrap();
+    writer.set_len(end).unwrap();
+
+    assert!(
+        !retained_session_is_usable(Framework::Codex, thread, "", home.path().to_str().unwrap(),)
+            .unwrap()
+    );
+}
+
+#[test]
 fn projected_context_preserves_framework_content_rules() {
     for (framework, line, expected) in [
         (

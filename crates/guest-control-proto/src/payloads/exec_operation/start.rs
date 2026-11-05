@@ -18,7 +18,7 @@ pub(super) const EXEC_LIFECYCLE_SUPERVISED: u8 = 0x01;
 
 pub(super) const EXEC_PROCESS_ROLE_WORKLOAD: u8 = 0x00;
 pub(super) const EXEC_PROCESS_ROLE_AGENT: u8 = 0x01;
-pub(super) const EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER: u8 = 0x02;
+// Retired process-role bytes 0x02 and 0x03 remain unassigned and are rejected.
 
 pub(super) const EXEC_TIMEOUT_DURATION: u8 = 0x00;
 pub(super) const EXEC_TIMEOUT_NONE: u8 = 0x01;
@@ -88,8 +88,6 @@ pub enum ExecProcessRole {
     Workload,
     /// Controlled guest Agent operation.
     Agent,
-    /// Fixed one-shot session-history identity verifier.
-    SessionHistoryIdentityVerifier,
 }
 
 impl ExecProcessRole {
@@ -98,7 +96,6 @@ impl ExecProcessRole {
         match self {
             Self::Workload => "contained_workload",
             Self::Agent => "controlled_agent",
-            Self::SessionHistoryIdentityVerifier => "session_history_identity_verifier",
         }
     }
 
@@ -113,10 +110,6 @@ impl ExecProcessRole {
             (Self::Workload, ExecLifecyclePolicy::Supervised) => "start_process",
             (Self::Agent, ExecLifecyclePolicy::Supervised) => "start_agent_process",
             (Self::Agent, ExecLifecyclePolicy::OneShot) => "invalid",
-            (Self::SessionHistoryIdentityVerifier, ExecLifecyclePolicy::OneShot) => {
-                "verify_session_history_identity"
-            }
-            (Self::SessionHistoryIdentityVerifier, ExecLifecyclePolicy::Supervised) => "invalid",
         }
     }
 }
@@ -160,7 +153,6 @@ pub enum ExecControlPolicy {
 /// | [`ExecProcessRole::Workload`] | [`ExecLifecyclePolicy::Supervised`] | [`ExecControlPolicy::Disabled`] | Ordinary supervised workload |
 /// | [`ExecProcessRole::Workload`] | [`ExecLifecyclePolicy::Supervised`] | `Enabled { sink: false, .. }` | Controlled supervised workload without a guest sink |
 /// | [`ExecProcessRole::Agent`] | [`ExecLifecyclePolicy::Supervised`] | `Enabled { sink: true, .. }` | Controlled Agent operation with a guest sink |
-/// | [`ExecProcessRole::SessionHistoryIdentityVerifier`] | [`ExecLifecyclePolicy::OneShot`] | [`ExecControlPolicy::Disabled`] | Fixed one-shot live identity verifier |
 ///
 /// An `Agent` therefore requires a supervised lifecycle and an enabled control
 /// sink. A controlled `Workload` is supervised with an enabled control channel
@@ -183,12 +175,6 @@ pub struct ExecStartEncodeRequest<'a> {
     /// - [`ExecProcessRole::Workload`]: shell command to execute.
     /// - [`ExecProcessRole::Agent`]: empty string; the Guest selects the Agent
     ///   program.
-    /// - [`ExecProcessRole::SessionHistoryIdentityVerifier`]: serialized JSON of
-    ///   [`guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest`].
-    ///
-    /// Prefer the typed client helper
-    /// `guest_control_client::GuestControlClient::verify_session_history_identity`
-    /// to construct the fixed-helper request.
     pub command: &'a str,
     /// Environment key/value pairs to encode.
     ///
@@ -317,9 +303,6 @@ fn append_exec_process_role(p: &mut Vec<u8>, role: ExecProcessRole) {
     p.push(match role {
         ExecProcessRole::Workload => EXEC_PROCESS_ROLE_WORKLOAD,
         ExecProcessRole::Agent => EXEC_PROCESS_ROLE_AGENT,
-        ExecProcessRole::SessionHistoryIdentityVerifier => {
-            EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER
-        }
     });
 }
 
@@ -392,11 +375,6 @@ pub fn validate_exec_process_contract(
             ExecProcessRole::Agent,
             ExecLifecyclePolicy::Supervised,
             ExecControlPolicy::Enabled { sink: true, .. },
-        )
-        | (
-            ExecProcessRole::SessionHistoryIdentityVerifier,
-            ExecLifecyclePolicy::OneShot,
-            ExecControlPolicy::Disabled,
         ) => Ok(()),
         _ => Err(ProtocolError::InvalidPayload(
             "exec start role, lifecycle, and control combination invalid",
@@ -618,9 +596,6 @@ fn decode_exec_process_role(
     match read_u8(payload, offset, "exec start process role truncated")? {
         EXEC_PROCESS_ROLE_WORKLOAD => Ok(ExecProcessRole::Workload),
         EXEC_PROCESS_ROLE_AGENT => Ok(ExecProcessRole::Agent),
-        EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER => {
-            Ok(ExecProcessRole::SessionHistoryIdentityVerifier)
-        }
         _ => Err(ProtocolError::InvalidPayload(
             "exec start process role invalid",
         )),

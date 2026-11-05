@@ -184,7 +184,8 @@ jobs:
                 native_kerberos_needed=true
                 native_gssapi_peer_needed=true
                 ;;
-              crates/kerberos-worker/tests/check-native-kerberos.sh)
+              crates/kerberos-worker/tests/check-native-kerberos.sh | \
+              crates/runner-remote/*)
                 native_kerberos_needed=true
                 ;;
               crates/rfb-client/tests/check-native-gssapi-peer.sh | \
@@ -530,6 +531,9 @@ jobs:
             --exact
           HOME=/root USER=root LOGNAME=root \
             cargo test -p guest-control-server --release --no-default-features \
+              --lib agent_command::tests::direct_agent_receives_system_path -- --exact
+          HOME=/root USER=root LOGNAME=root \
+            cargo test -p guest-control-server --release --no-default-features \
               --test production_identity -- \
               --ignored --exact production_write_file_identity_matches_sudo_policy
           HOME=/root USER=root LOGNAME=root \
@@ -643,6 +647,10 @@ jobs:
         uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version-file: crates/runner/mitm-addon/.python-version
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -923,6 +931,12 @@ jobs:
           RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
         run: bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
+      - name: Verify VNC starts during real Kerberos contention
+        shell: bash
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          NATIVE_TEST_OWNER: ubuntu
+        run: bash crates/runner-remote/tests/check-native-vnc-kerberos.sh
       # The host key's X64 writer remains check; this matrix owns ARM64 only.
       - name: Save pinned ARM64 Kerberos dependencies
         if: github.ref == 'refs/heads/main' && runner.arch == 'ARM64' && steps.kerberos-cache.outputs.cache-hit != 'true'
@@ -935,7 +949,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-kerberos-${{ matrix.os }}
-          path: crates/target/native-kerberos-receipt/
+          path: |
+            crates/target/native-kerberos-receipt/
+            crates/target/native-vnc-kerberos-receipt/
           if-no-files-found: error
           retention-days: 14
 

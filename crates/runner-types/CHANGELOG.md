@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.4](https://github.com/okou-ai/okou/compare/runner-types-v0.12.3...runner-types-v0.12.4) (2026-11-04)
+
+## [0.12.3](https://github.com/okou-ai/okou/compare/runner-types-v0.12.2...runner-types-v0.12.3) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+* **storage:** share canonical mount-path uniqueness validation ([#45042](https://github.com/okou-ai/okou/issues/45042)) ([893d967](https://github.com/okou-ai/okou/commit/893d967b6c850f220a45e8f011822a1fdf0340a1))
+
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-types-v0.12.1...runner-types-v0.12.2) (2026-11-03)
+
 ## [0.12.1](https://github.com/okou-ai/okou/compare/runner-types-v0.12.0...runner-types-v0.12.1) (2026-11-03)
 
 ## [0.12.0](https://github.com/okou-ai/okou/compare/runner-types-v0.11.8...runner-types-v0.12.0) (2026-11-03)

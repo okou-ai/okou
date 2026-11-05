@@ -656,15 +656,8 @@ pub(super) async fn prepare_admitted_job(
             return Ok(DiscoveredJobResult::completed(true));
         }
         Err(panic) => {
-            match activation
-                .recover(
-                    "activation_setup_panicked",
-                    "claimed activation setup panicked".to_owned(),
-                )
-                .await
-            {
-                Ok(recovery) => recovery.finish().await,
-                Err(error) => tracing::error!(%error, "claimed activation panic recovery failed"),
+            if let Err(error) = activation.recover_setup_panic().await {
+                tracing::error!(%error, "claimed activation panic recovery failed");
             }
             drop(activation_transfer_guard);
             std::panic::resume_unwind(panic);

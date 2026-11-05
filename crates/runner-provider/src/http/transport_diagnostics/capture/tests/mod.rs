@@ -19,12 +19,15 @@ fn frame(v6: bool, source: u16, destination: u16) -> Vec<u8> {
         ip[0] = 0x60;
         ip[4..6].copy_from_slice(&((tcp.len() + body.len()) as u16).to_be_bytes());
         ip[6] = 6;
+        ip[7] = 47;
         ip[8..24].copy_from_slice(&Ipv6Addr::LOCALHOST.octets());
         ip[24..40].copy_from_slice(&Ipv6Addr::LOCALHOST.octets());
     } else {
         ip[0] = 0x46; // IPv4 options, deliberately not the usual 20B header.
         let total = (ip.len() + tcp.len() + body.len()) as u16;
         ip[2..4].copy_from_slice(&total.to_be_bytes());
+        ip[4..6].copy_from_slice(&0x1234u16.to_be_bytes());
+        ip[8] = 57;
         ip[9] = 6;
         ip[12..16].copy_from_slice(&Ipv4Addr::LOCALHOST.octets());
         ip[16..20].copy_from_slice(&Ipv4Addr::LOCALHOST.octets());
@@ -58,6 +61,9 @@ fn kernel_filter_delivers_only_registered_tcp_headers_in_both_directions() {
             assert_eq!(parsed.flags, 0x14);
             assert_eq!(parsed.sequence, 123);
             assert_eq!(parsed.acknowledgment, 456);
+            assert_eq!(parsed.ip_ttl, (!v6).then_some(57));
+            assert_eq!(parsed.ipv4_id, (!v6).then_some(0x1234));
+            assert_eq!(parsed.ipv6_hop_limit, v6.then_some(47));
             assert!(!format!("{parsed:?}").contains("private-payload"));
         }
         send.send(&frame(v6, 999, 443)).unwrap();
@@ -100,7 +106,29 @@ fn recvmsg_retains_kernel_timestamp_and_parsed_headers_only() {
     assert!(packet.unix_ns >= before && packet.unix_ns <= unix_ns());
     assert_eq!(packet.payload_bytes, 39);
     assert_eq!(packet.flags, 0x14);
+    assert_eq!(packet.ip_ttl, Some(57));
+    assert_eq!(packet.ipv4_id, Some(0x1234));
+    assert!(
+        packet.capture_origin.is_none(),
+        "an unnamed Unix socket has no AF_PACKET source address"
+    );
     assert!(!format!("{packet:?}").contains("private-payload"));
+}
+
+#[test]
+fn receive_provenance_requires_a_complete_packet_socket_address() {
+    // SAFETY: sockaddr_ll is a C value that permits zero initialization.
+    let mut address: libc::sockaddr_ll = unsafe { zeroed() };
+    address.sll_family = libc::AF_PACKET as u16;
+    address.sll_ifindex = 7;
+    address.sll_pkttype = libc::PACKET_OUTGOING;
+    let size = size_of_val(&address) as libc::socklen_t;
+    let origin = capture_origin(&address, size).unwrap();
+    assert_eq!(origin.interface_index, 7);
+    assert_eq!(origin.packet_type, libc::PACKET_OUTGOING);
+    assert!(capture_origin(&address, size - 1).is_none());
+    address.sll_family = libc::AF_UNIX as u16;
+    assert!(capture_origin(&address, size).is_none());
 }
 
 #[test]
@@ -249,6 +277,8 @@ async fn recorder_retains_packets_observed_between_failure_and_incident_admissio
     assert_eq!(packet.fields["client_request_id"], "handoff");
     assert_eq!(packet.fields["flags"], "20");
     assert_eq!(packet.fields["phase"], "after_failure_observation");
+    assert_eq!(packet.fields["ip_ttl"], "57");
+    assert_eq!(packet.fields["ipv4_id"], "4660");
 }
 
 #[tokio::test]

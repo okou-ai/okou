@@ -6,6 +6,7 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { connectedConnectorsRoutes } from "../connected-connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -23,9 +24,10 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const target = { kind: "builtin", connectorSlug: "openai" } as const;
 
 function client() {
-  return setupApp({ context, routes: chatConnectorAccessRoutes })(
-    chatConnectorAccessContract,
-  );
+  return setupApp({
+    context,
+    routes: [...chatConnectorAccessRoutes, ...connectedConnectorsRoutes],
+  })(chatConnectorAccessContract);
 }
 function accounts() {
   return setupApp({ context, routes: connectorAccountRoutes })(
@@ -74,6 +76,248 @@ async function threadAccess(threadId: string) {
 }
 
 describe("Chat connector account configuration", () => {
+  it("aggregates owned identities and Chat preferences, and refreshes an exact target", async () => {
+    const owner = await ownerWithThread();
+    const a = await addAccount(owner.actor, "Work");
+    const b = await addAccount(owner.actor, "Personal");
+    const custom = await connectors.createCustomConnector(owner.actor, {
+      kind: "http",
+      displayName: "Private service",
+      prefixTemplates: ["https://private.example.test/"],
+      authMode: "none",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+    });
+    await connectors.setCustomConnectorValues(owner.actor, custom.id, []);
+    const params = { threadId: owner.threadId };
+    await accept(
+      client().setThreadCurrent({
+        headers,
+        params,
+        body: { target, connectionId: b.id },
+      }),
+      [200],
+    );
+    await accept(
+      client().setThreadOverride({
+        headers,
+        params: { ...params, connectionId: a.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    const existing = await accept(
+      client().overview({ headers, query: params }),
+      [200],
+    );
+    expect(existing.body).toHaveLength(2);
+    const builtin = existing.body.find((entry) => {
+      return entry.target.kind === "builtin";
+    });
+    expect(builtin).toMatchObject({
+      target,
+      label: "OpenAI",
+      currentConnectionId: b.id,
+    });
+    expect(builtin?.accounts).toStrictEqual([
+      {
+        connectionId: a.id,
+        displayName: "Work",
+        authMethod: "api-token",
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        isDefault: true,
+        defaultEnabled: true,
+        overrideEnabled: false,
+        enabled: false,
+      },
+      {
+        connectionId: b.id,
+        displayName: "Personal",
+        authMethod: "api-token",
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        isDefault: false,
+        defaultEnabled: true,
+        overrideEnabled: null,
+        enabled: true,
+      },
+    ]);
+    expect(
+      existing.body.find((entry) => {
+        return entry.target.kind === "custom";
+      }),
+    ).toMatchObject({
+      target: { kind: "custom", customConnectorId: custom.id },
+      label: "Private service",
+      icon: null,
+      hasPermissions: false,
+    });
+    const singleCustom = await accept(
+      client().overviewTarget({
+        headers,
+        query: { ...params, kind: "custom", customConnectorId: custom.id },
+      }),
+      [200],
+    );
+    expect(singleCustom.body.connector).toStrictEqual(
+      existing.body.find((entry) => {
+        return entry.target.kind === "custom";
+      }),
+    );
+    const single = await accept(
+      client().overviewTarget({ headers, query: { ...target, ...params } }),
+      [200],
+    );
+    expect(single.body.connector).toStrictEqual(builtin);
+    const access = await threadAccess(owner.threadId);
+    expect(single.body.connector?.currentConnectionId).toBe(
+      access.currentConnectionId,
+    );
+    expect(
+      single.body.connector?.accounts.map(
+        ({
+          authMethod: _method,
+          externalId: _id,
+          externalUsername: _username,
+          externalEmail: _email,
+          ...preference
+        }) => {
+          return preference;
+        },
+      ),
+    ).toStrictEqual(access.accounts);
+    const draft = await accept(
+      client().overview({ headers, query: {} }),
+      [200],
+    );
+    expect(
+      draft.body.find((entry) => {
+        return entry.target.kind === "builtin";
+      }),
+    ).toMatchObject({
+      currentConnectionId: a.id,
+      accounts: [
+        expect.objectContaining({ enabled: true, overrideEnabled: null }),
+        expect.objectContaining({ enabled: true, overrideEnabled: null }),
+      ],
+    });
+    const extra = await connectors.createCustomConnector(owner.actor, {
+      kind: "http",
+      displayName: "Another service",
+      prefixTemplates: ["https://another.example.test/"],
+      authMode: "none",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+    });
+    await connectors.setCustomConnectorValues(owner.actor, extra.id, []);
+    const grown = await accept(
+      client().overview({ headers, query: params }),
+      [200],
+    );
+    expect(grown.body).toHaveLength(3);
+    await accept(
+      client().setThreadOverride({
+        headers,
+        params: { ...params, connectionId: b.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          client().overviewTarget({ headers, query: { ...target, ...params } }),
+          [200],
+        )
+      ).body.connector?.currentConnectionId,
+    ).toBeNull();
+    await accept(
+      accounts().delete({
+        headers,
+        params: { connectionId: a.id },
+        body: { target },
+      }),
+      [200],
+    );
+    await accept(
+      accounts().delete({
+        headers,
+        params: { connectionId: b.id },
+        body: { target },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          client().overviewTarget({ headers, query: { ...target, ...params } }),
+          [200],
+        )
+      ).body.connector,
+    ).toBeNull();
+  });
+
+  it("isolates overview reads by member, organization, Chat ownership and feature gate", async () => {
+    const owner = await ownerWithThread(false);
+    await addAccount(owner.actor, "Owner");
+    await accept(client().overview({ headers, query: {} }), [404]);
+    await connectors.updateFeatureSwitches(owner.actor, {
+      connectorChatAccountAccess: true,
+    });
+    const other = await ownerWithThread(
+      true,
+      bdd.user({ orgId: owner.actor.orgId }),
+    );
+    await addAccount(other.actor, "Other member");
+    await addAccount(
+      bdd.user({ userId: owner.actor.userId }),
+      "Other organization",
+    );
+    mocks.clerk.session(
+      owner.actor.userId,
+      owner.actor.orgId,
+      owner.actor.orgRole,
+    );
+    const overview = await accept(
+      client().overview({ headers, query: { threadId: owner.threadId } }),
+      [200],
+    );
+    expect(
+      overview.body.flatMap((entry) => {
+        return entry.accounts.map((account) => {
+          return account.displayName;
+        });
+      }),
+    ).toStrictEqual(["Owner"]);
+    await accept(
+      client().overview({ headers, query: { threadId: other.threadId } }),
+      [404],
+    );
+    await accept(
+      client().overviewTarget({
+        headers,
+        query: { ...target, threadId: other.threadId },
+      }),
+      [404],
+    );
+    expect(
+      (
+        await accept(
+          client().overviewTarget({
+            headers,
+            query: { kind: "custom", customConnectorId: randomUUID() },
+          }),
+          [200],
+        )
+      ).body.connector,
+    ).toBeNull();
+  });
+
   it("starts accounts enabled, replaces defaults and promotes only enabled siblings on deletion", async () => {
     const owner = await ownerWithThread();
     const a = await addAccount(owner.actor, "A");

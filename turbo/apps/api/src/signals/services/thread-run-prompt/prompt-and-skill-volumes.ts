@@ -1,3 +1,4 @@
+import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -143,6 +144,9 @@ function createExecutionPromptSources(
   const disabledPaidTools$ = computed((get) => {
     return get(bootstrap.disabledPaidTools$);
   });
+  const seedSkills$ = computed((get) => {
+    return get(bootstrap.seedSkills$);
+  });
   return {
     agent$,
     memberMetadata$,
@@ -151,6 +155,7 @@ function createExecutionPromptSources(
     authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
+    seedSkills$,
   };
 }
 
@@ -168,6 +173,7 @@ export function createPromptAndSkillVolumesSignals(
     authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
+    seedSkills$,
   } = sources;
   const cloudBrowserEnabled$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;
@@ -187,6 +193,11 @@ export function createPromptAndSkillVolumesSignals(
     cloudBrowserEnabled$,
     disabledPaidTools$,
   );
+  const suggestionsPrompt$ = createSuggestionsPrompt(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
   const userPrompt$ = createUserPrompt(memberMetadata$);
   const computerUsePrompt$ = createComputerUsePrompt(
     pickedEvent$,
@@ -199,7 +210,10 @@ export function createPromptAndSkillVolumesSignals(
     selectedImageModel$,
     disabledPaidTools$,
   );
-  const systemSkills$ = createSystemSkillsContext(disabledPaidTools$);
+  const systemSkills$ = createSystemSkillsContext(
+    disabledPaidTools$,
+    seedSkills$,
+  );
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
     const contextType = (await get(pickedEvent$))?.contextType;
@@ -220,6 +234,7 @@ export function createPromptAndSkillVolumesSignals(
       connectors,
       systemSkills,
       runtime,
+      suggestions,
     ] = await Promise.all([
       get(integrationPrompts[contextType]),
       automation ? null : get(rotatedPrompt$),
@@ -230,6 +245,7 @@ export function createPromptAndSkillVolumesSignals(
       get(connectors$),
       get(systemSkills$),
       get(runtimePrompt$),
+      get(suggestionsPrompt$),
     ]);
     if (!integration) {
       throw new PromptAndSkillVolumesError(
@@ -255,6 +271,7 @@ export function createPromptAndSkillVolumesSignals(
       connectors,
       systemSkills,
       runtime,
+      suggestions,
     ]);
     const prompts = renderRunPrompts(combined);
     return {

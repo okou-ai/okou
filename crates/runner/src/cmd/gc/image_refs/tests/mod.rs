@@ -32,6 +32,23 @@ if [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "bounded" ] || [ "$OKOU_RUN_GC_EN
   trap 'printf "finished %s\n" "$invocation" >> "$OKOU_RUN_GC_ENABLED_SERVICE_STATE_DIR/events"' 0
 fi
 
+case "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" in
+  version-*)
+    if [ "$#" -ne 4 ] || [ "$1" != "show" ] || \
+       [ "$3" != "--property=LoadState" ] || [ "$4" != "--property=ActiveState" ]; then
+      printf 'unexpected version state query: %s\n' "$*" >&2
+      exit 2
+    fi
+    case "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" in
+      version-keep-latest|version-inactive) printf 'LoadState=loaded\nActiveState=inactive\n' ;;
+      version-deactivating) printf 'LoadState=loaded\nActiveState=deactivating\n' ;;
+      version-unknown) printf 'systemd unavailable\n' >&2; exit 1 ;;
+      *) exit 2 ;;
+    esac
+    exit 0
+    ;;
+esac
+
 if [ "$1" = "is-enabled" ]; then
   unit="$2"
   if [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "bounded" ] || [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "refill" ]; then
@@ -261,6 +278,14 @@ async fn protected_config_only_version_ref_keeps_image_snapshot() {
 
 #[tokio::test]
 async fn keep_latest_version_config_ref_keeps_image_snapshot() {
+    let invocations = run_systemctl_scenario("version-keep-latest").await;
+    assert_eq!(
+        invocations,
+        ["show vm0-runner-v1.0.0.service --property=LoadState --property=ActiveState"]
+    );
+}
+
+async fn assert_keep_latest_version_image_protection() {
     let dir = tempfile::tempdir().unwrap();
     let home = test_home(dir.path());
     let old_rootfs = test_hash('a');
@@ -356,6 +381,25 @@ async fn protected_image_ref_keeps_only_exact_snapshot_pair() {
 
 #[tokio::test]
 async fn removable_version_config_does_not_protect_image_snapshot() {
+    let invocations = run_systemctl_scenario("version-inactive").await;
+    assert_eq!(
+        invocations,
+        ["show vm0-runner-v1.0.0.service --property=LoadState --property=ActiveState"]
+    );
+}
+
+#[tokio::test]
+async fn unconfirmed_version_shutdown_keeps_image_snapshot() {
+    for scenario in ["version-deactivating", "version-unknown"] {
+        let invocations = run_systemctl_scenario(scenario).await;
+        assert_eq!(
+            invocations,
+            ["show vm0-runner-v1.0.0.service --property=LoadState --property=ActiveState"]
+        );
+    }
+}
+
+async fn assert_version_image_protection(retained: bool) {
     let dir = tempfile::tempdir().unwrap();
     let home = test_home(dir.path());
     let rootfs_hash = test_hash('a');
@@ -368,11 +412,19 @@ async fn removable_version_config_does_not_protect_image_snapshot() {
         .await
         .unwrap();
 
-    assert!(freed.freed_bytes > 0);
-    assert!(
-        !snapshot_dir.exists(),
-        "old removable version config should not pin image artifacts"
-    );
+    if retained {
+        assert_eq!(freed.freed_bytes, 0);
+        assert!(
+            snapshot_dir.exists(),
+            "unconfirmed shutdown must protect its image"
+        );
+    } else {
+        assert!(freed.freed_bytes > 0);
+        assert!(
+            !snapshot_dir.exists(),
+            "old removable version config should not pin image artifacts"
+        );
+    }
 }
 
 #[tokio::test]
@@ -479,7 +531,7 @@ async fn enabled_service_directory_scan_reports_iteration_error() {
 
 #[tokio::test]
 async fn enabled_service_discovery_overlaps_with_a_fixed_bound() {
-    let invocations = run_enabled_service_scenario("bounded").await;
+    let invocations = run_systemctl_scenario("bounded").await;
 
     assert_eq!(
         invocations
@@ -518,12 +570,12 @@ async fn enabled_service_discovery_overlaps_with_a_fixed_bound() {
 
 #[tokio::test]
 async fn enabled_service_discovery_refills_before_first_unit_finishes() {
-    run_enabled_service_scenario("refill").await;
+    run_systemctl_scenario("refill").await;
 }
 
 #[tokio::test]
 async fn effective_enabled_service_config_ref_keeps_image_snapshot() {
-    let invocations = run_enabled_service_scenario("effective").await;
+    let invocations = run_systemctl_scenario("effective").await;
 
     assert_eq!(
         invocations,
@@ -537,28 +589,28 @@ async fn effective_enabled_service_config_ref_keeps_image_snapshot() {
 #[tokio::test]
 async fn enabled_service_config_after_backslash_ended_comment_keeps_image_snapshot() {
     for scenario in ["comment-hash", "comment-semicolon"] {
-        run_enabled_service_scenario(scenario).await;
+        run_systemctl_scenario(scenario).await;
     }
 }
 
 #[tokio::test]
 async fn enabled_service_discovery_failures_make_inventory_incomplete() {
     for scenario in ["enablement-error", "cat-error", "cat-warning"] {
-        run_enabled_service_scenario(scenario).await;
+        run_systemctl_scenario(scenario).await;
     }
 }
 
 #[tokio::test]
 async fn malformed_enabled_service_config_makes_inventory_incomplete() {
-    run_enabled_service_scenario("malformed-config").await;
+    run_systemctl_scenario("malformed-config").await;
 }
 
 #[tokio::test]
 async fn readable_unit_without_runner_config_remains_best_effort() {
-    run_enabled_service_scenario("unparseable").await;
+    run_systemctl_scenario("unparseable").await;
 }
 
-async fn run_enabled_service_scenario(scenario: &str) -> Vec<String> {
+async fn run_systemctl_scenario(scenario: &str) -> Vec<String> {
     let dir = tempfile::tempdir().unwrap();
     let fake_systemctl = dir.path().join("systemctl");
     std::fs::write(&fake_systemctl, FAKE_SYSTEMCTL).unwrap();
@@ -624,7 +676,7 @@ fn utf8_path(path: &Path) -> &str {
 }
 
 #[tokio::test]
-#[ignore = "spawned by enabled service image ref systemctl tests"]
+#[ignore = "spawned by service image ref systemctl tests"]
 async fn enabled_service_systemctl_child() {
     let Ok(scenario) = std::env::var(ENABLED_SERVICE_SCENARIO_ENV) else {
         return;
@@ -635,6 +687,9 @@ async fn enabled_service_systemctl_child() {
 
     let system_dir = PathBuf::from(std::env::var(ENABLED_SERVICE_SYSTEM_DIR_ENV).unwrap());
     match scenario.as_str() {
+        "version-keep-latest" => assert_keep_latest_version_image_protection().await,
+        "version-inactive" => assert_version_image_protection(false).await,
+        "version-deactivating" | "version-unknown" => assert_version_image_protection(true).await,
         "bounded" => assert_bounded_enabled_service_discovery(&system_dir).await,
         "refill" => assert_enabled_service_discovery_refills_before_first_finishes().await,
         "effective" | "comment-hash" | "comment-semicolon" => {

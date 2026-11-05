@@ -625,12 +625,15 @@
       "loadFailed": "無法載入權限",
       "loadingPermissions": "正在載入權限",
       "onlyMe": "僅自己",
+      "onlyMeDescription": "只有你能開啟",
       "onlyMeOption": "僅自己",
       "organization": "組織",
+      "organizationDescription": "團隊成員可檢視",
       "organizationOption": "{{organization}}的所有成員",
       "organizationOptionUnnamed": "組織內的所有成員",
       "permissionsUpdated": "訪問權限已更新",
       "publicAccess": "公開訪問",
+      "publicDescription": "無需登入",
       "publicOption": "知道連結的所有人",
       "updateFailed": "無法更新存取權限"
     },
@@ -951,6 +954,27 @@
     },
     "homeLink": "前往 {{brandName}} 首頁",
     "loading": "正在載入身份驗證",
+    "signup": {
+      "alreadyHaveAccount": "已經有帳戶了嗎？",
+      "apple": "Apple",
+      "continue": "繼續",
+      "email": "電子郵件地址",
+      "emailPlaceholder": "輸入您的電子郵件地址",
+      "failed": "請求失敗",
+      "google": "Google",
+      "hidePassword": "隱藏密碼",
+      "legalAnd": "和",
+      "legalPrefix": "我同意",
+      "or": "或者",
+      "password": "密碼",
+      "passwordPlaceholder": "輸入您的密碼",
+      "privacy": "隱私權政策",
+      "showPassword": "顯示密碼",
+      "signIn": "登入",
+      "subtitle": "以繼續前往 {{applicationName}}",
+      "terms": "服務條款",
+      "title": "建立您的帳戶"
+    },
     "theme": {
       "darkEnabled": "已開啟深色主題",
       "lightEnabled": "已開啟淺色主題"
@@ -1364,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "輸入網址",
+    "authorizationRequired": "此對話未啟用雲端瀏覽器",
     "blankPage": {
       "description": "{{assistantName}} 工作時會在這裡開啟網頁。你也可以在上方輸入網址自行瀏覽。",
       "title": "尚未開啟網頁"
@@ -1390,8 +1415,8 @@
       "takeOver": "接管",
       "takeOverMessage": "我先接管瀏覽器，在我交還之前請不要操作它。"
     },
-    "reclaimHint_one": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
-    "reclaimHint_other": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
+    "reclaimHint_one": "面板開啟時保留，閒置 {{formattedCount}} 分鐘後回收。",
+    "reclaimHint_other": "面板開啟時保留，閒置 {{formattedCount}} 分鐘後回收。",
     "status": {
       "live": "執行中",
       "starting": "啟動中",
@@ -1429,6 +1454,7 @@
     "paused": "畫面已暫停",
     "quality": "影像品質",
     "reconnect": "重新連線",
+    "reconnecting": "正在重新連線…",
     "reload": "重新整理",
     "remoteInput": "遠端瀏覽器輸入",
     "resolution": "解析度",
@@ -1537,7 +1563,7 @@
           "unit": "每位成員"
         },
         "pendingState": "{{amount}} 待發放",
-        "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
+        "rewardsNote": "任務獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
         "slack": {
           "action": "新增",
           "description": "團隊日常辦公的地方",
@@ -1608,6 +1634,7 @@
       "notPlannedRecorded": "已記下，這件事暫無計劃",
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
+      "sent": "已傳送到新聊天",
       "undoFeedback": "復原",
       "useSuggestion": "使用建議"
     },
@@ -1966,47 +1993,6 @@
       "useDefault": "使用預設"
     },
     "documentTitle": "聊天",
-    "entrustedJobs": {
-      "archive": "封存任務",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "任務詳情",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "這裡還沒有任務。把任務交給 Okou，它會持續推進，並在需要你協助或有結果時通知你。",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "正在載入任務",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "來源更新",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "這次執行沒能完成",
       "loadMessages": "訊息載入失敗",
@@ -2099,78 +2085,6 @@
       "sent": "轉發成功",
       "threads": "聊天",
       "title": "轉發到"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Document",
-        "image": "Image",
-        "presentation": "Presentation",
-        "visualization": "Chart",
-        "website": "Website"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "幫我設定晨間郵件摘要，彙整需要我處理的郵件；先確認收件匣和傳送時間",
-            "second": "幫我設定每週競品簡報；先確認關注的公司、資訊來源和傳送排程",
-            "third": "幫我設定每日銷售摘要；先確認資料來源、指標和傳送時間"
-          },
-          "label": "Briefs",
-          "placeholder": "描述簡報要包含的內容，以及接收頻率…",
-          "title": "希望定期收到什麼簡報？"
-        },
-        "general": {
-          "examples": {
-            "first": "尋找適合新創團隊的品牌設計公司",
-            "second": "依功能和價格比較客戶管理工具",
-            "third": "研究某個產業的近期趨勢和領先企業"
-          },
-          "label": "綜合",
-          "placeholder": "描述你的問題，或想了解的內容…",
-          "title": "想查些什麼？"
-        },
-        "information": {
-          "examples": {
-            "first": "尋找近期關於小型企業採用 AI 的研究，並附上原始來源",
-            "second": "蒐集成功發表產品的公開案例，並說明哪些做法發揮了作用",
-            "third": "尋找可用於簡報的可靠產業資料，附上日期和來源連結"
-          },
-          "label": "資訊",
-          "placeholder": "描述主題、時間範圍，或資料的用途…",
-          "title": "想找哪方面的資料？"
-        },
-        "monitor": {
-          "examples": {
-            "first": "幫我關注競爭對手的價格變化；先確認公司、資訊來源和通知時間",
-            "second": "幫我關注寄給客戶的郵件是否收到回覆；先確認具體郵件和通知方式",
-            "third": "幫我關注某個產業的重要動態；先商定資訊來源、檢查頻率和關注重點"
-          },
-          "label": "Monitor",
-          "placeholder": "描述想持續關注的對象，以及哪些變化值得留意…",
-          "title": "想持續關注什麼變化？"
-        },
-        "people": {
-          "examples": {
-            "first": "為一場 AI 行銷活動尋找 5 位講者，說明適合的理由並附上公開來源",
-            "second": "尋找能觸及企業主的內容創作者，並說明其受眾為什麼合適",
-            "third": "為我的顧問服務尋找潛在客戶，並附上相關的公開背景資訊"
-          },
-          "label": "人物",
-          "placeholder": "描述職位、領域、公司或地區…",
-          "title": "找什麼樣的人？"
-        }
-      },
-      "groups": {
-        "automate": "Automate",
-        "create": "Create",
-        "search": "Search"
-      },
-      "label": "探索 Okou 能做什麼",
-      "placeholder": "描述你想完成的事…",
-      "sources": {
-        "trigger": "工具"
-      },
-      "workflows": "Workflows"
     },
     "mail": {
       "bcc": "密送",
@@ -2688,7 +2602,6 @@
       "tasks": {
         "document": "文件",
         "image": "圖片",
-        "jobs": "任務",
         "presentation": "簡報",
         "visualization": "視覺化",
         "website": "網站",
@@ -3168,6 +3081,17 @@
     "unavailable": "該帳號無法使用 Cloudflare Access。",
     "unused": "還沒有裝置連線使用此網路。",
     "usedBy_other": "你的 {{count}} 臺主機正在使用："
+  },
+  "connectorChatAccess": {
+    "accountAccess": "{{account}} 的存取權限",
+    "enableByDefault": "預設啟用 {{account}}",
+    "enabledAccounts": "{{value}} 個已啟用",
+    "manageAccounts": "管理帳號",
+    "noAccount": "未選擇帳號",
+    "noEnabledAccount": "目前聊天未啟用任何帳號",
+    "permissions": "權限",
+    "permissionsDescription": "這些規則適用於你所有聊天和帳號中的此連接器。",
+    "settingsDescription": "選擇預設啟用的帳號，以及新聊天的預設帳號。"
   },
   "connectors": {
     "access": {
@@ -4072,20 +3996,24 @@
     "actionFailed": "無法更新授權。",
     "allow": "允許 1 小時",
     "approved": "已授權",
-    "deadline": "到期時間：{{date}}",
+    "blocked": {
+      "chatBusy": "目前聊天正在執行，結束後即可核准。",
+      "computerChanged": "已切換電腦，請選回 {{computer}} 後再核准。",
+      "runActive": "發起申請的執行尚未結束，結束後即可核准。",
+      "runUnavailable": "發起申請的執行已無法使用，請在聊天中重新申請。"
+    },
     "denied": "已拒絕申請",
     "deny": "拒絕",
     "description": "Agent 需要取得在你的電腦上使用 Shell 的權限。",
     "expired": "授權已到期",
     "loading": "正在載入授權…",
-    "pending": "等待批准",
+    "reasonTitle": "申請用途",
+    "requestExpired": "申請已過期",
     "revoke": "撤銷授權",
     "revoked": "已撤銷 Shell 授權",
-    "scope": "僅限目前的 Chat 和電腦",
-    "terminalNotice": "授權結束後，既有終端仍保持開啟。",
-    "title": "Desktop Shell 授權",
+    "title": "Shell 存取",
     "unavailable": "授權無法使用",
-    "waiting": "Run 仍在執行或已切換電腦，暫時無法批准。"
+    "viewReason": "查看完整說明"
   },
   "documentTemplates": {
     "agreementNote": "此範本可作為協議起點。簽署前，請根據專案與適用法律審閱條款。",
@@ -4157,6 +4085,28 @@
     "emptyDescription": "新的建議會顯示在這裡。",
     "emptyTitle": "已全部處理",
     "title": "動態"
+  },
+  "friendReferrals": {
+    "checkingCode": "正在驗證邀請碼…",
+    "codeApplied": "邀請碼已生效",
+    "codeCheckFailed": "無法驗證邀請碼，請重試或留空繼續。",
+    "codeLabel": "你的邀請碼",
+    "codeUnavailable": "此邀請碼無法使用，請檢查或留空繼續。",
+    "copied": "已複製",
+    "copyCode": "複製邀請碼",
+    "copyFailed": "複製失敗，請重試。",
+    "copyLink": "複製邀請連結",
+    "description": "朋友使用你的邀請碼註冊、購買 usage pack 並升級至 Pro 或以上後，你將獲得價值 $20 的 credits。",
+    "earned": "累計獲得的 credits",
+    "invalidCode": "請輸入 6 位字母或數字，也可留空繼續。",
+    "loadFailed": "無法載入邀請碼，請重試。",
+    "loading": "正在取得你的邀請碼…",
+    "registered": "已註冊的朋友",
+    "retry": "重試",
+    "signupLabel": "邀請碼（選填）",
+    "signupPlaceholder": "輸入邀請碼",
+    "terms": "僅限新用戶，每位朋友僅獎勵一次。獎勵將發至你在此工作區的個人餘額，並於到帳 1 個月後到期。",
+    "title": "邀請朋友"
   },
   "global": {
     "errors": {
@@ -4981,8 +4931,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "已归档的聊天",
     "close": "Close",
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
@@ -4993,11 +4941,11 @@
     "deleteTitle": "删除 Project？",
     "description": "将不同 Agent 的相关聊天归到一起",
     "empty": "暂无聊天",
-    "emptyArchive": "No archived chats",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
     "moveError": "无法移动聊天",
     "moveTitle": "移动聊天",
+    "moveTo": "移至 {{name}}",
     "name": "Project 名称",
     "newChat": "新建聊天",
     "noMatches": "No projects found",
@@ -5011,6 +4959,7 @@
     "saving": "正在保存…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
   "queue": {
@@ -5403,6 +5352,8 @@
       "subscriptions": {
         "credits": "點數",
         "fiveHourLimit": "5 小時額度",
+        "label": "訂閱用量",
+        "lowUsage": "訂閱用量：剩餘額度低於 20%",
         "resetTimeUnavailable": "重置時間不可用",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩餘用量",
@@ -5463,7 +5414,7 @@
           "description": "個性化應用的外觀和使用方式。",
           "title": "偏好設定"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "選擇 Okou 主動工作的方式。",
           "title": "Proactive"
         },
@@ -5847,15 +5798,6 @@
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
         "title": "主動學習"
-      },
-      "proactivePlanningAction": {
-        "description": "在你交辦的範圍內規劃並推進任務，需要你處理時提醒你。",
-        "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
-        "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "此工作流程暫不可用。",
-        "preparing": "正在準備此工作流程。",
-        "title": "規劃與執行"
       },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",

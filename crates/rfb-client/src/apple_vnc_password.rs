@@ -3,13 +3,13 @@
 //! challenge nor SecurityResult encrypts the subsequent RFB desktop stream.
 
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite},
     time::Instant,
 };
 
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, Error, VncPassword,
-    authentication::{authenticate_apple_vnc, discard_reason, phase},
+    authentication::{authenticate_apple_vnc, phase, select_security_type},
     version::{ServerVersion, exchange_version},
 };
 
@@ -32,7 +32,7 @@ where
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,
-        select_vnc_auth(&mut stream),
+        select_security_type(&mut stream, VNC_AUTH),
     )
     .await?;
     phase(
@@ -44,23 +44,4 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_vnc_password_raw(stream),
     })
-}
-
-async fn select_vnc_auth<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let count = stream.read_u8().await?;
-    if count == 0 {
-        discard_reason(stream).await?;
-        return Err(Error::ServerRejected);
-    }
-    let mut types = [0u8; u8::MAX as usize];
-    let offered = types
-        .get_mut(..usize::from(count))
-        .ok_or(Error::UnsupportedSecurity)?;
-    stream.read_exact(offered).await?;
-    if !offered.contains(&VNC_AUTH) {
-        return Err(Error::UnsupportedSecurity);
-    }
-    stream.write_u8(VNC_AUTH).await?;
-    stream.flush().await?;
-    Ok(())
 }

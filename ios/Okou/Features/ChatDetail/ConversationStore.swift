@@ -53,7 +53,8 @@ final class ConversationStore {
   @ObservationIgnored lazy var connectorActions = ConnectorActionStore(
     service: commands.connectorActions, commands: commands, thread: thread,
     didContinue: { [weak self] in
-      guard let self else { return }
+      guard let self, !closed else { return }
+      await modelSelection?.connectors.refresh()
       didSend()
       await refresh()
     }, didFail: didFail)
@@ -129,7 +130,7 @@ final class ConversationStore {
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
-  let measurements = ConversationMeasurementCache()
+  let measurements: ConversationMeasurementCache
   let activitySummary: ConversationActivitySummary
   let runUsage: ConversationRunUsageStore
   private var detailOwner: UUID?
@@ -204,6 +205,7 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
+    measurementScope: ChatCacheScope? = nil,
     didRequestNewChat: @escaping @MainActor () -> Void = {},
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -217,6 +219,10 @@ final class ConversationStore {
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
+    measurements = ConversationMeasurementCache(
+      namespace: measurementScope.map {
+        [$0.apiBaseURL.absoluteString, $0.userID, $0.workspaceID, thread.id]
+      })
     self.draftStorage = draftStorage
     draftTarget = .thread(thread.id)
     composer = ComposerDraftStore(
@@ -247,7 +253,8 @@ final class ConversationStore {
   }
 
   var canRelease: Bool {
-    (!composer.hasContent || composer.isDurable) && pending.isEmpty
+    (!composer.hasContent || composer.isDurable) && composer.voice?.isWorking != true
+      && pending.isEmpty
       && modelSelection?.isBusy != true
       && !isLoading && !isSending && !isStopping && !isLoadingEarlier
       && !isRecoveringFailure && !permissionActions.isBusy
@@ -638,6 +645,7 @@ final class ConversationStore {
   }
 
   func reconcileVisibility() {
+    if !isVisible() { composer.voice?.suspend() }
     reconcileActivitySummary()
     if detailOwner != nil && isVisible() { requestFailureAccounts() }
     reconcileRunUsage()
@@ -776,6 +784,12 @@ final class ConversationStore {
     publishWindow()
     navigationRequest = NavigationRequest(position: position)
     return true
+  }
+
+  func earlierWindowMessages() -> [ChatMessage] {
+    var expanded = renderWindow
+    expanded.expand()
+    return items[expanded.range.lowerBound..<renderWindow.range.lowerBound].compactMap(\.message)
   }
 
   func loadEarlierMessages() async {

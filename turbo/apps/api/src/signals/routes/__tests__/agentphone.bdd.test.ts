@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { state, createStore } from "ccstate";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { randomUUID } from "node:crypto";
@@ -881,6 +882,16 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       context,
       routes: integrationsPhoneMessageRoutes,
     })(integrationsAgentPhoneContract);
+    mockClerkUsers(context, [
+      {
+        id: actor.userId,
+        firstName: "Linghan",
+        lastName: "Hu",
+        primaryEmailAddressId: "sender-email",
+        emailAddresses: [{ id: "sender-email", emailAddress: actor.email }],
+        imageUrl: "",
+      },
+    ]);
     const sent = await accept(
       client.groupMessage({
         headers: { authorization: `Bearer ${run.okouToken}` },
@@ -892,7 +903,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(lastSend(sends)).toMatchObject({
       agentId: AGENTPHONE_BDD_AGENT_ID,
       toNumber: groupId,
-      body: "The group update is ready",
+      body: expect.stringMatching(
+        /^The group update is ready\n\nSent via .+ · Triggered by Linghan Hu$/u,
+      ),
     });
     for (const member of [actor, other]) {
       const history = await integrations.requestAgentPhoneGroupHistory(
@@ -910,7 +923,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           toNumber: groupId,
           direction: "outbound",
           channel: "imessage",
-          body: "The group update is ready",
+          body: lastSend(sends).body,
         }),
       );
     }
@@ -5903,7 +5916,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         toNumber: groupId ?? phone,
       });
       const mediaSend = lastSend(sends);
-      expect(mediaSend.body).toBe("see attached");
+      expect(mediaSend.body).toBe(
+        "see attached\n\nSent via BDD agentphone upload agent · Triggered by BDD Runner",
+      );
       expect(completed.body.url).toBe(init.body.fileUrl);
       expect(mediaSend.toNumber).toBe(groupId ?? phone);
       if (!mediaSend.mediaUrl) {
@@ -5928,7 +5943,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
             toNumber: groupId,
             channel: "imessage",
             mediaUrl: init.body.fileUrl,
-            body: "see attached",
+            body: mediaSend.body,
           }),
         );
       }

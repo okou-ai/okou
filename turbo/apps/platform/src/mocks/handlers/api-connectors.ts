@@ -36,6 +36,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
@@ -372,6 +373,12 @@ export function connectorCatalogConnectItem(
 }
 
 export const apiConnectorsHandlers = [
+  mockApi(chatConnectorAccessContract.overview, ({ respond }) =>
+    respond(200, []),
+  ),
+  mockApi(chatConnectorAccessContract.overviewTarget, ({ respond }) =>
+    respond(200, { connector: null }),
+  ),
   mockApi(connectedConnectorsContract.list, ({ respond }) => {
     const connected = mockConnectorCatalogStatus().filter((connector) => {
       return mockConnectors.some((account) => {

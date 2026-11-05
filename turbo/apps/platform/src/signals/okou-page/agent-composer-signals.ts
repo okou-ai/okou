@@ -1,4 +1,6 @@
 import { command, computed, state } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import {
   sendNewThread$,
@@ -85,6 +87,13 @@ const noOpEventAction$ = command(
 
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
+  /**
+   * A dialog composer sends from its own unsaved draft and keeps the current
+   * page, leaving the Agent's saved composer untouched.
+   */
+  readonly inPlace?: boolean;
+  /** A Project page starts its chats in that Project. */
+  readonly projectId?: string;
   readonly onOptimisticSend?: () => void;
 }
 
@@ -106,27 +115,34 @@ function createAgentSubmitMessage(
         return false;
       }
       const access = get(newThreadComputerAccess$);
-      const connectorPreference = await get(
-        connector.accounts.preferenceState$,
-      );
+      const chatAccessEnabled =
+        get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+      const connectorPreference = chatAccessEnabled
+        ? null
+        : await get(connector.accounts.preferenceState$);
       signal.throwIfAborted();
-      const send = options.forward
+      const send = options.inPlace
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
-      const connectorSelections = connectorPreference.selections;
+      const connectorSelections = connectorPreference?.selections ?? [];
+      const pendingConnectorAccess = get(connector.chatAccess.pending$);
+      const hasPendingConnectorAccess =
+        pendingConnectorAccess.overrides.length > 0 ||
+        pendingConnectorAccess.selections.length > 0;
       const sent = await set(
         send,
         {
           agentId,
+          ...(options.projectId ? { projectId: options.projectId } : {}),
           draft,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
           editorDocument: submission.editorDocument,
-          // A forward stays on this page, so only a send that opens the new
-          // thread hands the selection over to it.
-          ...(options.forward
-            ? {}
+          // An in-place send stays on this page, so only a send that opens the
+          // new thread hands the selection over to it.
+          ...(options.inPlace
+            ? { preserveAgentDraft: true }
             : { composerTask: submission.taskSelection }),
           // Omit untouched draft preferences so the server applies the current
           // member default. Explicit "none" must also override a true default.
@@ -142,6 +158,9 @@ function createAgentSubmitMessage(
             ? { onOptimisticSend: options.onOptimisticSend }
             : {}),
           ...(connectorSelections.length > 0 ? { connectorSelections } : {}),
+          ...(chatAccessEnabled && hasPendingConnectorAccess
+            ? { initialConnectorAccess: pendingConnectorAccess }
+            : {}),
           ...(initialRemoteAccessOverrides.length > 0
             ? { initialRemoteAccessOverrides }
             : {}),
@@ -152,6 +171,7 @@ function createAgentSubmitMessage(
         set(resetNewThreadComputerAccess$);
         set(resetChatPageModelSelection$);
         set(connector.accounts.resetPendingSelections$);
+        set(connector.chatAccess.resetPending$);
         set(pendingRemoteAccess.reset$);
       }
       return sent;
@@ -180,13 +200,13 @@ function createAgentComposerSignalsWithDraft(
     pendingRemoteAccess,
     draft: {
       signals: agentDraft.draft,
-      load$: options.forward ? noOpAction$ : agentDraft.load$,
-      save$: options.forward ? noOpAction$ : agentDraft.queueDraftSync$,
+      load$: options.inPlace ? noOpAction$ : agentDraft.load$,
+      save$: options.inPlace ? noOpAction$ : agentDraft.queueDraftSync$,
     },
     eventSignals: createChatEventProjectionSignals(chatEvents$),
     voiceDraftTarget: `agent:${agentId}`,
     singleLineOnMobile: false,
-    forwardComposer: options.forward !== undefined,
+    forwardComposer: options.inPlace === true,
     modelSelection$: chatPageModelSelection$,
     selectedModelOauthAvailable$: chatPageSelectedModelOauthAvailable$,
     setModelSelection$,
@@ -211,13 +231,26 @@ export function createForwardAgentComposerSignals(
   return createAgentComposerSignalsWithDraft(
     agentId,
     createAgentDraftSignals(agentId),
-    { forward, onOptimisticSend },
+    { forward, inPlace: true, onOptimisticSend },
   );
+}
+
+/** A dialog composer for a prepared draft that starts a new thread in place. */
+export function createInPlaceAgentComposerSignals(
+  agentId: string,
+  agentDraft: EnsuredAgentDraft,
+  onOptimisticSend: () => void,
+) {
+  return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
+    inPlace: true,
+    onOptimisticSend,
+  });
 }
 
 interface AgentComposerContext {
   readonly agentId: string;
   readonly agentDraft: EnsuredAgentDraft;
+  readonly projectId?: string;
 }
 
 const internalAgentComposerContext$ = state<AgentComposerContext | null>(null);
@@ -236,5 +269,6 @@ export const agentChatComposerSignals$ = computed((get) => {
   return createAgentComposerSignalsWithDraft(
     context.agentId,
     context.agentDraft,
+    context.projectId ? { projectId: context.projectId } : {},
   );
 });

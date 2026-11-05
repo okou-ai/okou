@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.56](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.55...guest-tool-exec-v0.3.56) (2026-11-05)
+
+## [0.3.55](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.54...guest-tool-exec-v0.3.55) (2026-11-04)
+
+## [0.3.54](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.53...guest-tool-exec-v0.3.54) (2026-11-04)
+
+## [0.3.53](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.52...guest-tool-exec-v0.3.53) (2026-11-03)
+
 ## [0.3.52](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.51...guest-tool-exec-v0.3.52) (2026-11-03)
 
 ## [0.3.51](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.50...guest-tool-exec-v0.3.51) (2026-11-03)

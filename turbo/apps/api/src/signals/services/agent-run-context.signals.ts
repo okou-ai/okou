@@ -162,6 +162,10 @@ export interface AgentRunContextSignals {
   readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
   /** The accepted global Official Workflow catalog, shared across contexts. */
   readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
+  /** Seed Skill rows read with the model catalog; shared across contexts. */
+  readonly seedSkills$: ReturnType<
+    typeof createGlobalModelContext
+  >["seedSkills$"];
   readonly storage$: Computed<Promise<AgentStorageContext>>;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
@@ -360,6 +364,7 @@ function createOrgContextReferences(
           managedModelKeys$: supplied.managedModelKeys$,
           modelPricing$: supplied.modelPricing$,
           catalog$: supplied[globalModelOwner],
+          seedSkills$: supplied.seedSkills$,
         }
       : undefined
     : createGlobalModelContext();
@@ -571,6 +576,7 @@ function createIdentityContext(
       createSelectedImageModel(memberMetadata$),
     ...connectorContext.signals,
     officialCatalog$: reusedOfficialCatalog(supplied),
+    seedSkills$: globalReferences.seedSkills$,
     storage$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,

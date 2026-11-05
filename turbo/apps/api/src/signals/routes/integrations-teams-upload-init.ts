@@ -4,12 +4,9 @@ import {
   type TeamsUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations";
 
-import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { generatePresignedPutUrl, s3MetadataHeaders } from "../external/s3";
-import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
 
 import { resolveTeamsWriteTarget$ } from "../services/teams-write-access.service";
@@ -18,7 +15,12 @@ import {
   CanonicalPublicationConflictError,
 } from "../services/canonical-asset.service";
 import { settle } from "../utils";
-import { conflict, notFound, badRequestMessage } from "../../lib/error";
+import {
+  conflict,
+  notFound,
+  badRequestMessage,
+  resourceUnavailable,
+} from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 
 const prepareCanonicalTeamsUpload$ = command(
@@ -27,10 +29,8 @@ const prepareCanonicalTeamsUpload$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly runId: string;
-      readonly body: TeamsUploadInitBody & {
-        readonly canonical: NonNullable<TeamsUploadInitBody["canonical"]>;
-      };
+      readonly runId: string | null;
+      readonly body: TeamsUploadInitBody;
     },
     signal: AbortSignal,
   ) => {
@@ -45,7 +45,7 @@ const prepareCanonicalTeamsUpload$ = command(
     const target = await set(
       resolveTeamsWriteTarget$,
       {
-        runId,
+        ...(runId !== null ? { runId } : {}),
         userId: userId,
         orgId: orgId,
         body: body.canonical,
@@ -73,6 +73,7 @@ const prepareCanonicalTeamsUpload$ = command(
             tenantId: target.installation.teamsTenantId,
             conversationId: target.conversationId,
             source: target.source,
+            ...(target.recipientId ? { recipientId: target.recipientId } : {}),
             ...(body.canonical.activityId
               ? { activityId: body.canonical.activityId }
               : {}),
@@ -104,9 +105,7 @@ const prepareCanonicalTeamsUpload$ = command(
         filename: body.filename,
         contentType,
         size: body.length,
-        ...(prepared.uploadHeaders
-          ? { uploadHeaders: prepared.uploadHeaders }
-          : {}),
+        uploadHeaders: prepared.uploadHeaders ?? {},
       },
     };
   },
@@ -124,57 +123,21 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const body = bodyResult.data;
   const runId = "runId" in auth ? auth.runId : undefined;
-  if (body.canonical && runId && auth.orgId) {
-    return await set(
-      prepareCanonicalTeamsUpload$,
-      {
-        userId: auth.userId,
-        orgId: auth.orgId,
-        runId,
-        body: { ...body, canonical: body.canonical },
-      },
-      signal,
+  if (!auth.orgId) {
+    return resourceUnavailable(
+      "Choose an organization before uploading to Teams",
     );
   }
-  const filename = sanitizeArtifactFilename(body.filename);
-  const artifact = await set(
-    allocateUploadedArtifact$,
+  return await set(
+    prepareCanonicalTeamsUpload$,
     {
       userId: auth.userId,
       orgId: auth.orgId,
-      contentType: body.contentType,
-      size: body.length,
-      filename: body.filename,
+      runId: runId ?? null,
+      body,
     },
     signal,
   );
-  const uploadHeaders = s3MetadataHeaders(artifact.metadata);
-  const uploadUrl = await get(
-    generatePresignedPutUrl(
-      artifact.bucket,
-      artifact.key,
-      body.contentType,
-      {
-        usePublicEndpoint: true,
-        metadata: artifact.metadata,
-      },
-      signal,
-    ),
-  );
-  signal.throwIfAborted();
-
-  return {
-    status: 200 as const,
-    body: {
-      uploadId: artifact.id,
-      uploadUrl,
-      fileUrl: artifact.url,
-      filename,
-      contentType: body.contentType,
-      size: body.length,
-      ...(uploadHeaders ? { uploadHeaders } : {}),
-    },
-  };
 });
 
 export const integrationsTeamsUploadInitRoutes: readonly RouteEntry[] = [

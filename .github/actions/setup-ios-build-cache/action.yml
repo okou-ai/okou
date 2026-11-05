@@ -11,6 +11,9 @@ inputs:
   skip-restore-on-hit:
     description: Only restore when an exact cache entry is missing
     default: "false"
+  toolchain-file:
+    description: Actual toolchain already captured in this job; capture it when empty
+    default: ""
 
 outputs:
   dependencies-path:
@@ -43,6 +46,7 @@ runs:
       shell: bash
       env:
         IOS_CACHE_TARGET: ${{ inputs.target }}
+        IOS_CACHE_TOOLCHAIN_FILE: ${{ inputs.toolchain-file }}
       run: |
         case "$IOS_CACHE_TARGET" in
           simulator)
@@ -57,8 +61,13 @@ runs:
             ;;
           *) echo "Unsupported native cache target: $IOS_CACHE_TARGET" >&2; exit 1 ;;
         esac
-        toolchain_file="$RUNNER_TEMP/ios-cache-toolchain.json"
-        python3 ios/scripts/archive-promotion.py toolchain "$toolchain_file"
+        toolchain_file="${IOS_CACHE_TOOLCHAIN_FILE:-}"
+        if [[ -n "$toolchain_file" ]]; then
+          test -s "$toolchain_file"
+        else
+          toolchain_file="$RUNNER_TEMP/ios-cache-toolchain.json"
+          python3 ios/scripts/archive-promotion.py toolchain "$toolchain_file"
+        fi
         toolchain=$(shasum -a 256 "$toolchain_file" | cut -d ' ' -f 1)
         lock=$(shasum -a 256 ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved | cut -d ' ' -f 1)
         sources=$(git rev-parse HEAD:ios)

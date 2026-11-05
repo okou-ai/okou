@@ -417,6 +417,24 @@ describe("CHAT-02: shared user message queue", () => {
         },
       },
     });
+    // Thread authorization still decides before the source Run is used.
+    const unknownThread = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: randomUUID(),
+        clientEventId: randomUUID(),
+        prompt: "forwarded into an unknown thread",
+        sourceRunId: randomUUID(),
+      },
+      [404],
+    );
+    expect(unknownThread).toMatchObject({
+      status: 404,
+      body: {
+        error: { code: "NOT_FOUND", message: "Chat thread not found" },
+      },
+    });
 
     await cancelChatRun(actor, forwardedRunId);
     await cancelChatRun(actor, source.runId);
@@ -745,8 +763,9 @@ describe("CHAT-02: shared user message queue", () => {
     expect(rotatedSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(rotatedSystemPrompt).not.toContain(rotatedAnchorPrompt);
-    expect(rotatedSystemPrompt).not.toContain("# Incomplete Rounds Context");
+    expect(rotatedRun.prompt).toContain(
+      "agent prompt after the Web session rotates",
+    );
     expect(rotatedSystemPrompt).toContain("Web chat files: use");
     expect(rotatedSystemPrompt).toContain(
       "Cross-integration messages from web chat",

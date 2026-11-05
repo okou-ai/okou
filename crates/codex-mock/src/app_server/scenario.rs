@@ -37,6 +37,8 @@ pub(super) enum Scenario {
     RuntimeTurnFailed,
     RuntimeTurnFailedOutputTokenLimit,
     RuntimeOutputTokenLimitError,
+    RuntimeTurnFailedAccessProgram,
+    RuntimeAccessProgramError,
     RuntimeTurnFailedContextWindowExceeded,
     RuntimeTurnFailedInternalServerError,
     RuntimeTurnFailedProviderStreamServerError,
@@ -166,6 +168,8 @@ impl Scenario {
                     Ok(Self::RuntimeTurnFailedOutputTokenLimit)
                 }
                 "runtime-output-token-limit-error" => Ok(Self::RuntimeOutputTokenLimitError),
+                "runtime-turn-failed-access-program" => Ok(Self::RuntimeTurnFailedAccessProgram),
+                "runtime-access-program-error" => Ok(Self::RuntimeAccessProgramError),
                 "runtime-turn-failed-context-window-exceeded" => {
                     Ok(Self::RuntimeTurnFailedContextWindowExceeded)
                 }
@@ -307,6 +311,9 @@ impl Scenario {
             Self::RuntimeTurnFailedOutputTokenLimit | Self::RuntimeOutputTokenLimitError => {
                 Some(TurnFailure::OutputTokenLimit)
             }
+            Self::RuntimeTurnFailedAccessProgram | Self::RuntimeAccessProgramError => {
+                Some(TurnFailure::AccessProgram)
+            }
             Self::RuntimeTurnFailedContextWindowExceeded => {
                 Some(TurnFailure::ContextWindowExceeded)
             }
@@ -377,6 +384,7 @@ pub(super) enum TurnStartRpcError {
 pub(super) enum TurnFailure {
     Generic,
     OutputTokenLimit,
+    AccessProgram,
     ContextWindowExceeded,
     InternalServerError,
     ProviderStreamServerError,

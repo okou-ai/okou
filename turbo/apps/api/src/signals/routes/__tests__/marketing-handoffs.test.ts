@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   GetObjectCommand,
@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   marketingHandoffsContract,
+  serializeMarketingHandoff,
   type MarketingHandoffManifest,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
@@ -35,6 +36,10 @@ describe("Marketing content handoff", () => {
   let actor = { userId: "", orgId: "" };
   let taskId = "";
   let intentId = "";
+  let objects = new Map<
+    string,
+    { bytes: Buffer; type: string; metadata: Record<string, string> }
+  >();
 
   async function enableActor() {
     actor = { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
@@ -92,10 +97,7 @@ describe("Marketing content handoff", () => {
       "MARKETING_HANDOFF_PUBLISH_TOKEN",
       "publisher-credential-".repeat(3),
     );
-    const objects = new Map<
-      string,
-      { bytes: Buffer; type: string; metadata: Record<string, string> }
-    >();
+    objects = new Map();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command instanceof PutObjectCommand) {
         const key = `${command.input.Bucket}/${command.input.Key}`;
@@ -167,6 +169,7 @@ describe("Marketing content handoff", () => {
     const first = await create();
     const duplicate = await create();
     const edited = await create(manifest("A different task"));
+    expect(first.body.shortHash).toBe(first.body.hash.slice(0, 12));
     expect(duplicate.body.hash).toBe(first.body.hash);
     expect(edited.body.hash).not.toBe(first.body.hash);
     const resolved = await accept(
@@ -179,13 +182,108 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(resolved.body).toStrictEqual(manifest());
+    const short = await accept(
+      api().resolve({
+        params: { hash: first.body.shortHash },
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    expect(short.body).toStrictEqual(resolved.body);
+  });
+
+  it("rejects a colliding short address without overwriting or granting access to the first task", async () => {
+    const firstActor = actor;
+    const firstManifest = manifest("Short handoff collision 12975700");
+    const first = await create(firstManifest);
+    const colliding = manifest("Short handoff collision 15460718");
+    await enableActor();
+    const rejected = await api().create({
+      body: colliding,
+      headers: auth,
+      extraHeaders: { origin },
+    });
+    expect(rejected.status).toBe(409);
+    const rejectedPublication = await api().publish({
+      headers: publisher,
+      body: colliding,
+    });
+    expect(rejectedPublication.status).toBe(409);
+    expect(
+      (
+        await api().resolve({
+          params: { hash: first.body.shortHash },
+          body: {},
+          headers: auth,
+          extraHeaders: { origin },
+        })
+      ).status,
+    ).toBe(404);
+    mocks.clerk.session(firstActor.userId, firstActor.orgId);
+    const resolved = await accept(
+      api().resolve({
+        params: { hash: first.body.shortHash },
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(firstManifest);
+  });
+
+  it("reserves a short address for only one of two concurrent colliding tasks", async () => {
+    const bodies = [
+      manifest("Short handoff collision 12975700"),
+      manifest("Short handoff collision 15460718"),
+    ];
+    const responses = await Promise.all(
+      bodies.map((body) => {
+        return api().create({ body, headers: auth, extraHeaders: { origin } });
+      }),
+    );
+    expect(
+      responses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const resolved = await accept(
+      api().resolve({
+        params: { hash: "23aab54ca8ed" },
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(
+      bodies[
+        responses.findIndex((response) => {
+          return response.status === 200;
+        })
+      ],
+    );
+  });
+
+  it("returns not found for an unknown short address", async () => {
+    const response = await api().resolve({
+      params: { hash: "000000000000" },
+      body: {},
+      headers: auth,
+      extraHeaders: { origin },
+    });
+    expect(response.status).toBe(404);
   });
 
   it("does not grant another user access merely because they know the hash", async () => {
     const created = await create();
     await enableActor();
     const result = await api().resolve({
-      params: created.body,
+      params: { hash: created.body.shortHash },
       body: {},
       headers: auth,
       extraHeaders: { origin },
@@ -224,16 +322,345 @@ describe("Marketing content handoff", () => {
         return config as S3ClientConfig;
       },
     );
-    expect(configs).toHaveLength(3);
-    const transport = configs[1]?.requestHandler;
+    const transport = configs[0]?.requestHandler;
     expect(transport).toBeDefined();
-    expect(configs[2]?.requestHandler).toBe(transport);
     for (const config of configs) {
+      expect(config.requestHandler).toBe(transport);
       expect(config.credentials).toMatchObject({
         accessKeyId: "test-marketing-key",
         secretAccessKey: "test-marketing-secret",
       });
     }
+  });
+
+  it("checks public publication receipts without exposing private handoffs", async () => {
+    const privateHandoff = await create();
+    const published = await accept(
+      api().publish({
+        headers: publisher,
+        body: manifest(`Public preset ${taskId}`),
+      }),
+      [200],
+    );
+    const response = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: {
+          hashes: [
+            published.body.hash,
+            privateHandoff.body.hash,
+            privateHandoff.body.hash,
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(response.body.missing).toStrictEqual([privateHandoff.body.hash]);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(
+      (
+        await api().publishStatus({
+          headers: auth,
+          body: { hashes: [privateHandoff.body.hash] },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await api().publishBatch({
+          headers: auth,
+          body: { manifests: [manifest()] },
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("publishes only missing unique manifests and reuses the single-publish receipts", async () => {
+    const existing = manifest(`Existing preset ${taskId}`);
+    const added = manifest(`New preset ${taskId}`);
+    const first = await accept(
+      api().publish({ headers: publisher, body: existing }),
+      [200],
+    );
+    const puts = () => {
+      return context.mocks.s3.send.mock.calls.filter(([request]) => {
+        return request instanceof PutObjectCommand;
+      }).length;
+    };
+    const before = puts();
+    const batch = await accept(
+      api().publishBatch({
+        headers: publisher,
+        body: { manifests: [existing, added, added] },
+      }),
+      [200],
+    );
+    const newHash = createHash("sha256")
+      .update(serializeMarketingHandoff(added))
+      .digest("hex");
+    expect(batch.body.hashes).toStrictEqual([first.body.hash, newHash]);
+    expect(puts() - before).toBe(2);
+    await accept(
+      api().publishBatch({
+        headers: publisher,
+        body: { manifests: [added, existing] },
+      }),
+      [200],
+    );
+    expect(puts() - before).toBe(2);
+    const status = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: { hashes: batch.body.hashes },
+      }),
+      [200],
+    );
+    expect(status.body.missing).toStrictEqual([]);
+    await enableActor();
+    const resolved = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: newHash },
+        body: {},
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(added);
+    const short = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: newHash.slice(0, 12) },
+        body: {},
+      }),
+      [200],
+    );
+    expect(short.body).toStrictEqual(added);
+  });
+
+  it("repairs a full-only public receipt before inventory accepts its short address", async () => {
+    const body = manifest(`Legacy public preset ${taskId}`);
+    const published = await accept(
+      api().publish({ headers: publisher, body }),
+      [200],
+    );
+    objects.delete(
+      `test-marketing-handoffs/manifest/${published.body.shortHash}.json`,
+    );
+    const inventory = () => {
+      return accept(
+        api().publishStatus({
+          headers: publisher,
+          body: { hashes: [published.body.hash] },
+        }),
+        [200],
+      );
+    };
+    expect((await inventory()).body).toStrictEqual({
+      missing: [published.body.hash],
+      shortAddressesVerified: true,
+    });
+    await accept(
+      api().publishBatch({ headers: publisher, body: { manifests: [body] } }),
+      [200],
+    );
+    expect((await inventory()).body.missing).toStrictEqual([]);
+    await enableActor();
+    const resolved = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: published.body.shortHash! },
+        body: {},
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(body);
+  });
+
+  it("rejects a colliding batch without granting access to any unpublished manifest", async () => {
+    const bodies = [
+      manifest("Short handoff collision 12975700"),
+      manifest("Short handoff collision 15460718"),
+      manifest(`Unrelated preset ${taskId}`),
+    ];
+    const hashes = bodies.map((body) => {
+      return createHash("sha256")
+        .update(serializeMarketingHandoff(body))
+        .digest("hex");
+    });
+    const failed = await api().publishBatch({
+      headers: publisher,
+      body: { manifests: bodies },
+    });
+    expect(failed.status).toBe(409);
+    const inventory = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(inventory.body.missing).toStrictEqual(hashes);
+    await enableActor();
+    for (const hash of [...hashes, hashes[0]!.slice(0, 12)]) {
+      expect(
+        (
+          await api().resolve({
+            headers: auth,
+            extraHeaders: { origin },
+            params: { hash },
+            body: {},
+          })
+        ).status,
+      ).toBe(404);
+    }
+  });
+
+  it("does not make private files public through batch publication", async () => {
+    const file = await accept(
+      api().upload({
+        headers: auth,
+        extraHeaders: { origin },
+        body: {
+          filename: "private.txt",
+          contentType: "text/plain",
+          data: Buffer.from(taskId).toString("base64"),
+        },
+      }),
+      [200],
+    );
+    const body = { ...manifest(), files: [file.body] };
+    const result = await api().publishBatch({
+      headers: publisher,
+      body: { manifests: [body] },
+    });
+    expect(result.status).toBe(404);
+    const hash = createHash("sha256")
+      .update(serializeMarketingHandoff(body))
+      .digest("hex");
+    const status = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes: [hash] } }),
+      [200],
+    );
+    expect(status.body.missing).toStrictEqual([hash]);
+    await enableActor();
+    expect(
+      (
+        await api().resolve({
+          headers: auth,
+          extraHeaders: { origin },
+          params: { hash },
+          body: {},
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  it("keeps a partially failed batch unpublished and safely retries its immutable objects", async () => {
+    const manifests = [
+      manifest(`First ${taskId}`),
+      manifest(`Second ${taskId}`),
+    ];
+    const hashes = manifests.map((body) => {
+      return createHash("sha256")
+        .update(serializeMarketingHandoff(body))
+        .digest("hex");
+    });
+    context.mocks.s3.send.mockRejectedValueOnce(
+      new Error("Storage unavailable"),
+    );
+    const failed = await api().publishBatch({
+      headers: publisher,
+      body: { manifests },
+    });
+    expect(failed.status).toBe(500);
+    const unpublished = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(unpublished.body.missing).toStrictEqual(hashes);
+    const retry = await accept(
+      api().publishBatch({ headers: publisher, body: { manifests } }),
+      [200],
+    );
+    expect(retry.body.hashes).toStrictEqual(hashes);
+    const published = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(published.body.missing).toStrictEqual([]);
+  });
+
+  it("publishes a batch that references an already public file", async () => {
+    const file = await accept(
+      api().publishFile({
+        headers: publisher,
+        body: {
+          filename: "preset.txt",
+          contentType: "text/plain",
+          data: Buffer.from(taskId).toString("base64"),
+        },
+      }),
+      [200],
+    );
+    const body = { ...manifest(), files: [file.body] };
+    const batch = await accept(
+      api().publishBatch({ headers: publisher, body: { manifests: [body] } }),
+      [200],
+    );
+    await enableActor();
+    const resolved = await accept(
+      api().resolve({
+        headers: auth,
+        extraHeaders: { origin },
+        params: { hash: batch.body.hashes[0]! },
+        body: {},
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(body);
+  });
+
+  it("rejects a batch manifest larger than the reader's individual object limit", async () => {
+    const body = {
+      ...manifest("\u0000".repeat(20_000)),
+      options: { showcase: "\u0000".repeat(2048) },
+    };
+    expect(
+      (
+        await api().publishBatch({
+          headers: publisher,
+          body: { manifests: [body] },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("bounds publisher inventory and write batches", async () => {
+    const hash = "a".repeat(64);
+    expect(
+      (
+        await api().publishStatus({
+          headers: publisher,
+          body: {
+            hashes: Array.from({ length: 501 }, () => {
+              return hash;
+            }),
+          },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await api().publishBatch({
+          headers: publisher,
+          body: {
+            manifests: Array.from({ length: 101 }, () => {
+              return manifest();
+            }),
+          },
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("still rejects missing handoff credentials after the transport is initialized", async () => {
@@ -472,7 +899,7 @@ describe("Marketing content handoff", () => {
     );
     const retry = await accept(
       api().import({
-        params: created.body,
+        params: { hash: created.body.shortHash },
         body: { intentId },
         headers: auth,
         extraHeaders: { origin },

@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.55.10](https://github.com/okou-ai/okou/compare/desktop-v0.55.9...desktop-v0.55.10) (2026-11-05)
+
+
+### Performance Improvements
+
+* **ci:** run desktop xctest with two isolated workers ([#45390](https://github.com/okou-ai/okou/issues/45390)) ([591faa3](https://github.com/okou-ai/okou/commit/591faa33ba2c4371f014f50c083fd4bc5e557ecf))
+
+## [0.55.9](https://github.com/okou-ai/okou/compare/desktop-v0.55.8...desktop-v0.55.9) (2026-11-05)
+
+
+### CI
+
+* **desktop:** drop unused packages and shorten preview retention ([#45359](https://github.com/okou-ai/okou/issues/45359)) ([df03d82](https://github.com/okou-ai/okou/commit/df03d8247a64c1b2a92b9569931cfda894fe44d2))
+
+## [0.55.8](https://github.com/okou-ai/okou/compare/desktop-v0.55.7...desktop-v0.55.8) (2026-11-05)
+
+
+### Bug Fixes
+
+* **desktop:** cancel token waits without blocking request deadlines ([#45330](https://github.com/okou-ai/okou/issues/45330)) ([5ea40da](https://github.com/okou-ai/okou/commit/5ea40da064699d0e27507c40aa51d2f8790e3318))
+
+## [0.55.7](https://github.com/okou-ai/okou/compare/desktop-v0.55.6...desktop-v0.55.7) (2026-11-05)
+
+
+### Bug Fixes
+
+* **desktop:** attribute elapsed native timeouts to owning deadlines ([#45274](https://github.com/okou-ai/okou/issues/45274)) ([c8fa913](https://github.com/okou-ai/okou/commit/c8fa913b4a5c96bd02d351a9621ea53e610da44f))
+
+
+### CI
+
+* parallelize desktop native checks and packaging ([#45255](https://github.com/okou-ai/okou/issues/45255)) ([c9ce92e](https://github.com/okou-ai/okou/commit/c9ce92e76b8f8812c33c391b1a5231051ceec7c6))
+
+## [0.55.6](https://github.com/okou-ai/okou/compare/desktop-v0.55.5...desktop-v0.55.6) (2026-11-03)
+
+
+### Bug Fixes
+
+* **desktop:** keep transient heartbeat retries at info ([#44984](https://github.com/okou-ai/okou/issues/44984)) ([219b95f](https://github.com/okou-ai/okou/commit/219b95f71b39aa16ef48c674b8d1222965d66b15))
+
 ## [0.55.5](https://github.com/okou-ai/okou/compare/desktop-v0.55.4...desktop-v0.55.5) (2026-11-03)
 
 

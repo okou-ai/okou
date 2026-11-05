@@ -1,5 +1,183 @@
 # Changelog
 
+## [0.244.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.18...runner-rs-v0.244.19) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
+
+### Performance Improvements
+
+* **runner:** discard diagnostic response headers without decoding values ([#45414](https://github.com/okou-ai/okou/issues/45414)) ([d334b29](https://github.com/okou-ai/okou/commit/d334b297e22be9d89b2e49003a034f092dd89404))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.17...runner-rs-v0.244.18) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** isolate request and response capture policies ([#45380](https://github.com/okou-ai/okou/issues/45380)) ([c1117ae](https://github.com/okou-ai/okou/commit/c1117aec4d6b8363247f0ff61f9cbe834130c032))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.16...runner-rs-v0.244.17) (2026-11-05)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.15...runner-rs-v0.244.16) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** centralize expression branch enumeration ([#45351](https://github.com/okou-ai/okou/issues/45351)) ([d529f39](https://github.com/okou-ai/okou/commit/d529f393ce0bf89bdc18fa1c6bdbc122a384d24d))
+
+## [0.244.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.14...runner-rs-v0.244.15) (2026-11-05)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.13...runner-rs-v0.244.14) (2026-11-05)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.12...runner-rs-v0.244.13) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** centralize ordered outcome continuation ([#45298](https://github.com/okou-ai/okou/issues/45298)) ([c23ec55](https://github.com/okou-ai/okou/commit/c23ec55d648370474d0417daa103f3acd7e25af1))
+* **python:** centralize the response finalization precondition ([#45263](https://github.com/okou-ai/okou/issues/45263)) ([ae88103](https://github.com/okou-ai/okou/commit/ae881035e26bdeeba923b1f9e9280a9a7773c6b7))
+* **python:** isolate response inspector construction ([#45293](https://github.com/okou-ai/okou/issues/45293)) ([bbfdedf](https://github.com/okou-ai/okou/commit/bbfdedfc6e95dc9380db7af06f2f5fd9cea5e8b5))
+* **python:** reuse empty branch transfer semantics ([#45304](https://github.com/okou-ai/okou/issues/45304)) ([a1330ac](https://github.com/okou-ai/okou/commit/a1330acb461a5d685e9f6cdd337c6feb9a16810d))
+* **python:** share the trickling fixture thread owner ([#45270](https://github.com/okou-ai/okou/issues/45270)) ([f3ffb1f](https://github.com/okou-ai/okou/commit/f3ffb1f262f6ca6ff2d0c97a9622ae1906b11adb))
+
+
+### Performance Improvements
+
+* **python:** avoid irrelevant callable metadata analysis ([#45284](https://github.com/okou-ai/okou/issues/45284)) ([64c22b4](https://github.com/okou-ai/okou/commit/64c22b425ff31232d90e6d2cd1dc9eff482c1b95))
+
+## [0.244.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.11...runner-rs-v0.244.12) (2026-11-04)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#45244](https://github.com/okou-ai/okou/issues/45244)) ([a1933e5](https://github.com/okou-ai/okou/commit/a1933e593f4c66bce81c0ac201cd40c5826a07f9))
+* **runner:** upgrade mitmproxy to 12.3.1 with runtime dependency parity ([#45239](https://github.com/okou-ai/okou/issues/45239)) ([1d01c56](https://github.com/okou-ai/okou/commit/1d01c56186b97550868be9d018d8984a40425830))
+
+
+### Performance Improvements
+
+* **python:** avoid per-character ascii query byte counting ([#45251](https://github.com/okou-ai/okou/issues/45251)) ([ba160c0](https://github.com/okou-ai/okou/commit/ba160c059171cad110dc37cff6e804ddeac9cc0a))
+* **runner:** avoid decoding method-override values for presence checks ([#45226](https://github.com/okou-ai/okou/issues/45226)) ([053c9fc](https://github.com/okou-ai/okou/commit/053c9fc0674ca1a27aa954a79820f600ba894bbf))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.10...runner-rs-v0.244.11) (2026-11-04)
+
+
+### Refactoring
+
+* **python:** centralize registry uuid string validation ([#45174](https://github.com/okou-ai/okou/issues/45174)) ([6dfb65a](https://github.com/okou-ai/okou/commit/6dfb65aec1a0b6009f6f95c730a5c9d04834221d))
+* **runner:** retire withdrawn optional blank preparation ([#45190](https://github.com/okou-ai/okou/issues/45190)) ([e5dd518](https://github.com/okou-ai/okou/commit/e5dd51855865ccd8af3ef50a3ee32b4064c2d208))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.9...runner-rs-v0.244.10) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** preserve system sbin directories in agent path ([#45143](https://github.com/okou-ai/okou/issues/45143)) ([42e1307](https://github.com/okou-ai/okou/commit/42e1307f32e3518faa32019c65356b8476216a8a))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.8...runner-rs-v0.244.9) (2026-11-04)
+
+
+### Refactoring
+
+* **python:** centralize metadata lexical scope ownership ([#45097](https://github.com/okou-ai/okou/issues/45097)) ([7316ef8](https://github.com/okou-ai/okou/commit/7316ef8399612241b731b2d06079daab9dfee7de))
+* **python:** share configured platform url parsing primitives ([#45135](https://github.com/okou-ai/okou/issues/45135)) ([a9a4989](https://github.com/okou-ai/okou/commit/a9a498944103371b9ee8b16c1bea6de90accca65))
+* **test:** share the s3 partial-body error fixture ([#45118](https://github.com/okou-ai/okou/issues/45118)) ([413a9a3](https://github.com/okou-ai/okou/commit/413a9a3f1b856a77ffd86ddbe6a728913285a46f))
+
+
+### Performance Improvements
+
+* **runner:** optimize and prewarm firewall catalog initialization ([#45101](https://github.com/okou-ai/okou/issues/45101)) ([628bfa0](https://github.com/okou-ai/okou/commit/628bfa04201573db4431df43b1686a9738f970ba))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.7...runner-rs-v0.244.8) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** call local response owner directly ([#45038](https://github.com/okou-ai/okou/issues/45038)) ([3e34c50](https://github.com/okou-ai/okou/commit/3e34c508243c3f11181a4bfd243ad37fdcca2965))
+* **runner:** consolidate greedy firewall traversal branches ([#45016](https://github.com/okou-ai/okou/issues/45016)) ([247dd21](https://github.com/okou-ai/okou/commit/247dd2199e43eeb015e9a2b49c7bb731bad824a2))
+* **runner:** remove retired state marker publisher ([#45063](https://github.com/okou-ai/okou/issues/45063)) ([8c524b7](https://github.com/okou-ai/okou/commit/8c524b77ce06fec3703449208a4afcd75fba7cf4))
+* **runner:** retire the unused sigv4 boolean facade ([#45079](https://github.com/okou-ai/okou/issues/45079)) ([a3f0250](https://github.com/okou-ai/okou/commit/a3f025018da820d0e5285f9b5046b6ecf8744542))
+* **runner:** share http json inspection steps ([#45050](https://github.com/okou-ai/okou/issues/45050)) ([21cc0fa](https://github.com/okou-ai/okou/commit/21cc0fa2813b1f93fb844a8728241df2f2bdb399))
+* **runner:** share mixed firewall segment acceptance ([#45026](https://github.com/okou-ai/okou/issues/45026)) ([3691f83](https://github.com/okou-ai/okou/commit/3691f83183d6cca0cbb9dad3feed36da59701af9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.6...runner-rs-v0.244.7) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** retain service artifacts until shutdown is confirmed ([#44990](https://github.com/okou-ai/okou/issues/44990)) ([73f9c29](https://github.com/okou-ai/okou/commit/73f9c29a1b9378daad63d5b4c425240051afd7c4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.5...runner-rs-v0.244.6) (2026-11-03)
+
+
+### Refactoring
+
+* **python:** reuse unordered set element analysis ([#44945](https://github.com/okou-ai/okou/issues/44945)) ([d05fa2d](https://github.com/okou-ai/okou/commit/d05fa2d1f58291a5cb0578551dfeb5047797d966))
+* **python:** share native transition evidence validation ([#44969](https://github.com/okou-ai/okou/issues/44969)) ([f3f696a](https://github.com/okou-ai/okou/commit/f3f696a77076b8f82b2e40be1be0a2d266101bd6))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.4...runner-rs-v0.244.5) (2026-11-03)
+
+
+### Refactoring
+
+* **python:** centralize classified header rejection termination ([#44913](https://github.com/okou-ai/okou/issues/44913)) ([b09d3a5](https://github.com/okou-ai/okou/commit/b09d3a50a46971e6709fe91e2c72dac48c066139))
+* **rust:** share blocking-worker release ownership in tests ([#44912](https://github.com/okou-ai/okou/issues/44912)) ([0c873d8](https://github.com/okou-ai/okou/commit/0c873d8254326de823cf8d42f5fe06489e555299))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.3...runner-rs-v0.244.4) (2026-11-03)
 
 ### Release Dependencies

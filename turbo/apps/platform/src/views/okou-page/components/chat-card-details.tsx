@@ -6,18 +6,20 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@okouai/ui";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 /** Keep variable-length details and forms outside the transcript's fixed frame. */
 export function ChatCardDetails({
   title,
   children,
+  trigger,
   triggerLabel,
   onOpenChange,
 }: {
   readonly title: string;
   readonly children: ReactNode;
+  readonly trigger?: ReactElement;
   readonly triggerLabel?: string;
   readonly onOpenChange?: (open: boolean) => void;
 }) {
@@ -31,15 +33,17 @@ export function ChatCardDetails({
     <Dialog onOpenChange={onOpenChange}>
       <DialogTrigger
         render={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            aria-label={label}
-          >
-            {label}
-          </Button>
+          trigger ?? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              aria-label={label}
+            >
+              {label}
+            </Button>
+          )
         }
       />
       <DialogContent

@@ -10,7 +10,7 @@ import {
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
 import { requireTelegramConversationAccess$ } from "../services/telegram-access.service";
-import { telegramMessageSendFooterText } from "../services/telegram-footer.service";
+import { telegramMessageSendFooterText$ } from "../services/telegram-footer.service";
 import { buildTelegramResponse } from "../../lib/telegram-format";
 import type { RouteEntry } from "../route-entry";
 
@@ -25,10 +25,6 @@ const botNotFound = Object.freeze({
 });
 
 const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const authRunId =
-    "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
-
   const bodyResult = await get(
     bodyResultOf(integrationsTelegramMessageContract.sendMessage),
   );
@@ -37,6 +33,7 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const body = bodyResult.data;
+  const auth = get(organizationAuthContext$);
 
   const botToken = isOfficialTelegramBotId(body.botId)
     ? getOfficialTelegramBotConfig().botToken
@@ -45,12 +42,7 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return botNotFound;
   }
 
-  const footerText = await get(
-    telegramMessageSendFooterText({
-      authRunId,
-      botId: body.botId,
-    }),
-  );
+  const footerText = await get(telegramMessageSendFooterText$);
   signal.throwIfAborted();
 
   const text = buildTelegramResponse(body.text, footerText);

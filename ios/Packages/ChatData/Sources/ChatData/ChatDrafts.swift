@@ -112,6 +112,11 @@ public struct ChatDraftStorage: Sendable {
     try JSONEncoder().encode(value).write(
       to: file(key), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
   }
+  public func voiceDraft(for target: ChatDraftTarget) -> VoiceDraftStorage {
+    VoiceDraftStorage(
+      directory: directory.appendingPathComponent(
+        Self.digest(target.key + "/voice"), isDirectory: true))
+  }
   private func file(_ key: String) -> URL {
     directory.appendingPathComponent(Self.digest(key) + ".json")
   }

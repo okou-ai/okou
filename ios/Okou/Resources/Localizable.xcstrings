@@ -4076,7 +4076,14 @@
       }
     },
     "Allow for": {
+      "extractionState": "manual",
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow for"
+          }
+        },
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -10482,7 +10489,14 @@
       }
     },
     "Connecting…": {
+      "extractionState": "manual",
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting…"
+          }
+        },
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -11562,6 +11576,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "選擇一個工作區以繼續。"
+          }
+        }
+      }
+    },
+    "Continuing chat…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuing chat…"
           }
         }
       }
@@ -22354,6 +22379,17 @@
         }
       }
     },
+    "Mark all as read": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark all as read"
+          }
+        }
+      }
+    },
     "Mark all as read for this agent": {
       "extractionState": "manual",
       "localizations": {
@@ -32254,6 +32290,17 @@
         }
       }
     },
+    "Requested by %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested by %@"
+          }
+        }
+      }
+    },
     "Resend code": {
       "localizations": {
         "de": {
@@ -35128,6 +35175,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在儲存權限…"
+          }
+        }
+      }
+    },
+    "Saving…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving…"
           }
         }
       }
@@ -38712,6 +38770,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "提交驗證碼"
+          }
+        }
+      }
+    },
+    "Submitting code…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submitting code…"
           }
         }
       }

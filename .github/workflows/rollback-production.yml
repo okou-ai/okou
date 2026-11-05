@@ -235,6 +235,7 @@ jobs:
 
       - name: Start GitHub Deployment
         id: deployment
+        continue-on-error: true
         uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: start
@@ -264,7 +265,8 @@ jobs:
           deployment-url: ${{ needs.resolve-target.outputs.api_deployment_url }}
 
       - name: Finish GitHub Deployment
-        if: always()
+        if: ${{ always() && steps.deployment.outputs.deployment_id }}
+        continue-on-error: true
         uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: finish

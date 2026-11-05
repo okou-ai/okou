@@ -8,8 +8,6 @@ import Observation
 @MainActor @Observable
 final class WorkspaceStore {
   private let client: APIClient
-  /// One dictation session per workspace; whichever composer is visible drives it.
-  let voice: VoiceInputStore
   private let sync: ChatSync
   private let commands: ChatCommands
   private let conversationLimit: Int
@@ -52,6 +50,7 @@ final class WorkspaceStore {
   var newAttachmentDraft: AttachmentDraftStore { newComposer.attachments }
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
+  private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
   @ObservationIgnored private var agentDrafts: [String: ComposerDraftStore] = [:]
   private var agentDraftTask: Task<Void, Never>?
@@ -111,6 +110,7 @@ final class WorkspaceStore {
   init(
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
     sharedSync: ChatSync? = nil, draftStorage: ChatDraftStorage? = nil,
+    measurementScope: ChatCacheScope? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -120,11 +120,11 @@ final class WorkspaceStore {
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     self.client = client
-    voice = VoiceInputStore(client: client)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
     self.draftStorage = draftStorage
+    self.measurementScope = measurementScope
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync
@@ -209,6 +209,7 @@ final class WorkspaceStore {
       modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
+      measurementScope: measurementScope,
       didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) },
       readRetrySleep: readRetrySleep)
     conversation.composer.setForeground(isForeground)
@@ -570,7 +571,7 @@ final class WorkspaceStore {
     } else {
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: failure ?? "The archive change was not confirmed.",
-        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess
+        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess, kind: .error
       ) { [weak self] in
         await self?.setArchived(
           id, archived: archived, restoreOnUndo: restore,
@@ -589,8 +590,8 @@ final class WorkspaceStore {
     if succeeded {
       let message =
         muted
-        ? "Chat muted. Notifications and unread badges are off; tasks keep running."
-        : "Chat unmuted. Notifications and unread badges are on."
+        ? "Chat muted"
+        : "Chat unmuted"
       let canUndo = muted || list.canMuteChats
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: message, actionTitle: canUndo ? "Undo" : nil
@@ -601,7 +602,7 @@ final class WorkspaceStore {
     } else {
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: failure ?? "The mute change was not confirmed.",
-        actionTitle: "Retry", persists: true
+        actionTitle: "Retry", persists: true, kind: .error
       ) { [weak self] in
         await self?.setMuted(id, muted: muted, markRead: markRead)
       }

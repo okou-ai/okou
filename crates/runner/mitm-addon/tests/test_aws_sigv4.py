@@ -12,7 +12,6 @@ from aws_sigv4 import (
     AwsSigV4SigningError,
     hash_request_body,
     inspect_request,
-    request_requires_body_for_signing,
     sign_request,
 )
 from tests.aws_sigv4_helpers import (
@@ -169,13 +168,13 @@ _REJECTED_SIGNING_CONTEXTS = (
 
 
 @pytest.mark.parametrize(("url", "headers", "error"), _REJECTED_SIGNING_CONTEXTS)
-def test_request_requires_body_for_signing_rejects_invalid_signing_context(
+def test_inspect_request_rejects_invalid_signing_context(
     url: str,
     headers: list[tuple[str, str]],
     error: str,
 ) -> None:
     with pytest.raises(AwsSigV4SigningError, match=error):
-        request_requires_body_for_signing(url=url, headers=headers)
+        inspect_request(url=url, headers=headers)
 
 
 @pytest.mark.parametrize(("url", "headers", "error"), _REJECTED_SIGNING_CONTEXTS)
@@ -234,12 +233,12 @@ def test_sign_request_rejects_invalid_signing_context(
         ),
     ],
 )
-def test_request_requires_body_for_signing_matches_payload_semantics(
+def test_inspect_request_reports_payload_semantics(
     url: str,
     headers: list[tuple[str, str]],
     requires_body: bool,
 ) -> None:
-    assert request_requires_body_for_signing(url=url, headers=headers) is requires_body
+    assert inspect_request(url=url, headers=headers).requires_body is requires_body
 
 
 @pytest.mark.parametrize(
@@ -278,12 +277,12 @@ def test_request_requires_body_for_signing_matches_payload_semantics(
         ),
     ],
 )
-def test_request_requires_body_for_signing_preserves_signer_errors(
+def test_inspect_request_preserves_signer_errors(
     headers: list[tuple[str, str]],
     error: str,
 ) -> None:
     with pytest.raises(AwsSigV4SigningError, match=error):
-        request_requires_body_for_signing(
+        inspect_request(
             url=f"https://{STS_HOST}/",
             headers=headers,
         )

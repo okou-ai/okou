@@ -111,6 +111,20 @@ for env in [evidence['env'], ios['jobs']['publish-archive']['env']]:
         assert env[key] == value
 simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
 assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
+# A verified hit avoids native setup in this job; a miss and normal PR/manual
+# requests retain it without a second Mac job or an archive dependency.
+cache = next(step for step in native if step.get('id') == 'build-cache')
+receive = next(step for step in native if step.get('name') == 'Receive locked source repositories')
+configure = next(step for step in native if step.get('name') == 'Configure locked package sources')
+capture = next(step for step in native if step.get('name') == 'Capture promotion inputs')
+assert native.index(capture) < native.index(evidence) < native.index(cache)
+assert cache['with']['toolchain-file'] == '${{ env.IOS_ARCHIVE_DIR }}/toolchain.json'
+for event in ['merge_group', 'pull_request', 'workflow_dispatch']:
+    for decision in ['true', 'false', '']:
+        for step in [cache, receive, configure, simulator]:
+            expression = (step['if'].replace('github.event_name', repr(event))
+                .replace('steps.evidence.outputs.run_tests', repr(decision)).replace('||', 'or'))
+            assert eval(expression, {'__builtins__': {}}, {}) is (event != 'merge_group' or decision == 'true')
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']
 package_job = ios['jobs']['test-packages']

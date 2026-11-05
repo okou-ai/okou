@@ -1,5 +1,4 @@
 import { command, computed, state, type Command } from "ccstate";
-import type { SidebarProjectContext } from "./sidebar-chat-thread-item.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { activeRoute$ } from "../active-route.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
@@ -295,11 +294,7 @@ export const setupRightThreadNotFound$ = command(
 );
 
 export const loadLeftThread$ = command(
-  (
-    { get, set },
-    threadId: string,
-    projectContext?: SidebarProjectContext,
-  ): void => {
+  ({ get, set }, threadId: string): void => {
     if (get(currentChatThreadId$) === threadId) {
       return;
     }
@@ -316,12 +311,6 @@ export const loadLeftThread$ = command(
         : withoutThreadMailParams(params);
     if (next.get(SIDEBAR_PARAM) === threadId) {
       next.delete(SIDEBAR_PARAM);
-    }
-    next.delete("project");
-    next.delete("projectAgent");
-    if (projectContext) {
-      next.set("project", projectContext.projectId);
-      next.set("projectAgent", projectContext.agentId);
     }
     set(detachedNavigateTo$, ROUTES.chat, {
       pathParams: { threadId },

@@ -15,7 +15,6 @@ import {
 } from "../../lib/api/domains/suggestions";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { learnSuggestions } from "./learning";
 
 async function readInput(path: string): Promise<unknown> {
   const info = await stat(path);
@@ -74,43 +73,6 @@ export function createSuggestionCommand() {
   const suggestionCommand = new Command("suggestion").description(
     "Manage your next-step suggestions from Okou",
   );
-  suggestionCommand
-    .command("learning")
-    .description(
-      "Merge pending feedback into bounded member Memory and read current recommendation context",
-    )
-    .requiredOption(
-      "--memory-root <path>",
-      "This Run's selected member Memory mount, never the workspace",
-    )
-    .option(
-      "--json",
-      "Output current feedback memory and the pending publication status",
-    )
-    .option(
-      "--read-only",
-      "Read effective feedback context without writing member Memory",
-    )
-    .action(
-      withErrorHandler(
-        async (options: {
-          readonly memoryRoot: string;
-          readonly json?: boolean;
-          readonly readOnly?: boolean;
-        }) => {
-          const result = await learnSuggestions(
-            options.memoryRoot,
-            options.readOnly,
-          );
-          console.log(
-            options.json
-              ? JSON.stringify(result)
-              : `Prepared ${result.processed} feedback responses; ${result.memory.records.length} current memories. ${options.readOnly ? "Read-only context; Memory was not changed." : "Publication is pending Run finalization."} Continue with: okou suggestion list --json`,
-          );
-        },
-        jsonError,
-      ),
-    );
   suggestionCommand
     .command("identity")
     .description(

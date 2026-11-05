@@ -2,6 +2,8 @@ import {
   catalogFixture,
   requireConnectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
+import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GET_STARTED_REWARDS,
   GET_STARTED_REWARDS_CHANGED_EVENT,
@@ -17,7 +19,13 @@ import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   integrationsSlackContract,
@@ -44,6 +52,171 @@ import {
 
 const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
+
+test("The gift opens invitations independently of credit quests, with code and link copying", async () => {
+  const status = configureQuestPage(context, "admin");
+  status.quests = [];
+  const linkReady = context.mocks.deferred<void>();
+  context.mocks.api(friendReferralsContract.link, async ({ respond }) => {
+    await linkReady.promise;
+    return respond(200, {
+      code: "a7k2p9",
+      registeredCount: 3,
+      rewardedCount: 2,
+      earnedCredits: 40_000,
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  const user = userEvent.setup({ delay: null });
+  const entry = await waitFor(() => {
+    return buttonNamed("Invite your friends", document.body);
+  });
+  entry.focus();
+  await user.keyboard("{Enter}");
+  const dialog = await screen.findByRole("dialog", {
+    name: "Invite your friends",
+  });
+  expect(
+    within(dialog).getByText(
+      /buys a usage pack, and upgrades to Pro or above/u,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(/expire one month after they are granted/u),
+  ).toBeInTheDocument();
+  await expect(
+    within(dialog).findByRole("status", {
+      name: "Getting your invitation code…",
+    }),
+  ).resolves.toBeInTheDocument();
+  linkReady.resolve();
+  const code = await within(dialog).findByLabelText("Your invitation code");
+  expect(code).toHaveValue("a7k2p9");
+  expect(
+    within(dialog).queryByDisplayValue(
+      `${location.origin}/sign-up?friend_referral=a7k2p9`,
+    ),
+  ).not.toBeInTheDocument();
+  expect(within(dialog).getByText("40,000")).toBeInTheDocument();
+  click(buttonNamed("Copy code", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
+  await expect(navigator.clipboard.readText()).resolves.toBe("a7k2p9");
+  click(buttonNamed("Copy link", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
+  await expect(navigator.clipboard.readText()).resolves.toBe(
+    `${location.origin}/sign-up?friend_referral=a7k2p9`,
+  );
+  expect(buttonNamed("Copy code", dialog)).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(entry).toHaveFocus();
+  });
+  await user.click(linkNamed("Workflows", document.body));
+  await screen.findByRole("heading", { name: "Workflows" });
+  act(() => {
+    window.history.back();
+  });
+  const reopenedEntry = await waitFor(() => {
+    return buttonNamed("Invite your friends", document.body);
+  });
+  await user.click(reopenedEntry);
+  await screen.findByRole("dialog", { name: "Invite your friends" });
+  act(() => {
+    window.history.forward();
+  });
+  await screen.findByRole("heading", { name: "Workflows" });
+  act(() => {
+    window.history.back();
+  });
+  await waitFor(() => {
+    expect(pathname()).toBe(questChatPath());
+    expect(
+      screen.queryByRole("dialog", { name: "Invite your friends" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Referral link failures can be retried in the same dialog", async () => {
+  configureQuestPage(context, "admin");
+  let failed = true;
+  context.mocks.api(friendReferralsContract.link, ({ respond }) => {
+    return failed
+      ? respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Friend referrals are not available",
+          },
+        })
+      : respond(200, {
+          code: "a7k2p9",
+          registeredCount: 0,
+          rewardedCount: 0,
+          earnedCredits: 0,
+        });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  await screen.findByTestId("get-started-entry");
+  click(buttonNamed("Invite your friends", document.body));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Invite your friends",
+  });
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Your invitation code could not be loaded. Try again.",
+  );
+  failed = false;
+  click(buttonNamed("Try again", dialog));
+  await expect(
+    within(dialog).findByLabelText("Your invitation code"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("The invitation gift is hidden when friend referrals are disabled", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: false },
+  });
+  await screen.findByTestId("get-started-entry");
+  expect(
+    queryAllByRoleFast("button").find((button) => {
+      return button.getAttribute("aria-label") === "Invite your friends";
+    }),
+  ).toBeUndefined();
+});
 
 function normalizedText(element: Element): string {
   return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";

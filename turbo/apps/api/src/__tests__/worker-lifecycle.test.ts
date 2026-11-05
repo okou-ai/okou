@@ -4,6 +4,7 @@ import { object, string } from "zod";
 import {
   AbortMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import type { ExecutionContext, Hyperdrive } from "@cloudflare/workers-types";
@@ -235,6 +236,12 @@ test("completes admitted foreground upload after the HTTP caller disconnects", a
   );
   const receipts: string[] = [];
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    if (command instanceof HeadObjectCommand) {
+      throw Object.assign(new Error("Object not found"), {
+        name: "NotFound",
+        $metadata: { httpStatusCode: 404 },
+      });
+    }
     if (command instanceof PutObjectCommand) {
       return {};
     }

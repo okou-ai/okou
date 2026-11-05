@@ -7,32 +7,160 @@ require "yaml"
 require "tmpdir"
 require "open3"
 require "json"
+require "fileutils"
 root = ARGV[0]
 desktop = YAML.safe_load(File.read("#{root}/.github/workflows/desktop.yml"), aliases: true).fetch("jobs")
 release = YAML.safe_load(File.read("#{root}/.github/workflows/release-please.yml"), aliases: true).fetch("jobs")
 deploy = desktop.fetch("deploy-desktop")
 # Evaluate the actual job conditions across event contexts, including release PRs.
-build_condition = desktop.fetch("build-macos").fetch("if")
-deploy_condition = deploy.fetch("if")
-evaluate = lambda do |condition, event_name, head_ref, changed|
+evaluate = lambda do |condition, event_name, head_ref, changed, detection_result, cancelled|
   expression = condition.strip.delete_prefix('${{').delete_suffix('}}')
     .gsub("startsWith(github.head_ref, 'release-please--branches--')", "head_ref.start_with?('release-please--branches--')")
     .gsub("github.event_name", "event_name")
     .gsub("needs.detect-desktop-version.outputs.changed", "changed")
-  eval(expression, binding)
+    .gsub("needs.detect-desktop-version.result", "detection_result")
+    .gsub("cancelled()", "cancelled")
+  # Actions adds success() unless the condition explicitly handles job status.
+  default_success = condition.match?(/\b(?:always|cancelled|success|failure)\(/) || (!cancelled && detection_result == "success")
+  default_success && eval(expression, binding)
+end
+detect_condition = desktop.fetch("detect-desktop-version").fetch("if")
+{"pull_request" => false, "push" => false, "workflow_dispatch" => false, "merge_group" => true}.each do |event_name, expected|
+  raise "unexpected Desktop version detection for #{event_name}" unless evaluate.call(detect_condition, event_name, "", "", "success", false) == expected
 end
 [
-  ["pull_request", "release-please--branches--main", "false", false, false],
-  ["pull_request", "fix/desktop", "false", true, false],
-  ["pull_request", "release-please-imitation", "false", true, false],
-  ["merge_group", "", "true", false, true],
-  ["merge_group", "", "false", true, false],
-  ["merge_group", "release-please--branches--main", "true", false, true],
-  ["push", "", "true", true, false],
-  ["workflow_dispatch", "", "false", true, false]
-].each do |event_name, head_ref, changed, build_expected, deploy_expected|
-  raise "unexpected Desktop build selection for #{event_name}/#{head_ref}" unless evaluate.call(build_condition, event_name, head_ref, changed) == build_expected
-  raise "unexpected Desktop artifact selection for #{event_name}/#{head_ref}" unless evaluate.call(deploy_condition, event_name, head_ref, changed) == deploy_expected
+  ["pull_request", "release-please--branches--main", "", "skipped", false, false, false, false],
+  ["pull_request", "fix/desktop", "", "skipped", false, true, true, false],
+  ["pull_request", "release-please-imitation", "", "skipped", false, true, true, false],
+  ["merge_group", "", "true", "success", false, false, false, true],
+  ["merge_group", "", "false", "success", false, true, true, false],
+  ["merge_group", "release-please--branches--main", "true", "success", false, false, false, true],
+  ["push", "", "", "skipped", false, true, true, false],
+  ["workflow_dispatch", "", "", "skipped", false, true, true, false],
+  ["merge_group", "", "", "failure", false, false, true, false],
+  ["merge_group", "", "false", "failure", false, false, true, false],
+  ["merge_group", "", "true", "failure", false, false, true, false],
+  ["merge_group", "", "false", "cancelled", false, false, true, false],
+  ["merge_group", "", "false", "skipped", false, false, true, false],
+  ["pull_request", "fix/desktop", "", "skipped", true, false, false, false],
+  ["push", "", "", "skipped", true, false, false, false],
+  ["workflow_dispatch", "", "", "skipped", true, false, false, false],
+  ["merge_group", "", "true", "success", true, false, false, false]
+].each do |event_name, head_ref, changed, detection_result, cancelled, native_expected, publication_expected, deploy_expected|
+  {
+    "test-native" => native_expected,
+    "package-macos" => native_expected,
+    "build-macos" => publication_expected,
+    "deploy-desktop" => deploy_expected
+  }.each do |job, expected|
+    condition = desktop.fetch(job).fetch("if")
+    raise "unexpected Desktop #{job} selection for #{event_name}/#{head_ref}/#{detection_result}/#{cancelled}" unless evaluate.call(condition, event_name, head_ref, changed, detection_result, cancelled) == expected
+  end
+end
+gate_steps = desktop.fetch("build-macos").fetch("steps")
+validation = gate_steps.find { |step| step["name"] == "Verify parallel native checks" }
+download = gate_steps.find { |step| step.fetch("uses", "").start_with?("actions/download-artifact@") }
+raise "native packages must follow passing native checks" unless gate_steps.index(validation) < gate_steps.index(download)
+preview = gate_steps.find { |step| step["name"] == "Upload preview artifact" }
+staging = desktop.fetch("package-macos").fetch("steps").find { |step| step["name"] == "Stage preview package" }
+raise "preview publication must follow its handoff" unless gate_steps.index(download) < gate_steps.index(preview)
+%w[pull_request push workflow_dispatch merge_group].each do |event_name|
+  [staging, download, preview].each do |step|
+    selected = evaluate.call(step.fetch("if", "true"), event_name, "", "", "success", false)
+    raise "unexpected artifact transfer for #{event_name}: #{step.fetch('name')}" unless selected == (event_name == "pull_request")
+  end
+end
+raise "preview staging must expire after one day" unless staging.fetch("with").fetch("retention-days") == 1
+raise "preview must expire after seven days" unless preview.fetch("with").fetch("retention-days") == 7
+preview_paths = ["desktop/out/Okou Dev-*.zip", "desktop/out/Okou Dev-darwin-arm64/dSYMs"]
+[staging, preview].each do |step|
+  raise "preview handoff must contain the installable ZIP and symbols" unless step.fetch("with").fetch("path").lines.map(&:strip) == preview_paths
+end
+[
+  ["success", "success", true],
+  ["failure", "success", false],
+  ["success", "failure", false],
+  ["cancelled", "success", false],
+  ["success", "cancelled", false],
+  ["skipped", "success", false],
+  ["success", "skipped", false]
+].each do |native_result, package_result, expected|
+  output, status = Open3.capture2e(
+    {"NATIVE_TEST_RESULT" => native_result, "PACKAGE_RESULT" => package_result},
+    "bash", "-c", validation.fetch("run"), chdir: root)
+  raise "unexpected native publication for #{native_result}/#{package_result}: #{output}" unless status.success? == expected
+end
+detect = desktop.fetch("detect-desktop-version")
+detect_run = detect.fetch("steps").find { |step| step["id"] == "version" }.fetch("run")
+sparse_paths = detect.fetch("steps").find { |step| step.fetch("uses", "").start_with?("actions/checkout@") }
+  .fetch("with").fetch("sparse-checkout").lines.map(&:strip).reject(&:empty?)
+Dir.mktmpdir("desktop-version-inputs") do |dir|
+  origin = "#{dir}/origin"
+  Dir.mkdir(origin)
+  git = lambda do |*args|
+    output, status = Open3.capture2e("git", *args, chdir: origin)
+    raise "fixture Git command failed: #{args}: #{output}" unless status.success?
+    output.strip
+  end
+  git.call("init", "--quiet")
+  git.call("config", "maintenance.auto", "false")
+  git.call("config", "uploadpack.allowFilter", "true")
+  git.call("config", "user.email", "test@example.com")
+  git.call("config", "user.name", "Test")
+  FileUtils.mkdir_p("#{origin}/.github/scripts/release")
+  FileUtils.cp("#{root}/.github/scripts/release/resolve-desktop-version-change.sh",
+    "#{origin}/.github/scripts/release/resolve-desktop-version-change.sh")
+  git.call("add", ".")
+  git.call("commit", "--quiet", "-m", "before version file")
+  missing_version = git.call("rev-parse", "HEAD")
+  Dir.mkdir("#{origin}/desktop")
+  version_file = "#{origin}/desktop/version.txt"
+  File.write(version_file, "1.2.3\n")
+  git.call("add", ".")
+  git.call("commit", "--quiet", "-m", "base version")
+  base = git.call("rev-parse", "HEAD")
+  File.write(version_file, "1.3.0\n")
+  git.call("commit", "--quiet", "-am", "intermediate version change")
+  File.write("#{origin}/README.md", "unrelated head change\n")
+  git.call("add", ".")
+  git.call("commit", "--quiet", "-m", "changed head")
+  git.call("branch", "changed")
+  File.write(version_file, "1.2.3\n")
+  git.call("commit", "--quiet", "-am", "restore base version")
+  git.call("branch", "unchanged")
+
+  [
+    ["changed", base, "true", "1.3.0", false],
+    ["unchanged", base, "false", "1.2.3", true],
+    ["changed", "0" * 40, nil, nil, false],
+    ["changed", missing_version, nil, nil, false],
+    ["changed", "invalid", nil, nil, false]
+  ].each_with_index do |(branch, supplied_base, changed, version, already_fetched), index|
+    checkout = "#{dir}/checkout-#{index}"
+    git.call("clone", "--quiet", "--no-checkout", "--depth=1", "--filter=blob:none",
+      "--branch", branch, "file://#{origin}", checkout)
+    git.call("-C", checkout, "config", "maintenance.auto", "false")
+    git.call("-C", checkout, "sparse-checkout", "set", "--no-cone", *sparse_paths)
+    git.call("-C", checkout, "checkout", "--quiet", branch)
+    head = git.call("-C", checkout, "rev-parse", "HEAD")
+    raise "fixture must begin with only the shallow head" unless git.call("-C", checkout, "rev-list", "--count", "HEAD") == "1"
+    if already_fetched
+      git.call("-C", checkout, "fetch", "--no-tags", "--depth=1", "--filter=blob:none", "origin", base)
+    end
+    output_file = "#{dir}/output-#{index}"
+    File.write(output_file, "")
+    output, status = Open3.capture2e(
+      {"MERGE_GROUP_BASE_SHA" => supplied_base, "GITHUB_SHA" => head, "GITHUB_OUTPUT" => output_file},
+      "bash", "-c", detect_run, chdir: checkout)
+    if changed
+      raise "shallow version detection failed: #{output}" unless status.success?
+      raise "wrong version outputs: #{File.read(output_file)}" unless File.read(output_file) == "changed=#{changed}\nversion=#{version}\n"
+      raise "version detection fetched intervening history" unless git.call("-C", checkout, "rev-list", "--count", base, head) == "2"
+    else
+      raise "invalid version input succeeded: #{supplied_base}" if status.success?
+      raise "failed version detection published outputs" unless File.read(output_file).empty?
+    end
+  end
 end
 raise "canonical artifacts must remain merge-group only" unless deploy.fetch("if").include?("github.event_name == 'merge_group'")
 raise "canonical artifacts must follow version detection" unless deploy.fetch("needs") == "detect-desktop-version"
@@ -84,7 +212,6 @@ Dir.mktmpdir("desktop-artifact-reuse") do |dir|
   SH
   File.chmod(0755, "#{bin}/aws")
   app = "#{dir}/package/Okou.app"
-  require "fileutils"
   FileUtils.mkdir_p(app)
   %w[Okou.app.dSYM computer-use-helper.dSYM].each { |bundle| FileUtils.mkdir_p("#{dir}/package/dSYMs/#{bundle}") }
   artifact = "#{dir}/artifact"
@@ -205,14 +332,22 @@ Dir.mktmpdir("desktop-manifest-source") do |dir|
       *"--json targetCommitish"*) printf '%s\n' "$MOCK_DESKTOP_TARGET" ;;
       *"--json assets"*) printf '%s\n' "$MOCK_DESKTOP_ASSETS" ;;
       *"/jobs?"*) cat "$MOCK_SOURCE_JOBS" ;;
-      *) cat "$MOCK_SOURCE_RUN" ;;
+      *"/compare/"*) printf '%s\n' "$MOCK_MERGE_BASE" ;;
+      *"/contents/desktop/version.txt?"*) printf '%s\n' '0.54.6' | base64 ;;
+      *"/git/ref/tags/desktop-v"*) printf '{"object":{"type":"commit","sha":"%s"}}\n' "$MOCK_COMPONENT_TARGET" ;;
+      *"/actions/runs/123") cat "$MOCK_SOURCE_RUN" ;;
+      *) echo 'Unexpected GitHub operation' >&2; exit 99 ;;
     esac
   SH
   File.chmod(0755, "#{bin}/gh")
   target = "a" * 40
   run = {"path" => ".github/workflows/release-please.yml", "event" => "push", "head_branch" => "main", "head_sha" => target, "conclusion" => "success"}
   jobs = %w[release-please promote-desktop-release promote-api-production].map { |name| {"name" => name, "conclusion" => "success"} }
+  # A release commit can be followed by another merge in the same push. A
+  # failed overall run can still have successfully promoted Desktop and API.
   cases = [[run, jobs, true], [run.merge("conclusion" => nil), jobs, true],
+    [run.merge("head_sha" => "b" * 40), jobs, true],
+    [run.merge("head_sha" => "b" * 40, "conclusion" => "failure"), jobs, true],
     [run.merge("path" => ".github/workflows/desktop.yml"), jobs, false],
     [run.merge("head_branch" => "feature"), jobs, false],
     [run.merge("event" => "pull_request"), jobs, false],
@@ -221,7 +356,7 @@ Dir.mktmpdir("desktop-manifest-source") do |dir|
     [run, jobs[0..1], false]]
   %w[failure cancelled skipped].each do |result|
     [1, 2].each do |index|
-      cases << [run, jobs.each_with_index.map { |job, i| i == index ? job.merge("conclusion" => result) : job }, false]
+      cases << [run.merge("conclusion" => "failure"), jobs.each_with_index.map { |job, i| i == index ? job.merge("conclusion" => result) : job }, false]
     end
   end
   cases.each do |source_run, source_jobs, expected|
@@ -230,11 +365,35 @@ Dir.mktmpdir("desktop-manifest-source") do |dir|
     output_file = "#{dir}/outputs"
     File.write(output_file, "")
     env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "GITHUB_REPOSITORY" => "okou-ai/okou", "RELEASE_RUN_ID" => "123",
+      "RELEASE_TARGET" => target, "MOCK_MERGE_BASE" => target, "MOCK_COMPONENT_TARGET" => target,
       "GITHUB_OUTPUT" => output_file, "MOCK_SOURCE_RUN" => "#{dir}/run.json", "MOCK_SOURCE_JOBS" => "#{dir}/jobs.jsonl"}
     output, status = Open3.capture2e(env, "bash", "-c", source)
     raise "unexpected source release acceptance: #{output}" unless status.success? == expected
-    expected_output = expected ? "sha=#{target}\n" : ""
+    expected_output = expected ? "sha=#{target}\nversion=0.54.6\n" : ""
     raise "unverified source SHA escaped" unless File.read(output_file) == expected_output
+  end
+  File.write("#{dir}/run.json", JSON.generate(run.merge("head_sha" => "b" * 40, "conclusion" => "failure")))
+  File.write("#{dir}/jobs.jsonl", jobs.map { |job| JSON.generate(job) }.join("\n"))
+  [{"MOCK_MERGE_BASE" => "c" * 40}, {"MOCK_COMPONENT_TARGET" => "b" * 40}].each do |mismatch|
+    output_file = "#{dir}/outputs"
+    File.write(output_file, "")
+    env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "GITHUB_REPOSITORY" => "okou-ai/okou", "RELEASE_RUN_ID" => "123",
+      "RELEASE_TARGET" => target, "MOCK_MERGE_BASE" => target, "MOCK_COMPONENT_TARGET" => target,
+      "GITHUB_OUTPUT" => output_file, "MOCK_SOURCE_RUN" => "#{dir}/run.json", "MOCK_SOURCE_JOBS" => "#{dir}/jobs.jsonl"}.merge(mismatch)
+    output, status = Open3.capture2e(env, "bash", "-c", source)
+    raise "Unrelated release target must not be published: #{output}" if status.success? || !File.read(output_file).empty?
+  end
+  identity = publish.fetch("steps").find { |step| step["name"] == "Resolve Desktop release identity" }.fetch("run")
+  Dir.mkdir("#{dir}/desktop")
+  ["0.54.6", "0.54.5"].each do |version|
+    File.write("#{dir}/desktop/version.txt", "#{version}\n")
+    env_file = "#{dir}/env"
+    File.write(env_file, "")
+    output, status = Open3.capture2e({"EXPECTED_VERSION" => "0.54.6", "GITHUB_ENV" => env_file}, "bash", "-c", identity, chdir: dir)
+    expected = version == "0.54.6"
+    raise "unexpected checked-out release identity: #{output}" unless status.success? == expected
+    expected_env = expected ? "DESKTOP_VERSION=0.54.6\nOKOU_RELEASE_TAG=okou-desktop-v0.54.6\n" : ""
+    raise "wrong Desktop version escaped" unless File.read(env_file) == expected_env
   end
   assets = publish.fetch("steps").find { |step| step["name"] == "Verify Desktop release assets" }.fetch("run")
     .gsub('${{ github.repository }}', 'okou-ai/okou')

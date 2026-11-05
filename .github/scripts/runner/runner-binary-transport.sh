@@ -30,28 +30,27 @@ reference_key="runner-binaries/transports/${CURRENT_RUN_ID}/${EXPECTED_BINARY_IN
 mkdir -p "$(dirname "$OUTPUT_DIR")"
 transport_tmp=$(mktemp -d "$(dirname "$OUTPUT_DIR")/runner-binary-transport.XXXXXX")
 trap 'rm -rf "$transport_tmp"' EXIT
-
-r2() {
-  if ! timeout --kill-after=5s 120s aws s3api "$@" \
-    --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-    --bucket "$R2_BUCKET_NAME" --cli-connect-timeout 5 --cli-read-timeout 30 \
-    >"${transport_tmp}/aws.out" 2>"${transport_tmp}/aws.err"; then
-    # AWS errors can contain signed request material; do not echo raw stderr.
-    fail "R2 ${1} failed"
-  fi
-}
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 case "${1:-}" in
   publish)
-    timeout --kill-after=5s 180s env \
+    runner_binary_r2_publication_init
+    runner_binary_r2_run publication 180 - - forward env \
       GITHUB_OUTPUT= OUTPUT_DIR="${transport_tmp}/published" \
       PRODUCER_REPOSITORY="$REPO" PRODUCER_RUN_ID="$CURRENT_RUN_ID" \
       "$CACHE" publish
     # Publish readiness only after the content-addressed binary is verified.
     # Repeated producers may replace this run's reference, never another run's.
-    r2 put-object --key "$reference_key" \
-      --body "${transport_tmp}/published/manifest.json" \
-      --content-type application/json --cache-control 'private, no-store'
+    runner_binary_r2_put reference-put "$reference_key" \
+      "${transport_tmp}/published/manifest.json" replace "$transport_tmp" \
+      --content-type application/json --cache-control 'private, no-store' || fail 'reference publication failed'
+    runner_binary_r2_read reference-get "${transport_tmp}/get.out" "${transport_tmp}/get.err" \
+      get-object --key "$reference_key" --range bytes=0-65536 \
+      "${transport_tmp}/reference.json" || fail 'reference verification failed'
+    cmp -s "${transport_tmp}/published/manifest.json" "${transport_tmp}/reference.json" || \
+      fail 'published reference does not match this producer'
     mv "${transport_tmp}/published" "$OUTPUT_DIR"
     ;;
   download)

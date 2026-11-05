@@ -4,7 +4,7 @@ import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { command } from "ccstate";
 import { and, asc, count, eq, exists, gte, sql } from "drizzle-orm";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
-import { safeSqlStateCode } from "../../lib/pg-errors";
+import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
@@ -144,9 +144,14 @@ export const commitNetworkConfigMutation$ = command(
       // has rolled back every effect before reporting this known failed write.
       // A deadlock victim is also a known fully aborted statement. Let the
       // caller review the current snapshot; never replay prepared secret work.
+      // A binding committed after the delete snapshot is protected by its FK;
+      // that rejection also rolls back the statement's peer detachments.
       if (
         safeSqlStateCode(result.error) === "22012" ||
-        safeSqlStateCode(result.error) === "40P01"
+        safeSqlStateCode(result.error) === "40P01" ||
+        (args.operation === "delete" &&
+          (isForeignKeyViolation(result.error) ||
+            safeSqlStateCode(result.error) === "23001"))
       ) {
         return { ok: false as const, reason: "conflict" as const };
       }

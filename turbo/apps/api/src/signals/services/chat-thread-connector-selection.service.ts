@@ -81,7 +81,6 @@ interface PrepareChatThreadConnectorSelectionsArgs {
   readonly userId: string;
   readonly agentId: string;
   readonly selections: readonly ConnectorAccountSelection[];
-  readonly missingAccountPolicy?: "reject" | "omit";
 }
 
 type PrepareChatThreadConnectorSelectionsResult =
@@ -398,13 +397,9 @@ export const prepareChatThreadConnectorSelections$ = command(
         return [connection.id, connection];
       }),
     );
-    for (const [key, selection] of byTarget) {
+    for (const selection of byTarget.values()) {
       const ownership = targetOwnerships.get(selection.connectionId);
       if (!ownership) {
-        if (args.missingAccountPolicy === "omit") {
-          byTarget.delete(key);
-          continue;
-        }
         return unavailableConnectorSelection;
       }
       if (!connectorTargetOwnershipMatches(ownership, args, selection.target)) {
@@ -413,23 +408,7 @@ export const prepareChatThreadConnectorSelections$ = command(
           message: "Connector account does not match the requested target",
         };
       }
-      const projected = projectedById.get(selection.connectionId);
-      if (!projected) {
-        if (args.missingAccountPolicy === "omit") {
-          // Older clients still require omission if deletion committed between
-          // ownership and projection. Retire this compatibility with #42681.
-          const current = connectorTargetOwnershipsFromRows(
-            await db
-              .select(connectorTargetOwnershipColumns)
-              .from(connectors)
-              .where(inArray(connectors.id, [selection.connectionId])),
-          );
-          signal.throwIfAborted();
-          if (!current.has(selection.connectionId)) {
-            byTarget.delete(key);
-            continue;
-          }
-        }
+      if (!projectedById.has(selection.connectionId)) {
         return unavailableConnectorSelection;
       }
     }
@@ -806,12 +785,11 @@ export const clearChatThreadConnectorSelection$ = command(
   },
 );
 
-/** Required choices reject initialization; legacy clients omit missing accounts. */
+/** A choice whose account disappeared fails its FK and rejects initialization. */
 export function initialChatThreadConnectorSelectionStatements(
   args: {
     readonly chatThreadId: string;
     readonly selections: readonly PreparedChatThreadConnectorSelection[];
-    readonly required: boolean;
   },
   initializationGates: readonly SQL[],
 ) {
@@ -832,14 +810,6 @@ export function initialChatThreadConnectorSelectionStatements(
         throw new Error("Initial connector creation gate is missing");
       }
       const target = targetColumns(selection.target);
-      if (!args.required) {
-        return sql`INSERT INTO ${chatThreadConnectorSelections}
-        (chat_thread_id, connector_id, connector_slug, custom_connector_id)
-        SELECT ${args.chatThreadId}::uuid, ${connectors.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid
-        FROM ${connectors} WHERE ${connectors.id} = ${selection.connectionId}::uuid
-        AND ${createdThread}
-        RETURNING ${chatThreadConnectorSelections.chatThreadId}`;
-      }
       return sql`INSERT INTO ${chatThreadConnectorSelections}
         (chat_thread_id, connector_id, connector_slug, custom_connector_id)
         SELECT ${args.chatThreadId}::uuid, ${selection.connectionId}::uuid,

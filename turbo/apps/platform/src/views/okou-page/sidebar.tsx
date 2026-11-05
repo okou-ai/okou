@@ -1,5 +1,10 @@
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import type { ComponentProps, MouseEvent, ReactNode } from "react";
+import { Collapsible } from "@base-ui/react/collapsible";
+import type {
+  ComponentProps,
+  CSSProperties,
+  MouseEvent,
+  ReactNode,
+} from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  RequestCommit,
   SheetClose,
   SheetContent,
   ShortcutTooltipGroup,
@@ -49,7 +55,6 @@ import { OrgSwitcher, OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
-import { ProjectSidebar } from "../projects/project-sidebar.tsx";
 import { ChatThreadDialogs, ChatThreadsSection } from "./sidebar-threads.tsx";
 import {
   responsiveSidebarChatThreadScrollSignals,
@@ -75,6 +80,9 @@ import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { suggestionFeedEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { commitWorkspaceLayout$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { workspaceLayoutThreads$ } from "../../signals/chat-page/workspace-layout-commit.ts";
+import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
@@ -253,6 +261,7 @@ function AccountDropdownContainer({
       onAccountAction={onAccountAction}
       collapsed={collapsed}
       renderCodexResetDialog={renderCodexResetDialog}
+      showSubscriptionEntry={collapsed}
     />
   );
 }
@@ -386,7 +395,7 @@ function ExpandedManageSection() {
         size="sm"
         aria-expanded={!manageCollapsed}
         aria-controls={MANAGE_CONTENT_ID}
-        className="group flex h-8 w-full shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
+        className="group flex h-8 w-full shrink-0 items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
         onClick={() => {
           return setManageCollapsed(!manageCollapsed);
         }}
@@ -444,7 +453,6 @@ function ExpandedSidebarSections() {
       <div className="px-2">
         <PinnedAgentListSection />
       </div>
-      <ProjectSidebar touch />
       <ChatThreadsSection
         scrollSignals={responsiveSidebarChatThreadScrollSignals}
         contentClassName="px-2"
@@ -936,20 +944,22 @@ function ChatListResizeSeam() {
   const width = useGet(chatListWidth$);
   const resizing = useGet(chatListResizing$);
   const ref = useSet(chatListResizeHandleRef$);
+  const hidden = useGet(sidebarOff$);
   return (
     <ResizeSeam
       ref={ref}
       label={t(($) => {
         return $.appShell.sidebar.resizeChatList;
       })}
-      valueMin={CHAT_LIST_MIN_WIDTH}
+      valueMin={hidden ? 0 : CHAT_LIST_MIN_WIDTH}
       valueMax={CHAT_LIST_MAX_WIDTH}
-      valueNow={width}
+      valueNow={hidden ? 0 : width}
       resizing={resizing}
-      // The target stays inside the list so it needs no paint priority over
-      // the sheet; the sheet's own border draws the resting line at its end.
-      line="end"
-      className="absolute inset-y-0 right-0"
+      // This shell-owned 12px target straddles the list/workspace boundary.
+      // Its local paint priority keeps the later workspace from covering the
+      // right half; shared modal/menu portals still paint above the shell.
+      line="center"
+      className="absolute inset-y-2 right-0 z-1 translate-x-1/2"
     />
   );
 }
@@ -976,7 +986,6 @@ function ChatListColumn() {
         <div className={CHAT_LIST_INSET}>
           <PinnedAgentListSection layout="horizontal" />
         </div>
-        <ProjectSidebar />
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}
@@ -990,19 +999,69 @@ function ChatListColumn() {
       <div className={cn("pb-3 empty:hidden", CHAT_LIST_INSET)}>
         <SidebarUpgradeCard />
       </div>
-      {unified && <ChatListResizeSeam />}
     </aside>
   );
 }
 
 function ThreeColumnNav() {
-  const chatListHidden = useGet(sidebarOff$);
-  return withChatScrollLayout(
+  const hidden = useGet(sidebarOff$);
+  const syncLayout = useSet(commitWorkspaceLayout$);
+  const workspaceThreads = useGet(workspaceLayoutThreads$);
+  const unified = useGet(unifiedChatWorkspace$);
+  const width = useGet(chatListWidth$);
+  const resizing = useGet(workspaceResizing$);
+  return (
     <>
       <LabeledNavRail />
-      {!chatListHidden && <ChatListColumn />}
-    </>,
-    { measureWidth: true },
+      <Collapsible.Root
+        open={!hidden}
+        className="relative hidden shrink-0 md:flex"
+      >
+        <Collapsible.Panel
+          render={(props, state) => {
+            const layoutKey = JSON.stringify([
+              state.open,
+              state.transitionStatus,
+              unified,
+              unified ? width : 300,
+              resizing,
+            ]);
+            return (
+              <RequestCommit
+                onCommit={syncLayout}
+                request={workspaceThreads}
+                commitKey={layoutKey}
+              >
+                <div
+                  {...props}
+                  data-sidebar-layout-owner="chat-list"
+                  data-sidebar-layout-key={layoutKey}
+                  data-sidebar-layout-resizing={resizing ? "true" : undefined}
+                  data-sidebar-layout-starting={
+                    state.transitionStatus === "starting" ? "" : undefined
+                  }
+                />
+              </RequestCommit>
+            );
+          }}
+          inert={hidden}
+          className={cn(
+            "flex overflow-hidden w-[var(--chat-list-width)] data-[starting-style]:w-0 data-[ending-style]:w-0",
+            resizing
+              ? "transition-none"
+              : "motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
+          )}
+          style={
+            {
+              "--chat-list-width": `${String(unified ? width : 300)}px`,
+            } as CSSProperties
+          }
+        >
+          <ChatListColumn />
+        </Collapsible.Panel>
+        {unified && <ChatListResizeSeam />}
+      </Collapsible.Root>
+    </>
   );
 }
 

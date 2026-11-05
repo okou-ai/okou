@@ -1481,8 +1481,13 @@ async fn near_limit_registry_preserves_fail_closed_capacity() {
             .iter()
             .all(|outcome| matches!(outcome, ConnectorRuntimeFailCloseOutcome::Applied))
     }));
-    let final_bytes = tokio::fs::read(harness.registry_path()).await.unwrap();
-    assert_eq!(final_bytes.len(), max_bytes);
+    assert_eq!(
+        tokio::fs::metadata(harness.registry_path())
+            .await
+            .unwrap()
+            .len(),
+        PROXY_REGISTRY_MAX_BYTES
+    );
     read_registry(harness.registry_path()).await.unwrap();
 }
 

@@ -6,11 +6,36 @@ RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const ruleTester = new RuleTester();
+const ruleTester = new RuleTester({
+  linterOptions: { reportUnusedDisableDirectives: "error" },
+});
 const filename = "/project/turbo/apps/platform/src/signals/feature/action.ts";
+const utilsFilename = "/project/turbo/apps/platform/src/signals/utils.ts";
 
 ruleTester.run("no-settle", rule, {
   valid: [
+    {
+      filename: utilsFilename,
+      code: "export async function settle(operation) { return await operation; } type Callback = typeof settle; export type { settle };",
+    },
+    {
+      filename: utilsFilename,
+      code: "export async function settle(operation) { return await operation; } function other(settle) { return settle(); } { const settle = callback; settle(); }",
+    },
+    {
+      filename: utilsFilename,
+      code: "function other() { function settle(operation) { return operation; } return settle(operation); }",
+    },
+    {
+      filename,
+      code: "function settle(operation) { return operation; } settle(operation);",
+    },
+    {
+      filename: utilsFilename,
+      code: `export async function settle(operation) { return await operation; }
+// eslint-disable-next-line @rule-tester/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
+const result = settle(operation);`,
+    },
     {
       filename,
       code: 'import * as utils from "../utils.ts"; export type DeferredFactory = typeof utils.createDeferredPromise; export const isAbort = utils.isAbortError;',
@@ -79,6 +104,41 @@ const result = settle(operation, callback);`,
     },
   ],
   invalid: [
+    {
+      filename: utilsFilename,
+      code: "export async function settle(operation) { return await operation; } export function moved(operation) { return settle(operation); }",
+      errors: [{ messageId: "noSettle" }],
+    },
+    {
+      filename: utilsFilename,
+      code: "const result = settle(operation); export async function settle(operation) { return await operation; }",
+      errors: [{ messageId: "noSettle" }],
+    },
+    {
+      filename: utilsFilename,
+      code: "export const settle = async (operation) => await operation; const alias = settle; alias(operation);",
+      errors: [{ messageId: "noSettle" }],
+    },
+    {
+      filename: utilsFilename,
+      code: "export async function settle(operation) { return await operation; } consume(settle);",
+      errors: [{ messageId: "noSettle" }],
+    },
+    {
+      filename: utilsFilename,
+      code: "export async function settle(operation) { return await operation; } export { settle as observe };",
+      errors: [{ messageId: "noSettle" }],
+    },
+    {
+      filename: utilsFilename,
+      code: "export async function settle(operation) { return await operation; } function other(settle) { return settle(); } settle(operation);",
+      errors: [{ messageId: "noSettle" }],
+    },
+    {
+      filename: utilsFilename,
+      code: 'import { settle } from "./utils.ts"; settle(operation);',
+      errors: [{ messageId: "noSettle" }],
+    },
     {
       filename,
       code: 'import { settle } from "../utils.ts"; type Callback = typeof settle; settle(operation, callback);',

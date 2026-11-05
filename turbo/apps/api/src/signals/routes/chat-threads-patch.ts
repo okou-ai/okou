@@ -5,6 +5,8 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { updateChatThreadDraft$ } from "../services/chat-thread.service";
+import { projectReferenceWritesEnabled } from "../services/project-reference.service";
+import { badRequestMessage } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
 const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -16,6 +18,14 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
+  if (
+    !(await get(
+      projectReferenceWritesEnabled(auth, bodyResult.data.draftUserMessage),
+    ))
+  ) {
+    return badRequestMessage("Projects unavailable");
+  }
+  signal.throwIfAborted();
   await set(
     updateChatThreadDraft$,
     {

@@ -13,6 +13,329 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1095.7](https://github.com/okou-ai/okou/compare/app-v0.1095.6...app-v0.1095.7) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** reserve the pointer cursor for links ([#45410](https://github.com/okou-ai/okou/issues/45410)) ([a362219](https://github.com/okou-ai/okou/commit/a3622192416bde93d9f063e5bc15f6451ee838cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.4
+    * @okouai/core bumped to 8.818.5
+    * @okouai/ui bumped to 1.19.3
+
+## [0.1095.6](https://github.com/okou-ai/okou/compare/app-v0.1095.5...app-v0.1095.6) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** keep invitation code visible for returning signup visitors ([#45370](https://github.com/okou-ai/okou/issues/45370)) ([4e6ac29](https://github.com/okou-ai/okou/commit/4e6ac29b944f9cdeb27d481189261026698c5eb0))
+* **app:** open sidebar usage on click only ([#45375](https://github.com/okou-ai/okou/issues/45375)) ([0dbb20b](https://github.com/okou-ai/okou/commit/0dbb20bba49ef03fedeab53e1cb3b1cb93c96673))
+* **browser:** use server-authoritative session authorization ([#45332](https://github.com/okou-ai/okou/issues/45332)) ([5bec95a](https://github.com/okou-ai/okou/commit/5bec95a6c33f4989747094db13b56636fb8bc77d))
+
+
+### Refactoring
+
+* **app:** derive rail boundaries without observers ([#45355](https://github.com/okou-ai/okou/issues/45355)) ([b390ac7](https://github.com/okou-ai/okou/commit/b390ac7209c2cbc2c43bf07afb249096fe80e301))
+
+
+### Performance Improvements
+
+* **app:** isolate chat header refresh rendering ([#45373](https://github.com/okou-ai/okou/issues/45373)) ([453a5de](https://github.com/okou-ai/okou/commit/453a5de930be543f4d364a8e6a54d0b59bb017e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.818.4
+    * @okouai/ui bumped to 1.19.2
+
+## [0.1095.5](https://github.com/okou-ai/okou/compare/app-v0.1095.4...app-v0.1095.5) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.3
+    * @okouai/connectors bumped to 3.21.3
+    * @okouai/core bumped to 8.818.3
+
+## [0.1095.4](https://github.com/okou-ai/okou/compare/app-v0.1095.3...app-v0.1095.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* **browser:** report recovery failures only after retries stop ([#45323](https://github.com/okou-ai/okou/issues/45323)) ([00ee1b8](https://github.com/okou-ai/okou/commit/00ee1b83a64c5cbe9c8fd597848c6f8246580cf0))
+
+## [0.1095.3](https://github.com/okou-ai/okou/compare/app-v0.1095.2...app-v0.1095.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** show the invitation code on ordinary signup ([#45329](https://github.com/okou-ai/okou/issues/45329)) ([bf51d83](https://github.com/okou-ai/okou/commit/bf51d83cc891f6d7ec34f5f9941425d7e110f27c))
+* **browser:** expire operation failure notices after three seconds ([#45331](https://github.com/okou-ai/okou/issues/45331)) ([e5d43fd](https://github.com/okou-ai/okou/commit/e5d43fd0a12ad79f1dfc69e24c6ceb20e2d0be29))
+
+
+### Refactoring
+
+* **platform:** centralize async helpers with lint tracking ([#45326](https://github.com/okou-ai/okou/issues/45326)) ([1a5864b](https://github.com/okou-ai/okou/commit/1a5864be4fc4fb5415814c23d06de2b78ab7d310))
+
+
+### Performance Improvements
+
+* **app:** cache chat connector overview and refresh changed targets ([#45294](https://github.com/okou-ai/okou/issues/45294)) ([1b68448](https://github.com/okou-ai/okou/commit/1b684482eb01e7ff92d743ae140f7d6ea5932c1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.2
+    * @okouai/core bumped to 8.818.2
+    * @okouai/ui bumped to 1.19.1
+
+## [0.1095.2](https://github.com/okou-ai/okou/compare/app-v0.1095.1...app-v0.1095.2) (2026-11-05)
+
+
+### Refactoring
+
+* remove proactive planning and tasks ([#45210](https://github.com/okou-ai/okou/issues/45210)) ([222d861](https://github.com/okou-ai/okou/commit/222d8618346194b5af227c5e147a0076181ee3e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.1
+    * @okouai/core bumped to 8.818.1
+
+## [0.1095.1](https://github.com/okou-ai/okou/compare/app-v0.1095.0...app-v0.1095.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** add browser to the mobile chat more menu ([#45268](https://github.com/okou-ai/okou/issues/45268)) ([382b830](https://github.com/okou-ai/okou/commit/382b83068b0b91b0ca432d078504bf953c8cacf8))
+
+
+### Refactoring
+
+* **app:** reveal clipped titles without resize observers ([#45241](https://github.com/okou-ai/okou/issues/45241)) ([2b9d0ce](https://github.com/okou-ai/okou/commit/2b9d0ce4c3dc028403abb485f0f94106510d75b8))
+
+## [0.1095.0](https://github.com/okou-ai/okou/compare/app-v0.1094.0...app-v0.1095.0) (2026-11-04)
+
+
+### Features
+
+* **app:** show unread indicators on collapsed projects ([#45208](https://github.com/okou-ai/okou/issues/45208)) ([edec2af](https://github.com/okou-ai/okou/commit/edec2af2a840a4f326fca982f139f34c3c8b6819))
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#45244](https://github.com/okou-ai/okou/issues/45244)) ([a1933e5](https://github.com/okou-ai/okou/commit/a1933e593f4c66bce81c0ac201cd40c5826a07f9))
+
+
+### Refactoring
+
+* **app:** replace presentation viewport observer with css scaling ([#45240](https://github.com/okou-ai/okou/issues/45240)) ([1f8c8ef](https://github.com/okou-ai/okou/commit/1f8c8ef72e12872d61a8fceaa89d1fd0dd380419))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.0
+    * @okouai/core bumped to 8.818.0
+
+## [0.1094.0](https://github.com/okou-ai/okou/compare/app-v0.1093.0...app-v0.1094.0) (2026-11-04)
+
+
+### Features
+
+* **app:** add invitation code signup and gift entry ([#45113](https://github.com/okou-ai/okou/issues/45113)) ([e3a5087](https://github.com/okou-ai/okou/commit/e3a50872ffd66edfc312105fa3f8202869451324))
+* **app:** lay out the website share menu settings as menu rows behind a switch ([#45194](https://github.com/okou-ai/okou/issues/45194)) ([99fc106](https://github.com/okou-ai/okou/commit/99fc1069313e3edc6abc5d93dd20d4486869cb9e))
+* **app:** show subscription usage in the sidebar ring ([#45141](https://github.com/okou-ai/okou/issues/45141)) ([a7352b0](https://github.com/okou-ai/okou/commit/a7352b0be3b77f5f1e15d804aeb49cd2f5efea18))
+* **app:** support inline project renaming ([#45200](https://github.com/okou-ai/okou/issues/45200)) ([96cb0bd](https://github.com/okou-ai/okou/commit/96cb0bd3647768946e5ea09881fe8a62515e866d))
+* roll out marketing content handoff to all users ([#45187](https://github.com/okou-ai/okou/issues/45187)) ([58c27f0](https://github.com/okou-ai/okou/commit/58c27f02dfc1a8b171752cb634184b9318f89871))
+
+
+### Bug Fixes
+
+* **app:** keep subscription preview closed after dialog dismissal ([#45179](https://github.com/okou-ai/okou/issues/45179)) ([c7e872e](https://github.com/okou-ai/okou/commit/c7e872e209afb8fd584fd8fd447d6706a15b8ae9))
+* **app:** simplify shell authorization cards ([#45197](https://github.com/okou-ai/okou/issues/45197)) ([d9e6a3d](https://github.com/okou-ai/okou/commit/d9e6a3d28470df08f1ca63ee05864e8c5167e8e8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.41.0
+    * @okouai/core bumped to 8.817.0
+
+## [0.1093.0](https://github.com/okou-ai/okou/compare/app-v0.1092.0...app-v0.1093.0) (2026-11-04)
+
+
+### Features
+
+* enable cjk markdown emphasis for all users ([#45132](https://github.com/okou-ai/okou/issues/45132)) ([f8fbf51](https://github.com/okou-ai/okou/commit/f8fbf5178c22f72686b37549bb5d1a87293d07c0))
+
+
+### Bug Fixes
+
+* **app:** preserve connector popover layout with chat accounts ([#45137](https://github.com/okou-ai/okou/issues/45137)) ([fa06464](https://github.com/okou-ai/okou/commit/fa064641cc49710b17a66a7019cb766bcd4c0baa))
+* **app:** refine chat home compliance footer hierarchy ([#44151](https://github.com/okou-ai/okou/issues/44151)) ([1d1d273](https://github.com/okou-ai/okou/commit/1d1d273e38cedf2df6f05b163d4020a4e1f30f4e))
+* **browser:** avoid unavailable flashes during capture resizing ([#45153](https://github.com/okou-ai/okou/issues/45153)) ([b0c822a](https://github.com/okou-ai/okou/commit/b0c822a8a9488bf80a1a282274c98916f836a7b2))
+
+
+### Refactoring
+
+* **app:** remove homepage task discovery ([#45136](https://github.com/okou-ai/okou/issues/45136)) ([221db9b](https://github.com/okou-ai/okou/commit/221db9bb5b9739e0d9bd295afe7cf232ce5b97aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.1
+    * @okouai/core bumped to 8.816.0
+
+## [0.1092.0](https://github.com/okou-ai/okou/compare/app-v0.1091.0...app-v0.1092.0) (2026-11-04)
+
+
+### Features
+
+* **browser:** recover viewer resources with bounded retries ([#45051](https://github.com/okou-ai/okou/issues/45051)) ([12d04ed](https://github.com/okou-ai/okou/commit/12d04edfec0737589b7e8a666128980e185ec008))
+* **browser:** retain viewer frames during recovery ([#45109](https://github.com/okou-ai/okou/issues/45109)) ([93c1920](https://github.com/okou-ai/okou/commit/93c1920310bd4caeecea736a33322cdb475a67c9))
+
+
+### Bug Fixes
+
+* **app:** create projects optimistically ([#45134](https://github.com/okou-ai/okou/issues/45134)) ([4c4da6f](https://github.com/okou-ai/okou/commit/4c4da6fadb3c73950b94bfe865c110018e757159))
+* **app:** hydrate project cache alongside chat list ([#45090](https://github.com/okou-ai/okou/issues/45090)) ([84b58ab](https://github.com/okou-ai/okou/commit/84b58ab4d52cba0c8aca2164afd160ff00cf4c0e))
+* **app:** open models from sidebar subscription usage ([#45086](https://github.com/okou-ai/okou/issues/45086)) ([db178ee](https://github.com/okou-ai/okou/commit/db178eee3e803f70b76dac5242e6d9e4eae4095b))
+* **app:** preserve header appearance while loading ([#45099](https://github.com/okou-ai/okou/issues/45099)) ([6c30252](https://github.com/okou-ai/okou/commit/6c302526da25835c64aa844eb1a4d79797746e5a))
+* **app:** smooth chat list collapse and center divider hit targets ([#45008](https://github.com/okou-ai/okou/issues/45008)) ([7b08927](https://github.com/okou-ai/okou/commit/7b0892753efdcda688f539dae0ac2178b257063d))
+* **platform:** unify project and chat thread indexeddb caching ([#45102](https://github.com/okou-ai/okou/issues/45102)) ([02679d7](https://github.com/okou-ai/okou/commit/02679d7fe2fea27283b57bc38681532c7c42fd02))
+
+## [0.1091.0](https://github.com/okou-ai/okou/compare/app-v0.1090.0...app-v0.1091.0) (2026-11-04)
+
+
+### Features
+
+* **core:** enable projects for staff ([#45012](https://github.com/okou-ai/okou/issues/45012)) ([1c4dff2](https://github.com/okou-ai/okou/commit/1c4dff2cbb485abfce7e587bf91e411b79a7336a))
+
+
+### Bug Fixes
+
+* **app:** preserve header actions while switching chats ([#45030](https://github.com/okou-ai/okou/issues/45030)) ([b2cab5b](https://github.com/okou-ai/okou/commit/b2cab5b32b2e23a86754f2096de4c53fd62d9f0b))
+* **browser:** unify recovery ownership and usable readiness ([#44959](https://github.com/okou-ai/okou/issues/44959)) ([3aa45d9](https://github.com/okou-ai/okou/commit/3aa45d97a28c68749580a0a3e5d24ce8dfade705))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.40.0
+    * @okouai/core bumped to 8.815.0
+
+## [0.1090.0](https://github.com/okou-ai/okou/compare/app-v0.1089.0...app-v0.1090.0) (2026-11-03)
+
+
+### Features
+
+* add chat connector account controls to web ([#44897](https://github.com/okou-ai/okou/issues/44897)) ([5127205](https://github.com/okou-ai/okou/commit/512720518384529c210da187393419d31920b132))
+* add friend referrals with expiring credit rewards ([#44961](https://github.com/okou-ai/okou/issues/44961)) ([beaff0e](https://github.com/okou-ai/okou/commit/beaff0e0ddf72f5d2fcd835314f14d6661e721af))
+* **app:** add a compact sidebar subscription usage entry ([#44989](https://github.com/okou-ai/okou/issues/44989)) ([91a9aa7](https://github.com/okou-ai/okou/commit/91a9aa7b74dc003b9277c4a25d70e2b5e914368d))
+* shorten marketing handoff links to twelve characters ([#44980](https://github.com/okou-ai/okou/issues/44980)) ([046a7ba](https://github.com/okou-ai/okou/commit/046a7bac03cc5f5a94cc67394756f69be2eaf111))
+
+
+### Bug Fixes
+
+* **app:** match project chat row spacing to chat history ([#45000](https://github.com/okou-ai/okou/issues/45000)) ([f98b3c9](https://github.com/okou-ai/okou/commit/f98b3c9b82200bf2cfd4453a469b892ee96ccb8f))
+* **app:** open model settings from account menu subscriptions ([#45009](https://github.com/okou-ai/okou/issues/45009)) ([4d88fbd](https://github.com/okou-ai/okou/commit/4d88fbd3e77a62fea8b3a8c16af04a5ae1c6e375))
+* **app:** share capability icons between tools and onboarding ([#44977](https://github.com/okou-ai/okou/issues/44977)) ([33f7195](https://github.com/okou-ai/okou/commit/33f7195c708e82384730e2b5806d025646df4d56))
+* preserve project folders during chat navigation ([#45001](https://github.com/okou-ai/okou/issues/45001)) ([acc41bd](https://github.com/okou-ai/okou/commit/acc41bd16eb0edc770aacf8ab0a3e2018fa51766))
+
+
+### Refactoring
+
+* **platform:** centralize async utility helpers ([#44996](https://github.com/okou-ai/okou/issues/44996)) ([8adf870](https://github.com/okou-ai/okou/commit/8adf87014b3f6ffc58fd63ef8e14047be762a159))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.39.0
+    * @okouai/connectors bumped to 3.21.2
+    * @okouai/core bumped to 8.814.0
+
+## [0.1089.0](https://github.com/okou-ai/okou/compare/app-v0.1088.0...app-v0.1089.0) (2026-11-03)
+
+
+### Features
+
+* **platform:** drag chats into project groups ([#44950](https://github.com/okou-ai/okou/issues/44950)) ([be6bf0e](https://github.com/okou-ai/okou/commit/be6bf0e7f7e9f63d95f24805bf17a34b4ce297ec))
+
+
+### Bug Fixes
+
+* **app:** keep tools popover above its trigger with bounded scrolling ([#44936](https://github.com/okou-ai/okou/issues/44936)) ([16737ff](https://github.com/okou-ai/okou/commit/16737ff6f95cec83f63ff237c6eef481f799a7c3))
+* **app:** match sidebar chat title font weight ([#44929](https://github.com/okou-ai/okou/issues/44929)) ([58f7c36](https://github.com/okou-ai/okou/commit/58f7c36297499fefe27d90950154ab9e993d8120))
+* **app:** remove standalone chat header pin button ([#44927](https://github.com/okou-ai/okou/issues/44927)) ([ed06b4e](https://github.com/okou-ai/okou/commit/ed06b4ec35178b2c2fa5a13027b2f3ded7940af5))
+* **app:** use the connector icon in catalog debug settings ([#44966](https://github.com/okou-ai/okou/issues/44966)) ([9b94677](https://github.com/okou-ai/okou/commit/9b946777b44fcec4377e0963e8bb98124c5eae34))
+* **browser:** isolate viewer read and discovery failures ([#44917](https://github.com/okou-ai/okou/issues/44917)) ([cd26945](https://github.com/okou-ai/okou/commit/cd2694576ccede5adc986647528efe195f3340d6))
+* **platform:** apply project chat actions optimistically ([#44926](https://github.com/okou-ai/okou/issues/44926)) ([19d9217](https://github.com/okou-ai/okou/commit/19d92170439a89d19535759cfbef0c7a2419d355))
+* **platform:** point cloudinary media ideation at asset management mcp ([#44955](https://github.com/okou-ai/okou/issues/44955)) ([d77091b](https://github.com/okou-ai/okou/commit/d77091bc251b96d15c20632178f58a05c04afa52))
+* show folder icons for project mention suggestions ([#44940](https://github.com/okou-ai/okou/issues/44940)) ([66befdb](https://github.com/okou-ai/okou/commit/66befdb7c790eb4b32b6889980ce59b17abc9272))
+
+
+### Refactoring
+
+* **platform:** bound markdown math and project event loops by their conditions ([#44948](https://github.com/okou-ai/okou/issues/44948)) ([070611b](https://github.com/okou-ai/okou/commit/070611be96321c60c8dfa5befd838e2f47b3b33f))
+* retire project wire preparation adapters ([#44956](https://github.com/okou-ai/okou/issues/44956)) ([babbf94](https://github.com/okou-ai/okou/commit/babbf9431679a767b0e6e8221d99a3c50b094293))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.1
+    * @okouai/browser-extension-client bumped to 0.4.4
+    * @okouai/core bumped to 8.813.1
+    * @okouai/ui bumped to 1.19.0
+
+## [0.1088.0](https://github.com/okou-ai/okou/compare/app-v0.1087.4...app-v0.1088.0) (2026-11-03)
+
+
+### Features
+
+* **api:** show active connector catalog version in debug settings ([#44900](https://github.com/okou-ai/okou/issues/44900)) ([2e3fd47](https://github.com/okou-ai/okou/commit/2e3fd47a9993bfee38cba6607954b37e4ff1222c))
+* **platform:** show router capability families as published in onboarding ([#44914](https://github.com/okou-ai/okou/issues/44914)) ([2bf7b9b](https://github.com/okou-ai/okou/commit/2bf7b9b981609ab046ff167743ff949bddefe344))
+
+
+### Bug Fixes
+
+* **app:** preserve focus while saving remote host access ([#44896](https://github.com/okou-ai/okou/issues/44896)) ([a63393a](https://github.com/okou-ai/okou/commit/a63393a163ba7072ec32f692412e46be49cb1d93))
+* **app:** simplify markdown table footer actions ([#44911](https://github.com/okou-ai/okou/issues/44911)) ([6624aa7](https://github.com/okou-ai/okou/commit/6624aa77a3e85464a8573cbb524c13060f768683))
+* **app:** tighten spacing between projects and chats ([#44916](https://github.com/okou-ai/okou/issues/44916)) ([d16ecd5](https://github.com/okou-ai/okou/commit/d16ecd5a3abc7546cb4366647b79743da9e3171b))
+* **app:** use singular chart task label ([#44915](https://github.com/okou-ai/okou/issues/44915)) ([7c39d82](https://github.com/okou-ai/okou/commit/7c39d827ee9e32245c24387d94bb2f6dd8f6b2d8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.38.0
+    * @okouai/connectors bumped to 3.21.1
+    * @okouai/core bumped to 8.813.0
+
 ## [0.1087.4](https://github.com/okou-ai/okou/compare/app-v0.1087.3...app-v0.1087.4) (2026-11-03)
 
 

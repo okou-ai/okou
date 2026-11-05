@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.17.66](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.65...runner-lifecycle-v0.17.66) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
+## [0.17.65](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.64...runner-lifecycle-v0.17.65) (2026-11-05)
+
+## [0.17.64](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.63...runner-lifecycle-v0.17.64) (2026-11-05)
+
+## [0.17.63](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.62...runner-lifecycle-v0.17.63) (2026-11-04)
+
+
+### Bug Fixes
+
+* **runner:** reject expired home publication admission ([#45231](https://github.com/okou-ai/okou/issues/45231)) ([3c0b9d6](https://github.com/okou-ai/okou/commit/3c0b9d6d7374879061b91676c5b03e2cf19aab5c))
+
+
+### Refactoring
+
+* **runner:** retire standalone guarded idle retirement ([#45218](https://github.com/okou-ai/okou/issues/45218)) ([cddb246](https://github.com/okou-ai/okou/commit/cddb246515bb61986958c13a1877820a53515bbe))
+
+## [0.17.62](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.61...runner-lifecycle-v0.17.62) (2026-11-04)
+
+## [0.17.61](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.60...runner-lifecycle-v0.17.61) (2026-11-04)
+
+## [0.17.60](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.59...runner-lifecycle-v0.17.60) (2026-11-04)
+
+## [0.17.59](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.58...runner-lifecycle-v0.17.59) (2026-11-03)
+
+## [0.17.58](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.57...runner-lifecycle-v0.17.58) (2026-11-03)
+
+## [0.17.57](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.56...runner-lifecycle-v0.17.57) (2026-11-03)
+
+
+### Bug Fixes
+
+* **runner:** use fixed home image disk watermarks ([#44905](https://github.com/okou-ai/okou/issues/44905)) ([36900c4](https://github.com/okou-ai/okou/commit/36900c44f1540184327ebbf803a6a01f3f3f8f28))
+
 ## [0.17.56](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.55...runner-lifecycle-v0.17.56) (2026-11-03)
 
 ## [0.17.55](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.54...runner-lifecycle-v0.17.55) (2026-11-03)

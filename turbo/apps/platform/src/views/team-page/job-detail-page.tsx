@@ -1,4 +1,6 @@
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -247,30 +249,37 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
 function resolveVisibleTab(
   rawTab: string,
   hideProfileAndInstructions: boolean,
-): string {
-  if (hideProfileAndInstructions && rawTab !== "authorization") {
-    return "authorization";
+  showAuthorization: boolean,
+): string | null {
+  if (hideProfileAndInstructions) {
+    return showAuthorization ? "authorization" : null;
   }
-  return rawTab;
+  return rawTab === "authorization" && !showAuthorization ? "profile" : rawTab;
 }
 
 function AgentTabNav({
   activeTab,
   onTabChange,
   showProfileAndInstructions,
+  showAuthorization,
 }: {
   activeTab: string;
   onTabChange: (tab: string) => void;
   showProfileAndInstructions: boolean;
+  showAuthorization: boolean;
 }) {
   const { t } = useTranslation("agents");
   const tabItems = [
-    {
-      value: "authorization",
-      label: t(($) => {
-        return $.detail.tabs.authorization;
-      }),
-    },
+    ...(showAuthorization
+      ? [
+          {
+            value: "authorization",
+            label: t(($) => {
+              return $.detail.tabs.authorization;
+            }),
+          },
+        ]
+      : []),
     ...(showProfileAndInstructions
       ? [
           {
@@ -334,12 +343,14 @@ function AgentTabNav({
       </div>
 
       <TabsList className="hidden sm:inline-flex">
-        <TabsTrigger value="authorization">
-          <Shield size={14} />
-          {t(($) => {
-            return $.detail.tabs.authorization;
-          })}
-        </TabsTrigger>
+        {showAuthorization && (
+          <TabsTrigger value="authorization">
+            <Shield size={14} />
+            {t(($) => {
+              return $.detail.tabs.authorization;
+            })}
+          </TabsTrigger>
+        )}
         {showProfileAndInstructions && (
           <TabsTrigger value="profile">
             <UserCircle size={14} />
@@ -898,15 +909,17 @@ function AgentHeader({
   activeTab,
   onTabChange,
   showProfileAndInstructions,
+  showAuthorization,
   isDefaultAgent,
 }: {
   displayName: string;
   description: string;
   agentId: string;
   avatarUrl: string | null;
-  activeTab: string;
+  activeTab: string | null;
   onTabChange: (tab: string) => void;
   showProfileAndInstructions: boolean;
+  showAuthorization: boolean;
   isDefaultAgent: boolean | undefined;
 }) {
   const { t } = useTranslation("agents");
@@ -992,13 +1005,16 @@ function AgentHeader({
         </Link>
       </div>
 
-      <div className="mt-4 sm:mt-6 flex items-center gap-2">
-        <AgentTabNav
-          activeTab={activeTab}
-          onTabChange={onTabChange}
-          showProfileAndInstructions={showProfileAndInstructions}
-        />
-      </div>
+      {activeTab !== null && (
+        <div className="mt-4 sm:mt-6 flex items-center gap-2">
+          <AgentTabNav
+            activeTab={activeTab}
+            onTabChange={onTabChange}
+            showProfileAndInstructions={showProfileAndInstructions}
+            showAuthorization={showAuthorization}
+          />
+        </div>
+      )}
     </DetailPageHeader>
   );
 }
@@ -1099,7 +1115,7 @@ function AgentTabContent({
   visibility,
   canEditVisibility,
 }: {
-  activeTab: string;
+  activeTab: string | null;
   agentId: string;
   isDefaultAgent: boolean;
   displayName: string;
@@ -1198,10 +1214,17 @@ function useTabVisibility(ownerId: string, visibility: "public" | "private") {
   const rawTab = useGet(agentActiveTab$);
   const setActiveTab = useSet(setAgentActiveTab$);
   const hideProfileAndInstructions = !canEditProfile;
-  const activeTab = resolveVisibleTab(rawTab, hideProfileAndInstructions);
+  const showAuthorization =
+    !useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  const activeTab = resolveVisibleTab(
+    rawTab,
+    hideProfileAndInstructions,
+    showAuthorization,
+  );
 
   return {
     hideProfileAndInstructions,
+    showAuthorization,
     isOwner,
     activeTab,
     setActiveTab,
@@ -1220,8 +1243,13 @@ export function JobDetailPage() {
   const currentAgentId = useGet(currentAgentId$);
   const fields = useAgentFields();
   const errorAgentId = fields.agentId || currentAgentId || "";
-  const { hideProfileAndInstructions, isOwner, activeTab, setActiveTab } =
-    useTabVisibility(fields.ownerId, fields.visibility);
+  const {
+    hideProfileAndInstructions,
+    showAuthorization,
+    isOwner,
+    activeTab,
+    setActiveTab,
+  } = useTabVisibility(fields.ownerId, fields.visibility);
   const isDefaultAgent = fields.isDefaultAgent;
 
   if (!fields.detail && !error) {
@@ -1243,6 +1271,7 @@ export function JobDetailPage() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         showProfileAndInstructions={!hideProfileAndInstructions}
+        showAuthorization={showAuthorization}
         isDefaultAgent={isDefaultAgent}
       />
       <DetailPageMain>

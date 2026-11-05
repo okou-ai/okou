@@ -13,9 +13,8 @@ import type { ComposerSignals } from "../../signals/okou-page/composer-signals.t
 import type { DocumentTemplatePickerCategory } from "../../signals/okou-page/document-template-picker.ts";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
-import { composerRailFade } from "./composer-rail.tsx";
 import { RailPager } from "./rail-pager.tsx";
-import { measureRail } from "../../signals/okou-page/rail-travel.ts";
+import { RAIL_ROOT_CLASS } from "./rail-boundary.ts";
 import {
   TEMPLATE_CARD_GRID,
   TEMPLATE_TILE_CAPTION,
@@ -112,23 +111,14 @@ function DocumentTemplatePickerFilters({
 }) {
   const { t } = useTranslation();
   const setCategory = useSet(signals.template.setDocumentCategory$);
-  const filterTravel = useGet(signals.taskChips.railTravel$)[
-    PICKER_FILTER_RAIL
-  ];
-  const setTravel = useSet(signals.taskChips.setRailTravel$);
-  const bindRail = useSet(signals.taskChips.bindRail$);
   const filterRow = (
     <TemplateFilterPillRow
-      className={cn("px-6 py-0.5", composerRailFade(filterTravel))}
+      className="px-6 py-0.5"
       // Under the header band the row holds ten pills, one more than fits on
       // a line, so it travels like the composer shelf's filters rather than
       // wrapping a lone pill onto a second line.
       layout="scroll"
       rail={PICKER_FILTER_RAIL}
-      scrollerRef={bindRail}
-      onScroll={(event) => {
-        setTravel(PICKER_FILTER_RAIL, measureRail(event.currentTarget));
-      }}
       active={category}
       label={t(($) => {
         return $.documentTemplates.filter;
@@ -170,12 +160,10 @@ function DocumentTemplatePickerFilters({
     // A pager centres on its positioning root, so the row's spacing below
     // sits outside that root, as in the connector directory's category row.
     <div className="shrink-0 pb-3.5">
-      <div className="relative" data-rail-root="">
+      <div className={RAIL_ROOT_CLASS} data-rail-root="">
         {filterRow}
-        {filterTravel?.canScrollBack ? <PickerFilterPager side="back" /> : null}
-        {filterTravel?.canScrollForward ? (
-          <PickerFilterPager side="forward" />
-        ) : null}
+        <PickerFilterPager side="back" />
+        <PickerFilterPager side="forward" />
       </div>
     </div>
   );

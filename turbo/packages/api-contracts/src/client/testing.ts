@@ -346,6 +346,8 @@ import { feishuEventsContract as OriginalFeishuEventsContract } from "../contrac
 import { feishuEventsContract } from "./feishu-events";
 import { feishuOauthContract as OriginalFeishuOauthContract } from "../contracts/feishu-oauth";
 import { feishuOauthContract } from "./feishu-oauth";
+import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
+import { friendReferralsContract } from "./friend-referrals";
 import {
   cronGetStartedContract as OriginalCronGetStartedContract,
   getStartedContract as OriginalGetStartedContract,
@@ -482,8 +484,6 @@ import { iosNotificationsContract as OriginalIosNotificationsContract } from "..
 import { iosNotificationsContract } from "./ios-notifications";
 import { iosPushRegistrationsContract as OriginalIosPushRegistrationsContract } from "../contracts/ios-push-registrations";
 import { iosPushRegistrationsContract } from "./ios-push-registrations";
-import { jobsContract as OriginalJobsContract } from "../contracts/jobs";
-import { jobsContract } from "./jobs";
 import { linkApprovalWorkflowContract as OriginalLinkApprovalWorkflowContract } from "../contracts/link-approval-workflow";
 import { linkApprovalWorkflowContract } from "./link-approval-workflow";
 import {
@@ -559,8 +559,6 @@ import {
 } from "./personal-model-providers";
 import { presentationTemplatesContract as OriginalPresentationTemplatesContract } from "../contracts/presentation-templates";
 import { presentationTemplatesContract } from "./presentation-templates";
-import { proactiveJobsContract as OriginalProactiveJobsContract } from "../contracts/proactive-jobs";
-import { proactiveJobsContract } from "./proactive-jobs";
 import { proactiveLearningContract as OriginalProactiveLearningContract } from "../contracts/proactive-nightly";
 import { proactiveLearningContract } from "./proactive-nightly";
 import { proactiveSuggestionsContract as OriginalProactiveSuggestionsContract } from "../contracts/proactive-suggestions";
@@ -661,8 +659,6 @@ import { sshConnectionsContract as OriginalSshConnectionsContract } from "../con
 import { sshConnectionsContract } from "./ssh-connections";
 import { sshCredentialsContract as OriginalSshCredentialsContract } from "../contracts/ssh-credentials";
 import { sshCredentialsContract } from "./ssh-credentials";
-import { suggestionLearningContract as OriginalSuggestionLearningContract } from "../contracts/suggestion-learning";
-import { suggestionLearningContract } from "./suggestion-learning";
 import { suggestionsContract as OriginalSuggestionsContract } from "../contracts/suggestions";
 import { suggestionsContract } from "./suggestions";
 import { tailscaleContract as OriginalTailscaleContract } from "../contracts/tailscale";
@@ -1037,6 +1033,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [larkConnectContract, OriginalLarkConnectContract],
   [feishuEventsContract, OriginalFeishuEventsContract],
   [feishuOauthContract, OriginalFeishuOauthContract],
+  [friendReferralsContract, OriginalFriendReferralsContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],
@@ -1198,7 +1195,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [iosNotificationsContract, OriginalIosNotificationsContract],
   [iosPushRegistrationsContract, OriginalIosPushRegistrationsContract],
-  [jobsContract, OriginalJobsContract],
   [linkApprovalWorkflowContract, OriginalLinkApprovalWorkflowContract],
   [logsByIdContract, OriginalLogsByIdContract],
   [logsListContract, OriginalLogsListContract],
@@ -1239,7 +1235,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [personalSubscriptionsContract, OriginalPersonalSubscriptionsContract],
   [presentationTemplatesContract, OriginalPresentationTemplatesContract],
-  [proactiveJobsContract, OriginalProactiveJobsContract],
   [proactiveLearningContract, OriginalProactiveLearningContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],
   [projectChatContract, OriginalProjectChatContract],
@@ -1288,7 +1283,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [sshHostsContract, OriginalSshHostsContract],
   [sshConnectionsContract, OriginalSshConnectionsContract],
   [sshCredentialsContract, OriginalSshCredentialsContract],
-  [suggestionLearningContract, OriginalSuggestionLearningContract],
   [suggestionsContract, OriginalSuggestionsContract],
   [tailscaleContract, OriginalTailscaleContract],
   [teamsBotContract, OriginalTeamsBotContract],

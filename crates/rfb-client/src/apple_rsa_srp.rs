@@ -22,7 +22,7 @@ use zeroize::Zeroizing;
 use crate::{
     AppleRsaSrpCredentials, Authenticated, AuthenticatedStream, AuthenticationStage, Error,
     apple_srp::{expected_proof, parse_challenge_fields, write_message},
-    authentication::{discard_reason, phase, read_security_result},
+    authentication::{phase, read_security_result, require_security_type},
     version::{ServerVersion, exchange_version},
 };
 
@@ -51,7 +51,7 @@ where
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,
-        verify_offer(&mut stream),
+        require_security_type(&mut stream, SECURITY_TYPE),
     )
     .await?;
     phase(
@@ -63,23 +63,6 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_rsa_srp_raw(stream),
     })
-}
-
-async fn verify_offer<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let count = stream.read_u8().await?;
-    if count == 0 {
-        discard_reason(stream).await?;
-        return Err(Error::ServerRejected);
-    }
-    let mut types = [0u8; u8::MAX as usize];
-    let types = types
-        .get_mut(..usize::from(count))
-        .ok_or(Error::InvalidAppleRsaSrpParameters)?;
-    stream.read_exact(types).await?;
-    if !types.contains(&SECURITY_TYPE) {
-        return Err(Error::UnsupportedSecurity);
-    }
-    Ok(())
 }
 
 fn invalid() -> Error {

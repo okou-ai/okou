@@ -13,12 +13,15 @@ transport, command executor, host lifecycle, and preferences. `ComputerUse/`
 contains the existing native Accessibility and ScreenCaptureKit backend.
 
 ```bash
-swift test --package-path desktop -j 4
+swift test --package-path desktop -j 4 --parallel --num-workers 2
 swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 CLERK_PUBLISHABLE_KEY=pk_test_example \
   OKOU_DESKTOP_PLATFORM_URL=https://staging-app.omby.ai \
-  python3 desktop/scripts/build.py --development --package
+  python3 desktop/scripts/build.py --development --package zip
 ```
+
+The root package runs XCTest cases in separate processes with two workers, as
+in CI. `-j 4` separately limits compilation jobs.
 
 Use the real staging publishable key. Development packages use `Okou Dev`,
 `ai.okou.desktop.dev`, and a separate Application Support directory. Production
@@ -30,11 +33,33 @@ configuration, helper presence, and bundled resources without signing in or
 registering a host. Production builds also require `SENTRY_DSN_DESKTOP`; package
 verification rejects a missing DSN so error reporting cannot silently disappear.
 
+`--package zip` creates only a ZIP; bare `--package` creates both ZIP and DMG for
+distribution. Omitting `--package` still builds and verifies the app and symbols.
+
+Ordinary CI runs native checks and app construction on separate macOS runners.
+Production configuration is built and validated without distribution archives.
+PRs additionally create a Preview ZIP and matching symbols. After both jobs
+succeed, `build-macos-arm64` publishes them as
+`okou-desktop-macos-arm64-preview-unsigned`, retained for seven days. The PR-only
+`okou-desktop-macos-arm64-staging` handoff contains the same Preview files and is
+retained for one day. Non-PR validation does not upload GitHub Actions artifacts;
+canonical R2 artifacts and signed release ZIP/DMG publication follow the release
+process below.
+
 ### Error diagnostics
 
 Host heartbeat failures upload a correlated episode to the Desktop Sentry project.
-The first failed attempt emits an error immediately; recovery, stopping the host,
-or rejection of its authority emits one summary with the same `episodeId`.
+The first retryable failed attempt emits an info event; recovery, stopping the host,
+or rejection of its authority emits an info summary with the same `episodeId`.
+Transient HTTP 408/429/5xx, ordinary network failures (including TLS connection
+failure), deadlines, and cancellation stay at info during normal retry/recovery.
+Unexpected failures, including malformed successful responses and other HTTP
+errors, emit an error immediately. An episode with at least 90 seconds of awake
+failure emits one error when a subsequent failure or terminal outcome observes
+that threshold, even if it ultimately recovers. Further retries do not repeat
+the error. System suspension does not count toward this threshold, and the
+threshold does not establish lease loss or command impact. Server-side errors
+remain independently reported by the API.
 Filter by `heartbeatOutcome` (`failed`, `recovered`, `stopped`, or
 `authority_rejected`) or `heartbeatEpisodeId` and inspect `contexts.heartbeat`.
 Normal heartbeats do not emit events, and the SDK's automatic heartbeat
@@ -43,6 +68,11 @@ capture for other routes is unchanged.
 
 Each episode retains its first failure and its ten most recent failed attempts,
 the total failure count, omitted-history count, retry delays, and observed duration.
+Episode `durationMs`, `awakeElapsedMs`, and `systemSuspendedMs` include the first
+failed operation when its timing is available, plus subsequent request/backoff
+time. `observedDurationMs` retains its original meaning: time since the first
+failure was captured, excluding that operation. The initial info event preserves
+correlation evidence when a process exits without delivering a terminal summary.
 Request diagnostics include client request/session IDs, HTTP status, response byte
 count, duration, and bounded response headers (`cf-ray`, `x-vercel-id`,
 `x-vercel-cache`, `x-request-id`, `server`, `content-type`, and `retry-after`).
@@ -61,7 +91,11 @@ phase, and each wire request report `durationMs`, `awakeElapsedMs`, and
 `systemSuspendedMs` from continuous and suspending clocks. Operation timing starts
 when the API call begins, excluding heartbeat interval/backoff waits, and ends
 on success or failure before its snapshot is read. An inner cancellation after a
-total deadline is not evidence of a user cancellation. Opt-in HTTP task metrics retain bounded
+total deadline is not evidence of a user cancellation. A native HTTP timeout observed
+with the total budget exhausted records the owning budget scope even if the total
+timer has not resumed; its transport diagnostic still retains the native error.
+Native timeouts before that deadline and caller cancellation remain unchanged.
+Opt-in HTTP task metrics retain bounded
 DNS, connection, TLS, response timing, connection reuse/proxy flags, and protocol
 information. HTTP status and allowlisted headers survive a response-body failure
 when URLSession's task metrics retain them. Missing metrics remain unavailable.

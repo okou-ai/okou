@@ -44,7 +44,7 @@ if op == 'put-object':
         try:
             os.link(temp, path)
         except FileExistsError:
-            temp.unlink(); print('PreconditionFailed: 412', file=sys.stderr); sys.exit(1)
+            temp.unlink(); print(json.dumps({'Code': 'PreconditionFailed'}), file=sys.stderr); sys.exit(1)
         temp.unlink()
     else:
         os.replace(temp, path)
@@ -167,7 +167,7 @@ Dir.mktmpdir("runner-index-") do |fixture|
     cwd = "#{fixture}/producer-#{run}-#{target}"
     FileUtils.mkdir_p(["#{cwd}/.github/scripts/runner/runner-binary-build", "#{cwd}/crates/runner",
       "#{cwd}/crates/target/#{target}/ci", "#{cwd}/runner-binary-fresh"])
-    %w[runner-binary-cache.sh runner-binary-github.sh runner-binary-transport.sh runner-binary-download.sh runner-image-target.sh runner-guest-binaries.sh].each do |name|
+    %w[runner-binary-cache.sh runner-binary-github.sh runner-binary-transport.sh runner-binary-download.sh runner-binary-r2.sh runner-image-target.sh runner-guest-binaries.sh].each do |name|
       FileUtils.cp("#{root}/.github/scripts/runner/#{name}", "#{cwd}/.github/scripts/runner/#{name}")
     end
     FileUtils.cp("#{root}/.github/scripts/runner/runner-binary-build/contract.env", "#{cwd}/.github/scripts/runner/runner-binary-build/contract.env")

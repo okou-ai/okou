@@ -1856,24 +1856,52 @@ export function s3ObjectExists(
   return s3ObjectExistsWithClient(s3ClientForBucket(bucket), bucket, key);
 }
 
+export const checkS3ObjectExists$ = command(
+  async (
+    { get },
+    bucket: string,
+    key: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    return await headObjectExists(
+      get(s3ClientForBucket(bucket)),
+      bucket,
+      key,
+      signal,
+    );
+  },
+);
+
 function s3ObjectExistsWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   key: string,
 ): Computed<Promise<boolean>> {
-  return computed(async (get): Promise<boolean> => {
-    const client = get(client$);
-    const result = await settle(
-      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key })),
-    );
-    if (result.ok) {
-      return true;
-    }
-    if (isS3NotFoundError(result.error)) {
-      return false;
-    }
-    throw result.error;
+  return computed((get): Promise<boolean> => {
+    return headObjectExists(get(client$), bucket, key);
   });
+}
+
+async function headObjectExists(
+  client: S3Client,
+  bucket: string,
+  key: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  signal?.throwIfAborted();
+  const result = await settle(
+    client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), {
+      abortSignal: signal,
+    }),
+  );
+  signal?.throwIfAborted();
+  if (result.ok) {
+    return true;
+  }
+  if (isS3NotFoundError(result.error)) {
+    return false;
+  }
+  throw result.error;
 }
 
 export function hostedSitesS3ObjectExists(

@@ -23,8 +23,6 @@ use runner_lifecycle::status;
 mod status_file;
 #[cfg(test)]
 use runner_executor::test_fixtures;
-#[cfg(test)]
-mod test_fixtures_http_body;
 use runner_lifecycle::home_image_cache;
 use runner_lifecycle::home_mount;
 
@@ -44,7 +42,7 @@ include!(concat!(env!("OUT_DIR"), "/addon_files.rs"));
 mod addon_inventory_tests;
 
 // Source-observation API shared by the current-assignment usage composer.
-// (no-op Runner release marker refreshed for production delivery at 2026-10-30T11:35:01+08:00)
+// (no-op Runner release marker refreshed for production delivery at 2026-11-04T19:07:10+08:00)
 pub use proxy::{
     CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
     TokenTotals,

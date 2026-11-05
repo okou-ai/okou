@@ -4,9 +4,7 @@ import { apiErrorSchema } from "./errors";
 import { proactivePreferenceSchema } from "./proactive";
 
 export const PROACTIVE_LEARNING_DEFINITION_NAME = "proactive-learning";
-export const PROACTIVE_PLANNING_DEFINITION_NAME = "proactive-planning";
 export const PROACTIVE_LEARNING_BLUEPRINT_KEY = "nightly-learning";
-export const PROACTIVE_PLANNING_BLUEPRINT_KEY = "nightly-planning";
 
 const c = initContract();
 const responses = {

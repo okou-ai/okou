@@ -922,6 +922,17 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "friend-referrals",
+    contracts: ["friendReferralsContract"],
+    bindings: [
+      {
+        name: "FRIEND_REFERRAL_REWARD_CREDITS",
+        source: "validators/friend-referrals",
+        imported: "FRIEND_REFERRAL_REWARD_CREDITS",
+      },
+    ],
+  },
+  {
     module: "get-started",
     contracts: ["cronGetStartedContract", "getStartedContract"],
     bindings: [
@@ -1102,11 +1113,6 @@ export const clientContractImportManifest = [
   {
     module: "ios-push-registrations",
     contracts: ["iosPushRegistrationsContract"],
-    bindings: [],
-  },
-  {
-    module: "jobs",
-    contracts: ["jobsContract"],
     bindings: [],
   },
   {
@@ -1317,11 +1323,6 @@ export const clientContractImportManifest = [
   {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
-    bindings: [],
-  },
-  {
-    module: "proactive-jobs",
-    contracts: ["proactiveJobsContract"],
     bindings: [],
   },
   {
@@ -1735,11 +1736,6 @@ export const clientContractImportManifest = [
         imported: "updateSshCredentialRequestSchema",
       },
     ],
-  },
-  {
-    module: "suggestion-learning",
-    contracts: ["suggestionLearningContract"],
-    bindings: [],
   },
   {
     module: "suggestions",

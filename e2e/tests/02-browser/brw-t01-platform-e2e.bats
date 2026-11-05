@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
-# brw-t01-platform-e2e.bats — Hosted Clerk sign-up and sign-in with one test account
+# brw-t01-platform-e2e.bats — Clerk-backed sign-up and sign-in with one test account
 #
-# These two tests exercise Clerk's hosted forms on the deployed platform via
+# These two tests exercise the deployed authentication forms via
 # agent-browser:
-#   1. Sign up a new test account through hosted Clerk
+#   1. Sign up a new test account and complete Clerk verification
 #   2. Sign out, then sign in with the same account
 #
 # The separate Playwright smoke signs in, completes onboarding, and verifies a

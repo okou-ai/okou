@@ -625,12 +625,15 @@
       "loadFailed": "権限を読み込めませんでした",
       "loadingPermissions": "権限を読み込み中",
       "onlyMe": "自分のみ",
+      "onlyMeDescription": "自分だけが開けます",
       "onlyMeOption": "自分のみ",
       "organization": "組織",
+      "organizationDescription": "チームメンバーが閲覧できます",
       "organizationOption": "{{organization}} のメンバー",
       "organizationOptionUnnamed": "組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
+      "publicDescription": "サインイン不要",
       "publicOption": "リンクを知っている全員",
       "updateFailed": "アクセス権を更新できませんでした"
     },
@@ -951,6 +954,27 @@
     },
     "homeLink": "{{brandName}} のホームに移動",
     "loading": "認証を読み込み中",
+    "signup": {
+      "alreadyHaveAccount": "アカウントをお持ちですか？",
+      "apple": "Apple",
+      "continue": "続ける",
+      "email": "メールアドレス",
+      "emailPlaceholder": "メールアドレスを入力",
+      "failed": "リクエストが失敗しました",
+      "google": "Google",
+      "hidePassword": "パスワードを非表示",
+      "legalAnd": "および",
+      "legalPrefix": "次の内容に同意します：",
+      "or": "または",
+      "password": "パスワード",
+      "passwordPlaceholder": "パスワードを入力",
+      "privacy": "プライバシーポリシー",
+      "showPassword": "パスワードを表示",
+      "signIn": "サインイン",
+      "subtitle": "ようこそ！始めるには詳細を入力してください",
+      "terms": "利用規約",
+      "title": "アカウントを作成"
+    },
     "theme": {
       "darkEnabled": "ダークテーマを有効にしました",
       "lightEnabled": "ライトテーマを有効にしました"
@@ -1364,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "URL を入力",
+    "authorizationRequired": "このチャットではクラウドブラウザーが有効になっていません",
     "blankPage": {
       "description": "{{assistantName}} は作業中にここでページを開きます。上で URL を入力して自分で閲覧することもできます。",
       "title": "まだページが開かれていません"
@@ -1390,8 +1415,8 @@
       "takeOver": "操作を代わる",
       "takeOverMessage": "ブラウザの操作を引き継ぎました。お返しするまで使わないでください。"
     },
-    "reclaimHint_one": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
-    "reclaimHint_other": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
+    "reclaimHint_one": "パネル表示中は保持し、{{formattedCount}} 分間操作がないと解放します。",
+    "reclaimHint_other": "パネル表示中は保持し、{{formattedCount}} 分間操作がないと解放します。",
     "status": {
       "live": "ライブ",
       "starting": "開始",
@@ -1429,6 +1454,7 @@
     "paused": "表示を一時停止中",
     "quality": "画質",
     "reconnect": "再接続",
+    "reconnecting": "再接続中…",
     "reload": "再読み込み",
     "remoteInput": "リモートブラウザー入力",
     "resolution": "解像度",
@@ -1537,7 +1563,7 @@
           "unit": "メンバーごと"
         },
         "pendingState": "{{amount}} 件承諾待ち",
-        "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
+        "rewardsNote": "タスクの報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "slack": {
           "action": "追加",
           "description": "チームがすでに使っている場所へ",
@@ -1608,6 +1634,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "新しいチャットに送信しました",
       "undoFeedback": "Undo",
       "useSuggestion": "提案を使う"
     },
@@ -1966,47 +1993,6 @@
       "useDefault": "デフォルトを使用"
     },
     "documentTitle": "チャット",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "情報の更新",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "この実行を完了できませんでした",
       "loadMessages": "メッセージの読み込みに失敗しました",
@@ -2099,78 +2085,6 @@
       "sent": "転送しました",
       "threads": "チャット",
       "title": "転送先"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "ドキュメント",
-        "image": "画像",
-        "presentation": "Presentation",
-        "visualization": "グラフ",
-        "website": "ウェブサイト"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "対応が必要なメールを朝にまとめて受け取れるように設定したい。まず対象の受信トレイと配信時刻を確認して",
-            "second": "競合企業の情報を週次でまとめて受け取れるように設定したい。まず対象企業、情報源、配信スケジュールを確認して",
-            "third": "売上の日次サマリーを受け取れるように設定したい。まずデータソース、指標、配信時刻を確認して"
-          },
-          "label": "定期サマリー",
-          "placeholder": "受け取りたい情報と配信頻度を入力…",
-          "title": "どのようなサマリーを受け取りたいですか？"
-        },
-        "general": {
-          "examples": {
-            "first": "立ち上げ初期のチームに合うブランドデザイン会社を探して",
-            "second": "顧客管理ツールを機能と価格で比較して",
-            "third": "ある業界の最近の動向と主要企業を調べて"
-          },
-          "label": "総合",
-          "placeholder": "質問や知りたいことを入力…",
-          "title": "何を知りたいですか？"
-        },
-        "information": {
-          "examples": {
-            "first": "小規模企業のAI導入に関する最近の調査を、一次情報とあわせて探して",
-            "second": "公開されている製品ローンチの成功事例を集めて、成功の要因を説明して",
-            "third": "プレゼンに使える信頼性の高い業界データを、日付と出典リンク付きで探して"
-          },
-          "label": "情報",
-          "placeholder": "テーマ、対象期間、情報の用途などを入力…",
-          "title": "どのような情報を調べたいですか？"
-        },
-        "monitor": {
-          "examples": {
-            "first": "競合企業の価格変更を追えるようにしたい。まず対象企業、情報源、通知のタイミングを確認して",
-            "second": "顧客に送ったメールへの返信を確認できるようにしたい。まず対象のメールと通知方法を確認して",
-            "third": "業界の重要な動きを追えるようにしたい。まず情報源、確認頻度、重視する内容を相談して決めたい"
-          },
-          "label": "モニタリング",
-          "placeholder": "継続して追いたい対象と、注目する変化を入力…",
-          "title": "どのような変化を追いたいですか？"
-        },
-        "people": {
-          "examples": {
-            "first": "AIマーケティングのイベントに合う登壇者を5人、選定理由と公開情報の出典付きで探して",
-            "second": "経営者にリーチできるクリエイターを探して、視聴者層が適している理由を説明して",
-            "third": "私のコンサルティングサービスの見込み顧客を、関連する公開情報とあわせて探して"
-          },
-          "label": "人物",
-          "placeholder": "役職、専門分野、企業、地域などを入力…",
-          "title": "どのような人をお探しですか？"
-        }
-      },
-      "groups": {
-        "automate": "自動化",
-        "create": "作成",
-        "search": "検索"
-      },
-      "label": "Okouでできることを見つける",
-      "placeholder": "やりたいことを入力…",
-      "sources": {
-        "trigger": "ツール"
-      },
-      "workflows": "ワークフロー"
     },
     "mail": {
       "bcc": "BCC",
@@ -2688,7 +2602,6 @@
       "tasks": {
         "document": "ドキュメント",
         "image": "画像",
-        "jobs": "Tasks",
         "presentation": "スライド",
         "visualization": "可視化",
         "website": "ウェブサイト",
@@ -3168,6 +3081,17 @@
     "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
     "unused": "あなたのホストでは使用されていません",
     "usedBy_other": "あなたのホスト {{count}} 台が使用："
+  },
+  "connectorChatAccess": {
+    "accountAccess": "{{account}} のアクセス",
+    "enableByDefault": "{{account}} を既定で有効にする",
+    "enabledAccounts": "{{value}} 件が有効",
+    "manageAccounts": "アカウントを管理",
+    "noAccount": "アカウント未選択",
+    "noEnabledAccount": "このチャットで有効なアカウントはありません",
+    "permissions": "権限",
+    "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
+    "settingsDescription": "既定で有効にするアカウントと、新しいチャットの既定のアカウントを選択します。"
   },
   "connectors": {
     "access": {
@@ -4072,20 +3996,24 @@
     "actionFailed": "承認を更新できませんでした。",
     "allow": "1 時間許可",
     "approved": "許可済み",
-    "deadline": "有効期限：{{date}}",
+    "blocked": {
+      "chatBusy": "このチャットで実行中の Run が終了してから承認してください。",
+      "computerChanged": "承認する前に {{computer}} を選び直してください。",
+      "runActive": "リクエスト元の Run が終了してから承認してください。",
+      "runUnavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。"
+    },
     "denied": "リクエストを拒否しました",
     "deny": "拒否",
     "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
     "expired": "承認の有効期限が切れました",
     "loading": "承認を読み込み中…",
-    "pending": "承認待ち",
+    "reasonTitle": "アクセスの目的",
+    "requestExpired": "リクエストの有効期限切れ",
     "revoke": "アクセスを取り消す",
     "revoked": "Shell へのアクセスを取り消しました",
-    "scope": "このチャットとコンピュータのみ",
-    "terminalNotice": "アクセス終了後も既存のターミナルは開いたままです。",
-    "title": "Desktop Shell へのアクセス",
+    "title": "Shell アクセス",
     "unavailable": "承認を利用できません",
-    "waiting": "Run の実行中、または選択したコンピュータが変更された場合は承認できません。"
+    "viewReason": "説明をすべて表示"
   },
   "documentTemplates": {
     "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
@@ -4157,6 +4085,28 @@
     "emptyDescription": "新しい提案はここに表示されます。",
     "emptyTitle": "すべて確認済みです",
     "title": "フィード"
+  },
+  "friendReferrals": {
+    "checkingCode": "招待コードを確認中…",
+    "codeApplied": "招待コードを適用しました",
+    "codeCheckFailed": "コードを確認できませんでした。再試行するか、空欄のまま続行してください。",
+    "codeLabel": "あなたの招待コード",
+    "codeUnavailable": "この招待コードは利用できません。確認するか、空欄のまま続行してください。",
+    "copied": "コピー済み",
+    "copyCode": "コードをコピー",
+    "copyFailed": "コピーできませんでした。もう一度お試しください。",
+    "copyLink": "リンクをコピー",
+    "description": "友達があなたの招待コードで登録し、usage pack を購入して Pro 以上にアップグレードすると、$20 分の credits を獲得できます。",
+    "earned": "獲得クレジット",
+    "invalidCode": "6 桁の英数字を入力するか、空欄のまま続行してください。",
+    "loadFailed": "招待コードを読み込めませんでした。もう一度お試しください。",
+    "loading": "招待コードを取得中…",
+    "registered": "登録した友達",
+    "retry": "再試行",
+    "signupLabel": "招待コード（任意）",
+    "signupPlaceholder": "招待コードを入力",
+    "terms": "新規ユーザーのみ対象です。友達1人につき報酬は1回です。このワークスペースの個人残高に付与され、付与から1か月後に失効します。",
+    "title": "友達を招待"
   },
   "global": {
     "errors": {
@@ -4981,8 +4931,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -4993,11 +4941,11 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
+    "moveTo": "{{name}} に移動",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",
@@ -5011,6 +4959,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {
@@ -5403,6 +5352,8 @@
       "subscriptions": {
         "credits": "クレジット",
         "fiveHourLimit": "5時間の上限",
+        "label": "サブスクリプションの使用状況",
+        "lowUsage": "サブスクリプションの使用状況：残り20%未満",
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",
         "usageRemaining": "{{provider}} {{window}} 残り",
@@ -5463,7 +5414,7 @@
           "description": "アプリの外観と動作をカスタマイズします。",
           "title": "好み"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Okou が先回りして行う作業を設定します。",
           "title": "Proactive"
         },
@@ -5847,15 +5798,6 @@
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
         "title": "学習"
-      },
-      "proactivePlanningAction": {
-        "description": "依頼された作業を計画・実行し、あなたの対応が必要なときに通知します。",
-        "errorMessage": "設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
-        "missingTimezone": "設定でタイムゾーンを指定してください。",
-        "preparationFailed": "このワークフローは一時的に利用できません。",
-        "preparing": "ワークフローを準備しています。",
-        "title": "計画と実行"
       },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",

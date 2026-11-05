@@ -159,6 +159,55 @@ fn verifies_codex_zstd_history_source() {
 }
 
 #[test]
+fn rejects_excessive_codex_encoded_input_with_the_existing_too_large_exit_code() {
+    use std::io::{Seek, SeekFrom, Write};
+
+    std::fs::create_dir_all("/home/user").unwrap();
+    let dir = tempfile::tempdir_in("/home/user").unwrap();
+    let sessions_dir = dir.path().join("sessions");
+    let day = sessions_dir.join("2026/11/03");
+    std::fs::create_dir_all(&day).unwrap();
+    let thread = "00000000-0000-4000-8000-000000000001";
+    let path = day.join("rollout-00000000000040008000000000000001.jsonl.zst");
+    let history = b"a";
+    let mut writer = std::fs::File::create(path).unwrap();
+    let padding = 256 * 1024 * 1024u32;
+    writer.write_all(&0x184D2A50u32.to_le_bytes()).unwrap();
+    writer.write_all(&padding.to_le_bytes()).unwrap();
+    writer.seek(SeekFrom::Current(i64::from(padding))).unwrap();
+    writer
+        .write_all(&zstd::encode_all(history.as_slice(), 0).unwrap())
+        .unwrap();
+    let identity = SessionHistoryIdentity::new(
+        SessionHistoryFramework::Codex,
+        session_hash(thread),
+        SessionHistoryRefKind::LocalHome,
+        hex::encode(Sha256::digest(history)),
+        history.len() as u64,
+        SessionHistorySourceRef::Codex {
+            sessions_dir: sessions_dir.to_string_lossy().into_owned(),
+            thread_id: thread.into(),
+        },
+    )
+    .unwrap();
+    let metadata_path = write_metadata(&dir, &identity);
+
+    for error in [
+        verify_final_session_history_identity_file(&metadata_path, None).unwrap_err(),
+        verify_retained_home_identity(&identity).unwrap_err(),
+    ] {
+        assert!(matches!(
+            error,
+            SessionHistoryIdentityVerifyError::HistoryTooLarge
+        ));
+        assert_eq!(
+            error.helper_exit_code(),
+            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE
+        );
+    }
+}
+
+#[test]
 fn rejects_history_mismatch() {
     let dir = tempfile::tempdir().unwrap();
     let (history_path, source) = claude_history_source(&dir);

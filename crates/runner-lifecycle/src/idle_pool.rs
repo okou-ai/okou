@@ -31,10 +31,7 @@ pub use inventory_retirement::{
     IdleRetirementCandidate,
 };
 pub use pressure::IdlePressureCandidate;
-pub use retirement::{
-    GuardedIdleRetirement, IdleRetirementAdmissionFailure, IdleRetirementEnvelope,
-    IdleRetirementStartFailure,
-};
+pub use retirement::IdleRetirementEnvelope;
 pub use retirement_batch::{IdleRetirementBatchScope, IdleRetirementSelection};
 
 pub use activation_cleanup::{

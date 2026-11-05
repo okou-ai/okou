@@ -2,51 +2,42 @@ import { computed, type Computed } from "ccstate";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import { skills as skillCatalog } from "@okouai/db/schema/skill";
-import { inArray } from "drizzle-orm";
-import { db$ } from "../external/db";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
 
 export function createSystemSkillsContext(
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
+  seedSkills$: AgentRunContextSignals["seedSkills$"],
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
-    const disabledPaidTools = await get(disabledPaidTools$);
+    const [disabledPaidTools, published] = await Promise.all([
+      get(disabledPaidTools$),
+      get(seedSkills$),
+    ]);
     // The external gen skill unconditionally teaches managed image execution.
     // Other generation types retain their CLI and Agent Tools guidance.
     const skills = SEED_SKILLS.filter((name) => {
       return name !== "gen" || !disabledPaidTools.includes("image-generation");
     });
-    const published = await get(db$)
-      .select({
-        url: skillCatalog.url,
-        versionHash: skillCatalog.versionHash,
-        contentBundle: skillCatalog.contentBundle,
-        contentBundleSourceVersionHash:
-          skillCatalog.contentBundleSourceVersionHash,
-      })
-      .from(skillCatalog)
-      .where(inArray(skillCatalog.url, skills.map(resolveSkillRef)));
     const byUrl = new Map(
       published.map((skill) => {
         return [skill.url, skill];
       }),
     );
     const skillVolumes = skills.flatMap((skillName): readonly SkillVolume[] => {
-      const skill = byUrl.get(resolveSkillRef(skillName));
-      if (
-        !skill ||
-        skill.versionHash === null ||
-        skill.contentBundle === null ||
-        skill.contentBundleSourceVersionHash !== skill.versionHash
-      ) {
+      // Only a usable bundle matters; the run keeps this pointer whatever the
+      // catalog's source version is when the Runner starts.
+      const contentBundle = byUrl.get(
+        resolveSkillRef(skillName),
+      )?.contentBundle;
+      if (!contentBundle) {
         throw new Error(`Seed Skill bundle is not prepared: ${skillName}`);
       }
       return [
         {
           skillName,
           source: "system_skill",
-          contentBundle: contentBundleSchema.parse(skill.contentBundle),
+          contentBundle: contentBundleSchema.parse(contentBundle),
         },
       ];
     });

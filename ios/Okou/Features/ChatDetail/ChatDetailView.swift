@@ -5,7 +5,6 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let agents: ThreadListStore?
-  var voice: VoiceInputStore? = nil
   var didSend: (@MainActor () async -> Void)? = nil
   let topContentInset: CGFloat
   let sidebar: SidebarInteraction?
@@ -25,14 +24,13 @@ struct ChatDetailView: View {
 
   init(
     conversation: ConversationStore, agents: ThreadListStore? = nil,
-    voice: VoiceInputStore? = nil, didSend: (@MainActor () async -> Void)? = nil,
+    didSend: (@MainActor () async -> Void)? = nil,
     topContentInset: CGFloat = 0,
     sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil,
     onFirstMessagePresented: (@MainActor (String) -> Void)? = nil
   ) {
     self.conversation = conversation
     self.agents = agents
-    self.voice = voice
     self.didSend = didSend
     self.topContentInset = topContentInset
     self.sidebar = sidebar
@@ -185,7 +183,8 @@ struct ChatDetailView: View {
   var body: some View {
     let displayedMessages = conversation.visibleMessages
     ConversationCollectionView(
-      rows: rows, markdown: conversation.messageMarkdown, measurements: conversation.measurements,
+      rows: rows, markdown: conversation.messageMarkdown, renderContext: renderContext,
+      measurements: conversation.measurements,
       contentInsets: EdgeInsets(
         top: topContentInset, leading: 0, bottom: composerHeight, trailing: 0),
       anchor: scrolling.anchor,
@@ -198,6 +197,7 @@ struct ChatDetailView: View {
         scrolling.rowsPresented(firstItemID: id)
         if let id { onFirstMessagePresented?(id) }
       },
+      earlierMessages: conversation.earlierWindowMessages,
       quote: conversation.quote,
       refresh: {
         await conversation.refresh()
@@ -342,7 +342,7 @@ struct ChatDetailView: View {
           connectorSelection: conversation.modelSelection?.connectors,
           mentionSource: mentionSource,
           workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
-          sendTransition: scrolling.sendTransition, voice: voice,
+          sendTransition: scrolling.sendTransition,
           placeholder: agentName.map { String(localized: "Message \($0)") }
         )
       }
@@ -353,6 +353,14 @@ struct ChatDetailView: View {
       }
     }
     .task(id: thread.id) { await conversation.refresh() }
+  }
+
+  private func renderContext(_ message: ChatMessage) -> MessageRenderPlan.Context {
+    let assistant = message.role == .assistant
+    return .init(
+      webURL: conversation.webURL,
+      action: assistant ? .init(agentID: thread.agentID, threadID: thread.id) : nil,
+      permissionsEnabled: true, artifacts: assistant ? conversation.artifacts : nil)
   }
 
   @ViewBuilder
@@ -415,7 +423,10 @@ struct ChatDetailView: View {
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
       }
-      .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
+      .padding(
+        EdgeInsets(
+          top: topSpacing, leading: ConversationCollectionRow.messageHorizontalInset,
+          bottom: 0, trailing: ConversationCollectionRow.messageHorizontalInset))
     case .footer(let executionState, let showsAvatar):
       VStack(alignment: .leading, spacing: OkouSpace.xxl) {
         if executionState.isActive {
@@ -516,7 +527,9 @@ struct ChatDetailView: View {
         )
         .equatable()
         .foregroundStyle(isWorkHistory ? OkouColor.mutedForeground : OkouColor.foreground)
-        .padding(.leading, message.role == .assistant ? 6 : 0)
+        .padding(
+          .leading, message.role == .assistant ? ConversationCollectionRow.assistantLeadingInset : 0
+        )
       }
       ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, attachment in
         MessageAttachmentView(

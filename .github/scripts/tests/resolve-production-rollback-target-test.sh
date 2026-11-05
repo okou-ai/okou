@@ -21,6 +21,7 @@ connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/conn
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
 data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
 official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
+registry_archive_reader_floor=$(<"${repo_root}/.github/rollback-floors/registry-archive-reader")
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
@@ -33,12 +34,24 @@ case "${1:-}" in
   merge-base)
     if [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
       [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_REGISTRY_ARCHIVE_READER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_REGISTRY_ARCHIVE_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_REGISTRY_ARCHIVE_READER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e" ]; then
+      [ "${MOCK_TEAMS_UPLOAD_V2_CLI_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d" ]; then
+      [ "${MOCK_TEAMS_IDENTITY_PREPARATION_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
       else
         [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "046a7bac03cc5f5a94cc67394756f69be2eaf111" ]; then
+      [ "${MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
       [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc" ]; then
@@ -103,6 +116,10 @@ case "${1:-}" in
       else
         [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_FLOOR_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "c146c146c146c146c146c146c146c146c146c146" ]; then
+      [ "${MOCK_PROJECT_WIRE_CONTRACTS_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "428f46154beb1a11cdf09f150650c388826e539c" ]; then
+      [ "${MOCK_PROJECT_RUNNER_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6161616161616161616161616161616161616161" ]; then
       [ "${MOCK_STORAGE_DEBUG_CONTRACTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2eff576ad75d328676834643c1380ff35c2297e2" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
@@ -278,6 +295,14 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/teams-upload-v2-cli* ]]; then
+      printf '%s\n' "${MOCK_TEAMS_UPLOAD_V2_CLI_COMMIT-6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e}"
+      exit 0
+    fi
+    if [[ "$*" == *rollback-floors/teams-identity-retirement-preparation* ]]; then
+      printf '%s\n' "${MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT-7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/seed-skill-bundle-only-api* ]]; then
       printf '%s\n' "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_COMMIT-7373737373737373737373737373737373737373}"
       exit 0
@@ -344,6 +369,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *.github/rollback-floors/project-wire-contracts* ]]; then
+      printf '%s\n' "${MOCK_PROJECT_WIRE_CONTRACTS_COMMIT-c146c146c146c146c146c146c146c146c146c146}"
     elif [[ "$*" == *.github/rollback-floors/storage-debug-contracts* ]]; then
       printf '%s\n' "${MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT-6161616161616161616161616161616161616161}"
     elif [[ "$*" == *.github/rollback-floors/vnc-native-networks-canonical-metadata* ]]; then
@@ -374,6 +401,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/registry-archive-reader" ]; then
+      [ "${MOCK_REGISTRY_ARCHIVE_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_REGISTRY_ARCHIVE_READER_COMMIT-$MOCK_REGISTRY_ARCHIVE_READER_FLOOR}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/content-bundle-reference-only-api* ]]; then
       [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE:-1}" = "1" ] || exit 1
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
@@ -509,6 +541,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
+    MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR="$content_bundle_reference_api_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
@@ -574,6 +607,15 @@ assert_failure "Rollback target predates immutable default Agent identity" \
 [ ! -s "${tmp_dir}/immutable-default-agent.output" ] || fail "mutable default Agent API must not publish outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "mutable default Agent API must fail before provider or host access"
+fi
+
+# App assets no longer accept a full-hash-only creation response.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates Marketing handoff short-address responses" \
+  run_resolver "${tmp_dir}/marketing-short-address.output" MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID=0
+[ ! -s "${tmp_dir}/marketing-short-address.output" ] || fail "full-hash-only API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "full-hash-only API must fail before provider or host access"
 fi
 
 # The prepared API reader is required even when the rollback selects an older
@@ -888,6 +930,20 @@ fi
 : >"${tmp_dir}/boundaries.log"
 run_resolver "${tmp_dir}/context-exact.output" "MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT=${target_commit}" >"${tmp_dir}/context-exact.log"
 [ -s "${tmp_dir}/context-exact.output" ] || fail "exact context cleanup artifact must remain eligible"
+
+for project_commit in "" invalid; do
+  assert_failure "Cannot resolve the merged Project wire contract activation on main" \
+    run_resolver "${tmp_dir}/project-policy.output" "MOCK_PROJECT_WIRE_CONTRACTS_COMMIT=${project_commit}"
+  [ ! -s "${tmp_dir}/project-policy.output" ] || fail "invalid Project policy must not publish outputs"
+done
+
+assert_failure "Rollback target predates the Project wire contract activation" \
+  run_resolver "${tmp_dir}/project-api.output" MOCK_PROJECT_WIRE_CONTRACTS_VALID=0
+[ ! -s "${tmp_dir}/project-api.output" ] || fail "pre-activation API must not publish outputs"
+
+assert_failure "predates the Project CLI readers" \
+  run_resolver "${tmp_dir}/project-runner.output" MOCK_PROJECT_RUNNER_READER_VALID=0
+[ ! -s "${tmp_dir}/project-runner.output" ] || fail "unprepared Runner must not publish outputs"
 
 for completion_reader_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
@@ -2102,6 +2158,20 @@ for official_bundle_case in \
   fi
 done
 
+for registry_reader_case in \
+  "MOCK_REGISTRY_ARCHIVE_READER_AVAILABLE=0|Cannot read the Registry archive reader rollback floor from main" \
+  "MOCK_REGISTRY_ARCHIVE_READER_COMMIT=invalid|Missing or invalid Registry archive reader rollback floor" \
+  "MOCK_REGISTRY_ARCHIVE_READER_ON_MAIN=0|Registry archive reader rollback floor is not on main" \
+  "MOCK_REGISTRY_ARCHIVE_READER_VALID=0|Rollback target predates independent Registry archive reads"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${registry_reader_case#*|}" \
+    run_resolver "${tmp_dir}/registry-reader.output" "${registry_reader_case%%|*}"
+  [ ! -s "${tmp_dir}/registry-reader.output" ] || fail "incompatible Registry API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Registry reader floor must reject before provider or host access"
+  fi
+done
+
 for official_artifact_case in \
   "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT=|Cannot resolve the merged Official Workflow artifact reader on main" \
   "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT=invalid|Cannot resolve the merged Official Workflow artifact reader on main" \
@@ -2141,6 +2211,32 @@ for expectation in \
   [ ! -s "${tmp_dir}/seed-skill-bundle-only-api.output" ] || fail "incompatible Seed publisher must not publish rollback outputs"
   if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
     fail "Seed publisher floor must fail before artifact or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT=|Cannot resolve the merged Teams identity preparation on main" \
+  "MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT=invalid|Cannot resolve the merged Teams identity preparation on main" \
+  "MOCK_TEAMS_IDENTITY_PREPARATION_VALID=0|Rollback target predates Teams identity preparation"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" \
+    run_resolver "${tmp_dir}/teams-identity-preparation.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/teams-identity-preparation.output" ] || fail "incompatible Teams API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Teams preparation floor must reject before provider or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_TEAMS_UPLOAD_V2_CLI_COMMIT=|Cannot resolve the merged Teams v2 upload CLI on main" \
+  "MOCK_TEAMS_UPLOAD_V2_CLI_COMMIT=invalid|Cannot resolve the merged Teams v2 upload CLI on main" \
+  "MOCK_TEAMS_UPLOAD_V2_CLI_VALID=0|Runner release runner-rs-v1.2.3 predates the Teams v2 upload CLI"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" \
+    run_resolver "${tmp_dir}/teams-upload-v2-cli.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/teams-upload-v2-cli.output" ] || fail "v1 Teams Runner must not publish outputs"
+  if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+    fail "v1 Teams Runner must reject before Runner artifact or host access"
   fi
 done
 

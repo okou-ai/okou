@@ -1,5 +1,4 @@
 import { performance } from "node:perf_hooks";
-import { captureInvokedWorkflow$ } from "./execution-agent-workflows.service";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
@@ -718,9 +717,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
     ),
     ...EVENT_POLICY[eventType],
     ...(eventType === "manual" &&
-    ["learning", "planning"].includes(
-      proactiveWorkflowKind(args.workflowName) ?? "",
-    )
+    proactiveWorkflowKind(args.workflowName) === "learning"
       ? { recordLastRunId: false, recordLastRunAt: false }
       : {}),
     allowClaimedOnceScheduleAutomation: args.automation.scheduleType === "once",
@@ -1057,8 +1054,7 @@ function buildWorkflowAutomationCallbacks(
   // Debug adds one delivery and never settles the daily schedule occurrence.
   const nightlyManual =
     eventType === "manual" &&
-    (automation.officialBlueprintKey === "nightly-learning" ||
-      automation.officialBlueprintKey === "nightly-planning");
+    automation.officialBlueprintKey === "nightly-learning";
   if (
     automation.kind === "schedule" &&
     eventType !== "morning-brief-debug" &&
@@ -1150,6 +1146,24 @@ function claimRejectionContext(
     },
   };
 }
+
+/**
+ * Generation writes a title only over NULL title and renamed_at, and a rename
+ * sets both, so a titled or renamed claim snapshot never needs another read.
+ */
+function threadTitled(
+  thread:
+    | { readonly title: string | null; readonly renamedAt: Date | null }
+    | null
+    | undefined,
+) {
+  return (
+    thread !== null &&
+    thread !== undefined &&
+    (thread.title !== null || thread.renamedAt !== null)
+  );
+}
+
 function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
   if (record.kind === "automation") {
     return record;
@@ -1160,6 +1174,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
     timing: record.timing,
     context: {
       userId: record.context.userId,
+      titled: record.context.titled,
       runInput: {
         orgId: input.orgId,
         threadId: input.threadId,
@@ -1783,7 +1798,11 @@ export function createThreadClaimRunObjects(
         launchRecord: {
           kind: "prompt",
           timing,
-          context: { userId: head.userId, runInput },
+          context: {
+            userId: head.userId,
+            titled: threadTitled((await get(pickedEvent$))?.thread),
+            runInput,
+          },
         },
       };
     },
@@ -2253,9 +2272,7 @@ export function createThreadClaimRunObjects(
         loadedTarget.workflow.officialDefinitionName !== null &&
         event.eventType === "manual" &&
         proactiveWorkflowKind(loadedTarget.workflow.officialDefinitionName) !==
-          "learning" &&
-        proactiveWorkflowKind(loadedTarget.workflow.officialDefinitionName) !==
-          "planning"
+          "learning"
       ) {
         return rejectedAutomationLaunch(
           unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),
@@ -3797,24 +3814,7 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const invokedWorkflowId =
-        runnerInput && !isRouteError(runnerInput)
-          ? await set(
-              captureInvokedWorkflow$,
-              {
-                agentId: runnerInput.args.resolved.agentId,
-                userId: runnerInput.args.userId,
-                orgId: runnerInput.args.orgId,
-                prompt: runnerInput.body.prompt,
-              },
-              signal,
-            )
-          : null;
-      const contextDraft = claimRunStoredContextDraft(
-        runnerInput,
-        encrypted,
-        invokedWorkflowId,
-      );
+      const contextDraft = claimRunStoredContextDraft(runnerInput, encrypted);
       return {
         kind: "prepared" as const,
         resources: [
@@ -5168,7 +5168,6 @@ function claimRunStoredContextDraft<
 >(
   input: RunnerInputResult,
   encrypted: TEncrypted | CreateRunErrorResult | null | undefined,
-  invokedWorkflowId: string | null,
 ) {
   if (!input || isRouteError(input)) {
     return input;
@@ -5184,7 +5183,6 @@ function claimRunStoredContextDraft<
       platformEnvironment,
       runId: args.run.id,
       workflowAutomationId: args.workflowAutomationId,
-      invokedWorkflowId,
     },
     encrypted.encryptedSecrets,
   );
@@ -5206,7 +5204,6 @@ function buildStoredExecutionContextDraft(
   args: {
     readonly runId: string;
     readonly workflowAutomationId: string | null;
-    readonly invokedWorkflowId: string | null;
     readonly userId: string;
     readonly orgId: string;
     readonly chatThreadId: string | undefined;
@@ -5284,12 +5281,11 @@ function buildStoredExecutionContextDraft(
     context: {
       environment,
       seedSkillBundles: args.seedSkillBundles,
-      // Capture invocation identity and mount precedence, never Workflow content.
+      // Capture Agent identity and mount precedence, never Workflow content.
       ...(args.resolved.agentId !== null
         ? {
             customWorkflowSelection: {
               agentId: args.resolved.agentId,
-              invokedWorkflowId: args.invokedWorkflowId,
               ...(args.workflowAutomationId === null
                 ? {}
                 : { automationId: args.workflowAutomationId }),

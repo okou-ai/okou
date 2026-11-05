@@ -343,6 +343,10 @@ export const clientDescriptorManifest = [
     contracts: ["feishuOauthContract"],
   },
   {
+    module: "friend-referrals",
+    contracts: ["friendReferralsContract"],
+  },
+  {
     module: "get-started",
     contracts: ["cronGetStartedContract", "getStartedContract"],
   },
@@ -474,10 +478,6 @@ export const clientDescriptorManifest = [
     contracts: ["iosPushRegistrationsContract"],
   },
   {
-    module: "jobs",
-    contracts: ["jobsContract"],
-  },
-  {
     module: "link-approval-workflow",
     contracts: ["linkApprovalWorkflowContract"],
   },
@@ -570,10 +570,6 @@ export const clientDescriptorManifest = [
   {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
-  },
-  {
-    module: "proactive-jobs",
-    contracts: ["proactiveJobsContract"],
   },
   {
     module: "proactive-nightly",
@@ -702,10 +698,6 @@ export const clientDescriptorManifest = [
   {
     module: "ssh-credentials",
     contracts: ["sshCredentialsContract"],
-  },
-  {
-    module: "suggestion-learning",
-    contracts: ["suggestionLearningContract"],
   },
   {
     module: "suggestions",

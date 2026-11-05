@@ -9,7 +9,7 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   chatConnectorAccess,
   connectorAccountAccessDefaults,
@@ -29,15 +29,11 @@ const owner$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   return { orgId: auth.orgId, userId: auth.userId };
 });
+const featureContext$ = createUserFeatureSwitchContext(owner$);
 const featureAvailable$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const owner = get(owner$);
-  const context = await set(
-    loadUserFeatureSwitchContext$,
-    owner.orgId,
-    owner.userId,
-    signal,
-  );
+  const context = await get(featureContext$);
+  signal.throwIfAborted();
   return isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, context);
 });
 

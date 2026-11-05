@@ -641,7 +641,7 @@ test("A user's attachment preview withholds the sharing an agent artifact offers
   const agentDialog = await screen.findByRole("dialog", {
     name: "agent-chart.png preview",
   });
-  click(await findNamedLink("Share", agentDialog));
+  click(await findNamedButton("Share", agentDialog));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([agentImageUrl]);
   });

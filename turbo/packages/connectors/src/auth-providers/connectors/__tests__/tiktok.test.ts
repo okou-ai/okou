@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
 import { server } from "../../__tests__/test-server";
+import { oauthFailureDiagnostics } from "../../oauth/error";
 import { authCodeGrantFixture } from "./auth-code-grant-fixture";
 import {
   buildTikTokAuthorizationUrl,
@@ -116,12 +117,80 @@ describe("TikTok OAuth", () => {
         return HttpResponse.json({ ...token, refresh_token: undefined });
       }),
     );
-    await expect(
-      refreshTikTokToken(
-        { ...client, refreshToken: "refresh-one" },
-        new AbortController().signal,
-      ),
-    ).rejects.toThrow("Invalid TikTok token response");
+    const refresh = refreshTikTokToken(
+      { ...client, refreshToken: "refresh-one" },
+      new AbortController().signal,
+    );
+    await expect(refresh).rejects.toThrow("Invalid TikTok token response");
+    await expect(refresh).rejects.toMatchObject({
+      diagnostics: {
+        stage: "token",
+        reason: "invalid_schema",
+        invalidFields: ["refresh_token"],
+      },
+    });
+  });
+
+  it("preserves an OAuth error returned with HTTP 200 without retaining its description", async () => {
+    const secret = "provider-controlled-private-value";
+    server.use(
+      http.post(TOKEN_URL, () => {
+        return HttpResponse.json({
+          error: "invalid_grant",
+          error_description: secret,
+          access_token: secret,
+        });
+      }),
+    );
+    const error: unknown = await refreshTikTokToken(
+      { ...client, refreshToken: "expired-token" },
+      new AbortController().signal,
+    ).catch((failure: unknown) => {
+      return failure;
+    });
+    expect(error).toMatchObject({ status: 200, oauthError: "invalid_grant" });
+    expect(JSON.stringify(error)).not.toContain(secret);
+    expect(oauthFailureDiagnostics(error)).toStrictEqual({
+      failureKind: "oauth_http",
+      httpStatus: 200,
+      oauthError: "invalid_grant",
+    });
+  });
+
+  it("reports the profile API failure without retaining profile data or error descriptions", async () => {
+    const secret = "private-profile-response-canary";
+    server.use(
+      http.post(TOKEN_URL, () => {
+        return HttpResponse.json(token);
+      }),
+      http.get(PROFILE_URL, () => {
+        return HttpResponse.json({
+          data: { private_value: secret },
+          error: {
+            code: "scope_not_authorized",
+            message: secret,
+            log_id: secret,
+          },
+        });
+      }),
+    );
+    const error: unknown = await exchangeTikTokCode({
+      ...client,
+      code: "code",
+      redirectUri: "https://app.example.com/callback",
+    }).catch((failure: unknown) => {
+      return failure;
+    });
+    expect(oauthFailureDiagnostics(error)).toStrictEqual({
+      failureKind: "provider_response",
+      responseStage: "profile",
+      responseReason: "provider_error",
+      httpStatus: 200,
+      contentType: "application/json",
+      providerCode: "scope_not_authorized",
+      responseShape: "data:object,error:object",
+    });
+    expect(JSON.stringify(error)).not.toContain(secret);
   });
 
   it("preserves invalid_grant so an expired or revoked refresh token requires reconnection", async () => {

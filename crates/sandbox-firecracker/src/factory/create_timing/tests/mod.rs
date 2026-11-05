@@ -336,19 +336,19 @@ fn nbd_cow_details_map_to_external_observer() {
             "vm0/default".into(),
             Some(&mut observer),
         );
-        for stage in NbdCowCreateStage::ALL {
+        for (index, stage) in NbdCowCreateStage::ALL.into_iter().enumerate() {
             nbd_cow::NbdCowCreateObserver::record_stage(
                 &mut timing,
                 stage,
-                Duration::from_millis(5),
+                Duration::from_millis(index as u64 + 10),
                 stage != NbdCowCreateStage::NetlinkConnect,
             );
         }
-        for stage in NbdNetlinkConnectStage::ALL {
+        for (index, stage) in NbdNetlinkConnectStage::ALL.into_iter().enumerate() {
             nbd_cow::NbdCowCreateObserver::record_netlink_connect_stage(
                 &mut timing,
                 stage,
-                Duration::from_millis(3),
+                Duration::from_millis(index as u64 + 20),
                 stage != NbdNetlinkConnectStage::FamilyResolve,
             );
         }
@@ -367,31 +367,32 @@ fn nbd_cow_details_map_to_external_observer() {
     }
 
     assert_eq!(
-        observer
-            .nbd_cow_records
-            .iter()
-            .map(|record| record.0)
+        observer.nbd_cow_records,
+        SandboxNbdCowCreateStage::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(index, stage)| {
+                (
+                    stage,
+                    Duration::from_millis(index as u64 + 10),
+                    stage != SandboxNbdCowCreateStage::NetlinkConnect,
+                )
+            })
             .collect::<Vec<_>>(),
-        SandboxNbdCowCreateStage::ALL,
-    );
-    assert!(
-        observer
-            .nbd_cow_records
-            .iter()
-            .all(|record| { record.2 == (record.0 != SandboxNbdCowCreateStage::NetlinkConnect) })
     );
     assert_eq!(
-        observer
-            .nbd_netlink_connect_records
-            .iter()
-            .map(|record| record.0)
+        observer.nbd_netlink_connect_records,
+        SandboxNbdNetlinkConnectStage::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(index, stage)| {
+                (
+                    stage,
+                    Duration::from_millis(index as u64 + 20),
+                    stage != SandboxNbdNetlinkConnectStage::FamilyResolve,
+                )
+            })
             .collect::<Vec<_>>(),
-        SandboxNbdNetlinkConnectStage::ALL,
-    );
-    assert!(
-        observer.nbd_netlink_connect_records.iter().all(|record| {
-            record.2 == (record.0 != SandboxNbdNetlinkConnectStage::FamilyResolve)
-        })
     );
     assert_eq!(
         observer.nbd_cow_outcomes,

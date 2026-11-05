@@ -5,7 +5,9 @@ use std::{
 };
 
 use guest_contracts::{
-    agent_instructions::{InstructionCheck, SOURCE_FILENAME, instruction_paths},
+    agent_instructions::{
+        InstructionCheck, InstructionOperation, SOURCE_FILENAME, instruction_paths,
+    },
     storage_files,
     storage_manifest::Manifest,
 };
@@ -113,11 +115,11 @@ fn apply_guest_storage(
 }
 
 fn apply_guest_instructions(overrides: &MockSandboxOverrides, root: &Path, first_exec: usize) {
-    for call in overrides.exec_calls().iter().skip(first_exec) {
-        if call.cmd.ends_with(" --instructions-stdin") {
+    for call in overrides.agent_instructions_calls().iter().skip(first_exec) {
+        if call.operation == InstructionOperation::Apply {
             assert!(guest_storage_apply::apply_agent_instructions(
                 &guest_path(root, "/home/user"),
-                call.stdin_bytes.as_deref().unwrap(),
+                &call.metadata,
             ));
         }
     }
@@ -229,7 +231,7 @@ async fn instruction_storage_reuses_applied_files_and_refreshes_changed_versions
                     instruction_check(&overrides, guest.path(), framework);
                 }
                 let first_storage = overrides.storage_manifest_calls().len();
-                let first_exec = overrides.exec_calls().len();
+                let first_exec = overrides.agent_instructions_calls().len();
                 let (mut outcome, _) = if let Some(sandbox) = idle.take() {
                     execute_job_reuse(
                         sandbox,
@@ -269,10 +271,10 @@ async fn instruction_storage_reuses_applied_files_and_refreshes_changed_versions
                     assert_eq!(overrides.storage_manifest_calls().len(), first_storage);
                     assert!(
                         !overrides
-                            .exec_calls()
+                            .agent_instructions_calls()
                             .iter()
                             .skip(first_exec)
-                            .any(|call| call.cmd.ends_with(" --instructions-stdin"))
+                            .any(|call| call.operation == InstructionOperation::Apply)
                     );
                 }
                 assert_eq!(fs::read(&history).unwrap(), b"preserved");
@@ -435,7 +437,7 @@ async fn cancelled_preparation_reuses_only_instructions_applied_to_the_final_fil
         .await;
         instruction_check(&overrides, guest.path(), "claude-code");
         let first_storage = overrides.storage_manifest_calls().len();
-        let first_exec = overrides.exec_calls().len();
+        let first_exec = overrides.agent_instructions_calls().len();
         let (mut next, _) = execute_job_reuse(
             idle,
             next_context,
@@ -622,7 +624,11 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     apply_guest_instructions(&overrides, guest.path(), 0);
     download.assert_calls(1);
     let actual = fs::read(guest_path(guest.path(), "/home/user/.codex/AGENTS.md")).unwrap();
-    assert_eq!(Sha256::digest(actual), Sha256::digest(content.as_bytes()));
+    assert!(
+        actual.as_slice() == content.as_bytes(),
+        "fresh instructions must match the complete original content"
+    );
+    drop(actual);
     let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
     fs::remove_file(&target).unwrap();
     let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
@@ -641,7 +647,7 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     );
     next_context.run_id = runner_types::ids::RunId::new_v4();
     let first_storage = overrides.storage_manifest_calls().len();
-    let first_exec = overrides.exec_calls().len();
+    let first_exec = overrides.agent_instructions_calls().len();
     let (mut repaired, _) = execute_job_reuse(
         idle,
         next_context,
@@ -662,9 +668,9 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     );
     apply_guest_instructions(&overrides, guest.path(), first_exec);
     download.assert_calls(2);
-    assert_eq!(
-        Sha256::digest(fs::read(target).unwrap()),
-        Sha256::digest(content.as_bytes())
+    assert!(
+        fs::read(target).unwrap().as_slice() == content.as_bytes(),
+        "reused instructions must match the complete original content"
     );
     config.background_fill.shutdown().await;
 }
@@ -1022,9 +1028,9 @@ async fn home_restored_instruction_reuse_checks_target_and_repairs_missing_or_ta
                 assert!(overrides.storage_manifest_calls().is_empty());
                 assert!(
                     !overrides
-                        .exec_calls()
+                        .agent_instructions_calls()
                         .iter()
-                        .any(|call| call.cmd.ends_with(" --instructions-stdin"))
+                        .any(|call| call.operation == InstructionOperation::Apply)
                 );
                 assert!(
                     !config
@@ -1122,7 +1128,7 @@ async fn instruction_reuse_reapplies_after_storage_reconciles_its_parent() {
         .await;
         instruction_check(&overrides, guest.path(), "codex");
         let first_storage = overrides.storage_manifest_calls().len();
-        let first_exec = overrides.exec_calls().len();
+        let first_exec = overrides.agent_instructions_calls().len();
         let (mut next, _) = execute_job_reuse(
             idle,
             make_context(changed_parent.then_some("v2")),
@@ -1223,11 +1229,11 @@ async fn instruction_reuse_checks_all_preserved_mounts_in_bounded_guest_requests
         reused,
         super::super::storage::InstructionReuse::Reused
     ));
-    let calls = overrides.exec_calls();
+    let calls = overrides.agent_instructions_calls();
     assert!(calls.len() > 1);
     let mut checked = Vec::new();
     for call in calls {
-        let metadata = call.stdin_bytes.unwrap();
+        let metadata = call.metadata;
         assert!(metadata.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
         assert!(guest_storage_apply::check_agent_instructions(&home, &metadata).unwrap());
         let input: InstructionCheck = serde_json::from_slice(&metadata).unwrap();
@@ -1377,7 +1383,7 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
         },
     );
     let first_storage = overrides.storage_manifest_calls().len();
-    let first_exec = overrides.exec_calls().len();
+    let first_exec = overrides.agent_instructions_calls().len();
     let (mut next, _) = execute_job_reuse(
         idle,
         make_context(false),
@@ -1388,14 +1394,13 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
     .await;
     assert_eq!(next.exit_code(), 0, "{:?}", next.error());
     if symlink_parent {
-        let calls = overrides.exec_calls();
+        let calls = overrides.agent_instructions_calls();
         let check = calls
             .iter()
             .skip(first_exec)
-            .find(|call| call.cmd.ends_with(" --instructions-check-stdin"))
+            .find(|call| call.operation == InstructionOperation::Check)
             .unwrap();
-        let input: InstructionCheck =
-            serde_json::from_slice(check.stdin_bytes.as_deref().unwrap()).unwrap();
+        let input: InstructionCheck = serde_json::from_slice(&check.metadata).unwrap();
         assert_eq!(
             input.preserved_download_mounts,
             if preserved_symlink {

@@ -5,9 +5,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use guest_control_proto::ExecTermination;
+
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::process::{
-    ChildProcess, kill_and_reap_child, kill_owned_child_process_group, process_signal_pid,
+    ChildProcess, extract_exit_code, kill_and_reap_child, kill_owned_child_process_group,
+    process_signal_pid,
 };
 use crate::threading::spawn_scoped_named;
 
@@ -24,6 +27,26 @@ pub(crate) enum WaitOutcome {
     Cancelled,
     /// `wait()` itself failed; carries the error message.
     WaitFailed(String),
+}
+
+impl WaitOutcome {
+    /// Project the common exec result before operation-specific cleanup policy.
+    pub(crate) fn into_exec_result(self, wait_failure_context: &str) -> (ExecTermination, String) {
+        match self {
+            Self::Exited(status) => (
+                ExecTermination::Exited {
+                    exit_code: extract_exit_code(status),
+                },
+                String::new(),
+            ),
+            Self::TimedOut => (ExecTermination::TimedOut, String::new()),
+            Self::Cancelled => (ExecTermination::Cancelled, String::new()),
+            Self::WaitFailed(message) => (
+                ExecTermination::WaitFailed,
+                format!("{wait_failure_context}: {message}"),
+            ),
+        }
+    }
 }
 
 enum KillReason {

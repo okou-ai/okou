@@ -324,17 +324,9 @@ function hasCanonicalAgentReference(
 function toApiChatThreadEvent(
   row: ChatThreadEventRow & { readonly agentId: string },
 ): ChatThreadEvent {
-  return {
+  const event: Omit<ChatThreadEvent, "kind" | "projectId"> = {
     id: row.id,
     seqId: row.seqId,
-    // Release-1 response enum stays compatible with installed native readers.
-    // Remove this bridge in #44591 after prepared-reader floors and API drain.
-    kind: row.kind === "project_updated" ? "sort_touched" : row.kind,
-    ...(row.kind === "project_updated"
-      ? { projectMembershipUpdated: true, projectId: row.projectId }
-      : row.kind === "created"
-        ? { projectId: row.projectId }
-        : {}),
     chatThreadId: row.chatThreadId,
     agentId: row.agentId,
     ...(row.reassignedAgentId === null
@@ -361,6 +353,10 @@ function toApiChatThreadEvent(
     cloudBrowserEnabled: row.cloudBrowserEnabled,
     createdAt: row.createdAt.toISOString(),
   };
+  if (row.kind === "project_updated" || row.kind === "created") {
+    return { ...event, kind: row.kind, projectId: row.projectId };
+  }
+  return { ...event, kind: row.kind };
 }
 
 function chatThreadEventRowsAfterCursor(args: {

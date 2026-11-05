@@ -7,7 +7,15 @@ final class ConversationMeasurementCache {
     let row: ConversationCollectionRow
     let width: CGFloat
     let category: UIContentSizeCategory
+    let environment: ConversationHeightDiskCache.Layout
     var height: CGFloat
+    var diskKey: ConversationHeightDiskCache.Key? = nil
+  }
+
+  let namespace: [String]?
+
+  init(namespace: [String]? = nil) {
+    self.namespace = namespace
   }
 
   private var entries: [String: Measurement] = [:]
@@ -15,10 +23,11 @@ final class ConversationMeasurementCache {
   private let limit = 256
 
   func measurement(
-    for row: ConversationCollectionRow, width: CGFloat, category: UIContentSizeCategory
+    for row: ConversationCollectionRow, width: CGFloat, category: UIContentSizeCategory,
+    environment: ConversationHeightDiskCache.Layout
   ) -> Measurement? {
     guard let value = entries[row.id], value.row == row, value.width == width,
-      value.category == category
+      value.category == category, value.environment == environment
     else { return nil }
     return value
   }

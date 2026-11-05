@@ -1,5 +1,10 @@
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { ChatConnectorMenu } from "./chat-connector-menu.tsx";
+import { ComposerConnectorMenuShell } from "./composer-connector-menu-shell.tsx";
+import { ConnectorPermissionsDialog } from "./components/settings/connector-permissions-dialog.tsx";
 import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
 import { Combobox } from "@base-ui/react/combobox";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -296,7 +301,6 @@ import {
   TemplateDetailStageControls,
 } from "./template-detail-layout.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
-import { ComposerSearchSources } from "./composer-search-sources.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
 import {
@@ -759,7 +763,7 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
 }
 
 /** The cover width every type's shelf uses, so the rows line up across tabs. */
-const PRESENTATION_SHELF_COVER = "w-[200px]";
+const PRESENTATION_SHELF_COVER = "w-full";
 
 function WebsiteTemplateCard({
   item,
@@ -849,7 +853,7 @@ function WebsiteTemplateCard({
             }}
             className={cn(
               TEMPLATE_TILE_USE,
-              "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
+              "[@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
             )}
           >
             {t(($) => {
@@ -3353,9 +3357,8 @@ export function ComposerPresentationRecommendations({
         </Button>
       </div>
       <ComposerRail
-        signals={signals}
         rail="templates:presentation"
-        gap="gap-3"
+        itemWidth={200}
         items={[
           <TemplateImportCard
             key="import"
@@ -4070,7 +4073,7 @@ function ComputerUseConnectorMenuSection({
   const { t } = useTranslation();
   return (
     <div className="shrink-0 border-t border-border/50 bg-gray-50 p-1 dark:bg-gray-100">
-      <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
+      <label className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
           <Globe size={16} />
         </span>
@@ -4136,7 +4139,7 @@ function ComputerUseConnectorMenuSection({
             return (
               <label
                 key={host.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover"
+                className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover"
               >
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
                   <Monitor size={16} />
@@ -4352,10 +4355,10 @@ function ComposerConnectorAccessRow({
         </span>
       ) : null}
       <label className="contents">
-        <span className="order-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center">
+        <span className="order-1 flex h-4 w-4 shrink-0 cursor-default items-center justify-center">
           {icon}
         </span>
-        <span className="order-1 min-w-0 flex-1 cursor-pointer truncate text-sm text-foreground">
+        <span className="order-1 min-w-0 flex-1 cursor-default truncate text-sm text-foreground">
           {connectorLabel}
         </span>
         <span className="order-3 shrink-0">
@@ -4491,8 +4494,8 @@ function ComposerConnectorAccountChoices({
 }) {
   const { t } = useTranslation();
   const choiceClassName = cn(
-    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover data-highlighted:bg-state-hover data-highlighted:ring-2 data-highlighted:ring-inset data-highlighted:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-    saving && "cursor-default opacity-50",
+    "flex w-full cursor-default items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover data-highlighted:bg-state-hover data-highlighted:ring-2 data-highlighted:ring-inset data-highlighted:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    saving && "opacity-50",
   );
   const accountLabel = useConnectorAccountLabel();
   const defaultLabel = defaultConnection
@@ -4967,6 +4970,7 @@ function ConnectorsPopoverButton({
   const { t } = useTranslation();
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
+  const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
@@ -5024,7 +5028,11 @@ function ConnectorsPopoverButton({
         initialFocus={isMobileTextInputDevice() ? false : undefined}
         // The modal takes focus during the handoff; ordinary dismissal still
         // returns to this popover's trigger through Base UI.
-        finalFocus={connectorUi.remoteAccessDialogOpen ? false : undefined}
+        finalFocus={
+          connectorUi.remoteAccessDialogOpen || chatPermissions !== null
+            ? false
+            : undefined
+        }
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -5055,24 +5063,65 @@ function ConnectorsPopoverButton({
   );
 }
 
-function focusComposerConnectorSearch(element: HTMLElement | null) {
-  const panel = element?.closest("[data-connector-panel]");
-  if (
-    panel?.closest("[data-slot='popover-content'][data-open]") &&
-    panel.ownerDocument.activeElement === panel &&
-    !isMobileTextInputDevice()
-  ) {
-    panel
-      .querySelector<HTMLInputElement>("[data-connector-search]")
-      ?.focus({ preventScroll: true });
-  }
-}
-
 /**
  * The open popover. Mounted only while the popover is open, so it is the
  * component that asks for the agent's connectors and their access.
  */
 function ComposerConnectorsPopoverBody({
+  signals,
+  actions,
+  onOpenAddDialog,
+  onOpenDownloadDialog,
+}: {
+  signals: ComposerSignals;
+  actions: ComposerConnectorActions;
+  onOpenAddDialog: () => void;
+  onOpenDownloadDialog: () => void;
+}) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  return enabled ? (
+    <ChatConnectorsPopoverBody
+      signals={signals}
+      onOpenAddDialog={onOpenAddDialog}
+      onOpenDownloadDialog={onOpenDownloadDialog}
+    />
+  ) : (
+    <LegacyComposerConnectorsPopoverBody
+      signals={signals}
+      actions={actions}
+      onOpenAddDialog={onOpenAddDialog}
+      onOpenDownloadDialog={onOpenDownloadDialog}
+    />
+  );
+}
+
+function ChatConnectorsPopoverBody({
+  signals,
+  onOpenAddDialog,
+  onOpenDownloadDialog,
+}: {
+  signals: ComposerSignals;
+  onOpenAddDialog: () => void;
+  onOpenDownloadDialog: () => void;
+}) {
+  const computerUse = useComposerComputerUse(signals);
+  return (
+    <ChatConnectorMenu
+      signals={signals}
+      onOpenAddDialog={onOpenAddDialog}
+      footer={
+        <ComposerRemoteAccessMenu
+          signals={signals}
+          computerUse={computerUse}
+          onOpenDownloadDialog={onOpenDownloadDialog}
+        />
+      }
+    />
+  );
+}
+
+function LegacyComposerConnectorsPopoverBody({
   signals,
   actions,
   onOpenAddDialog,
@@ -5100,10 +5149,10 @@ function ComposerConnectorsPopoverBody({
     resolveComposerAgentConnectors(connectorData);
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const searchConnectors = useSet(signals.connector.searchConnectors$);
   const search = connectorUi.popoverSearch;
   const sortOrder = connectorUi.popoverSortOrder;
   const pageSignal = useGet(pageSignal$);
-  const waitingForConnectors = connectorsLoading;
   const connectorItems = composerPopoverItems({
     agentConnectors,
     agentCustomConnectors,
@@ -5155,241 +5204,145 @@ function ComposerConnectorsPopoverBody({
   };
 
   return (
-    <div
-      data-connector-panel
-      // Base UI focuses this while loading; once ready, search is first.
-      tabIndex={connectorsLoading ? 0 : -1}
-      onFocus={(event) => {
-        focusComposerConnectorSearch(event.currentTarget);
-      }}
-      className={cn(
-        "flex min-h-0 flex-col outline-none",
-        showSearch && "h-100",
-      )}
-    >
-      {connectorState.state === "hasError" && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-2 p-3 text-sm text-destructive"
-        >
-          <span>
-            {t(($) => {
+    <ComposerConnectorMenuShell
+      loading={connectorsLoading}
+      hasContent={connectorItems.length > 0}
+      showSearch={showSearch}
+      search={search}
+      onSearchChange={searchConnectors}
+      onOpenAddDialog={onOpenAddDialog}
+      error={
+        connectorState.state === "hasError"
+          ? t(($) => {
               return $.chat.connectors.loadFailed;
-            })}
-          </span>
-        </div>
-      )}
-      {(connectorItems.length > 0 || connectorsLoading) && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {showSearch && (
-            <div className="mt-1 flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
-              <Search
-                size={16}
-                aria-hidden="true"
-                className="pointer-events-none shrink-0 text-muted-foreground"
-              />
-              <input
-                ref={focusComposerConnectorSearch}
-                data-connector-search
-                type="text"
-                aria-label={t(($) => {
-                  return $.chat.connectors.find;
-                })}
-                placeholder={t(($) => {
-                  return $.chat.connectors.find;
-                })}
-                value={search}
-                onChange={(e) => {
-                  return updateConnectorUi({
-                    popoverSearch: e.target.value,
-                  });
-                }}
-                className="min-w-0 w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
-              />
-            </div>
-          )}
-          {waitingForConnectors ? (
-            <div className="flex flex-col pt-1 pb-2 animate-pulse">
-              {Array.from({ length: 3 }, (_, i) => {
-                return (
-                  <div key={i} className="flex items-center gap-2 px-3 py-2">
-                    <span className="h-4 w-4 shrink-0 rounded bg-muted/50" />
-                    <span className="h-3.5 w-20 rounded bg-muted/50 flex-1" />
-                    <span className="h-3 w-6 rounded-full bg-muted/50" />
-                  </div>
-                );
+            })
+          : undefined
+      }
+      footer={
+        <ComposerRemoteAccessMenu
+          signals={signals}
+          computerUse={computerUse}
+          onOpenDownloadDialog={onOpenDownloadDialog}
+        />
+      }
+    >
+      {visibleConnectors.map((item) => {
+        if (item.kind === "custom") {
+          const connector = item.connector;
+          return (
+            <ComposerConnectorAccessRow
+              key={connector.id}
+              icon={
+                <CustomConnectorIcon
+                  id={connector.id}
+                  displayName={connector.displayName}
+                  size={16}
+                />
+              }
+              connectorLabel={connector.displayName}
+              actions={
+                <ComposerConnectorAccountAction signals={signals} item={item} />
+              }
+              checked={connector.authorized}
+              onCheckedChange={onDomEventFn(async (checked) => {
+                await handleCustomToggle(connector.id, checked);
               })}
-            </div>
-          ) : (
-            <div
-              role="list"
-              aria-label={t(($) => {
-                return $.chat.connectors.title;
-              })}
-              // The list's air lives inside the scroller, so a clipped row runs
-              // to the card edge and the rule instead of stopping short of
-              // them. With search the panel's fixed height bounds the list.
-              className={cn(
-                "flex min-h-0 flex-1 flex-col overflow-y-auto pb-2",
-                !showSearch && "max-h-67 pt-1",
-              )}
-            >
-              {visibleConnectors.map((item) => {
-                if (item.kind === "custom") {
-                  const connector = item.connector;
-                  return (
-                    <ComposerConnectorAccessRow
-                      key={connector.id}
-                      icon={
-                        <CustomConnectorIcon
-                          id={connector.id}
-                          displayName={connector.displayName}
-                          size={16}
-                        />
-                      }
-                      connectorLabel={connector.displayName}
-                      actions={
-                        <ComposerConnectorAccountAction
-                          signals={signals}
-                          item={item}
-                        />
-                      }
-                      checked={connector.authorized}
-                      onCheckedChange={onDomEventFn(async (checked) => {
-                        await handleCustomToggle(connector.id, checked);
-                      })}
-                      loading={actions.savingAuthorization}
-                      ariaLabel={
-                        connector.authorized
-                          ? t(
-                              ($) => {
-                                return $.chat.connectors.remove;
-                              },
-                              {
-                                connectorName: connector.displayName,
-                              },
-                            )
-                          : t(
-                              ($) => {
-                                return $.chat.connectors.add;
-                              },
-                              {
-                                connectorName: connector.displayName,
-                              },
-                            )
+              loading={actions.savingAuthorization}
+              ariaLabel={
+                connector.authorized
+                  ? t(
+                      ($) => {
+                        return $.chat.connectors.remove;
+                      },
+                      {
+                        connectorName: connector.displayName,
+                      },
+                    )
+                  : t(
+                      ($) => {
+                        return $.chat.connectors.add;
+                      },
+                      {
+                        connectorName: connector.displayName,
+                      },
+                    )
+              }
+            />
+          );
+        }
+        const connector = item.connector;
+        const accountAction = connector.authorized ? (
+          <ComposerConnectorAccountAction signals={signals} item={item} />
+        ) : null;
+        const showPermissionAction =
+          Boolean(agentId) && connector.authorized && connector.hasPermissions;
+        return (
+          <ComposerConnectorAccessRow
+            key={connector.slug}
+            icon={<ConnectorIcon icon={connector.icon} size={16} />}
+            connectorLabel={connector.label}
+            actions={
+              showPermissionAction || accountAction ? (
+                <>
+                  {accountAction}
+                  {showPermissionAction ? (
+                    <PopoverClose
+                      render={
+                        <Button
+                          showTooltip
+                          type="button"
+                          onClick={() => {
+                            updateConnectorUi({
+                              permissionConnectorSlug: connector.slug,
+                              permissionConnector: connector,
+                            });
+                          }}
+                          aria-label={t(
+                            ($) => {
+                              return $.chat.connectors.configurePermissions;
+                            },
+                            { connectorName: connector.label },
+                          )}
+                          variant="quiet"
+                          size="icon-2xs"
+                          className="shrink-0"
+                        >
+                          <SlidersHorizontal size={15} />
+                        </Button>
                       }
                     />
-                  );
-                }
-                const connector = item.connector;
-                const accountAction = connector.authorized ? (
-                  <ComposerConnectorAccountAction
-                    signals={signals}
-                    item={item}
-                  />
-                ) : null;
-                const showPermissionAction =
-                  Boolean(agentId) &&
-                  connector.authorized &&
-                  connector.hasPermissions;
-                return (
-                  <ComposerConnectorAccessRow
-                    key={connector.slug}
-                    icon={<ConnectorIcon icon={connector.icon} size={16} />}
-                    connectorLabel={connector.label}
-                    actions={
-                      showPermissionAction || accountAction ? (
-                        <>
-                          {accountAction}
-                          {showPermissionAction ? (
-                            <PopoverClose
-                              render={
-                                <Button
-                                  showTooltip
-                                  type="button"
-                                  onClick={() => {
-                                    updateConnectorUi({
-                                      permissionConnectorSlug: connector.slug,
-                                      permissionConnector: connector,
-                                    });
-                                  }}
-                                  aria-label={t(
-                                    ($) => {
-                                      return $.chat.connectors
-                                        .configurePermissions;
-                                    },
-                                    { connectorName: connector.label },
-                                  )}
-                                  variant="quiet"
-                                  size="icon-2xs"
-                                  className="shrink-0"
-                                >
-                                  <SlidersHorizontal size={15} />
-                                </Button>
-                              }
-                            />
-                          ) : null}
-                        </>
-                      ) : null
-                    }
-                    checked={connector.authorized}
-                    onCheckedChange={onDomEventFn(async (checked) => {
-                      await handleToggle(connector.slug, checked);
-                    })}
-                    loading={actions.savingAuthorization}
-                    ariaLabel={
-                      connector.authorized
-                        ? t(
-                            ($) => {
-                              return $.chat.connectors.remove;
-                            },
-                            {
-                              connectorName: connector.label,
-                            },
-                          )
-                        : t(
-                            ($) => {
-                              return $.chat.connectors.add;
-                            },
-                            {
-                              connectorName: connector.label,
-                            },
-                          )
-                    }
-                  />
-                );
-              })}
-            </div>
-          )}
-          <div className="mx-3 shrink-0 border-t border-border/50" />
-        </div>
-      )}
-      <div className="flex shrink-0 flex-col p-1">
-        <PopoverClose
-          render={
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-state-hover transition-colors"
-              onClick={() => {
-                return onOpenAddDialog();
-              }}
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
-                <Plus size={13} />
-              </span>
-              {t(($) => {
-                return $.chat.connectors.addConnectors;
-              })}
-            </button>
-          }
-        />
-      </div>
-      <ComposerRemoteAccessMenu
-        signals={signals}
-        computerUse={computerUse}
-        onOpenDownloadDialog={onOpenDownloadDialog}
-      />
-    </div>
+                  ) : null}
+                </>
+              ) : null
+            }
+            checked={connector.authorized}
+            onCheckedChange={onDomEventFn(async (checked) => {
+              await handleToggle(connector.slug, checked);
+            })}
+            loading={actions.savingAuthorization}
+            ariaLabel={
+              connector.authorized
+                ? t(
+                    ($) => {
+                      return $.chat.connectors.remove;
+                    },
+                    {
+                      connectorName: connector.label,
+                    },
+                  )
+                : t(
+                    ($) => {
+                      return $.chat.connectors.add;
+                    },
+                    {
+                      connectorName: connector.label,
+                    },
+                  )
+            }
+          />
+        );
+      })}
+    </ComposerConnectorMenuShell>
   );
 }
 
@@ -6743,6 +6696,12 @@ function ComposerConnectorsSlot({
   actions: ComposerConnectorActions;
 }) {
   const connectorUi = useGet(signals.connector.connectorUiState$);
+  const triggerElement = useGet(signals.connector.triggerElement$);
+  const permissions = useGet(signals.connector.chatAccess.permissions$);
+  const permissionSignals = useGet(
+    signals.connector.chatAccess.permissionSignals$,
+  );
+  const setPermissions = useSet(signals.connector.chatAccess.setPermissions$);
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
   );
@@ -6758,6 +6717,16 @@ function ComposerConnectorsSlot({
         onOpenAddDialog={openAddConnectorsDialog}
       />
       <ThreadRemoteAccessDialog signals={signals} />
+      {permissions && permissionSignals && (
+        <ConnectorPermissionsDialog
+          finalFocus={triggerElement}
+          entry={permissions}
+          signals={permissionSignals}
+          onClose={() => {
+            return setPermissions(null);
+          }}
+        />
+      )}
       {connectorUi.permissionConnectorSlug !== null && (
         <ComposerConnectorPermissionDialogSlot
           signals={signals}
@@ -6784,8 +6753,8 @@ function ComposerConnectorDialogsSlot({
 }) {
   const { t } = useTranslation();
   const lastAuthorization = useLastResolved(
-    signals.connector.connectorAuthorization$,
-  );
+    signals.connector.data$,
+  )?.authorization;
   const authorization =
     lastAuthorization?.agentId === signals.agentId
       ? lastAuthorization
@@ -6808,6 +6777,10 @@ function ComposerConnectorDialogsSlot({
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const openConnectorPermissions = useSet(
+    signals.connector.openConnectorPermissions$,
+  );
+  const directoryFinalFocus = useSet(signals.connector.directoryFinalFocus$);
   const completeAddition = useSet(
     signals.connectorCompletion.completeConnectorAddition$,
   );
@@ -6971,6 +6944,7 @@ function ComposerConnectorDialogsSlot({
       />
       {connectorUi.showAddDialog && (
         <ConnectorDirectoryDialog
+          finalFocus={directoryFinalFocus}
           state={connectorUi}
           onUpdateState={updateConnectorUi}
           categoryCounts={directoryBrowse.categoryCounts}
@@ -6995,15 +6969,11 @@ function ComposerConnectorDialogsSlot({
             if (!connector) {
               return;
             }
-            updateConnectorUi({
-              showAddDialog: false,
-              permissionConnectorSlug: connectorSlug,
-              permissionConnector: {
-                slug: connector.slug,
-                label: connector.label,
-                icon: connector.icon,
-                hasPermissions: connector.permissionSummary.hasPermissions,
-              },
+            openConnectorPermissions({
+              slug: connector.slug,
+              label: connector.label,
+              icon: connector.icon,
+              hasPermissions: connector.permissionSummary.hasPermissions,
             });
           }}
           onClose={() => {
@@ -7026,20 +6996,13 @@ function ComposerIdleControls({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const searchActive = useGet(signals.homeDiscovery.searchActive$);
   return (
     <>
-      <div
-        className={cn(
-          "flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5",
-          searchActive && "flex-wrap",
-        )}
-      >
+      <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
         <ComposerAddMenuSlot signals={signals} />
         <ComposerTemplatePickerSlot signals={signals} />
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
         <ComposerTaskControls signals={signals} />
-        {searchActive && <ComposerSearchSources />}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
         <ComposerModelPickerSlot signals={signals} />

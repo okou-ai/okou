@@ -44,16 +44,17 @@ The new-chat screen greets with the agent and the description of a custom one; t
 greeting's avatar opens the agent's profile and saved workflows.
 
 Conversation history renders durable user messages and assistant results using
-Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
-links, images, and code blocks, with text selection, code copying, and horizontal
-overflow for wide tables and code. Ably notifications trigger fresh API reads. While
-a visible chat runs, its `run-output` channel streams text (Pi runs emit it) until the
-durable event with the same id replaces it. The composer offers ChatGPT-style dictation
-(a one-line bar with a live waveform: cancel, stop to edit, or send as heard) through
-the web's voice-io transcription and polish APIs, and camera and document-scan attachments
-where the device supports them. The native composer Connector sheet supports
-service access, conversation account choices, permission grants, a Manus-style
-catalog (category chips, cards that connect with "+", connector detail pages) and
+the official Textual 0.5.0 release. The renderer supports Markdown headings, lists,
+quotes, tables, links, images, and code blocks, with text selection, code copying, and
+horizontal overflow for wide tables and code. Ably notifications trigger fresh API reads.
+While a visible chat runs, its `run-output` channel streams text (Pi runs emit it) until
+the durable event with the same id replaces it. The composer offers recoverable voice
+input (a glass bar above the composer with a live waveform; a recording is kept with its
+draft until it is used or discarded) through the web's voice-io APIs, and camera and
+document-scan attachments where the device supports them. The native composer Connector
+sheet supports service access, conversation account choices, permission grants, a
+Manus-style catalog (category chips, cards that connect with "+", connector detail
+pages) and
 connection, Cloud Browser, Computer Use, and SSH/VNC conversation access. Separate
 setup/settings destinations open in Safari and refresh on return. An answer can be
 copied, shared as text, or shared as a workspace or public link to that exchange;
@@ -79,10 +80,17 @@ control can stop active work.
 
 Sending preserves the conversation's confirmed connector account choices and
 Cloud Browser / Computer Use selection. The same conversation shares these
-settings with the PWA. Service access belongs to the current user and Agent;
-account preferences and remote host overrides belong to the conversation.
+settings with the PWA. When `connectorChatAccountAccess` is enabled, each account
+inherits its saved default enablement or has an explicit conversation override;
+the conversation selects one enabled current account. Connector permissions belong
+to the current user and connector across conversations and accounts. Supported
+connectors expose permissions even when all saved accounts are disabled. The
+ordinary feature-off service authorization remains Agent-scoped. Remote host
+overrides belong to the conversation.
 New-chat account and host choices remain with their Agent composer until the
-first message creates a conversation. An uncertain settings write requires fresh
+first message creates a conversation. New-mode account overrides and current
+choices are saved before the first message; a failed initialization retains the
+draft for ordinary retry. An uncertain settings write requires fresh
 readback before another message can be sent.
 
 ## Local setup

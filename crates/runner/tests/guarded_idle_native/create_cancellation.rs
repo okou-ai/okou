@@ -1,6 +1,5 @@
 //! Actual owned home creation retains full custody through cancelled observation.
 
-use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -9,8 +8,6 @@ use async_trait::async_trait;
 use runner_executor::pre_spawn_admission::PreSpawnAdmission;
 use runner_lifecycle::host_memory_operations::HostMemoryOperations;
 use runner_lifecycle::host_memory_pressure::HostPressureState;
-use runner_lifecycle::lifecycle::RunnerMode;
-use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile, OptionalBlankPoolRequest};
 use runner_supervisor::idle_pressure::{IdlePressureConfig, IdlePressureOwner};
 use sandbox::{Sandbox, SandboxConfig, SandboxCreateCustody, SandboxCreateObserver};
 use serde_json::{Value, json};
@@ -254,29 +251,8 @@ pub async fn exercise(
         }
     };
     let control = pressure.optional_preparation();
-    let profiles = BTreeMap::from([(
-        fixture::PROFILE.into(),
-        BlankProfile {
-            vcpu: 2,
-            memory_mb: 4096,
-            rootfs_hash: context.rootfs_hash.clone(),
-            home_disk_mb: fixture::HOME_DISK_MB,
-        },
-    )]);
-    let factories = BTreeMap::from([(fixture::PROFILE.into(), (context.factory.clone(), true))]);
-    let mut blank = BlankPoolReplenisher::new(&profiles, &factories, &context.budget, 2, None);
-    let request = || OptionalBlankPoolRequest {
-        mode: RunnerMode::Running,
-        pool: &context.pool,
-        budget: &context.budget,
-        admission: &admission,
-        status: &context.status,
-        tracker: &context.tracker,
-        pressure: &control,
-        preparation_bytes: inputs.preparation_bytes(),
-        envelope: inputs.envelope(),
-    };
     let growth = 4096 * 1024 * 1024 + inputs.preparation_bytes();
+    let mut creation = None;
     let outcome = tokio::time::timeout(Duration::from_secs(90), async {
         source.wait_for_readers(1).await;
         proof.create_cancellation_witness("inputs_verified", json!({"policy": serde_json::to_value(inputs)?,
@@ -286,11 +262,59 @@ pub async fn exercise(
             "checkpoint_models_stalled_storage": false}))?;
         let first_sample = source.samples()?.len();
         source.resume();
-        let mut ticks = tokio::time::interval(control.policy().optional_start_interval);
         loop {
-            if blank.maybe_start_optional(request())? { break; }
-            ticks.tick().await;
+            let changed = control.changed();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            if control.decision().state == HostPressureState::Ready { break; }
+            changed.await;
         }
+        let mut request = context.operations.request(inputs.replacement_plan()?)?;
+        let permit = request.try_grant().await?;
+        let lease = ResourceBudget::try_reserve_lease(&context.budget, 2, 4096)
+            .ok_or_else(|| io::Error::other("create full lease unavailable"))?;
+        let cpu = admission.try_acquire_background(2)?
+            .ok_or_else(|| io::Error::other("create CPU admission unavailable"))?;
+        let cancel = cpu.cancellation_token();
+        let cancelled = cancel.clone();
+        let factory = context.factory.clone();
+        let work = permit.spawn(move |operation| async move {
+            // The factory carries this capability through independently accepted
+            // physical IO and rollback, even after create observation is dropped.
+            let hold = Arc::new((operation, lease));
+            let physical = tokio_util::task::TaskTracker::new();
+            let custody = SandboxCreateCustody::new(Arc::new((hold.clone(), physical.token())));
+            let mut cpu = Some(cpu);
+            let created = {
+                let create = factory.create_with_custody(SandboxConfig {
+                    id: SandboxId::new_v4(),
+                    resources: sandbox::ResourceLimits { cpu_count: 2, memory_mb: 4096 },
+                    device_rate_limits: None,
+                    home_drive: Some(sandbox::HomeDriveConfig {
+                        size_mb: fixture::HOME_DISK_MB,
+                        seed_image: None,
+                        space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
+                    }),
+                }, custody);
+                tokio::pin!(create);
+                tokio::select! {
+                    biased;
+                    () = cancelled.cancelled() => { drop(cpu.take()); None }
+                    result = &mut create => Some(result),
+                }
+            };
+            drop(cpu);
+            physical.close();
+            physical.wait().await;
+            if let Some(created) = created {
+                if let Ok(sandbox) = created { factory.destroy(sandbox).await; }
+                return Err(io::Error::other("create completed before cancellation"));
+            }
+            drop(hold);
+            Ok(())
+        })?;
+        creation = Some(tokio::spawn(work.join()));
+        let joined = creation.as_mut().ok_or_else(|| io::Error::other("create join absent"))?;
         probe.gate.wait_entered().await?;
         let decision = control.decision();
         if decision.state != HostPressureState::Ready || decision.wave_inflight {
@@ -301,17 +325,16 @@ pub async fn exercise(
             "state": "Ready", "available_bytes": decision.available_bytes,
             "samples": source.samples()?.into_iter().skip(first_sample).collect::<Vec<_>>(),
             "accounting": held(&context, growth)?, "allocated": context.budget.allocated(), "release_byte_withheld": true}))?;
-        blank.cancel_if_inactive(RunnerMode::Draining);
+        cancel.cancel();
         let cancelled_ns = evidence::clocks()?.0;
         {
-            let first = blank.wait_for_optional_preparation(); tokio::pin!(first);
+            let first = &mut *joined; tokio::pin!(first);
             if futures_util::poll!(&mut first).is_ready() { return Err(io::Error::other("first create wait lost accepted IO").into()); }
         }
         let first_dropped_ns = evidence::clocks()?.0;
         let release_ns;
-        let result;
         {
-            let second = blank.wait_for_optional_preparation(); tokio::pin!(second);
+            let second = &mut *joined; tokio::pin!(second);
             if futures_util::poll!(&mut second).is_ready() { return Err(io::Error::other("replacement create wait lost accepted IO").into()); }
             let second_pending_ns = evidence::clocks()?.0;
             let foreground = admission.acquire(2, &tokio_util::sync::CancellationToken::new()).await?;
@@ -326,7 +349,9 @@ pub async fn exercise(
                 "accounting": held(&context, growth)?, "heartbeat": acknowledged, "observer": observed}))?;
             drop(foreground);
             release_ns = evidence::clocks()?.0; probe.gate.release()?;
-            result = second.await.ok_or_else(|| io::Error::other("create result owner absent"))?;
+            let finished = second.await;
+            creation.take();
+            finished???;
         }
         // The result channel precedes the original task's final tracking-token
         // drop. Observe that same owner's actual end before recording a join.
@@ -336,31 +361,35 @@ pub async fn exercise(
             tokio::task::yield_now().await;
         }
         let joined_ns = evidence::clocks()?.0;
-        let snapshot = result.snapshot();
         let complete = probe.evidence(true)?;
         if complete.get("workspace_absent").and_then(Value::as_bool) != Some(true)
             || complete.get("allocated") != Some(&json!([4,8192,2]))
-            || !snapshot.finished || snapshot.prepared || snapshot.published || snapshot.retained_resource
-            || snapshot.error.as_deref() != Some("creation cancelled/lost; joined physical rollback, Fresh remains uncertain")
             || context.budget.allocated() != (2,4096,1) {
-            return Err(io::Error::other(format!("actual create rollback incomplete: {snapshot:?}; {complete}")).into());
+            return Err(io::Error::other(format!("actual create rollback incomplete: {complete}")).into());
         }
         proof.require_full_lease()?;
         proof.create_cancellation_witness("create_joined", json!({"completion": complete, "release_ns": release_ns,
-            "joined_ns": joined_ns, "finished": snapshot.finished, "prepared": snapshot.prepared,
-            "published": snapshot.published, "retained_resource": snapshot.retained_resource, "error": snapshot.error,
+            "joined_ns": joined_ns, "transaction_joined": true, "cancelled": cancel.is_cancelled(),
             "allocated": context.budget.allocated(), "accounting": accounting(&context.operations)?}))?;
         Ok::<(), Box<dyn Error + Send + Sync>>(())
     }).await;
     let release = probe.gate.release();
     source.resume();
-    let blank_stopped = blank.shutdown_optional(&context.tracker).await;
+    // An assertion or bounded observer can fail after physical acceptance. Join
+    // that same creation after releasing its checkpoint before dependent teardown.
+    let creation_stopped = async {
+        if let Some(joined) = creation.take() {
+            joined.await???;
+        }
+        Ok::<(), Box<dyn Error + Send + Sync>>(())
+    }
+    .await;
     let pressure_stopped = pressure.shutdown().await;
     let reporting = heartbeat.finish().await;
     release?;
-    blank_stopped?;
     let stopped = pressure_stopped?;
     reporting?;
+    creation_stopped?;
     outcome.map_err(io::Error::other)??;
     if stopped.producer_lost || !stopped.stopped || stopped.decision.wave_inflight {
         return Err(io::Error::other("create dependencies not joined").into());
@@ -369,7 +398,7 @@ pub async fn exercise(
     let expected = proof.snapshot_memory_hash()?.to_owned();
     tokio::task::spawn_blocking(move || evidence::verify_file(&path, &expected)).await??;
     proof.require_full_lease()?;
-    proof.create_cancellation_witness("producers_joined", json!({"blank_shutdown_joined": true, "pressure_stopped": true,
+    proof.create_cancellation_witness("producers_joined", json!({"creation_joined": true, "pressure_stopped": true,
         "heartbeat_joined": true, "provider_joined": true, "peer_joined": true, "snapshot_reverified": true,
         "allocated": context.budget.allocated(), "accounting": accounting(&context.operations)?}))?;
     let mut batch = context

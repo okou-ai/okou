@@ -35,6 +35,7 @@ import { Decoration, DecorationSet, type NodeView } from "@tiptap/pm/view";
 import {
   createCompositionGate,
   inlineReferenceVariants,
+  isEditableTarget,
   type CompositionGate,
 } from "@okouai/ui";
 import { generationTemplateRequestSchema } from "@okouai/api-contracts/validators/chat-threads";
@@ -209,6 +210,17 @@ function feedbackPlaceholder(
   return i18n.t(($) => {
     return $.chat.feedback.placeholder;
   });
+}
+
+/** A suggestion quote asks for its own direction in every composer. */
+function composerFeedbackPlaceholder(
+  custom: (() => string) | undefined,
+): (suggestionContext: SuggestionContext | null) => string {
+  return (suggestionContext) => {
+    return custom && !suggestionContext
+      ? custom()
+      : feedbackPlaceholder(suggestionContext);
+  };
 }
 
 interface WorkflowHighlightStorage {
@@ -2355,6 +2367,19 @@ interface WorkflowComposerOptions {
   readonly feedbackPlaceholder?: () => string;
 }
 
+// A mounting composer never takes focus from a field the member is already
+// typing in, such as a sidebar name opened by a double-click whose first click
+// opened this page.
+function autoFocusMountedEditor(editor: Editor): void {
+  if (
+    isMobileTextInputDevice() ||
+    isEditableTarget(editor.view.dom.ownerDocument.activeElement)
+  ) {
+    return;
+  }
+  focusMountedEditorAtEnd(editor);
+}
+
 function focusMountedEditorAtEnd(editor: Editor): void {
   editor.view.dispatch(
     editor.state.tr.setSelection(Selection.atEnd(editor.state.doc)),
@@ -2542,8 +2567,8 @@ function createMountEditorCommand({
       );
       // Keep workflow decoration sync scoped to real editor mounts.
       set(mountWorkflowNamesSync$, workflowNames.sync$, signal);
-      if (autoFocus && !isMobileTextInputDevice()) {
-        focusMountedEditorAtEnd(editor);
+      if (autoFocus) {
+        autoFocusMountedEditor(editor);
       }
       signal.addEventListener("abort", () => {
         compositionGate.cancel(signal.reason);
@@ -3385,7 +3410,7 @@ export function createWorkflowComposerSignals<
   // preview follows the keyboard again, including when the menu reopens.
   const previewSuggestionIndexState$ = state<number | null>(null);
   const runtime = createWorkflowComposerRuntime(
-    options.feedbackPlaceholder ?? feedbackPlaceholder,
+    composerFeedbackPlaceholder(options.feedbackPlaceholder),
   );
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const compositionGate = createCompositionGate();

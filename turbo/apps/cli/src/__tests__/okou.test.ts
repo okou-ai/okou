@@ -51,7 +51,6 @@ describe("Okou CLI program", () => {
   it("should register all expected Okou commands", () => {
     const expectedCommands = [
       "suggestion",
-      "task",
       "model",
       "agent",
       "connector",
@@ -134,18 +133,6 @@ describe("Okou CLI lazy command loading", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
-
-  it.each([[], ["job:read"], ["job:write"]])(
-    "advertises Tasks with the existing delegation capabilities: %j",
-    (...capabilities) => {
-      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
-      const cli = new Command("okou");
-      registerCommands(cli);
-      expect(/^\s+task\b/m.test(cli.helpInformation())).toBe(
-        capabilities.length > 0,
-      );
-    },
-  );
 
   it.each([[], ["suggestion:read"], ["suggestion:write"]])(
     "advertises suggestions only with an authorized capability: %j",

@@ -248,6 +248,9 @@ fn map_session_history_digest_error(
     error: session_history::SessionHistoryDigestError,
 ) -> SessionHistoryIdentityVerifyError {
     match error {
+        session_history::SessionHistoryDigestError::Read(
+            AgentError::SessionHistoryEncodedTooLarge { .. },
+        ) => SessionHistoryIdentityVerifyError::HistoryTooLarge,
         session_history::SessionHistoryDigestError::Read(error) => {
             SessionHistoryIdentityVerifyError::HistoryRead(error)
         }

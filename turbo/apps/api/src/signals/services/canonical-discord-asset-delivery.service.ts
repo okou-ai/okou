@@ -1,3 +1,11 @@
+import {
+  appendIntegrationMessageFooter,
+  escapeMarkdownFooterLabel,
+} from "../../lib/integration-message-footer";
+import {
+  integrationMessageSendLabels$,
+  integrationMessageSendFooterText,
+} from "./integration-message-context.service";
 import { createHash, randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import {
@@ -466,6 +474,7 @@ const sendDiscordFile$ = command(
     { set },
     operation: DiscordDeliveryOperation,
     bytes: Uint8Array,
+    comment: string,
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
     const db = set(writeDb$);
@@ -532,7 +541,7 @@ const sendDiscordFile$ = command(
         {
           botToken: sendAccess.access.botToken,
           channelId: attemptRow.destination.channelId,
-          content: attemptRow.destination.comment ?? "",
+          content: comment,
           files: [
             {
               filename: attemptRow.filename,
@@ -617,7 +626,7 @@ function deliveryIdentityCondition(args: DiscordDeliveryIdentity) {
  */
 export const completeCanonicalDiscordDelivery$ = command(
   async (
-    { set },
+    { get, set },
     args: DiscordDeliveryIdentity,
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
@@ -670,6 +679,20 @@ export const completeCanonicalDiscordDelivery$ = command(
     if (!destination.ok) {
       return destination;
     }
+    const labels = await get(integrationMessageSendLabels$);
+    signal.throwIfAborted();
+    const footerText = integrationMessageSendFooterText({
+      ...labels,
+      agentLabel: escapeMarkdownFooterLabel(labels.agentLabel),
+      userLabel: labels.runOwner
+        ? `<@${destination.access.binding.discordUserId}>`
+        : undefined,
+    });
+    const comment = appendIntegrationMessageFooter(
+      row.destination.comment,
+      footerText ? `-# ${footerText}` : undefined,
+      2000,
+    );
     /** Claims the operation's only send; a concurrent claimer loses the race. */
     const attemptRow = await (async (
       signal: AbortSignal,
@@ -693,6 +716,7 @@ export const completeCanonicalDiscordDelivery$ = command(
       sendDiscordFile$,
       { identity: args, row: attemptRow },
       verified.bytes,
+      comment,
       signal,
     );
   },

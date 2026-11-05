@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.22.60](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.59...guest-control-proto-v0.22.60) (2026-11-05)
+
+
+### Refactoring
+
+* **guest-control:** share bounded result capture validation ([#45289](https://github.com/okou-ai/okou/issues/45289)) ([ae9b0ce](https://github.com/okou-ai/okou/commit/ae9b0ce9e127f2a7f671dcfa57c262f2a09fd7d4))
+
+## [0.22.59](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.58...guest-control-proto-v0.22.59) (2026-11-04)
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.22.58](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.57...guest-control-proto-v0.22.58) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
 ## [0.22.57](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.56...guest-control-proto-v0.22.57) (2026-11-03)
 
 ## [0.22.56](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.55...guest-control-proto-v0.22.56) (2026-11-03)

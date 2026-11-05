@@ -1,5 +1,9 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
+import {
+  captureFriendReferral$,
+  registerFriendReferral$,
+} from "./friend-referrals.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { resetProjectUi$ } from "./projects/project-ui.ts";
 import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
@@ -642,6 +646,9 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
     set(applyFeatureSwitches$, featureSwitches);
 
+    await set(registerFriendReferral$, signal);
+    signal.throwIfAborted();
+
     await Promise.all([
       ...(featureSwitches[FeatureSwitchKey.MarketingContentHandoff]
         ? [set(enrollMarketingHandoffSession$, signal)]
@@ -700,6 +707,9 @@ export const bootstrap$ = command(
       ...(vercelProtectionBypass ? { vercelProtectionBypass } : {}),
     });
     set(setupLoggers$);
+
+    await set(captureFriendReferral$, signal);
+    signal.throwIfAborted();
 
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);

@@ -52,7 +52,7 @@ function triggerClassName(
   isPrimarySelected: boolean,
 ) {
   if (variant === "sidebar") {
-    return `peer pointer-events-auto absolute left-1 top-1 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 data-popup-open:bg-state-selected-hover data-popup-open:text-foreground disabled:cursor-not-allowed ${
+    return `peer pointer-events-auto absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 data-popup-open:bg-state-selected-hover data-popup-open:text-foreground disabled:cursor-not-allowed ${
       isPrimarySelected
         ? "text-sidebar-foreground/80 hover:text-foreground hover:bg-state-selected-hover"
         : "text-sidebar-foreground/80 hover:text-foreground hover:bg-state-selected-hover"

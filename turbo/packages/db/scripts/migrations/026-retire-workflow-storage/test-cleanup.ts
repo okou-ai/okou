@@ -19,12 +19,14 @@ import { promisify } from "node:util";
 import { Client } from "pg";
 import {
   array,
+  literal,
   number,
   object,
   record,
   string,
   unknown as zUnknown,
 } from "zod";
+import { parseMigrationCliStderr } from "../../migration-cli-stderr";
 import { planSchema, type Plan } from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -166,6 +168,9 @@ try {
         process.execPath,
         [
           "--import",
+          new URL("../../fixtures/migration-cli-warning.mjs", import.meta.url)
+            .href,
+          "--import",
           "tsx",
           "scripts/migrations/026-retire-workflow-storage/cleanup.ts",
           "--output",
@@ -194,11 +199,11 @@ try {
       );
       if (code === 1) {
         const rejected = object({
-          status: string(),
+          status: literal("failed"),
           classification: string(),
-        }).parse(JSON.parse(failure.data.stderr.trim()));
-        assert.equal(rejected.status, "failed");
-        classification = rejected.classification;
+        }).safeParse(parseMigrationCliStderr(failure.data.stderr));
+        assert.ok(rejected.success, failure.data.stderr);
+        classification = rejected.data.classification;
       }
       stdout = failure.data.stdout;
     }

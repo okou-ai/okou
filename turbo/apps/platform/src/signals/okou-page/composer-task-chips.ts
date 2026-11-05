@@ -11,15 +11,13 @@ import type {
   ComposerCreateSignals,
 } from "./composer-create.ts";
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
-import { onRef, settle } from "../utils.ts";
-import { observeRail, type RailTravel } from "./rail-travel.ts";
+import { settle } from "../utils.ts";
 import { customTemplateCatalog$ } from "./custom-template-library.ts";
-import { homeJobSummaries$ } from "./entrusted-jobs.ts";
 import { createComposerTaskOverflowSignals } from "./composer-task-overflow.ts";
 
 export type ComposerTask =
-  ComposerCreateMode | "workflow" | "website" | "visualization" | "jobs";
-export type ComposerIdeaTask = Exclude<ComposerTask, "visualization" | "jobs">;
+  ComposerCreateMode | "workflow" | "website" | "visualization";
+export type ComposerIdeaTask = Exclude<ComposerTask, "visualization">;
 /** The tasks whose ideas render as a prompt row; workflow has its own surface. */
 export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
 /**
@@ -34,13 +32,8 @@ export type ComposerTemplateTask = Exclude<
 /** A general task owns the chip row itself; the rest resolve to a create mode. */
 function isComposerGeneralTask(
   task: ComposerTask | null,
-): task is "workflow" | "website" | "visualization" | "jobs" {
-  return (
-    task === "workflow" ||
-    task === "website" ||
-    task === "visualization" ||
-    task === "jobs"
-  );
+): task is "workflow" | "website" | "visualization" {
+  return task === "workflow" || task === "website" || task === "visualization";
 }
 
 type ComposerDocumentCategory = DocumentTemplateCategory | "custom";
@@ -81,51 +74,13 @@ function createDocumentCategorySignals() {
   return { documentCategory$, setDocumentCategory$ };
 }
 
-function createTaskRailSignals() {
-  /**
-   * How far a rail can still travel, per rail. A rail that has never reported
-   * is assumed to fit, which hides both pagers until a measurement proves
-   * otherwise.
-   */
-  const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
-  const railTravel$ = computed((get) => {
-    return get(internalRailTravel$);
-  });
-  const setRailTravel$ = command(
-    ({ get, set }, rail: string, travel: RailTravel) => {
-      const current = get(internalRailTravel$)[rail];
-      if (
-        current?.canScrollBack === travel.canScrollBack &&
-        current.canScrollForward === travel.canScrollForward
-      ) {
-        return;
-      }
-      set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
-    },
-  );
-  /** Owns one row's DOM lifecycle; the observers report what layout knows. */
-  const bindRail$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-      const rail = element.dataset.rail;
-      if (!rail) {
-        return;
-      }
-      observeRail(element, signal, (travel) => {
-        set(setRailTravel$, rail, travel);
-      });
-    }),
-  );
-  return { railTravel$, setRailTravel$, bindRail$ };
-}
-
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
   workflowActions: WorkflowRecommendationActions,
 ) {
   const internalGeneralTask$ = state<
-    "workflow" | "website" | "visualization" | "jobs" | null
+    "workflow" | "website" | "visualization" | null
   >(null);
-  const explicitSelection$ = state(false);
   const visualization = createComposerVisualizationSignals();
   const overflow = createComposerTaskOverflowSignals();
   const { documentCategory$, setDocumentCategory$ } =
@@ -149,28 +104,21 @@ export function createComposerTaskChipsSignals(
     workflowVisible$,
     workflowActions,
   );
-  const applyTask$ = command(
-    ({ set }, task: ComposerTask | null, browsing = false) => {
-      set(workflows.close$);
-      if (task === null || isComposerGeneralTask(task)) {
-        set(internalGeneralTask$, task);
-        set(create.setMode$, null, !browsing);
-        return;
-      }
-      set(internalGeneralTask$, null);
-      if (browsing) {
-        set(create.setMode$, task, false);
-      } else {
-        set(create.selectCommand$, task);
-      }
-    },
-  );
+  const applyTask$ = command(({ set }, task: ComposerTask | null) => {
+    set(workflows.close$);
+    if (task === null || isComposerGeneralTask(task)) {
+      set(internalGeneralTask$, task);
+      set(create.setMode$, null, true);
+      return;
+    }
+    set(internalGeneralTask$, null);
+    set(create.selectCommand$, task);
+  });
   /**
    * The chip row toggles: choosing the task already showing clears it. The
    * footer chip and the composer's Backspace clear the same way.
    */
   const selectTask$ = command(({ get, set }, task: ComposerTask | null) => {
-    set(explicitSelection$, true);
     set(applyTask$, get(task$) === task ? null : task);
   });
   /**
@@ -179,31 +127,11 @@ export function createComposerTaskChipsSignals(
    * repeating it has to leave the surface the last one opened standing.
    */
   const openTask$ = command(({ get, set }, task: ComposerTask) => {
-    set(explicitSelection$, true);
     if (get(task$) === task) {
       return;
     }
     set(applyTask$, task);
   });
-  const browseTask$ = command(({ set }, task: ComposerTask) => {
-    set(explicitSelection$, true);
-    set(applyTask$, task, true);
-  });
-  const initializeHomeJobs$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const jobs = await get(homeJobSummaries$);
-      signal.throwIfAborted();
-      if (
-        !get(explicitSelection$) &&
-        get(task$) === null &&
-        jobs.some((job) => {
-          return job.status.startsWith("waiting_") || job.hasUnseenResult;
-        })
-      ) {
-        set(applyTask$, "jobs", true);
-      }
-    },
-  );
   const selectTemplate$ = command(
     (
       { set },
@@ -228,24 +156,18 @@ export function createComposerTaskChipsSignals(
     },
   );
   // Choosing a task hands focus to the composer and removes More. Ordinary
-  // dismissal (or browsing Tasks) returns focus to the trigger.
+  // dismissal returns focus to the trigger.
   const taskMenuFinalFocus$ = command(({ get }) => {
     const task = get(task$);
-    return task === null || task === "jobs";
+    return task === null;
   });
-  const { railTravel$, setRailTravel$, bindRail$ } = createTaskRailSignals();
   return {
     task$,
-    initializeHomeJobs$,
     customTemplates$,
     selectTask$,
     taskMenuFinalFocus$,
     openTask$,
-    browseTask$,
     selectTemplate$,
-    railTravel$,
-    setRailTravel$,
-    bindRail$,
     workflows,
     visualization,
     overflow,

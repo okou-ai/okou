@@ -1,17 +1,22 @@
 import SwiftUI
 
 struct ChatThreadFeedback: Identifiable {
+  enum Kind {
+    case operation, error
+  }
+
   let id = UUID()
   let threadID: String
   let message: String
   let actionTitle: String?
   let persists: Bool
   let requiresNavigation: Bool
+  let kind: Kind
   let action: @MainActor () async -> Void
 
   init(
     threadID: String, message: String, actionTitle: String?, persists: Bool = false,
-    requiresNavigation: Bool = false,
+    requiresNavigation: Bool = false, kind: Kind = .operation,
     action: @escaping @MainActor () async -> Void
   ) {
     self.threadID = threadID
@@ -19,6 +24,7 @@ struct ChatThreadFeedback: Identifiable {
     self.actionTitle = actionTitle
     self.persists = persists
     self.requiresNavigation = requiresNavigation
+    self.kind = kind
     self.action = action
   }
 }
@@ -28,26 +34,25 @@ struct ChatThreadFeedbackView: View {
   let feedback: ChatThreadFeedback
 
   var body: some View {
-    OkouToast(feedback.message, dismiss: { store.dismissThreadFeedback(feedback.id) }) {
-      if let title = feedback.actionTitle {
-        Button(title) {
-          store.dismissThreadFeedback(feedback.id)
-          Task { await feedback.action() }
-        }
-        .frame(minWidth: OkouControl.minimumTarget)
-        .accessibilityIdentifier("chat-feedback-action")
-        .disabled(
-          !store.list.canUpdate(feedback.threadID) || store.needsUpgrade
-            || (feedback.requiresNavigation && store.isCreating))
+    ChatFeedbackSurface(
+      message: feedback.message,
+      systemImage: feedback.kind == .error ? "exclamationmark.circle" : "checkmark.circle",
+      actionTitle: feedback.actionTitle,
+      actionEnabled: store.list.canUpdate(feedback.threadID) && !store.needsUpgrade
+        && (!feedback.requiresNavigation || !store.isCreating),
+      action: {
+        store.dismissThreadFeedback(feedback.id)
+        Task { await feedback.action() }
+      },
+      dismiss: {
+        store.dismissThreadFeedback(feedback.id)
       }
-    }
-    .padding(.horizontal, OkouSpace.lg)
-    .accessibilityElement(children: .contain)
+    )
     .task(id: feedback.id) {
       UIAccessibility.post(notification: .announcement, argument: feedback.message)
       guard !feedback.persists else { return }
       do {
-        try await Task.sleep(for: .seconds(UIAccessibility.isVoiceOverRunning ? 20 : 8))
+        try await Task.sleep(for: .seconds(UIAccessibility.isVoiceOverRunning ? 20 : 4))
         store.dismissThreadFeedback(feedback.id)
       } catch {}
     }

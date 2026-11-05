@@ -1,4 +1,4 @@
-import { projectMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -12,7 +12,7 @@ import {
 } from "../../lib/db-structured-result";
 
 const chatEventUserMessageDecoder = zodDriverValueDecoder(
-  projectMessageDocumentSchema,
+  userMessageDocumentSchema,
 );
 const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
   array(uuid())
@@ -67,7 +67,7 @@ export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {
   const userMessage = row.payload?.userMessage;
   return userMessage === undefined
     ? null
-    : projectMessageDocumentSchema.parse(userMessage);
+    : userMessageDocumentSchema.parse(userMessage);
 }
 
 export function canonicalArchivedChatEventError(

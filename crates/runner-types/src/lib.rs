@@ -9,4 +9,6 @@ pub mod profile;
 pub mod profile_name;
 pub mod storage_fingerprints;
 pub mod storage_manifest;
+#[cfg(feature = "test-support")]
+pub mod test_fixtures;
 pub mod types;

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from enum import Enum, auto
 from pathlib import Path
 
 from flow_metadata_linter.ast_helpers import (
+    _expression_branches,
     _static_first_call_argument_nodes,
     _static_mapping_input_key_outcomes,
 )
@@ -35,6 +37,12 @@ def _registered_key_name(node: ast.AST) -> str | None:
     if value is None:
         return None
     return _REGISTERED_METADATA_KEYS.get(value)
+
+
+def _contains_registered_key(nodes: Iterable[ast.AST]) -> bool:
+    return any(
+        _registered_key_name(child) is not None for node in nodes for child in ast.walk(node)
+    )
 
 
 def _static_string_value(node: ast.AST) -> str | None:
@@ -100,16 +108,13 @@ def _metadata_collection_violations(
         return []
     if isinstance(node, ast.NamedExpr):
         return _metadata_collection_violations(path, node.value, mode)
-    if isinstance(node, ast.IfExp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return [
-            *_metadata_collection_violations(path, node.body, mode),
-            *_metadata_collection_violations(path, node.orelse, mode),
+            violation
+            for value in branches
+            for violation in _metadata_collection_violations(path, value, mode)
         ]
-    if isinstance(node, ast.BoolOp):
-        violations: list[str] = []
-        for value in node.values:
-            violations.extend(_metadata_collection_violations(path, value, mode))
-        return violations
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.BitOr):
         operand_mode = mode
         if isinstance(node.op, ast.Add) and mode is _MetadataCollectionMode.MAPPING_INPUT:
@@ -287,18 +292,13 @@ def _metadata_key_expression_violations(
     """Find scalar keys through alternatives and the required entry-pair layers."""
     if isinstance(node, ast.NamedExpr):
         return _metadata_key_expression_violations(path, node.value, pair_depth=pair_depth)
-    if isinstance(node, ast.IfExp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return [
-            *_metadata_key_expression_violations(path, node.body, pair_depth=pair_depth),
-            *_metadata_key_expression_violations(path, node.orelse, pair_depth=pair_depth),
+            violation
+            for value in branches
+            for violation in _metadata_key_expression_violations(path, value, pair_depth=pair_depth)
         ]
-    if isinstance(node, ast.BoolOp):
-        violations: list[str] = []
-        for value in node.values:
-            violations.extend(
-                _metadata_key_expression_violations(path, value, pair_depth=pair_depth)
-            )
-        return violations
     if pair_depth:
         if not isinstance(node, ast.List | ast.Tuple) or len(node.elts) != _METADATA_PAIR_LENGTH:
             return []

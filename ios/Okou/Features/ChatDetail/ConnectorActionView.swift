@@ -73,8 +73,13 @@ struct ConnectorActionCard: View {
       }
     case .ready(let status):
       ChatCardHeader(title: status.label, icon: "link", titleLineLimit: 1) {
-        Text(status.account?.label ?? String(localized: "Connect an account for this Agent"))
-          .lineLimit(1, reservesSpace: true).textSelection(.enabled)
+        Text(
+          status.account?.label
+            ?? (status.chatAccountAccess
+              ? String(localized: "Connect an account")
+              : String(localized: "Connect an account for this Agent"))
+        )
+        .lineLimit(1, reservesSpace: true).textSelection(.enabled)
         (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
           .lineLimit(2, reservesSpace: true)
       }
@@ -93,7 +98,7 @@ struct ConnectorActionCard: View {
     case .select: return "Use this account"
     case .reconnect: return "Reconnect"
     default:
-      if status.connected { return "Authorize Agent" }
+      if status.connected { return status.chatAccountAccess ? "Connected" : "Authorize Agent" }
       return status.account == nil ? "Connect" : "Reconnect"
     }
   }
@@ -102,7 +107,10 @@ struct ConnectorActionCard: View {
     case .select: return "Confirm this account for the chat and continue."
     case .reconnect: return "Reconnect this exact account to continue."
     default:
-      if status.complete { return "Connected and authorized for this Agent." }
+      if status.complete {
+        return status.chatAccountAccess
+          ? "Account connected." : "Connected and authorized for this Agent."
+      }
       if status.connected { return "Allow this Agent to use the connected account." }
       if let reconnectReason = status.account?.reconnectReason {
         if reconnectReason == "configuration_incomplete"
@@ -136,8 +144,13 @@ struct ConnectorAuthorizationSheet: View {
               LabeledContent("Service account", value: identity).textSelection(.enabled)
             }
           }
-          Text("Authorization applies to the Agent in this chat.")
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+        } footer: {
+          Text(
+            flow.status.chatAccountAccess
+              ? "Connect this account to make it available in your account settings."
+              : "Authorization applies to the Agent in this chat."
+          )
+          .okouSectionNote()
         }
         if flow.needsConnection {
           if flow.status.builtin != nil {
@@ -224,22 +237,17 @@ struct ConnectorAuthorizationSheet: View {
           Button {
             store.submit()
           } label: {
-            HStack {
-              Text(
-                flow.operatedID != nil
-                  ? "Retry continuation"
-                  : (flow.isExternalCode ? "Submit code" : "Confirm and continue"))
-              if flow.busy {
-                Spacer()
-                ProgressView()
-              }
-            }
+            ChatSettingsActionLabel(title: confirmationTitle, isBusy: flow.busy)
           }
+          .buttonStyle(OkouButtonStyle(isPrimary: true))
           .disabled(!flow.canSubmit)
           .accessibilityIdentifier("connector-confirm")
         }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
       }
       .okouGroupedBackground()
+      .listSectionSpacing(OkouSpace.lg)
       .navigationTitle("Connect service")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -260,6 +268,15 @@ struct ConnectorAuthorizationSheet: View {
       }
     }
   }
+  private var confirmationTitle: LocalizedStringKey {
+    if flow.busy {
+      if flow.operatedID != nil { return "Continuing chat…" }
+      return flow.isExternalCode ? "Submitting code…" : "Connecting…"
+    }
+    if flow.operatedID != nil { return "Retry continuation" }
+    return flow.isExternalCode ? "Submit code" : "Confirm and continue"
+  }
+
   @ViewBuilder private func credential(_ label: String, key: String, secret: Bool) -> some View {
     let value = Binding(get: { flow.values[key] ?? "" }, set: { flow.values[key] = $0 })
     if secret {

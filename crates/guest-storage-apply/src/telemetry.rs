@@ -104,8 +104,13 @@
 //!
 //! # Compatibility boundary
 //!
+//! Cleanup attribution additionally emits separate stale-path and instruction
+//! wall/CPU actions; see [`cleanup`] for requested-entry buckets, CPU availability
+//! and emission ordering. These are nested observations, not additional startup
+//! latency to sum with the unchanged combined cleanup action.
+//!
 //! `complete_action_schema_is_exact_and_unique` constructs the complete list of
-//! 95 action names, checks its order, and checks uniqueness. The binary
+//! 99 action names, checks its order, and checks uniqueness. The binary
 //! attribution tests in
 //! `tests/integration/binary_logging/attribution.rs` cover action ordering,
 //! successful and failed downloads, local-versus-remote emission,
@@ -122,6 +127,9 @@ use guest_telemetry::telemetry::{
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
+
+mod cleanup;
+pub(crate) use cleanup::CleanupPhase;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DownloadTaskTelemetry {
@@ -150,8 +158,12 @@ impl DownloadTaskTelemetry {
         }
     }
 
+    pub(crate) fn is_remote(self) -> bool {
+        matches!(self.url_kind, DownloadUrlKind::Remote)
+    }
+
     pub(crate) fn remote_metrics(self) -> Option<RemoteArchiveTaskMetrics> {
-        matches!(self.url_kind, DownloadUrlKind::Remote).then(RemoteArchiveTaskMetrics::default)
+        self.is_remote().then(RemoteArchiveTaskMetrics::default)
     }
 
     pub(crate) fn local_metrics(self) -> Option<LocalArchiveTaskMetrics> {

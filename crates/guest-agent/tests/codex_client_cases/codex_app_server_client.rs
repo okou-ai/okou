@@ -1033,6 +1033,8 @@ async fn codex_app_server_terminate_sigkills_sigterm_deaf_child() -> Result<(), 
     let pid = client
         .process_id()
         .ok_or_else(|| "app-server child missing pid".to_string())?;
+    // This response confirms the fixture installed SIGTERM ignoring before termination.
+    wait_result(client.initialize(), "initialize SIGTERM-deaf child").await?;
 
     match tokio::time::timeout(Duration::from_millis(1500), client.terminate()).await {
         Ok(Ok(())) => {}

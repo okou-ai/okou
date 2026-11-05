@@ -5,18 +5,12 @@ use std::time::Duration;
 use guest_control_proto::{ExecTermination, MSG_ERROR, MSG_EXEC_START};
 use tokio::io::AsyncWriteExt;
 
-use guest_contracts::session_history_identity::{
-    SESSION_HISTORY_IDENTITY_VERIFY_DIAGNOSTIC_LABEL,
-    SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES, SessionHistoryIdentityVerifyRequest,
-};
-
 use super::super::support::{
     MockGuest, await_mock_guest, captured_output_bytes, exec_capture_default, host_from_stream,
     make_pair, normal_operation_readiness, operation_count, read_guest_message, send_exec_result,
     set_next_route_id, setup_host_and_guest, wait_for_operation_count,
 };
 use super::start_capture_operation;
-use crate::SessionHistoryIdentityVerifyRequest as HostSessionHistoryIdentityVerifyRequest;
 use crate::operation_tracker::NormalOperationReadiness;
 
 #[tokio::test]
@@ -62,82 +56,6 @@ async fn test_exec() {
     assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
     assert_eq!(captured_output_bytes(&result.stdout), b"hello\n");
     assert!(captured_output_bytes(&result.stderr).is_empty());
-    await_mock_guest(guest_task).await;
-}
-
-#[tokio::test]
-async fn session_history_identity_verifier_encodes_fixed_process_contract() {
-    let (host_stream, guest) = make_pair();
-    let guest_task = tokio::spawn(async move {
-        let mut guest = MockGuest::new(guest);
-        guest.complete_handshake().await;
-        let msg = guest.expect_message(MSG_EXEC_START).await;
-        let decoded = guest_control_proto::decode_exec_start(&msg.payload).unwrap();
-
-        assert_eq!(
-            decoded.role,
-            guest_control_proto::ExecProcessRole::SessionHistoryIdentityVerifier
-        );
-        assert_eq!(
-            decoded.lifecycle,
-            guest_control_proto::ExecLifecyclePolicy::OneShot
-        );
-        assert_eq!(
-            decoded.control,
-            guest_control_proto::ExecControlPolicy::Disabled
-        );
-        assert!(decoded.env.is_empty());
-        assert!(!decoded.sudo);
-        assert!(decoded.stdin_bytes.is_none());
-        assert!(decoded.expected_exit_codes.is_empty());
-        assert_eq!(
-            decoded.label,
-            SESSION_HISTORY_IDENTITY_VERIFY_DIAGNOSTIC_LABEL
-        );
-        assert_eq!(
-            decoded.stdout,
-            guest_control_proto::ExecOutputPolicy::Capture {
-                limit_bytes: SESSION_HISTORY_IDENTITY_VERIFY_OUTPUT_LIMIT_BYTES,
-            }
-        );
-        assert_eq!(decoded.stdout, decoded.stderr);
-        let request: SessionHistoryIdentityVerifyRequest =
-            serde_json::from_str(decoded.command).unwrap();
-        assert_eq!(request.metadata_path, "/runtime/final.json");
-        assert_eq!(request.runtime_dir, "/runtime");
-        assert_eq!(request.expectation.framework.as_str(), "claude-code");
-        assert_eq!(request.expectation.session_id_hash, "a".repeat(64));
-        assert_eq!(request.expectation.history_ref_kind.as_str(), "blob");
-        assert_eq!(request.expectation.history_hash, "b".repeat(64));
-        assert_eq!(request.expectation.history_size_bytes, 42);
-
-        guest
-            .send_exec_result(
-                msg.seq,
-                ExecTermination::Exited { exit_code: 8 },
-                b"",
-                b"mismatch",
-            )
-            .await;
-    });
-
-    let host = host_from_stream(host_stream).await.unwrap();
-    let result = host
-        .verify_session_history_identity(HostSessionHistoryIdentityVerifyRequest {
-            metadata_path: "/runtime/final.json",
-            runtime_dir: "/runtime",
-            framework: "claude-code",
-            session_id_hash: &"a".repeat(64),
-            history_ref_kind: "blob",
-            history_hash: &"b".repeat(64),
-            history_size_bytes: 42,
-            timeout_ms: 5000,
-            wait_timeout: Duration::from_secs(5),
-        })
-        .await
-        .unwrap();
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 8 });
-    assert_eq!(captured_output_bytes(&result.stderr), b"mismatch");
     await_mock_guest(guest_task).await;
 }
 

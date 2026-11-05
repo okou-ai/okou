@@ -5,7 +5,10 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 
-import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
+import {
+  isBrowserUnauthorized,
+  type BrowserSessionSignals,
+} from "../../signals/chat-page/browser-session-block.ts";
 import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import {
@@ -133,9 +136,11 @@ function BrowserSessionCardSkeleton() {
 function BrowserSessionUnavailable({
   signals,
   openMode,
+  authorizationRequired = false,
 }: {
   readonly signals?: BrowserSessionSignals;
   readonly openMode: NonNullable<BrowserSessionCardProps["openMode"]>;
+  readonly authorizationRequired?: boolean;
 }) {
   const { t } = useTranslation();
   const openSidebar = useSet(openThreadBrowserSession$);
@@ -149,7 +154,9 @@ function BrowserSessionUnavailable({
             target="_blank"
             rel="noreferrer"
             data-browser-session-card
-            data-browser-session-status="suspended"
+            data-browser-session-status={
+              authorizationRequired ? "unauthorized" : "suspended"
+            }
             aria-label={t(($) => {
               return $.browserSession.openAction;
             })}
@@ -159,7 +166,11 @@ function BrowserSessionUnavailable({
             type="button"
             data-browser-session-card
             data-browser-session-status={
-              unavailable ? "unavailable" : "suspended"
+              authorizationRequired
+                ? "unauthorized"
+                : unavailable
+                  ? "unavailable"
+                  : "suspended"
             }
             disabled={unavailable}
             aria-label={
@@ -192,9 +203,17 @@ function BrowserSessionUnavailable({
             return $.browserSession.cardTitle;
           })}
         </span>
-        <BrowserSessionStatus live={false} />
+        {authorizationRequired ? null : <BrowserSessionStatus live={false} />}
       </span>
-      <BrowserSessionPreview />
+      {authorizationRequired ? (
+        <span className="flex aspect-[16/10] items-center justify-center px-6 text-center text-sm text-muted-foreground">
+          {t(($) => {
+            return $.browserSession.authorizationRequired;
+          })}
+        </span>
+      ) : (
+        <BrowserSessionPreview />
+      )}
     </ChatCard>
   );
 }
@@ -221,6 +240,15 @@ function BrowserSessionCardState({
   }
 
   const session = sessionLoadable.data;
+  if (isBrowserUnauthorized(session)) {
+    return (
+      <BrowserSessionUnavailable
+        signals={signals}
+        openMode={openMode}
+        authorizationRequired
+      />
+    );
+  }
   const selected = selectedBrowserThreadId === signals.threadId;
   const live = session.status === "active";
   return (

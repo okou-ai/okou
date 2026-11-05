@@ -140,6 +140,7 @@ export default [
       "ccstate/no-react-class-component": "error",
       "ccstate/prefer-ui-components": "error",
       "ccstate/menu-row-height": "error",
+      "ccstate/require-anchor-href": "error",
       "ccstate/require-accept": "error",
       "ccstate/require-client-signal": "error",
       "ccstate/command-async-signal": "error",
@@ -292,6 +293,13 @@ export default [
     rules: {
       "ccstate/no-duplicate-route-param": "error",
     },
+  },
+  // The PDF download link acquires its object URL when the anchor commits and
+  // releases it when the anchor detaches, so its `href` is assigned in the ref
+  // callback rather than written in JSX. It is still a real download link.
+  {
+    files: ["src/views/okou-page/message-pdf-action.tsx"],
+    rules: { "ccstate/require-anchor-href": "off" },
   },
   // Allow detach() in signal infrastructure (definition site)
   {

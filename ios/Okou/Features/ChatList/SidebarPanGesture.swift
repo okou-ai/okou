@@ -17,14 +17,17 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
     let recognizer = UIPanGestureRecognizer()
     recognizer.maximumNumberOfTouches = 1
     recognizer.delegate = context.coordinator
+    interaction.attachPanGesture(recognizer)
     return recognizer
   }
 
   func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
     context.coordinator.parent = self
+    interaction.attachPanGesture(recognizer)
   }
 
   func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+    guard interaction.allowsDragging else { return }
     let translation = recognizer.translation(in: recognizer.view).x
     switch recognizer.state {
     case .began, .changed:
@@ -38,7 +41,7 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
   static func dismantleUIGestureRecognizer(
     _ recognizer: UIPanGestureRecognizer, coordinator: Coordinator
   ) {
-    coordinator.parent.interaction.cancelDrag()
+    coordinator.parent.interaction.detachPanGesture(recognizer)
   }
 
   final class Coordinator: NSObject, UIGestureRecognizerDelegate {
@@ -51,6 +54,7 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+      guard parent.interaction.allowsDragging else { return false }
       guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
       let velocity = pan.velocity(in: pan.view)
       return SidebarGesturePolicy.canBegin(
@@ -133,8 +137,36 @@ final class SidebarInteraction {
   private(set) var isOpen = false
   private(set) var translation: CGFloat?
   @ObservationIgnored private weak var transcript: (any SidebarScrollParticipant)?
+  @ObservationIgnored private weak var panGesture: UIPanGestureRecognizer?
+  @ObservationIgnored private var menuPresentations: Set<UUID> = []
 
   private var isActive: Bool { isOpen || translation != nil }
+  var allowsDragging: Bool { menuPresentations.isEmpty }
+
+  func attachPanGesture(_ recognizer: UIPanGestureRecognizer) {
+    panGesture = recognizer
+    recognizer.isEnabled = allowsDragging
+  }
+
+  func detachPanGesture(_ recognizer: UIPanGestureRecognizer) {
+    guard panGesture === recognizer else { return }
+    panGesture = nil
+    cancelDrag()
+  }
+
+  func beginMenuPresentation() -> UUID {
+    let id = UUID()
+    menuPresentations.insert(id)
+    // Cancel an existing pan synchronously, without waiting for a SwiftUI update.
+    panGesture?.isEnabled = false
+    cancelDrag()
+    return id
+  }
+
+  func endMenuPresentation(_ id: UUID) {
+    guard menuPresentations.remove(id) != nil else { return }
+    panGesture?.isEnabled = allowsDragging
+  }
 
   func dragChanged(_ translation: CGFloat) {
     self.translation = translation

@@ -3,6 +3,7 @@ import { command } from "ccstate";
 import {
   MARKETING_HANDOFF_MAX_FILE_BYTES,
   marketingHandoffsContract,
+  serializeMarketingHandoff,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -29,6 +30,8 @@ import {
   importMarketingFiles$,
   marketingContentHash,
   marketingHandoffBucket,
+  publicMarketingManifestHashes$,
+  publishMarketingManifests$,
   readMarketingManifest$,
   storeMarketingManifest$,
 } from "../services/marketing-handoff.service";
@@ -333,12 +336,12 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       return badRequestMessage("File size does not match uploaded content");
     }
   }
-  const hash = await set(
+  const result = await set(
     storeMarketingManifest$,
     { bucket: context.bucket, manifest: body.data, subject: context.subject },
     signal,
   );
-  return { status: 200 as const, body: { hash } };
+  return "status" in result ? result : { status: 200 as const, body: result };
 });
 
 const authorizedManifest$ = command(
@@ -350,6 +353,15 @@ const authorizedManifest$ = command(
     if (!context.userId) {
       return resourceUnavailable("Sign in to receive this content");
     }
+    const stored = await set(
+      readMarketingManifest$,
+      { bucket: context.bucket, hash },
+      signal,
+    );
+    if (!stored) {
+      return notFound("Content not found");
+    }
+    const { hash: resourceHash, manifest } = stored;
     const subjects = [context.subject, context.sessionSubject].filter(
       (subject): subject is string => {
         return subject !== null;
@@ -358,21 +370,16 @@ const authorizedManifest$ = command(
     if (
       !(await set(
         canReadMarketingContent$,
-        { resourceType: "manifest", resourceHash: hash, subjects },
+        { resourceType: "manifest", resourceHash, subjects },
         signal,
       ))
     ) {
       return notFound("Content not found");
     }
-    const manifest = await set(
-      readMarketingManifest$,
-      { bucket: context.bucket, hash },
-      signal,
-    );
     const claimed = await set(
       claimMarketingManifest$,
       {
-        hash,
+        hash: resourceHash,
         userId: context.userId,
         sessionSubject: context.sessionSubject,
         manifest,
@@ -382,7 +389,7 @@ const authorizedManifest$ = command(
     if (!claimed) {
       return notFound("Content not found");
     }
-    return { ...context, userId: context.userId, manifest };
+    return { ...context, userId: context.userId, manifest, hash: resourceHash };
   },
 );
 
@@ -442,7 +449,7 @@ const import$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const files = await set(
     importMarketingFiles$,
-    { ...result, hash, orgId: result.orgId, intentId: body.data.intentId },
+    { ...result, orgId: result.orgId, intentId: body.data.intentId },
     signal,
   );
   return { status: 200 as const, body: { files } };
@@ -529,12 +536,73 @@ const publish$ = command(async ({ get, set }, signal: AbortSignal) => {
       return notFound("Publish files before publishing a manifest");
     }
   }
-  const hash = await set(
+  const result = await set(
     storeMarketingManifest$,
     { bucket, manifest: body.data, subject: "public" },
     signal,
   );
-  return { status: 200 as const, body: { hash } };
+  return "status" in result ? result : { status: 200 as const, body: result };
+});
+
+const publishStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const context = set(publisherContext$);
+  if ("status" in context) {
+    return context;
+  }
+  const body = await get(bodyResultOf(marketingHandoffsContract.publishStatus));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const hashes = [...new Set(body.data.hashes)];
+  const published = await set(
+    publicMarketingManifestHashes$,
+    { bucket: context.bucket, hashes },
+    signal,
+  );
+  return {
+    status: 200 as const,
+    body: {
+      shortAddressesVerified: true as const,
+      missing: hashes.filter((hash) => {
+        return !published.has(hash);
+      }),
+    },
+  };
+});
+
+const publishBatch$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const context = set(publisherContext$);
+  if ("status" in context) {
+    return context;
+  }
+  const body = await get(bodyResultOf(marketingHandoffsContract.publishBatch));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  if (
+    body.data.manifests.some((manifest) => {
+      return (
+        Buffer.byteLength(serializeMarketingHandoff(manifest)) >
+        manifestPolicy.maxBytes
+      );
+    })
+  ) {
+    return badRequestMessage("Handoff manifest is too large");
+  }
+  const hashes = await set(
+    publishMarketingManifests$,
+    { bucket: context.bucket, manifests: body.data.manifests },
+    signal,
+  );
+  if (!hashes) {
+    return notFound("Publish files before publishing a manifest");
+  }
+  if (!Array.isArray(hashes)) {
+    return hashes;
+  }
+  return { status: 200 as const, body: { hashes } };
 });
 
 const manifestPolicy: Readonly<{ maxBytes: number; tooLargeMessage: string }> =
@@ -583,6 +651,19 @@ export const marketingHandoffsRoutes: readonly RouteEntry[] = [
     requestBodyPolicy: {
       maxBytes: Math.ceil(MARKETING_HANDOFF_MAX_FILE_BYTES / 3) * 4 + 2048,
       tooLargeMessage: "File is too large",
+    },
+  },
+  {
+    route: marketingHandoffsContract.publishStatus,
+    handler: publishStatus$,
+    requestBodyPolicy: manifestPolicy,
+  },
+  {
+    route: marketingHandoffsContract.publishBatch,
+    handler: publishBatch$,
+    requestBodyPolicy: {
+      maxBytes: 512 * 1024,
+      tooLargeMessage: "Handoff publication batch is too large",
     },
   },
 ];

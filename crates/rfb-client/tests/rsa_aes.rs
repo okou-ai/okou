@@ -1,5 +1,7 @@
 //! Public RSA-AES entry/stream tests against a controlled protocol peer.
 //! Independent TigerVNC evidence is a separate opt-in target.
+mod common_rsa;
+
 use aes::{Aes128, Aes256};
 use crypto_bigint::BoxedUint;
 use eax::{AeadInOut, Eax, KeyInit, Nonce, Tag, cipher::consts::U16};
@@ -26,12 +28,6 @@ use tokio::{
 static CRYPTO_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-fn key() -> TestResult<RsaPrivateKey> {
-    Ok(RsaPrivateKey::new(
-        &mut StdRng::try_from_rng(&mut SysRng)?,
-        2048,
-    )?)
-}
 fn wire(key: &RsaPublicKey) -> Vec<u8> {
     let size = key.size();
     let mut b = key.n().bits().to_be_bytes().to_vec();
@@ -341,7 +337,7 @@ fn credential(user: bool) -> Result<RsaAesCredentials, Error> {
 async fn all_four_exact_modes_and_both_credential_subtypes_keep_the_selected_post_auth_transport()
 -> TestResult {
     let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
-    let private = key()?;
+    let private = common_rsa::server_key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
     for mode in [
         RsaAesSecurity::Ra2,
@@ -376,7 +372,7 @@ async fn all_four_exact_modes_and_both_credential_subtypes_keep_the_selected_pos
 async fn large_then_small_authenticated_records_preserve_plaintext_and_late_failure_cleanup()
 -> TestResult {
     let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
-    let private = key()?;
+    let private = common_rsa::server_key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
     for mode in [RsaAesSecurity::Ra2, RsaAesSecurity::Ra2_256] {
         for fault in [
@@ -445,7 +441,7 @@ async fn large_then_small_authenticated_records_preserve_plaintext_and_late_fail
 async fn wrong_proof_mac_subtype_raw_transition_and_security_result_never_return_a_session()
 -> TestResult {
     let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
-    let private = key()?;
+    let private = common_rsa::server_key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
     for (mode, user, fault) in [
         (RsaAesSecurity::Ra2ne, false, Fault::Proof),
@@ -501,7 +497,7 @@ async fn prefix<S: AsyncRead + AsyncWrite + Unpin>(io: &mut S, offered: u8) -> T
 }
 #[tokio::test]
 async fn missing_exact_offer_and_wrong_pin_close_without_client_key_or_credentials() -> TestResult {
-    let raw = wire(&key()?.to_public_key());
+    let raw = wire(&common_rsa::server_key()?.to_public_key());
     for wrong_pin in [false, true] {
         let (a, mut b) = tokio::io::duplex(2048);
         let raw = raw.clone();
@@ -654,7 +650,7 @@ enum DeadlineCase {
 #[tokio::test]
 async fn exchange_deadlines_reject_stalled_or_ready_io_and_close_the_stream() -> TestResult {
     let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
-    let private = key()?;
+    let private = common_rsa::server_key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
     // Proof and credential IO share the same deadline path in every mode.
     // The full mode/credential matrix is covered by the successful exchanges.
@@ -774,7 +770,7 @@ async fn exchange_deadlines_reject_stalled_or_ready_io_and_close_the_stream() ->
 }
 #[tokio::test]
 async fn pinned_but_invalid_rsa_modulus_or_exponent_close_before_client_exchange() -> TestResult {
-    let raw = wire(&key()?.to_public_key());
+    let raw = wire(&common_rsa::server_key()?.to_public_key());
     let mut missing_top_bit = raw.clone();
     *missing_top_bit.get_mut(4).ok_or("modulus required")? &= 0x7f;
     let mut even_modulus = raw.clone();

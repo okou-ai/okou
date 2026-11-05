@@ -6,7 +6,6 @@ import {
   userPreferencesContract,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -116,34 +115,34 @@ test("saving cloud browser keeps the selected send mode unchanged during refresh
 });
 
 test.each([false, true])(
-  "saving Planning and action (initially %s) keeps enabled Suggestions unchanged during refresh",
+  "saving Learning (initially %s) keeps enabled Suggestions unchanged during refresh",
   async (initialEnabled) => {
     let saved = false;
     let enabled = initialEnabled;
     const refreshing = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
+    context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled: true,
+        status: "enabled",
+        unavailableReason: null,
+      });
+    });
     context.mocks.api(
-      proactiveSuggestionsContract.get,
+      proactiveLearningContract.get,
       async ({ respond, withSignal }) => {
         if (saved) {
           refreshing.resolve();
           await withSignal(release.promise);
         }
         return respond(200, {
-          enabled: true,
-          status: "enabled",
+          enabled,
+          status: enabled ? "enabled" : "paused",
           unavailableReason: null,
         });
       },
     );
-    context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
-      return respond(200, {
-        enabled,
-        status: enabled ? "enabled" : "paused",
-        unavailableReason: null,
-      });
-    });
-    context.mocks.api(proactiveJobsContract.update, ({ body, respond }) => {
+    context.mocks.api(proactiveLearningContract.update, ({ body, respond }) => {
       saved = true;
       enabled = body.enabled;
       return respond(200, {
@@ -157,36 +156,38 @@ test.each([false, true])(
       path: "/agents?settings=preference",
       featureSwitches: {
         [FeatureSwitchKey.AgentSuggestion]: true,
-        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.ProactiveLearning]: true,
       },
     });
     const suggestions = await screen.findByRole("switch", {
       name: "Suggestions",
     });
-    const planning = screen.getByRole("switch", { name: "Planning & action" });
+    const learning = screen.getByRole("switch", { name: "Learning" });
     await waitFor(() => {
       expect(suggestions).toBeChecked();
-      expect(planning).toBeEnabled();
-      expect(planning).toHaveAttribute("aria-checked", String(initialEnabled));
+      expect(learning).toBeEnabled();
+      expect(learning).toHaveAttribute("aria-checked", String(initialEnabled));
     });
-    click(planning);
+    click(learning);
     await refreshing.promise;
-    await waitFor(() => {
-      expect(planning).toHaveAttribute("aria-checked", String(!initialEnabled));
-      expect(planning).toBeEnabled();
-    });
+    expect(learning).toHaveAttribute("aria-disabled", "true");
+    expect(learning).toHaveAttribute("aria-checked", String(initialEnabled));
     expect(suggestions).toBeChecked();
     expect(suggestions).toBeEnabled();
-    expect(screen.getByRole("switch", { name: "Learning" })).not.toBeChecked();
     release.resolve();
+    await waitFor(() => {
+      expect(learning).toHaveAttribute("aria-checked", String(!initialEnabled));
+      expect(learning).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(suggestions).toBeChecked();
   },
 );
 
 test.each(["reopening Settings", "returning to Preference"])(
-  "%s refreshes a Planning preference changed elsewhere",
+  "%s refreshes a Learning preference changed elsewhere",
   async (entry) => {
     let enabled = false;
-    context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
+    context.mocks.api(proactiveLearningContract.get, ({ respond }) => {
       return respond(200, {
         enabled,
         status: enabled ? "enabled" : "paused",
@@ -196,14 +197,14 @@ test.each(["reopening Settings", "returning to Preference"])(
     await setupPage({
       context,
       path: "/agents?settings=preference",
-      featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
+      featureSwitches: { [FeatureSwitchKey.ProactiveLearning]: true },
     });
-    const planning = await screen.findByRole("switch", {
-      name: "Planning & action",
+    const learning = await screen.findByRole("switch", {
+      name: "Learning",
     });
     await waitFor(() => {
-      expect(planning).toBeEnabled();
-      expect(planning).not.toBeChecked();
+      expect(learning).toBeEnabled();
+      expect(learning).not.toBeChecked();
     });
     const settings = screen.getByRole("dialog", { name: "Settings" });
     function selectSection(name: string) {
@@ -238,7 +239,7 @@ test.each(["reopening Settings", "returning to Preference"])(
     const reopened = await screen.findByRole("dialog", { name: "Settings" });
     await waitFor(() => {
       const refreshed = within(reopened).getByRole("switch", {
-        name: "Planning & action",
+        name: "Learning",
       });
       expect(refreshed).toBeEnabled();
       expect(refreshed).toBeChecked();
@@ -282,7 +283,6 @@ test.each([
   { name: "Morning brief", contract: morningBriefPreferenceContract },
   { name: "Suggestions", contract: proactiveSuggestionsContract },
   { name: "Learning", contract: proactiveLearningContract },
-  { name: "Planning & action", contract: proactiveJobsContract },
 ])(
   "keeps $name pending until its saved preference has been read back",
   async ({ name, contract }) => {
@@ -313,7 +313,7 @@ test.each([
       path: "/agents?settings=preference",
       featureSwitches: {
         [FeatureSwitchKey.AgentSuggestion]: true,
-        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.ProactiveLearning]: true,
       },
     });
     const toggle = await screen.findByRole("switch", { name });

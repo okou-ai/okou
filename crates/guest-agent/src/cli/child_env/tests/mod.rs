@@ -13,6 +13,21 @@ fn base_child_env_includes_stable_minimum() {
 }
 
 #[test]
+fn explicit_user_path_replaces_the_inherited_default() {
+    let user_env = HashMap::from([("PATH".to_string(), "/custom/tools:/usr/bin".to_string())]);
+    let values = values_with_inputs("/tmp/home", &user_env, "");
+
+    assert_eq!(
+        values
+            .iter()
+            .filter(|(key, _)| key == "PATH")
+            .map(|(_, value)| value.as_str())
+            .collect::<Vec<_>>(),
+        ["/custom/tools:/usr/bin"]
+    );
+}
+
+#[test]
 fn normalize_values_keeps_last_value_for_duplicate_keys() {
     let values = normalize_values(vec![
         (

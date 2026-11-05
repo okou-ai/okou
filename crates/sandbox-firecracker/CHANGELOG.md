@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.53.70](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.69...sandbox-firecracker-v0.53.70) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
+## [0.53.69](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.68...sandbox-firecracker-v0.53.69) (2026-11-05)
+
+## [0.53.68](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.67...sandbox-firecracker-v0.53.68) (2026-11-05)
+
+## [0.53.67](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.66...sandbox-firecracker-v0.53.67) (2026-11-04)
+
+
+### Refactoring
+
+* **sandbox:** retire orphaned staged-file finalization ([#45133](https://github.com/okou-ai/okou/issues/45133)) ([e397ac6](https://github.com/okou-ai/okou/commit/e397ac62f05a037478f6135ecb231f665ab76afe))
+
+## [0.53.66](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.65...sandbox-firecracker-v0.53.66) (2026-11-04)
+
+
+### Performance Improvements
+
+* **runner:** bypass shell setup for fixed instruction preparation ([#45031](https://github.com/okou-ai/okou/issues/45031)) ([57a4b14](https://github.com/okou-ai/okou/commit/57a4b1496559234cd35b93565e135727c00202a9))
+
+## [0.53.65](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.64...sandbox-firecracker-v0.53.65) (2026-11-03)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** share abnormal cleanup-group drop pass ([#44988](https://github.com/okou-ai/okou/issues/44988)) ([3e9fd2b](https://github.com/okou-ai/okou/commit/3e9fd2b8737e542acfc5965764a5f0b6fe0a1439))
+
+## [0.53.64](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.63...sandbox-firecracker-v0.53.64) (2026-11-03)
+
+
+### Refactoring
+
+* **guest-control:** retire orphaned identity verifier role ([#44960](https://github.com/okou-ai/okou/issues/44960)) ([46476ac](https://github.com/okou-ai/okou/commit/46476ac6245a6e94ea2ba7d1cc8ed2b4d3bf45e1))
+
 ## [0.53.63](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.62...sandbox-firecracker-v0.53.63) (2026-11-03)
 
 ## [0.53.62](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.61...sandbox-firecracker-v0.53.62) (2026-11-03)

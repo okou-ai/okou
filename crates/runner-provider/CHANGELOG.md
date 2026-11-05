@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.16.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.10...runner-provider-v0.16.11) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
+## [0.16.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.9...runner-provider-v0.16.10) (2026-11-05)
+
+
+### Bug Fixes
+
+* **runner:** retain packet provenance in local transport faults ([#45368](https://github.com/okou-ai/okou/issues/45368)) ([b186aad](https://github.com/okou-ai/okou/commit/b186aadf3dad0754db84c7d6256567b82b684cdb))
+
+## [0.16.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.8...runner-provider-v0.16.9) (2026-11-05)
+
+## [0.16.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.7...runner-provider-v0.16.8) (2026-11-05)
+
+## [0.16.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.6...runner-provider-v0.16.7) (2026-11-04)
+
+## [0.16.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.5...runner-provider-v0.16.6) (2026-11-04)
+
+
+### Refactoring
+
+* **runner:** share execution context test fixture ownership ([#45060](https://github.com/okou-ai/okou/issues/45060)) ([9208ab4](https://github.com/okou-ai/okou/commit/9208ab466aed6992671c9ac4343ebc7b39e43036))
+
+## [0.16.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.4...runner-provider-v0.16.5) (2026-11-03)
+
+## [0.16.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.3...runner-provider-v0.16.4) (2026-11-03)
+
+## [0.16.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.2...runner-provider-v0.16.3) (2026-11-03)
+
+
+### Refactoring
+
+* **rust:** share blocking-worker release ownership in tests ([#44912](https://github.com/okou-ai/okou/issues/44912)) ([0c873d8](https://github.com/okou-ai/okou/commit/0c873d8254326de823cf8d42f5fe06489e555299))
+
 ## [0.16.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.1...runner-provider-v0.16.2) (2026-11-03)
 
 

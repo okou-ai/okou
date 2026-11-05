@@ -1,5 +1,5 @@
 // Okou CLI entry point - standalone binary for Okou platform commands
-// (no-op CLI release marker refreshed for production delivery at 2026-10-30T11:35:01+08:00)
+// (no-op CLI release marker refreshed for production delivery at 2026-11-04T19:07:10+08:00)
 // Sentry must be initialized before any other imports
 import "./instrument.js";
 import { Command } from "commander";
@@ -93,11 +93,10 @@ const COMMAND_CAPABILITY_MAP: Record<
   data: "data-search:read",
   banking: "banking:read",
   suggestion: ["suggestion:read", "suggestion:write"],
-  task: ["job:read", "job:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "task"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -105,13 +104,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Send messages and files to your connected WhatsApp account",
     load: async () => {
       return (await import("./commands/whatsapp/index")).whatsappCommand;
-    },
-  },
-  {
-    name: "task",
-    description: "Delegate and inspect background Okou Tasks",
-    load: async () => {
-      return (await import("./commands/job/index")).jobCommand;
     },
   },
   {

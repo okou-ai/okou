@@ -1,6 +1,8 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { resolveTeamsMessageSendPresentation$ } from "./integration-message-send-presentation.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { TeamsUploadCompleteResponse } from "@okouai/api-contracts/contracts/integrations";
 import {
   canonicalAssetDeliveries,
@@ -22,7 +24,7 @@ import { routeError } from "./teams-message-target.service";
 interface TeamsUploadIdentity {
   readonly assetId: string;
   readonly operationId: string;
-  readonly runId: string;
+  readonly runId: string | null;
   readonly orgId: string;
   readonly userId: string;
 }
@@ -53,7 +55,9 @@ const teamsUploadDelivery$ = command(
           eq(canonicalAssetDeliveries.assetId, args.assetId),
           eq(canonicalAssetDeliveries.provider, "teams"),
           eq(canonicalAssetDeliveries.operationId, args.operationId),
-          eq(runUploadedFiles.runId, args.runId),
+          args.runId === null
+            ? isNull(runUploadedFiles.runId)
+            : eq(runUploadedFiles.runId, args.runId),
           eq(runUploadedFiles.userId, args.userId),
           eq(runUploadedFiles.orgId, args.orgId),
           eq(runUploadedFiles.assetVersion, 1),
@@ -142,6 +146,29 @@ const failTeamsUploadAttempt$ = command(
   },
 );
 
+const claimTeamsUploadAttempt$ = command(
+  async ({ set }, row: TeamsUploadDelivery, signal: AbortSignal) => {
+    const providerState: CanonicalAssetTeamsDeliveryState = {
+      provider: "teams",
+      attempt: { id: randomUUID(), startedAt: nowDate().toISOString() },
+    };
+    const db = set(writeDb$);
+    const [attempted] = await db
+      .update(canonicalAssetDeliveries)
+      .set({ providerState, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(canonicalAssetDeliveries.id, row.id),
+          eq(canonicalAssetDeliveries.status, "pending"),
+          eq(canonicalAssetDeliveries.providerState, row.providerState),
+        ),
+      )
+      .returning({ id: canonicalAssetDeliveries.id });
+    signal.throwIfAborted();
+    return Boolean(attempted);
+  },
+);
+
 /** Persist the destination and attempt before provider I/O; retain success receipts. */
 export const completeCanonicalTeamsUpload$ = command(
   async ({ set }, args: TeamsUploadIdentity, signal: AbortSignal) => {
@@ -149,7 +176,7 @@ export const completeCanonicalTeamsUpload$ = command(
     if (!row) {
       return routeError(
         404,
-        "Teams upload operation not found for this Run",
+        "Teams upload operation not found for this caller",
         "NOT_FOUND",
       );
     }
@@ -185,16 +212,17 @@ export const completeCanonicalTeamsUpload$ = command(
       },
       signal,
     );
-    // Completion input cannot replace the persisted Run, installation or conversation.
+    // Completion input cannot replace the persisted owner, installation or conversation.
     const target = await set(
       resolveTeamsWriteTarget$,
       {
         orgId: args.orgId,
         userId: args.userId,
-        runId: args.runId,
+        ...(args.runId !== null ? { runId: args.runId } : {}),
         tenantId: destination.tenantId,
         allowSource: destination.source,
         sourceOnly: destination.source,
+        recipientId: destination.recipientId,
         body: {
           conversationId: destination.conversationId,
           activityId: destination.activityId,
@@ -205,23 +233,13 @@ export const completeCanonicalTeamsUpload$ = command(
     if ("status" in target) {
       return target;
     }
-    const providerState: CanonicalAssetTeamsDeliveryState = {
-      provider: "teams",
-      attempt: { id: randomUUID(), startedAt: nowDate().toISOString() },
-    };
+    const presentation = await set(
+      resolveTeamsMessageSendPresentation$,
+      destination.tenantId,
+      signal,
+    );
+    const attempted = await set(claimTeamsUploadAttempt$, row, signal);
     const db = set(writeDb$);
-    const [attempted] = await db
-      .update(canonicalAssetDeliveries)
-      .set({ providerState, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(canonicalAssetDeliveries.id, row.id),
-          eq(canonicalAssetDeliveries.status, "pending"),
-          eq(canonicalAssetDeliveries.providerState, row.providerState),
-        ),
-      )
-      .returning({ id: canonicalAssetDeliveries.id });
-    signal.throwIfAborted();
     // Once persisted, an interrupted or uncertain attempt must not be replayed.
     if (!attempted) {
       const current = await set(teamsUploadDelivery$, args, signal);
@@ -237,9 +255,15 @@ export const completeCanonicalTeamsUpload$ = command(
         tenantId: destination.tenantId,
         conversationId: destination.conversationId,
         activityId: destination.activityId,
-        text: [destination.text, `[${row.filename}](${materialized.url})`]
-          .filter(Boolean)
-          .join("\n\n"),
+        text: appendIntegrationMessageFooter(
+          [destination.text, `[${row.filename}](${materialized.url})`]
+            .filter(Boolean)
+            .join("\n\n"),
+          presentation.footerText,
+        ),
+        ...(presentation.entities.length > 0
+          ? { entities: presentation.entities }
+          : {}),
         attachments: [
           {
             contentType: row.contentType,

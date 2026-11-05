@@ -352,19 +352,12 @@ fn is_safe_timezone_name(timezone: &str) -> bool {
 }
 
 fn validate_stderr(stderr: ExecCapturedOutput<'_>) -> Result<(), ProtocolError> {
-    match stderr {
-        ExecCapturedOutput::Captured { bytes, .. }
-            if bytes.len() <= GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES =>
-        {
-            Ok(())
-        }
-        ExecCapturedOutput::Captured { bytes, .. } => {
-            Err(ProtocolError::PayloadTooLarge("stderr", bytes.len()))
-        }
-        ExecCapturedOutput::Discarded => Err(ProtocolError::InvalidPayload(
-            "guest_state_restore_result stderr must be captured",
-        )),
-    }
+    super::validate_bounded_capture(
+        stderr,
+        GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES,
+        "stderr",
+        "guest_state_restore_result stderr must be captured",
+    )
 }
 
 #[cfg(test)]

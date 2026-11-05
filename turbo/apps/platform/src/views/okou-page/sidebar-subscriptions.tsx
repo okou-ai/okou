@@ -8,7 +8,7 @@ import {
   TooltipTrigger,
   cn,
 } from "@okouai/ui";
-import { RotateCcw } from "lucide-react";
+import { ChevronRight, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -58,12 +58,14 @@ export function AccountMenuSubscriptionsPanel({
   loading,
   rows,
   onResetCodexUsage,
+  onOpenUsage,
   resetPending = false,
   resetControl = "menu",
 }: {
   readonly loading: boolean;
   readonly rows: readonly AccountMenuSubscriptionUsageRow[];
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
+  readonly onOpenUsage?: () => void;
   readonly resetPending?: boolean;
   readonly resetControl?: "menu" | "button";
 }) {
@@ -73,7 +75,9 @@ export function AccountMenuSubscriptionsPanel({
         <AccountMenuSubscriptionsSkeleton />
       ) : (
         <TooltipProvider delay={250}>
-          <div className="flex flex-col gap-1">
+          <div
+            className={cn("flex flex-col", resetControl === "menu" && "gap-1")}
+          >
             {rows.map((row) => {
               return (
                 <AccountMenuSubscriptionProviderSection
@@ -82,6 +86,7 @@ export function AccountMenuSubscriptionsPanel({
                   resetPending={resetPending}
                   resetControl={resetControl}
                   onResetCodexUsage={onResetCodexUsage}
+                  onOpenUsage={onOpenUsage}
                 />
               );
             })}
@@ -130,11 +135,13 @@ function AccountMenuSubscriptionProviderSection({
   resetPending,
   resetControl,
   onResetCodexUsage,
+  onOpenUsage,
 }: {
   readonly row: AccountMenuSubscriptionUsageRow;
   readonly resetPending: boolean;
   readonly resetControl: "menu" | "button";
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
+  readonly onOpenUsage?: () => void;
 }) {
   const { t } = useTranslation();
   const isCodex = row.type === "codex-oauth-token";
@@ -180,33 +187,27 @@ function AccountMenuSubscriptionProviderSection({
     },
     { provider: label },
   );
-  // This is a multi-line information block; all four sides share 12px padding.
-  const informationClassName =
-    "flex w-full flex-col items-stretch gap-2 rounded-lg p-3 text-sm font-normal leading-5 outline-none hover:bg-state-hover focus-visible:bg-state-hover";
 
   return (
     <section
-      className="overflow-hidden rounded-lg bg-nested-fill"
+      className={cn(
+        "rounded-lg",
+        resetControl === "button"
+          ? "not-first:before:mx-3 not-first:before:my-1 not-first:before:block not-first:before:border-t not-first:before:border-border"
+          : "overflow-hidden bg-nested-fill",
+      )}
       aria-label={usageLabel}
     >
       <Tooltip>
         <TooltipTrigger
-          render={
-            resetControl === "menu" ? (
-              <DropdownMenuItem
-                closeOnClick={false}
-                className={informationClassName}
-              />
-            ) : (
-              <div tabIndex={0} className={informationClassName} />
-            )
-          }
+          render={subscriptionInformationTarget(resetControl, onOpenUsage)}
           aria-label={usageLabel}
         >
-          <h3 className="flex items-center gap-2 font-medium">
-            <ProviderIcon type={row.type} size={16} />
-            {label}
-          </h3>
+          <SubscriptionProviderHeading
+            type={row.type}
+            label={label}
+            showAction={onOpenUsage !== undefined}
+          />
           <div className="flex flex-col gap-2">
             {windows.map(({ kind, window }) => {
               return (
@@ -252,6 +253,63 @@ function AccountMenuSubscriptionProviderSection({
       )}
     </section>
   );
+}
+
+function SubscriptionProviderHeading({
+  type,
+  label,
+  showAction,
+}: {
+  readonly type: AccountMenuSubscriptionUsageRow["type"];
+  readonly label: string;
+  readonly showAction: boolean;
+}) {
+  return (
+    <h3 className="flex items-center gap-2 font-medium">
+      <ProviderIcon type={type} size={16} />
+      {label}
+      {showAction && (
+        <ChevronRight
+          aria-hidden="true"
+          strokeWidth={1.5}
+          className="ml-auto size-4 shrink-0 text-muted-foreground"
+        />
+      )}
+    </h3>
+  );
+}
+
+function subscriptionInformationTarget(
+  resetControl: "menu" | "button",
+  onOpenUsage: (() => void) | undefined,
+) {
+  // This is a multi-line information block; all four sides share 12px padding.
+  const informationClassName =
+    "flex w-full flex-col items-stretch gap-2 rounded-lg p-3 text-left text-sm font-normal leading-5 outline-none hover:bg-state-hover focus-visible:bg-state-hover";
+
+  if (resetControl === "menu") {
+    return (
+      <DropdownMenuItem
+        closeOnClick={onOpenUsage !== undefined}
+        onClick={onOpenUsage}
+        className={cn(
+          informationClassName,
+          onOpenUsage && "active:bg-state-pressed",
+        )}
+      />
+    );
+  }
+
+  if (onOpenUsage) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenUsage}
+        className={cn(informationClassName, "active:bg-state-pressed")}
+      />
+    );
+  }
+  return <div tabIndex={0} className={informationClassName} />;
 }
 
 function SubscriptionResetTimes({

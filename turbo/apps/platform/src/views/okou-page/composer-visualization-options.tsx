@@ -132,7 +132,7 @@ function VisualizationChartButton({
         RAIL_TILE,
         // The cover width every other type's shelf carries; the caption and the
         // 16:9 box below follow from it.
-        "w-[200px] border-0 text-left font-normal",
+        "w-full border-0 text-left font-normal",
         // `bg-transparent` alone leaves the toggle's dark selected fill: a
         // theme-prefixed utility is a different merge key, so it survives an
         // unprefixed one and would wash the tile in dark.
@@ -197,11 +197,10 @@ function VisualizationChartPicker({
         {copy.preferredCharts}
       </p>
       <ComposerRail
-        signals={signals}
         rail="charts"
         // The shelf labels its own wrapper, so the rail inside stays unnamed:
         // two groups of the same name would be two things to address.
-        gap="gap-3"
+        itemWidth={200}
         items={CURATED_VISUALIZATION_CHARTS.map((chart) => {
           return (
             <VisualizationChartButton

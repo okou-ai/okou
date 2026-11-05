@@ -2,6 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import {
@@ -70,9 +71,47 @@ function mockViewer(
   return browser;
 }
 
-async function openViewer() {
-  await setupPage({ context, path: `/browsers/${threadId}` });
+async function openViewer(sharedOwner = false) {
+  await setupPage({
+    context,
+    path: `/browsers/${threadId}`,
+    featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: sharedOwner },
+  });
   return screen.findByRole("region", { name: "Remote browser viewer" });
+}
+
+function observeFailures(viewer: HTMLElement) {
+  const failures: string[] = [];
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      const nodes =
+        mutation.type === "characterData"
+          ? [mutation.target]
+          : mutation.addedNodes;
+      for (const node of nodes) {
+        const text = node.textContent ?? "";
+        if (
+          text.includes("Browser view unavailable") ||
+          text.includes("Browser disconnected")
+        ) {
+          failures.push(text);
+        }
+      }
+    }
+  });
+  observer.observe(viewer, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      observer.disconnect();
+    },
+    { once: true },
+  );
+  return failures;
 }
 
 async function openWindowSizeMenu(viewer: HTMLElement) {
@@ -444,31 +483,85 @@ test.each(["frame", "capture receipt"] as const)(
   },
 );
 
-test("A window resize synchronizes the remote display to the new panel size", async () => {
-  let canvasBox = new DOMRect(0, 0, 900, 600);
-  const browser = mockViewer(() => {
-    return canvasBox;
-  });
-  const viewer = await openViewer();
-  await waitFor(() => {
-    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
-    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
-  });
-  act(() => {
-    browser.frame("AAAA");
-  });
+test.each([false, true])(
+  "A window resize keeps the accepted picture while capture is pending (shared owner %s)",
+  async (sharedOwner) => {
+    let canvasBox = new DOMRect(0, 0, 900, 600);
+    const browser = mockViewer(() => {
+      return canvasBox;
+    });
+    const viewer = await openViewer(sharedOwner);
+    await waitFor(() => {
+      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+      expect(
+        within(viewer).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    act(() => {
+      browser.frame("AAAA");
+    });
 
-  canvasBox = new DOMRect(0, 0, 720, 480);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
+    const failures = observeFailures(viewer);
+    const frame = browser.holdTargetFrames("example-page");
+    canvasBox = new DOMRect(0, 0, 720, 480);
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
 
-  await waitFor(() => {
-    expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
-  });
-  expect(
-    browser.requests.filter((request) => {
-      return request.method === "Browser.setWindowBounds";
-    }),
-  ).toStrictEqual([]);
-});
+    await frame.received;
+    expect(
+      within(viewer).getByLabelText("Remote browser input"),
+    ).toBeDisabled();
+    expect(
+      within(viewer).queryByText("Browser view unavailable"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(viewer).getByRole("img", { name: "Live browser view" }),
+    ).toBeInTheDocument();
+    act(() => {
+      frame.release();
+    });
+    await waitFor(() => {
+      expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
+      expect(
+        within(viewer).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Browser.setWindowBounds";
+      }),
+    ).toStrictEqual([]);
+    expect(failures).toStrictEqual([]);
+  },
+);
+
+test.each([false, true])(
+  "Returning to a visible viewer does not flash a failure during display setup (shared owner %s)",
+  async (sharedOwner) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const browser = mockViewer();
+    const viewer = await openViewer(sharedOwner);
+    const input = within(viewer).getByLabelText("Remote browser input");
+    await waitFor(() => {
+      expect(input).toBeEnabled();
+    });
+    const failures = observeFailures(viewer);
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await within(viewer).findByText("Viewing paused");
+    expect(input).toBeDisabled();
+    act(() => {
+      visibility.changeTo("visible");
+    });
+    await waitFor(() => {
+      expect(input).toBeEnabled();
+      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    });
+    expect(
+      within(viewer).getByRole("img", { name: "Live browser view" }),
+    ).toBeInTheDocument();
+    expect(failures).toStrictEqual([]);
+  },
+);

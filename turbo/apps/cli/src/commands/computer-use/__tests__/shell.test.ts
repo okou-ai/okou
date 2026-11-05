@@ -37,6 +37,102 @@ afterEach(() => {
 });
 
 describe("computer-use shell", () => {
+  it.each([
+    ["cmd", "pwd"],
+    ["list"],
+    ["status", session.id],
+    ["close", session.id],
+  ])(
+    "guides a run without Shell capability to computer authorization for %j",
+    async (...args) => {
+      const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
+        "base64url",
+      );
+      const payload = Buffer.from(
+        JSON.stringify({ scope: "okou", capabilities: ["agent:read"] }),
+      ).toString("base64url");
+      vi.stubEnv("OKOU_TOKEN", `vm0_sandbox_${header}.${payload}.signature`);
+
+      await expect(
+        createShellCommand().parseAsync(["node", "okou", ...args]),
+      ).rejects.toThrow("process.exit called");
+
+      const output = error.mock.calls.flat().join("\n");
+      expect(output).toContain(
+        "okou connector permission-request computer-use --permission computer-use:write",
+      );
+      expect(output).toContain("share the authorization link");
+      expect(output).toContain("select an Okou Desktop host");
+      expect(output).toContain("Shell Access in Desktop Developer Tools");
+      expect(output).toContain("start a new run");
+    },
+  );
+
+  it.each([
+    { args: ["cmd", "pwd"], endpoint: "commands" },
+    {
+      args: ["request-access", "--reason", "Read the project", "--json"],
+      endpoint: "authorizations",
+    },
+  ])(
+    "guides missing Shell capability responses to computer authorization for $endpoint",
+    async ({ args, endpoint }) => {
+      server.use(
+        http.post(`${base}/shell/${endpoint}`, () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "FORBIDDEN",
+                message:
+                  "Missing required capability: computer-use:shell:write",
+              },
+            },
+            { status: 403 },
+          );
+        }),
+      );
+
+      await expect(
+        createShellCommand().parseAsync(["node", "okou", ...args]),
+      ).rejects.toThrow("process.exit called");
+
+      const output = error.mock.calls.flat().join("\n");
+      expect(output).toContain(
+        "okou connector permission-request computer-use --permission computer-use:write",
+      );
+      expect(output).toContain("Enable Desktop Shell for the workspace");
+      expect(output).toContain(
+        "Existing run tokens cannot gain computer-use:shell:write in place",
+      );
+    },
+  );
+
+  it("preserves a disabled Shell response when requesting access", async () => {
+    server.use(
+      http.post(`${base}/shell/authorizations`, () => {
+        return HttpResponse.json(
+          {
+            error: { code: "FORBIDDEN", message: "Desktop Shell is disabled" },
+          },
+          { status: 403 },
+        );
+      }),
+    );
+
+    await expect(
+      createShellCommand().parseAsync([
+        "node",
+        "okou",
+        "request-access",
+        "--reason",
+        "Read the project",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "403: Desktop Shell is disabled",
+    );
+  });
+
   it("requests access once and returns the trusted approval link without dispatching Shell input", async () => {
     const requests: unknown[] = [];
     server.use(

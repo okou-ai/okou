@@ -1,3 +1,5 @@
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
+import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
 import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
@@ -402,12 +404,15 @@ const complete$ = command(
     const mimetype = body.contentType ?? object.contentType;
     const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
     signal.throwIfAborted();
+    const footerText = await get(integrationMessageSendFooterText$);
+    signal.throwIfAborted();
+    const caption = appendIntegrationMessageFooter(body.caption, footerText);
     const sendResult = await settle(
       sendAgentPhoneMessage(
         {
           agentphoneAgentId: destination.agentphoneAgentId,
           toNumber: destination.toNumber,
-          body: body.caption ?? "",
+          body: caption,
           mediaUrl: fetchUrl,
         },
         signal,
@@ -428,7 +433,7 @@ const complete$ = command(
       auth,
       ...destination,
       mimetype,
-      body,
+      body: { ...body, caption },
       uploadedFile,
       layout: object.layout,
       sent,

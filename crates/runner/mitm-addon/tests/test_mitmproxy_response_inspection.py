@@ -60,7 +60,7 @@ class _ResponsePeerLayer(layer.Layer):
 @pytest.mark.parametrize(
     ("cancel_inspection", "response_kind"),
     [
-        pytest.param(False, "x", id="complete-x", marks=pytest.mark.shard_cost(10)),
+        pytest.param(False, "x", id="complete-x", marks=pytest.mark.shard_cost(1)),
         pytest.param(False, "x-json", id="complete-x-json"),
         pytest.param(False, "model-sse", id="complete-model-sse", marks=pytest.mark.shard_cost(2)),
         pytest.param(False, "model-json", id="complete-model-json"),

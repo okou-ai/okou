@@ -14,6 +14,8 @@ use crate::tailscale::{
     tests::derp::fixture::{PausedTcp, Server, WriteGate},
 };
 
+mod tests;
+
 #[derive(Clone)]
 pub(crate) struct Relay {
     targets: Arc<BTreeMap<u16, Target>>,
@@ -25,6 +27,8 @@ struct Target {
     address: std::net::SocketAddr,
     tls: Arc<rustls::ClientConfig>,
     gate: Arc<WriteGate>,
+    // A cloned dialer owns the old endpoint through all reconnect attempts.
+    _reservation: Arc<tokio::net::TcpSocket>,
 }
 
 #[derive(Clone)]
@@ -62,6 +66,7 @@ impl Relay {
                     address: server.address,
                     tls: server.tls.clone().unwrap(),
                     gate,
+                    _reservation: Arc::clone(&server.reservation),
                 },
             )])),
             descriptors,
@@ -86,6 +91,7 @@ impl Relay {
                                 address: server.address,
                                 tls: server.tls.clone().unwrap(),
                                 gate: Arc::clone(gate),
+                                _reservation: Arc::clone(&server.reservation),
                             },
                         )
                     })

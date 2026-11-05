@@ -17,9 +17,13 @@ import {
 } from "lucide-react";
 import {
   Button,
+  cn,
   IconButton,
   Input,
+  LayoutCommit,
+  RequestCommit,
   Textarea,
+  TransientAlert,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -36,6 +40,7 @@ import {
 } from "@okouai/ui";
 import {
   isBrowserOperationFailure,
+  type BrowserFocusHandoff,
   type BrowserSignals,
 } from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
@@ -47,25 +52,32 @@ import type {
   WindowSizeSync,
 } from "../../signals/browser/viewer/types.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { Reason } from "../../signals/utils.ts";
+import { detachBrowser as detach } from "../../signals/browser/reporting.ts";
 
 function BrowserOperationError({
-  failed,
+  occurrences,
+  duplicateMessage,
   className = "border-b border-divider px-3 py-2 text-sm text-muted-foreground",
 }: {
-  readonly failed: boolean;
+  readonly occurrences: readonly (object | false | null)[];
+  readonly duplicateMessage?: string;
   readonly className?: string;
 }) {
   const { t } = useTranslation();
-  if (!failed) {
-    return null;
-  }
+  const message = t(($) => {
+    return $.browserViewer.operationFailed;
+  });
   return (
-    <p role="alert" className={className}>
-      {t(($) => {
-        return $.browserViewer.operationFailed;
+    <TransientAlert
+      occurrences={occurrences.filter((occurrence): occurrence is object => {
+        return Boolean(occurrence);
       })}
-    </p>
+      hidden={message === duplicateMessage}
+      className={className}
+    >
+      {message}
+    </TransientAlert>
   );
 }
 
@@ -78,7 +90,7 @@ function BrowserSettings({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  // The owner remains mounted when the menu closes, including its operation errors.
+  // Keep the request owner mounted when the menu closes.
   const [captureOperation, changeCapture] = useLoadableSet(
     signals.changeCapture$,
   );
@@ -89,17 +101,15 @@ function BrowserSettings({
     signals.changeWindowSizeSync$,
   );
   const [syncOperation, syncDisplay] = useLoadableSet(signals.syncDisplay$);
-  const failed = [
-    captureOperation,
-    transportOperation,
-    windowOperation,
-    syncOperation,
-  ].some((operation) => {
-    return (
-      operation.state === "hasError" &&
-      isBrowserOperationFailure(operation.error)
-    );
-  });
+  // Transport replacement uses the root recovery pipeline and its current error.
+  const failures = [captureOperation, windowOperation, syncOperation].filter(
+    (operation) => {
+      return (
+        operation.state === "hasError" &&
+        isBrowserOperationFailure(operation.error)
+      );
+    },
+  );
   return (
     <>
       <DropdownMenu>
@@ -159,7 +169,7 @@ function BrowserSettings({
         </DropdownMenuContent>
       </DropdownMenu>
       <BrowserOperationError
-        failed={failed}
+        occurrences={failures}
         className="absolute right-2 top-full z-20 max-w-64 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
       />
     </>
@@ -427,6 +437,96 @@ interface BrowserNavigationProps {
   readonly settingsDisabled: boolean;
 }
 
+function isCurrentNavigationFailure(error: unknown, scope: object | null) {
+  return (
+    isBrowserOperationFailure(error) &&
+    (!(error instanceof NavigationFault) || error.scope === scope)
+  );
+}
+
+function BrowserAddress({
+  signals,
+  disabled,
+  navigating,
+  onSubmit,
+}: {
+  readonly signals: BrowserSignals;
+  readonly disabled: boolean;
+  readonly navigating: boolean;
+  readonly onSubmit: () => void;
+}) {
+  const { t } = useTranslation();
+  const address = useGet(signals.address$);
+  const selectedTargetId = useGet(signals.selectedTabId$);
+  const pendingHandoff = useGet(signals.focusHandoff$);
+  const handoff = pendingHandoff?.kind === "address" ? pendingHandoff : null;
+  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
+  const addressRef = useSet(signals.refs.address$);
+  const focus = useSet(signals.focusAddress$);
+  const edit = useSet(signals.editAddress$);
+  const blur = useSet(signals.blurAddress$);
+  const reset = useSet(signals.resetAddress$);
+  return (
+    <RequestCommit
+      request={handoff}
+      commitKey={JSON.stringify([selectedTargetId, disabled])}
+      onCommit={acknowledge}
+    >
+      <form
+        className="flex min-w-0 flex-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!disabled) {
+            onSubmit();
+          }
+        }}
+      >
+        <Input
+          ref={addressRef}
+          data-browser-address
+          aria-label={t(($) => {
+            return $.browserViewer.address;
+          })}
+          placeholder={t(($) => {
+            return $.browserSession.addressPlaceholder;
+          })}
+          className="h-8 min-w-0 flex-1"
+          value={address}
+          inputMode="url"
+          enterKeyHint="go"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          disabled={disabled}
+          aria-busy={navigating}
+          onFocus={() => {
+            return focus();
+          }}
+          onBlur={() => {
+            return blur();
+          }}
+          onChange={(event) => {
+            return edit(event.currentTarget.value);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229
+            ) {
+              return;
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              reset();
+              event.currentTarget.select();
+            }
+          }}
+        />
+      </form>
+    </RequestCommit>
+  );
+}
+
 function BrowserNavigation({
   signals,
   settingsDisabled,
@@ -434,24 +534,19 @@ function BrowserNavigation({
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
-  const address = useGet(signals.address$);
   const controls = useGet(signals.controls$);
   const pageSignal = useGet(pageSignal$);
-  const addressRef = useSet(signals.refs.address$);
-  const focus = useSet(signals.focusAddress$);
-  const edit = useSet(signals.editAddress$);
-  const blur = useSet(signals.blurAddress$);
-  const reset = useSet(signals.resetAddress$);
   const [operation, navigate] = useLoadableSet(signals.navigate$);
   const navigating = operation.state === "loading";
   const entries = history.state === "hasData" ? history.data : null;
-  const failed =
-    (history.state === "hasError" &&
-      isBrowserOperationFailure(history.error)) ||
-    (operation.state === "hasError" &&
-      isBrowserOperationFailure(operation.error) &&
-      (!(operation.error instanceof NavigationFault) ||
-        operation.error.scope === scope));
+  const failures = [
+    history.state === "hasError" &&
+      isBrowserOperationFailure(history.error) &&
+      history,
+    operation.state === "hasError" &&
+      isCurrentNavigationFailure(operation.error, scope) &&
+      operation,
+  ];
   return (
     <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
       <IconButton
@@ -493,61 +588,18 @@ function BrowserNavigation({
       >
         <RotateCw size={15} />
       </IconButton>
-      <form
-        className="flex min-w-0 flex-1"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (controls.streaming && !navigating) {
-            detach(navigate("submit-address", pageSignal), Reason.DomCallback);
-          }
+      <BrowserAddress
+        signals={signals}
+        disabled={!controls.streaming || navigating}
+        navigating={navigating}
+        onSubmit={() => {
+          detach(navigate("submit-address", pageSignal), Reason.DomCallback);
         }}
-      >
-        <Input
-          ref={addressRef}
-          data-browser-address
-          aria-label={t(($) => {
-            return $.browserViewer.address;
-          })}
-          placeholder={t(($) => {
-            return $.browserSession.addressPlaceholder;
-          })}
-          className="h-8 min-w-0 flex-1"
-          value={address}
-          inputMode="url"
-          enterKeyHint="go"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          disabled={!controls.streaming || navigating}
-          aria-busy={navigating}
-          onFocus={() => {
-            return focus();
-          }}
-          onBlur={() => {
-            return blur();
-          }}
-          onChange={(event) => {
-            return edit(event.currentTarget.value);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.nativeEvent.isComposing ||
-              event.nativeEvent.keyCode === 229
-            ) {
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              reset();
-              event.currentTarget.select();
-            }
-          }}
-        />
-      </form>
+      />
       <BrowserSettings signals={signals} disabled={settingsDisabled} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
-        failed={failed}
+        occurrences={failures}
         className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
       />
     </div>
@@ -558,7 +610,8 @@ function BrowserTab({
   signals,
   target,
   name,
-  width,
+  selected,
+  handoff,
   selecting,
 }: {
   readonly signals: BrowserSignals;
@@ -568,7 +621,8 @@ function BrowserTab({
     readonly faviconUrl?: string;
   };
   readonly name: string;
-  readonly width: number;
+  readonly selected: boolean;
+  readonly handoff: Extract<BrowserFocusHandoff, { kind: "tab" }> | null;
   readonly selecting: boolean;
 }) {
   const { t } = useTranslation();
@@ -576,60 +630,126 @@ function BrowserTab({
   const pageSignal = useGet(pageSignal$);
   const [closeOperation, closeTab] = useLoadableSet(signals.closeTab$);
   const rejectFavicon = useSet(signals.rejectFavicon$);
+  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
   const closing = closeOperation.state === "loading";
+  const triggerDisabled = controls.tabsDisabled || selecting || closing;
+  // Each tab owns its close loadable and therefore its actual enable commit.
   return (
-    <div
-      style={{ width }}
-      className="group relative h-9 min-w-0 max-w-56 flex-none"
+    <RequestCommit
+      request={handoff}
+      commitKey={JSON.stringify([target.id, selected, triggerDisabled])}
+      onCommit={acknowledge}
     >
-      <TabsTrigger
-        value={target.id}
-        aria-label={name}
-        disabled={controls.tabsDisabled || selecting || closing}
-        className="w-full justify-start rounded-lg px-2 pr-7 text-xs data-active:bg-state-selected data-active:shadow-none"
+      <div
+        className={cn(
+          "group relative h-9 min-w-[32px] max-w-56 flex-1 basis-0",
+          selected && "min-w-[48px]",
+        )}
       >
-        {target.faviconUrl ? (
-          <img
-            src={target.faviconUrl}
-            alt=""
-            className="size-3.5 shrink-0"
-            onError={() => {
-              if (target.faviconUrl) {
-                rejectFavicon(target.id, target.faviconUrl);
-              }
-            }}
+        <TabsTrigger
+          value={target.id}
+          data-browser-tab-id={target.id}
+          aria-label={name}
+          disabled={triggerDisabled}
+          className="w-full justify-start rounded-lg px-2 pr-7 text-xs data-active:bg-state-selected data-active:shadow-none"
+        >
+          {target.faviconUrl ? (
+            <img
+              src={target.faviconUrl}
+              alt=""
+              className="size-3.5 shrink-0"
+              onError={() => {
+                if (target.faviconUrl) {
+                  rejectFavicon(target.id, target.faviconUrl);
+                }
+              }}
+            />
+          ) : (
+            <Globe size={14} className="shrink-0" />
+          )}
+          <span className="truncate">{name}</span>
+        </TabsTrigger>
+        <IconButton
+          type="button"
+          data-close-target={target.id}
+          aria-label={t(
+            ($) => {
+              return $.browserViewer.closeTab;
+            },
+            { title: name },
+          )}
+          disabled={!controls.canMutateTabs || closing || selecting}
+          className="absolute right-0.5 top-1.5 size-6 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            detach(closeTab(target.id, pageSignal), Reason.DomCallback);
+          }}
+        >
+          <X size={12} />
+        </IconButton>
+        <BrowserOperationError
+          occurrences={[
+            closeOperation.state === "hasError" &&
+              isBrowserOperationFailure(closeOperation.error) &&
+              closeOperation,
+          ]}
+          className="absolute left-0 top-full z-20 w-56 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+        />
+      </div>
+    </RequestCommit>
+  );
+}
+
+function BrowserTabPicker({
+  signals,
+  selecting,
+  onSelect,
+  title,
+}: {
+  readonly signals: BrowserSignals;
+  readonly selecting: boolean;
+  readonly onSelect: (tabId: string) => Promise<void>;
+  readonly title: (id: string, value: string) => string;
+}) {
+  const { t } = useTranslation();
+  const tabs = useGet(signals.tabs$);
+  const selectedTabId = useGet(signals.selectedTabId$);
+  const controls = useGet(signals.controls$);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        data-browser-tab-picker
+        render={
+          <IconButton
+            type="button"
+            aria-label={t(($) => {
+              return $.browserViewer.allTabs;
+            })}
+            className="size-8"
           />
-        ) : (
-          <Globe size={14} className="shrink-0" />
-        )}
-        <span className="truncate">{name}</span>
-      </TabsTrigger>
-      <IconButton
-        type="button"
-        data-close-target={target.id}
-        aria-label={t(
-          ($) => {
-            return $.browserViewer.closeTab;
-          },
-          { title: name },
-        )}
-        disabled={!controls.canMutateTabs || closing || selecting}
-        className="absolute right-0.5 top-1.5 size-6 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-        onClick={(event) => {
-          event.stopPropagation();
-          detach(closeTab(target.id, pageSignal), Reason.DomCallback);
-        }}
-      >
-        <X size={12} />
-      </IconButton>
-      <BrowserOperationError
-        failed={
-          closeOperation.state === "hasError" &&
-          isBrowserOperationFailure(closeOperation.error)
         }
-        className="absolute left-0 top-full z-20 w-56 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
-      />
-    </div>
+      >
+        <ChevronDown size={15} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {tabs.map((target) => {
+          return (
+            <DropdownMenuItem
+              key={target.id}
+              disabled={controls.tabsDisabled || selecting}
+              onClick={() => {
+                detach(onSelect(target.id), Reason.DomCallback);
+              }}
+            >
+              <span className="max-w-60 flex-1 truncate">
+                {title(target.id, target.title)}
+              </span>
+              {selectedTabId === target.id && <Check size={14} />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -656,6 +776,11 @@ function BrowserTabs({
   const controls = useGet(signals.controls$);
   const toolbarRef = useSet(signals.refs.toolbar$);
   const tabsRef = useSet(signals.refs.tabs$);
+  const handoff = useGet(signals.focusHandoff$);
+  const toolbarHandoff = handoff?.kind === "toolbar" ? handoff : null;
+  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
+  const newTabDisabled = !controls.canCreate || creating;
+  const syncLayout = useSet(signals.syncLayout$);
   const title = (id: string, value: string) => {
     return (selectedTabId === id && navigation?.url === "about:blank") ||
       value === "about:blank"
@@ -668,170 +793,169 @@ function BrowserTabs({
           });
   };
   return (
-    <div
-      ref={toolbarRef}
-      data-browser-toolbar
-      className="flex min-w-0 shrink-0 items-center gap-1 border-b border-divider px-2 py-1"
+    <RequestCommit
+      request={toolbarHandoff}
+      commitKey={JSON.stringify([
+        selectedTabId,
+        newTabDisabled,
+        layout.overflow,
+      ])}
+      onCommit={acknowledge}
     >
-      <TabsList
-        ref={tabsRef}
-        className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
+      <LayoutCommit
+        layoutKey={String(Boolean(actions))}
+        onLayoutCommit={syncLayout}
       >
-        {layout.items.map(({ target, width }) => {
-          const name = title(target.id, target.title);
-          return (
-            <BrowserTab
-              key={target.id}
-              signals={signals}
-              target={
-                tabs.find((tab) => {
-                  return tab.id === target.id;
-                }) ?? target
-              }
-              name={name}
-              width={width}
-              selecting={selecting}
-            />
-          );
-        })}
-      </TabsList>
-      {layout.overflow && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            data-browser-tab-picker
-            render={
-              <IconButton
-                type="button"
-                aria-label={t(($) => {
-                  return $.browserViewer.allTabs;
-                })}
-                className="size-8"
-              />
-            }
+        <div
+          ref={toolbarRef}
+          data-browser-toolbar
+          className="flex min-w-0 shrink-0 items-center gap-1 border-b border-divider px-2 py-1"
+        >
+          <div
+            data-browser-tab-budget
+            className="flex min-w-0 flex-1 items-center gap-1"
           >
-            <ChevronDown size={15} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {tabs.map((target) => {
-              return (
-                <DropdownMenuItem
-                  key={target.id}
-                  disabled={controls.tabsDisabled || selecting}
-                  onClick={() => {
-                    detach(onSelect(target.id), Reason.DomCallback);
-                  }}
-                >
-                  <span className="max-w-60 flex-1 truncate">
-                    {title(target.id, target.title)}
-                  </span>
-                  {selectedTabId === target.id && <Check size={14} />}
-                </DropdownMenuItem>
-              );
+            <TabsList
+              ref={tabsRef}
+              className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
+            >
+              {layout.items.map(({ target }) => {
+                const name = title(target.id, target.title);
+                return (
+                  <BrowserTab
+                    key={target.id}
+                    signals={signals}
+                    target={
+                      tabs.find((tab) => {
+                        return tab.id === target.id;
+                      }) ?? target
+                    }
+                    name={name}
+                    selected={selectedTabId === target.id}
+                    handoff={
+                      handoff?.kind === "tab" && handoff.targetId === target.id
+                        ? handoff
+                        : null
+                    }
+                    selecting={selecting}
+                  />
+                );
+              })}
+            </TabsList>
+            {layout.overflow && (
+              <BrowserTabPicker
+                signals={signals}
+                selecting={selecting}
+                onSelect={onSelect}
+                title={title}
+              />
+            )}
+          </div>
+          <IconButton
+            data-browser-new-tab
+            type="button"
+            aria-label={t(($) => {
+              return $.browserViewer.newTab;
             })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-      <IconButton
-        data-browser-new-tab
-        type="button"
-        aria-label={t(($) => {
-          return $.browserViewer.newTab;
-        })}
-        disabled={!controls.canCreate || creating}
-        className="size-8"
-        onClick={() => {
-          detach(onCreate(), Reason.DomCallback);
-        }}
-      >
-        <Plus size={16} />
-      </IconButton>
-      {actions}
-    </div>
+            disabled={newTabDisabled}
+            className="size-8"
+            onClick={() => {
+              detach(onCreate(), Reason.DomCallback);
+            }}
+          >
+            <Plus size={16} />
+          </IconButton>
+          {actions}
+        </div>
+      </LayoutCommit>
+    </RequestCommit>
   );
 }
 
 function useBrowserRecovery(signals: BrowserSignals) {
-  const controls = useGet(signals.controls$);
+  const recoveryOperation = useLoadable(signals.recoveryOperation$);
   const displayRecovery = useGet(signals.displayRecovery$);
-  const imageRecovery = useGet(signals.imageRecovery$);
   const navigationScope = useGet(signals.navigationScope$);
   const [retryOperation, retryImage] = useLoadableSet(signals.retryImage$);
   const [reconnectOperation, reconnect] = useLoadableSet(signals.reconnect$);
   const [reloadOperation, navigate] = useLoadableSet(signals.navigate$);
+  const recovering = recoveryOperation.state === "loading";
   const pending =
+    recoveryOperation.state === "loading" ||
     retryOperation.state === "loading" ||
     reloadOperation.state === "loading" ||
     reconnectOperation.state === "loading";
-  const failed =
-    displayRecovery !== null ||
-    (retryOperation.state === "hasError" &&
-      isBrowserOperationFailure(retryOperation.error)) ||
-    (reloadOperation.state === "hasError" &&
-      isBrowserOperationFailure(reloadOperation.error) &&
-      (!(reloadOperation.error instanceof NavigationFault) ||
-        reloadOperation.error.scope === navigationScope)) ||
-    (reconnectOperation.state === "hasError" &&
-      isBrowserOperationFailure(
-        reconnectOperation.error,
-        imageRecovery !== null || controls.streaming,
-      ));
-  return { pending, failed, retryImage, reconnect, navigate };
+  // The current runtime presents connection failures. Action loadables retain
+  // only local command feedback; an old Reconnect must not become current again.
+  const failures = [
+    displayRecovery,
+    !recovering &&
+      retryOperation.state === "hasError" &&
+      isBrowserOperationFailure(retryOperation.error) &&
+      retryOperation,
+    reloadOperation.state === "hasError" &&
+      isCurrentNavigationFailure(reloadOperation.error, navigationScope) &&
+      reloadOperation,
+  ];
+  const recoveryError =
+    recoveryOperation.state === "hasData" &&
+    recoveryOperation.data &&
+    recoveryOperation.data.status !== "restored"
+      ? recoveryOperation.data.error
+      : null;
+  return {
+    pending,
+    failures,
+    recovering,
+    recoveryError,
+    retryImage,
+    reconnect,
+    navigate,
+  };
 }
 
-function BrowserStatus({
+export function BrowserRecoveryStatus({
   signals,
+  className,
+}: {
+  readonly signals: BrowserSignals;
+  readonly className?: string;
+}) {
+  const recovery = useLoadable(signals.recoveryOperation$);
+  const { t } = useTranslation();
+  return recovery.state === "loading" ? (
+    <span
+      role="status"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap",
+        className,
+      )}
+    >
+      <Loader2 size={12} aria-hidden className="animate-spin" />
+      {t(($) => {
+        return $.browserViewer.reconnecting;
+      })}
+    </span>
+  ) : null;
+}
+
+function BrowserRecoveryActions({
+  signals,
+  recovery,
   creating,
-  contentVisible,
   onCreate,
 }: {
   readonly signals: BrowserSignals;
+  readonly recovery: ReturnType<typeof useBrowserRecovery>;
   readonly creating: boolean;
-  readonly contentVisible: boolean;
   readonly onCreate: () => Promise<string>;
 }) {
   const { t } = useTranslation();
   const controls = useGet(signals.controls$);
-  const presentation = useGet(signals.presentation$);
   const pageSignal = useGet(pageSignal$);
-  const { pending, failed, retryImage, reconnect, navigate } =
-    useBrowserRecovery(signals);
-  if (contentVisible) {
-    return (
-      <BrowserOperationError
-        failed={failed}
-        className="absolute inset-x-3 top-3 z-10 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
-      />
-    );
-  }
-  const text =
-    presentation.status === "connecting"
-      ? t(($) => {
-          return $.browserViewer.connecting;
-        })
-      : presentation.status === "paused"
-        ? t(($) => {
-            return $.browserViewer.paused;
-          })
-        : controls.emptyScoped || controls.emptyUnscoped
-          ? t(($) => {
-              return $.browserViewer.noTabs;
-            })
-          : presentation.status === "disconnected"
-            ? t(($) => {
-                return $.browserViewer.disconnected;
-              })
-            : t(($) => {
-                return $.browserViewer.unavailable;
-              });
+  const { pending, retryImage, reconnect, navigate } = recovery;
   return (
-    <div
-      role="status"
-      className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-5 text-center text-sm text-muted-foreground"
-    >
-      {presentation.status === "connecting" && (
-        <Loader2 size={20} className="animate-spin" />
-      )}
-      <p>{text}</p>
+    <>
       {controls.canReload && (
         <Button
           type="button"
@@ -892,7 +1016,91 @@ function BrowserStatus({
           })}
         </Button>
       )}
-      <BrowserOperationError failed={failed} className="text-sm" />
+    </>
+  );
+}
+
+function useBrowserStatusText(signals: BrowserSignals, recovering: boolean) {
+  const { t } = useTranslation();
+  const controls = useGet(signals.controls$);
+  const presentation = useGet(signals.presentation$);
+  return recovering || presentation.status === "connecting"
+    ? t(($) => {
+        return $.browserViewer.connecting;
+      })
+    : presentation.status === "paused"
+      ? t(($) => {
+          return $.browserViewer.paused;
+        })
+      : controls.emptyScoped || controls.emptyUnscoped
+        ? t(($) => {
+            return $.browserViewer.noTabs;
+          })
+        : presentation.status === "disconnected"
+          ? t(($) => {
+              return $.browserViewer.disconnected;
+            })
+          : t(($) => {
+              return $.browserViewer.unavailable;
+            });
+}
+
+function BrowserStatus({
+  signals,
+  creating,
+  contentVisible,
+  onCreate,
+}: {
+  readonly signals: BrowserSignals;
+  readonly creating: boolean;
+  readonly contentVisible: boolean;
+  readonly onCreate: () => Promise<string>;
+}) {
+  const presentation = useGet(signals.presentation$);
+  const recovery = useBrowserRecovery(signals);
+  const { failures, recovering, recoveryError } = recovery;
+  const text = useBrowserStatusText(signals, recovering);
+  const error = presentation.error
+    ? (recoveryError ?? presentation.error)
+    : null;
+  const showStatus =
+    !contentVisible && !(recovering && presentation.retainedFrame);
+  return (
+    <div
+      role={showStatus ? "status" : undefined}
+      className={
+        showStatus
+          ? "absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-5 text-center text-sm text-muted-foreground"
+          : "contents"
+      }
+    >
+      {showStatus && (recovering || presentation.status === "connecting") && (
+        <Loader2 size={20} className="animate-spin" />
+      )}
+      {showStatus && <p>{text}</p>}
+      {showStatus && !recovering && error && error.message !== text && (
+        <p role="alert" className="max-w-md break-words">
+          {error.message}
+        </p>
+      )}
+      {showStatus && (
+        <BrowserRecoveryActions
+          signals={signals}
+          recovery={recovery}
+          creating={creating}
+          onCreate={onCreate}
+        />
+      )}
+      {/* Keep notice ownership stable when status gives way to live content. */}
+      <BrowserOperationError
+        occurrences={failures}
+        duplicateMessage={showStatus ? error?.message : undefined}
+        className={
+          showStatus
+            ? "text-sm"
+            : "absolute inset-x-3 top-3 z-10 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+        }
+      />
     </div>
   );
 }
@@ -934,10 +1142,11 @@ function BrowserClipboard({ signals }: { readonly signals: BrowserSignals }) {
         />
       )}
       <BrowserOperationError
-        failed={
+        occurrences={[
           copyOperation.state === "hasError" &&
-          isBrowserOperationFailure(copyOperation.error)
-        }
+            isBrowserOperationFailure(copyOperation.error) &&
+            copyOperation,
+        ]}
         className="text-sm"
       />
       <div className="flex justify-end gap-2">
@@ -1064,15 +1273,17 @@ export function Browser({
         className="relative min-h-0 flex-1"
       >
         <BrowserOperationError
-          failed={[selectOperation, createOperation].some((operation) => {
-            return (
-              operation.state === "hasError" &&
-              isBrowserOperationFailure(
-                operation.error,
-                imageRecovery !== null || controls.streaming,
-              )
-            );
-          })}
+          occurrences={[selectOperation, createOperation].filter(
+            (operation) => {
+              return (
+                operation.state === "hasError" &&
+                isBrowserOperationFailure(
+                  operation.error,
+                  imageRecovery !== null || controls.streaming,
+                )
+              );
+            },
+          )}
           className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
         />
         <div
@@ -1088,7 +1299,9 @@ export function Browser({
             aria-label={t(($) => {
               return $.browserViewer.liveView;
             })}
-            aria-hidden={!controls.streaming}
+            aria-hidden={
+              presentation.status !== "streaming" && !presentation.retainedFrame
+            }
             className="block h-full w-full object-contain"
           />
           <BrowserInput signals={signals} />
@@ -1098,7 +1311,7 @@ export function Browser({
             signals={signals}
             creating={createOperation.state === "loading"}
             contentVisible={
-              controls.streaming ||
+              presentation.status === "streaming" ||
               presentation.loadingPreview ||
               presentation.blank
             }

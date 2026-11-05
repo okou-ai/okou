@@ -26,6 +26,14 @@ Retain exact version gates and real protocol coverage for necessary adaptations.
 Re-audit private integration when upgrading dependencies, and remove a bridge when
 a supported public API provides the required capability.
 
+Keep the addon's locked runtime dependency closure aligned with the official
+release lock, including transitive FFI and codec dependencies. A package satisfying
+upstream version bounds is not proof that it matches the standalone. The verified
+packaged suite checks the release reference, installed dependencies and readable
+frozen-runtime versions; test-only tooling retains its separate constraints.
+Interpreter upgrades must also preserve the shared hostname Unicode policy rather
+than silently expanding accepted authorities with a newer Unicode database.
+
 The official pinned Linux standalone requires glibc 2.36 or newer on both host
 architectures. Establish that host prerequisite before deployment. Runner uses
 its own interception CA for sandbox clients. Upstream verification uses the
@@ -68,7 +76,7 @@ until consumed, but rejected expansion overshoot is released before yielding.
 This does not introduce a byte-exact Brotli allocation guarantee. This is not a
 lifetime row limit, a billing cutoff, or an alternate price/count fallback.
 
-The exact mitmproxy 12.3.0 compatibility bridge provides two ownership boundaries:
+The exact mitmproxy 12.3.1 compatibility bridge provides two ownership boundaries:
 it pauses the HTTP stream before its next body event, and joins the checkpoint's
 complete native hook task outside the connection event lock in the reader's
 `drain_writers()` boundary before the connection reads again. The native read loop
@@ -330,9 +338,9 @@ reply followed by EOF, then the existing TCP listener probe and one completed
 inode alone is not readiness. Only observational startup probes retry, with at
 most one second per control attempt; an uncertain warmup is not replayed.
 
-`catalog.warm` takes empty object parameters and runs the existing configured
-catalog loader on the bounded registry owner, not the control I/O thread. It
-returns the credential-free catalog projection used by registry observations:
+`catalog.warm` takes empty object parameters and prepares raw catalog validation
+and the matching diagnostic index on the bounded registry owner, not the control
+I/O thread. It returns the credential-free catalog projection used by registry observations:
 `available` with file identity and digest, or `unavailable` with file identity
 when known and its explicit reason. It does not apply a registry or change
 authorization. Missing and invalid sources retain existing fail-closed builtin
@@ -341,8 +349,8 @@ observational and does not establish catalog warmth.
 
 Runner starts mitmdump with `server=false` because the pinned runtime loads
 scripts asynchronously and can otherwise listen before the addon is configured.
-The addon's configure hook preloads an existing configured catalog; its managed
-running hook then starts control and enables the listener. Standalone addon use
+The addon's configure hook prepares an existing configured catalog and its
+diagnostic index; its managed running hook then starts control and enables the listener. Standalone addon use
 without Runner control does not override the server option. This covers
 sandboxes reconnecting during proxy replacement before Runner can send its
 readiness request. Managed `proxy.status` returns `not_ready` until its own
@@ -353,9 +361,13 @@ therefore completes another catalog warmup after provider startup readiness and
 before factories, Running status, or discovery. A failed control exchange stops
 startup; lifecycle cancellation retains startup rollback ownership. Replacement
 mitmdump launches complete their catalog load before process readiness returns.
-The loader reuses the warmed file identity on initial requests; changed identities
-still invalidate it. Periodic catalog replacement after admission retains its
-existing synchronous validation cost. Warmup outcome and elapsed time are logged
+The loader and diagnostic index reuse the warmed file identity on initial
+requests; changed identities still invalidate them. Rule validation shares runtime
+syntax parsing without constructing unused matcher objects. Source paths with one
+literal interpretation avoid graph enumeration while preserving the original
+charged work and resource bounds; encoded/escaped paths retain the bounded graph
+analysis. Periodic catalog replacement after admission retains synchronous
+validation and diagnostic preparation. Warmup outcome and elapsed time are logged
 without policy or credential content; unavailable is not reported as an available
 catalog.
 
@@ -727,7 +739,7 @@ and streaming-response policies are unchanged; the input gate does not create a
 byte-exact transient output-allocation guarantee.
 
 Production zstd decoding uses `compression.zstd` on the pinned standalone's
-Python 3.14.0 interpreter, which is also used by tests and static checks. Every
+Python 3.15.1 interpreter, which is also used by tests and static checks. Every
 `decompress` call supplies a positive `max_length`, bounded by both the remaining
 output allowance and 64 KiB. Buffered output is drained with empty input until
 `needs_input` permits another chunk. Prefix decoding feeds at most 1 KiB at a
@@ -1059,7 +1071,7 @@ diagnostic state without emitting a record.
 connection class is already installed, and rejects an unexpected unmarked
 mitmproxy connection class. `mitm_addon.load()` installs the adaptation through
 the [exact-version compatibility gate](../../crates/runner/mitm-addon/src/mitmproxy_compat.py)
-before registering addon options. The gate requires mitmproxy `12.3.0` and
+before registering addon options. The gate requires mitmproxy `12.3.1` and
 wsproto `1.3.2`; the [runner dependency contract](../../crates/runner/src/deps.rs)
 and the addon `pyproject.toml`/`uv.lock` keep those pins aligned.
 

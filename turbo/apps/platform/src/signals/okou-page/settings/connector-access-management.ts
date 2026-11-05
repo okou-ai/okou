@@ -9,6 +9,10 @@ import { userPermissionGrantsByAgentIfExists } from "../../permission-allow/perm
 import { firewallPermissionMetadataByConnector } from "../../firewall-permission-metadata.ts";
 import type { PlatformUserPermissionGrant } from "../../connector-domain.ts";
 import { connectorAgentAccess$ } from "./connector-agent-access.ts";
+import { createConnectorPermissionsSignals } from "./connector-permissions.ts";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { pageSignal$ } from "../../page-signal.ts";
 
 export interface ConnectorAgentAccessRow {
   readonly agent: AgentResponse;
@@ -32,13 +36,24 @@ export const connectorAccessManagementSearch$ = computed((get) => {
 });
 
 export const setManagedConnectorAccessSlug$ = command(
-  ({ set }, connectorSlug: ConnectorSlug | null) => {
+  ({ get, set }, connectorSlug: ConnectorSlug | null) => {
+    const current = get(managedConnectorAccessSignals$);
+    if (current) {
+      set(current.memberPermissions.close$);
+    }
     set(managedConnectorAccessSlugState$, connectorSlug);
+    const next = get(managedConnectorAccessSignals$);
+    if (
+      next &&
+      get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
+    ) {
+      set(next.memberPermissions.open$, get(pageSignal$));
+    }
   },
 );
 
 export const closeConnectorAccessManagement$ = command(({ set }) => {
-  set(managedConnectorAccessSlugState$, null);
+  set(setManagedConnectorAccessSlug$, null);
 });
 
 export const setConnectorAccessManagementSearch$ = command(
@@ -149,6 +164,10 @@ function createManagedConnectorAccessSignals(connectorSlug: ConnectorSlug) {
     },
   );
   return {
+    memberPermissions: createConnectorPermissionsSignals({
+      target: { kind: "builtin", connectorSlug },
+      label: connectorSlug,
+    }),
     rows$,
     metadata$,
     permissionGrants$,

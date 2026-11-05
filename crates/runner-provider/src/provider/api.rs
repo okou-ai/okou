@@ -48,7 +48,7 @@ use crate::error::{
     ApiBodyReadError, ApiFailureKind, ApiStatusError, ApiTransportCause, ApiTransportError,
     ProviderError, ProviderResult,
 };
-use crate::http::{ApiRequestBuilder, HttpClient};
+use crate::http::{ApiRequestBuilder, HttpClient, response_cf_ray};
 use crate::run_cancellation::RunCancellationRegistry;
 #[cfg(test)]
 use guest_contracts::okou_cli::OkouCliInstalledPackage;
@@ -567,13 +567,19 @@ impl ApiProvider {
             )
         };
         let result = claim().await;
-        if !matches!(
-            &result,
+        let (status, failure_cause) = match &result {
             Err(ClaimApiError::Request(ProviderError::ApiStatus(error)))
-                if error.status == StatusCode::INTERNAL_SERVER_ERROR
-        ) {
-            return result;
-        }
+                if error.status == StatusCode::INTERNAL_SERVER_ERROR =>
+            {
+                (Some(error.status.as_u16()), None)
+            }
+            Err(ClaimApiError::Request(ProviderError::ApiTransport(error)))
+                if error.failure_cause == ApiTransportCause::ConnectionReset =>
+            {
+                (None, Some(error.failure_cause.as_str()))
+            }
+            _ => return result,
+        };
         let Some(preference) = candidate.runner_preference().filter(|preference| {
             preference.targets(self.runner_identity)
                 && preference.remaining() > PREFERRED_CLAIM_RETRY_DELAY
@@ -594,7 +600,8 @@ impl ApiProvider {
         }
         warn!(
             run_id = %candidate.run_id(),
-            status = 500,
+            status,
+            failure_cause,
             retry_after_ms = duration_ms(PREFERRED_CLAIM_RETRY_DELAY),
             "claim failed, retrying preferred candidate"
         );
@@ -1744,7 +1751,7 @@ impl ApiClient {
                 http_status = status,
                 execution_to_response_headers_ms = duration_ms(execution_to_response_headers_elapsed),
                 http_version = ?resp.version(),
-                response_cf_ray = claim_cf_ray(resp.headers()),
+                response_cf_ray = response_cf_ray(resp.headers()),
                 response_vercel_id = claim_vercel_id(resp.headers()),
                 "claim response headers received"
             );
@@ -2015,16 +2022,6 @@ impl ApiClient {
 
 // Only provider-issued request identifiers are retained, never arbitrary
 // response headers. Invalid/unknown shapes are simply unobserved diagnostics.
-fn claim_cf_ray(headers: &reqwest::header::HeaderMap) -> Option<&str> {
-    let value = headers.get("cf-ray")?.to_str().ok()?;
-    let (ray, colo) = value.split_once('-')?;
-    (ray.len() == 16
-        && ray.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && colo.len() == 3
-        && colo.bytes().all(|byte| byte.is_ascii_uppercase()))
-    .then_some(value)
-}
-
 fn claim_vercel_id(headers: &reqwest::header::HeaderMap) -> Option<&str> {
     let value = headers.get("x-vercel-id")?.to_str().ok()?;
     let (region, request_id) = value.split_once("::")?;

@@ -29,6 +29,10 @@ export PATH="$HOME/.local/bin:$PATH"
 uv --version
 ```
 
+Ensure Python 3.15.1 is installed and discoverable before syncing. The pinned uv
+release predates its interpreter download metadata and cannot bootstrap it by
+itself; CI provisions the interpreter with `actions/setup-python`.
+
 Create or update the local environment from the committed lockfile:
 
 ```bash
@@ -41,7 +45,7 @@ uv sync --locked
 `.venv` without changing `uv.lock`. It also selects the exact interpreter from
 `.python-version`, which matches the Python patch embedded in the pinned
 mitmproxy standalone runtime. Package metadata, Ruff, and BasedPyright target
-that runtime's Python 3.14; related checks and tests use Python 3.14.0.
+that runtime's Python 3.15; related checks and tests use Python 3.15.1.
 
 The test-only `zstandard` package supplies independent wire fixtures. Production
 uses the stdlib zstd API provided by the pinned runtime; installing the
@@ -49,6 +53,16 @@ test codec does not establish standalone compatibility. Keep the verified
 packaged suite in the upgrade gate. Its compressed-response case checks original
 wire forwarding, decoded network-log capture and complete JSON usage through
 the actual frozen executable on both architectures.
+
+Packaged verification also acquires the released upstream `uv.lock` using
+`tests/mitmproxy-uv.lock.sha256`. Before behavioral acceptance, it compares the
+complete applicable mitmproxy runtime dependency closure with the addon lockfile
+and installed environment, then probes the frozen binary's available distribution
+metadata and critical codec, FFI and protocol module versions. PyInstaller does
+not retain metadata for every distribution; the released lock remains the full
+dependency reference. Addon-only test and lint tools keep their own constraints.
+Keep this reference checksum aligned with the selected release when upgrading;
+both cached reference bytes and binary artifacts are verified before pytest.
 
 ## Running Tests
 

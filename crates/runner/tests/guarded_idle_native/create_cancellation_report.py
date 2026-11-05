@@ -16,7 +16,6 @@ import snapshot_report as startup
 PREFIX = "NATIVE_CREATE_CANCELLATION_WITNESS "
 CASES = {f"CreateCancellation-{mode}" for mode in ("fresh", "snapshot")}
 PHASES = ("inputs_verified", "create_accepted", "cancel_wait", "create_joined", "producers_joined", "accounting_closed")
-ERROR = "creation cancelled/lost; joined physical rollback, Fresh remains uncertain"
 
 
 def ordered(values):
@@ -101,17 +100,18 @@ def validate(directory):
         ordered([events[2]["monotonic_ns"],joined.get("release_ns"),completion["cleanup_ns"],joined.get("joined_ns"),events[3]["monotonic_ns"]])
         accounting(joined.get("accounting"),growth,True)
         startup.exact(joined,{"completion":completion,"release_ns":joined["release_ns"],"joined_ns":joined["joined_ns"],
-            "finished":True,"prepared":False,"published":False,"retained_resource":False,"error":ERROR,
+            "transaction_joined":True,"cancelled":True,
             "allocated":[2,4096,1],"accounting":joined["accounting"]},"actual create cancellation/uncertainty result changed")
         accounting(producers.get("accounting"),growth,True)
-        startup.exact(producers,{"blank_shutdown_joined":True,"pressure_stopped":True,"heartbeat_joined":True,
+        startup.exact(producers,{"creation_joined":True,"pressure_stopped":True,"heartbeat_joined":True,
             "provider_joined":True,"peer_joined":True,"snapshot_reverified":True,"allocated":[2,4096,1],
             "accounting":producers["accounting"]},"actual create producers not joined before original saving")
         startup.exact(closed,{"registered_operations":1,"tracked_tasks":0,"started":0,"uncertain":1,
             "ordinary_growth_bytes":growth,"cleanup_growth_bytes":0,"closed":True,"allocated":[0,0,0]},"closed actual create P2 uncertainty was discarded")
         result["cases"][case]["create_cancellation"]=events
-    result.update(format="native-create-cancellation-report-v1",native_create_cancellation_complete=True,
-        checkpoint_models_stalled_storage=False,remaining_parent_gate="40787 actual returned Guest/late results; 40788 post-merge reconciliation; production/higher/P4 limits")
+    result.update(format="native-create-cancellation-report-v2",native_create_cancellation_complete=True,
+        checkpoint_models_stalled_storage=False,
+        coverage_boundary="direct factory custody and physical rollback; no production memory-policy activation")
     return result
 
 

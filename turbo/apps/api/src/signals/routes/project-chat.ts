@@ -7,7 +7,6 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
 import { projectAccess$ } from "./projects";
-import { projectById } from "../services/project.service";
 import { sendValidatedChatEvent$ } from "./chat-events";
 import {
   chatThreadDraft,
@@ -48,19 +47,6 @@ const send$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
-  }
-  const owner = get(organizationAuthContext$);
-  const references = body.data.userMessage.parts
-    .flatMap((part) => {
-      return part.type === "feedback" ? part.note : [part];
-    })
-    .filter((part) => {
-      return part.type === "project";
-    });
-  for (const reference of references) {
-    if (!(await get(projectById(owner, reference.projectId)))) {
-      return missing;
-    }
   }
   return await set(sendValidatedChatEvent$, body.data, signal);
 });

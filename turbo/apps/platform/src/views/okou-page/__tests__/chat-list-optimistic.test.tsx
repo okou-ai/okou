@@ -226,7 +226,6 @@ test.each([true, false])(
       expect(requests.eventId).toBeDefined();
     });
     expect(screen.queryByLabelText("Change icon")).toBeNull();
-    expect(screen.queryByLabelText("Pin chat")).toBeNull();
     expect(screen.queryByLabelText("Share messages")).toBeNull();
     expect(
       screen.queryByLabelText(desktop ? "Artifacts and chats" : "More actions"),
@@ -247,9 +246,6 @@ test.each([true, false])(
 
     await waitFor(() => {
       expect(screen.getByLabelText("Change icon")).toBeVisible();
-      expect(screen.queryAllByLabelText("Pin chat")).toHaveLength(
-        desktop ? 1 : 0,
-      );
       expect(screen.getByLabelText("Share messages")).toBeVisible();
       expect(
         screen.getByLabelText(desktop ? "Artifacts and chats" : "More actions"),

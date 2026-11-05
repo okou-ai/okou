@@ -1,4 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -376,60 +377,69 @@ test("Show only the connector actions that are useful in chat", async () => {
   expect(accessRow(screen.getByLabelText("Add Axiom"))).toBe(axiomRow);
 });
 
-test("Start connector setup from chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({
-        slug: GOOGLE_ANALYTICS_SLUG,
-        label: "Google Analytics",
-        hasAccount: false,
-        authMethods: [oauthAuthMethod()],
-      }),
-    ],
-  });
-  const authWindow = createAuthWindow();
-  const browserOpen = context.mocks.browser.open(authWindow);
-
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openAddConnectors(user);
-  await user.type(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-    "Google Analytics",
-  );
-  const connect = await findFastControl(
-    "button",
-    "Connect Google Analytics",
-    catalog,
-  );
-  expect(authWindow.location.href).toBe("about:blank");
-  await user.click(connect);
-  await waitFor(() => {
-    expect(fixture.oauthConnectionRequests).toHaveLength(1);
-    expect(fixture.oauthConnectionRequests[0]).toMatchObject({
-      connectorSlug: GOOGLE_ANALYTICS_SLUG,
-      authMethod: "oauth",
-      agentId: SCOUT_AGENT_ID,
-      authorizeAgent: true,
+test.each([false, true])(
+  "Start connector setup from chat, chat accounts=%s",
+  async (chatAccounts) => {
+    const user = userEvent.setup({ delay: null });
+    const fixture = installComposerConnectorFixture({
+      catalog: [
+        builtinConnector({
+          slug: GOOGLE_ANALYTICS_SLUG,
+          label: "Google Analytics",
+          hasAccount: false,
+          authMethods: [oauthAuthMethod()],
+        }),
+      ],
     });
-    expect(authWindow.location.href).toBe(
-      "https://accounts.example.test/google-analytics",
+    const authWindow = createAuthWindow();
+    const browserOpen = context.mocks.browser.open(authWindow);
+
+    await setupPage({
+      context,
+      path: `/agents/${SCOUT_AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
+      },
+    });
+
+    await loadComposer();
+    await openConnectors(user);
+    const catalog = await openAddConnectors(user);
+    await user.type(
+      within(catalog).getByPlaceholderText("Find connectors..."),
+      "Google Analytics",
     );
-  });
-  expect(browserOpen.calls).toHaveLength(1);
-  authWindow.close();
-  await waitFor(() => {
+    const connect = await findFastControl(
+      "button",
+      "Connect Google Analytics",
+      catalog,
+    );
+    expect(authWindow.location.href).toBe("about:blank");
+    await user.click(connect);
+    await waitFor(() => {
+      expect(fixture.oauthConnectionRequests).toHaveLength(1);
+      expect(fixture.oauthConnectionRequests[0]).toMatchObject({
+        connectorSlug: GOOGLE_ANALYTICS_SLUG,
+        authMethod: "oauth",
+        agentId: chatAccounts ? undefined : SCOUT_AGENT_ID,
+        authorizeAgent: chatAccounts ? undefined : true,
+      });
+      expect(authWindow.location.href).toBe(
+        "https://accounts.example.test/google-analytics",
+      );
+    });
+    expect(browserOpen.calls).toHaveLength(1);
+    authWindow.close();
+    await waitFor(() => {
+      expect(
+        queryFastControl("button", "Connect Google Analytics", catalog),
+      ).toBeEnabled();
+    });
     expect(
-      queryFastControl("button", "Connect Google Analytics", catalog),
-    ).toBeEnabled();
-  });
-  expect(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-  ).toHaveValue("Google Analytics");
-});
+      within(catalog).getByPlaceholderText("Find connectors..."),
+    ).toHaveValue("Google Analytics");
+  },
+);
 
 test.each([null, "Close"] as const)(
   "Complete or cancel connector authorization from chat (%s)",

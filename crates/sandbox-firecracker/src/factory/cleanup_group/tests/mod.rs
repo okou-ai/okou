@@ -258,28 +258,47 @@ async fn factory_cleanup_group_closed_logging_wait_suppresses_panic() {
 
 #[tokio::test]
 async fn factory_cleanup_group_drop_aborts_in_flight_task() {
-    let group = FactoryCleanupGroup::new();
-    let aborted = Arc::new(AtomicBool::new(false));
-    let aborted_clone = Arc::clone(&aborted);
-    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    for failed_registration in [false, true] {
+        let group = FactoryCleanupGroup::new();
+        let aborted = Arc::new(AtomicBool::new(false));
+        let aborted_clone = Arc::clone(&aborted);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
 
-    let waiter = group.spawn(FactoryCleanupTaskKind::Destroy, "drop-abort", async move {
-        let _flag = AbortFlag(aborted_clone);
-        let _ = started_tx.send(());
-        std::future::pending::<()>().await;
-    });
-    drop(waiter);
+        let waiter = group.spawn(FactoryCleanupTaskKind::Destroy, "drop-abort", async move {
+            let _flag = AbortFlag(aborted_clone);
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        drop(waiter);
 
-    started_rx.await.unwrap();
-    drop(group);
-
-    tokio::time::timeout(std::time::Duration::from_secs(1), async {
-        while !aborted.load(Ordering::SeqCst) {
-            tokio::task::yield_now().await;
+        started_rx.await.unwrap();
+        if failed_registration {
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                            group.spawn(
+                                FactoryCleanupTaskKind::Destroy,
+                                "failed-registration",
+                                std::future::pending::<()>(),
+                            )
+                        }));
+                        assert!(result.is_err());
+                    })
+                    .join()
+                    .unwrap();
+            });
         }
-    })
-    .await
-    .unwrap();
+        drop(group);
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !aborted.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
 }
 
 #[tokio::test]

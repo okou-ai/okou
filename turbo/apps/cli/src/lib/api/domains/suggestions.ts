@@ -5,18 +5,6 @@ import {
   type SuggestionUpdate,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { getClientConfig, handleError } from "../core/client-factory";
-import { suggestionLearningContract } from "@okouai/api-contracts/contracts/suggestion-learning";
-
-export async function prepareSuggestionLearning() {
-  const client = initClient(
-    suggestionLearningContract,
-    await getClientConfig(),
-  );
-  const result = await client.prepare({ body: {}, headers: {} });
-  if (result.status === 200) return result.body;
-  handleError(result, "Failed to prepare suggestion feedback learning");
-}
-
 export async function listSuggestions(options?: {
   readonly all?: boolean;
   readonly after?: string;

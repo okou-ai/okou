@@ -54,6 +54,10 @@ public final class PermissionHTTPFixture: Sendable {
       return try state.withLock { value in
         value.requests.append(request)
         let path = request.url!.path
+        if path == "/api/feature-switches" {
+          return ChatHTTPResponse(
+            body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
+        }
         let threadPath = "/api/chat-threads/\(Self.threadID)"
         if path == threadPath + "/activity-summary" {
           let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))

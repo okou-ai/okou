@@ -53,6 +53,7 @@ import {
 } from "./api-integrations-telegram.ts";
 import { appLogsHandlers } from "./api-logs.ts";
 import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
+import { apiMarketingHandoffsHandlers } from "./api-marketing-handoffs.ts";
 import { apiModelCatalogHandlers } from "./api-model-catalog.ts";
 import {
   apiMorningBriefPreferenceHandlers,
@@ -73,6 +74,7 @@ import {
   resetMockPersonalModelProviders,
 } from "./api-personal-model-providers.ts";
 import { apiPresentationTemplatesHandlers } from "./api-presentation-templates.ts";
+import { apiProjectsHandlers } from "./api-projects.ts";
 import { apiRealtimeHandlers } from "./api-realtime.ts";
 import {
   apiAvailableRunModelsHandlers,
@@ -113,11 +115,11 @@ import {
   apiProactiveSuggestionsHandlers,
   resetMockProactiveSuggestions,
 } from "./api-proactive-suggestions.ts";
-import { apiJobsHandlers, resetMockJobs } from "./api-jobs.ts";
 
 export const handlers = [
   ...apiHostHandlers,
   ...apiMarketingEventsHandlers,
+  ...apiMarketingHandoffsHandlers,
   ...clerkLocalizationHandlers,
   ...localeResourceHandlers,
   ...chatThreadEmojiHandlers,
@@ -131,6 +133,7 @@ export const handlers = [
   ...apiAvailableRunModelsHandlers,
   ...apiPersonalModelProvidersHandlers,
   ...apiPresentationTemplatesHandlers,
+  ...apiProjectsHandlers,
   ...apiUserTemplatesHandlers,
   ...appLogsHandlers,
   ...apiIntegrationsSlackOrgHandlers,
@@ -147,7 +150,6 @@ export const handlers = [
   ...apiPaidToolsHandlers,
   ...apiMorningBriefPreferenceHandlers,
   ...apiProactiveSuggestionsHandlers,
-  ...apiJobsHandlers,
   ...apiEmailSubscriptionHandlers,
   ...apiUserModelPreferenceHandlers,
   ...apiOnboardingHandlers,
@@ -175,7 +177,6 @@ export function resetAllMockHandlers(): void {
   resetMockPaidTools();
   resetMockMorningBriefPreference();
   resetMockProactiveSuggestions();
-  resetMockJobs();
   resetMockEmailSubscription();
   resetMockUserModelPreference();
   resetMockAvailableRunModels();

@@ -3,6 +3,8 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { EllipsisVertical } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 
 import {
   surfaceVariants,
@@ -71,7 +73,17 @@ interface CustomConnectorRowProps {
   readonly connecting: boolean;
 }
 
-function CustomConnectorAgentAccess({
+function CustomConnectorAgentAccess(props: {
+  readonly connector: CustomConnectorResponse;
+  readonly allowAccessIncrease: boolean;
+  readonly onManageAccess: () => void;
+}) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+  return enabled ? null : <LegacyCustomConnectorAgentAccess {...props} />;
+}
+
+function LegacyCustomConnectorAgentAccess({
   connector,
   allowAccessIncrease,
   onManageAccess,
@@ -233,7 +245,7 @@ function CustomConnectorActivationCard({
             },
             { connector: connectorLabel },
           )}
-          className="absolute inset-0 z-10 cursor-pointer rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-default"
+          className="absolute inset-0 z-10 rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           onClick={onActivate}
         />
       ) : null}

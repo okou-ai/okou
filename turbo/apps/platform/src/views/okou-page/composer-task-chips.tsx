@@ -1,9 +1,7 @@
-import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Image, MessageSquare } from "lucide-react";
-import { Button, Tabs, TabsContent } from "@okouai/ui";
-import { EntrustedJobs } from "./entrusted-jobs.tsx";
-import { entrustedJobsEnabled$ } from "../../signals/okou-page/entrusted-jobs.ts";
+import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import {
@@ -20,7 +18,6 @@ import type {
   ComposerTemplateTask,
 } from "../../signals/okou-page/composer-task-chips.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { measureRail } from "../../signals/okou-page/rail-travel.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   ComposerPresentationRecommendations,
@@ -28,11 +25,11 @@ import {
 } from "./chat-composer.tsx";
 import {
   ComposerRail,
-  composerRailFade,
   RAIL_TILE,
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
 import { ComposerRailPager } from "./rail-pager.tsx";
+import { RAIL_ROOT_CLASS } from "./rail-boundary.ts";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import {
   slashTemplatePreviews,
@@ -44,7 +41,6 @@ import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendat
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
-import { ComposerHomeDiscovery } from "./composer-home-discovery.tsx";
 
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
@@ -64,7 +60,7 @@ import { ComposerHomeDiscovery } from "./composer-home-discovery.tsx";
  * overlays above whichever fill is underneath.
  */
 const TASK_IDEA_CARD = [
-  "h-[116px] w-[232px] flex-col items-start justify-start gap-0",
+  "h-[116px] w-full flex-col items-start justify-start gap-0",
   "rounded-xl border-border bg-card p-4 pb-3.5",
   // A fixed box holds translated copy, so the overflow is contained here
   // rather than left to spill past the card in a longer language.
@@ -141,15 +137,15 @@ const WEBSITE_IDEAS = [
 const TASK_TEMPLATE_SHELF = {
   image: {
     category: "illustration",
-    width: "w-[118px]",
+    width: 118,
     ratio: "aspect-[4/5]",
   },
-  website: { category: "website", width: "w-[200px]", ratio: "aspect-video" },
+  website: { category: "website", width: 200, ratio: "aspect-video" },
 } as const satisfies Record<
   ComposerTemplateTask,
   {
     readonly category: SlashTemplatePreviewCategory;
-    readonly width: string;
+    readonly width: number;
     readonly ratio: string;
   }
 >;
@@ -162,14 +158,12 @@ const TASK_TEMPLATE_SHELF = {
 function ComposerTemplateCover({
   title,
   coverUrl,
-  width,
   ratio,
   documentPage,
   onSelect,
 }: {
   readonly title: string;
   readonly coverUrl: string | null;
-  readonly width: string;
   readonly ratio: string;
   /**
    * A document cover is drawn as the picker draws it -- the first page as a
@@ -184,7 +178,7 @@ function ComposerTemplateCover({
     <Button
       type="button"
       variant="quiet"
-      className={cn(RAIL_TILE, width)}
+      className={cn(RAIL_TILE, "w-full")}
       aria-label={t(
         ($) => {
           return $.chat.composer.slashPanel.useTemplate;
@@ -277,9 +271,8 @@ function ComposerTemplateShelf({
         </Button>
       </div>
       <ComposerRail
-        signals={signals}
         rail={`templates:${task}`}
-        gap="gap-3"
+        itemWidth={width}
         items={[
           ...(task === "image"
             ? [
@@ -288,7 +281,7 @@ function ComposerTemplateShelf({
                   signals={signals}
                   kind="illustration"
                   compact
-                  className={cn("block", width)}
+                  className="block w-full"
                   onImported={() => {
                     setMode(null);
                   }}
@@ -301,7 +294,6 @@ function ComposerTemplateShelf({
                 key={template.id}
                 title={template.title}
                 coverUrl={template.previewAssets[0]?.url ?? null}
-                width={width}
                 ratio={ratio}
                 onSelect={() => {
                   insertTemplate(
@@ -329,7 +321,6 @@ function ComposerTemplateShelf({
                 key={preview.slug}
                 title={preview.title}
                 coverUrl={preview.coverUrl}
-                width={width}
                 ratio={ratio}
                 onSelect={() => {
                   insertTemplate(preview.template, preview.attachment);
@@ -377,12 +368,11 @@ function ComposerTaskIdeas({
   const pageSignal = useGet(pageSignal$);
   return (
     <ComposerRail
-      signals={signals}
       rail={`ideas:${task}`}
       label={t(($) => {
         return $.chat.taskChips.ideasLabel;
       })}
-      gap="gap-3"
+      itemWidth={232}
       items={ideas.map((idea) => {
         return (
           <Button
@@ -425,10 +415,9 @@ function ComposerDocumentTemplateRail({
   const pageSignal = useGet(pageSignal$);
   return (
     <ComposerRail
-      signals={signals}
       key={category}
       rail={`templates:document:${category}`}
-      gap="gap-3"
+      itemWidth={200}
       items={
         category === "custom"
           ? [
@@ -437,7 +426,7 @@ function ComposerDocumentTemplateRail({
                 signals={signals}
                 kind="document"
                 compact
-                className="block w-[200px]"
+                className="block w-full"
                 onImported={() => {
                   setMode(null);
                 }}
@@ -448,7 +437,6 @@ function ComposerDocumentTemplateRail({
                     key={template.id}
                     title={template.title}
                     coverUrl={template.coverUrl}
-                    width="w-[200px]"
                     ratio="aspect-[4/3]"
                     documentPage={{
                       hasMorePages: template.coverHasMorePages,
@@ -480,7 +468,6 @@ function ComposerDocumentTemplateRail({
                   coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
                     width: 284,
                   })}
-                  width="w-[200px]"
                   ratio="aspect-[4/3]"
                   documentPage={{ hasMorePages: item.previewPages.length > 1 }}
                   onSelect={() => {
@@ -515,11 +502,6 @@ function ComposerDocumentRecommendations({
   const setCategory = useSet(signals.taskChips.setDocumentCategory$);
   const setPickerCategory = useSet(signals.template.setDocumentCategory$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
-  const filterTravel = useGet(signals.taskChips.railTravel$)[
-    DOCUMENT_FILTER_RAIL
-  ];
-  const setTravel = useSet(signals.taskChips.setRailTravel$);
-  const bindRail = useSet(signals.taskChips.bindRail$);
   const label = t(($) => {
     return $.chat.taskChips.shelf.document;
   });
@@ -551,16 +533,11 @@ function ComposerDocumentRecommendations({
       {/* The filter row travels like the cover rail under it: the overrun
           dissolves and a pager moves it, instead of a pill cut in half at the
           column edge. */}
-      <div className="relative min-w-0" data-rail-root="">
+      <div className={RAIL_ROOT_CLASS} data-rail-root="">
         <TemplateFilterPillRow
           active={category ?? ""}
           layout="scroll"
           rail={DOCUMENT_FILTER_RAIL}
-          scrollerRef={bindRail}
-          className={composerRailFade(filterTravel)}
-          onScroll={(event) => {
-            setTravel(DOCUMENT_FILTER_RAIL, measureRail(event.currentTarget));
-          }}
           label={t(($) => {
             return $.documentTemplates.filter;
           })}
@@ -593,10 +570,8 @@ function ComposerDocumentRecommendations({
             }
           }}
         />
-        {filterTravel?.canScrollBack ? <ComposerRailPager side="back" /> : null}
-        {filterTravel?.canScrollForward ? (
-          <ComposerRailPager side="forward" />
-        ) : null}
+        <ComposerRailPager side="back" />
+        <ComposerRailPager side="forward" />
       </div>
       <ComposerDocumentTemplateRail
         signals={signals}
@@ -615,9 +590,6 @@ function ComposerTaskPanel({
   readonly signals: ComposerSignals;
   readonly selected: ComposerTask;
 }) {
-  if (selected === "jobs") {
-    return <EntrustedJobs />;
-  }
   return (
     <div
       key={selected}
@@ -654,62 +626,15 @@ function ComposerTaskPanel({
   );
 }
 
-function ComposerTaskTabs({
-  signals,
-  selected,
-  tasks,
-}: {
-  readonly signals: ComposerSignals;
-  readonly selected: ComposerTask | null;
-  readonly tasks: readonly ComposerTask[];
-}) {
-  const { t } = useTranslation();
-  const browseTask = useSet(signals.taskChips.browseTask$);
-  const selectTask = useSet(signals.taskChips.selectTask$);
-  return (
-    <Tabs
-      value={selected}
-      onValueChange={(value) => {
-        const task = tasks.find((candidate) => {
-          return candidate === value;
-        });
-        if (task === "jobs") {
-          browseTask(task);
-        } else if (task) {
-          selectTask(task);
-        }
-      }}
-      className="flex min-w-0 flex-col gap-5"
-      aria-label={t(($) => {
-        return $.chat.taskChips.label;
-      })}
-    >
-      <ComposerTaskChipRow signals={signals} tasks={tasks} tabs />
-      {tasks.map((task) => {
-        return (
-          <TabsContent key={task} value={task}>
-            <ComposerTaskPanel signals={signals} selected={task} />
-          </TabsContent>
-        );
-      })}
-    </Tabs>
-  );
-}
-
 export function ComposerTaskChips({
   signals,
 }: {
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const jobs = useLoadable(entrustedJobsEnabled$);
-  const jobsEnabled = jobs.state === "hasData" && jobs.data;
-  const current = useGet(signals.taskChips.task$);
-  const homeDiscoveryEnabled = useGet(signals.homeDiscovery.enabled$);
-  const selected = current === "jobs" && !jobsEnabled ? null : current;
+  const selected = useGet(signals.taskChips.task$);
   const tasks = (
     [
-      "jobs",
       "workflow",
       "presentation",
       "document",
@@ -718,9 +643,6 @@ export function ComposerTaskChips({
       "visualization",
     ] as const
   ).filter((task) => {
-    if (task === "jobs") {
-      return jobsEnabled;
-    }
     return (
       task === "workflow" ||
       task === "website" ||
@@ -728,22 +650,6 @@ export function ComposerTaskChips({
       signals.create.modes.includes(task)
     );
   });
-  if (homeDiscoveryEnabled) {
-    return (
-      <ComposerHomeDiscovery signals={signals} tasks={tasks}>
-        {selected !== null && (
-          <ComposerTaskPanel signals={signals} selected={selected} />
-        )}
-      </ComposerHomeDiscovery>
-    );
-  }
-  // Tasks is browsed beside the row; selecting another task moves its chip
-  // into the composer and hides the choices.
-  if (jobsEnabled && (selected === null || selected === "jobs")) {
-    return (
-      <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
-    );
-  }
   return (
     <section
       className="flex min-w-0 flex-col gap-5"

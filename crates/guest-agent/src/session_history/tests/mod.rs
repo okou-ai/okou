@@ -1,5 +1,7 @@
 use super::*;
 
+mod encoded_input;
+
 const TEST_CLAUDE_SESSION_ID: &str = "session-history-source-test";
 
 fn claude_source(config_dir: &Path) -> SessionHistorySourceRef {

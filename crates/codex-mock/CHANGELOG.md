@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.48](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.47...codex-mock-v0.12.48) (2026-11-05)
+
+
+### Refactoring
+
+* **test:** share direct-child timeout and reaping protocol ([#45322](https://github.com/okou-ai/okou/issues/45322)) ([e1bab91](https://github.com/okou-ai/okou/commit/e1bab91248db4f9e1ea0435efdbf80de5c536ee3))
+
+## [0.12.47](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.46...codex-mock-v0.12.47) (2026-11-04)
+
+
+### Refactoring
+
+* **test:** share synchronous child output capture ([#45088](https://github.com/okou-ai/okou/issues/45088)) ([b73eac3](https://github.com/okou-ai/okou/commit/b73eac3fb31c9416315cabf05813ffd41b9420a6))
+
+## [0.12.46](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.45...codex-mock-v0.12.46) (2026-11-04)
+
+## [0.12.45](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.44...codex-mock-v0.12.45) (2026-11-03)
+
 ## [0.12.44](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.43...codex-mock-v0.12.44) (2026-11-03)
 
 ## [0.12.43](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.42...codex-mock-v0.12.43) (2026-11-03)

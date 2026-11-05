@@ -26,6 +26,7 @@ import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   connectorCatalog,
@@ -33,6 +34,7 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
@@ -117,6 +119,10 @@ import {
 import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
+import {
+  activeMemberConnectorPermissionCondition,
+  memberConnectorPermissionColumns,
+} from "../services/member-connector-selection";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
   resolveRunnerReusePreference$,
@@ -706,23 +712,23 @@ function recordPollTimingMetrics(args: {
   ]);
 }
 
-function runnerPollPriorityOrder(args: {
+type RunnerPollReusePriority = ReturnType<
+  typeof runnerReusePreferencePollPriority
+>;
+
+function runnerPollReusePriority(args: {
   readonly runnerId: string | undefined;
   readonly runnerGroup: string;
   readonly currentDate: Date;
-}): SQL[] {
+}): RunnerPollReusePriority | null {
   if (!args.runnerId) {
-    return [];
+    return null;
   }
-  return [
-    desc(
-      runnerReusePreferencePollPriority({
-        runnerId: args.runnerId,
-        runnerGroup: args.runnerGroup,
-        currentDate: args.currentDate,
-      }),
-    ),
-  ];
+  return runnerReusePreferencePollPriority({
+    runnerId: args.runnerId,
+    runnerGroup: args.runnerGroup,
+    currentDate: args.currentDate,
+  });
 }
 
 const resolvePollRunnerReusePreference$ = command(
@@ -756,10 +762,10 @@ const findPendingRunnerJob$ = command(
     { get },
     args: {
       readonly conditions: readonly SQL[];
-      readonly priorityOrder: readonly SQL[];
+      readonly reusePriority: RunnerPollReusePriority | null;
     },
   ) => {
-    const [pendingJob] = await get(db$)
+    const pendingJobs = get(db$)
       .select({
         runId: runnerJobQueue.runId,
         prompt: agentRuns.prompt,
@@ -772,14 +778,24 @@ const findPendingRunnerJob$ = command(
         discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
       })
       .from(runnerJobQueue)
-      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-      .where(and(...args.conditions))
-      .orderBy(
-        ...args.priorityOrder,
-        runnerJobQueue.createdAt,
-        runnerJobQueue.runId,
-      )
-      .limit(1);
+      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id));
+    const where = and(...args.conditions);
+    const { reusePriority } = args;
+    // Every priority tier reads the job's Thread predecessor from one join.
+    const [pendingJob] = await (reusePriority
+      ? pendingJobs
+          .leftJoinLateral(reusePriority.predecessor, sql`true`)
+          .where(where)
+          .orderBy(
+            desc(reusePriority.priority),
+            runnerJobQueue.createdAt,
+            runnerJobQueue.runId,
+          )
+          .limit(1)
+      : pendingJobs
+          .where(where)
+          .orderBy(runnerJobQueue.createdAt, runnerJobQueue.runId)
+          .limit(1));
     return pendingJob;
   },
 );
@@ -823,14 +839,14 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(writeDb$);
   const pendingJobLookupStartedAtMs = now();
   const currentDate = nowDate();
-  const reusePreferencePriorityOrder = runnerPollPriorityOrder({
+  const reusePriority = runnerPollReusePriority({
     runnerId: body.data.runnerId,
     runnerGroup: group,
     currentDate,
   });
   const pendingJob = await set(findPendingRunnerJob$, {
     conditions: whereConditions,
-    priorityOrder: reusePreferencePriorityOrder,
+    reusePriority,
   });
   signal.throwIfAborted();
   const pendingJobLookupFinishedAtMs = now();
@@ -1358,11 +1374,33 @@ const readClaimNetworkPolicyRefreshes$ = command(
           plan.selection,
           rows,
         );
-        const refreshes = await set(readActiveNetworkPolicyRefreshes$, {
-          scope,
-          connectorSlugs: builtinConnectorSlugs,
-          snapshot,
-        });
+        const checkedAt = nowDate();
+        const memberRules = args.storedContext.featureFlags?.[
+          FeatureSwitchKey.ConnectorChatAccountAccess
+        ]
+          ? await get(db$)
+              .select(memberConnectorPermissionColumns())
+              .from(connectorPermissionGrants)
+              .where(
+                and(
+                  activeMemberConnectorPermissionCondition(scope, checkedAt),
+                  inArray(
+                    connectorPermissionGrants.connectorSlug,
+                    builtinConnectorSlugs,
+                  ),
+                ),
+              )
+          : undefined;
+        const refreshes = await set(
+          readActiveNetworkPolicyRefreshes$,
+          {
+            scope,
+            connectorSlugs: builtinConnectorSlugs,
+            snapshot,
+            memberRules,
+          },
+          checkedAt,
+        );
 
         return {
           value: {
@@ -2001,7 +2039,7 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
-    const workflowInput = workflowClaimInput(storedContext, run.prompt);
+    const workflowInput = workflowClaimInput(storedContext);
 
     const baseResponseBody = await set(
       buildClaimResponseBodyForClaim$,

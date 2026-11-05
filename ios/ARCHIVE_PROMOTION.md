@@ -7,6 +7,21 @@ runs simulator tests to recover a missing archive.
 ## CI and test evidence
 
 `.github/workflows/ios.yml` runs simulator checks on ordinary PRs and dispatches.
+Bot-authored release PR updates are checked on Ubuntu first. The validator uses
+the exact PR head and complete Git diff, including renamed-away inputs. Only
+recognized release metadata can reuse successful App and package test steps from
+an ancestor of the PR's protected `main` base with identical normalized native
+source inputs. The gate links that exact run and attempt; it does not claim to
+have tested a new SDK. The merge group independently verifies its actual
+toolchain before reusing simulator evidence. Missing proof or non-metadata
+changes select full native validation. An existing dispatch for the same head
+is retained instead of repeated; the two release-refresh callers serialize
+validation scheduling. Failed or cancelled validation remains a
+visible failure rather than being automatically retried. Discovery uses GitHub's
+history at the pinned main ancestor: up to 32 iOS-changing commits and the latest
+change to each other native input path. Partial Git fetches avoid downloading
+unrelated historical blobs. No matching executed tests retains the full native
+path.
 A main merge group with changed iOS inputs also builds an **unsigned device
 Release archive**, with locked Swift packages and no production credentials.
 Standalone Swift package tests, simulator validation, and device compilation run
@@ -22,9 +37,13 @@ Cheap change detection selects the native jobs while the existing script
 regressions run independently on Linux. Both archive publication and the required
 gate still require those script checks to succeed. Detection and gate checkouts
 contain only their executed scripts; detection retains the bounded Git ancestry.
-The simulator job resolves locked dependencies while waiting for `simctl bootstatus`,
-then compiles after system boot readiness. Cold system-service startup must finish
-before asset compilation; requesting a boot alone does not establish readiness.
+The simulator job captures its actual toolchain once and checks historical
+evidence before downloading build caches or source artifacts. A verified hit
+skips those downloads, compilation, simulator startup, and App tests within the
+same job. A miss continues normally in that job; package tests and device
+archive builds retain their independent parallel paths. Native execution resolves
+locked dependencies and compiles before booting the explicit simulator, waits
+for `simctl bootstatus`, and then runs the built tests.
 
 All three native jobs must succeed before the Ubuntu publisher writes canonical
 objects. The publisher compares their independently captured **complete input
@@ -39,7 +58,8 @@ record matches its complete test input fingerprint. Standalone package tests
 still run on every selected merge group. The classifier examines the
 **whole group's diff**, not its branch name or last commit. Its conservative
 allowlist accepts release manifest versions, configured package changelogs,
-simple version files, package.json top-level versions, Cargo package versions and
+simple version files, package.json top-level versions, configured JSON extra-files
+whose top-level `version` is the only changed value, Cargo package versions and
 local Cargo.lock package versions, and the exact release-please version line in
 `ios/Config/Shared.xcconfig`. Other changes, including mixed code changes outside
 iOS, run tests normally. Unrecognized metadata changes also run tests.

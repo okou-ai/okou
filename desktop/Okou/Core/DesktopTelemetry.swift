@@ -121,9 +121,10 @@ public enum DesktopTelemetry {
   }
 
   static func captureHeartbeatEpisode(
-    id: String, outcome: HeartbeatDiagnostics.Outcome, context: [String: Any]
+    id: String, outcome: HeartbeatDiagnostics.Outcome, level: SentryLevel = .info,
+    context: [String: Any]
   ) {
-    let event = Event(level: outcome == .failed ? .error : .info)
+    let event = Event(level: level)
     event.message = SentryMessage(formatted: "Desktop host heartbeat \(outcome.rawValue)")
     event.fingerprint = ["desktop-host-heartbeat"]
     event.tags = ["heartbeatOutcome": outcome.rawValue, "heartbeatEpisodeId": id]

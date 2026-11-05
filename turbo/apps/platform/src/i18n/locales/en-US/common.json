@@ -626,12 +626,15 @@
       "loadFailed": "Unable to load permissions",
       "loadingPermissions": "Loading permissions",
       "onlyMe": "Only me",
+      "onlyMeDescription": "Only you can open it",
       "onlyMeOption": "Only me",
       "organization": "Organization",
+      "organizationDescription": "Teammates can view",
       "organizationOption": "Anyone at {{organization}}",
       "organizationOptionUnnamed": "Anyone in your organization",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
+      "publicDescription": "No sign-in needed",
       "publicOption": "Anyone with the link",
       "updateFailed": "Couldn’t update access"
     },
@@ -952,6 +955,27 @@
     },
     "homeLink": "Go to {{brandName}} home",
     "loading": "Loading authentication",
+    "signup": {
+      "alreadyHaveAccount": "Already have an account?",
+      "apple": "Apple",
+      "continue": "Continue",
+      "email": "Email address",
+      "emailPlaceholder": "Enter your email address",
+      "failed": "Request failed",
+      "google": "Google",
+      "hidePassword": "Hide password",
+      "legalAnd": "and",
+      "legalPrefix": "I agree to the",
+      "or": "or",
+      "password": "Password",
+      "passwordPlaceholder": "Create a password",
+      "privacy": "Privacy Policy",
+      "showPassword": "Show password",
+      "signIn": "Sign in",
+      "subtitle": "Welcome! Please fill in the details to get started.",
+      "terms": "Terms of Service",
+      "title": "Create your account"
+    },
     "theme": {
       "darkEnabled": "Dark theme enabled",
       "lightEnabled": "Light theme enabled"
@@ -1366,6 +1390,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "Enter a URL",
+    "authorizationRequired": "Cloud browser is not enabled for this chat",
     "blankPage": {
       "description": "{{assistantName}} opens pages here as it works. Enter a URL above to browse yourself.",
       "title": "Nothing open yet"
@@ -1392,8 +1417,8 @@
       "takeOver": "Take over",
       "takeOverMessage": "I've taken over the browser. Don't use it until I hand it back."
     },
-    "reclaimHint_one": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minute.",
-    "reclaimHint_other": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minutes.",
+    "reclaimHint_one": "Kept while open; reclaimed after {{formattedCount}} idle minute.",
+    "reclaimHint_other": "Kept while open; reclaimed after {{formattedCount}} idle minutes.",
     "status": {
       "live": "Live",
       "starting": "Starting",
@@ -1431,6 +1456,7 @@
     "paused": "Viewing paused",
     "quality": "Image quality",
     "reconnect": "Reconnect",
+    "reconnecting": "Reconnecting…",
     "reload": "Reload",
     "remoteInput": "Remote browser input",
     "resolution": "Resolution",
@@ -1539,7 +1565,7 @@
           "unit": "per member"
         },
         "pendingState": "{{amount}} pending",
-        "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
+        "rewardsNote": "Task rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
         "slack": {
           "action": "Add",
           "description": "Where your team already works",
@@ -1610,6 +1636,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "Sent to a new chat",
       "undoFeedback": "Undo",
       "useSuggestion": "Use suggestion"
     },
@@ -1973,47 +2000,6 @@
       "useDefault": "Use default"
     },
     "documentTitle": "Chat",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "Source update",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "This run couldn't finish",
       "loadMessages": "Failed to load messages",
@@ -2106,78 +2092,6 @@
       "sent": "Forwarded successfully",
       "threads": "Chats",
       "title": "Forward to"
-    },
-    "homeDiscovery": {
-      "create": {
-        "document": "Document",
-        "image": "Image",
-        "presentation": "Presentation",
-        "visualization": "Chart",
-        "website": "Website"
-      },
-      "entries": {
-        "briefs": {
-          "examples": {
-            "first": "Help me set up a morning brief of emails that need my attention; first confirm the inbox and delivery time",
-            "second": "Help me set up a weekly competitor brief; first confirm the companies, sources, and schedule",
-            "third": "Help me set up a daily sales summary; first confirm the data source, metrics, and delivery time"
-          },
-          "label": "Briefs",
-          "placeholder": "Describe what you would like in your brief, and how often…",
-          "title": "What brief would you like to receive?"
-        },
-        "general": {
-          "examples": {
-            "first": "Find brand design agencies suited to an early-stage team",
-            "second": "Compare customer management tools by features and price",
-            "third": "Research recent trends and leading companies in an industry"
-          },
-          "label": "General",
-          "placeholder": "Describe your question or what you would like to learn…",
-          "title": "What would you like to find out?"
-        },
-        "information": {
-          "examples": {
-            "first": "Find recent research on AI adoption in small businesses, with original sources",
-            "second": "Collect public examples of successful product launches and explain what worked",
-            "third": "Find reliable industry data for a presentation, with dates and source links"
-          },
-          "label": "Information",
-          "placeholder": "Describe the topic, time range, or what you need the information for…",
-          "title": "What would you like to research?"
-        },
-        "monitor": {
-          "examples": {
-            "first": "Help me follow competitors' pricing changes; first confirm the companies, sources, and when to notify me",
-            "second": "Help me watch a client email for a reply; first confirm the email and how to notify me",
-            "third": "Help me follow important updates in an industry; first agree on the sources, frequency, and what matters"
-          },
-          "label": "Monitor",
-          "placeholder": "Describe what you want to follow and which changes matter…",
-          "title": "What changes would you like to follow?"
-        },
-        "people": {
-          "examples": {
-            "first": "Find 5 speakers for an AI marketing event, with reasons they fit and public sources",
-            "second": "Find creators who reach business owners and explain their audience fit",
-            "third": "Find potential customers for my consulting services, with relevant public background"
-          },
-          "label": "People",
-          "placeholder": "Describe the role, field, company, or location…",
-          "title": "Who are you looking for?"
-        }
-      },
-      "groups": {
-        "automate": "Automate",
-        "create": "Create",
-        "search": "Search"
-      },
-      "label": "Explore what Okou can do",
-      "placeholder": "Describe what you want to get done…",
-      "sources": {
-        "trigger": "Tools"
-      },
-      "workflows": "Workflows"
     },
     "mail": {
       "bcc": "bcc",
@@ -2699,7 +2613,6 @@
       "tasks": {
         "document": "Document",
         "image": "Image",
-        "jobs": "Tasks",
         "presentation": "Presentation",
         "visualization": "Chart",
         "website": "Website",
@@ -3181,6 +3094,17 @@
     "unused": "Not used by any of your hosts",
     "usedBy_one": "Used by {{count}} of your hosts:",
     "usedBy_other": "Used by {{count}} of your hosts:"
+  },
+  "connectorChatAccess": {
+    "accountAccess": "{{account}} access",
+    "enableByDefault": "Enable {{account}} by default",
+    "enabledAccounts": "{{value}} enabled",
+    "manageAccounts": "Manage accounts",
+    "noAccount": "No account selected",
+    "noEnabledAccount": "No account is on for this chat",
+    "permissions": "Permissions",
+    "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
+    "settingsDescription": "Choose which accounts are on by default and the default account for new chats."
   },
   "connectors": {
     "access": {
@@ -4084,20 +4008,24 @@
     "actionFailed": "Could not update authorization.",
     "allow": "Allow for 1 hour",
     "approved": "Allowed",
-    "deadline": "Expires {{date}}",
+    "blocked": {
+      "chatBusy": "Wait for the current Run in this chat to finish before approving.",
+      "computerChanged": "Select {{computer}} again before approving.",
+      "runActive": "Wait for the requesting Run to finish before approving.",
+      "runUnavailable": "The requesting Run is unavailable. Ask for a new request in this chat."
+    },
     "denied": "Request denied",
     "deny": "Deny",
     "description": "The agent needs permission to use Shell on your computer.",
     "expired": "Authorization expired",
     "loading": "Loading authorization…",
-    "pending": "Ready for approval",
+    "reasonTitle": "Reason for access",
+    "requestExpired": "Request expired",
     "revoke": "Revoke access",
     "revoked": "Shell access revoked",
-    "scope": "Only this chat and computer",
-    "terminalNotice": "Existing terminals stay open when access ends.",
-    "title": "Desktop Shell access",
+    "title": "Shell access",
     "unavailable": "Authorization unavailable",
-    "waiting": "Approval is unavailable while a Run is active or the selected computer has changed."
+    "viewReason": "View full reason"
   },
   "documentTemplates": {
     "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",
@@ -4169,6 +4097,28 @@
     "emptyDescription": "New suggestions will appear here.",
     "emptyTitle": "You’re all caught up",
     "title": "Feed"
+  },
+  "friendReferrals": {
+    "checkingCode": "Checking invitation code…",
+    "codeApplied": "Invitation code applied",
+    "codeCheckFailed": "Could not check the code. Try again or leave blank to continue.",
+    "codeLabel": "Your invitation code",
+    "codeUnavailable": "This invitation code is unavailable. Check it or leave blank to continue.",
+    "copied": "Copied",
+    "copyCode": "Copy code",
+    "copyFailed": "Copy failed. Try again.",
+    "copyLink": "Copy link",
+    "description": "Earn $20 in credits when a friend signs up with your invitation code, buys a usage pack, and upgrades to Pro or above.",
+    "earned": "Credits earned",
+    "invalidCode": "Use 6 letters or numbers, or leave blank to continue.",
+    "loadFailed": "Your invitation code could not be loaded. Try again.",
+    "loading": "Getting your invitation code…",
+    "registered": "Friends signed up",
+    "retry": "Try again",
+    "signupLabel": "Invitation code (optional)",
+    "signupPlaceholder": "Enter invitation code",
+    "terms": "For new users only. Each friend can earn you one reward. Credits go to your personal balance in this workspace and expire one month after they are granted.",
+    "title": "Invite your friends"
   },
   "global": {
     "errors": {
@@ -4996,8 +4946,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -5008,11 +4956,11 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
+    "moveTo": "Move to {{name}}",
     "name": "Project name",
     "newChat": "New chat",
     "noMatches": "No projects found",
@@ -5026,6 +4974,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {
@@ -5418,6 +5367,8 @@
       "subscriptions": {
         "credits": "Credits",
         "fiveHourLimit": "5-hour limit",
+        "label": "Subscription usage",
+        "lowUsage": "Subscription usage: less than 20% remaining",
         "resetTimeUnavailable": "Reset time unavailable",
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
@@ -5478,7 +5429,7 @@
           "description": "Personalize how the app looks and behaves.",
           "title": "Preference"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Choose how Okou works proactively.",
           "title": "Proactive"
         },
@@ -5863,15 +5814,6 @@
         "preparationFailed": "This workflow is temporarily unavailable.",
         "preparing": "Preparing this workflow.",
         "title": "Learning"
-      },
-      "proactivePlanningAction": {
-        "description": "Plan and carry out your delegated work, and notify you when your input is needed.",
-        "errorMessage": "Could not load or update this setting.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
-        "missingTimezone": "Set your time zone in Preferences.",
-        "preparationFailed": "This workflow is temporarily unavailable.",
-        "preparing": "Preparing this workflow.",
-        "title": "Planning & action"
       },
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",

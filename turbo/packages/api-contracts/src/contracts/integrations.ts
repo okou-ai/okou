@@ -841,13 +841,14 @@ export type IntegrationsTeamsDownloadFileContract =
  * Integration Microsoft Teams file upload — init contract
  * POST /api/integrations/teams/upload-file/init
  *
- * Requests a pre-signed upload URL for a temporary hosted file. The CLI
- * uploads the file body directly to R2, then the complete route sends a Teams
- * message with the file attachment and public file URL.
+ * Prepares a private canonical asset and delivery operation. The CLI uploads
+ * the file body directly to R2 when needed, then the complete route sends
+ * the Teams attachment using that operation.
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
 const teamsUploadInitBodySchema = object({
   canonical: object({
+    version: literal(2),
     operationId: uuid(),
     checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
     conversationId: string().min(1).optional(),
@@ -870,8 +871,7 @@ const teamsUploadInitBodySchema = object({
       {
         message: "activityId can only be used with conversationId",
       },
-    )
-    .optional(),
+    ),
   filename: string().min(1, "Filename is required").max(255),
   contentType: string().min(1, "Content type is required").max(200),
   length: number().int().positive("File length must be a positive integer"),
@@ -880,8 +880,8 @@ const teamsUploadInitBodySchema = object({
 export type TeamsUploadInitBody = zInfer<typeof teamsUploadInitBodySchema>;
 
 const teamsUploadInitResponseSchema = object({
-  operationId: uuid().optional(),
-  uploadRequired: boolean().optional(),
+  operationId: uuid(),
+  uploadRequired: boolean(),
   uploadId: uuid(),
   uploadUrl: string(),
   fileUrl: string(),
@@ -981,7 +981,7 @@ export const integrationsTelegramUploadCompleteContract = c.router({
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
 const teamsUploadCompleteBodySchema = object({
-  operationId: uuid().optional(),
+  operationId: uuid(),
   uploadId: string().check(uuid("Upload ID must be a UUID")),
   conversationId: string().min(1, "Conversation ID is required").optional(),
   user: string().min(1, "Teams user ID is required").optional(),

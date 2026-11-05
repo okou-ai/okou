@@ -1,6 +1,8 @@
 import {
   array,
   boolean,
+  discriminatedUnion,
+  literal,
   object,
   string,
   uuid,
@@ -13,6 +15,11 @@ import {
   connectorAccountTargetSchema,
 } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
+import {
+  connectorAuthMethodIdSchema,
+  connectorSlugSchema,
+} from "./connector-identity";
+import { publicConnectorCatalogIconSchema } from "./connector-catalog";
 
 const c = initContract();
 const targetBody = object({ target: connectorAccountTargetSchema }).strict();
@@ -37,6 +44,31 @@ const chatConnectorAccessSchema = object({
   available: boolean(),
 }).strict();
 
+const chatConnectorOverviewEntrySchema = object({
+  target: connectorAccountTargetSchema,
+  label: string(),
+  icon: publicConnectorCatalogIconSchema.nullable(),
+  hasPermissions: boolean(),
+  accounts: array(
+    accountDefaultsSchema
+      .extend({
+        authMethod: connectorAuthMethodIdSchema,
+        externalId: string().nullable(),
+        externalUsername: string().nullable(),
+        externalEmail: string().nullable(),
+        overrideEnabled: boolean().nullable(),
+        enabled: boolean(),
+      })
+      .strict(),
+  ),
+  currentConnectionId: uuid().nullable(),
+}).strict();
+
+export type ChatConnectorOverviewEntry = zInfer<
+  typeof chatConnectorOverviewEntrySchema
+>;
+const overviewQuery = object({ threadId: uuid().optional() });
+
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
@@ -46,6 +78,44 @@ const errors = {
 
 /** New owner configuration contracts leave strict existing account shapes intact. */
 export const chatConnectorAccessContract = c.router({
+  overview: {
+    method: "GET",
+    path: "/api/chat-connector-overview",
+    headers: authHeadersSchema,
+    query: overviewQuery.strict(),
+    responses: {
+      200: array(chatConnectorOverviewEntrySchema),
+      ...errors,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Read connector identities and effective Chat preferences together",
+  },
+  overviewTarget: {
+    method: "GET",
+    path: "/api/chat-connector-overview/target",
+    headers: authHeadersSchema,
+    query: discriminatedUnion("kind", [
+      object({
+        ...overviewQuery.shape,
+        kind: literal("builtin"),
+        connectorSlug: connectorSlugSchema,
+      }).strict(),
+      object({
+        ...overviewQuery.shape,
+        kind: literal("custom"),
+        customConnectorId: uuid(),
+      }).strict(),
+    ]),
+    responses: {
+      200: object({
+        connector: chatConnectorOverviewEntrySchema.nullable(),
+      }).strict(),
+      ...errors,
+      503: apiErrorSchema,
+    },
+    summary: "Refresh one connector's Chat overview, or null after its removal",
+  },
   accountDefaults: {
     method: "GET",
     path: "/api/connector-account-access/defaults",

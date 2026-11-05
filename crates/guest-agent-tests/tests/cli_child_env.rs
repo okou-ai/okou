@@ -90,6 +90,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         );
     }
 
+    let inherited_path = std::env::var("PATH")?;
     let runtime = GuestRuntime::from_process_env()?;
     assert!(!user_env_path.exists());
     assert!(!user_env_dir.exists());
@@ -230,7 +231,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
             .map(String::as_str),
         Some("false")
     );
-    assert!(cli_env.contains_key("PATH"));
+    assert_eq!(cli_env.get("PATH"), Some(&inherited_path));
     assert_eq!(
         cli_env.get("npm_config_cache").map(String::as_str),
         explicit_npm_cache.to_str()

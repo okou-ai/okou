@@ -531,6 +531,9 @@ describe("chat agent bootstrap prefetch", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
     const sent = await chat.requestSendEvent(
       actor,
       {
@@ -545,6 +548,14 @@ describe("chat agent bootstrap prefetch", () => {
       throw new Error("Expected the steer input to be accepted");
     }
     await flushWaitUntilForTest();
+    // The running run holds the thread, so the send's pick cannot claim it and
+    // the Runner is told about the pending input.
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `runner-group:${runnerGroup}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith("active-input", {
+      runId: active.runId,
+    });
 
     await expect(
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),

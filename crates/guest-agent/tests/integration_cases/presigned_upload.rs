@@ -34,7 +34,8 @@ async fn put_presigned_success() {
 #[tokio::test]
 async fn transport_only_client_can_send_presigned_upload_without_api_config()
 -> Result<(), Box<dyn std::error::Error>> {
-    let server = MockServer::start();
+    let api = PrivateApiMock::new().await;
+    let server = api.server();
     let mock = server.mock(|when, then| {
         when.method(PUT).path("/test/put-transport-only");
         then.respond_with(|req| upload_validation_response(req, b"transport-only upload", "21"));

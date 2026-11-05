@@ -8,7 +8,8 @@ use aws_sdk_s3::primitives::ByteStream;
 use bytes::Bytes;
 use http_body::{Body, Frame};
 
-pub(crate) fn byte_stream_with_error_after(bytes: Vec<u8>, error: io::Error) -> ByteStream {
+/// Yields one data frame (including an empty prefix), then the supplied error, then EOF.
+pub fn byte_stream_with_error_after(bytes: Vec<u8>, error: io::Error) -> ByteStream {
     ByteStream::from_body_1_x(BodyThenError {
         bytes: Some(Bytes::from(bytes)),
         error: Some(error),

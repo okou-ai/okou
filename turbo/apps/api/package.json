@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "2.44.2",
+  "version": "2.48.8",
   "private": true,
   "type": "module",
   "scripts": {
@@ -74,7 +74,7 @@
     "hono": "^4.13.12",
     "html-to-text": "^10.0.1",
     "jose": "^6.2.3",
-    "markdown-it": "14.3.3",
+    "marked": "17.0.5",
     "music-metadata": "^11.16.0",
     "pg": "^8.23.0",
     "resend": "^6.12.4",
@@ -99,7 +99,6 @@
     "@types/archiver": "^8.0.0",
     "@types/fontkit": "2.0.9",
     "@types/html-to-text": "^9.0.4",
-    "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.3.0",
     "@types/pg": "^8.21.0",
     "@types/web-push": "^3.6.4",

@@ -9,6 +9,9 @@ use super::*;
 use std::os::unix::fs::MetadataExt;
 use tokio::time::Instant;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Default)]
 pub(super) struct PublicationProgress {
     entry: Option<HomeEntryLock>,
@@ -161,6 +164,10 @@ impl HomeImageCache {
                 .map_err(|error| {
                     LifecycleError::Internal(format!("home publication admission closed: {error}"))
                 })?;
+            // Timeout polls admission first, so ready permits can win after expiry.
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
             Ok::<_, LifecycleError>(Some(io))
         };
         match tokio::time::timeout_at(deadline, admission).await {

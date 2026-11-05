@@ -31,7 +31,7 @@ function Toggle<Value extends string>({
           variant === "filter"
             ? [
                 buttonBaseClassName,
-                "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border px-2.5 leading-none transition-colors focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50",
+                "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border px-2.5 leading-none transition-colors focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50",
                 // Selection recolours the shared hairline rather than only
                 // the fill: bg-muted sits 1.08:1 against the white surface,
                 // which no one reads as "chosen". Width stays constant, so

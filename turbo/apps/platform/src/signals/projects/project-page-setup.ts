@@ -1,46 +1,68 @@
 import { command } from "ccstate";
+import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
-import { projects$, hydrateProjects$ } from "./projects.ts";
-import { expandProject$ } from "./project-folders.ts";
+import { ProjectPage } from "../../views/projects/project-page.tsx";
+import { defaultAgentId$ } from "../agent.ts";
+import { setChatAgentId$ } from "../agent-chat.ts";
+import { hideAppSkeleton$ } from "../app-skeleton.ts";
+import { updateDocumentTitle$ } from "../document-title.ts";
+import { ensureAgentDraft$ } from "../okou-page/agent-draft.ts";
+import {
+  agentChatComposerSignals$,
+  setAgentComposerContext$,
+} from "../okou-page/agent-composer-signals.ts";
+import { setupProjectPageKeyboardShortcuts$ } from "../okou-page/agent-chat-keyboard.ts";
+import { setTalkDraft$ } from "../okou-page/chat-draft.ts";
+import { resetChatPageModelSelection$ } from "../okou-page/chat-page.ts";
+import { updatePage$ } from "../react-router.ts";
+import { detachedNavigateTo$ } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
-import { currentChatAgentId$ } from "../agent-chat.ts";
-import { navigateTo$, searchParams$ } from "../route.ts";
-import { rootSignal$ } from "../root-signal.ts";
+import { hydrateProjects$, projects$ } from "./projects.ts";
 
-// Project URLs are folder deep links; Projects have no separate page.
+/**
+ * A Project's own page starts new chats inside it, like an Agent's new-chat
+ * page. Projects always compose with the default Agent and keep the agent
+ * draft for now.
+ */
 export const setupProjectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    await set(hydrateProjects$, signal);
     const projectId = get(selectedProjectId$);
-    const available = get(projects$).some((project) => {
-      return project.id === projectId;
+    const agentId = await get(defaultAgentId$);
+    signal.throwIfAborted();
+    if (!projectId || !agentId) {
+      throw new Error("A Project page requires a Project and a default Agent");
+    }
+    set(setChatAgentId$, agentId);
+    const agentDraft = set(ensureAgentDraft$, agentId);
+    set(setAgentComposerContext$, { agentId, agentDraft, projectId });
+    set(get(agentChatComposerSignals$).voice.setup$, signal);
+    set(setTalkDraft$, agentDraft.draft);
+    set(resetChatPageModelSelection$);
+    set(updatePage$, createElement(ProjectPage), "sidebar");
+    set(setupProjectPageKeyboardShortcuts$, projectId, signal);
+    await set(hideAppSkeleton$, signal);
+    signal.throwIfAborted();
+
+    await set(hydrateProjects$, signal);
+    signal.throwIfAborted();
+    const project = get(projects$).find((item) => {
+      return item.id === projectId;
     });
-    if (projectId && available) {
-      set(expandProject$, projectId);
-    } else {
+    if (!project) {
       toast.error(
         i18n.t(($) => {
           return $.projects.unavailable;
         }),
       );
-    }
-    const agentId = await get(currentChatAgentId$);
-    signal.throwIfAborted();
-    const params = new URLSearchParams(get(searchParams$));
-    if (projectId && available) {
-      params.set("project", projectId);
-    }
-    // Navigation ends this route's lifetime and belongs to the app root.
-    await set(
-      navigateTo$,
-      agentId ? "/agents/:agentId/chat" : "/agents",
-      {
-        pathParams: agentId ? { agentId } : undefined,
-        searchParams: params,
+      set(detachedNavigateTo$, ROUTES.agentChat, {
+        pathParams: { agentId },
         replace: true,
-      },
-      get(rootSignal$),
-    );
+      });
+      return;
+    }
+    set(updateDocumentTitle$, project.name);
+    await set(agentDraft.load$, signal);
   },
 );

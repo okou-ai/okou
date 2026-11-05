@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
+import { cronDrainEmailOutboxContract } from "@okouai/api-contracts/contracts/cron";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { notificationsRoutes } from "../notifications";
+import { cronDrainEmailOutboxRoutes } from "../cron-drain-email-outbox";
 import { emailSubscriptionRoutes } from "../email-subscription";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUserOptions } from "./helpers/api-bdd";
@@ -91,6 +93,90 @@ const body = () => {
 };
 
 describe("agent mail notifications", () => {
+  it("drains non-default numbered notifications and replays the same provider request on retry", async () => {
+    await setupApp({
+      context,
+      routes: [...notificationsRoutes, ...cronDrainEmailOutboxRoutes],
+      isolatePg: true,
+    });
+    const fixture = await runningAgent();
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.example.com");
+    mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+    const first = await accept(
+      client().mail({
+        headers: fixture.headers,
+        body: { ...body(), text: "3. Third step\n4. Fourth step" },
+      }),
+      [200],
+    );
+    const second = await accept(
+      client().mail({
+        headers: fixture.headers,
+        body: { ...body(), subject: "Next notification", text: "0. Zero step" },
+      }),
+      [200],
+    );
+    context.mocks.resend.send
+      .mockResolvedValueOnce({
+        data: null,
+        error: { name: "rate_limit_exceeded", message: "Try again" },
+      })
+      .mockResolvedValue({ data: { id: "provider-email" }, error: null });
+    const drain = setupApp({ context, routes: cronDrainEmailOutboxRoutes })(
+      cronDrainEmailOutboxContract,
+    );
+    const drainTime = now();
+    mockNow(drainTime);
+    const drained = await accept(
+      drain.drain({ headers: { authorization: "Bearer test-cron-secret" } }),
+      [200],
+    );
+    expect(drained.body.drained).toBe(2);
+    const firstAttempt = context.mocks.resend.send.mock.calls[0];
+    expect(firstAttempt?.[0]).toMatchObject({
+      html: expect.stringContaining('<ol start="3"'),
+      text: expect.stringContaining("3. Third step"),
+    });
+    expect(firstAttempt?.[1]).toMatchObject({
+      idempotencyKey: expect.stringMatching(/^okou-email-outbox\/v1\//u),
+    });
+    expect(context.mocks.resend.send.mock.calls[1]?.[0]).toMatchObject({
+      subject: "Next notification",
+      html: expect.stringContaining('<ol start="0"'),
+    });
+    expect(
+      (
+        await accept(
+          client().get({
+            headers: fixture.headers,
+            params: { id: second.body.notificationId },
+          }),
+          [200],
+        )
+      ).body.status,
+    ).toBe("sent");
+
+    mockNow(drainTime + 2000);
+    const retried = await accept(
+      drain.drain({ headers: { authorization: "Bearer test-cron-secret" } }),
+      [200],
+    );
+    expect(retried.body.drained).toBe(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
+    expect(context.mocks.resend.send.mock.calls[2]).toStrictEqual(firstAttempt);
+    expect(
+      (
+        await accept(
+          client().get({
+            headers: fixture.headers,
+            params: { id: first.body.notificationId },
+          }),
+          [200],
+        )
+      ).body.status,
+    ).toBe("sent");
+  });
+
   it("rejects Morning Brief purpose from an ordinary run without silently downgrading", async () => {
     const fixture = await runningAgent();
     const brief = {

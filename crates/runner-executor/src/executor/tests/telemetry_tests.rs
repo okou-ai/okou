@@ -387,6 +387,12 @@ struct ObservedStartSandbox {
 
 #[async_trait]
 impl Sandbox for ObservedStartSandbox {
+    async fn run_agent_instructions(
+        &self,
+        request: &sandbox::AgentInstructionsRequest<'_>,
+    ) -> sandbox::Result<sandbox::ExecResult> {
+        self.inner.run_agent_instructions(request).await
+    }
     fn id(&self) -> &str {
         self.inner.id()
     }

@@ -1,8 +1,16 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   Check,
+  Loader2,
   MessageCircle,
   MessageSquare,
   MessageSquarePlus,
@@ -15,7 +23,17 @@ import type {
   Suggestion,
   SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
-import { Button, Textarea } from "@okouai/ui";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Textarea,
+} from "@okouai/ui";
+import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
+import { assistantName$ } from "../../signals/branding.ts";
 import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
@@ -29,11 +47,17 @@ import {
   saveSuggestionFeedbackReason$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
-  prepareAgentSuggestion$,
+  agentSuggestionComposerItem$,
+  closeAgentSuggestionComposer$,
+  finishAgentSuggestionComposer$,
+  openAgentSuggestionComposer$,
   startAgentSuggestion$,
 } from "../../signals/okou-page/agent-suggestions.ts";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { ChatComposer } from "./chat-composer.tsx";
+import { AgentAvatarImg } from "./sidebar-shared.tsx";
 
 const SUGGESTION_ACTION =
   "min-h-11 shrink-0 gap-1 whitespace-nowrap px-0.5 text-xs font-normal @min-[521px]/suggestion:min-h-9 @min-[521px]/suggestion:gap-2 @min-[521px]/suggestion:px-2";
@@ -360,10 +384,92 @@ export function SuggestionSaveErrors() {
     : null;
 }
 
-function AgentSuggestionCard({ item }: { readonly item: Suggestion }) {
+type ComposerPreparation =
+  | { readonly state: "idle" | "loading" }
+  | { readonly state: "hasData"; readonly data: ComposerSignals }
+  | { readonly state: "hasError"; readonly error: unknown };
+
+/**
+ * The custom direction is written over the Feed, like a forward: the default
+ * Agent receives it in a new thread and the member stays on the next card.
+ */
+function AgentSuggestionComposerDialog({
+  composer,
+}: {
+  readonly composer: ComposerPreparation;
+}) {
+  const { t } = useTranslation();
+  const item = useGet(agentSuggestionComposerItem$);
+  const close = useSet(closeAgentSuggestionComposer$);
+  const agentId = useLastResolved(defaultAgentId$);
+  const assistantName = useGet(assistantName$);
+  const agentName = useLastResolved(defaultAgentName$) ?? assistantName;
+  if (!item) {
+    return null;
+  }
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          close();
+        }
+      }}
+    >
+      <DialogContent
+        smMaxWidth="xl"
+        contentClassName="grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden p-0"
+      >
+        <DialogHeader className="min-w-0 px-5 pb-3 pt-5">
+          <DialogTitle className="min-w-0 overflow-hidden pr-8 text-base font-semibold">
+            <span className="flex min-w-0 items-center gap-2">
+              {agentId ? (
+                <AgentAvatarImg
+                  name={agentId}
+                  alt=""
+                  className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
+                />
+              ) : null}
+              <span className="truncate text-foreground">{agentName}</span>
+            </span>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {t(($) => {
+              return $.chat.agentSuggestions.customDirectionDescription;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        {composer.state === "hasData" ? (
+          <div className="w-full min-w-0 p-5" data-chat-composer>
+            <ChatComposer signals={composer.data} showPendingItems={false} />
+          </div>
+        ) : composer.state === "hasError" ? (
+          <p role="alert" className="px-5 pb-5 text-sm text-muted-foreground">
+            {composer.error instanceof Error
+              ? composer.error.message
+              : t(($) => {
+                  return $.global.errors.requestFailed;
+                })}
+          </p>
+        ) : (
+          <div className="flex min-h-40 items-center justify-center text-muted-foreground">
+            <Loader2 size={16} className="animate-spin" aria-hidden />
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AgentSuggestionCard({
+  item,
+  onCustomDirection,
+}: {
+  readonly item: Suggestion;
+  readonly onCustomDirection: (item: Suggestion) => void;
+}) {
   const { t } = useTranslation();
   const start = useSet(startAgentSuggestion$);
-  const prepare = useSet(prepareAgentSuggestion$);
   const submitFeedback = useSet(submitAgentSuggestionFeedback$);
   const signal = useGet(pageSignal$);
   return (
@@ -402,7 +508,7 @@ function AgentSuggestionCard({ item }: { readonly item: Suggestion }) {
           })}
           <CustomDirectionOption
             onClick={() => {
-              detach(prepare(item, signal), Reason.DomCallback);
+              onCustomDirection(item);
             }}
           />
           <AgentSuggestionActions
@@ -426,6 +532,21 @@ export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(agentSuggestionFeedItems$);
   const feedback = useGet(suggestionFeedbackConfirmation$);
+  const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
+  const finish = useSet(finishAgentSuggestionComposer$);
+  const signal = useGet(pageSignal$);
+  const openCustomDirection = (item: Suggestion) => {
+    detach(
+      openComposer(
+        item,
+        () => {
+          detach(finish(item, signal), Reason.DomCallback);
+        },
+        signal,
+      ),
+      Reason.DomCallback,
+    );
+  };
   if (result.state !== "hasData" || result.data.length === 0) {
     return null;
   }
@@ -445,12 +566,16 @@ export function AgentSuggestions() {
               {feedback?.item.id === item.id ? (
                 <SuggestionFeedbackNotice />
               ) : (
-                <AgentSuggestionCard item={item} />
+                <AgentSuggestionCard
+                  item={item}
+                  onCustomDirection={openCustomDirection}
+                />
               )}
             </li>
           );
         })}
       </ul>
+      <AgentSuggestionComposerDialog composer={composer} />
     </section>
   );
 }
