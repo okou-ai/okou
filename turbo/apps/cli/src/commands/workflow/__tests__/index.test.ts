@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -32,7 +33,7 @@ function text() {
   return output.mock.calls.flat().join("\n");
 }
 beforeEach(() => {
-  workflowCommand.emit("single-agent-mode", true);
+  EventEmitter.prototype.emit.call(workflowCommand, "single-agent-mode", true);
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
   vi.stubEnv(
     "OKOU_TOKEN",
@@ -46,7 +47,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
-  workflowCommand.emit("single-agent-mode", false);
+  EventEmitter.prototype.emit.call(workflowCommand, "single-agent-mode", false);
   output.mockClear();
   errors.mockClear();
   exit.mockClear();
