@@ -1,6 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -13,6 +12,7 @@ import {
   connectorAccount,
   SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
+  chatConnectorOverviewFixture,
 } from "./chat-composer-connectors-test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 
@@ -49,26 +49,19 @@ async function openLoadingConnectors(chatAccounts: boolean) {
   });
   if (chatAccounts) {
     context.mocks.api(
-      chatConnectorAccessContract.accountDefaults,
-      async ({ query, respond }) => {
+      chatConnectorAccessContract.overview,
+      async ({ respond }) => {
         await authorization.promise;
         return respond(
           200,
-          accounts
-            .filter((account) => {
-              return (
-                connectorAccountTargetKey(account.target) ===
-                connectorAccountTargetKey(query)
-              );
-            })
-            .map((account) => {
-              return {
-                connectionId: account.id,
-                displayName: account.displayName,
-                isDefault: account.isDefault,
-                defaultEnabled: true,
-              };
-            }),
+          catalog.map((connector) => {
+            return chatConnectorOverviewFixture({
+              target: { kind: "builtin", connectorSlug: connector.slug },
+              label: connector.label,
+              icon: connector.icon,
+              accounts,
+            });
+          }),
         );
       },
     );

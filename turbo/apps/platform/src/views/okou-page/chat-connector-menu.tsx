@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validators/connector-accounts";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -107,6 +106,7 @@ function ChatAccountChoices({
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
   const list = useLoadable(accounts.list.accounts$);
+  const current = useLoadable(accounts.current$);
   const previous = useLastResolved(accounts.list.accounts$);
   const search = useGet(accounts.list.search$);
   const setSearch = useSet(accounts.list.setSearch$);
@@ -123,11 +123,12 @@ function ChatAccountChoices({
   const rows = page?.connections ?? [];
   const displayed =
     !search &&
-    entry.current &&
+    current.state === "hasData" &&
+    current.data &&
     !rows.some((row) => {
-      return row.id === entry.current?.id;
+      return row.id === current.data?.id;
     })
-      ? [entry.current, ...rows]
+      ? [current.data, ...rows]
       : rows;
   const busy = selecting.state === "loading" || saving.state === "loading";
   return (
@@ -180,7 +181,7 @@ function ChatAccountChoices({
           })}
         </p>
       )}
-      {list.state === "hasError" && (
+      {(list.state === "hasError" || current.state === "hasError") && (
         <p className="px-3 py-2 text-sm text-muted-foreground">
           {t(($) => {
             return $.connectors.accounts.accountsUnavailable;
@@ -213,11 +214,9 @@ function ChatAccountChoices({
 
 function ConnectorOverviewRow({
   entry,
-  icon,
   onOpen,
 }: {
   readonly entry: ChatConnectorOverview;
-  readonly icon: PublicConnectorCatalogIcon | undefined;
   readonly onOpen: () => void;
 }) {
   const { t } = useTranslation();
@@ -241,7 +240,7 @@ function ConnectorOverviewRow({
       className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-state-hover"
     >
       {entry.target.kind === "builtin" ? (
-        <ConnectorIcon icon={icon} size={20} />
+        <ConnectorIcon icon={entry.icon ?? undefined} size={20} />
       ) : (
         <CustomConnectorIcon
           id={entry.target.customConnectorId}
@@ -282,26 +281,15 @@ function ChatConnectorOverviewList({
   readonly signals: ComposerSignals;
   readonly entries: readonly ChatConnectorOverview[];
 }) {
-  const connected = useLoadable(signals.connector.resources.connected$);
   const open = useSet(signals.connector.chatAccess.openTarget$);
   const signal = useGet(pageSignal$);
   return (
     <div className="p-1">
       {entries.map((entry) => {
-        const icon =
-          connected.state === "hasData"
-            ? connected.data.builtinConnectors.find((connector) => {
-                return (
-                  entry.target.kind === "builtin" &&
-                  connector.slug === entry.target.connectorSlug
-                );
-              })?.icon
-            : undefined;
         return (
           <div role="listitem" key={connectorAccountTargetKey(entry.target)}>
             <ConnectorOverviewRow
               entry={entry}
-              icon={icon}
               onOpen={() => {
                 open(entry, signal);
               }}
@@ -375,6 +363,36 @@ function AccountPanelFooter({
   );
 }
 
+function ChatConnectorOverviewRetry({
+  signals,
+  failed,
+  target,
+}: {
+  readonly signals: ComposerSignals;
+  readonly failed: boolean;
+  readonly target: ChatConnectorMenuTarget | null;
+}) {
+  const { t } = useTranslation();
+  const retry = useSet(signals.connector.chatAccess.retry$);
+  if (!failed || target) {
+    return null;
+  }
+  return (
+    <div role="listitem">
+      <Button
+        variant="quiet"
+        onClick={() => {
+          retry();
+        }}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.tryAgain;
+        })}
+      </Button>
+    </div>
+  );
+}
+
 export function ChatConnectorMenu({
   signals,
   footer,
@@ -387,17 +405,16 @@ export function ChatConnectorMenu({
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
   const overview = useLoadable(accounts.overview$);
+  const notifications = useLoadable(accounts.notifications$);
+  const failed =
+    overview.state === "hasError" || notifications.state === "hasError";
   const previous = useLastResolved(accounts.overview$);
   const target = useGet(accounts.target$);
   const back = useSet(accounts.closeTarget$);
   const ui = useGet(signals.connector.connectorUiState$);
   const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
-    overview.state === "hasData"
-      ? overview.data
-      : overview.state === "loading"
-        ? (previous ?? [])
-        : [];
+    overview.state === "hasData" ? overview.data : (previous ?? []);
   const showSearch = entries.length > 20;
   const filtered =
     showSearch && ui.popoverSearch.trim()
@@ -418,9 +435,9 @@ export function ChatConnectorMenu({
   return (
     <ComposerConnectorMenuShell
       loading={overview.state === "loading" && !previous}
-      hasContent={entries.length > 0 || target !== null}
+      hasContent={entries.length > 0 || target !== null || failed}
       error={
-        overview.state === "hasError" && !target
+        failed && !target
           ? t(($) => {
               return $.connectors.accounts.accountsUnavailable;
             })
@@ -434,6 +451,11 @@ export function ChatConnectorMenu({
       contentRole={target ? "group" : "list"}
       contentLabel={target?.label}
     >
+      <ChatConnectorOverviewRetry
+        signals={signals}
+        failed={failed}
+        target={target}
+      />
       {target ? (
         <>
           <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">

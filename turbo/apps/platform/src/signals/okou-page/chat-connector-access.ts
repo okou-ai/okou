@@ -7,14 +7,16 @@ import {
   type Command,
 } from "ccstate";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
-import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
+import type {
+  ChatConnectorAccess,
+  ChatConnectorOverviewEntry,
+} from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { resetSignal } from "../utils.ts";
@@ -22,10 +24,7 @@ import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
 } from "./connector-accounts.ts";
-import {
-  builtinConnectorAccountProjectionVersion$,
-  customConnectorAccountProjectionVersion$,
-} from "./connector-account-projection.ts";
+import { createChatConnectorOverviewSignals } from "./chat-connector-overview.ts";
 import {
   createConnectorPermissionsSignals,
   type ConnectorPermissionsTarget,
@@ -51,36 +50,14 @@ export interface ChatConnectorMenuTarget {
 
 export interface ChatConnectorOverview extends ChatConnectorMenuTarget {
   readonly access: ChatConnectorAccess;
-  readonly current: ConnectorAccountConnection | null;
+  readonly current:
+    | (ChatConnectorOverviewEntry["accounts"][number] & { readonly id: string })
+    | null;
+  readonly icon: ChatConnectorOverviewEntry["icon"];
 }
 
 function accountAccessRequests(signal: AbortSignal) {
   return {
-    thread: (
-      client: ApiClientFactory,
-      threadId: string,
-      target: ConnectorAccountTarget,
-    ) => {
-      return accept(
-        client(chatConnectorAccessContract).getThread({
-          params: { threadId },
-          query: target,
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-    },
-    defaults: (client: ApiClientFactory, target: ConnectorAccountTarget) => {
-      return accept(
-        client(chatConnectorAccessContract).accountDefaults({
-          query: target,
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-    },
     connection: (
       client: ApiClientFactory,
       target: ConnectorAccountTarget,
@@ -100,113 +77,66 @@ function accountAccessRequests(signal: AbortSignal) {
 }
 
 function createChatConnectorReads({
-  connected$,
+  entries$,
   pending$,
-  requests$,
-  version$,
   target$,
   threadId,
 }: {
-  readonly connected$: Computed<Promise<ConnectedConnectors>>;
+  readonly entries$: Computed<Promise<readonly ChatConnectorOverviewEntry[]>>;
   readonly pending$: State<PendingChatConnectorAccess>;
-  readonly requests$: State<ReturnType<typeof accountAccessRequests> | null>;
-  readonly version$: State<number>;
   readonly target$: State<ChatConnectorMenuTarget | null>;
   readonly threadId: string | undefined;
 }) {
   const overview$ = computed(
     async (get): Promise<readonly ChatConnectorOverview[]> => {
-      const requests = get(requests$);
-      if (!requests) {
-        return [];
-      }
-      get(version$);
-      get(builtinConnectorAccountProjectionVersion$);
-      get(customConnectorAccountProjectionVersion$);
       const pending = get(pending$);
-      const connected = await get(connected$);
-      const client = get(apiClient$);
-      const targets: ChatConnectorMenuTarget[] = [
-        ...connected.builtinConnectors.map((connector) => {
+      const entries = await get(entries$);
+      return entries.map((entry) => {
+        const key = connectorAccountTargetKey(entry.target);
+        const accounts = entry.accounts.map((account) => {
+          const overrideEnabled = threadId
+            ? account.overrideEnabled
+            : (pending.overrides.find((candidate) => {
+                return (
+                  candidate.connectionId === account.connectionId &&
+                  connectorAccountTargetKey(candidate.target) === key
+                );
+              })?.enabled ?? null);
           return {
-            target: { kind: "builtin" as const, connectorSlug: connector.slug },
-            label: connector.label,
-            hasPermissions: connector.hasPermissions,
+            ...account,
+            overrideEnabled,
+            enabled: overrideEnabled ?? account.defaultEnabled,
           };
-        }),
-        ...connected.customConnectors.map((connector) => {
-          return {
-            target: {
-              kind: "custom" as const,
-              customConnectorId: connector.id,
-            },
-            label: connector.displayName,
-            hasPermissions: false,
-          };
-        }),
-      ];
-      return await Promise.all(
-        targets.map(async (entry) => {
-          let access: ChatConnectorAccess;
-          if (threadId) {
-            const result = await requests.thread(
-              client,
-              threadId,
-              entry.target,
+        });
+        const allowed = accounts.filter((account) => {
+          return account.enabled;
+        });
+        const selection = pending.selections.find((candidate) => {
+          return connectorAccountTargetKey(candidate.target) === key;
+        });
+        const current =
+          allowed.find((account) => {
+            return (
+              account.connectionId ===
+              (threadId ? entry.currentConnectionId : selection?.connectionId)
             );
-            access = result.body;
-          } else {
-            const result = await requests.defaults(client, entry.target);
-            const key = connectorAccountTargetKey(entry.target);
-            const accounts = result.body.map((account) => {
-              const overrideEnabled =
-                pending.overrides.find((candidate) => {
-                  return (
-                    candidate.connectionId === account.connectionId &&
-                    connectorAccountTargetKey(candidate.target) === key
-                  );
-                })?.enabled ?? null;
-              return {
-                ...account,
-                overrideEnabled,
-                enabled: overrideEnabled ?? account.defaultEnabled,
-              };
-            });
-            const allowed = accounts.filter((account) => {
-              return account.enabled;
-            });
-            const selection = pending.selections.find((candidate) => {
-              return connectorAccountTargetKey(candidate.target) === key;
-            });
-            const current =
-              allowed.find((account) => {
-                return account.connectionId === selection?.connectionId;
-              }) ??
-              allowed.find((account) => {
-                return account.isDefault;
-              }) ??
-              allowed[0];
-            access = {
-              target: entry.target,
-              accounts,
-              currentConnectionId: current?.connectionId ?? null,
-              available: allowed.length > 0,
-            };
-          }
-          const result = access.currentConnectionId
-            ? await requests.connection(
-                client,
-                entry.target,
-                access.currentConnectionId,
-              )
-            : null;
-          return {
-            ...entry,
-            access,
-            current: result?.status === 200 ? result.body : null,
-          };
-        }),
-      );
+          }) ??
+          allowed.find((account) => {
+            return account.isDefault;
+          }) ??
+          allowed[0];
+        const access = {
+          target: entry.target,
+          accounts,
+          currentConnectionId: current?.connectionId ?? null,
+          available: allowed.length > 0,
+        };
+        return {
+          ...entry,
+          access,
+          current: current ? { ...current, id: current.connectionId } : null,
+        };
+      });
     },
   );
   const active$ = computed(async (get) => {
@@ -274,19 +204,21 @@ function pendingConnectorOverride(
   };
 }
 
+/** Saves and cache reconciliation share the Chat page's lifetime. */
 function createChatConnectorMutations({
   pending$,
   target$,
   active$,
-  resetSave$,
-  reload$,
+  refreshTarget$,
   threadId,
 }: {
   readonly pending$: State<PendingChatConnectorAccess>;
   readonly target$: State<ChatConnectorMenuTarget | null>;
   readonly active$: Computed<Promise<ChatConnectorOverview | null>>;
-  readonly resetSave$: ReturnType<typeof resetSignal>;
-  readonly reload$: Command<void, []>;
+  readonly refreshTarget$: Command<
+    Promise<void>,
+    [ConnectorAccountTarget, AbortSignal]
+  >;
   readonly threadId: string | undefined;
 }) {
   const setOverride$ = command(
@@ -294,9 +226,9 @@ function createChatConnectorMutations({
       { get, set },
       connectionId: string,
       enabled: boolean | null,
-      parentSignal: AbortSignal,
+      signal: AbortSignal,
     ) => {
-      const signal = set(resetSave$, parentSignal);
+      signal.throwIfAborted();
       const entry = get(target$);
       if (!entry) {
         return;
@@ -311,7 +243,7 @@ function createChatConnectorMutations({
           [200],
           signal,
         );
-        set(reload$);
+        await set(refreshTarget$, entry.target, signal);
       } else {
         const active = await get(active$);
         signal.throwIfAborted();
@@ -333,8 +265,7 @@ function createChatConnectorMutations({
     },
   );
   const select$ = command(
-    async ({ get, set }, connectionId: string, parentSignal: AbortSignal) => {
-      const signal = set(resetSave$, parentSignal);
+    async ({ get, set }, connectionId: string, signal: AbortSignal) => {
       const active = await get(active$);
       signal.throwIfAborted();
       if (
@@ -354,7 +285,7 @@ function createChatConnectorMutations({
           [200],
           signal,
         );
-        set(reload$);
+        await set(refreshTarget$, active.target, signal);
         await get(active$);
         signal.throwIfAborted();
       } else {
@@ -379,10 +310,7 @@ function createChatConnectorMutations({
 }
 
 /** One composer's Chat preferences; opening the menu owns its account reads. */
-export function createChatConnectorAccessSignals(
-  connected$: Computed<Promise<ConnectedConnectors>>,
-  threadId?: string,
-) {
+export function createChatConnectorAccessSignals(threadId?: string) {
   const pending$ = state<PendingChatConnectorAccess>({
     overrides: [],
     selections: [],
@@ -391,8 +319,6 @@ export function createChatConnectorAccessSignals(
     null,
   );
   const resetOwner$ = resetSignal();
-  const resetSave$ = resetSignal();
-  const version$ = state(0);
   const target$ = state<ChatConnectorMenuTarget | null>(null);
   const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
@@ -400,25 +326,18 @@ export function createChatConnectorAccessSignals(
     return entry ? createConnectorPermissionsSignals(entry) : null;
   });
   const list = createConnectorAccountListSignals();
-  const reload$ = command(({ set }) => {
-    set(version$, (value) => {
-      return value + 1;
-    });
-  });
+  const cache = createChatConnectorOverviewSignals(threadId);
   const { overview$, active$ } = createChatConnectorReads({
-    connected$,
+    entries$: cache.entries$,
     pending$,
-    requests$,
-    version$,
     target$,
     threadId,
   });
   const open$ = command(({ set }, parentSignal: AbortSignal) => {
     set(requests$, accountAccessRequests(set(resetOwner$, parentSignal)));
-    set(reload$);
+    set(cache.open$, parentSignal);
   });
   const closeTarget$ = command(({ set }) => {
-    set(resetSave$);
     set(target$, null);
     set(list.clearTarget$);
   });
@@ -429,7 +348,6 @@ export function createChatConnectorAccessSignals(
   });
   const openTarget$ = command(
     ({ set }, target: ChatConnectorMenuTarget, signal: AbortSignal) => {
-      set(resetSave$);
       set(target$, target);
       set(list.setTarget$, target.target, signal);
     },
@@ -438,12 +356,34 @@ export function createChatConnectorAccessSignals(
     pending$,
     target$,
     active$,
-    resetSave$,
-    reload$,
+    refreshTarget$: cache.refreshTarget$,
     threadId,
   });
+  const current$ = computed(
+    async (get): Promise<ConnectorAccountConnection | null> => {
+      const requests = get(requests$);
+      const active = await get(active$);
+      if (!requests || !active?.access.currentConnectionId) {
+        return null;
+      }
+      const page = await get(list.accounts$);
+      const found = page.connections.find((account) => {
+        return account.id === active.access.currentConnectionId;
+      });
+      if (found) {
+        return found;
+      }
+      const result = await requests.connection(
+        get(apiClient$),
+        active.target,
+        active.access.currentConnectionId,
+      );
+      return result.status === 200 ? result.body : null;
+    },
+  );
   return {
     overview$,
+    notifications$: cache.notifications$,
     active$,
     list,
     open$,
@@ -452,7 +392,9 @@ export function createChatConnectorAccessSignals(
     closeTarget$,
     setOverride$,
     select$,
-    reload$,
+    reload$: cache.reload$,
+    retry$: cache.retry$,
+    current$,
     target$: computed((get) => {
       return get(target$);
     }),

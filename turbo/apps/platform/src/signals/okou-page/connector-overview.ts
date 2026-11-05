@@ -49,22 +49,26 @@ export function createConnectorResourceSignals() {
     get(remotesVersion$);
     return await get(requests$).remotes(get(apiClient$));
   });
-  const open$ = command(({ set }, signal: AbortSignal) => {
-    const ownerSignal = set(resetRequests$, signal);
-    set(requests$, resourceRequests(ownerSignal));
-    set(
-      setAblyInvalidationLoop$,
-      {
-        topic: "connector:changed",
-        invalidations: [reloadConnected$],
-        options: { runOnSubscribe: true },
-      },
-      ownerSignal,
-    );
-    set(openedVersion$, (version) => {
-      return version + 1;
-    });
-  });
+  const open$ = command(
+    ({ set }, watchConnectors: boolean, signal: AbortSignal) => {
+      const ownerSignal = set(resetRequests$, signal);
+      set(requests$, resourceRequests(ownerSignal));
+      if (watchConnectors) {
+        set(
+          setAblyInvalidationLoop$,
+          {
+            topic: "connector:changed",
+            invalidations: [reloadConnected$],
+            options: { runOnSubscribe: true },
+          },
+          ownerSignal,
+        );
+      }
+      set(openedVersion$, (version) => {
+        return version + 1;
+      });
+    },
+  );
   const close$ = command(({ set }) => {
     set(resetRequests$);
   });
