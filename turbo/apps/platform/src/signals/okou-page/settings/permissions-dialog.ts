@@ -2,7 +2,17 @@ import { command, computed, state } from "ccstate";
 import type { PlatformConnectorPermissionMetadata } from "../../connector-domain.ts";
 
 import {
+  clearPermissionDraftInheritedExpiration,
   createEmptyPermissionDraftIntent,
+  setPermissionDraftConnectorPolicy,
+  setPermissionDraftExpiration,
+  setPermissionDraftGroupAllowExpiration,
+  setPermissionDraftGroupAllowPolicy,
+  setPermissionDraftGroupPolicy,
+  setPermissionDraftPolicy,
+  setPermissionDraftUnknownExpiration,
+  setPermissionDraftUnknownPolicy,
+  stagePermissionDraftConnectorRestore,
   type PermissionDraftIntent,
 } from "./permission-draft-intent.ts";
 
@@ -78,11 +88,85 @@ export const permissionDrawerUiState$ = computed((get) => {
   return get(internalPermissionDrawerUiState$);
 });
 
-export const updatePermissionDrawerDraft$ = command(
+type DraftEditArgs<Edit extends (args: never) => PermissionDraftIntent> = Omit<
+  Parameters<Edit>[0],
+  "draft"
+>;
+
+/** One member edit to the drawer's permission draft. */
+export type PermissionDrawerDraftEdit =
+  | ({ readonly kind: "permission-policy" } & DraftEditArgs<
+      typeof setPermissionDraftPolicy
+    >)
+  | ({ readonly kind: "connector-policy" } & DraftEditArgs<
+      typeof setPermissionDraftConnectorPolicy
+    >)
+  | ({ readonly kind: "group-allow" } & DraftEditArgs<
+      typeof setPermissionDraftGroupAllowPolicy
+    >)
+  | ({ readonly kind: "group-policy" } & DraftEditArgs<
+      typeof setPermissionDraftGroupPolicy
+    >)
+  | ({ readonly kind: "group-allow-expiration" } & DraftEditArgs<
+      typeof setPermissionDraftGroupAllowExpiration
+    >)
+  | { readonly kind: "restore-connector" }
+  | ({ readonly kind: "permission-expiration" } & DraftEditArgs<
+      typeof setPermissionDraftExpiration
+    >)
+  | ({ readonly kind: "clear-inherited-expiration" } & DraftEditArgs<
+      typeof clearPermissionDraftInheritedExpiration
+    >)
+  | ({ readonly kind: "unknown-expiration" } & DraftEditArgs<
+      typeof setPermissionDraftUnknownExpiration
+    >)
+  | ({ readonly kind: "unknown-policy" } & DraftEditArgs<
+      typeof setPermissionDraftUnknownPolicy
+    >);
+
+function applyPermissionDrawerDraftEdit(
+  draft: PermissionDraftIntent,
+  edit: PermissionDrawerDraftEdit,
+): PermissionDraftIntent {
+  switch (edit.kind) {
+    case "permission-policy": {
+      return setPermissionDraftPolicy({ ...edit, draft });
+    }
+    case "connector-policy": {
+      return setPermissionDraftConnectorPolicy({ ...edit, draft });
+    }
+    case "group-allow": {
+      return setPermissionDraftGroupAllowPolicy({ ...edit, draft });
+    }
+    case "group-policy": {
+      return setPermissionDraftGroupPolicy({ ...edit, draft });
+    }
+    case "group-allow-expiration": {
+      return setPermissionDraftGroupAllowExpiration({ ...edit, draft });
+    }
+    case "restore-connector": {
+      return stagePermissionDraftConnectorRestore({ draft });
+    }
+    case "permission-expiration": {
+      return setPermissionDraftExpiration({ ...edit, draft });
+    }
+    case "clear-inherited-expiration": {
+      return clearPermissionDraftInheritedExpiration({ ...edit, draft });
+    }
+    case "unknown-expiration": {
+      return setPermissionDraftUnknownExpiration({ ...edit, draft });
+    }
+    case "unknown-policy": {
+      return setPermissionDraftUnknownPolicy({ ...edit, draft });
+    }
+  }
+}
+
+export const editPermissionDrawerDraft$ = command(
   (
     { get, set },
     key: string,
-    update: (current: PermissionDraftIntent) => PermissionDraftIntent,
+    edit: PermissionDrawerDraftEdit,
     initial?: InitialPermissionDrawerUiState,
   ) => {
     const current = stateForKey(
@@ -92,7 +176,7 @@ export const updatePermissionDrawerDraft$ = command(
     );
     set(internalPermissionDrawerUiState$, {
       ...current,
-      draft: update(current.draft),
+      draft: applyPermissionDrawerDraftEdit(current.draft, edit),
     });
   },
 );

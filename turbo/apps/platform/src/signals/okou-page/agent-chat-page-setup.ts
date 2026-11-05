@@ -91,7 +91,7 @@ export const setupAgentChatPage$ = command(
     );
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
-    set(get(agentChatComposerSignals$).voice.setup$, signal);
+    set(get(agentChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
     const firstGreetingVisit = set(startChatGreetingVisit$);
     set(resetChatPageModelSelection$);

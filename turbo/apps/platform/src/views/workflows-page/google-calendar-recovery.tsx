@@ -11,7 +11,6 @@ import {
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import {
   cancelGoogleCalendarRecovery$,
-  finishGoogleCalendarReconnect$,
   closeGoogleCalendarReconnect$,
   googleCalendarRecoveryTarget$,
   openGoogleCalendarRecovery$,
@@ -67,7 +66,6 @@ export function GoogleCalendarRecoveryDialogs() {
   const recovery = useGet(googleCalendarRecoveryTarget$);
   const cancelRecovery = useSet(cancelGoogleCalendarRecovery$);
   const closeReconnect = useSet(closeGoogleCalendarReconnect$);
-  const finishReconnect = useSet(finishGoogleCalendarReconnect$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
   const googleCalendarManager =
     managedConnector?.slug === GOOGLE_CALENDAR_CONNECTOR_SLUG
@@ -116,9 +114,7 @@ export function GoogleCalendarRecoveryDialogs() {
           onClose={() => {
             closeReconnect(recovery);
           }}
-          onSuccess={(connectionId, signal) => {
-            return finishReconnect(recovery, connectionId, signal);
-          }}
+          origin={{ kind: "google-calendar-recovery" }}
         />
       ) : null}
     </>

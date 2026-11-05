@@ -1,5 +1,4 @@
-import { closeDeletedThreadArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
+import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
@@ -119,8 +118,8 @@ type ArtifactSidebarContentProps = {
   markdownTree$?: MarkdownPreviewTreeComputed;
   onBack?: () => void;
   onClose: () => void;
-  onSyncSuccess?: () => void;
-  onDeleted?: () => void;
+  /** The surface deleting the artifact; it decides what follows. */
+  deletionOrigin: ArtifactDeletionOrigin;
   syncTarget?: ArtifactDownloadSyncTarget;
   text$?: TextPreviewComputed;
   threadId?: string;
@@ -136,8 +135,6 @@ export function ArtifactSidebar({
   text$: providedText$,
   thread,
 }: ArtifactSidebarProps) {
-  const closeDeleted = useSet(closeDeletedThreadArtifact$);
-  const pageSignal = useGet(pageSignal$);
   const loadable = useLastLoadable(thread.artifacts$);
   const agentId = thread.agentId;
   const imageNavigation = thread.imageNavigation.sidebar;
@@ -181,9 +178,7 @@ export function ArtifactSidebar({
         markdownTree$={markdownTree$}
         onBack={onBack}
         onClose={onClose}
-        onDeleted={() => {
-          closeDeleted(thread, pageSignal);
-        }}
+        deletionOrigin={{ kind: "thread-sidebar", threadId: thread.threadId }}
         text$={text$}
         threadId={thread.threadId}
       />
@@ -195,18 +190,15 @@ export function ArtifactSidebar({
 function artifactSidebarSyncTargetForItem({
   agentId,
   item,
-  onSyncSuccess,
 }: {
   agentId?: string | null;
   item?: ArtifactSidebarItem;
-  onSyncSuccess?: () => void;
   threadId?: string;
 }): ArtifactDownloadSyncTarget | undefined {
   return item
     ? artifactSidebarSyncTarget({
         agentId,
         file: item.file,
-        onSyncSuccess,
       })
     : undefined;
 }
@@ -223,8 +215,7 @@ export function ArtifactSidebarContent({
   markdownTree$,
   onBack,
   onClose,
-  onSyncSuccess,
-  onDeleted,
+  deletionOrigin,
   syncTarget: providedSyncTarget,
   text$,
   threadId,
@@ -245,7 +236,6 @@ export function ArtifactSidebarContent({
     artifactSidebarSyncTargetForItem({
       agentId,
       item,
-      onSyncSuccess,
       threadId,
     });
   const recoveryTarget =
@@ -263,8 +253,7 @@ export function ArtifactSidebarContent({
       deleteAction={
         <ArtifactDeleteButton
           artifactId={artifactId ?? syncTarget?.artifactId}
-          surface="sidebar"
-          onDeleted={onDeleted ?? onClose}
+          origin={deletionOrigin}
         />
       }
       recovery={recovery}
@@ -419,7 +408,6 @@ export function artifactSidebarSyncTarget(params: {
     ChatThreadArtifactFile,
     "artifactId" | "filename" | "googleDriveConnectionId" | "googleDriveSync"
   >;
-  onSyncSuccess?: () => void;
 }): ArtifactDownloadSyncTarget | undefined {
   const { file } = params;
   const artifactId = file.artifactId;
@@ -439,7 +427,6 @@ export function artifactSidebarSyncTarget(params: {
     artifactId,
     connectionId: file.googleDriveConnectionId,
     filename: file.filename,
-    onSyncSuccess: params.onSyncSuccess,
     synced: file.googleDriveSync?.status === "synced",
     originalUploaded:
       file.googleDriveSync?.status === "synced"

@@ -78,3 +78,27 @@ test("A video artifact without a poster uses its source as the catalog preview",
     "https://videos.example.test/product-tour.mp4#t=0.001",
   );
 });
+
+test("Re-read the catalog when one of the member's artifacts changes", async () => {
+  let reads = 0;
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    reads += 1;
+    return respond(200, {
+      artifacts: [
+        artifact({
+          title: reads > 1 ? "synced-plan.txt" : "launch-plan.txt",
+        }),
+      ],
+      nextCursor: null,
+    });
+  });
+
+  await setupArtifactCatalogPage(context);
+  await expect(findArtifactAction("launch-plan.txt")).resolves.toBeVisible();
+
+  context.mocks.ably.trigger("artifact:changed", {
+    artifactId: "a0000000-0000-4000-a000-000000000001",
+  });
+
+  await expect(findArtifactAction("synced-plan.txt")).resolves.toBeVisible();
+});

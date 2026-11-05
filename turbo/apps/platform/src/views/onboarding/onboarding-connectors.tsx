@@ -10,14 +10,13 @@ import {
 import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   builtinPollingOAuthDeviceAuthSlug$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
-  runBuiltinConnectorConnectSuccess$,
   selectedBuiltinConnectorCatalogItem$,
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
+import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { onboardingMakeConnectorItems$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import type {
@@ -46,7 +45,8 @@ interface ConnectorSetupBaseProps {
    * other flows and pass neither.
    */
   readonly onConnectStart?: (connectorSlug: ConnectorSlug) => void;
-  readonly onConnected?: (connectorSlug: ConnectorSlug) => void;
+  /** The sources step records each connection it completes. */
+  readonly captureSourceConnections?: boolean;
 }
 
 /** The source step's grid: its connectors come from the onboarding sources. */
@@ -246,14 +246,13 @@ function useSelectedConnector(): {
 
 function useSourceConnectorActivate(
   onConnectStart: ConnectorSetupProps["onConnectStart"],
-  onConnected: ConnectorSetupProps["onConnected"],
+  captureSourceConnections: boolean,
 ) {
   const pageSignal = useGet(pageSignal$);
   const selectConnector = useSet(setSelectedBuiltinConnectorSlug$);
   const [connection, directConnect] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
-  const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
 
   const activate = (
     item: PlatformConnectorCatalogConnectItem,
@@ -275,15 +274,9 @@ function useSourceConnectorActivate(
               authorizeVisibleAgents: true,
               ...accountOptions,
             },
-            onSuccess: (connectionId, signal) => {
-              return runConnectSuccess(
-                () => {
-                  onConnected?.(item.slug);
-                },
-                connectionId,
-                item.slug,
-                signal,
-              );
+            origin: {
+              kind: "selected-connector",
+              captureOnboardingSource: captureSourceConnections,
             },
           },
           pageSignal,
@@ -317,7 +310,7 @@ function ConnectorCatalogReadError() {
 function SourcesConnectorGrid({
   connectorSlugs,
   onConnectStart,
-  onConnected,
+  captureSourceConnections = false,
 }: SourcesConnectorSetupProps) {
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const connectorCatalogItemsLoadable = useLastLoadable(
@@ -328,7 +321,7 @@ function SourcesConnectorGrid({
     useSelectedConnector();
   const { activate, busy } = useSourceConnectorActivate(
     onConnectStart,
-    onConnected,
+    captureSourceConnections,
   );
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectorCatalogItems =
@@ -382,11 +375,12 @@ function SourcesConnectorGrid({
           item={selectedConnector}
           accountOptions={selectedAccountOptions}
           authorizeVisibleAgentsOnConnect
-          onSuccess={() => {
-            onConnected?.(selectedConnector.slug);
-          }}
           onClose={() => {
             setSelectedConnectorSlug(null);
+          }}
+          origin={{
+            kind: "selected-connector",
+            captureOnboardingSource: captureSourceConnections,
           }}
         />
       ) : null}
@@ -538,6 +532,10 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
           authorizeVisibleAgentsOnConnect
           onClose={() => {
             setSelectedConnectorSlug(null);
+          }}
+          origin={{
+            kind: "selected-connector",
+            captureOnboardingSource: false,
           }}
         />
       ) : null}

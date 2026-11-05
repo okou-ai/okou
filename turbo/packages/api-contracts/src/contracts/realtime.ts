@@ -10,6 +10,7 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerGroupSchema } from "./runner-primitives";
 import {
+  artifactChangedPayloadSchema,
   browserSessionChangedPayloadSchema,
   sessionOutputDeltaSchema,
   walletChangedPayloadSchema,
@@ -18,6 +19,8 @@ import {
 } from "../validators/realtime";
 export {
   sessionOutputChannelName,
+  artifactChangedPayloadSchema,
+  artifactChangedTopic,
   browserSessionChangedPayloadSchema,
   sessionOutputDeltaSchema,
   walletChangedPayloadSchema,
@@ -70,6 +73,10 @@ export type ConnectorChangedPayload = zInfer<
 >;
 
 export type WalletChangedPayload = zInfer<typeof walletChangedPayloadSchema>;
+
+export type ArtifactChangedPayload = zInfer<
+  typeof artifactChangedPayloadSchema
+>;
 
 export const composerAgentConnectorsChangedPayloadSchema = object({
   agentId: uuid(),

@@ -58,13 +58,9 @@ import {
   connectorDirectoryCustomScope$,
   connectorsScope$,
   setConnectorsScope$,
-  showCreatedDirectoryConnector$,
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  connectBuiltinConnectorNoAuthAndSettle$,
-  runBuiltinConnectorConnectSuccess$,
   connectorsSearch$,
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
@@ -76,6 +72,10 @@ import {
   setBuiltinConnectorScopeReviewSelection$,
   type ConnectorsConnectionFilter,
 } from "../../signals/okou-page/settings/connectors.ts";
+import {
+  connectBuiltinConnectorNoAuthAndContinue$,
+  connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+} from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import {
   buildConnectorShelves,
   emptyConnectorShelfLayout,
@@ -145,7 +145,6 @@ import {
   builtinAccountManager$,
   closeBuiltinAccountConnectDialog$,
   closeBuiltinAccountManager$,
-  finishConnectorAccountConnection$,
   openBuiltinAccountConnectDialog$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
@@ -1325,38 +1324,14 @@ function ManagedConnectorAccessDialogBody({
 }
 
 function useBuiltinConnectorConnectHandlers() {
-  const finishAccountConnection = useSet(finishConnectorAccountConnection$);
-  const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
   const [browserAuth, connect] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
   const [noAuth, connectNoAuth] = useLoadableSet(
-    connectBuiltinConnectorNoAuthAndSettle$,
+    connectBuiltinConnectorNoAuthAndContinue$,
   );
   const signal = useGet(pageSignal$);
-  const finishExplicitAccountAdd = async (
-    connector: PlatformConnectorCatalogStatusItem,
-    connectionId: string,
-    attemptSignal: AbortSignal,
-  ): Promise<void> => {
-    await runConnectSuccess(
-      (completedConnectionId, continuationSignal) => {
-        return finishAccountConnection(
-          {
-            target: { kind: "builtin", connectorSlug: connector.slug },
-            connectionId: completedConnectionId,
-            connectorLabel: connector.label,
-            mode: { kind: "add" },
-          },
-          continuationSignal,
-        );
-      },
-      connectionId,
-      connector.slug,
-      attemptSignal,
-    );
-  };
 
   const accountConnectHandlers = (
     connector: PlatformConnectorCatalogStatusItem,
@@ -1376,13 +1351,7 @@ function useBuiltinConnectorConnectHandlers() {
               connectorLabel: connector.label,
               connectorIcon: connector.icon,
             },
-            onSuccess: (connectionId, attemptSignal) => {
-              return finishExplicitAccountAdd(
-                connector,
-                connectionId,
-                attemptSignal,
-              );
-            },
+            origin: { kind: "account", mode: { kind: "add" } },
           },
           signal,
         );
@@ -1397,13 +1366,7 @@ function useBuiltinConnectorConnectHandlers() {
               authorizeVisibleAgents: true,
               connectorLabel: connector.label,
             },
-            onSuccess: (connectionId, attemptSignal) => {
-              return finishExplicitAccountAdd(
-                connector,
-                connectionId,
-                attemptSignal,
-              );
-            },
+            origin: { kind: "account", mode: { kind: "add" } },
           },
           signal,
         );
@@ -1631,7 +1594,6 @@ function ConnectorsDirectoryPage() {
 function BuiltinAccountConnectDialog() {
   const accountConnect = useGet(builtinAccountConnectDialog$);
   const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
-  const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   return accountConnect ? (
     <ConnectModal
       item={accountConnect.connector}
@@ -1649,20 +1611,7 @@ function BuiltinAccountConnectDialog() {
       onClose={() => {
         closeAccountConnect();
       }}
-      onSuccess={async (connectionId, attemptSignal) => {
-        await finishAccountConnection(
-          {
-            target: {
-              kind: "builtin",
-              connectorSlug: accountConnect.connector.slug,
-            },
-            connectionId,
-            connectorLabel: accountConnect.connector.label,
-            mode: accountConnect.mode,
-          },
-          attemptSignal,
-        );
-      }}
+      origin={{ kind: "account", mode: accountConnect.mode }}
     />
   ) : null;
 }
@@ -1759,12 +1708,5 @@ function BuiltinScopeReviewBody() {
 }
 
 function DirectoryCustomDialogs() {
-  const showCreated = useSet(showCreatedDirectoryConnector$);
-  return (
-    <CustomConnectorDirectoryDialogs
-      onCreated={(connector) => {
-        showCreated(connector.id);
-      }}
-    />
-  );
+  return <CustomConnectorDirectoryDialogs />;
 }

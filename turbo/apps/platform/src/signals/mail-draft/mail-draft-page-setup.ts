@@ -11,6 +11,9 @@ import { mailDraftPageSignals$ } from "./mail-draft-page-state.ts";
 export const setupMailDraftPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const signals = get(mailDraftPageSignals$);
+    if (signals) {
+      set(signals.subscribeConnectorChanges$, signal);
+    }
     set(
       updatePage$,
       createElement(MailDraftPage, { key: signals?.mailDraftId, signals }),

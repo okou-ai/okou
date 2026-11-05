@@ -192,7 +192,6 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
   const draftLoadable = useLastLoadable(signals.draft$);
   const selectedMailDraftId = useGet(activeSidebarMailDraftId$);
   const openSidebar = useSet(openThreadMailDraft$);
-  const reloadDraft = useSet(signals.reloadDraft$);
   const reconnectConnectionId =
     draftLoadable.state === "hasData"
       ? draftLoadable.data?.reconnectConnectionId
@@ -203,7 +202,6 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
         ? (draftLoadable.data?.provider ?? "gmail")
         : "gmail",
       reconnectConnectionId,
-      reloadDraft,
     );
 
   if (draftLoadable.state === "loading") {

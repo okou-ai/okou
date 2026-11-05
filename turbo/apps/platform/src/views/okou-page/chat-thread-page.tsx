@@ -199,10 +199,6 @@ import type {
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
-  completeExactReconnectChatAction$,
-  completeCustomConnectorChatAction$,
-  refreshCustomConnectorChatAccount$,
-  completeCatalogConnectorChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -2272,7 +2268,7 @@ function HeaderWorkflowAutomationEditDialog({
             automation={automation}
             headerAutomations={headerAutomations}
             displayTimezone={displayTimezone}
-            onDone={() => {
+            onCancel={() => {
               onOpenChange(false);
             }}
           />
@@ -2282,7 +2278,7 @@ function HeaderWorkflowAutomationEditDialog({
           <HeaderGmailNewMessageAutomationEditForm
             automation={automation}
             headerAutomations={headerAutomations}
-            onDone={() => {
+            onCancel={() => {
               onOpenChange(false);
             }}
           />
@@ -2292,7 +2288,7 @@ function HeaderWorkflowAutomationEditDialog({
           <HeaderGmailLabelAutomationEditForm
             automation={automation}
             headerAutomations={headerAutomations}
-            onDone={() => {
+            onCancel={() => {
               onOpenChange(false);
             }}
           />
@@ -2354,7 +2350,7 @@ function HeaderScheduleAutomationEditForm({
   automation,
   headerAutomations,
   displayTimezone,
-  onDone,
+  onCancel,
 }: {
   readonly automation: Extract<
     ChatThreadWorkflowAutomation,
@@ -2362,7 +2358,7 @@ function HeaderScheduleAutomationEditForm({
   >;
   readonly headerAutomations: HeaderAutomationSignals;
   readonly displayTimezone: string;
-  readonly onDone: () => void;
+  readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -2387,7 +2383,6 @@ function HeaderScheduleAutomationEditForm({
         detach(
           updateAutomation(
             { automationId: automation.id, schedule: scheduleValue },
-            onDone,
             pageSignal,
           ),
           Reason.DomCallback,
@@ -2452,7 +2447,7 @@ function HeaderScheduleAutomationEditForm({
           </span>
         </label>
       ) : null}
-      <HeaderAutomationEditFooter saving={saving} onCancel={onDone} />
+      <HeaderAutomationEditFooter saving={saving} onCancel={onCancel} />
     </form>
   );
 }
@@ -2669,14 +2664,14 @@ function HeaderGmailTextMatcherFields({
 function HeaderGmailNewMessageAutomationEditForm({
   automation,
   headerAutomations,
-  onDone,
+  onCancel,
 }: {
   readonly automation: Extract<
     ChatThreadWorkflowAutomation,
     { eventType: "gmail-new-message" }
   >;
   readonly headerAutomations: HeaderAutomationSignals;
-  readonly onDone: () => void;
+  readonly onCancel: () => void;
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateAutomation] = useLoadableSet(
@@ -2699,7 +2694,6 @@ function HeaderGmailNewMessageAutomationEditForm({
                 automation.eventConfig,
               ),
             },
-            onDone,
             pageSignal,
           ),
           Reason.DomCallback,
@@ -2715,7 +2709,7 @@ function HeaderGmailNewMessageAutomationEditForm({
         eventConfig={automation.eventConfig}
         disabled={saving}
       />
-      <HeaderAutomationEditFooter saving={saving} onCancel={onDone} />
+      <HeaderAutomationEditFooter saving={saving} onCancel={onCancel} />
     </form>
   );
 }
@@ -2723,14 +2717,14 @@ function HeaderGmailNewMessageAutomationEditForm({
 function HeaderGmailLabelAutomationEditForm({
   automation,
   headerAutomations,
-  onDone,
+  onCancel,
 }: {
   readonly automation: Extract<
     ChatThreadWorkflowAutomation,
     { eventType: "gmail-label-applied" }
   >;
   readonly headerAutomations: HeaderAutomationSignals;
-  readonly onDone: () => void;
+  readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -2753,7 +2747,6 @@ function HeaderGmailLabelAutomationEditForm({
         detach(
           updateAutomation(
             { automationId: automation.id, eventConfig },
-            onDone,
             pageSignal,
           ),
           Reason.DomCallback,
@@ -2778,7 +2771,7 @@ function HeaderGmailLabelAutomationEditForm({
           })}
         />
       </label>
-      <HeaderAutomationEditFooter saving={saving} onCancel={onDone} />
+      <HeaderAutomationEditFooter saving={saving} onCancel={onCancel} />
     </form>
   );
 }
@@ -4654,31 +4647,12 @@ function ChatConnectorActionConnectModal() {
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
-  const completeExactReconnect = useSet(completeExactReconnectChatAction$);
-  const completeCustomConnector = useSet(completeCustomConnectorChatAction$);
-  const refreshCustomAccount = useSet(refreshCustomConnectorChatAccount$);
-  const completeCatalogConnector = useSet(completeCatalogConnectorChatAction$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
 
   if (!active) {
     return null;
   }
-
-  const onSuccess = async (
-    connectionId: string,
-    attemptSignal: AbortSignal,
-  ) => {
-    if (active.kind === "catalog-reconnect") {
-      await completeExactReconnect(active, connectionId, attemptSignal);
-      return;
-    }
-    if (active.kind === "custom") {
-      await completeCustomConnector(active, attemptSignal);
-      return;
-    }
-    await completeCatalogConnector(active, attemptSignal);
-  };
 
   if (active.kind === "custom") {
     const connector = customConnectors?.find((candidate) => {
@@ -4692,11 +4666,7 @@ function ActiveChatConnectorActionConnectModal() {
         connector={connector}
         agentId={active.agentId}
         accountOptions={accountOptions}
-        onClose={close}
-        onConnected={async (_connectionId, attemptSignal) => {
-          await refreshCustomAccount(active, attemptSignal);
-        }}
-        onSuccess={onSuccess}
+        origin={{ kind: "chat-action" }}
       />
     ) : null;
   }
@@ -4716,7 +4686,7 @@ function ActiveChatConnectorActionConnectModal() {
           account: { intent: "reconnect", connectionId: active.account.id },
         }}
         onClose={close}
-        onSuccess={onSuccess}
+        origin={{ kind: "chat-action" }}
       />
     );
   }
@@ -4739,7 +4709,7 @@ function ActiveChatConnectorActionConnectModal() {
       accountOptions={accountOptions}
       reconnectAuthMethod={reconnectAuthMethod}
       onClose={close}
-      onSuccess={onSuccess}
+      origin={{ kind: "chat-action" }}
     />
   );
 }

@@ -28,6 +28,13 @@ export const connectorChangedPayloadSchema = object({
   connectorSlug: connectorSlugSchema,
 });
 
+/** A member's artifact changed outside the request that observed it. */
+export const artifactChangedTopic = "artifact:changed";
+
+export const artifactChangedPayloadSchema = object({
+  artifactId: uuid(),
+}).strict();
+
 export const walletChangedPayloadSchema = object({
   orgId: string().min(1),
 });

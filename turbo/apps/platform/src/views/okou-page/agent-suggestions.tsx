@@ -50,7 +50,6 @@ import {
 import {
   agentSuggestionComposerItem$,
   closeAgentSuggestionComposer$,
-  finishAgentSuggestionComposer$,
   openAgentSuggestionComposer$,
   startAgentSuggestion$,
 } from "../../signals/okou-page/agent-suggestions.ts";
@@ -601,7 +600,7 @@ function AgentSuggestionCard({
                 key={option.id}
                 option={option}
                 onClick={() => {
-                  detach(start(item, option.id, signal), Reason.DomCallback);
+                  detach(start(item.id, option.id, signal), Reason.DomCallback);
                 }}
               />
             );
@@ -614,12 +613,12 @@ function AgentSuggestionCard({
           <AgentSuggestionActions
             onDismiss={() => {
               detach(
-                submitFeedback(item, "dismissed", signal),
+                submitFeedback(item.id, "dismissed", signal),
                 Reason.DomCallback,
               );
             }}
             onSelect={(kind) => {
-              detach(submitFeedback(item, kind, signal), Reason.DomCallback);
+              detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}
           />
         </div>
@@ -632,19 +631,9 @@ export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(agentSuggestionFeedItems$);
   const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
-  const finish = useSet(finishAgentSuggestionComposer$);
   const signal = useGet(pageSignal$);
   const openCustomDirection = (item: Suggestion) => {
-    detach(
-      openComposer(
-        item,
-        (threadId) => {
-          detach(finish(item, threadId, signal), Reason.DomCallback);
-        },
-        signal,
-      ),
-      Reason.DomCallback,
-    );
+    detach(openComposer(item.id, signal), Reason.DomCallback);
   };
   if (result.state !== "hasData" || result.data.length === 0) {
     return null;

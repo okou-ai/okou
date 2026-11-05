@@ -38,7 +38,6 @@ import {
   chatListQuery$,
   setChatListQuery$,
 } from "../../signals/okou-page/sidebar-state.ts";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ASSISTANT_NAME } from "../../signals/branding.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
@@ -255,18 +254,10 @@ export function ChatForwardDialog({
       sourceAgentId,
       sourceThreadTitle,
     );
-    const onOptimisticSend = () => {
-      onDismiss();
-      toast.success(
-        t(($) => {
-          return $.chat.forward.sent;
-        }),
-      );
-    };
     detach(
       prepare(
         createChatForwardComposerSignals,
-        { target: nextTarget, forward, onOptimisticSend },
+        { target: nextTarget, forward },
         signal,
       ),
       Reason.DomCallback,

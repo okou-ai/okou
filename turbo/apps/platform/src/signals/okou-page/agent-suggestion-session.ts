@@ -313,7 +313,7 @@ export const openSuggestionFeedbackReason$ = command(
 export const submitAgentSuggestionFeedback$ = command(
   async (
     { get, set },
-    item: Suggestion,
+    suggestionId: string,
     kind: FeedbackKind,
     pageSignal: AbortSignal,
   ) => {
@@ -321,7 +321,7 @@ export const submitAgentSuggestionFeedback$ = command(
     const entries = await get(session.entries$);
     pageSignal.throwIfAborted();
     const entry = entries.find((candidate) => {
-      return candidate.item.id === item.id;
+      return candidate.item.id === suggestionId;
     });
     if (!entry || get(entry.hidden$)) {
       return;

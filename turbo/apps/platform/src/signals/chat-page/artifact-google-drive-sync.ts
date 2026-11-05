@@ -131,7 +131,6 @@ export const syncArtifactAndRefresh$ = command(
     { get, set },
     params: ArtifactGoogleDriveSyncParams & {
       readonly authorize: boolean;
-      readonly onSyncSuccess?: () => void;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -172,9 +171,6 @@ export const syncArtifactAndRefresh$ = command(
       });
     } else if (sameCurrentAccount) {
       set(account$, { ...account, ready: false });
-    }
-    if (result.kind === "uploaded") {
-      params.onSyncSuccess?.();
     }
   },
 );

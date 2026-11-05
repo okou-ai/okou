@@ -43,7 +43,6 @@ import type {
 } from "../../../../signals/connector-domain.ts";
 import { ConnectorIcon } from "./connector-icons.tsx";
 import {
-  clearPermissionDraftInheritedExpiration,
   createPermissionDraftContext,
   explicitGrantStateKey,
   hasAnyPermissionDraftChange,
@@ -57,15 +56,6 @@ import {
   resolvePermissionDraftListPolicy,
   resolvePermissionDraftPolicy,
   resolvePermissionDraftUnknownPolicy,
-  setPermissionDraftConnectorPolicy,
-  setPermissionDraftExpiration,
-  setPermissionDraftGroupAllowExpiration,
-  setPermissionDraftGroupAllowPolicy,
-  setPermissionDraftGroupPolicy,
-  setPermissionDraftPolicy,
-  setPermissionDraftUnknownExpiration,
-  setPermissionDraftUnknownPolicy,
-  stagePermissionDraftConnectorRestore,
   type PermissionDraftContext,
   type PermissionDraftIntent,
 } from "../../../../signals/okou-page/settings/permission-draft-intent.ts";
@@ -79,7 +69,7 @@ import {
   setPermissionDrawerSearch$,
   showMorePermissionDrawerRows$,
   togglePermissionDrawerGroup$,
-  updatePermissionDrawerDraft$,
+  editPermissionDrawerDraft$,
 } from "../../../../signals/okou-page/settings/permissions-dialog.ts";
 import type { PermissionPolicy } from "../../../../signals/okou-page/settings/permissions.ts";
 import {
@@ -1141,7 +1131,7 @@ function LoadedPermissionsDrawerContent({
     useGet(permissionDrawerUiState$),
     stateKey,
   );
-  const setDraft = useSet(updatePermissionDrawerDraft$);
+  const editDraft = useSet(editPermissionDrawerDraft$);
   const toggleGroup = useSet(togglePermissionDrawerGroup$);
   const showMore = useSet(showMorePermissionDrawerRows$);
   const setSearch = useSet(setPermissionDrawerSearch$);
@@ -1211,22 +1201,18 @@ function LoadedPermissionsDrawerContent({
   const unknownSelectedExpiration = draft.unknownExpiration;
 
   const handlePolicyChange = (name: string, policy: PermissionPolicy) => {
-    setDraft(stateKey, (current) => {
-      return setPermissionDraftPolicy({
-        draft: current,
-        permissionName: name,
-        policy,
-      });
+    editDraft(stateKey, {
+      kind: "permission-policy",
+      permissionName: name,
+      policy,
     });
   };
 
   const handleSetAll = (policy: PermissionPolicy) => {
-    setDraft(stateKey, (current) => {
-      return setPermissionDraftConnectorPolicy({
-        draft: current,
-        policy,
-        includeUnknown: true,
-      });
+    editDraft(stateKey, {
+      kind: "connector-policy",
+      policy,
+      includeUnknown: true,
     });
   };
 
@@ -1234,12 +1220,10 @@ function LoadedPermissionsDrawerContent({
     category: string,
     groupPermissions: ConnectorPermission[],
   ) => {
-    setDraft(stateKey, (current) => {
-      return setPermissionDraftGroupAllowPolicy({
-        draft: current,
-        category,
-        permissions: groupPermissions,
-      });
+    editDraft(stateKey, {
+      kind: "group-allow",
+      category,
+      permissions: groupPermissions,
     });
   };
 
@@ -1247,13 +1231,11 @@ function LoadedPermissionsDrawerContent({
     category: string,
     groupPermissions: ConnectorPermission[],
   ) => {
-    setDraft(stateKey, (current) => {
-      return setPermissionDraftGroupPolicy({
-        draft: current,
-        category,
-        permissions: groupPermissions,
-        policy: "deny",
-      });
+    editDraft(stateKey, {
+      kind: "group-policy",
+      category,
+      permissions: groupPermissions,
+      policy: "deny",
     });
   };
 
@@ -1262,21 +1244,17 @@ function LoadedPermissionsDrawerContent({
     groupPermissions: ConnectorPermission[],
     expiresIn: UserPermissionGrantExpiresIn,
   ) => {
-    setDraft(stateKey, (current) => {
-      return setPermissionDraftGroupAllowExpiration({
-        draft: current,
-        category,
-        permissions: groupPermissions,
-        explicitGrants: effectiveExplicitGrants,
-        expiresIn,
-      });
+    editDraft(stateKey, {
+      kind: "group-allow-expiration",
+      category,
+      permissions: groupPermissions,
+      explicitGrants: effectiveExplicitGrants,
+      expiresIn,
     });
   };
 
   const handleResetConnector = () => {
-    setDraft(stateKey, (current) => {
-      return stagePermissionDraftConnectorRestore({ draft: current });
-    });
+    editDraft(stateKey, { kind: "restore-connector" });
   };
 
   const handleClose = () => {
@@ -1292,33 +1270,24 @@ function LoadedPermissionsDrawerContent({
     permission: string,
     expiresIn: UserPermissionGrantExpiresIn | null,
   ) => {
-    setDraft(stateKey, (current) => {
-      return setPermissionDraftExpiration({
-        draft: current,
-        permissionName: permission,
-        expiresIn,
-      });
+    editDraft(stateKey, {
+      kind: "permission-expiration",
+      permissionName: permission,
+      expiresIn,
     });
   };
 
   const handleClearInheritedExpiration = (permission: string) => {
-    setDraft(stateKey, (current) => {
-      return clearPermissionDraftInheritedExpiration({
-        draft: current,
-        permissionName: permission,
-      });
+    editDraft(stateKey, {
+      kind: "clear-inherited-expiration",
+      permissionName: permission,
     });
   };
 
   const handleUnknownExpirationChange = (
     expiresIn: UserPermissionGrantExpiresIn | null,
   ) => {
-    setDraft(stateKey, (current) => {
-      return setPermissionDraftUnknownExpiration({
-        draft: current,
-        expiresIn,
-      });
-    });
+    editDraft(stateKey, { kind: "unknown-expiration", expiresIn });
   };
 
   const handleShowMore = (key: string) => {
@@ -1467,11 +1436,9 @@ function LoadedPermissionsDrawerContent({
               readOnly={readOnly}
               saving={saving}
               onAllowClick={() => {
-                setDraft(stateKey, (current) => {
-                  return setPermissionDraftUnknownPolicy({
-                    draft: current,
-                    policy: "allow",
-                  });
+                editDraft(stateKey, {
+                  kind: "unknown-policy",
+                  policy: "allow",
                 });
               }}
               onClearExpiration={() => {
@@ -1486,12 +1453,7 @@ function LoadedPermissionsDrawerContent({
                 );
               }}
               onPolicyChange={(p) => {
-                setDraft(stateKey, (current) => {
-                  return setPermissionDraftUnknownPolicy({
-                    draft: current,
-                    policy: p,
-                  });
-                });
+                editDraft(stateKey, { kind: "unknown-policy", policy: p });
               }}
             />
           }

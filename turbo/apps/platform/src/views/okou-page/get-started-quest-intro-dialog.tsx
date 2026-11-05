@@ -539,6 +539,7 @@ function SelectedQuestConnectModal({
       onClose={() => {
         setSelectedSlug(null);
       }}
+      origin={{ kind: "selected-connector", captureOnboardingSource: false }}
     />
   );
 }

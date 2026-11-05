@@ -16,6 +16,7 @@ import type { ComposerUiSignalGroups } from "./chat-composer.ts";
 import type { ComposerConnectorSignals } from "./connectors.ts";
 import { loadCustomTemplateCatalog$ } from "./custom-template-library.ts";
 import { invalidateAgentConnectorAccess$ } from "./composer-agent-connectors.ts";
+import { registerComposerConnectHost$ } from "./composer-connect-hosts.ts";
 import { withCleanup } from "../utils.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -182,5 +183,25 @@ export function createComposerConnectorCompletion(
       set(invalidateAgentConnectorAccess$, agentId);
     }
   });
-  return { completeConnectorAddition$, completeCustomConnectorAddition$ };
+  // A connection started from this composer finds it again by this key.
+  const connectHostKey = crypto.randomUUID();
+  const registerConnectHost$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      registerComposerConnectHost$,
+      connectHostKey,
+      {
+        agentId,
+        connector,
+        completeConnectorAddition$,
+        completeCustomConnectorAddition$,
+      },
+      signal,
+    );
+  });
+  return {
+    completeConnectorAddition$,
+    completeCustomConnectorAddition$,
+    connectHostKey,
+    registerConnectHost$,
+  };
 }

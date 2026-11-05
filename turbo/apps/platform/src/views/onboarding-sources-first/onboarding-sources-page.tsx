@@ -15,10 +15,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/validators/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
-import {
-  captureSourceOnboardingConnected$,
-  captureSourceOnboardingConnectStarted$,
-} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import { captureSourceOnboardingConnectStarted$ } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
@@ -145,7 +142,6 @@ function useSourceExplanation(
 export function OnboardingSourcesPage() {
   const { t, i18n } = useTranslation();
   const captureConnectStarted = useSet(captureSourceOnboardingConnectStarted$);
-  const captureConnected = useSet(captureSourceOnboardingConnected$);
   const flow = useSourcesFirstFlow("sources");
   const rootSignal = useGet(rootSignal$);
   const startRecommendation = useSet(startOnboardingRecommendation$);
@@ -251,7 +247,7 @@ export function OnboardingSourcesPage() {
           connectorSlugs={[...featuredSlugs, ...extraConnectedSlugs]}
           variant="sources"
           onConnectStart={captureConnectStarted}
-          onConnected={captureConnected}
+          captureSourceConnections
         />
       </OnboardingStepLayout>
       <SourcesSkipDialogContent onSkip={flow.goSkip} />

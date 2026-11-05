@@ -210,6 +210,9 @@ test("Edit schedule and Gmail workflow triggers", async () => {
       { schedule: { type: "loop", intervalSeconds: 900 } },
     ]);
     expect(screen.getByText("Every 15 minutes")).toBeVisible();
+    expect(
+      screen.queryByRole("dialog", { name: "Edit automation" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -269,6 +272,9 @@ test("Edit Gmail match workflow trigger filters", async () => {
         'Thread ID is "gmail-thread-42"; From contains "billing@example.com"; Subject contains any of "invoice", "receipt"',
       ),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("dialog", { name: "Edit automation" }),
+    ).not.toBeInTheDocument();
   });
   const sidebar = screen.getByRole("complementary", { name: "Automations" });
   expect(within(sidebar).queryByText("Next run")).not.toBeInTheDocument();

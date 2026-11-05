@@ -315,13 +315,22 @@ test("A deleted draft is identified without exposing Send or Delete", async () =
   );
 });
 
-test("A draft whose Gmail access expired offers reconnection", async () => {
-  mockDraft(
-    mailDraft({
-      accessStatus: "reconnect",
-      reconnectConnectionId: "e0000000-0000-4000-a000-000000000902",
-    }),
-  );
+test("A draft whose Gmail access expired reopens once Gmail is reconnected", async () => {
+  let reconnected = false;
+  context.mocks.api(mailContract.getDraft, ({ params, respond }) => {
+    expect(params.mailDraftId).toBe(MAIL_ID);
+    return respond(
+      200,
+      mailResponse(
+        reconnected
+          ? mailDraft()
+          : mailDraft({
+              accessStatus: "reconnect",
+              reconnectConnectionId: "e0000000-0000-4000-a000-000000000902",
+            }),
+      ),
+    );
+  });
 
   await setupPage({ context, path: MAIL_PATH });
 
@@ -332,6 +341,24 @@ test("A draft whose Gmail access expired offers reconnection", async () => {
   ).resolves.toBeInTheDocument();
   expect(control("button", "Reconnect Gmail")).toBeInTheDocument();
   expect(screen.queryByText("Review the invitation")).not.toBeInTheDocument();
+
+  // The API announces the reconnected Gmail account to the member.
+  reconnected = true;
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("connector:changed"),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.trigger("connector:changed", { connectorSlug: "gmail" });
+
+  await expect(
+    screen.findByText("Review the invitation"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByText(
+      "You no longer have permission to access this email. Reconnect Gmail to continue.",
+    ),
+  ).not.toBeInTheDocument();
 });
 
 test("Email content retains links and image descriptions without native hover hints", async () => {

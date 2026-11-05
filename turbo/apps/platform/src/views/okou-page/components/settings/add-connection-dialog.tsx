@@ -31,11 +31,7 @@ import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/con
 import {
   builtinConnectorExternalCodeState$,
   builtinConnectorOAuthDeviceAuthState$,
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
-  connectBuiltinConnectorNoAuthAndSettle$,
   connectBuiltinConnectorExternalCode$,
-  completeBuiltinConnectorExternalCodeAndSettle$,
   openBuiltinConnectorExternalCodeAuthorizationPage$,
   openBuiltinConnectorOAuthDeviceAuthVerificationPage$,
   clearBuiltinConnectorExternalCode$,
@@ -44,16 +40,22 @@ import {
   builtinConnectorOAuthDeviceAuthStartOptionValuesFor$,
   setBuiltinConnectorOAuthDeviceAuthStartOptionValue$,
   setBuiltinConnectorExternalCodeAuthorizationCode$,
-  submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
   builtinManualGrantFormValuesFor$,
   builtinConnectorCurrentConnectionStatus,
   builtinConnectorExpiryCountdownText,
   manualGrantInputValuesForMethod,
-  type ConnectorConnectSuccess,
   type BuiltinConnectorExternalCodeState,
   type BuiltinConnectorOAuthDeviceAuthState,
 } from "../../../../signals/okou-page/settings/connectors.ts";
+import {
+  completeBuiltinConnectorExternalCodeAndContinue$,
+  connectBuiltinConnectorNoAuthAndContinue$,
+  connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+  connectBuiltinConnectorOAuthDeviceAuthAndContinue$,
+  submitBuiltinManualGrantAndContinue$,
+  type ConnectorConnectOrigin,
+} from "../../../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { hasTokenInputValue } from "../../../../signals/okou-page/settings/token-input.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 
@@ -130,7 +132,7 @@ function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
 type ConnectModalContentProps = {
   item: PlatformConnectorCatalogStatusItem;
   agentId?: string;
-  onSuccess: ConnectorConnectSuccess;
+  origin: ConnectorConnectOrigin;
   authorizeVisibleAgentsOnConnect: boolean;
   accountOptions: ConnectorAccountMutationOptions;
   accountMode?: ConnectorAccountConnectMode;
@@ -202,7 +204,7 @@ function ManualGrantForm({
   connectorLabel,
   authMethod,
   method,
-  onSuccess,
+  origin,
   authorizeVisibleAgentsOnConnect,
   agentId,
   accountOptions,
@@ -211,14 +213,14 @@ function ManualGrantForm({
   connectorLabel: string;
   authMethod: ConnectorAuthMethodId;
   method: PublicConnectorCatalogAuthMethodDetail;
-  onSuccess: ConnectorConnectSuccess;
+  origin: ConnectorConnectOrigin;
   authorizeVisibleAgentsOnConnect: boolean;
   agentId?: string;
   accountOptions: ConnectorAccountMutationOptions;
 }) {
   const { t } = useTranslation();
   const [operation, submit] = useLoadableSet(
-    submitBuiltinManualGrantAndSettle$,
+    submitBuiltinManualGrantAndContinue$,
   );
   const submitting = operation.state === "loading";
   const setFormValue = useSet(setBuiltinManualGrantFormValue$);
@@ -247,7 +249,8 @@ function ManualGrantForm({
             ...(agentId ? { agentId } : {}),
             ...accountOptions,
           },
-          onSuccess,
+          origin,
+          surface: "connect-modal",
         },
         pageSignal,
       );
@@ -326,7 +329,7 @@ function UnavailableConnectMethodsContent() {
 function OAuthAuthCodeConnectButton({
   item,
   method,
-  onSuccess,
+  origin,
   authorizeVisibleAgentsOnConnect,
   agentId,
   accountOptions,
@@ -338,7 +341,7 @@ function OAuthAuthCodeConnectButton({
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const [operation, connect] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
   return (
     <>
@@ -363,7 +366,8 @@ function OAuthAuthCodeConnectButton({
               {
                 connectorSlug: item.slug,
                 method,
-                onSuccess,
+                origin,
+                surface: "connect-modal",
                 options: {
                   authorizeVisibleAgents: authorizeVisibleAgentsOnConnect,
                   connectorLabel: item.label,
@@ -400,7 +404,7 @@ function OAuthAuthCodeConnectMethodContent(props: ConnectMethodContentProps) {
     <OAuthAuthCodeConnectButton
       item={props.item}
       method={props.method}
-      onSuccess={props.onSuccess}
+      origin={props.origin}
       agentId={props.agentId}
       authorizeVisibleAgentsOnConnect={props.authorizeVisibleAgentsOnConnect}
       accountOptions={props.accountOptions}
@@ -676,7 +680,7 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
   const signal = useGet(pageSignal$);
   const state = useGet(builtinConnectorOAuthDeviceAuthState$);
   const [operation, connect] = useLoadableSet(
-    connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
+    connectBuiltinConnectorOAuthDeviceAuthAndContinue$,
   );
   const openVerificationPage = useSet(
     openBuiltinConnectorOAuthDeviceAuthVerificationPage$,
@@ -722,7 +726,8 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
-        onSuccess: props.onSuccess,
+        origin: props.origin,
+        surface: "connect-modal",
         options: {
           authorizeVisibleAgents: props.authorizeVisibleAgentsOnConnect,
           connectorLabel: props.item.label,
@@ -952,7 +957,7 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
     connectBuiltinConnectorExternalCode$,
   );
   const [completion, completeConnection] = useLoadableSet(
-    completeBuiltinConnectorExternalCodeAndSettle$,
+    completeBuiltinConnectorExternalCodeAndContinue$,
   );
   const setCode = useSet(setBuiltinConnectorExternalCodeAuthorizationCode$);
   const openAuthorizationPage = useSet(
@@ -984,7 +989,8 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
-        onSuccess: props.onSuccess,
+        origin: props.origin,
+        surface: "connect-modal",
         options: {
           authorizeVisibleAgents: props.authorizeVisibleAgentsOnConnect,
           connectorLabel: props.item.label,
@@ -1066,7 +1072,7 @@ function ManualGrantConnectMethodContent(props: ConnectMethodContentProps) {
       connectorLabel={props.item.label}
       authMethod={props.authMethod}
       method={props.method}
-      onSuccess={props.onSuccess}
+      origin={props.origin}
       authorizeVisibleAgentsOnConnect={props.authorizeVisibleAgentsOnConnect}
       agentId={props.agentId}
       accountOptions={props.accountOptions}
@@ -1076,7 +1082,7 @@ function ManualGrantConnectMethodContent(props: ConnectMethodContentProps) {
 
 function NoAuthConnectMethodContent(props: ConnectMethodContentProps) {
   const [operation, connect] = useLoadableSet(
-    connectBuiltinConnectorNoAuthAndSettle$,
+    connectBuiltinConnectorNoAuthAndContinue$,
   );
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
@@ -1085,7 +1091,8 @@ function NoAuthConnectMethodContent(props: ConnectMethodContentProps) {
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
-        onSuccess: props.onSuccess,
+        origin: props.origin,
+        surface: "connect-modal",
         options: {
           authorizeVisibleAgents: props.authorizeVisibleAgentsOnConnect,
           connectorLabel: props.item.label,
@@ -1280,7 +1287,7 @@ function ConnectModalContent(props: ConnectModalContentProps) {
 export function ConnectModal({
   item,
   onClose,
-  onSuccess,
+  origin,
   authorizeVisibleAgentsOnConnect = false,
   agentId,
   accountLabel,
@@ -1290,7 +1297,8 @@ export function ConnectModal({
 }: {
   item: PlatformConnectorCatalogStatusItem;
   onClose: () => void;
-  onSuccess?: ConnectorConnectSuccess;
+  /** Where the connection was started; it decides what follows and closes. */
+  origin: ConnectorConnectOrigin;
   authorizeVisibleAgentsOnConnect?: boolean;
   agentId?: string;
   accountLabel?: string;
@@ -1372,13 +1380,7 @@ export function ConnectModal({
             accountOptions={accountOptions}
             accountMode={accountMode}
             reconnectAuthMethod={reconnectAuthMethod}
-            onSuccess={async (connectionId, signal) => {
-              await onSuccess?.(connectionId, signal);
-              signal.throwIfAborted();
-              clearConnectorOAuthDeviceAuth();
-              clearConnectorExternalCode();
-              onClose();
-            }}
+            origin={origin}
           />
         </div>
         {item.slug === "mercury" ? (

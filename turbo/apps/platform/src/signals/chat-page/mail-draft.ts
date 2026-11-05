@@ -26,6 +26,8 @@ import {
   type TextPreviewComputed,
 } from "../text-preview.ts";
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
+import { isConnectorChangedPayloadFor } from "../connector-change.ts";
+import { setAblyPayloadLoop$ } from "../realtime.ts";
 
 export interface MailDraftDescriptor {
   readonly mailDraftId: string;
@@ -56,6 +58,9 @@ export interface MailAttachmentPreviews {
   readonly inlineImages: readonly MailInlineImagePreview[];
 }
 
+/** The connectors a mail draft can be waiting for. */
+const MAIL_CONNECTOR_SLUGS = ["gmail", "outlook-mail"] as const;
+
 export interface MailDraftSignals extends MailDraftDescriptor {
   /** Present only when the mail is displayed inside a chat. */
   readonly threadId: string | undefined;
@@ -67,6 +72,11 @@ export interface MailDraftSignals extends MailDraftDescriptor {
     [HTMLDivElement | null]
   >;
   readonly reloadDraft$: Command<void, []>;
+  /**
+   * Re-reads the draft whenever a mail connector changes, for example after
+   * the member reconnects the account a draft was waiting for.
+   */
+  readonly subscribeConnectorChanges$: Command<void, [AbortSignal]>;
   readonly delete$: Command<Promise<void>, [AbortSignal]>;
   readonly send$: Command<Promise<MailDraftStatus>, [AbortSignal]>;
 }
@@ -209,7 +219,7 @@ function createAttachmentPreviews(
 
 interface MailDraftResourceSignals extends Pick<
   MailDraftSignals,
-  "draft$" | "sidebarDraft$" | "reloadDraft$"
+  "draft$" | "sidebarDraft$" | "reloadDraft$" | "subscribeConnectorChanges$"
 > {
   readonly draftOverride$: State<MailDraft | null | undefined>;
 }
@@ -240,11 +250,42 @@ function createMailDraftResourceSignals(
       return version + 1;
     });
   });
+  const reloadOnConnectorChange$ = command(
+    ({ set }, payload: unknown): boolean => {
+      if (
+        MAIL_CONNECTOR_SLUGS.some((connectorSlug) => {
+          return isConnectorChangedPayloadFor(payload, connectorSlug);
+        })
+      ) {
+        set(reloadDraft$);
+      }
+      return false;
+    },
+  );
+  const reloadAfterResync$ = command(({ set }): boolean => {
+    set(reloadDraft$);
+    return false;
+  });
+  const subscribeConnectorChanges$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "connector:changed",
+        loopCommand$: reloadOnConnectorChange$,
+        initializeCommand$: reloadAfterResync$,
+        // The draft is read when the card renders; only a continuity gap
+        // needs another read.
+        options: { runOnSubscribe: false },
+      },
+      signal,
+    );
+  });
   return {
     draftOverride$,
     draft$,
     sidebarDraft$,
     reloadDraft$,
+    subscribeConnectorChanges$,
   };
 }
 
@@ -299,6 +340,7 @@ export function createMailDraftSignals(
     sidebarDraft$: resources.sidebarDraft$,
     ...attachmentPreviews,
     reloadDraft$: resources.reloadDraft$,
+    subscribeConnectorChanges$: resources.subscribeConnectorChanges$,
     delete$: mutations.delete$,
     send$: mutations.send$,
   };
@@ -313,6 +355,9 @@ export function createMailDraftCardSignalsRegistry(
     },
     (descriptor) => {
       return createMailDraftSignals(descriptor, threadId);
+    },
+    (signals) => {
+      return signals.subscribeConnectorChanges$;
     },
   );
 }

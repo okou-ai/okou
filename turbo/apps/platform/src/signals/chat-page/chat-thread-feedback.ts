@@ -472,7 +472,14 @@ function createStartFeedback(
 interface ForwardComposerRequest {
   readonly target: ChatForwardTarget;
   readonly forward: ChatForwardContext;
-  readonly onOptimisticSend: () => void;
+}
+
+function showForwardSent(): void {
+  toast.success(
+    i18n.t(($) => {
+      return $.chat.forward.sent;
+    }),
+  );
 }
 
 function createForwardState(closeSelection$: Command<void, []>) {
@@ -480,6 +487,8 @@ function createForwardState(closeSelection$: Command<void, []>) {
   const request$ = state<
     | (ForwardComposerRequest & {
         readonly createComposer: typeof createChatForwardComposerSignals;
+        /** Ends the forward once the target composer's send is accepted. */
+        readonly onOptimisticSend: () => void;
       })
     | null
   >(null);
@@ -504,23 +513,6 @@ function createForwardState(closeSelection$: Command<void, []>) {
     set(resetTarget$);
     set(request$, null);
   });
-  const prepareForwardComposer$ = command(
-    async (
-      { get, set },
-      createComposer: typeof createChatForwardComposerSignals,
-      request: ForwardComposerRequest,
-      parentSignal: AbortSignal,
-    ) => {
-      parentSignal.throwIfAborted();
-      const signal = set(resetTarget$, parentSignal);
-      set(request$, { ...request, createComposer });
-      const preparation = get(preparation$);
-      if (!preparation) {
-        throw new Error("Forward target did not derive its composer");
-      }
-      return await set(preparation.prepare$, signal);
-    },
-  );
   const openForward$ = command(
     ({ set }, selection: ChatForwardSelection): void => {
       set(clearChatListQuery$);
@@ -534,6 +526,34 @@ function createForwardState(closeSelection$: Command<void, []>) {
     set(internalForwardSelection$, null);
     set(resetForwardTarget$);
   });
+  // An accepted forward ends the dialog; the member stays on the source thread.
+  const finishForward$ = command(({ set }): void => {
+    set(closeForward$);
+    showForwardSent();
+  });
+  const prepareForwardComposer$ = command(
+    async (
+      { get, set },
+      createComposer: typeof createChatForwardComposerSignals,
+      request: ForwardComposerRequest,
+      parentSignal: AbortSignal,
+    ) => {
+      parentSignal.throwIfAborted();
+      const signal = set(resetTarget$, parentSignal);
+      set(request$, {
+        ...request,
+        createComposer,
+        onOptimisticSend: () => {
+          set(finishForward$);
+        },
+      });
+      const preparation = get(preparation$);
+      if (!preparation) {
+        throw new Error("Forward target did not derive its composer");
+      }
+      return await set(preparation.prepare$, signal);
+    },
+  );
   return {
     forwardSelection$,
     forwardTarget$,

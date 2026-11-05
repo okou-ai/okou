@@ -10,7 +10,6 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   closeThreadMailDraft$,
-  closeDeletedThreadArtifact$,
   openThreadArtifacts$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -330,15 +329,11 @@ function ThreadArtifactDetail({
   const fullscreen = useGet(sidebar.fullscreen$);
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
-  const closeDeleted = useSet(closeDeletedThreadArtifact$);
   const openAttachment = useSet(sidebar.openAttachment$);
   const backToArtifacts = useOpenThreadArtifacts(thread);
   const pageSignal = useGet(pageSignal$);
   const detailLoadable = useLastLoadable(
     sidebar.artifactCatalog.selectedArtifactDetail$,
-  );
-  const reloadDetail = useSet(
-    sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
   );
 
   const fullscreenState = {
@@ -414,9 +409,7 @@ function ThreadArtifactDetail({
     <>
       <ArtifactSidebarContent
         artifactId={detail.id}
-        onDeleted={() => {
-          closeDeleted(thread, pageSignal);
-        }}
+        deletionOrigin={{ kind: "thread-sidebar", threadId: thread.threadId }}
         syncTarget={artifactSidebarSyncTarget({
           agentId: thread.agentId,
           file: {
@@ -425,7 +418,6 @@ function ThreadArtifactDetail({
             googleDriveConnectionId: detail.googleDriveConnectionId,
             googleDriveSync: detail.googleDriveSync,
           },
-          onSyncSuccess: reloadDetail,
         })}
         artifactRef={{
           url: preview.url,

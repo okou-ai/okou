@@ -358,18 +358,11 @@ interface AgentDeleteDialogProps {
   agentId: string;
   /** Agent name shown in the confirmation copy. */
   resolvedAgentName: string;
-  /** Callback to delete the agent. */
-  onDelete: () => Promise<void>;
   /** Workflows bound to this agent, offered for rescue in the delete dialog. */
   deleteWorkflows?: readonly AgentDeleteWorkflow[];
   deleteWorkflowsState: "loading" | "error" | "ready";
   /** Agents the caller can copy a workflow onto before deleting this agent. */
   deleteCopyTargets?: readonly AgentDeleteCopyTarget[];
-  /** Copy a workflow onto another agent before the agent is deleted. */
-  onCopyWorkflowBeforeDelete?: (
-    workflowId: string,
-    toAgentId: string,
-  ) => Promise<void>;
 }
 
 function AgentDeleteError({ error }: { error: unknown }) {
@@ -432,10 +425,8 @@ export function AgentDeleteDialog(props: AgentDeleteDialogProps) {
 
 function useAgentDeleteConfirmation({
   agentId,
-  onDelete,
   deleteWorkflows,
   deleteWorkflowsState,
-  onCopyWorkflowBeforeDelete,
 }: AgentDeleteDialogProps) {
   const pageSignal = useGet(pageSignal$);
   const currentSession = useGet(agentDeleteSession$);
@@ -453,7 +444,6 @@ function useAgentDeleteConfirmation({
   const workflows = deleteWorkflows ?? session?.workflows ?? [];
   const copying =
     busy &&
-    !!onCopyWorkflowBeforeDelete &&
     Object.entries(copyChoices).some(([workflowId, targetId]) => {
       return (
         targetId !== DELETE_WITH_AGENT &&
@@ -470,27 +460,13 @@ function useAgentDeleteConfirmation({
       updateCopyChoices(session.id, choices, workflows);
     }
   };
-  const canReconcile =
-    workflows.length > 0 && onCopyWorkflowBeforeDelete !== undefined;
+  const canReconcile = workflows.length > 0;
 
   const handleDelete = () => {
     if (!session || !workflowsReady) {
       return;
     }
-    detach(
-      deleteAgentFn(
-        {
-          sessionId: session.id,
-          deleteFn: onDelete,
-          copyWorkflow: onCopyWorkflowBeforeDelete,
-          workflowIds: workflows.map((workflow) => {
-            return workflow.id;
-          }),
-        },
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
+    detach(deleteAgentFn(session.id, pageSignal), Reason.DomCallback);
   };
 
   return {

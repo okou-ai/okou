@@ -60,7 +60,6 @@ import {
   buildAgentInstructions$,
 } from "../../signals/okou-page/job-detail/instructions";
 import { updateAgentSettings$ } from "../../signals/okou-page/job-detail/settings";
-import { deleteAgentAndReturnToList$ } from "../../signals/okou-page/job-detail/actions.ts";
 import { agentAuthorizedConnectors$ } from "../../signals/okou-page/job-detail/connectors";
 import {
   agentActiveTab$,
@@ -93,10 +92,7 @@ import {
 } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
 import { userConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
-import {
-  copyWorkflow$,
-  currentAgentVisibleWorkflows$,
-} from "../../signals/workflows-page/workflows-signals.ts";
+import { currentAgentVisibleWorkflows$ } from "../../signals/workflows-page/workflows-signals.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   permConnectorSlug$,
@@ -1030,7 +1026,6 @@ function AgentProfileSettings({
   resolvedSound,
   visibility,
   canEditVisibility,
-  onDelete,
 }: {
   agentId: string;
   isDefaultAgent: boolean;
@@ -1040,14 +1035,11 @@ function AgentProfileSettings({
   resolvedSound: Tone;
   visibility: "public" | "private";
   canEditVisibility: boolean;
-  onDelete: () => Promise<void>;
 }) {
-  const pageSignal = useGet(pageSignal$);
   const workflowsLoadable = useLastLoadable(currentAgentVisibleWorkflows$);
   const workflowsStatus = useLoadable(currentAgentVisibleWorkflows$);
   const agentsLoadable = useLastLoadable(agents$);
   const user = useLastResolved(user$);
-  const copyWorkflow = useSet(copyWorkflow$);
 
   const deleteWorkflows =
     workflowsLoadable.state === "hasData"
@@ -1069,13 +1061,6 @@ function AgentProfileSettings({
           })
       : [];
 
-  const copyWorkflowBeforeDelete = async (
-    workflowId: string,
-    toAgentId: string,
-  ) => {
-    await copyWorkflow({ workflowId, toAgentId }, pageSignal);
-  };
-
   return (
     <SettingsTab
       key={agentId}
@@ -1089,7 +1074,7 @@ function AgentProfileSettings({
       canEditVisibility={canEditVisibility && !isDefaultAgent}
       updateSettings$={updateAgentSettings$}
       inputId="job-agent-name"
-      onDelete={isDefaultAgent ? undefined : onDelete}
+      canDelete={!isDefaultAgent}
       deleteWorkflows={deleteWorkflows}
       deleteWorkflowsState={
         workflowsStatus.state === "hasData"
@@ -1099,7 +1084,6 @@ function AgentProfileSettings({
             : "loading"
       }
       deleteCopyTargets={deleteCopyTargets}
-      onCopyWorkflowBeforeDelete={copyWorkflowBeforeDelete}
     />
   );
 }
@@ -1125,15 +1109,6 @@ function AgentTabContent({
   visibility: "public" | "private";
   canEditVisibility: boolean;
 }) {
-  const [, deleteAgentAndReturnToList] = useLoadableSet(
-    deleteAgentAndReturnToList$,
-  );
-  const pageSignal = useGet(pageSignal$);
-
-  const handleDelete = async () => {
-    await deleteAgentAndReturnToList(pageSignal);
-  };
-
   switch (activeTab) {
     case "authorization": {
       return <JobPermissionsTab agentId={agentId} displayName={displayName} />;
@@ -1149,7 +1124,6 @@ function AgentTabContent({
           resolvedSound={resolvedSound}
           visibility={visibility}
           canEditVisibility={canEditVisibility}
-          onDelete={handleDelete}
         />
       );
     }

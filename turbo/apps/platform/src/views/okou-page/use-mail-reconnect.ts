@@ -4,27 +4,25 @@ import { useLoadableSet } from "ccstate-react/experimental";
 
 import { connectorCatalogItemBySlug } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
-} from "../../signals/okou-page/settings/connectors.ts";
+import { getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail } from "../../signals/okou-page/settings/connectors.ts";
+import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 // Read the selected provider entry without loading the full connector catalog.
 const gmailCatalogItem$ = connectorCatalogItemBySlug("gmail");
 const outlookCatalogItem$ = connectorCatalogItemBySlug("outlook-mail");
 
+/** The draft re-reads itself from the resulting connector change. */
 export function useMailReconnect(
   provider: MailProvider,
   connectionId: string | undefined,
-  onSuccess: () => void | Promise<void>,
 ) {
   const connector =
     useLastResolved(
       provider === "gmail" ? gmailCatalogItem$ : outlookCatalogItem$,
     ) ?? undefined;
   const [connection, connect] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
   const signal = useGet(pageSignal$);
   const authMethod = connector
@@ -46,7 +44,7 @@ export function useMailReconnect(
           {
             connectorSlug: provider === "gmail" ? "gmail" : "outlook-mail",
             method: authMethod,
-            onSuccess,
+            origin: { kind: "none" },
             options: {
               authorizeVisibleAgents: true,
               connectorLabel: connector.label,

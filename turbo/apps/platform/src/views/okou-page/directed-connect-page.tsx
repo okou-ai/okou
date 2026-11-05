@@ -23,14 +23,13 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
-  type ConnectorConnectSuccess,
   builtinPollingOAuthDeviceAuthSlug$,
-  submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
   builtinManualGrantFormValuesFor$,
   getOnlyManualBuiltinConnectorStatusAuthMethod,
   manualGrantInputValuesForMethod,
 } from "../../signals/okou-page/settings/connectors.ts";
+import { submitBuiltinManualGrantAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { hasTokenInputValue } from "../../signals/okou-page/settings/token-input.ts";
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import {
@@ -42,7 +41,6 @@ import {
   directedConnectCatalogItem$,
   directedConnectExactAccount$,
   directedConnectAccounts$,
-  reloadDirectedConnectAccounts$,
   directedConnectAgentId$,
   directedConnectAgentName$,
   manualGrantDialogKey$,
@@ -60,8 +58,6 @@ import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { assistantName$ } from "../../signals/branding.ts";
 import { ConnectorHelpText } from "./components/settings/connector-help-text.tsx";
-import { completeDirectedConnectorAction$ } from "../../signals/connectors-page/directed-connector-callback.ts";
-import { routeChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import {
   customConnectors$,
   resetCustomConnectorConnectInput$,
@@ -82,18 +78,16 @@ function ManualGrantForm({
   connectorLabel,
   manualGrantMethod,
   accountOptions,
-  onSuccess,
 }: {
   connectorSlug: ConnectorSlug;
   agentId: string | null;
   connectorLabel: string;
   manualGrantMethod: PublicConnectorCatalogAuthMethodDetail;
   accountOptions: ConnectorAccountMutationOptions;
-  onSuccess: ConnectorConnectSuccess;
 }) {
   const { t } = useTranslation();
   const [submitLoadable, submit] = useLoadableSet(
-    submitBuiltinManualGrantAndSettle$,
+    submitBuiltinManualGrantAndContinue$,
   );
   const setFormValue = useSet(setBuiltinManualGrantFormValue$);
   const pageSignal = useGet(pageSignal$);
@@ -124,7 +118,8 @@ function ManualGrantForm({
             ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
             ...accountOptions,
           },
-          onSuccess,
+          origin: { kind: "directed-connect", agentId },
+          surface: "directed-manual-grant-dialog",
         },
         pageSignal,
       );
@@ -194,7 +189,6 @@ function ManualGrantDialog({
   accountOptions,
   open,
   onOpenChange,
-  onSuccess,
 }: {
   connectorSlug: ConnectorSlug;
   agentId: string | null;
@@ -204,7 +198,6 @@ function ManualGrantDialog({
   accountOptions: ConnectorAccountMutationOptions | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: ConnectorConnectSuccess;
 }) {
   if (!manualGrantMethod || !accountOptions) {
     return null;
@@ -224,11 +217,6 @@ function ManualGrantDialog({
           connectorLabel={connectorLabel}
           manualGrantMethod={manualGrantMethod}
           accountOptions={accountOptions}
-          onSuccess={async (connectionId, signal) => {
-            await onSuccess(connectionId, signal);
-            signal.throwIfAborted();
-            onOpenChange(false);
-          }}
         />
       </DialogContent>
     </Dialog>
@@ -302,7 +290,6 @@ function DirectedConnectModal({
   reconnectAuthMethod,
   agentId,
   onClose,
-  onSuccess,
 }: {
   readonly open: boolean;
   readonly item: PlatformConnectorCatalogStatusItem | undefined;
@@ -310,7 +297,6 @@ function DirectedConnectModal({
   readonly reconnectAuthMethod: ConnectorAuthMethodId | undefined;
   readonly agentId: string | null;
   readonly onClose: () => void;
-  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   if (!open || !item || !accountOptions) {
     return null;
@@ -323,7 +309,7 @@ function DirectedConnectModal({
       reconnectAuthMethod={reconnectAuthMethod}
       authorizeVisibleAgentsOnConnect={!agentId}
       onClose={onClose}
-      onSuccess={onSuccess}
+      origin={{ kind: "directed-connect", agentId }}
     />
   );
 }
@@ -341,7 +327,6 @@ function DirectedConnectDialogs({
   agentId,
   connectModalOpen,
   setConnectModalOpen,
-  onSuccess,
 }: {
   readonly connectorSlug: ConnectorSlug;
   readonly item: PlatformConnectorCatalogStatusItem | undefined;
@@ -355,7 +340,6 @@ function DirectedConnectDialogs({
   readonly agentId: string | null | undefined;
   readonly connectModalOpen: boolean;
   readonly setConnectModalOpen: (open: boolean) => void;
-  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   return (
     <>
@@ -368,7 +352,6 @@ function DirectedConnectDialogs({
         accountOptions={accountOptions}
         open={manualGrantDialogOpen}
         onOpenChange={setManualGrantDialogOpen}
-        onSuccess={onSuccess}
       />
       <DirectedConnectModal
         open={connectModalOpen}
@@ -379,7 +362,6 @@ function DirectedConnectDialogs({
         onClose={() => {
           setConnectModalOpen(false);
         }}
-        onSuccess={onSuccess}
       />
     </>
   );
@@ -635,8 +617,6 @@ function DirectedConnectCard() {
   const { item, presentation } = useDirectedConnectPresentation(connectorSlug);
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
   const setDirectedConnectModalKey = useSet(setDirectedConnectModalKey$);
-  const completeAction = useSet(completeDirectedConnectorAction$);
-  const actionCallback = useGet(routeChatActionCallback$);
   const { manualGrantDialogOpen, connectModalOpen } =
     useDirectedConnectDialogOpenState(connectorSlug, agentId, signal);
 
@@ -667,12 +647,6 @@ function DirectedConnectCard() {
   const canConnect = authMethods.length > 0 && accountOptions !== null;
   const connectorLabel = item?.label ?? connectorSlug;
   const connectorDescription = item?.description ?? "";
-  const handleConnectSuccess: ConnectorConnectSuccess = (
-    _connectionId,
-    attemptSignal,
-  ) => {
-    return completeAction(agentId, actionCallback, attemptSignal);
-  };
 
   const handleConnect = () => {
     if (!canConnect || !item) {
@@ -718,7 +692,6 @@ function DirectedConnectCard() {
             signal,
           );
         }}
-        onSuccess={handleConnectSuccess}
       />
     </>
   );
@@ -777,14 +750,10 @@ function CustomDirectedConnectorDialog({
   connection,
   open,
   agentId,
-  onClose,
-  onSuccess,
 }: {
   readonly connection: CustomConnectorConnection | null;
   readonly open: boolean;
   readonly agentId: string | null;
-  readonly onClose: () => void;
-  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   if (!connection || !open) {
     return null;
@@ -794,8 +763,7 @@ function CustomDirectedConnectorDialog({
       connector={connection.connector}
       {...(agentId ? { agentId } : {})}
       accountOptions={connection.accountOptions}
-      onClose={onClose}
-      onSuccess={onSuccess}
+      origin={{ kind: "directed-connect", agentId }}
     />
   );
 }
@@ -813,9 +781,6 @@ function CustomDirectedConnectCard({
   const dialogKey = useGet(directedConnectCustomDialogKey$);
   const setDialogKey = useSet(setDirectedConnectCustomDialogKey$);
   const resetConnectInput = useSet(resetCustomConnectorConnectInput$);
-  const completeAction = useSet(completeDirectedConnectorAction$);
-  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
-  const actionCallback = useGet(routeChatActionCallback$);
   const signal = useGet(pageSignal$);
   const connectors =
     connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
@@ -836,13 +801,6 @@ function CustomDirectedConnectCard({
     agentNameLoadable.data.displayName
       ? agentNameLoadable.data.displayName
       : assistantName;
-  const handleConnectSuccess: ConnectorConnectSuccess = (
-    _connectionId,
-    attemptSignal,
-  ) => {
-    reloadAccounts(attemptSignal);
-    return completeAction(agentId, actionCallback, attemptSignal);
-  };
   const setDialogOpen = (open: boolean) => {
     setDialogKey(open ? { connectorSlug, agentId } : null, signal);
   };
@@ -886,10 +844,6 @@ function CustomDirectedConnectCard({
         connection={connection}
         open={dialogOpen}
         agentId={agentId}
-        onClose={() => {
-          setDialogOpen(false);
-        }}
-        onSuccess={handleConnectSuccess}
       />
     </>
   );

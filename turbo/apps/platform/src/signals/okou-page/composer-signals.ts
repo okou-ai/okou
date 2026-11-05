@@ -249,6 +249,7 @@ interface ComposerTemplateSignals
 }
 
 export interface ComposerSignals {
+  readonly setup$: Command<void, [AbortSignal]>;
   readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
@@ -598,9 +599,18 @@ export function createComposerSignals(
       );
     }),
   );
+  const connectorCompletion = createComposerConnectorCompletion(
+    connector,
+    options.agentId,
+  );
   return {
     agentId: options.agentId,
     threadId: options.threadId,
+    /** Starts the composer's owner-scoped work under its owner's signal. */
+    setup$: command(({ set }, signal: AbortSignal) => {
+      set(voice.setup$, signal);
+      set(connectorCompletion.registerConnectHost$, signal);
+    }),
     ...composerRemoteAccessSignals(options, connector),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
@@ -611,10 +621,7 @@ export function createComposerSignals(
     workflow: composerWorkflowSignals(workflowComposer),
     suggestion: composerSuggestionSignals(workflowComposer),
     connector,
-    connectorCompletion: createComposerConnectorCompletion(
-      connector,
-      options.agentId,
-    ),
+    connectorCompletion,
     draft: composerDraftSignals(options.draft, fileInput),
     model: {
       ...ui.model,

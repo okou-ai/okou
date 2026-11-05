@@ -356,6 +356,10 @@ function installDriveMocks(
       if (body.mode === "google" || !mimeType) {
         mimeType = uploadedMimeType;
       }
+      // The API announces the synced artifact before it responds.
+      targetContext.mocks.ably.trigger("artifact:changed", {
+        artifactId: params.artifactId,
+      });
       return respond(200, {
         id: "drive-file-1",
         name: filename,

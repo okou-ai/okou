@@ -2688,17 +2688,3 @@ const connectConnectorOAuthAuthCodeAndSettleCommand$ = command(
 
 export const connectBuiltinConnectorOAuthAuthCodeAndSettle$ =
   connectConnectorOAuthAuthCodeAndSettleCommand$;
-
-export const runBuiltinConnectorConnectSuccess$ = command(
-  async (
-    _context,
-    onSuccess: ConnectorConnectSuccess,
-    connectionId: string,
-    _connectorSlug: ConnectorSlug,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    signal.throwIfAborted();
-    await onSuccess(connectionId, signal);
-    signal.throwIfAborted();
-  },
-);

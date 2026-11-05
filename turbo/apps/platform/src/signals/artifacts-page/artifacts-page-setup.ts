@@ -7,6 +7,8 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { setArtifactDeleteTarget$ } from "../artifact-deletion.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
+import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime";
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";
 import { historyState$, searchParams$ } from "../route.ts";
 import {
@@ -40,6 +42,12 @@ export const setupArtifactsPage$ = command(
     // fetched on scroll and never cached across visits.
     set(setArtifactCatalogKindFromRoute$, kind);
     set(reloadArtifactCatalog$);
+    // A synced artifact shows its Google Drive state on its catalog row.
+    set(
+      setAblyInvalidationLoop$,
+      { topic: artifactChangedTopic, invalidations: [reloadArtifactCatalog$] },
+      signal,
+    );
     if (artifactId) {
       set(prepareArtifactCatalogPreviewHistory$, artifactId, routeSearchParams);
     } else {
