@@ -20,7 +20,6 @@ export const loadProactiveWorkflowsEligibility$ = command(
       get(db$)
         .select({
           suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
-          jobsEnabled: orgMembersMetadata.proactiveJobsEnabled,
           learningEnabled: orgMembersMetadata.proactiveLearningEnabled,
           timezone: orgMembersMetadata.timezone,
         })
@@ -52,23 +51,17 @@ export const loadProactiveWorkflowsEligibility$ = command(
     ]);
     signal.throwIfAborted();
     const available = isFeatureEnabled(
-      FeatureSwitchKey.ProactiveAgent,
+      FeatureSwitchKey.ProactiveLearning,
       features,
     );
     const suggestionsAvailable = isFeatureEnabled(
       FeatureSwitchKey.AgentSuggestion,
       features,
     );
-    const jobsEnabled = preference?.jobsEnabled ?? false;
     const suggestionsEnabled = preference?.suggestionsEnabled ?? false;
     const learningEnabled = preference?.learningEnabled ?? false;
     const timezone = preference?.timezone ?? null;
     return {
-      jobs: {
-        available,
-        enabled: jobsEnabled,
-        active: available && jobsEnabled,
-      },
       suggestions: {
         available: suggestionsAvailable,
         enabled: suggestionsEnabled,
@@ -78,11 +71,6 @@ export const loadProactiveWorkflowsEligibility$ = command(
         available,
         enabled: learningEnabled,
         active: available && learningEnabled && timezone !== null,
-      },
-      planning: {
-        available,
-        enabled: jobsEnabled,
-        active: available && jobsEnabled && timezone !== null,
       },
       timezone,
       agentId: agent?.id ?? null,

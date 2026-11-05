@@ -4,46 +4,17 @@ import {
   PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
   PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
 } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { RETIRED_PROACTIVE_DEFINITION_NAME } from "../services/proactive-workflow-definitions";
+import { RETIRED_PROACTIVE_DEFINITION_NAMES } from "../services/proactive-workflow-definitions";
 import {
   PROACTIVE_LEARNING_DEFINITION_NAME,
   PROACTIVE_LEARNING_BLUEPRINT_KEY,
-  PROACTIVE_PLANNING_DEFINITION_NAME,
-  PROACTIVE_PLANNING_BLUEPRINT_KEY,
 } from "@okouai/api-contracts/contracts/proactive-nightly";
-import {
-  PROACTIVE_LEARNING_INSTRUCTION,
-  PROACTIVE_PLANNING_INSTRUCTION,
-} from "../services/proactive-nightly-instructions";
-import {
-  PROACTIVE_JOBS_BLUEPRINT_KEY,
-  PROACTIVE_JOBS_DEFINITION_NAME,
-  PROACTIVE_JOBS_INTERVAL_SECONDS,
-} from "@okouai/api-contracts/contracts/proactive-jobs";
-
+import { PROACTIVE_LEARNING_INSTRUCTION } from "../services/proactive-nightly-instructions";
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-
-const PROACTIVE_JOBS_INSTRUCTION = `# Proactive tasks
-
-Advance only work explicitly entrusted as Okou Tasks. This hidden execution Chat is not a user-facing delivery channel. Never create Tasks from ordinary questions or Suggestions. Do not curate Suggestions.
-
-You are the background executor. Creating chats hand off saved Tasks to this loop and end their turns; execute the entrusted objectives here and persist their progress and Results. Do not stop at acknowledging delegation or create another Task for the same objective.
-
-Read \`okou task --help\`, then use \`okou task list --runnable --json\`, following nextAfter with --after to cover every page. Read each selected Task with \`okou task get <id> --json\`. The Task's persisted objective, progress, inputs and Results are the continuation authority; old Chat messages are not current state.
-
-Process Tasks sequentially. Prioritize unprocessed user input, then active Tasks least recently updated, with ID as a stable tie-breaker. Take a bounded, useful step per Task so the run budget does not starve the rest. Re-read a Task before another external action; skip archived Tasks. Respect current permissions and explicit user authorization. A changed default Agent requires rechecking Agent-scoped grants.
-
-Use ordinary skills and tools to advance work, verify the outcome, and save progress through \`okou task update <id> --file update.json --json\`. The JSON carries expected: {status, work} copied from the inspected Task, the new status and work, and optionally result: {id, text, references: [{title, url}]}. Preserve existing work fields you are not changing. work.processedInputIds acknowledges only the exact prefix of input IDs actually read; newly appended input must remain pending. Preserve stable IDs for retries. On a conflict, read current state before deciding; never repeat an uncertain external action.
-
-Choose active while useful work remains. When user input is needed, set waiting_decision with a specific explanation, or waiting_authorization with a stable request ID, current agentId, concrete action, connector and permission. Only request connector permissions supported by the existing permission system. The user responds inside Task details; never ask them to open the worker Chat. Permission grants must actually be effective for the requested action and current Agent. An authorization response is evidence to verify, not a permission grant. Refusal or expiry must not be treated as approval.
-
-Read new replies even on waiting or completed Tasks, then decide whether to continue, remain waiting, or retain completion. A reply such as thanks need not reopen a Task. When work is complete, verify it, publish a Result with a stable UUID, and set work.currentResultId to that ID in the same update with status completed. Put the completion summary and authorized deliverable references on the Result; retain previous Results. The home page shows state and new Results without duplicate notices. Do not send external messages unless the Task explicitly authorizes that delivery.
-
-Archived is terminal for automatic execution. Never restore it through stale progress, pending input or callback messages. If no runnable Tasks remain, finish; the system sleeps until new eligible work or user input arrives. Further eligible runs wait five minutes after completion. Missing CLI capability or temporary tool failure is an execution error, not a completed Task or a fabricated user-decision blocker.`;
 
 const MORNING_BRIEF_CONTEXT_INSTRUCTION = `# Morning Brief
 
@@ -173,37 +144,27 @@ function morningBriefDefinition(
   };
 }
 
-function nightlyDefinition(
-  kind: "learning" | "planning",
-): OfficialWorkflowSourceDefinition {
-  const learning = kind === "learning";
+function nightlyLearningDefinition(): OfficialWorkflowSourceDefinition {
   return {
-    name: learning
-      ? PROACTIVE_LEARNING_DEFINITION_NAME
-      : PROACTIVE_PLANNING_DEFINITION_NAME,
+    name: PROACTIVE_LEARNING_DEFINITION_NAME,
     lifecycle: "active",
     workflow: {
-      displayName: learning ? "Proactive Learning" : "Proactive Planning",
-      description: learning
-        ? "Review your activity overnight and improve personal memory and understanding."
-        : "Plan next steps within your explicit delegation and keep Tasks up to date.",
-      instruction: learning
-        ? PROACTIVE_LEARNING_INSTRUCTION
-        : PROACTIVE_PLANNING_INSTRUCTION,
+      displayName: "Proactive Learning",
+      description:
+        "Review your activity overnight and improve personal memory and understanding.",
+      instruction: PROACTIVE_LEARNING_INSTRUCTION,
       files: [],
     },
     blueprints: [
       {
-        key: learning
-          ? PROACTIVE_LEARNING_BLUEPRINT_KEY
-          : PROACTIVE_PLANNING_BLUEPRINT_KEY,
+        key: PROACTIVE_LEARNING_BLUEPRINT_KEY,
         parameters: [
           {
             key: "cron",
             type: "string",
             required: true,
             format: "text",
-            default: learning ? "0 2 * * *" : "0 4 * * *",
+            default: "0 2 * * *",
           },
         ],
         desiredState: {
@@ -224,33 +185,7 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
   Object.freeze<OfficialWorkflowSourceCatalog>({
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
-      nightlyDefinition("learning"),
-      nightlyDefinition("planning"),
-      {
-        name: PROACTIVE_JOBS_DEFINITION_NAME,
-        lifecycle: "active",
-        workflow: {
-          displayName: "Proactive tasks",
-          description:
-            "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-          instruction: PROACTIVE_JOBS_INSTRUCTION,
-          files: [],
-        },
-        blueprints: [
-          {
-            key: PROACTIVE_JOBS_BLUEPRINT_KEY,
-            parameters: [],
-            desiredState: {
-              kind: "schedule",
-              schedule: {
-                type: "loop",
-                intervalSeconds: PROACTIVE_JOBS_INTERVAL_SECONDS,
-              },
-            },
-          },
-        ],
-        presentation: { category: "productivity" },
-      },
+      nightlyLearningDefinition(),
       {
         name: PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
         lifecycle: "active",
@@ -285,11 +220,13 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
         ],
         presentation: { category: "productivity" },
       },
-      {
-        name: RETIRED_PROACTIVE_DEFINITION_NAME,
-        lifecycle: "retired",
-        presentation: { category: "productivity" },
-      },
+      ...RETIRED_PROACTIVE_DEFINITION_NAMES.map((name) => {
+        return {
+          name,
+          lifecycle: "retired" as const,
+          presentation: { category: "productivity" },
+        };
+      }),
       morningBriefDefinition("morning-brief", MORNING_BRIEF_INSTRUCTION),
       morningBriefDefinition(
         INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,

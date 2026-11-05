@@ -3109,6 +3109,13 @@
       "when": 1793725191980,
       "tag": "1522_repair_deleted_chat_connector_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 1523,
+      "version": "7",
+      "when": 1793779523098,
+      "tag": "1523_retire_proactive_tasks",
+      "breakpoints": true
     }
   ]
 }

@@ -1991,47 +1991,6 @@
       "useDefault": "デフォルトを使用"
     },
     "documentTitle": "チャット",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "情報の更新",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "この実行を完了できませんでした",
       "loadMessages": "メッセージの読み込みに失敗しました",
@@ -2641,7 +2600,6 @@
       "tasks": {
         "document": "ドキュメント",
         "image": "画像",
-        "jobs": "Tasks",
         "presentation": "スライド",
         "visualization": "可視化",
         "website": "ウェブサイト",
@@ -5458,7 +5416,7 @@
           "description": "アプリの外観と動作をカスタマイズします。",
           "title": "好み"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Okou が先回りして行う作業を設定します。",
           "title": "Proactive"
         },
@@ -5842,15 +5800,6 @@
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
         "title": "学習"
-      },
-      "proactivePlanningAction": {
-        "description": "依頼された作業を計画・実行し、あなたの対応が必要なときに通知します。",
-        "errorMessage": "設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
-        "missingTimezone": "設定でタイムゾーンを指定してください。",
-        "preparationFailed": "このワークフローは一時的に利用できません。",
-        "preparing": "ワークフローを準備しています。",
-        "title": "計画と実行"
       },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",

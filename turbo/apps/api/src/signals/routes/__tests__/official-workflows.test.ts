@@ -21,7 +21,6 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
-import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -33,7 +32,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import {
   proactiveLearningRoutes,
-  proactiveJobsRoutes,
   proactiveSuggestionsRoutes,
 } from "../proactive-preferences";
 
@@ -295,15 +293,11 @@ describe("Workflow schedules", () => {
   });
 });
 
-describe("Planning and action preference", () => {
-  it("preserves the combined choice independently of Learning and Suggestions", async () => {
+describe("Proactive Learning preference", () => {
+  it("preserves the Learning choice independently of Suggestions", async () => {
     const app = setupApp({
       context,
-      routes: [
-        ...proactiveJobsRoutes,
-        ...proactiveLearningRoutes,
-        ...proactiveSuggestionsRoutes,
-      ],
+      routes: [...proactiveLearningRoutes, ...proactiveSuggestionsRoutes],
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
@@ -314,23 +308,18 @@ describe("Planning and action preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
     );
-    const client = app(proactiveJobsContract);
-    for (const independent of [
-      app(proactiveLearningContract),
-      app(proactiveSuggestionsContract),
-    ]) {
-      await accept(
-        independent.update({
-          headers: authHeaders(actor),
-          body: { enabled: true },
-        }),
-        [200],
-      );
-    }
+    const client = app(proactiveLearningContract);
+    await accept(
+      app(proactiveSuggestionsContract).update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
     const initial = await accept(
       client.get({ headers: authHeaders(actor) }),
       [200],
@@ -350,22 +339,17 @@ describe("Planning and action preference", () => {
       [200],
     );
     expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
-    for (const independent of [
-      app(proactiveLearningContract),
-      app(proactiveSuggestionsContract),
-    ]) {
-      const preference = await accept(
-        independent.get({ headers: authHeaders(actor) }),
-        [200],
-      );
-      expect(preference.body.enabled).toBeTruthy();
-    }
+    const suggestions = await accept(
+      app(proactiveSuggestionsContract).get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(suggestions.body.enabled).toBeTruthy();
   });
 
-  it("keeps an opt-in cancellable while the planning time zone is unavailable", async () => {
+  it("keeps an opt-in cancellable while the Learning time zone is unavailable", async () => {
     const app = setupApp({
       context,
-      routes: proactiveJobsRoutes,
+      routes: proactiveLearningRoutes,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -375,16 +359,16 @@ describe("Planning and action preference", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveAgent]: true },
+      { [FeatureSwitchKey.ProactiveLearning]: true },
     );
-    const client = app(proactiveJobsContract);
+    const client = app(proactiveLearningContract);
     const pending = await accept(
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
       [200],
     );
     expect(pending.body).toMatchObject({
       enabled: true,
-      status: "preparing",
+      status: "paused",
       unavailableReason: "missing-timezone",
     });
     const cancelled = await accept(
@@ -409,7 +393,7 @@ describe("Proactive Suggestions preference", () => {
   it("keeps the independent Suggestions choice while the catalog is unavailable", async () => {
     const app = setupApp({
       context,
-      routes: [...proactiveSuggestionsRoutes, ...proactiveJobsRoutes],
+      routes: [...proactiveSuggestionsRoutes, ...proactiveLearningRoutes],
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -421,7 +405,7 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: false,
       },
     );
@@ -430,12 +414,12 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveAgent]: false,
+        [FeatureSwitchKey.ProactiveLearning]: false,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
     );
     await accept(
-      app(proactiveJobsContract).get({ headers: authHeaders(actor) }),
+      app(proactiveLearningContract).get({ headers: authHeaders(actor) }),
       [403],
     );
     const initial = await accept(
@@ -467,7 +451,7 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: false,
       },
     );
@@ -476,7 +460,7 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveAgent]: false,
+        [FeatureSwitchKey.ProactiveLearning]: false,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
     );

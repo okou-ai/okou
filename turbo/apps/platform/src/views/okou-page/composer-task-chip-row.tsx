@@ -1,13 +1,11 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import {
   ChartNoAxesCombined,
   ChevronDown,
   FileText,
   Globe,
   Image,
-  ListTodo,
   Presentation,
   Route,
 } from "lucide-react";
@@ -19,7 +17,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   LayoutPanel,
-  TabsList,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -36,7 +33,6 @@ import {
 
 const TASK_CHIP = "shrink-0 px-3";
 const TASK_ICONS = {
-  jobs: ListTodo,
   workflow: Route,
   presentation: Presentation,
   document: FileText,
@@ -123,12 +119,10 @@ function TaskChipSizing({
 function TaskChip({
   task,
   label,
-  tabs,
   onSelect,
 }: {
   readonly task: ComposerTask;
   readonly label: string;
-  readonly tabs: boolean;
   readonly onSelect: (task: ComposerTask) => void;
 }) {
   const Icon = TASK_ICONS[task];
@@ -138,15 +132,7 @@ function TaskChip({
       {label}
     </>
   );
-  return tabs ? (
-    <TabsPrimitive.Tab
-      value={task}
-      className="data-active:bg-segment-selected data-active:shadow-segment-selected"
-      render={<Button type="button" variant="outline" className={TASK_CHIP} />}
-    >
-      {content}
-    </TabsPrimitive.Tab>
-  ) : (
+  return (
     <Button
       type="button"
       variant="outline"
@@ -234,11 +220,9 @@ function TaskOverflowMenu({
 export function ComposerTaskChipRow({
   signals,
   tasks,
-  tabs = false,
 }: {
   readonly signals: ComposerSignals;
   readonly tasks: readonly ComposerTask[];
-  readonly tabs?: boolean;
 }) {
   const { t } = useTranslation();
   const labels = t(
@@ -257,7 +241,6 @@ export function ComposerTaskChipRow({
   const bindRoot = useSet(signals.taskChips.overflow.bindRoot$);
   const measure = useSet(signals.taskChips.overflow.measure$);
   const selectTask = useSet(signals.taskChips.selectTask$);
-  const browseTask = useSet(signals.taskChips.browseTask$);
   const finalFocus = useSet(signals.taskChips.taskMenuFinalFocus$);
   const sidebarHidden = useGet(sidebarOff$);
   const chatListWidth = useGet(chatListWidth$);
@@ -271,14 +254,6 @@ export function ComposerTaskChipRow({
     unified,
   ]);
 
-  const select = (task: ComposerTask) => {
-    if (task === "jobs") {
-      browseTask(task);
-    } else {
-      selectTask(task);
-    }
-  };
-  const Row = tabs ? TabsList : "div";
   return (
     <LayoutPanel
       active
@@ -291,8 +266,8 @@ export function ComposerTaskChipRow({
         <TaskChipSizing tasks={tasks} labels={labels} />
         {/* Keep SVG pixel snapping stable when Safari composites nearby animations. */}
         <div className="mx-auto flex w-max max-w-full transform-gpu items-center gap-2 overflow-hidden p-1">
-          <Row
-            {...(tabs ? {} : { role: "group" })}
+          <div
+            role="group"
             aria-label={t(($) => {
               return $.chat.taskChips.chooseTask;
             })}
@@ -307,18 +282,17 @@ export function ComposerTaskChipRow({
                   key={task}
                   task={task}
                   label={labels[task]}
-                  tabs={tabs}
-                  onSelect={select}
+                  onSelect={selectTask}
                 />
               );
             })}
-          </Row>
+          </div>
           {hidden.length > 0 && (
             <TaskOverflowMenu
               tasks={hiddenTasks}
               labels={labels}
               more={more}
-              onSelect={select}
+              onSelect={selectTask}
               finalFocus={finalFocus}
             />
           )}

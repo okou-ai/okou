@@ -21,7 +21,6 @@ import {
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import {
   click,
   fill,
@@ -147,13 +146,7 @@ function link(href: string) {
   }
   return found;
 }
-function queryTab(name: string) {
-  return (
-    queryAllByRoleFast("tab").find((element) => {
-      return element.textContent?.trim() === name;
-    }) ?? null
-  );
-}
+
 const SUGGESTIONS_TOPIC = "agentSuggestionsChanged";
 
 // The API publishes every committed suggestion change.
@@ -198,13 +191,6 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
       return respond(200, { restored: false });
     },
   );
-  context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
-    return respond(200, {
-      enabled: true,
-      status: "enabled",
-      unavailableReason: null,
-    });
-  });
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
     return respond(200, { suggestions: items });
   });
@@ -251,7 +237,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
 }
 const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
-  [FeatureSwitchKey.ProactiveAgent]: false,
+  [FeatureSwitchKey.ProactiveLearning]: false,
 } as const;
 const homePath = `/agents/${agentId}/chat`;
 const EMPTY_FEED = "You’re all caught up";
@@ -310,60 +296,6 @@ test("The Feed sidebar entry opens the suggestions on their own page", async () 
   expect(pathname()).toBe("/feed");
   expect(link("/feed")).toHaveAttribute("aria-current", "page");
 });
-
-test.each([
-  "Workflow",
-  "Presentation",
-  "Document",
-  "Image",
-  "Website",
-  "Chart",
-])(
-  "Selecting %s hides the Tasks row and clearing it restores the row",
-  async (task) => {
-    mockPool([]);
-    await setupPage({
-      context,
-      path: homePath,
-      featureSwitches: {
-        ...features,
-        [FeatureSwitchKey.ProactiveAgent]: true,
-      },
-    });
-    await waitFor(() => {
-      expect(queryTab(task)).toBeInTheDocument();
-    });
-    await fill(composer(), "Keep my draft");
-    click(button(task, "tab"));
-    await waitFor(() => {
-      expect(button(`Remove ${task}`)).toBeInTheDocument();
-      expect(composer()).toHaveFocus();
-    });
-    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("group", { name: "Choose a task" }),
-    ).not.toBeInTheDocument();
-    expect(composer()).toHaveTextContent("Keep my draft");
-    click(button(`Remove ${task}`));
-    await waitFor(() => {
-      expect(queryTab(task)).toBeInTheDocument();
-    });
-    expect(
-      queryAllByRoleFast("tab").map((tab) => {
-        return tab.textContent?.trim();
-      }),
-    ).toStrictEqual([
-      "Tasks",
-      "Workflow",
-      "Presentation",
-      "Document",
-      "Image",
-      "Website",
-      "Chart",
-    ]);
-    expect(composer()).toHaveTextContent("Keep my draft");
-  },
-);
 
 test("Each Feed visit loads new suggestions and an empty pool says so", async () => {
   const pool = mockPool([]);

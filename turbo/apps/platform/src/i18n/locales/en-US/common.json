@@ -1998,47 +1998,6 @@
       "useDefault": "Use default"
     },
     "documentTitle": "Chat",
-    "entrustedJobs": {
-      "archive": "Archive task",
-      "authorize": "Authorize",
-      "currentGrant": "Current access: {{scope}} · {{expiry}}",
-      "decline": "Decline",
-      "declined": "Authorization declined",
-      "details": "Task details",
-      "detailsDescription": "Review progress, reply, or view the result here.",
-      "duration": "Allow access for",
-      "durations": {
-        "1h": "1 hour",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "always": "Always"
-      },
-      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
-      "filters": {
-        "archived": "Archived",
-        "history": "History",
-        "home": "Current"
-      },
-      "granted": "Authorization saved",
-      "loading": "Loading Tasks",
-      "next": "Next",
-      "noExpiry": "No expiry",
-      "previous": "Previous",
-      "progress": "Progress",
-      "replies": "Your replies",
-      "reply": "Reply",
-      "result": "Result",
-      "saved": "Saved for the next evaluation",
-      "saveReply": "Save reply",
-      "sourceUpdate": "Source update",
-      "states": {
-        "active": "In progress",
-        "archived": "Archived",
-        "completed": "Completed",
-        "waiting_authorization": "Waiting for authorization",
-        "waiting_decision": "Waiting for your decision"
-      }
-    },
     "errors": {
       "genericTitle": "This run couldn't finish",
       "loadMessages": "Failed to load messages",
@@ -2652,7 +2611,6 @@
       "tasks": {
         "document": "Document",
         "image": "Image",
-        "jobs": "Tasks",
         "presentation": "Presentation",
         "visualization": "Chart",
         "website": "Website",
@@ -5473,7 +5431,7 @@
           "description": "Personalize how the app looks and behaves.",
           "title": "Preference"
         },
-        "proactiveAgent": {
+        "proactiveLearning": {
           "description": "Choose how Okou works proactively.",
           "title": "Proactive"
         },
@@ -5858,15 +5816,6 @@
         "preparationFailed": "This workflow is temporarily unavailable.",
         "preparing": "Preparing this workflow.",
         "title": "Learning"
-      },
-      "proactivePlanningAction": {
-        "description": "Plan and carry out your delegated work, and notify you when your input is needed.",
-        "errorMessage": "Could not load or update this setting.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
-        "missingTimezone": "Set your time zone in Preferences.",
-        "preparationFailed": "This workflow is temporarily unavailable.",
-        "preparing": "Preparing this workflow.",
-        "title": "Planning & action"
       },
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",

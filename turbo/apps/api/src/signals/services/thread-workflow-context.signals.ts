@@ -3,7 +3,10 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { db$ } from "../external/db";
-import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
+import {
+  isRetiredProactiveWorkflow,
+  proactiveWorkflowKind,
+} from "./proactive-workflow-definitions";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
@@ -31,6 +34,11 @@ function createProactiveTargetEligibility(
     }
     const { automation, workflow } = target;
     const scope = bootstrap;
+    if (isRetiredProactiveWorkflow(workflow.officialDefinitionName)) {
+      throw new OfficialWorkflowRunAdmissionError({
+        message: "This proactive workflow has been retired.",
+      });
+    }
     const proactiveKind = proactiveWorkflowKind(
       workflow.officialDefinitionName,
     );
@@ -39,7 +47,7 @@ function createProactiveTargetEligibility(
         !isFeatureEnabled(
           proactiveKind === "suggestions"
             ? FeatureSwitchKey.AgentSuggestion
-            : FeatureSwitchKey.ProactiveAgent,
+            : FeatureSwitchKey.ProactiveLearning,
           await get(bootstrap.featureSwitches$),
         )
       ) {
@@ -79,7 +87,7 @@ function assertOfficialManualEvent(
   definitionName: string,
 ) {
   const kind = proactiveWorkflowKind(definitionName);
-  if (eventType === "manual" && kind !== "learning" && kind !== "planning") {
+  if (eventType === "manual" && kind !== "learning") {
     throw new OfficialWorkflowRunAdmissionError({
       message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
     });

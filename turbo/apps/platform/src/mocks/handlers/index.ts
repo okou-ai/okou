@@ -115,7 +115,6 @@ import {
   apiProactiveSuggestionsHandlers,
   resetMockProactiveSuggestions,
 } from "./api-proactive-suggestions.ts";
-import { apiJobsHandlers, resetMockJobs } from "./api-jobs.ts";
 
 export const handlers = [
   ...apiHostHandlers,
@@ -151,7 +150,6 @@ export const handlers = [
   ...apiPaidToolsHandlers,
   ...apiMorningBriefPreferenceHandlers,
   ...apiProactiveSuggestionsHandlers,
-  ...apiJobsHandlers,
   ...apiEmailSubscriptionHandlers,
   ...apiUserModelPreferenceHandlers,
   ...apiOnboardingHandlers,
@@ -179,7 +177,6 @@ export function resetAllMockHandlers(): void {
   resetMockPaidTools();
   resetMockMorningBriefPreference();
   resetMockProactiveSuggestions();
-  resetMockJobs();
   resetMockEmailSubscription();
   resetMockUserModelPreference();
   resetMockAvailableRunModels();

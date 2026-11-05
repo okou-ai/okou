@@ -48,7 +48,7 @@ function ComposerSelectedTask({
     },
     { returnObjects: true },
   );
-  if (!task || task === "jobs") {
+  if (!task) {
     return null;
   }
   const Icon = TASK_ICONS[task];

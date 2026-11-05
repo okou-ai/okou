@@ -9,11 +9,10 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 import {
   PROACTIVE_WORKFLOW_DEFINITIONS,
-  RETIRED_PROACTIVE_DEFINITION_NAME,
+  RETIRED_PROACTIVE_DEFINITION_NAMES,
+  isRetiredProactiveWorkflow,
   proactiveWorkflowKind,
 } from "./proactive-workflow-definitions";
-import { userJobs } from "@okouai/db/schema/user-job";
-import { jobOwnerCondition, runnableJobCondition } from "./user-jobs-query";
 
 import { writeDb$ } from "../external/db";
 import {
@@ -36,7 +35,9 @@ function proactiveRunDefinitionCondition(
   return or(
     ...[
       PROACTIVE_WORKFLOW_DEFINITIONS[kind],
-      { name: RETIRED_PROACTIVE_DEFINITION_NAME },
+      ...RETIRED_PROACTIVE_DEFINITION_NAMES.map((name) => {
+        return { name };
+      }),
     ].map((definition) => {
       return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
     }),
@@ -106,7 +107,7 @@ export const workflowAutomationCanFire$ = command(
     signal.throwIfAborted();
     if (
       !visible ||
-      visible.definitionName === RETIRED_PROACTIVE_DEFINITION_NAME ||
+      isRetiredProactiveWorkflow(visible.definitionName) ||
       !canReadAgent(visible, automation.ownerUserId)
     ) {
       return false;
@@ -123,25 +124,6 @@ export const workflowAutomationCanFire$ = command(
         eligibility.agentId !== args.agentId
       ) {
         return false;
-      }
-      if (proactiveKind === "jobs") {
-        const [work] = await db
-          .select({ id: userJobs.id })
-          .from(userJobs)
-          .where(
-            and(
-              jobOwnerCondition({
-                orgId: automation.orgId,
-                userId: automation.ownerUserId,
-              }),
-              runnableJobCondition(),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        if (!work) {
-          return false;
-        }
       }
       // Agent and mode changes wait for the previous proactive check.
       // The current schedule already serializes its own occurrences.

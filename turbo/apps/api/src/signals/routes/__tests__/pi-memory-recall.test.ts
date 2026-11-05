@@ -16,7 +16,7 @@ import { readClaimedPiMemory } from "./helpers/pi-memory-session";
 const context = testContext();
 
 describe("ordinary Pi published personal Memory", () => {
-  it("reads the selected published version across Runs, independently of Learning and ProactiveAgent", async () => {
+  it("reads the selected published version across Runs, independently of Learning and ProactiveLearning", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
@@ -27,7 +27,7 @@ describe("ordinary Pi published personal Memory", () => {
       }
       const actor = { ...fixture.actor, orgId: fixture.actor.orgId };
       await updateFeatureSwitchesForUser(context, actor, {
-        proactiveAgent: true,
+        proactiveLearning: true,
       });
       createRouteMocks(context).clerk.session(
         actor.userId,
@@ -46,7 +46,7 @@ describe("ordinary Pi published personal Memory", () => {
       );
       expect(preference.body.enabled).toBeFalsy();
       await updateFeatureSwitchesForUser(context, actor, {
-        proactiveAgent: false,
+        proactiveLearning: false,
       });
       fixture.installObjects();
 
@@ -148,7 +148,7 @@ describe("ordinary Pi published personal Memory", () => {
         versionId: published,
         mountPath: "/home/user/.pi/agent/memory",
       });
-      expect(selected.execution.featureFlags?.proactiveAgent).toBeFalsy();
+      expect(selected.execution.featureFlags?.proactiveLearning).toBeFalsy();
       const laterWriter = await fixture.claim(
         agentId,
         "Publish a newer version after reader startup",
