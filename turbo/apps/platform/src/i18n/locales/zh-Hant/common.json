@@ -2000,7 +2000,6 @@
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "這次執行沒能完成",
-      "loadMessages": "訊息載入失敗",
       "noModelProviderAction": "管理訂閱",
       "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請連結個人訂閱。",
       "providerIncompatibleAction": "開始新會話",

@@ -56,6 +56,7 @@ import type {
 } from "./chat-event-types.ts";
 import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
 import { createChatRunUsageSignals } from "./chat-run-usage.ts";
+import { createChatThreadRows } from "./chat-thread-rows.ts";
 import { createThreadDraftLoad } from "./chat-thread-draft.ts";
 import {
   createChatThreadScrollSignals,
@@ -2821,6 +2822,7 @@ function createEnsureVisibleEventTrees({
   diagramCodesForEvents$,
   mermaidDiagrams,
   syncVisibleRunUsage$,
+  syncVisibleRows$,
   initialEventsReady$,
 }: {
   readonly visibleChatGroups$: Computed<ChatEventGroup[]>;
@@ -2829,6 +2831,7 @@ function createEnsureVisibleEventTrees({
   readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
   readonly mermaidDiagrams: MermaidDiagramRegistry;
   readonly syncVisibleRunUsage$: ChatRenderWindowOptions["syncVisibleRunUsage$"];
+  readonly syncVisibleRows$: Command<void, []>;
   readonly initialEventsReady$: State<boolean>;
 }): Command<Promise<void>, [boolean, AbortSignal]> {
   return command(
@@ -2845,11 +2848,15 @@ function createEnsureVisibleEventTrees({
       });
       set(ensureUserMessageDocuments$, visibleEvents);
       const richContentReady = set(ensureEventTrees$, visibleEvents, signal);
+      // Rows show the window with every resource prepared synchronously, then
+      // again once rich bodies finish parsing.
+      set(syncVisibleRows$);
       if (revealPreparedEvents) {
         set(initialEventsReady$, true);
       }
       await richContentReady;
       signal.throwIfAborted();
+      set(syncVisibleRows$);
       await set(
         prewarmMermaidDiagrams$,
         mermaidDiagrams,
@@ -2858,6 +2865,24 @@ function createEnsureVisibleEventTrees({
       );
     },
   );
+}
+
+function createRenderedVisibleChatGroups(
+  visibleChatGroups$: Computed<ChatEventGroup[]>,
+  eventRenderResources$: Computed<ChatEventRenderResources>,
+) {
+  const renderedVisibleChatGroups$ = computed((get): ChatEventGroup[] => {
+    return renderChatGroups(
+      get(visibleChatGroups$),
+      get(eventRenderResources$),
+    );
+  });
+  const visibleRenderedChatGroups$ = computed(
+    (get): Promise<ChatEventGroup[]> => {
+      return Promise.resolve(get(renderedVisibleChatGroups$));
+    },
+  );
+  return { renderedVisibleChatGroups$, visibleRenderedChatGroups$ };
 }
 
 function createChatRenderWindow({
@@ -2894,19 +2919,12 @@ function createChatRenderWindow({
         : Math.min(requestedStartIndex, targetStartIndex),
     );
   });
-  const visibleRenderedChatGroups$ = computed(
-    (get): Promise<ChatEventGroup[]> => {
-      return Promise.resolve(
-        renderChatGroups(get(visibleChatGroups$), get(eventRenderResources$)),
-      );
-    },
-  );
-  const visibleRenderedChatGroupsReady$ = computed(
-    async (get): Promise<boolean> => {
-      await get(visibleRenderedChatGroups$);
-      return true;
-    },
-  );
+  const { renderedVisibleChatGroups$, visibleRenderedChatGroups$ } =
+    createRenderedVisibleChatGroups(visibleChatGroups$, eventRenderResources$);
+  const { visibleRows$, syncVisibleRows$ } = createChatThreadRows({
+    renderedGroups$: renderedVisibleChatGroups$,
+    threadScrollPosition$,
+  });
 
   /**
    * Prepares resources for every event currently in the render window. Every
@@ -2921,6 +2939,7 @@ function createChatRenderWindow({
     diagramCodesForEvents$,
     mermaidDiagrams,
     syncVisibleRunUsage$,
+    syncVisibleRows$,
     initialEventsReady$,
   });
 
@@ -2985,7 +3004,7 @@ function createChatRenderWindow({
     }
     // Resetting the cursor only shrinks the window — the visible slice is a
     // suffix, so every event it still holds already has its tree and no
-    // ensure pass is needed here.
+    // ensure pass is needed here, only the rows.
     set(
       renderWindowStateByThreadId$,
       setThreadRenderWindowState(get(renderWindowStateByThreadId$), threadId, {
@@ -2993,11 +3012,12 @@ function createChatRenderWindow({
         cursorGroupId: null,
       }),
     );
+    set(syncVisibleRows$);
   });
 
   return {
     visibleRenderedChatGroups$,
-    visibleRenderedChatGroupsReady$,
+    visibleRows$,
     ensureVisibleEventTrees$,
     preloadPreviousRenderWindowForEvent$,
     loadMoreRenderedChatGroups$,
@@ -3598,7 +3618,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
-    visibleRenderedChatGroupsReady$: events.visibleRenderedChatGroupsReady$,
+    visibleRows$: events.visibleRows$,
     visibleRunUsageSignals$: events.visibleRunUsageSignals$,
     readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
