@@ -2,7 +2,7 @@ import {
   desktopShellAuthorizationContract as contract,
   type DesktopShellAuthorization,
 } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -269,6 +269,103 @@ test("The direct page automatically removes and restores the approval blocker on
   await waitFor(() => {
     expect(button(card, "Allow for 1 hour")).toBeDisabled();
   });
+});
+
+test.each([
+  ["pending", SHELL_TOPIC],
+  ["approved", SHELL_TOPIC],
+  ["pending", "computerUseHostsChanged"],
+  ["approved", "computerUseHostsChanged"],
+] as const)(
+  "A shell card keeps its %s content while %s refreshes",
+  async (status, topic) => {
+    const refreshStarted = context.mocks.deferred<void>();
+    const refreshResponse = context.mocks.deferred<void>();
+    let refreshing = false;
+    let current = authorization({
+      status,
+      ...(status === "approved"
+        ? {
+            approvedAt: new Date(now()).toISOString(),
+            grantExpiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
+          }
+        : {}),
+    });
+    context.mocks.api(contract.get, async ({ respond }) => {
+      if (refreshing) {
+        refreshStarted.resolve();
+        await refreshResponse.promise;
+      }
+      return respond(200, current);
+    });
+    await setupChat(URL, "message-port");
+    const card = await screen.findByTestId("desktop-shell-authorization-card");
+    const actionLabel =
+      status === "approved" ? "Revoke access" : "Allow for 1 hour";
+    await waitFor(() => {
+      expect(button(card, actionLabel)).toBeEnabled();
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(USER_CHANNEL, topic),
+      ).toBeTruthy();
+    });
+    const reason = within(card).getByText("Run the project tests");
+    const action = button(card, actionLabel);
+    const content = card.textContent;
+
+    refreshing = true;
+    await act(async () => {
+      context.mocks.ably.triggerOnChannel(USER_CHANNEL, topic);
+      await refreshStarted.promise;
+    });
+    expect(card.textContent).toBe(content);
+    expect(reason).toBeInTheDocument();
+    expect(button(card, actionLabel)).toBe(action);
+    expect(screen.getByTestId("desktop-shell-authorization-card")).toBe(card);
+
+    current = {
+      ...current,
+      status: status === "approved" ? "revoked" : "denied",
+    };
+    refreshResponse.resolve();
+    await within(card).findByText(
+      status === "approved" ? "Shell access revoked" : "Request denied",
+    );
+    expect(findButton(card, actionLabel)).toBeUndefined();
+  },
+);
+
+test("A failed background read stops offering access and a later shell event recovers", async () => {
+  let available = true;
+  let current = authorization({
+    status: "approved",
+    approvedAt: new Date(now()).toISOString(),
+    grantExpiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
+  });
+  context.mocks.api(contract.get, ({ respond }) => {
+    return available
+      ? respond(200, current)
+      : respond(500, {
+          error: { code: "INTERNAL_SERVER_ERROR", message: "Read failed" },
+        });
+  });
+  await setupChat(URL, "message-port");
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Revoke access")).toBeEnabled();
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(USER_CHANNEL, SHELL_TOPIC),
+    ).toBeTruthy();
+  });
+  available = false;
+  context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
+  await within(card).findByText("Authorization unavailable");
+  expect(findButton(card, "Revoke access")).toBeUndefined();
+  expect(within(card).queryByText("Allowed")).not.toBeInTheDocument();
+
+  available = true;
+  current = { ...current, status: "revoked" };
+  context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
+  await within(card).findByText("Shell access revoked");
 });
 
 test("A host change makes an unavailable authorization stop offering approval", async () => {
