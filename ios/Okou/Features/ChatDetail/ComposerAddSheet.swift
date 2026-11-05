@@ -27,19 +27,19 @@ struct ComposerAddSheet: View {
         VStack(alignment: .leading, spacing: OkouSpace.lg) {
           strip
           VStack(spacing: 0) {
-            row("All photos", icon: "images") { choose(.photos) }
+            OkouActionRow("All photos", icon: "images") { choose(.photos) }
               .accessibilityIdentifier("composer-photos")
             if ComposerDocumentScanner.isAvailable {
-              row("Scan Document", icon: "scan-text") { choose(.scan) }
+              OkouActionRow("Scan Document", icon: "scan-text") { choose(.scan) }
             }
-            row("Choose Files", icon: "folder") { choose(.files) }
+            OkouActionRow("Choose Files", icon: "folder") { choose(.files) }
             if let connectorSelection {
               Divider().padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.xs)
               connectorsRow(connectorSelection)
             }
             if let clearDraft {
               Divider().padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.xs)
-              row("Clear draft", icon: "trash-2", role: .destructive) {
+              OkouActionRow("Clear draft", icon: "trash-2", role: .destructive) {
                 clearDraft()
                 dismiss()
               }
@@ -102,45 +102,20 @@ struct ComposerAddSheet: View {
     .frame(height: OkouControl.mediaTile)
   }
 
-  private func row(
-    _ title: LocalizedStringKey, icon: String, role: ButtonRole? = nil,
-    action: @escaping () -> Void
-  ) -> some View {
-    Button(role: role, action: action) {
-      OkouRowLabel(title, okouSymbol: icon)
-        .font(.okou(.body))
-        .foregroundStyle(role == .destructive ? OkouColor.destructive : OkouColor.foreground)
-        .frame(maxWidth: .infinity, minHeight: OkouControl.listRow, alignment: .leading)
-        .padding(.horizontal, OkouSpace.lg)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-  }
-
   private func connectorsRow(_ store: ComposerConnectorStore) -> some View {
-    Button {
+    OkouActionRow("Connectors", icon: "plug") {
       choose(.connectors)
-    } label: {
-      HStack(spacing: OkouSpace.sm) {
-        OkouRowLabel("Connectors", okouSymbol: "plug")
-        Spacer(minLength: 0)
-        if store.uncertain {
-          // The draft cannot be sent until the connector settings are confirmed.
-          Text("Confirm settings")
-            .font(.okou(.subheadline))
-            .foregroundStyle(OkouColor.mutedForeground)
-          OkouIcon("circle-alert", size: OkouIconSize.inline)
-            .foregroundStyle(OkouStatusColor.warning)
-            .accessibilityHidden(true)
-        }
+    } trailing: {
+      if store.uncertain {
+        // The draft cannot be sent until the connector settings are confirmed.
+        Text("Confirm settings")
+          .font(.okou(.subheadline))
+          .foregroundStyle(OkouColor.mutedForeground)
+        OkouIcon("circle-alert", size: OkouIconSize.inline)
+          .foregroundStyle(OkouStatusColor.warning)
+          .accessibilityHidden(true)
       }
-      .font(.okou(.body))
-      .foregroundStyle(OkouColor.foreground)
-      .frame(minHeight: OkouControl.listRow)
-      .padding(.horizontal, OkouSpace.lg)
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
     .disabled(store.agentID == nil)
     .accessibilityIdentifier("composer-connectors")
   }

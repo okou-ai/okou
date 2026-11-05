@@ -34,7 +34,6 @@ struct ChatSidebarView: View {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
   }
 
-  @ScaledMetric(relativeTo: .body) private var statusColumnWidth = OkouControl.statusColumn
   @ScaledMetric(relativeTo: .body) private var rowAvatar = OkouAvatarSize.row
   /// One caption2 line of Geist under each pinned agent's avatar.
   @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
@@ -327,50 +326,19 @@ struct ChatSidebarView: View {
       store.selectChat(thread.id)
       close()
     } label: {
-      HStack(spacing: OkouSpace.ten) {
-        let parts = thread.titleParts
-        if showsAgent {
-          // Active chats come from every agent: its avatar names the one doing the work. The
-          // 28 pt avatar overhangs the status column so its mark lines up with an emoji.
-          agentAvatar(thread.agentID)
-            .frame(width: statusColumnWidth)
-        } else if showsStatusColumn {
-          // Every row in the section fills the slot, so titles share one left edge without a
-          // blank gap: the chat's status emoji, or a quiet chat glyph when it has none.
-          Group {
-            if let emoji = parts.emoji {
-              Text(emoji).font(.okou(.body))
-            } else {
-              OkouIcon("message-circle", size: OkouIconSize.inline)
-                .foregroundStyle(OkouColor.mutedForeground)
-                .accessibilityHidden(true)
-            }
-          }
-          .frame(width: statusColumnWidth, alignment: .leading)
+      let parts = thread.titleParts
+      let trailing = chatTrailing(thread, waveIndex: waveIndex)
+      if showsAgent {
+        // Active chats come from every agent: its avatar names the one doing the work.
+        OkouChatRowLabel(parts.text, trailing: trailing) { agentAvatar(thread.agentID) }
+      } else if showsStatusColumn {
+        // Every row in the section fills the column, so titles share one left edge.
+        OkouChatRowLabel(parts.text, trailing: trailing) {
+          OkouChatStatusMark(emoji: parts.emoji)
         }
-        Text(parts.text)
-          .font(.okou(.body))
-          .lineLimit(1)
-        Spacer(minLength: 0)
-        if thread.indicator == .active {
-          OkouRunningIndicator(phaseOffset: Double(waveIndex) / OkouMotion.runningWaveRows)
-            .frame(width: 20)
-            .accessibilityElement()
-            .accessibilityLabel("Working")
-        } else if thread.indicator == .unread {
-          // Web: an 8 px sky-600 dot. Amber stays for a primary commit.
-          Circle()
-            .fill(OkouStatusColor.running)
-            .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
-            .accessibilityLabel("Unread")
-        } else if thread.pinnedAt != nil && threadFilter.wrappedValue != .recent {
-          OkouIcon("pin", size: OkouIconSize.inline)
-            .foregroundStyle(OkouColor.mutedForeground)
-            .accessibilityHidden(true)
-        }
+      } else {
+        OkouChatRowLabel(parts.text, trailing: trailing)
       }
-      .frame(minHeight: OkouControl.listRow)
-      .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
@@ -476,6 +444,15 @@ struct ChatSidebarView: View {
     .listRowInsets(EdgeInsets(top: 2, leading: rowInset, bottom: 0, trailing: rowInset))
     .listRowSeparator(.hidden)
     .listRowBackground(Color.clear)
+  }
+
+  private func chatTrailing(_ thread: ChatThread, waveIndex: Int) -> OkouChatTrailing {
+    if thread.indicator == .active {
+      return .running(phase: Double(waveIndex) / OkouMotion.runningWaveRows)
+    }
+    if thread.indicator == .unread { return .unread }
+    if thread.pinnedAt != nil && threadFilter.wrappedValue != .recent { return .pinned }
+    return .none
   }
 
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {

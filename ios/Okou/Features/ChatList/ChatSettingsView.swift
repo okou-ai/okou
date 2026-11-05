@@ -195,22 +195,18 @@ struct ChatSettingsView: View {
 
   private var profile: some View {
     let profile = authentication.profile
+    var email: Text?
+    if let address = profile?.email, profile?.name != nil {
+      email = Text(verbatim: address)
+    }
     // The account and the workspace below share one mark size and one text edge.
-    return HStack(spacing: OkouSpace.md) {
+    return OkouAccountRowLabel(
+      Text(profile?.name ?? profile?.email ?? String(localized: "Signed in")), detail: email
+    ) {
       OkouProfileAvatar(
         imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
         size: OkouAvatarSize.account)
-      VStack(alignment: .leading, spacing: OkouSpace.one) {
-        Text(profile?.name ?? profile?.email ?? String(localized: "Signed in"))
-          .font(.okou(.body).weight(.medium))
-        if let email = profile?.email, profile?.name != nil {
-          Text(verbatim: email)
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            .textSelection(.enabled)
-        }
-      }
     }
-    .accessibilityElement(children: .combine)
   }
 
   @ViewBuilder private var workspaceRow: some View {

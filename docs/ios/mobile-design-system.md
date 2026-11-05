@@ -259,6 +259,10 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   own actions, on every sheet and full-screen viewer (`OkouCloseToolbarItem`; never
   `.cancellationAction` or the leading side). The system's own pickers (Photos, Files)
   keep theirs.
+- **A menu opens from what it is attached to.** A `Menu`'s label is only as wide as its
+  own content (the Inbox filter is "Inbox ⌄"); a row that needs the full width widens
+  outside the `Menu`. A full-width label makes the system open the menu from the middle
+  of the row.
 - **Swipes move between pages.** A right swipe anywhere in a chat opens the full-screen
   sidebar and a left swipe anywhere in the sidebar closes it; content that scrolls
   sideways (a code block, a table, the pinned agents rail) keeps the finger, and from
@@ -547,6 +551,9 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouProfileAvatar`                                                           | The signed-in person's photo in a circle with a hairline; account glyph without a photo (sidebar Settings, Settings profile row)                                                 |
 | `OkouActionTile` / `OkouMediaThumbnail` / `OkouSelectionMark`                 | An 88 pt media-strip tile (Camera), a photo thumbnail with a hairline, and its pick mark (open ring, then amber with an ink check)                                               |
 | `OkouCloseToolbarItem`                                                        | The close button in its one place: the toolbar's trailing end                                                                                                                    |
+| `OkouChatRowLabel` / `OkouChatStatusMark`                                     | A sidebar chat: status column (emoji, quiet glyph, or an Active chat's agent avatar), one body line, trailing running / unread / pinned                                          |
+| `OkouActionRow`                                                               | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                                           |
+| `OkouAccountRowLabel`                                                         | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                                         |
 | `OkouAgentTile`                                                               | An agent in a sideways avatar rail: 56 pt avatar, one 11 pt line of name ending in "…", selected tile, unread dot                                                                |
 | `OkouLiveWaveform`                                                            | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                |
 | `OkouChip` / `OkouChipRail`                                                   | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                  |

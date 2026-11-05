@@ -112,20 +112,21 @@
               }
             }
             .background(OkouColor.sidebar)
-            // An Active chat under the rail: one line like every row, its agent's avatar in
-            // the status column.
-            HStack(spacing: OkouSpace.ten) {
-              OkouAgentAvatar(
-                avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.row
-              )
-              .frame(width: OkouControl.statusColumn)
-              Text(verbatim: "!45375 Sidebar entries open in one tap")
-                .font(.okou(.body)).lineLimit(1)
-              Spacer(minLength: 0)
-              Circle().fill(OkouStatusColor.running)
-                .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
+            // Chat rows, as the sidebar draws them: an Active chat with its agent's avatar,
+            // then status emoji, the quiet glyph, and the trailing states.
+            VStack(spacing: 0) {
+              OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
+                OkouAgentAvatar(
+                  avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.row)
+              }
+              OkouChatRowLabel("!36076 Share in two steps", trailing: .running(phase: 0)) {
+                OkouChatStatusMark(emoji: "✅")
+              }
+              OkouChatRowLabel("Design tokens review", trailing: .pinned) {
+                OkouChatStatusMark(emoji: nil)
+              }
+              OkouChatRowLabel("A chat in a section without statuses")
             }
-            .frame(minHeight: OkouControl.listRow)
             .background(OkouColor.sidebar)
           }
           section("Dictation") {
@@ -143,12 +144,22 @@
             .glassEffect(.regular, in: Capsule())
           }
           section("Add to chat") {
-            // Camera, then picked and unpicked photos; the rows below use OkouRowLabel.
+            // Camera, then picked and unpicked photos, then the sheet's action rows.
             HStack(spacing: OkouSpace.sm) {
               OkouActionTile(title: "Camera", icon: "camera")
               OkouMediaThumbnail(image: nil, isSelected: true)
               OkouMediaThumbnail(image: nil, isSelected: false)
             }
+            VStack(spacing: 0) {
+              OkouActionRow("All photos", icon: "images") {}
+              OkouActionRow("Connectors", icon: "plug") {
+              } trailing: {
+                Text("Confirm settings")
+                  .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+              }
+              OkouActionRow("Clear draft", icon: "trash-2", role: .destructive) {}
+            }
+            .padding(.horizontal, -OkouSpace.lg)
             HStack(spacing: OkouSpace.sm) {
               ForEach(
                 Array([OkouSwipeTint.readState, OkouSwipeTint.neutral].enumerated()), id: \.offset
@@ -211,6 +222,20 @@
               text: "What are we working on, Tong?"
             )
             .frame(maxWidth: .infinity)
+          }
+          section("Settings account") {
+            // One mark size and one text edge for the account and its workspace.
+            VStack(alignment: .leading, spacing: OkouSpace.md) {
+              OkouAccountRowLabel(
+                Text(verbatim: "Tong Xing"), detail: Text(verbatim: "tong@example.com")
+              ) {
+                OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouAvatarSize.account)
+              }
+              OkouRowLabel(Text(verbatim: "Max & Zoe, Inc"), slot: OkouAvatarSize.account) {
+                OkouWorkspaceLogo(
+                  workspaceID: "catalog", name: "Max & Zoe, Inc", size: OkouAvatarSize.account)
+              }
+            }
           }
           section("Usage & grouped rows") {
             VStack(alignment: .leading, spacing: 0) {
