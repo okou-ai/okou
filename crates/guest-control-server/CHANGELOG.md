@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.77](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.76...guest-control-server-v0.24.77) (2026-11-05)
+
+
+### Refactoring
+
+* **guest-control:** centralize captured-output projection policies ([#45363](https://github.com/okou-ai/okou/issues/45363)) ([143de08](https://github.com/okou-ai/okou/commit/143de0848688c231cf3dc41b440b59087826be53))
+
 ## [0.24.76](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.75...guest-control-server-v0.24.76) (2026-11-05)
 
 ## [0.24.75](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.74...guest-control-server-v0.24.75) (2026-11-05)

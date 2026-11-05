@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.9](https://github.com/okou-ai/okou/compare/desktop-v0.55.8...desktop-v0.55.9) (2026-11-05)
+
+
+### CI
+
+* **desktop:** drop unused packages and shorten preview retention ([#45359](https://github.com/okou-ai/okou/issues/45359)) ([df03d82](https://github.com/okou-ai/okou/commit/df03d8247a64c1b2a92b9569931cfda894fe44d2))
+
 ## [0.55.8](https://github.com/okou-ai/okou/compare/desktop-v0.55.7...desktop-v0.55.8) (2026-11-05)
 
 
