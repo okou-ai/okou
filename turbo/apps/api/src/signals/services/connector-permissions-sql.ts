@@ -1,7 +1,7 @@
 import type { ApplyConnectorPermissions } from "@okouai/api-contracts/contracts/connector-permissions";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
-import { and, count, eq, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, gt, inArray, notInArray, sql } from "drizzle-orm";
 
 import {
   connectorAccessAccountOwner,
@@ -48,6 +48,13 @@ export function connectorPermissionMutationSql(
   const requested = apply.grants.map((grant) => {
     return grant.permission;
   });
+  const preserveExpiryPermissions = apply.grants.flatMap((grant) => {
+    return apply.mode === "patch" &&
+      grant.action === "allow" &&
+      grant.expiresIn === undefined
+      ? [grant.permission]
+      : [];
+  });
   const saved =
     values.length === 0
       ? sql`SELECT ${count()} FROM removed_connector_grants`
@@ -57,7 +64,11 @@ export function connectorPermissionMutationSql(
         AS requested(org_id, user_id, connector_slug, custom_connector_id, permission, action, expires_at)
       WHERE EXISTS (SELECT 1 FROM owned_connector)
         AND (SELECT ${count()} FROM removed_connector_grants) >= 0
-      ON CONFLICT ${conflict} DO UPDATE SET action = excluded.action, expires_at = excluded.expires_at
+      ON CONFLICT ${conflict} DO UPDATE SET action = excluded.action,
+        expires_at = CASE WHEN ${inArray(connectorPermissionGrants.permission, preserveExpiryPermissions)}
+          AND ${eq(connectorPermissionGrants.action, "allow")}
+          AND ${gt(connectorPermissionGrants.expiresAt, timestamp)}
+          THEN ${connectorPermissionGrants.expiresAt} ELSE excluded.expires_at END
       RETURNING id`;
   return sql`WITH owned_connector AS MATERIALIZED (
     SELECT ${connectors.id} FROM ${connectors} WHERE ${connectorAccessAccountOwner(owner)} LIMIT 1

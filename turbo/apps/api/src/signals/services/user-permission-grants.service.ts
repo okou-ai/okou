@@ -237,7 +237,7 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       readonly scope: UserPermissionGrantScope;
       readonly connectorSlugs: readonly string[];
       readonly snapshot: ConnectorRuntimeLookup;
-      readonly memberRules?: readonly ResolvedPermissionGrant[];
+      readonly memberRules: readonly ResolvedPermissionGrant[] | undefined;
     },
     checkedAt: Date = nowDate(),
   ): Promise<readonly ActiveNetworkPolicyRefresh[]> => {
