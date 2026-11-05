@@ -1,6 +1,7 @@
 use super::*;
 use guest_control_proto::{
-    ExecCapturedOutput, GuestDnsReadinessTermination, MSG_GUEST_DNS_READINESS,
+    ExecCapturedOutput, FileWriteStage, FileWriteStatus, GuestDnsReadinessTermination,
+    MSG_FILE_WRITE_STATUS, MSG_FILE_WRITE_STATUS_RESULT, MSG_GUEST_DNS_READINESS,
     MSG_GUEST_DNS_READINESS_RESULT, MSG_HOME_DRIVE_MOUNT, MSG_HOME_DRIVE_MOUNT_RESULT,
 };
 
@@ -92,6 +93,37 @@ async fn requests(peer: &mut UnixStream) -> (RawMessage, RawMessage) {
     (home, dns)
 }
 
+async fn wait_for_reply_dispatch(guest: &GuestControlClient, peer: &mut UnixStream) {
+    // This control query does not alter normal-operation gates. Its reply comes
+    // after the readiness replies on the same stream, so awaiting it proves the
+    // client has dispatched those earlier frames before we assert on them.
+    let status = FileWriteStatus {
+        sequence: 0,
+        stage: FileWriteStage::Idle,
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let respond = async {
+            let request = read_vsock_message(peer).await;
+            assert_eq!(request.msg_type, MSG_FILE_WRITE_STATUS);
+            assert!(request.payload.is_empty());
+            peer.write_all(
+                &guest_control_proto::encode(
+                    MSG_FILE_WRITE_STATUS_RESULT,
+                    request.seq,
+                    &status.encode_payload(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        };
+        let (received, ()) = tokio::join!(guest.file_write_status(Duration::from_secs(5)), respond);
+        assert_eq!(received.unwrap(), status);
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn readiness_joins_both_gates_in_either_order_and_preserves_home_failure_precedence() {
     for home_first in [false, true] {
@@ -111,6 +143,7 @@ async fn readiness_joins_both_gates_in_either_order_and_preserves_home_failure_p
                     (&dns, dns_ok, &home, home_ok)
                 };
                 reply(&mut peer, first, first_ok).await;
+                wait_for_reply_dispatch(&guest, &mut peer).await;
                 assert!(futures_util::poll!(&mut wait).is_pending());
                 reply(&mut peer, second, second_ok).await;
                 wait.await
@@ -189,6 +222,7 @@ async fn cancelled_readiness_fences_both_admitted_requests_even_after_late_resul
     };
     reply(&mut peer, &home, true).await;
     reply(&mut peer, &dns, true).await;
+    wait_for_reply_dispatch(&guest, &mut peer).await;
     assert!(guest.try_fence_normal_operations().is_err());
     assert!(observer.stages.is_empty());
     assert_eq!(observer.attempts.len(), 1);
