@@ -4065,8 +4065,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · Acesso encerrado",
     "actionFailed": "Não foi possível atualizar a autorização.",
     "allow": "Permitir por 1 hora",
+    "allowedTitle": "Acesso ao Shell permitido",
     "approved": "Permitido",
     "blocked": {
       "chatBusy": "Aguarde o Run atual deste chat terminar antes de aprovar.",
@@ -4074,18 +4076,27 @@
       "runActive": "Aguarde o Run que fez a solicitação terminar antes de aprovar.",
       "runUnavailable": "O Run que fez a solicitação não está disponível. Peça uma nova solicitação neste chat."
     },
+    "checkFailed": "Não foi possível verificar o acesso. Tente novamente mais tarde.",
     "denied": "Solicitação negada",
+    "deniedTitle": "Acesso ao Shell negado",
     "deny": "Negar",
     "description": "O agente precisa de permissão para usar o Shell no seu computador.",
+    "details": "Detalhes",
+    "duration": "O acesso dura 1 hora após a aprovação",
     "expired": "Autorização expirada",
+    "expiredTitle": "Acesso ao Shell expirado",
     "loading": "Carregando autorização…",
+    "pendingSummary": "{{computer}} · 1 hora",
     "reasonTitle": "Motivo do acesso",
     "requestExpired": "Solicitação expirada",
-    "revoke": "Revogar acesso",
+    "review": "Revisar acesso",
+    "revoke": "Revogar",
     "revoked": "Acesso ao Shell revogado",
+    "scope": "Uma hora de acesso para esta conversa",
+    "summary": "{{computer}} · Esta conversa",
     "title": "Acesso ao Shell",
     "unavailable": "Autorização indisponível",
-    "viewReason": "Ver o motivo completo"
+    "unavailableTitle": "Acesso ao Shell indisponível"
   },
   "documentTemplates": {
     "agreementNote": "Um ponto de partida para seu acordo. Revise os termos do projeto e da jurisdição aplicável antes de assinar.",

@@ -3998,8 +3998,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · 存取已結束",
     "actionFailed": "無法更新授權。",
     "allow": "允許 1 小時",
+    "allowedTitle": "Shell 存取已允許",
     "approved": "已授權",
     "blocked": {
       "chatBusy": "目前聊天正在執行，結束後即可核准。",
@@ -4007,18 +4009,27 @@
       "runActive": "發起申請的執行尚未結束，結束後即可核准。",
       "runUnavailable": "發起申請的執行已無法使用，請在聊天中重新申請。"
     },
+    "checkFailed": "無法檢查存取狀態，請稍後再試。",
     "denied": "已拒絕申請",
+    "deniedTitle": "Shell 存取已拒絕",
     "deny": "拒絕",
     "description": "Agent 需要取得在你的電腦上使用 Shell 的權限。",
+    "details": "詳細資訊",
+    "duration": "核准後可存取 1 小時",
     "expired": "授權已到期",
+    "expiredTitle": "Shell 存取已到期",
     "loading": "正在載入授權…",
+    "pendingSummary": "{{computer}} · 1 小時",
     "reasonTitle": "申請用途",
     "requestExpired": "申請已過期",
-    "revoke": "撤銷授權",
+    "review": "檢視授權",
+    "revoke": "撤銷",
     "revoked": "已撤銷 Shell 授權",
+    "scope": "目前聊天的一小時存取權限",
+    "summary": "{{computer}} · 目前聊天",
     "title": "Shell 存取",
     "unavailable": "授權無法使用",
-    "viewReason": "查看完整說明"
+    "unavailableTitle": "Shell 存取無法使用"
   },
   "documentTemplates": {
     "agreementNote": "此範本可作為協議起點。簽署前，請根據專案與適用法律審閱條款。",

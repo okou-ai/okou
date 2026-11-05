@@ -3998,8 +3998,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · 访问已结束",
     "actionFailed": "无法更新授权。",
     "allow": "允许 1 小时",
+    "allowedTitle": "Shell 访问已允许",
     "approved": "已授权",
     "blocked": {
       "chatBusy": "当前聊天正在运行，结束后即可批准。",
@@ -4007,18 +4009,27 @@
       "runActive": "发起申请的运行尚未结束，结束后即可批准。",
       "runUnavailable": "发起申请的运行已不可用，请在聊天中重新申请。"
     },
+    "checkFailed": "无法检查访问状态，请稍后重试。",
     "denied": "已拒绝申请",
+    "deniedTitle": "Shell 访问已拒绝",
     "deny": "拒绝",
     "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
+    "details": "详情",
+    "duration": "批准后可访问 1 小时",
     "expired": "授权已到期",
+    "expiredTitle": "Shell 访问已过期",
     "loading": "正在加载授权…",
+    "pendingSummary": "{{computer}} · 1 小时",
     "reasonTitle": "申请用途",
     "requestExpired": "申请已过期",
-    "revoke": "撤销授权",
+    "review": "查看授权",
+    "revoke": "撤销",
     "revoked": "已撤销 Shell 授权",
+    "scope": "当前聊天的一小时访问权限",
+    "summary": "{{computer}} · 当前聊天",
     "title": "Shell 访问",
     "unavailable": "授权不可用",
-    "viewReason": "查看完整说明"
+    "unavailableTitle": "Shell 访问不可用"
   },
   "documentTemplates": {
     "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
