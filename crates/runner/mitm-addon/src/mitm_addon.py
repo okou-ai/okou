@@ -834,6 +834,12 @@ def _terminate_classified_requestheaders(flow: http.HTTPFlow) -> None:
     flow.kill()
 
 
+def _mark_local_requestheaders_response(flow: http.HTTPFlow) -> None:
+    """Skip request dispatch and hand the local response to native framing."""
+    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+    header_auth_response.mark(flow)
+
+
 def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
     try:
         return _requestheaders(flow)
@@ -877,8 +883,7 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         preparation = custom_http.prepare(flow, registry_path=get_registry_path())
     except custom_http.InvalidFirewallInputError as error:
         _block_custom_http_invalid_input(flow, error)
-        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-        header_auth_response.mark(flow)
+        _mark_local_requestheaders_response(flow)
         return None
     except AuthorityValidationError as error:
         _reject_custom_http_requestheaders(flow, error)
@@ -909,8 +914,7 @@ def _reject_custom_http_requestheaders(
     # Preserve early error framing rather than forwarding an unadmitted body.
     _classify_request_for_flow(flow)
     http_local_responses.block_authority_validation_error(flow, error)
-    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-    header_auth_response.mark(flow)
+    _mark_local_requestheaders_response(flow)
 
 
 async def _prepare_custom_http_requestheaders(
@@ -956,8 +960,7 @@ def _requestheaders_after_authority(
             http_local_responses.set_firewall_invalid_input_response(
                 flow, bounded_classification.firewall_invalid_input
             )
-            flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-            header_auth_response.mark(flow)
+            _mark_local_requestheaders_response(flow)
             return None
         if bounded_classification is not None and _admit_managed_openrouter_from_headers(
             flow, bounded_classification, request_end_stream=request_end_stream
@@ -1013,8 +1016,7 @@ def _requestheaders_after_authority(
         http_local_responses.set_firewall_invalid_input_response(
             flow, classification.firewall_invalid_input
         )
-        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-        header_auth_response.mark(flow)
+        _mark_local_requestheaders_response(flow)
         return None
     if classification.kind == "public_destination_denied":
         _start_request_timing(flow)
@@ -1524,8 +1526,7 @@ async def _try_firewall_request_stream_from_headers(
         managed_openrouter.release_from_flow(flow)
         release_aws_sigv4_request_inspection(flow)
         request_classification.pop_cached_classification(flow)
-        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-        header_auth_response.mark(flow)
+        _mark_local_requestheaders_response(flow)
         return
     if result is not FirewallHeaderPhaseAuthResult.APPLIED:
         fall_back()
