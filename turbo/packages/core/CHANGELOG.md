@@ -1,5 +1,14 @@
 # Changelog
 
+## [8.818.6](https://github.com/okou-ai/okou/compare/core-v8.818.5...core-v8.818.6) (2026-11-05)
+
+
+### Refactoring
+
+* remove bill connector feature switch ([#45424](https://github.com/okou-ai/okou/issues/45424)) ([96a631a](https://github.com/okou-ai/okou/commit/96a631a4b162fc73d2107781900d888f140738a7))
+* remove netsuite connector feature switch ([#45428](https://github.com/okou-ai/okou/issues/45428)) ([b4e2b13](https://github.com/okou-ai/okou/commit/b4e2b13a0b1406c5d743c07d85846e8dc32b3414))
+* remove workday connector feature switch ([#45437](https://github.com/okou-ai/okou/issues/45437)) ([cdabb63](https://github.com/okou-ai/okou/commit/cdabb63e8d24c30353cb01fe84cfd620d3091ffd))
+
 ## [8.818.5](https://github.com/okou-ai/okou/compare/core-v8.818.4...core-v8.818.5) (2026-11-05)
 
 

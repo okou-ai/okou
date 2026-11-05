@@ -228,6 +228,9 @@ private struct WorkspaceRootView: View {
                     threads: store.list.threads),
                   workflowSource: store.composerWorkflows, agentID: store.selectedAgentID)
               }
+              .animation(
+                reduceMotion ? nil : .easeInOut(duration: 0.22),
+                value: store.newComposer.voice?.phase)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

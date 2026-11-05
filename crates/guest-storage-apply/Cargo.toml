@@ -13,6 +13,7 @@ serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 tar = { workspace = true, features = ["xattr"] }
 ureq = { workspace = true, features = ["gzip", "platform-verifier", "rustls"] }
+uuid = { workspace = true, features = ["std", "v4"] }
 guest-telemetry.workspace = true
 
 [dev-dependencies]

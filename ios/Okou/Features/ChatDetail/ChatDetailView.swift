@@ -247,6 +247,10 @@ struct ChatDetailView: View {
         composerHeight = $0
       }
     }
+    .animation(
+      reduceMotion ? nil : .easeInOut(duration: 0.22),
+      value: conversation.composer.voice?.phase
+    )
     .task(id: thread.id) { await conversation.refresh() }
   }
 

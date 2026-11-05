@@ -1,9 +1,9 @@
+import "../polyfill.ts";
 import "./preview-bypass-cookie-bootstrap.ts";
 import "./accept-browser.ts";
 import { browserUpgradeRequired } from "./browser-support.ts";
 import { initSentry } from "./sentry.ts";
 import { captureFirstSkeletonPaint, initPostHog } from "./posthog.ts";
-import "../polyfill.ts";
 import { createRoot } from "react-dom/client";
 import { createStore } from "ccstate";
 import { bootstrap$ } from "../signals/bootstrap.ts";

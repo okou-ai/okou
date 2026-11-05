@@ -1630,10 +1630,13 @@
       "label": "建議",
       "lessLikeThis": "少推薦這類內容",
       "lessRecorded": "會少推薦類似的建議（{{scope}}）",
+      "messageSent": "訊息已傳送",
       "notPlanned": "暫無計劃",
       "notPlannedRecorded": "已記下，這件事暫無計劃",
+      "openChat": "開啟聊天",
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
+      "sending": "正在傳送…",
       "sent": "已傳送到新聊天",
       "undoFeedback": "復原",
       "useSuggestion": "使用建議"
@@ -2066,7 +2069,6 @@
       "partsHeading_other": "引用了你回覆中的 {{count}} 段內容",
       "placeholder": "針對引用內容提問或評論",
       "quote": "引用",
-      "quoteEmail": "引用 {{email}}",
       "remove": "移除反饋",
       "sentEmailDescription": "已傳送的郵件",
       "sourcePartHeading": "引用自{{description}}",
@@ -4931,8 +4933,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "已归档的聊天",
     "close": "Close",
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
@@ -4943,7 +4943,6 @@
     "deleteTitle": "删除 Project？",
     "description": "将不同 Agent 的相关聊天归到一起",
     "empty": "暂无聊天",
-    "emptyArchive": "No archived chats",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
     "moveError": "无法移动聊天",
@@ -4962,6 +4961,7 @@
     "saving": "正在保存…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
   "queue": {

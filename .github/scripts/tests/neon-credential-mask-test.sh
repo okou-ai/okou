@@ -26,7 +26,6 @@ expected_generator_files=(
   .github/actions/neon-branch/action.yml
   .github/actions/production-migration-smoke/action.yml
   .github/workflows/release-please.yml
-  .github/workflows/teams-identity-preflight.yml
   .github/workflows/turbo.yml
 )
 
@@ -49,8 +48,8 @@ mapfile -t invocations < <(
     "${generator_files[@]}"
 )
 
-if [[ ${#invocations[@]} -ne 5 ]]; then
-  fail "expected five reviewed neonctl connection-string invocations"
+if [[ ${#invocations[@]} -ne 4 ]]; then
+  fail "expected four reviewed neonctl connection-string invocations"
 fi
 
 mapfile -t script_invocations < <(
@@ -171,7 +170,6 @@ done <<'BOUNDARIES'
 .github/workflows/turbo.yml|Turbo test parent database|PARENT_DATABASE_URL|PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)|(cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
 .github/workflows/turbo.yml|Turbo preview database|DATABASE_URL|DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch|DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
 .github/workflows/release-please.yml|Production release database|DATABASE_URL|DATABASE_URL=$(neonctl connection-string production|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
-.github/workflows/teams-identity-preflight.yml|Teams ownership preflight|database_url|database_url=$(neonctl connection-string production|DATABASE_URL="$database_url" pnpm --dir turbo/packages/db exec tsx
 BOUNDARIES
 
 mapfile -t release_shell_patterns <<'PATTERNS'
@@ -184,4 +182,4 @@ assert_ordered \
   'Production release database shell' \
   "${release_shell_patterns[@]}"
 
-echo "Neon credential masking checks passed (7 invocations, 6 resolved values)"
+echo "Neon credential masking checks passed (6 invocations, 5 resolved values)"

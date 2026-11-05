@@ -1655,10 +1655,13 @@
       "label": "Suggestions",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
+      "messageSent": "Message envoyé",
       "notPlanned": "Not planned",
       "notPlannedRecorded": "Noted — this is not planned",
+      "openChat": "Ouvrir la discussion",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sending": "Envoi…",
       "sent": "Envoyé dans une nouvelle discussion",
       "undoFeedback": "Undo",
       "useSuggestion": "Utiliser la suggestion"
@@ -2106,7 +2109,6 @@
       "partsHeading_other": "{{count}} parties citées depuis votre réponse",
       "placeholder": "Posez une question ou commentez cette citation",
       "quote": "Citer",
-      "quoteEmail": "Citer {{email}}",
       "remove": "Supprimer les retours",
       "sentEmailDescription": "un e-mail envoyé",
       "sourcePartHeading": "Cité depuis {{description}}",
@@ -5004,8 +5006,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -5016,7 +5016,6 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -5035,6 +5034,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {

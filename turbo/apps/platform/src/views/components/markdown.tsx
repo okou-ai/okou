@@ -92,14 +92,12 @@ export function MarkdownEventBody({
   className,
   tree,
   mediaPreview,
-  emailQuote,
 }: {
   /** Opt into the chat bubble treatment described above. */
   readonly chatBubble?: boolean;
   readonly className?: string;
   readonly tree: Root | undefined;
   readonly mediaPreview: boolean | "link";
-  readonly emailQuote?: boolean;
 }) {
   const frameClassName = cn(
     "text-[length:inherit]! leading-[inherit]!",
@@ -118,7 +116,6 @@ export function MarkdownEventBody({
       className={frameClassName}
       tree={tree}
       mediaPreview={mediaPreview}
-      emailQuote={emailQuote}
     />
   );
 }

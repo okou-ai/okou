@@ -85,6 +85,8 @@ export const newChatThreadDisabled$ = computed(() => {
 
 interface SendNewThreadMessageRequest {
   agentId: string;
+  /** The Project the new thread starts in. */
+  projectId?: string;
   draft?: DraftSignals;
   /** Send from an isolated draft without clearing the Agent's saved composer. */
   preserveAgentDraft?: boolean;
@@ -100,7 +102,8 @@ interface SendNewThreadMessageRequest {
   composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
   forward?: ChatForwardContext;
-  onOptimisticSend?: () => void;
+  /** Runs once the new thread is published, before its send is confirmed. */
+  onOptimisticSend?: (threadId: string) => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
   initialConnectorAccess?: PendingChatConnectorAccess;
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
@@ -557,18 +560,7 @@ export const createNewChatThread$ = command(
 
     await set(
       routeChatThread$,
-      {
-        pane: targetPane,
-        threadId: result.threadId,
-        ...(target.projectId
-          ? {
-              searchParams: new URLSearchParams({
-                project: target.projectId,
-                projectAgent: target.agentId,
-              }),
-            }
-          : {}),
-      },
+      { pane: targetPane, threadId: result.threadId },
       signal,
     );
     await result.createResult;
@@ -592,7 +584,7 @@ const mintNewThreadSubmission$ = command(
     { set },
     request: Pick<
       SendNewThreadMessageRequest,
-      "agentId" | "computerUseHostId" | "cloudBrowserEnabled"
+      "agentId" | "projectId" | "computerUseHostId" | "cloudBrowserEnabled"
     >,
     identity: Omit<PendingThreadIdentity, "intent">,
     submission: {
@@ -619,6 +611,7 @@ const mintNewThreadSubmission$ = command(
         threadId: identity.threadId,
         eventId: identity.chatThreadEventId,
         agentId: request.agentId,
+        projectId: request.projectId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
         serviceTier: apiServiceTierFromSelection(modelSelection),
@@ -688,6 +681,7 @@ const reserveNewThreadSubmissionIdentity$ = command(
           draft.reserveThreadIdentity$,
           JSON.stringify({
             agentId: request.agentId,
+            projectId: request.projectId,
             userMessage,
             modelSelection,
             computerUseHostId: request.computerUseHostId,
@@ -749,6 +743,7 @@ function newThreadRecordOptions(args: {
   return {
     createClient,
     agentId: request.agentId,
+    projectId: request.projectId,
     title: undefined,
     clientThreadId: identity.threadId,
     eventId: identity.chatThreadEventId,
@@ -868,7 +863,7 @@ const sendNewThreadMessage$ = command(
     if (request.composerTask) {
       set(rememberComposerTaskForThread$, threadId, request.composerTask);
     }
-    request.onOptimisticSend?.();
+    request.onOptimisticSend?.(threadId);
     const clearDraftResult = set(
       clearSubmittedNewThreadDraft$,
       {

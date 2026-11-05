@@ -454,10 +454,7 @@ export const notifyPendingTeamsConnectWelcomes$ = command(
         and(
           eq(teamsOrgConnections.teamsTenantId, args.tenantId),
           eq(teamsOrgInstallations.orgId, args.orgId),
-          or(
-            eq(teamsOrgConnections.orgId, args.orgId),
-            isNull(teamsOrgConnections.orgId),
-          ),
+          eq(teamsOrgConnections.orgId, args.orgId),
           args.userId ? eq(teamsOrgConnections.userId, args.userId) : undefined,
           eq(teamsOrgConnections.dmWelcomeSent, false),
         ),

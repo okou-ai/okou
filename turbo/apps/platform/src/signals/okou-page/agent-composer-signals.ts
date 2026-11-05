@@ -92,7 +92,9 @@ interface AgentComposerOptions {
    * page, leaving the Agent's saved composer untouched.
    */
   readonly inPlace?: boolean;
-  readonly onOptimisticSend?: () => void;
+  /** A Project page starts its chats in that Project. */
+  readonly projectId?: string;
+  readonly onOptimisticSend?: (threadId: string) => void;
 }
 
 function createAgentSubmitMessage(
@@ -132,6 +134,7 @@ function createAgentSubmitMessage(
         send,
         {
           agentId,
+          ...(options.projectId ? { projectId: options.projectId } : {}),
           draft,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
@@ -236,7 +239,7 @@ export function createForwardAgentComposerSignals(
 export function createInPlaceAgentComposerSignals(
   agentId: string,
   agentDraft: EnsuredAgentDraft,
-  onOptimisticSend: () => void,
+  onOptimisticSend: (threadId: string) => void,
 ) {
   return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
     inPlace: true,
@@ -247,6 +250,7 @@ export function createInPlaceAgentComposerSignals(
 interface AgentComposerContext {
   readonly agentId: string;
   readonly agentDraft: EnsuredAgentDraft;
+  readonly projectId?: string;
 }
 
 const internalAgentComposerContext$ = state<AgentComposerContext | null>(null);
@@ -265,5 +269,6 @@ export const agentChatComposerSignals$ = computed((get) => {
   return createAgentComposerSignalsWithDraft(
     context.agentId,
     context.agentDraft,
+    context.projectId ? { projectId: context.projectId } : {},
   );
 });

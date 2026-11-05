@@ -75,6 +75,7 @@ import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
+import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
 import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -3206,6 +3207,7 @@ async function main(): Promise<void> {
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
     await validatePermanentNativeVncStorage(dbUrl1);
+    await validateTeamsIdentityRetirement(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validateChatRelations(dbUrl1);
     await validatePermanentRunnerStateStorage(dbUrl1);
@@ -3258,6 +3260,7 @@ async function main(): Promise<void> {
     await validatePermanentSshStorage(dbUrl2);
     await validateCanonicalBillingSources(dbUrl2);
     await validatePermanentNativeVncStorage(dbUrl2);
+    await validateTeamsIdentityRetirement(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validateChatRelations(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);

@@ -1632,10 +1632,13 @@
       "label": "सुझाव",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
+      "messageSent": "संदेश भेजा गया",
       "notPlanned": "Not planned",
       "notPlannedRecorded": "Noted — this is not planned",
+      "openChat": "चैट खोलें",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sending": "भेजा जा रहा है…",
       "sent": "नई चैट में भेजा गया",
       "undoFeedback": "Undo",
       "useSuggestion": "सुझाव इस्तेमाल करें"
@@ -2073,7 +2076,6 @@
       "partsHeading_other": "आपके उत्तर से {{count}} भाग उद्धृत",
       "placeholder": "इस उद्धरण पर सवाल पूछें या टिप्पणी करें",
       "quote": "उद्धृत करें",
-      "quoteEmail": "{{email}} उद्धृत करें",
       "remove": "प्रतिक्रिया हटाएँ",
       "sentEmailDescription": "एक भेजा गया ईमेल",
       "sourcePartHeading": "{{description}} से उद्धृत",
@@ -4948,8 +4950,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -4960,7 +4960,6 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -4979,6 +4978,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {

@@ -46,15 +46,6 @@ struct ChatSidebarView: View {
       })
   }
 
-  private var markAgentReadTitle: LocalizedStringKey {
-    if let name = store.list.agents.first(where: { $0.agentId == store.selectedAgentID })?
-      .displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty
-    {
-      return "Mark all chats for \(name) as read"
-    }
-    return "Mark all as read for this agent"
-  }
-
   var body: some View {
     List {
       pinnedAgentsSection
@@ -293,7 +284,7 @@ struct ChatSidebarView: View {
       .pickerStyle(.inline)
       if let agentID = store.selectedAgentID {
         Divider()
-        Button(markAgentReadTitle, systemImage: "checkmark.message") {
+        Button("Mark all as read") {
           Task { await store.list.markAgentRead(agentID) }
         }
         .disabled(
