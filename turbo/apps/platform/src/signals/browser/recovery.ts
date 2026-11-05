@@ -17,6 +17,11 @@ import {
   type DeferredPromise,
 } from "../utils.ts";
 import { monotonicNow } from "../../lib/time.ts";
+import { claimErrorReporting } from "../../lib/error-reporting.ts";
+import {
+  captureSentryLogError,
+  sentryLogContext,
+} from "../../lib/sentry-config.ts";
 import type { BrowserConnection } from "./browser.ts";
 import { CdpFault } from "./cdp/errors.ts";
 import { diagnostic } from "./viewer/diagnostic.ts";
@@ -29,6 +34,53 @@ export type BrowserRecoveryResult =
       readonly status: "exhausted" | "terminal";
       readonly error: ViewerError;
     };
+
+function reportFailure(
+  result: Exclude<BrowserRecoveryResult, { status: "restored" }>,
+) {
+  const { error } = result;
+  captureSentryLogError("Browser", [
+    "Browser viewer recovery stopped",
+    new CdpFault(
+      error.kind,
+      error.message,
+      error.request?.code,
+      error.request,
+      {
+        connection: error.connection,
+      },
+    ),
+    sentryLogContext({
+      tags: { browser_event: "recovery-stopped" },
+      contexts: {
+        browser_viewer: {
+          kind: error.kind,
+          transient: error.transient,
+          ...(error.connection?.role ? { role: error.connection.role } : {}),
+        },
+        browser_recovery: { outcome: result.status },
+        ...(error.connection
+          ? { browser_connection: { ...error.connection } }
+          : {}),
+        ...(error.bridge ? { browser_bridge: { ...error.bridge } } : {}),
+        ...(error.http ? { browser_http: { ...error.http } } : {}),
+      },
+    }),
+  ]);
+}
+
+function finishRecovery(
+  completion: DeferredPromise<BrowserRecoveryResult>,
+  result: BrowserRecoveryResult,
+): void {
+  if (completion.settled()) {
+    return;
+  }
+  completion.resolve(result);
+  if (result.status !== "restored") {
+    reportFailure(result);
+  }
+}
 
 export interface RecoveryTarget {
   readonly owner: object;
@@ -255,7 +307,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           if (monotonicNow() < deadline) {
             return false;
           }
-          completion.resolve({ status: "exhausted", error: lastError });
+          finishRecovery(completion, { status: "exhausted", error: lastError });
           set(ports.reset$, AbortSignal.abort(cancelled()));
           return true;
         },
@@ -270,7 +322,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         }
         set(assertCurrent$, operation, signal);
         if (get(ports.view$).usable) {
-          completion.resolve({ status: "restored" });
+          finishRecovery(completion, { status: "restored" });
           return;
         }
         const mode =
@@ -278,7 +330,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
             ? initialMode
             : failure(get(ports.view$))?.mode;
         if (!mode) {
-          completion.resolve({ status: "terminal", error: lastError });
+          finishRecovery(completion, { status: "terminal", error: lastError });
           return;
         }
         const [result] = await Promise.allSettled([
@@ -287,11 +339,11 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         signal.throwIfAborted();
         set(assertCurrent$, operation, signal);
         if (get(ports.view$).usable) {
-          completion.resolve({ status: "restored" });
+          finishRecovery(completion, { status: "restored" });
           return;
         }
         if (result.status === "fulfilled") {
-          completion.resolve({
+          finishRecovery(completion, {
             status: "terminal",
             error: diagnostic(
               new CdpFault(
@@ -304,11 +356,11 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         }
         lastError = attemptError(result.reason, get(ports.view$));
         if (!lastError.transient || failure(get(ports.view$))?.mode === null) {
-          completion.resolve({ status: "terminal", error: lastError });
+          finishRecovery(completion, { status: "terminal", error: lastError });
           return;
         }
       }
-      completion.resolve({ status: "exhausted", error: lastError });
+      finishRecovery(completion, { status: "exhausted", error: lastError });
     },
   );
 }
@@ -391,7 +443,9 @@ function createManualRecovery(
       ]);
       signal.throwIfAborted();
       if (result.status !== "restored") {
-        throw new CdpFault(result.error.kind, result.error.message);
+        const fault = new CdpFault(result.error.kind, result.error.message);
+        claimErrorReporting(fault);
+        throw fault;
       }
     },
   );
@@ -467,6 +521,7 @@ function createRecoveryObservation(
             graph.result$,
             Promise.resolve({ status: "terminal", error: current.error }),
           );
+          reportFailure({ status: "terminal", error: current.error });
         }
       }
       return view.paused;

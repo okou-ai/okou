@@ -7,6 +7,7 @@ import { NativeNavigationFault } from "../signals/browser/navigation/rejection.t
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { SENTRY_APPLICATION_KEY } from "./sentry-application-key.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
+import { claimErrorReporting, hasErrorReportOwner } from "./error-reporting.ts";
 
 type PlatformSentryRuntime = "page" | "shared-worker";
 
@@ -181,16 +182,16 @@ export function captureSentryLogError(
 
 /** Keep native refusals local; deduplicate captured faults through wrappers. */
 function claimCdpReport(error: Error): readonly CdpFault[] | null {
+  if (hasErrorReportOwner(error)) {
+    return null;
+  }
   const visited = new Set<Error>();
   const faults: CdpFault[] = [];
   let current: unknown = error;
   while (current instanceof Error && !visited.has(current)) {
     visited.add(current);
     if (current instanceof CdpFault) {
-      if (
-        current.reported ||
-        (current instanceof NativeNavigationFault && current.expected)
-      ) {
+      if (current instanceof NativeNavigationFault && current.expected) {
         return null;
       }
       faults.push(current);
@@ -198,7 +199,7 @@ function claimCdpReport(error: Error): readonly CdpFault[] | null {
     current = current.cause;
   }
   for (const fault of faults) {
-    fault.reported = true;
+    claimErrorReporting(fault);
   }
   return faults;
 }

@@ -7,6 +7,12 @@ import {
   type State,
 } from "ccstate";
 import { timeout } from "signal-timers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
+import {
+  claimErrorReporting,
+  hasErrorReportOwner,
+} from "../../../lib/error-reporting.ts";
 import {
   createDeferredPromise,
   detach,
@@ -43,9 +49,10 @@ import {
   connectNative,
   nativeFault,
 } from "../cdp/native.ts";
-import type {
-  OkouBrowserClient,
-  NativeEvent,
+import {
+  BrowserBridgeError,
+  type OkouBrowserClient,
+  type NativeEvent,
 } from "@okouai/browser-extension-client";
 import { createInputSession } from "../input/session.ts";
 import type { NativeInputHost } from "../input/port.ts";
@@ -3046,18 +3053,24 @@ function createDisconnectionHandling(
     if (get(disposedState$) || get(closingState$) || get(disconnectingState$)) {
       return;
     }
-    if (source !== get(clientState$)) {
-      if (source !== get(framesState$)) {
-        return;
-      }
-      if (get(connectedState$)) {
-        set(framesDisconnected$, fault, source);
-        return;
+    if (source !== get(clientState$) && source !== get(framesState$)) {
+      return;
+    }
+    const established = get(connectedState$);
+    const automatic = get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
+    if (automatic) {
+      // Recovery owns the final report, including rejected in-flight effects.
+      claimErrorReporting(fault);
+      if (fault.cause instanceof BrowserBridgeError) {
+        claimErrorReporting(fault.cause);
       }
     }
+    if (source !== get(clientState$) && established) {
+      set(framesDisconnected$, fault, source);
+      return;
+    }
     set(disconnectingState$, true);
-    const established = get(connectedState$);
-    if (established) {
+    if (!automatic && established) {
       captureSentryLogError("Browser", [
         "Browser viewer disconnected",
         fault,
@@ -4577,7 +4590,18 @@ function createDisposalGraph(
             get(disconnectingState$) && failure instanceof CdpFault
               ? failure
               : undefined;
-          const nativeClosed = get(nativeState$)?.close();
+          const native = get(nativeState$);
+          let reason: BrowserBridgeError | undefined;
+          if (native && !native.signal.aborted && hasErrorReportOwner(fault)) {
+            // Installed native clients completed bootstrap. Give their pending
+            // calls the original resource report owner, not a fresh close error.
+            reason = new BrowserBridgeError("unavailable", {
+              stage: "ready",
+              reason: "closed",
+            });
+            claimErrorReporting(reason);
+          }
+          const nativeClosed = native?.close(reason);
           get(framesState$)?.close(fault);
           get(clientState$)?.close(fault);
           await nativeClosed;

@@ -65,6 +65,7 @@ export function diagnostic(error: unknown): ViewerError {
             })
           : error.message,
       ...(error.request ? { request: error.request } : {}),
+      ...(error.connection ? { connection: error.connection } : {}),
       ...(error.cause instanceof BrowserBridgeError
         ? { bridge: error.cause.diagnostics }
         : {}),
@@ -73,6 +74,9 @@ export function diagnostic(error: unknown): ViewerError {
   return Object.freeze({
     kind: "protocol",
     transient: transientFailure(error),
+    ...(error instanceof ApiError
+      ? { http: { status: error.status, code: error.code } }
+      : {}),
     message: i18n.t(($) => {
       return $.browserViewer.operationFailed;
     }),

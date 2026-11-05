@@ -1199,9 +1199,10 @@ function createRootObservation(
             ]);
             signal.throwIfAborted();
             if (result.status === "rejected" && !isAbortError(result.reason)) {
-              // Reconciliation already published its current failure. A future actual
-              // notification, not an automatic retry, owns the next attempt.
-              L.error("Browser viewer startup failed", result.reason);
+              // The coordinator reports only when the current episode stops retrying.
+              if (!get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner]) {
+                L.error("Browser viewer startup failed", result.reason);
+              }
               set(observer$, null);
             }
           }
