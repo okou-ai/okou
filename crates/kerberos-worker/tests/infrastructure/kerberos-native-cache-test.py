@@ -36,6 +36,18 @@ def fixture_helper_bytes():
         return binary.read_bytes()
 
 
+@cache
+def fixture_sdk_archive_bytes():
+    # Share immutable input bytes; every test still owns its writable SDK file.
+    output = io.BytesIO()
+    data = b"fixture SDK"
+    with tarfile.open(fileobj=output, mode="w:xz") as archive:
+        info = tarfile.TarInfo("zig-x86_64-linux-0.15.2/zig")
+        info.size, info.mode = len(data), 0o755
+        archive.addfile(info, io.BytesIO(data))
+    return output.getvalue()
+
+
 class CacheTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -48,7 +60,7 @@ class CacheTest(unittest.TestCase):
         self.count = 0
         # Fixture upstream pins and external curl/make replace network/compiler
         # cost. Hash validation, tar IO, completion publication and flock are real.
-        self.archive("zig.tar.xz", "w:xz", {"zig-x86_64-linux-0.15.2/zig": b"fixture SDK"})
+        (self.root / "zig.tar.xz").write_bytes(fixture_sdk_archive_bytes())
         configure = ("#!/bin/sh\nset -e\n"
                      f"CACHE_TEST_ROOT={shlex.quote(str(self.root))}\n"
                      'if [ -n "${CONFIG_SITE:-}" ]; then . "$CONFIG_SITE"; fi\n'
