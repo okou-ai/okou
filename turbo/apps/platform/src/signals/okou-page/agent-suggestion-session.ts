@@ -12,6 +12,7 @@ import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { rootSignal$ } from "../root-signal.ts";
+import { slideSuggestionRows$ } from "./agent-suggestion-motion.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 
 type FeedbackKind =
@@ -97,18 +98,35 @@ function createSuggestionEntry(item: Suggestion) {
   // A chosen action is sent from this card's own unsaved draft, so the
   // default Agent's composer is neither read nor replaced.
   const optionDraft = createDraftSignals();
-  return { item, hidden$, result$, enqueue$, retry$, optionDraft };
+  // The chosen action's send, whose progress and failure its sent row shows.
+  const sending$ = state<Promise<void> | undefined>(undefined);
+  return { item, hidden$, result$, enqueue$, retry$, optionDraft, sending$ };
 }
 export type AgentSuggestionEntry = ReturnType<typeof createSuggestionEntry>;
 
-interface FeedbackConfirmation {
-  readonly entry: AgentSuggestionEntry;
-  readonly item: Suggestion;
+interface SuggestionFeedbackOutcome {
+  readonly type: "feedback";
   readonly id: string;
   readonly undoId: string;
   readonly kind: FeedbackKind;
   readonly reasonSaved: boolean;
   readonly note: string;
+}
+interface SuggestionSentOutcome {
+  readonly type: "sent";
+  /** Null until the new thread is published. */
+  readonly threadId: string | null;
+}
+export type SuggestionOutcome =
+  SuggestionFeedbackOutcome | SuggestionSentOutcome;
+
+/** A Feed row: a waiting card, or a handled one below every waiting card. */
+interface AgentSuggestionFeedItem {
+  readonly entry: AgentSuggestionEntry;
+  readonly outcome: SuggestionOutcome | null;
+}
+interface SettledSuggestion extends AgentSuggestionFeedItem {
+  readonly outcome: SuggestionOutcome;
 }
 
 /** The Feed page and its sidebar entry follow the Suggestions rollout. */
@@ -149,27 +167,30 @@ function createSuggestionSession() {
   const entries$ = computed(async (get) => {
     return (await get(snapshot$)).map(createSuggestionEntry);
   });
-  const confirmation$ = state<FeedbackConfirmation | null>(null);
-  const feedItems$ = computed(async (get) => {
-    const entries = await get(entries$);
-    const confirmation = get(confirmation$);
-    return entries
-      .filter((entry) => {
-        return (
-          entry === confirmation?.entry ||
-          (!get(entry.hidden$) && getSuggestionExpiresAt(entry.item) > now())
-        );
-      })
-      .map((entry) => {
-        return entry.item;
-      });
-  });
+  // Handled cards, in the order the member handled them.
+  const settled$ = state<readonly SettledSuggestion[]>([]);
+  const feedItems$ = computed(
+    async (get): Promise<readonly AgentSuggestionFeedItem[]> => {
+      const entries = await get(entries$);
+      const waiting = entries
+        .filter((entry) => {
+          return (
+            !get(entry.hidden$) && getSuggestionExpiresAt(entry.item) > now()
+          );
+        })
+        .map((entry) => {
+          return { entry, outcome: null };
+        });
+      return [...waiting, ...get(settled$)];
+    },
+  );
   return {
     snapshot$,
     entries$,
     feedItems$,
-    confirmation$,
-    reasonOpen$: state(false),
+    settled$,
+    // The handled card whose feedback reason is being edited.
+    reasonOpen$: state<AgentSuggestionEntry | null>(null),
   };
 }
 
@@ -184,9 +205,6 @@ export const agentSuggestionEntries$ = computed((get) => {
 export const agentSuggestionFeedItems$ = computed((get) => {
   return get(get(session$).feedItems$);
 });
-export const suggestionFeedbackConfirmation$ = computed((get) => {
-  return get(get(session$).confirmation$);
-});
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
   return get(get(session$).reasonOpen$);
 });
@@ -198,14 +216,103 @@ export const enterAgentSuggestions$ = command(
     return snapshot;
   },
 );
-export const closeSuggestionFeedback$ = command(({ get, set }) => {
-  const session = get(session$);
-  set(session.confirmation$, null);
-  set(session.reasonOpen$, false);
-});
-export const openSuggestionFeedbackReason$ = command(({ get, set }) => {
-  set(get(session$).reasonOpen$, true);
-});
+
+/** Records how a card was handled and slides it below the waiting cards. */
+export const settleAgentSuggestion$ = command(
+  (
+    { get, set },
+    entry: AgentSuggestionEntry,
+    outcome: SuggestionOutcome,
+    pageSignal: AbortSignal,
+  ) => {
+    // A later visit has its own cards; this card is no longer on screen.
+    if (pageSignal.aborted) {
+      return;
+    }
+    const session = get(session$);
+    set(slideSuggestionRows$);
+    set(entry.hidden$, true);
+    set(session.settled$, [
+      ...get(session.settled$).filter((candidate) => {
+        return candidate.entry !== entry;
+      }),
+      { entry, outcome },
+    ]);
+  },
+);
+
+/**
+ * Updates a handled card's row in place. A row the member already closed, or
+ * one from an earlier visit, stays closed.
+ */
+const updateSettledSuggestion$ = command(
+  ({ get, set }, entry: AgentSuggestionEntry, outcome: SuggestionOutcome) => {
+    const session = get(session$);
+    set(
+      session.settled$,
+      get(session.settled$).map((candidate) => {
+        return candidate.entry === entry ? { entry, outcome } : candidate;
+      }),
+    );
+  },
+);
+
+/** Links a sent card's row to the thread its send published. */
+export const linkAgentSuggestionThread$ = command(
+  ({ set }, entry: AgentSuggestionEntry, threadId: string) => {
+    set(updateSettledSuggestion$, entry, { type: "sent", threadId });
+  },
+);
+
+/** Returns a handled card to its original place among the waiting cards. */
+export const restoreAgentSuggestion$ = command(
+  ({ get, set }, entry: AgentSuggestionEntry) => {
+    const session = get(session$);
+    set(slideSuggestionRows$);
+    set(entry.hidden$, false);
+    set(
+      session.settled$,
+      get(session.settled$).filter((candidate) => {
+        return candidate.entry !== entry;
+      }),
+    );
+    if (get(session.reasonOpen$) === entry) {
+      set(session.reasonOpen$, null);
+    }
+  },
+);
+
+function settledFeedback(
+  settled: readonly SettledSuggestion[],
+  entry: AgentSuggestionEntry,
+): SuggestionFeedbackOutcome | null {
+  const found = settled.find((candidate) => {
+    return candidate.entry === entry;
+  });
+  return found?.outcome.type === "feedback" ? found.outcome : null;
+}
+
+/** Clears a handled card from the Feed; the card stays handled. */
+export const closeSettledSuggestion$ = command(
+  ({ get, set }, entry: AgentSuggestionEntry) => {
+    const session = get(session$);
+    set(slideSuggestionRows$);
+    set(
+      session.settled$,
+      get(session.settled$).filter((candidate) => {
+        return candidate.entry !== entry;
+      }),
+    );
+    if (get(session.reasonOpen$) === entry) {
+      set(session.reasonOpen$, null);
+    }
+  },
+);
+export const openSuggestionFeedbackReason$ = command(
+  ({ get, set }, entry: AgentSuggestionEntry) => {
+    set(get(session$).reasonOpen$, entry);
+  },
+);
 
 export const submitAgentSuggestionFeedback$ = command(
   async (
@@ -224,17 +331,19 @@ export const submitAgentSuggestionFeedback$ = command(
       return;
     }
     const id = crypto.randomUUID();
-    set(entry.hidden$, true);
-    set(session.confirmation$, {
+    set(
+      settleAgentSuggestion$,
       entry,
-      item,
-      id,
-      undoId: crypto.randomUUID(),
-      kind,
-      reasonSaved: false,
-      note: "",
-    });
-    set(session.reasonOpen$, false);
+      {
+        type: "feedback",
+        id,
+        undoId: crypto.randomUUID(),
+        kind,
+        reasonSaved: false,
+        note: "",
+      },
+      pageSignal,
+    );
     await set(
       entry.enqueue$,
       {
@@ -246,24 +355,25 @@ export const submitAgentSuggestionFeedback$ = command(
   },
 );
 export const undoSuggestionFeedback$ = command(
-  async ({ get, set }, pageSignal: AbortSignal) => {
+  async (
+    { get, set },
+    entry: AgentSuggestionEntry,
+    pageSignal: AbortSignal,
+  ) => {
     pageSignal.throwIfAborted();
-    const session = get(session$);
-    const last = get(session.confirmation$);
-    if (!last) {
+    const feedback = settledFeedback(get(get(session$).settled$), entry);
+    if (!feedback) {
       return;
     }
-    set(last.entry.hidden$, false);
-    set(session.confirmation$, null);
-    set(session.reasonOpen$, false);
+    set(restoreAgentSuggestion$, entry);
     await set(
-      last.entry.enqueue$,
+      entry.enqueue$,
       {
         type: "feedback",
         request: {
-          id: last.undoId,
+          id: feedback.undoId,
           kind: "undo",
-          targetId: last.id,
+          targetId: feedback.id,
           note: "",
         },
       },
@@ -272,23 +382,32 @@ export const undoSuggestionFeedback$ = command(
   },
 );
 export const saveSuggestionFeedbackReason$ = command(
-  async ({ get, set }, note: string, pageSignal: AbortSignal) => {
+  async (
+    { get, set },
+    entry: AgentSuggestionEntry,
+    note: string,
+    pageSignal: AbortSignal,
+  ) => {
     pageSignal.throwIfAborted();
     const session = get(session$);
-    const last = get(session.confirmation$);
-    if (!last) {
+    const feedback = settledFeedback(get(session.settled$), entry);
+    if (!feedback) {
       return;
     }
-    set(session.confirmation$, { ...last, reasonSaved: true, note });
-    set(session.reasonOpen$, false);
+    set(updateSettledSuggestion$, entry, {
+      ...feedback,
+      reasonSaved: true,
+      note,
+    });
+    set(session.reasonOpen$, null);
     await set(
-      last.entry.enqueue$,
+      entry.enqueue$,
       {
         type: "feedback",
         request: {
           id: crypto.randomUUID(),
           kind: "reason",
-          targetId: last.id,
+          targetId: feedback.id,
           note,
         },
       },

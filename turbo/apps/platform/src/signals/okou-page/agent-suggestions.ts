@@ -19,6 +19,9 @@ import { resetSignal } from "../utils.ts";
 import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
+  linkAgentSuggestionThread$,
+  restoreAgentSuggestion$,
+  settleAgentSuggestion$,
 } from "./agent-suggestion-session.ts";
 import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
@@ -91,7 +94,7 @@ interface SuggestionComposerSession {
   readonly item: Suggestion;
   readonly agentId: string;
   /** Supplied by the Feed view, which owns the dialog's completion. */
-  readonly onOptimisticSend: () => void;
+  readonly onOptimisticSend: (threadId: string) => void;
 }
 
 const internalSuggestionComposer$ = state<SuggestionComposerSession | null>(
@@ -137,7 +140,7 @@ export const openAgentSuggestionComposer$ = command(
   async (
     { get, set },
     item: Suggestion,
-    onOptimisticSend: () => void,
+    onOptimisticSend: (threadId: string) => void,
     pageSignal: AbortSignal,
   ): Promise<ComposerSignals> => {
     const signal = set(resetSuggestionComposer$, pageSignal);
@@ -202,12 +205,14 @@ export const openAgentSuggestionComposer$ = command(
 
 /**
  * The API consumes the card when it accepts the custom follow-up, before the
- * optimistic thread is published; the Feed then drops the card in place.
+ * optimistic thread is published; the Feed then moves the card below the
+ * waiting ones as a link to that thread.
  */
 export const finishAgentSuggestionComposer$ = command(
   async (
     { get, set },
     item: Suggestion,
+    threadId: string,
     pageSignal: AbortSignal,
   ): Promise<void> => {
     if (get(internalSuggestionComposer$)?.item === item) {
@@ -218,7 +223,12 @@ export const finishAgentSuggestionComposer$ = command(
     pageSignal.throwIfAborted();
     for (const entry of entries) {
       if (entry.item.id === item.id) {
-        set(entry.hidden$, true);
+        set(
+          settleAgentSuggestion$,
+          entry,
+          { type: "sent", threadId },
+          pageSignal,
+        );
       }
     }
   },
@@ -267,13 +277,16 @@ const sendAgentSuggestionOption$ = command(
         prompt,
         generationTemplate: undefined,
         editorDocument: createMessageDocumentSnapshot(userMessage),
-        onOptimisticSend: showSuggestionSent,
+        onOptimisticSend: (threadId) => {
+          showSuggestionSent();
+          set(linkAgentSuggestionThread$, entry, threadId);
+        },
       },
       signal,
     );
     if (!sent) {
       // Nothing was sent, so the card stays available for another choice.
-      set(entry.hidden$, false);
+      set(restoreAgentSuggestion$, entry);
       return;
     }
     await set(entry.enqueue$, { type: "consume", optionId: option.id }, signal);
@@ -344,11 +357,27 @@ export const startAgentSuggestion$ = command(
     }
     // The send and the recorded choice outlive the Feed visit.
     const signal = get(rootSignal$);
-    set(entry.hidden$, true);
     if (option.threadId === null) {
-      await set(sendAgentSuggestionOption$, entry, option, agentId, signal);
+      // The card moves below the waiting ones at once and links its thread
+      // when the send publishes it.
+      set(
+        settleAgentSuggestion$,
+        entry,
+        { type: "sent", threadId: null },
+        pageSignal,
+      );
+      const sending = set(
+        sendAgentSuggestionOption$,
+        entry,
+        option,
+        agentId,
+        signal,
+      );
+      set(entry.sending$, sending);
+      await sending;
       return;
     }
+    set(entry.hidden$, true);
     // The loaded card owns this visit's choice and draft. Recording the choice
     // cannot replace it with a later server version or hold the card in place.
     await Promise.all([

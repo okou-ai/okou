@@ -253,6 +253,7 @@ async function openFeedFromHome(draft: string): Promise<void> {
   click(link("/feed"));
 }
 const SENT = "Sent to a new chat";
+const MESSAGE_SENT = "Message sent";
 const REFERENCED_THREAD = {
   type: "chat_thread",
   threadId,
@@ -376,13 +377,14 @@ test("Choosing an action sends it to a new thread and keeps the Feed and the hom
   click(button(selected.label));
   await screen.findByText(SENT);
   expect(pathname()).toBe("/feed");
-  expect(feedItemLabels()).toStrictEqual([next.title]);
+  expect(feedItemLabels()).toStrictEqual([next.title, MESSAGE_SENT]);
   await waitFor(() => {
     expect(pool.selections).toStrictEqual([
       { id: suggestion.id, optionId: selected.id },
     ]);
   });
-  const message = (await sent).userMessage;
+  const { threadId: sentThreadId, userMessage: message } = await sent;
+  expect(openChatLink()).toHaveAttribute("href", `/chats/${sentThreadId}`);
   expect(message?.parts).toContainEqual(REFERENCED_THREAD);
   expect(JSON.stringify(message)).not.toContain("Unselected action");
   click(link(homePath));
@@ -622,6 +624,19 @@ function numberedSuggestions(count: number): Suggestion[] {
     };
   });
 }
+// The sidebar also links the new thread, so the sent row's own link is read.
+function openChatLink(): HTMLElement {
+  const found = queryAllByRoleFast(
+    "link",
+    screen.getByRole("region", { name: "Suggestions" }),
+  ).find((element) => {
+    return element.textContent?.trim() === "Open chat";
+  });
+  if (!found) {
+    throw new Error("Missing Open chat link");
+  }
+  return found;
+}
 function feedItemLabels(): (string | null)[] {
   return within(screen.getByRole("region", { name: "Suggestions" }))
     .getAllByRole("listitem")
@@ -677,22 +692,49 @@ test("The Feed lists every suggestion card and sends the chosen card's action in
   }
   click(button(items[1].options[0].label, "button", cards[1]));
   await screen.findByText(SENT);
-  expect(feedItemLabels()).toStrictEqual([items[0].title, items[2].title]);
+  expect(feedItemLabels()).toStrictEqual([
+    items[0].title,
+    items[2].title,
+    MESSAGE_SENT,
+  ]);
   expect(JSON.stringify((await sent).userMessage)).toContain(
     "Draft for suggested action 2",
   );
   expect(pathname()).toBe("/feed");
 });
-test("Dismissing a suggestion removes only its card and keeps the remaining suggestion available", async () => {
+test("A sent suggestion moves below the waiting cards and opens its new thread", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  const sent = captureSend();
+  await openFeed();
+  click(
+    button(
+      makeOption().label,
+      "button",
+      await screen.findByRole("article", { name: items[0].title }),
+    ),
+  );
+  await screen.findByText(MESSAGE_SENT);
+  expect(feedItemLabels()).toStrictEqual([items[1].title, MESSAGE_SENT]);
+  const { threadId: sentThreadId } = await sent;
+  click(openChatLink());
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${sentThreadId}`);
+  });
+});
+test("Dismissing a suggestion moves only its card below the waiting cards and keeps the rest available", async () => {
   const pool = mockPool(numberedSuggestions(2));
   await openFeed();
   await screen.findByText("Suggested action 1");
   click(button("Dismiss"));
   await screen.findByText("Suggestion dismissed");
+  expect(feedItemLabels()).toStrictEqual([
+    "Suggested action 2",
+    "Suggestion dismissed",
+  ]);
   expect(
-    screen.getByRole("article", { name: "Suggested action 2" }),
-  ).toBeInTheDocument();
-  expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
+    screen.queryByRole("article", { name: "Suggested action 1" }),
+  ).not.toBeInTheDocument();
   await waitFor(() => {
     expect(pool.consumed).toStrictEqual([
       "a0000000-0000-4000-a000-000000000001",
@@ -709,8 +751,23 @@ test("Dismissing a suggestion removes only its card and keeps the remaining sugg
       "a0000000-0000-4000-a000-000000000002",
     ]);
   });
-  expect(screen.getByText("Suggestion dismissed")).toBeInTheDocument();
+  // Each handled card keeps its own row, in the order it was handled.
+  await waitFor(() => {
+    expect(feedItemLabels()).toStrictEqual([
+      "Suggestion dismissed",
+      "Suggestion dismissed",
+    ]);
+  });
+  expect(
+    within(screen.getByRole("region", { name: "Suggestions" }))
+      .getAllByRole("listitem")
+      .map((row) => {
+        return within(row).getByText(/^Suggested action/).textContent;
+      }),
+  ).toStrictEqual(["Suggested action 1", "Suggested action 2"]);
   expect(screen.queryByText(EMPTY_FEED)).not.toBeInTheDocument();
+  await userEvent.setup().click(button("Close feedback"));
+  expect(feedItemLabels()).toStrictEqual(["Suggestion dismissed"]);
   await userEvent.setup().click(button("Close feedback"));
   await screen.findByText(EMPTY_FEED);
   expect(pathname()).toBe("/feed");
@@ -956,6 +1013,11 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   expect(
     screen.queryByRole("article", { name: makeSuggestion().title }),
   ).not.toBeInTheDocument();
+  expect(feedItemLabels()).toStrictEqual([MESSAGE_SENT]);
+  expect(openChatLink()).toHaveAttribute(
+    "href",
+    `/chats/${attempts[1].threadId}`,
+  );
   // The API records the custom follow-up when it accepts the input.
   expect(pool.consumed).toStrictEqual([]);
 });
@@ -1067,7 +1129,7 @@ test("Feedback stays available after the last card, accepts an optional reason, 
   await screen.findByText(EMPTY_FEED);
 });
 
-test("Not planned replaces its card in the Feed and Undo restores it in place", async () => {
+test("Not planned moves its card below the waiting cards and Undo restores it in place", async () => {
   const items = numberedSuggestions(3);
   mockPool(items);
   await openFeed();
@@ -1082,11 +1144,11 @@ test("Not planned replaces its card in the Feed and Undo restores it in place", 
   await screen.findByText("Noted — this is not planned");
   expect(feedItemLabels()).toStrictEqual([
     items[0].title,
-    "Noted — this is not planned",
     items[2].title,
+    "Noted — this is not planned",
   ]);
   click(button("Undo"));
-  await screen.findByText(items[1].title);
+  await screen.findByRole("article", { name: items[1].title });
   expect(feedItemLabels()).toStrictEqual(
     items.map((item) => {
       return item.title;
@@ -1121,7 +1183,9 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
     within(error).getByText(/Feedback could not be saved/),
   ).toBeInTheDocument();
   expect(screen.getByText("Noted — this is already done")).toBeInTheDocument();
-  expect(screen.queryByText(item.title)).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("article", { name: item.title }),
+  ).not.toBeInTheDocument();
   click(button("Close feedback"));
   await screen.findByText(EMPTY_FEED);
   expect(screen.getByRole("alert")).toBeInTheDocument();
@@ -1165,9 +1229,9 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
   await requested.promise;
   await screen.findByText("Noted — this is already done");
   expect(feedItemLabels()).toStrictEqual([
-    "Noted — this is already done",
     items[1].title,
     items[2].title,
+    "Noted — this is already done",
   ]);
   expect(
     button(
@@ -1177,7 +1241,7 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
     ),
   ).toBeEnabled();
   click(button("Undo"));
-  await screen.findByText(items[0].title);
+  await screen.findByRole("article", { name: items[0].title });
   expect(
     within(screen.getByRole("region", { name: "Suggestions" }))
       .getAllByRole("heading")
@@ -1299,7 +1363,7 @@ test("Choosing an action confirms the send while its consumption is still saving
   );
   await requested.promise;
   await screen.findByText(SENT);
-  expect(feedItemLabels()).toStrictEqual([items[1].title]);
+  expect(feedItemLabels()).toStrictEqual([items[1].title, MESSAGE_SENT]);
   expect(pathname()).toBe("/feed");
   release.resolve();
 });
