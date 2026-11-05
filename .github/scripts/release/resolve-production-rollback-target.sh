@@ -16,6 +16,7 @@ readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
 readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
 readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
 readonly TEAMS_IDENTITY_PREPARATION_PATH=.github/rollback-floors/teams-identity-retirement-preparation
+readonly TEAMS_UPLOAD_V2_CLI_PATH=.github/rollback-floors/teams-upload-v2-cli
 # #40206 migrates encrypted Link grants before requiring their metadata. Old
 # writers must never recreate the retired shape after the migration.
 readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
@@ -1074,6 +1075,14 @@ runner_tag=$(runner_image_release_tag "$runner_version")
 runner_tag_commit=$(git rev-list -n 1 "$runner_tag" || true)
 if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_commit" "$TARGET_COMMIT"; then
   fail "Runner release ${runner_tag} is not reachable from ${TARGET_COMMIT}."
+fi
+teams_upload_v2_cli_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$TEAMS_UPLOAD_V2_CLI_PATH" | sed -n '1p')
+if [[ ! "$teams_upload_v2_cli_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Teams v2 upload CLI on main."
+fi
+if ! git merge-base --is-ancestor "$teams_upload_v2_cli_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the Teams v2 upload CLI: ${teams_upload_v2_cli_commit}."
 fi
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates DAV firewall method support: ${DAV_FIREWALL_READER_COMMIT}."

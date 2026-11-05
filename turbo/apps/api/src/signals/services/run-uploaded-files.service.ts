@@ -439,19 +439,6 @@ interface RecordFeishuUploadedFileArgs {
   readonly metadata: Record<string, unknown>;
 }
 
-interface RecordTeamsUploadedFileArgs {
-  readonly runId: string | undefined;
-  readonly externalId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly filename: string;
-  readonly contentType: string;
-  readonly sizeBytes: number;
-  readonly url: string;
-  readonly layout: LinkLayout;
-  readonly metadata: Record<string, unknown>;
-}
-
 interface RecordAgentPhoneUploadedFileArgs {
   readonly runId: string | undefined;
   readonly externalId: string;
@@ -530,48 +517,6 @@ export const recordFeishuUploadedFile$ = command(
       return;
     }
     const source = await set(sourceForRun$, args.runId, "feishu", signal);
-
-    const row = await set(
-      recordRunUploadedFile$,
-      {
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        file: {
-          userId: args.userId,
-          orgId: args.orgId,
-          filename: args.filename,
-          contentType: args.contentType,
-          sizeBytes: args.sizeBytes,
-          url: args.url,
-          metadata: {
-            ...args.metadata,
-            publicBrand: linkLayoutSegment(args.layout),
-          },
-        },
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (!row) {
-      return;
-    }
-
-    await set(syncArtifactCatalogForFile$, row.id, signal);
-  },
-);
-
-export const recordTeamsUploadedFile$ = command(
-  async (
-    { set },
-    args: RecordTeamsUploadedFileArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    if (!args.runId) {
-      return;
-    }
-    const source = await set(sourceForRun$, args.runId, "teams", signal);
 
     const row = await set(
       recordRunUploadedFile$,
