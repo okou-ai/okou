@@ -13,6 +13,25 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1096.0](https://github.com/okou-ai/okou/compare/app-v0.1095.7...app-v0.1096.0) (2026-11-05)
+
+
+### Features
+
+* **platform:** merge projects into the chat list and give them their own page ([#45392](https://github.com/okou-ai/okou/issues/45392)) ([22a0b1b](https://github.com/okou-ai/okou/commit/22a0b1b41b633d64c816c775b8990805895f62ae))
+
+
+### Bug Fixes
+
+* **app:** make the ideas breadcrumb a link back to chat ([#45423](https://github.com/okou-ai/okou/issues/45423)) ([b6f77e5](https://github.com/okou-ai/okou/commit/b6f77e5f18a73c24ff398a2c352a9fafef676caa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.818.6
+
 ## [0.1095.7](https://github.com/okou-ai/okou/compare/app-v0.1095.6...app-v0.1095.7) (2026-11-05)
 
 
