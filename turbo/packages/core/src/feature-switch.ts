@@ -292,11 +292,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Neon serverless Postgres connector",
     enabled: false,
   },
-  [FeatureSwitchKey.NetSuiteConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Oracle NetSuite ERP connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.GarminConnectConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Garmin Connect wellness connector",

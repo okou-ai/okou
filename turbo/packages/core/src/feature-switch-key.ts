@@ -22,7 +22,6 @@ export enum FeatureSwitchKey {
   DocuSignConnector = "docusignConnector",
   MercuryConnector = "mercuryConnector",
   NeonConnector = "neonConnector",
-  NetSuiteConnector = "netSuiteConnector",
   GarminConnectConnector = "garminConnectConnector",
   RedditConnector = "redditConnector",
   SupabaseConnector = "supabaseConnector",
