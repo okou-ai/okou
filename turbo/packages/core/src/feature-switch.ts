@@ -322,11 +322,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Supabase database connector integration",
     enabled: false,
   },
-  [FeatureSwitchKey.CloseConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Close CRM connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.WebflowConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Webflow site management connector",
