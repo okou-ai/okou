@@ -96,6 +96,9 @@ fi
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
+  if [[ "$ios_test_partition" != all ]]; then
+    python3 ios/scripts/app-test-shards.py selectors "$ios_test_partition" > "$build_root/test-selectors.txt"
+  fi
   if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
     echo "iOS starting compiler observer" >&2
     python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples" -- \
@@ -126,7 +129,6 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     -resultBundlePath "$build_root/Tests.xcresult"
   )
   if [[ "$ios_test_partition" != all ]]; then
-    python3 ios/scripts/app-test-shards.py selectors "$ios_test_partition" > "$build_root/test-selectors.txt"
     while IFS= read -r selector; do
       test_args+=("$selector")
     done < "$build_root/test-selectors.txt"

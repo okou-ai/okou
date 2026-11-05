@@ -27,6 +27,8 @@ print(open(root + '/' + file).read())
 XCODE = """#!/usr/bin/env python3
 import json, os, pathlib, sys
 args = sys.argv[1:]
+if 'build-for-testing' in args:
+    sys.exit(0)
 assert 'test-without-building' in args
 assert pathlib.Path(args[args.index('-xctestrun') + 1]).read_text() == 'built tests'
 cases = json.loads(os.environ['SHARD_TEST_CASES'])
@@ -255,17 +257,26 @@ class AppShardTests(unittest.TestCase):
             ("a", [], True),
         ):
             with self.subTest(role=role, failed=failed):
+                env = self.env | {
+                    "RUNNER_TEMP": str(self.root / "work"),
+                    "IOS_TEST_DESTINATION": "platform=iOS Simulator,id=owned",
+                    "IOS_APP_TEST_PARTITION": role,
+                    "SHARD_TEST_CASES": json.dumps(CASES),
+                    "SHARD_TEST_FAILURE": str(failed).lower(),
+                }
+                compiled = subprocess.run(
+                    ["bash", str(scripts / "ci-test.sh"), "compile"],
+                    cwd=repo,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
                 result = subprocess.run(
                     ["bash", str(scripts / "ci-test.sh"), "run"],
                     cwd=repo,
-                    env=self.env
-                    | {
-                        "RUNNER_TEMP": str(self.root / "work"),
-                        "IOS_TEST_DESTINATION": "platform=iOS Simulator,id=owned",
-                        "IOS_APP_TEST_PARTITION": role,
-                        "SHARD_TEST_CASES": json.dumps(CASES),
-                        "SHARD_TEST_FAILURE": str(failed).lower(),
-                    },
+                    env=env,
                     text=True,
                     capture_output=True,
                     check=False,

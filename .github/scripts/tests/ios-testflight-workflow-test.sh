@@ -142,9 +142,8 @@ assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
 assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
 assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_APP_TEST_PARTITION', 'IOS_APP_TEST_RECEIPTS', 'IOS_ARCHIVE_CACHE_EXPERIMENT'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
 # Automatic events retain one full native job; only manual comparisons can split it.
-import json
 selection = test_job['strategy']['matrix']['partition'].removeprefix('${{ fromJSON(').removesuffix(') }}')
-proof = ios['jobs']['verify-test-shards']
+proof = next(step for step in ios['jobs']['ci-gate-ios']['steps'] if step.get('id') == 'shard-proof')
 assert test_job['strategy']['fail-fast'] is False
 assert ios['on']['workflow_dispatch']['inputs']['app_test_shards']['default'] == 'one'
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
@@ -156,9 +155,9 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         split = event == 'workflow_dispatch' and count == 'two'
         assert json.loads(experiment_expression(selection)) == (['a', 'b'] if split else ['all'])
         assert experiment_expression(proof['if']) is split
-assert proof['needs'] == ['detect', 'build-test']
-assert 'needs.build-test.result' in str(proof['steps'][0])
-assert 'verify-test-shards' in ios['jobs']['ci-gate-ios']['needs']
+assert 'build-test' in ios['jobs']['ci-gate-ios']['needs']
+assert ios['jobs']['ci-gate-ios']['if'] == 'always()'
+assert ios['jobs']['ci-gate-ios']['steps'][-1]['env']['SHARD_PROOF_RESULT'] == '${{ steps.shard-proof.outcome }}'
 manual_receipt = next(step for step in native if step.get('name') == 'Transfer manual App test receipt')
 assert manual_receipt['if'] == "success() && github.event_name == 'workflow_dispatch'"
 assert manual_receipt['with']['retention-days'] == 1

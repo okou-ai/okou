@@ -186,9 +186,23 @@ class BuildCacheTests(unittest.TestCase):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
         source = yaml(ROOT / ".github/workflows/ios.yml")
         self.assertIn(source["name"], workflow["on"]["workflow_run"]["workflows"])
-        self.assertEqual(
-            source["jobs"]["build-test"].get("name", "build-test"), "build-test"
-        )
+        name = source["jobs"]["build-test"]["name"]
+        for partition, expected in (
+            ("all", "build-test"),
+            ("a", "build-test-a"),
+            ("b", "build-test-b"),
+        ):
+            expression = (
+                name.removeprefix("${{")
+                .removesuffix("}}")
+                .strip()
+                .replace("matrix.partition", repr(partition))
+                .replace("&&", " and ")
+                .replace("||", " or ")
+            )
+            self.assertEqual(
+                eval(expression, {"__builtins__": {}, "format": str.format}), expected
+            )
         for role, job in workflow["jobs"].items():
             for ref in (
                 "refs/heads/main",
