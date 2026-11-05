@@ -18,6 +18,7 @@ import * as userSchema from "./schema/user";
 import * as featureGuideSchema from "./schema/feature-guide";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
+import * as instructionsSchema from "./schema/instructions";
 import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
@@ -193,6 +194,7 @@ export const schema = {
   ...deviceCodesSchema,
   ...cliTokensSchema,
   ...agentSchema,
+  ...instructionsSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...storageSchema,

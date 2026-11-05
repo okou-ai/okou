@@ -184,6 +184,7 @@ export function buildClaimTransitionSql(
           locked_job AS MATERIALIZED (
             SELECT
               ${runnerJobQueue.runId} AS "runId",
+              ${runnerJobQueue.executionContext} AS "executionContext",
               ${runnerJobQueueExpiredCondition()} AS "isExpired"
             FROM ${runnerJobQueue}
             INNER JOIN locked_run

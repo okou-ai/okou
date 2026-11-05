@@ -171,6 +171,7 @@ const agentAuth$ = command(
       orgId: agentAuth.orgId,
       runId: agentAuth.runId,
       capabilities: [...agentAuth.capabilities],
+      ...(agentAuth.singleAgent === true ? { singleAgent: true as const } : {}),
       ...(agentAuth.computerUseHostId
         ? { computerUseHostId: agentAuth.computerUseHostId }
         : {}),

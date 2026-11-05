@@ -1,3 +1,6 @@
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { instructionsRoutes } from "../instructions";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 
 import { CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
@@ -45,6 +48,7 @@ const cronSecret = "user-export-publication-cron";
 const cronHeaders = Object.freeze({ authorization: `Bearer ${cronSecret}` });
 const routes = Object.freeze([
   ...agentsRoutes,
+  ...instructionsRoutes,
   ...agentInstructionsRoutes,
   ...chatThreadCreateRoutes,
   ...chatThreadPatchRoutes,
@@ -661,3 +665,79 @@ test.each([
     });
   },
 );
+
+test("exports only the subject's personal Instructions, independently of shared Agent ownership", async () => {
+  const owner = actor();
+  const peer = actor(owner.orgId);
+  const app = await setupApp({ context, routes, isolatePg: true });
+  const fixture = initialize(app, [owner, peer]);
+  for (const user of [owner, peer]) {
+    await updateFeatureSwitchesForUser(context, user, { singleAgent: true });
+    authenticate(user);
+    await accept(
+      app(instructionsContract).update({
+        headers,
+        body: {
+          content: user === owner ? "Personal export" : "Peer private content",
+        },
+      }),
+      [200],
+    );
+  }
+  const jobId = await startExport(fixture, owner);
+  await process(fixture);
+  const ready = await status(fixture, owner);
+  expect(ready.job).toMatchObject({
+    id: jobId,
+    status: "completed",
+    error: null,
+  });
+  const zip = archive(fixture, ready.job?.downloadUrl);
+  expect(
+    JSON.parse(zip.readAsText(`instructions/${owner.orgId}.json`)),
+  ).toMatchObject({ ...owner, content: "Personal export" });
+  expect(
+    zip
+      .getEntries()
+      .filter((entry) => {
+        return entry.entryName.startsWith("instructions/");
+      })
+      .map((entry) => {
+        return entry.entryName;
+      }),
+  ).toStrictEqual([`instructions/${owner.orgId}.json`]);
+});
+
+test("withholds a personal Instructions export when workspace membership ends before publication", async () => {
+  const owner = actor();
+  const app = await setupApp({ context, routes, isolatePg: true });
+  let membershipEnded = false;
+  const fixture = initialize(app, [owner], () => {
+    membershipEnded = true;
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [],
+      totalCount: 0,
+    });
+    return Promise.resolve();
+  });
+  await updateFeatureSwitchesForUser(context, owner, { singleAgent: true });
+  authenticate(owner);
+  await accept(
+    app(instructionsContract).update({
+      headers,
+      body: { content: "Private until publication" },
+    }),
+    [200],
+  );
+  const jobId = await startExport(fixture, owner);
+  await process(fixture);
+  // The user survives departure and can still inspect their account export status.
+  createRouteMocks(context).clerk.session(owner.userId, null);
+  const result = await accept(app(userExportContract).get({ headers }), [200]);
+  expect(membershipEnded).toBeTruthy();
+  expect(result.body.job).toMatchObject({
+    id: jobId,
+    status: "running",
+    downloadUrl: null,
+  });
+});

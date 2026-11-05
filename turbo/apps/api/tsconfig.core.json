@@ -618,7 +618,8 @@
     "src/signals/services/background-job-command.service.ts",
     "src/signals/services/background-job.service.ts",
     "src/signals/services/teams-workspace-identity.service.ts",
-    "src/signals/services/teams-delivery-access.service.ts"
+    "src/signals/services/teams-delivery-access.service.ts",
+    "src/signals/services/personal-instructions.service.ts"
   ],
   "references": [
     {

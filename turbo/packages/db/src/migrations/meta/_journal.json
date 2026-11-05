@@ -3144,6 +3144,13 @@
       "when": 1793875052900,
       "tag": "1527_remove_suggestion_feedback_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 1528,
+      "version": "7",
+      "when": 1793877151133,
+      "tag": "1528_personal_instructions",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
-import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
   DEFAULT_IMAGE_MODEL,
@@ -341,8 +342,24 @@ function capturedFeatureSwitchContext(
   scope: { readonly orgId: string; readonly userId: string },
   member: ExecutionMemberMetadata,
   overrides: BootstrapFeatureSwitchContext["overrides"],
+  agent: BootstrapAgent | null,
 ): BootstrapFeatureSwitchContext {
-  return { ...scope, email: member.profile?.email ?? undefined, overrides };
+  const context = {
+    ...scope,
+    email: member.profile?.email ?? undefined,
+    overrides,
+  };
+  // Retained non-default executions are explicitly legacy, even for enabled members.
+  const singleAgent =
+    isFeatureEnabled(FeatureSwitchKey.SingleAgent, context) &&
+    agent !== null &&
+    agent.id === agent.defaultAgentId &&
+    agent.orgId === scope.orgId &&
+    (agent.visibility === "public" || agent.owner === scope.userId);
+  return {
+    ...context,
+    overrides: { ...overrides, [FeatureSwitchKey.SingleAgent]: singleAgent },
+  };
 }
 
 function requirePreparedContextAgent(agent: BootstrapAgent | null): void {
@@ -510,14 +527,16 @@ function createIdentityContext(
       return executionCreditBalance(org, executionExpiredCredits(rows), pack);
     });
   const featureSwitchContext$ =
-    sharedMember?.featureSwitches$ ??
-    computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
-      const [member, overrides] = await Promise.all([
-        get(memberMetadata$),
-        get(memberContext.overrides$),
-      ]);
-      return capturedFeatureSwitchContext(scope, member, overrides);
-    });
+    sharedMember?.agentId === agentId
+      ? sharedMember.featureSwitches$
+      : computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
+          const [member, overrides, agent] = await Promise.all([
+            get(memberMetadata$),
+            get(memberContext.overrides$),
+            get(agent$),
+          ]);
+          return capturedFeatureSwitchContext(scope, member, overrides, agent);
+        });
   const connectorContext = createConnectorContextGroups(
     userId,
     orgId,

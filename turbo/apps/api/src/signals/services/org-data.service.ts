@@ -1,3 +1,4 @@
+import { deletePersonalInstructions$ } from "./personal-instructions.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { usagePackUsdSchema } from "@okouai/api-contracts/contracts/billing";
@@ -649,6 +650,11 @@ export const deleteOrg$ = command(
 
     await client.organizations.deleteOrganization(args.orgId);
     signal.throwIfAborted();
+    await set(
+      deletePersonalInstructions$,
+      { kind: "organization", orgId: args.orgId },
+      signal,
+    );
     await set(
       eraseRemoteOwnerData$,
       { kind: "organization", orgId: args.orgId },

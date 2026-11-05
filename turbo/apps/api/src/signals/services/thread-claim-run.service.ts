@@ -1,3 +1,4 @@
+import { initializePersonalInstructions$ } from "./personal-instructions.service";
 import { performance } from "node:perf_hooks";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
@@ -3484,6 +3485,16 @@ export function createThreadClaimRunObjects(
       }
       const tokenInput = await get(okouTokenInput$);
       signal.throwIfAborted();
+      if (
+        tokenInput.options?.isDefaultAgent === true &&
+        tokenInput.featureOverrides?.[FeatureSwitchKey.SingleAgent] === true
+      ) {
+        await set(
+          initializePersonalInstructions$,
+          { orgId: tokenInput.orgId, userId: tokenInput.userId },
+          signal,
+        );
+      }
       const okouToken = set(prepareOkouTokenEnvironment$, tokenInput, signal);
       // Keep acquisition before storage preparation without retaining the DB.
       set(writeDb$);

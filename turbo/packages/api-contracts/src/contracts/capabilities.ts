@@ -5,6 +5,8 @@ export const CAPABILITIES = [
   "notify:write",
   "suggestion:read",
   "suggestion:write",
+  "instructions:read",
+  "instructions:write",
   "agent:read",
   "agent:write",
   "agent:delete",

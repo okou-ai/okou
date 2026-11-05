@@ -1,3 +1,4 @@
+import { instructions } from "@okouai/db/schema/instructions";
 import { command } from "ccstate";
 import {
   and,
@@ -25,6 +26,7 @@ import {
 import {
   array,
   iso,
+  literal,
   number,
   object,
   string,
@@ -89,6 +91,8 @@ const checkpointSchema = object({
   startedAt: iso.datetime().optional(),
   orgIds: array(string()).default([]),
   cursor: string().optional(),
+  collectingInstructions: literal(true).optional(),
+  instructionsCursor: string().optional(),
   discordKind: discordExportKindSchema.optional(),
   thread: object({
     id: uuid(),
@@ -153,6 +157,8 @@ function nextPhase(
     ...checkpoint,
     phase,
     cursor: undefined,
+    collectingInstructions: undefined,
+    instructionsCursor: undefined,
     thread: undefined,
     discordKind: undefined,
   });
@@ -750,8 +756,8 @@ const collectAgent$ = command(
     checkpoint: SourceCheckpoint,
     signal: AbortSignal,
   ) => {
-    if (checkpoint.orgIds.length === 0) {
-      return nextPhase(checkpoint, "workflows");
+    if (checkpoint.collectingInstructions || checkpoint.orgIds.length === 0) {
+      return await set(collectInstructions$, args, checkpoint, signal);
     }
     const [agent] = await get(db$)
       .select({
@@ -777,7 +783,7 @@ const collectAgent$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!agent) {
-      return nextPhase(checkpoint, "workflows");
+      return await set(collectInstructions$, args, checkpoint, signal);
     }
     // One unreadable instruction document must not strand the whole export.
     // The committed checkpoint resumes before this agent, so a hard throw here
@@ -823,6 +829,57 @@ const collectAgent$ = command(
         },
       ),
     ]);
+  },
+);
+
+const collectInstructions$ = command(
+  async (
+    { get },
+    args: SourceArgs,
+    checkpoint: SourceCheckpoint,
+    signal: AbortSignal,
+  ) => {
+    if (checkpoint.orgIds.length === 0) {
+      return nextPhase(checkpoint, "workflows");
+    }
+    const [row] = await get(db$)
+      .select({
+        orgId: instructions.orgId,
+        userId: instructions.userId,
+        content: instructions.content,
+        updatedAt: instructions.updatedAt,
+        version: instructions.version,
+      })
+      .from(instructions)
+      .where(
+        and(
+          eq(instructions.userId, args.userId),
+          inArray(instructions.orgId, checkpoint.orgIds),
+          lte(instructions.createdAt, startedBefore(checkpoint)),
+          checkpoint.instructionsCursor
+            ? gt(instructions.orgId, checkpoint.instructionsCursor)
+            : undefined,
+        ),
+      )
+      .orderBy(asc(instructions.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      return nextPhase(checkpoint, "workflows");
+    }
+    return step(
+      {
+        ...checkpoint,
+        collectingInstructions: true,
+        instructionsCursor: row.orgId,
+      },
+      [
+        jsonEntry(`instructions/${row.orgId}.json`, row, {
+          sourceKind: "instructions",
+          orgId: row.orgId,
+        }),
+      ],
+    );
   },
 );
 
