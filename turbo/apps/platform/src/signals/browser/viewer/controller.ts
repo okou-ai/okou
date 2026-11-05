@@ -3782,19 +3782,46 @@ function createTabCreationGraph(
   return { cancelCreation$, createTab$, creatingTab$ };
 }
 
-function createTabClosingGraph(
-  context: ControllerContext<
-    | "assertAvailable$"
-    | "clientState$"
-    | "closingTargets$"
-    | "connection"
-    | "directory$"
-    | "model"
-    | "tabOpening"
-    | "targetRevision$"
-  >,
+type TabClosingContext = ControllerContext<
+  | "assertAvailable$"
+  | "clientState$"
+  | "closingTargets$"
+  | "connection"
+  | "directory$"
+  | "model"
+  | "tabOpening"
+  | "targetRevision$"
+>;
+
+function createCloseInventoryWait(
+  context: ControllerContext<"assertAvailable$" | "model">,
   links$: ControllerDependencies<
-    "discovery$" | "discoveryChanged$" | "retireCurrent$" | "selectTab$"
+    "canRetryDiscovery$" | "discovery$" | "retryDiscovery$"
+  >,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    set(context.assertAvailable$, signal);
+    const selectionIntent = get(context.model.intent$).selection;
+    // Input can be ready before the inventory is complete. Revalidate a failed
+    // read or join the current scan before counting survivors for a close.
+    if (get(get(links$).canRetryDiscovery$)) {
+      await set(get(links$).retryDiscovery$, signal);
+    }
+    await set(get(get(links$).discovery$)!.start$, signal);
+    set(context.assertAvailable$, signal);
+    return { snapshot: get(context.model.snapshot$), selectionIntent };
+  });
+}
+
+function createTabClosingGraph(
+  context: TabClosingContext,
+  links$: ControllerDependencies<
+    | "canRetryDiscovery$"
+    | "discovery$"
+    | "discoveryChanged$"
+    | "retireCurrent$"
+    | "retryDiscovery$"
+    | "selectTab$"
   >,
 ) {
   const {
@@ -3806,14 +3833,17 @@ function createTabClosingGraph(
     directory$,
     tabOpening,
   } = context;
+  const waitForInventory$ = createCloseInventoryWait(context, links$);
   const closeTab$ = command(
     async (
       { get, set },
       targetId: string,
       signal: AbortSignal,
     ): Promise<void> => {
-      set(assertAvailable$, signal);
-      const snapshot = get(model.snapshot$);
+      const { snapshot, selectionIntent } = await set(
+        waitForInventory$,
+        signal,
+      );
       const index = snapshot.targets.findIndex((target) => {
         return target.id === targetId;
       });
@@ -3823,7 +3853,6 @@ function createTabClosingGraph(
           "The tab is no longer available in this scope.",
         );
       }
-      const selectionIntent = get(model.intent$).selection;
       const client = get(clientState$)!;
       const directory = get(directory$)!;
       const discovery = get(get(links$).discovery$)!;
@@ -3927,10 +3956,12 @@ function createTabsGraph(
   >,
   links$: ControllerDependencies<
     | "canCreate$"
+    | "canRetryDiscovery$"
     | "discovery$"
     | "discoveryChanged$"
     | "restoreSelection$"
     | "retireCurrent$"
+    | "retryDiscovery$"
     | "selectTab$"
   >,
 ): Pick<

@@ -92,11 +92,11 @@ function viewer() {
   });
   return {
     browser,
-    start() {
+    start(enabled = true) {
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
-        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: true },
+        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: enabled },
       });
     },
     advance(ms: number) {
@@ -188,6 +188,76 @@ test("Creating a tab during the continuing scan retains unvisited own tabs", asy
   expect(screen.queryByLabelText("Sibling 19")).not.toBeInTheDocument();
 });
 
+test("Closing the initially visible tab preserves the undiscovered survivor without an extra blank tab", async () => {
+  const { browser, start } = viewer();
+  const held = browser.holdNextMembership("sibling-3");
+  await start();
+  await held.received;
+  await ready();
+  click(screen.getByLabelText("Close First own tab"));
+  await act(held.release);
+  await ready("https://later.example.com");
+  expect(
+    screen.queryByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).not.toBeInTheDocument();
+  expect(
+    browser.targets.filter((target) => {
+      return target.windowId === 101;
+    }),
+  ).toMatchObject([{ targetId: "own-later" }]);
+});
+
+test("A close revalidates a failed partial inventory before counting survivors", async () => {
+  recordBrowserStartupErrors();
+  const { browser, start } = viewer();
+  const held = browser.holdNextMembership("sibling-3");
+  await start(false);
+  await held.received;
+  await ready();
+  browser.failNext("Runtime.evaluate", "Native window temporarily unavailable");
+  act(() => {
+    browser.nativeEvent("tab-attached", browser.targets[0]);
+  });
+  await act(held.release);
+  await screen.findByText("Browser view unavailable");
+  const close = screen.getByLabelText("Close First own tab");
+  expect(close).toBeEnabled();
+  click(close);
+  await ready("https://later.example.com");
+  expect(
+    screen.queryByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).not.toBeInTheDocument();
+});
+
+test.each([true, false])(
+  "Overlapping closes during discovery preserve one tab (undiscovered survivor: %s)",
+  async (survivor) => {
+    const { browser, start } = viewer();
+    browser.move("sibling-0", 101);
+    if (!survivor) {
+      const later = browser.targets.findIndex((target) => {
+        return target.targetId === "own-later";
+      });
+      browser.targets.splice(later, 1);
+    }
+    const held = browser.holdNextMembership("sibling-3");
+    await start();
+    await held.received;
+    await ready();
+    click(screen.getByLabelText("Close First own tab"));
+    click(screen.getByLabelText("Close Sibling 0"));
+    await act(held.release);
+    await ready(survivor ? "https://later.example.com" : "");
+    expect(
+      browser.targets.filter((target) => {
+        return target.windowId === 101;
+      }),
+    ).toMatchObject([
+      survivor ? { targetId: "own-later" } : { url: "about:blank" },
+    ]);
+  },
+);
+
 test("A late membership reply cannot admit a tab moved to a sibling window", async () => {
   const { browser, start } = viewer();
   const held = browser.holdNextMembership("own-later");
@@ -235,13 +305,15 @@ test("An in-flight selection survives later inventory publication", async () => 
   await ready();
 });
 
-test("Unmounting an admitted viewer cancels its continuing discovery", async () => {
+test("Unmounting cancels discovery and a close waiting for its inventory", async () => {
   const errors = recordBrowserStartupErrors();
   const { browser, start } = viewer();
   const held = browser.holdNextMembership("sibling-3");
   await start();
   await held.received;
   await ready();
+  click(screen.getByLabelText("Close First own tab"));
+  expect(screen.getByLabelText("Close First own tab")).toBeDisabled();
   cleanup();
   await waitFor(() => {
     expect(browser.activeConnections()).toBe(0);
@@ -250,5 +322,10 @@ test("Unmounting an admitted viewer cancels its continuing discovery", async () 
   expect(
     screen.queryByLabelText("Remote browser input"),
   ).not.toBeInTheDocument();
+  expect(
+    browser.targets.filter((target) => {
+      return target.windowId === 101;
+    }),
+  ).toMatchObject([{ targetId: "own-first" }, { targetId: "own-later" }]);
   expect(errors).toHaveLength(0);
 });
