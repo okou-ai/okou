@@ -12,14 +12,12 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   Record<string, FeatureSwitchKey | undefined>
 >({
   "ahrefs\0oauth": FeatureSwitchKey.AhrefsConnector,
-  "bill\0api-token": FeatureSwitchKey.BillConnector,
   "canva\0oauth": FeatureSwitchKey.CanvaConnector,
   "deel\0oauth": FeatureSwitchKey.DeelConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,
-  "netsuite\0api-token": FeatureSwitchKey.NetSuiteConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "reddit\0oauth": FeatureSwitchKey.RedditConnector,

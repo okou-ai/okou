@@ -36,7 +36,7 @@ const surfaceVariants = cva(
       },
       interactive: {
         // Keep the overlay when a touch browser exposes :hover as well.
-        true: "cursor-pointer [&:hover]:bg-state-hover-overlay",
+        true: "[&:hover]:bg-state-hover-overlay",
         false: "",
       },
     },

@@ -441,7 +441,7 @@ function MailMediaAttachmentPreview({
         },
         { filename },
       )}
-      className="group relative aspect-[10/9] w-[50px] max-w-full cursor-pointer overflow-hidden rounded-lg border border-foreground/10 bg-muted/30 shadow-sm transition-all duration-200 hover:scale-[1.015] hover:border-foreground/20 hover:shadow-lg hover:shadow-black/10 dark:hover:shadow-black/30"
+      className="group relative aspect-[10/9] w-[50px] max-w-full overflow-hidden rounded-lg border border-foreground/10 bg-muted/30 shadow-sm transition-all duration-200 hover:scale-[1.015] hover:border-foreground/20 hover:shadow-lg hover:shadow-black/10 dark:hover:shadow-black/30"
     >
       {kind === "image" ? (
         <img

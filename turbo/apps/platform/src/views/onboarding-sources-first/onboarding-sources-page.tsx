@@ -175,7 +175,7 @@ export function OnboardingSourcesPage() {
         {...explanation}
         mobileFooter={
           <details className="text-sm text-muted-foreground">
-            <summary className="cursor-pointer rounded-lg py-3 hover:text-foreground">
+            <summary className="cursor-default rounded-lg py-3 hover:text-foreground">
               {t(($) => {
                 return $.onboarding.sourcesFirst.mobile.permissionsLabel;
               })}

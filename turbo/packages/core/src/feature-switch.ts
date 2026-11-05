@@ -257,11 +257,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
-  [FeatureSwitchKey.BillConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BILL Spend & Expense connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.CanvaConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Canva design connector",
@@ -285,11 +280,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.NeonConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Neon serverless Postgres connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.NetSuiteConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Oracle NetSuite ERP connector",
     enabled: false,
   },
   [FeatureSwitchKey.GarminConnectConnector]: {

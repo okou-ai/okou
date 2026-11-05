@@ -57,7 +57,7 @@ function CapabilityRow({
     <li className="flex items-center gap-4 border-b border-border/60 px-2 py-3.5 last:border-b-0 hover:bg-gray-50">
       <label
         htmlFor={id}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-4"
+        className="flex min-w-0 flex-1 cursor-default items-center gap-4"
       >
         <Icon
           size={20}

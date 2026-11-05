@@ -37,7 +37,7 @@ function permissionPolicyButtonClass({
       : disabled
         ? "text-muted-foreground/50"
         : "text-muted-foreground hover:text-foreground hover:bg-state-hover"
-  } ${disabled ? "cursor-default" : "cursor-pointer"}`;
+  }`;
 }
 
 export function PermissionPolicyToggle({

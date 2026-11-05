@@ -199,7 +199,7 @@ fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnos
                 event_type: "error",
                 message: raw_message_from_field(event.get("message"))
                     .unwrap_or_else(|| "error".into()),
-                failure_reason: codex_error_failure_reason(event, error),
+                failure_reason: codex_error_failure_reason(error),
                 evidence: error.and_then(crate::codex_failure::terminal_evidence),
             })
         }
@@ -212,7 +212,7 @@ fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnos
                 event_type: "turn.completed",
                 message: codex_error_message(turn_error)
                     .unwrap_or_else(|| format!("turn {status}")),
-                failure_reason: codex_error_failure_reason(event, turn_error),
+                failure_reason: codex_error_failure_reason(turn_error),
                 evidence: turn_error.and_then(crate::codex_failure::terminal_evidence),
             })
         }
@@ -262,9 +262,9 @@ fn codex_error_message(error: Option<&Value>) -> Option<String> {
     combined_message_and_details(message, details)
 }
 
-fn codex_error_failure_reason(event: &Value, error: Option<&Value>) -> Option<FailureReason> {
+fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
     let error = error?;
-    if is_codex_access_program_unavailable(event, error) {
+    if is_codex_access_program_unavailable(error) {
         return Some(FailureReason::CodexAccessProgramUnavailable);
     }
     if error.get("code").and_then(Value::as_str) == Some("invalid_api_key") {
@@ -336,12 +336,40 @@ fn codex_error_failure_reason(event: &Value, error: Option<&Value>) -> Option<Fa
     None
 }
 
-fn is_codex_access_program_unavailable(event: &Value, error: &Value) -> bool {
-    event.get("status").and_then(Value::as_u64) == Some(400)
-        && error.get("type").and_then(Value::as_str) == Some("invalid_request_error")
-        && error.get("code").and_then(Value::as_str) == Some("unsupported_parameter")
-        && error.get("param").and_then(Value::as_str) == Some("access_programs.cyber")
-        && error.get("message").and_then(Value::as_str)
+fn is_codex_access_program_unavailable(error: &Value) -> bool {
+    // Codex 0.166.0 preserves an HTTP 400 body as InvalidRequest's complete
+    // message and projects its native kind as `other`. TurnError does not expose
+    // the raw HTTP fields. Do not override a stronger native cause or infer this
+    // reason from display prose/additional details.
+    if error.get("codex_error_info").and_then(Value::as_str) != Some("other") {
+        return false;
+    }
+    let Some(message) = error.get("message").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(body) = serde_json::from_str::<Value>(message) else {
+        return false;
+    };
+    // HTTP bodies have no wrapper. Codex also preserves complete WebSocket
+    // error envelopes, whose explicit status must agree with the rejection.
+    let supported_envelope = match (
+        body.get("type"),
+        body.get("status"),
+        body.get("status_code"),
+    ) {
+        (None, None, None) => true,
+        (Some(kind), Some(status), None) | (Some(kind), None, Some(status)) => {
+            kind.as_str() == Some("error") && status.as_u64() == Some(400)
+        }
+        _ => false,
+    };
+    let Some(provider_error) = body.get("error").filter(|_| supported_envelope) else {
+        return false;
+    };
+    provider_error.get("type").and_then(Value::as_str) == Some("invalid_request_error")
+        && provider_error.get("code").and_then(Value::as_str) == Some("unsupported_parameter")
+        && provider_error.get("param").and_then(Value::as_str) == Some("access_programs.cyber")
+        && provider_error.get("message").and_then(Value::as_str)
             == Some("The access_programs parameter is not enabled for this organization.")
 }
 

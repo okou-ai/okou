@@ -77,7 +77,7 @@ const segmentControlVariants = cva(
  * the selection is itself a state layer.
  */
 const segmentControlItemVariants = cva(
-  "inline-flex h-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors select-none not-data-checked:hover:bg-state-hover not-data-checked:hover:text-foreground data-checked:text-foreground data-disabled:pointer-events-none data-disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex h-full shrink-0 cursor-default items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors select-none not-data-checked:hover:bg-state-hover not-data-checked:hover:text-foreground data-checked:text-foreground data-disabled:pointer-events-none data-disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     // Segment padding runs one step tighter than the matching button size,
     // because the segment already sits inside the track's 2px inset -- that

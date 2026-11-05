@@ -17,7 +17,6 @@ import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { getCategories } from "./ideation-data.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { agents$, currentAgentId$ } from "../../signals/agent.ts";
 import {
   ideationActiveTab$,
@@ -73,7 +72,6 @@ export function IdeationPage() {
   const setActiveTab = useSet(setIdeationActiveTab$);
   const searchQuery = useGet(ideationSearchQuery$);
   const setSearchQuery = useSet(setIdeationSearchQuery$);
-  const navigate = useSet(detachedNavigateTo$);
   const selectedTab =
     activeTab === "all" ||
     categories.some((category) => {
@@ -81,14 +79,6 @@ export function IdeationPage() {
     })
       ? activeTab
       : "all";
-
-  const navigateToChat = () => {
-    if (agentId) {
-      navigate("/agents/:agentId/chat", { pathParams: { agentId: agentId } });
-    } else {
-      navigate("/");
-    }
-  };
 
   const baseCategories =
     selectedTab === "all"
@@ -116,23 +106,19 @@ export function IdeationPage() {
             return c.cases.length > 0;
           });
 
-  const handleBack = () => {
-    navigateToChat();
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <nav className="flex shrink-0 items-center gap-1 px-4 pt-4 text-sm text-muted-foreground">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-state-hover hover:text-foreground transition-colors cursor-pointer"
+        <Link
+          pathname={agentId ? "/agents/:agentId/chat" : "/"}
+          options={{ pathParams: agentId ? { agentId } : undefined }}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-state-hover hover:text-foreground transition-colors"
         >
           <MessageCircle size={14} className="shrink-0" />
           {t(($) => {
             return $.ideation.chat;
           })}
-        </button>
+        </Link>
         <span className="text-muted-foreground/40 select-none">/</span>
         <span className="rounded-md px-1.5 py-0.5 text-foreground font-medium truncate">
           {t(($) => {

@@ -47,7 +47,7 @@ function CategoryPopover({
 
   return (
     <Popover>
-      <PopoverTrigger className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+      <PopoverTrigger className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
         <Icon className="h-3 w-3" />
         <span>
           {formatAppNumber(count)} {label}
@@ -204,7 +204,7 @@ function ModelUsagePopover({ modelUsage }: { modelUsage: ModelUsage }) {
 
   return (
     <Popover>
-      <PopoverTrigger className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+      <PopoverTrigger className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
         <Wrench className="h-3 w-3" />
         <span>
           {t(

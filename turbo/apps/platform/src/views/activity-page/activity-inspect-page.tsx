@@ -137,7 +137,7 @@ function InspectEmptyState() {
         <label
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "cursor-pointer",
+            "cursor-default",
           )}
         >
           <Upload size={16} />
