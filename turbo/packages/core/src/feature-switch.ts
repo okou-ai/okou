@@ -201,14 +201,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Render paired bold and italic markers next to Chinese, Japanese, and Korean punctuation without showing literal asterisks.",
     enabled: true,
   },
-  [FeatureSwitchKey.MarkdownTableExport]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Markdown table export",
-    description:
-      "Export tables to Excel or save them to Google Drive and Google Sheets.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatMessagePdf]: {
     maintainer: "ethan@okou.ai",
     displayName: "Message PDF export",

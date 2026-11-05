@@ -1,9 +1,8 @@
 import type { ComponentPropsWithoutRef } from "react";
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Download, Loader2 } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   BrandGoogleDrive,
   BrandGoogleSheets,
@@ -24,7 +23,6 @@ import {
 import type { Element } from "hast";
 import { formatAppNumber } from "../../i18n/format.ts";
 import { getMarkdownTableDimensions } from "../../lib/markdown-table-dimensions.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import {
@@ -39,8 +37,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 type TableProps = ComponentPropsWithoutRef<"table"> & { node?: Element };
 
 export function MarkdownTable({ node, children, ...props }: TableProps) {
-  const features = useLastResolved(featureSwitch$);
-  if (!node || !features?.[FeatureSwitchKey.MarkdownTableExport]) {
+  if (!node) {
     return (
       <div className="overflow-x-auto">
         <table {...props}>{children}</table>

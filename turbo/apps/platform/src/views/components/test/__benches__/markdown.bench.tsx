@@ -1,8 +1,9 @@
 import { cleanup, render } from "@testing-library/react";
 import { StoreProvider } from "ccstate-react";
 import type { Root } from "hast";
-import { describe, test } from "vitest";
+import { beforeEach, describe, test } from "vitest";
 
+import { setupPage } from "../../../../__tests__/page-helper.ts";
 import { parseMarkdownTree } from "../../../../lib/markdown/pipeline.ts";
 import {
   chatEventTreeContent,
@@ -32,6 +33,12 @@ import { Markdown, MarkdownEventBody } from "../../rich-markdown.tsx";
 // ---------------------------------------------------------------------------
 
 const context = testContext();
+
+beforeEach(async () => {
+  // Bootstrap the page and i18n lifetimes outside the measured render callbacks.
+  await setupPage({ context, path: "/" });
+  cleanup();
+});
 
 // Match the chat parse pass: registration only returns signals to embed;
 // prewarming or a visible diagram starts layout by reading its computed.
