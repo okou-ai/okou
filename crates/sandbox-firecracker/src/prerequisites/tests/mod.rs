@@ -208,7 +208,7 @@ fn factory_fresh_commands_include_network_and_home_image_create() {
 }
 
 #[test]
-fn snapshot_restore_commands_include_cp_mkfs_and_private_mount_restore() {
+fn snapshot_restore_commands_include_cp_mkfs_and_host_stale_target_repair() {
     let snapshot = snapshot_config();
     let mode = PrerequisiteMode::FactorySnapshotRestore { snapshot };
 
@@ -223,16 +223,13 @@ fn snapshot_restore_commands_include_cp_mkfs_and_private_mount_restore() {
             "sysctl",
             "cp",
             "mkfs.ext4",
-            "unshare",
-            "bash",
-            "mount",
             "umount",
         ]
     );
 }
 
 #[test]
-fn snapshot_create_commands_include_private_mount_create_without_sparse_copy() {
+fn snapshot_create_commands_include_network_and_home_image_creation() {
     let mode = PrerequisiteMode::SnapshotCreate;
     let commands = required_commands(&mode);
 
@@ -246,9 +243,6 @@ fn snapshot_create_commands_include_private_mount_create_without_sparse_copy() {
             "conntrack",
             "sysctl",
             "mkfs.ext4",
-            "unshare",
-            "bash",
-            "mount",
         ]
     );
 }

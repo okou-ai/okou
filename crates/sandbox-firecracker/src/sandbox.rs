@@ -1460,7 +1460,7 @@ impl FirecrackerSandbox {
         );
 
         // Bind mount targets are snapshot-level paths shared by all sandboxes.
-        // Each sandbox runs inside `unshare --mount`, so bind mounts are
+        // Each sandbox gets a private mount namespace before exec, so binds are
         // per-namespace and don't conflict.
         //
         // IMPORTANT: we must NOT `rm -f` the bind mount target.  The target
@@ -1483,7 +1483,10 @@ impl FirecrackerSandbox {
             self.network.name(),
             &self.factory_config.binary_path,
             &api_sock,
-        );
+        )
+        .map_err(|e| SandboxError::Start {
+            message: format!("prepare snapshot mount namespace: {e}"),
+        })?;
 
         let client = self
             .spawn_and_wait_for_api(command, &api_sock, runtime_cancel, "snapshot restore")

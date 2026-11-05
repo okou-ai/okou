@@ -244,6 +244,7 @@ pub(super) fn spawn_with_admission<G>(
         credentials: options.credentials,
         deny_process_inspection: options.deny_process_inspection,
         nofile_limit: command.nofile_limit,
+        mount_namespace: command.mount_namespace.as_ref(),
         stdio: [
             stdin.child.as_ref(),
             stdout.child.as_ref(),
@@ -389,6 +390,7 @@ struct ChildInputs<'a> {
     credentials: Option<Credentials<'a>>,
     deny_process_inspection: bool,
     nofile_limit: Option<libc::rlim_t>,
+    mount_namespace: Option<&'a crate::mount_namespace::PrivateMountNamespace>,
     stdio: [Option<RawFd>; 3],
     error_fd: RawFd,
     sigpipe: &'a libc::sigaction,
@@ -430,6 +432,11 @@ fn child_exec(inputs: &ChildInputs<'_>, old_mask: u64) -> ! {
         }
         if let Some(directory) = inputs.directory
             && libc::syscall(libc::SYS_chdir, directory.as_ptr()) != 0
+        {
+            child_errno(inputs.error_fd);
+        }
+        if let Some(namespace) = inputs.mount_namespace
+            && namespace.apply() != 0
         {
             child_errno(inputs.error_fd);
         }
