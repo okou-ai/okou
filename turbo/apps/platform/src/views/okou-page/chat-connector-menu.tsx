@@ -41,11 +41,16 @@ function ChatAccountChoiceRow({
   access,
   busy,
   onChange,
+  popupFocus,
 }: {
   readonly account: ConnectorAccountConnection;
   readonly access: ChatConnectorAccess["accounts"][number];
   readonly busy: boolean;
   readonly onChange: (enabled: boolean | null) => Promise<void>;
+  readonly popupFocus: {
+    readonly remember: (popup: HTMLDivElement) => void;
+    readonly restore: () => false;
+  };
 }) {
   const { t } = useTranslation();
   const name = useConnectorAccountLabel()(account);
@@ -91,6 +96,7 @@ function ChatAccountChoiceRow({
         }
         readOnly={busy}
         onChange={onChange}
+        popupFocus={popupFocus}
       />
     </div>
   );
@@ -105,6 +111,8 @@ function ChatAccountChoices({
 }) {
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
+  const rememberSelectFocus = useSet(accounts.navigation.rememberSelectFocus$);
+  const restoreSelectFocus = useSet(accounts.navigation.restoreSelectFocus$);
   const list = useLoadable(accounts.list.accounts$);
   const current = useLoadable(accounts.current$);
   const previous = useLastResolved(accounts.list.accounts$);
@@ -167,6 +175,14 @@ function ChatAccountChoices({
               account={account}
               access={access}
               busy={busy}
+              popupFocus={{
+                remember: (popup) => {
+                  rememberSelectFocus(account.id, popup);
+                },
+                restore: () => {
+                  return restoreSelectFocus(account.id);
+                },
+              }}
               onChange={(enabled) => {
                 return override(account.id, enabled, signal);
               }}
@@ -462,7 +478,7 @@ export function ChatConnectorMenu({
     overview.state === "hasError" || notifications.state === "hasError";
   const previous = useLastResolved(accounts.overview$);
   const target = useGet(accounts.target$);
-  const setViewport = useSet(accounts.focus.setViewport$);
+  const setViewport = useSet(accounts.navigation.setViewport$);
   const ui = useGet(signals.connector.connectorUiState$);
   const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
@@ -500,27 +516,28 @@ export function ChatConnectorMenu({
       onSearchChange={searchConnectors}
       onOpenAddDialog={onOpenAddDialog}
       footer={footer}
-      contentKey={ui.popoverSearch}
-      contentRef={setViewport}
-      detail={
+      contentRole={target ? "group" : "list"}
+      contentLabel={target?.label}
+      contentKey={
         target
-          ? {
-              key: connectorAccountTargetKey(target.target),
-              label: target.label,
-              content: (
-                <ChatConnectorAccountPanel
-                  signals={signals}
-                  target={target}
-                  entry={active}
-                  unavailable={overview.state === "hasError"}
-                />
-              ),
-            }
-          : undefined
+          ? connectorAccountTargetKey(target.target)
+          : `overview:${ui.popoverSearch}`
       }
+      contentRef={setViewport}
     >
-      <ChatConnectorOverviewRetry signals={signals} failed={failed} />
-      <ChatConnectorOverviewList signals={signals} entries={filtered} />
+      {target ? (
+        <ChatConnectorAccountPanel
+          signals={signals}
+          target={target}
+          entry={active}
+          unavailable={overview.state !== "loading"}
+        />
+      ) : (
+        <>
+          <ChatConnectorOverviewRetry signals={signals} failed={failed} />
+          <ChatConnectorOverviewList signals={signals} entries={filtered} />
+        </>
+      )}
     </ComposerConnectorMenuShell>
   );
 }

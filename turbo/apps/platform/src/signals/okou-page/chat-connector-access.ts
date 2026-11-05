@@ -25,7 +25,7 @@ import {
   createConnectorAccountListSignals,
 } from "./connector-accounts.ts";
 import { createChatConnectorOverviewSignals } from "./chat-connector-overview.ts";
-import { createChatConnectorMenuFocusSignals } from "./chat-connector-menu-focus.ts";
+import { createChatConnectorMenuNavigationSignals } from "./chat-connector-menu-navigation.ts";
 import {
   createConnectorPermissionsSignals,
   type ConnectorPermissionsTarget,
@@ -324,7 +324,7 @@ export function createChatConnectorAccessSignals(threadId?: string) {
   const menuTarget$ = computed((get) => {
     return get(target$);
   });
-  const focus = createChatConnectorMenuFocusSignals(menuTarget$);
+  const navigation = createChatConnectorMenuNavigationSignals(menuTarget$);
   const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
     const entry = get(permissions$);
@@ -339,23 +339,24 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     threadId,
   });
   const open$ = command(({ set }, parentSignal: AbortSignal) => {
-    set(focus.reset$);
+    set(navigation.reset$);
     set(requests$, accountAccessRequests(set(resetOwner$, parentSignal)));
     set(cache.open$, parentSignal);
   });
   const closeTarget$ = command(({ set }) => {
+    set(navigation.back$);
     set(target$, null);
     set(list.clearTarget$);
   });
   const close$ = command(({ set }) => {
-    set(focus.reset$);
+    set(navigation.reset$);
     set(resetOwner$);
     set(requests$, null);
     set(closeTarget$);
   });
   const openTarget$ = command(
     ({ set }, target: ChatConnectorMenuTarget, signal: AbortSignal) => {
-      set(focus.rememberTarget$, target.target);
+      set(navigation.enter$, target.target);
       set(target$, target);
       set(list.setTarget$, target.target, signal);
     },
@@ -403,7 +404,7 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     reload$: cache.reload$,
     retry$: cache.retry$,
     current$,
-    focus,
+    navigation,
     target$: menuTarget$,
     permissions$: computed((get) => {
       return get(permissions$);

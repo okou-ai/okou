@@ -192,6 +192,9 @@ test("Keep a valid overview focus destination if the returning connector was rem
   await waitFor(() => {
     expect(queryFastControl("radio", "Account 1", panel)).toBeNull();
   });
+  expect(
+    within(panel).getByText("Accounts are unavailable for this connector."),
+  ).toBeInTheDocument();
   const overview = await backToOverview(popup, panel);
   expect(within(overview).queryByText("Scroll 7", { exact: true })).toBeNull();
   expect(overview.scrollTop).toBe(180);
@@ -243,4 +246,69 @@ test("Keep popup focus as the final connector disappears and returns", async () 
   await expect(
     findFastControl("button", "Add connectors", popup),
   ).resolves.toHaveFocus();
+});
+
+test("Return focus inside the connector popup when an open account Select disappears", async () => {
+  const user = userEvent.setup();
+  const { popup, trigger } = await setup(12);
+  const panel = await openAccountPanel(popup);
+  await user.click(
+    await within(panel).findByRole("combobox", { name: "Account 1 access" }),
+  );
+  const options = await screen.findByRole("listbox");
+  await waitFor(() => {
+    expect(options.contains(document.activeElement)).toBeTruthy();
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ respond }) => {
+      return respond(200, { connector: null });
+    },
+  );
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "scroll-7",
+  });
+  await within(panel).findByText(
+    "Accounts are unavailable for this connector.",
+  );
+  await waitFor(() => {
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(panel.contains(document.activeElement)).toBeTruthy();
+  });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+});
+
+test("Keep normal Select dismissal and deliberate focus moves with their controls", async () => {
+  const user = userEvent.setup();
+  const { popup, trigger } = await setup(30);
+  const panel = await openAccountPanel(popup);
+  const select = await within(panel).findByRole("combobox", {
+    name: "Account 1 access",
+  });
+  await user.click(select);
+  await screen.findByRole("listbox");
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(select).toHaveFocus();
+  });
+  await user.click(select);
+  await screen.findByRole("listbox");
+  const search = within(popup).getByPlaceholderText("Find connectors...");
+  await user.click(search);
+  await waitFor(() => {
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(search).toHaveFocus();
+  });
+  await user.click(select);
+  await screen.findByRole("listbox");
+  await user.click(trigger);
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
 });

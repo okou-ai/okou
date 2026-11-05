@@ -76,40 +76,6 @@ function AddConnectors({ onOpen }: { readonly onOpen: () => void }) {
   );
 }
 
-function ConnectorMenuViewport({
-  children,
-  role,
-  label,
-  showSearch,
-  contentRef,
-  hidden = false,
-}: {
-  readonly children: ReactNode;
-  readonly role: "list" | "group";
-  readonly label: string;
-  readonly showSearch: boolean;
-  readonly contentRef: Ref<HTMLDivElement> | undefined;
-  readonly hidden?: boolean;
-}) {
-  return (
-    <div
-      ref={hidden ? undefined : contentRef}
-      hidden={hidden}
-      tabIndex={contentRef ? -1 : undefined}
-      role={role}
-      aria-label={label}
-      // Hidden overview DOM retains its offset without exposing its controls.
-      className={cn(
-        "min-h-0 flex-1 flex-col overflow-y-auto pb-2",
-        hidden ? "hidden" : "flex",
-        !showSearch && "max-h-67 pt-1",
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
 /** The existing popup chrome is shared; only its connector/account content varies. */
 export function ComposerConnectorMenuShell({
   children,
@@ -121,9 +87,10 @@ export function ComposerConnectorMenuShell({
   search,
   onSearchChange,
   onOpenAddDialog,
+  contentRole = "list",
+  contentLabel,
   contentKey,
   contentRef,
-  detail,
 }: {
   readonly children: ReactNode;
   readonly footer: ReactNode;
@@ -134,13 +101,10 @@ export function ComposerConnectorMenuShell({
   readonly search: string;
   readonly onSearchChange: (search: string) => void;
   readonly onOpenAddDialog: () => void;
+  readonly contentRole?: "list" | "group";
+  readonly contentLabel?: string;
   readonly contentKey?: string;
   readonly contentRef?: Ref<HTMLDivElement>;
-  readonly detail?: {
-    readonly key: string;
-    readonly label: string;
-    readonly content: ReactNode;
-  };
 }) {
   const { t } = useTranslation();
   return (
@@ -183,31 +147,24 @@ export function ComposerConnectorMenuShell({
               })}
             </div>
           ) : (
-            <>
-              <ConnectorMenuViewport
-                key={contentKey}
-                contentRef={contentRef}
-                role="list"
-                label={t(($) => {
+            <div
+              key={contentKey}
+              ref={contentRef}
+              tabIndex={contentRef ? -1 : undefined}
+              role={contentRole}
+              aria-label={
+                contentLabel ??
+                t(($) => {
                   return $.chat.connectors.title;
-                })}
-                showSearch={showSearch}
-                hidden={Boolean(detail)}
-              >
-                {children}
-              </ConnectorMenuViewport>
-              {detail && (
-                <ConnectorMenuViewport
-                  key={detail.key}
-                  contentRef={contentRef}
-                  role="group"
-                  label={detail.label}
-                  showSearch={showSearch}
-                >
-                  {detail.content}
-                </ConnectorMenuViewport>
+                })
+              }
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-y-auto pb-2",
+                !showSearch && "max-h-67 pt-1",
               )}
-            </>
+            >
+              {children}
+            </div>
           )}
           <div className="mx-3 shrink-0 border-t border-border/50" />
         </div>
