@@ -1,5 +1,5 @@
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
-import { useGet, useLoadable } from "ccstate-react";
+import { useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Check, Terminal, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -193,7 +193,7 @@ export function DesktopShellAuthorizationCard({
   standalone?: boolean;
 }) {
   const { t } = useTranslation();
-  const request = useLoadable(signals.request$);
+  const request = useLastLoadable(signals.request$);
   const data = request.state === "hasData" ? request.data : null;
   const loading = request.state === "loading";
   const blocker = approvalBlocker(data);
