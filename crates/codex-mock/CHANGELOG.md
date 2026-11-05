@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.49](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.48...codex-mock-v0.12.49) (2026-11-05)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify native codex access-program rejections ([#45417](https://github.com/okou-ai/okou/issues/45417)) ([f48a7a3](https://github.com/okou-ai/okou/commit/f48a7a3595fd7c565c50957036751c230bf0ea57))
+
 ## [0.12.48](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.47...codex-mock-v0.12.48) (2026-11-05)
 
 

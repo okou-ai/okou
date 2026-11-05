@@ -1003,10 +1003,16 @@ const connectors = [
     connectorSlug: "deel",
     label: "Deel",
     authMethods: [
-      standardOauthMethod({
-        connectorSlug: "deel",
-        prefix: "DEEL",
-        tokenEnvironmentNames: ["DEEL_TOKEN"],
+      manualMethod({
+        fields: [
+          manualField({
+            privateName: "DEEL_TOKEN",
+            publicId: "apiToken",
+            label: "API Token",
+            storage: "secret",
+          }),
+        ],
+        envBindings: { DEEL_TOKEN: secret("DEEL_TOKEN") },
       }),
     ],
   }),
@@ -1070,17 +1076,6 @@ const connectors = [
       ],
       { placeholders: { FIGMA_TOKEN: "fixture-figma-token" } },
     ),
-  }),
-  connector({
-    connectorSlug: "garmin-connect",
-    label: "Garmin Connect",
-    authMethods: [
-      standardOauthMethod({
-        connectorSlug: "garmin-connect",
-        prefix: "GARMIN_CONNECT",
-        tokenEnvironmentNames: ["GARMIN_CONNECT_TOKEN"],
-      }),
-    ],
   }),
   connector({
     connectorSlug: "github",
@@ -2133,10 +2128,16 @@ const connectors = [
     connectorSlug: "supabase",
     label: "Supabase",
     authMethods: [
-      standardOauthMethod({
-        connectorSlug: "supabase",
-        prefix: "SUPABASE",
-        tokenEnvironmentNames: ["SUPABASE_TOKEN"],
+      manualMethod({
+        fields: [
+          manualField({
+            privateName: "SUPABASE_TOKEN",
+            publicId: "serviceRoleKey",
+            label: "Service Role Key",
+            storage: "secret",
+          }),
+        ],
+        envBindings: { SUPABASE_TOKEN: secret("SUPABASE_TOKEN") },
       }),
     ],
   }),

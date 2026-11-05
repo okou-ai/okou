@@ -35,6 +35,31 @@ pub(crate) fn cleanup_stale_paths(
         retained_roots,
         |path| detector.is_mount_point(path),
         remove_entry,
+        remove_directory_tree,
+    )
+}
+
+pub(crate) fn cleanup_stale_paths_with_quarantine(
+    cleanup_paths: &[String],
+    preserved: &[String],
+    retained_roots: &[String],
+    quarantine: &crate::quarantine::Quarantine,
+) -> bool {
+    let detector = CleanupMountPointDetector::new(cleanup_mountinfo);
+    cleanup_stale_paths_with_options(
+        cleanup_paths,
+        preserved,
+        retained_roots,
+        |path| detector.is_mount_point(path),
+        remove_entry,
+        |path| {
+            if quarantine.try_move(path, |logical, device| {
+                detector.can_quarantine(logical, device)
+            })? {
+                return Ok(RemoveOutcome::Removed);
+            }
+            remove_directory_tree(path)
+        },
     )
 }
 
@@ -54,6 +79,7 @@ where
         &[],
         |path| detector.is_mount_point(path),
         remove_entry,
+        remove_directory_tree,
     )
 }
 
@@ -72,19 +98,22 @@ where
         &[],
         |path| Ok(is_mount_point(path)),
         remove_entry,
+        remove_directory_tree,
     )
 }
 
-fn cleanup_stale_paths_with_options<M, R>(
+fn cleanup_stale_paths_with_options<M, R, T>(
     cleanup_paths: &[String],
     preserved: &[String],
     retained_roots: &[String],
     is_mount_point: M,
     remove_entry: R,
+    remove_tree: T,
 ) -> bool
 where
     M: Fn(&Path) -> io::Result<bool>,
     R: Fn(&fs::DirEntry) -> io::Result<()>,
+    T: Fn(&Path) -> io::Result<RemoveOutcome>,
 {
     let preserved = PreservedPaths::new(preserved);
     let retained_roots: HashSet<_> = retained_roots
@@ -166,7 +195,7 @@ where
                 );
             }
         } else {
-            match remove_directory_tree(path.original) {
+            match remove_tree(path.original) {
                 Ok(RemoveOutcome::Removed) => {
                     log_info!(LOG_TAG, "Cleaned stale path: {}", path.original.display());
                 }
@@ -339,7 +368,33 @@ where
     L: Fn() -> io::Result<Vec<u8>>,
 {
     load_mountinfo: L,
-    mount_points: OnceCell<io::Result<HashSet<PathBuf>>>,
+    mount_points: OnceCell<io::Result<MountSnapshot>>,
+}
+
+struct MountSnapshot {
+    paths: HashSet<PathBuf>,
+    #[cfg(target_os = "linux")]
+    device_mounts: HashMap<(u32, u32), usize>,
+}
+
+impl MountSnapshot {
+    fn parse(mountinfo: &[u8]) -> Self {
+        let mut paths = HashSet::new();
+        #[cfg(target_os = "linux")]
+        let mut device_mounts = HashMap::new();
+        for mount in linux_mountinfo::parse(mountinfo).filter_map(Result::ok) {
+            paths.insert(PathBuf::from(OsString::from_vec(mount.target)));
+            #[cfg(target_os = "linux")]
+            {
+                *device_mounts.entry(mount.device).or_insert(0) += 1;
+            }
+        }
+        Self {
+            paths,
+            #[cfg(target_os = "linux")]
+            device_mounts,
+        }
+    }
 }
 
 impl<L> CleanupMountPointDetector<L>
@@ -355,14 +410,28 @@ where
 
     fn is_mount_point(&self, path: &Path) -> io::Result<bool> {
         let path = absolute_path_without_following_final_symlink(path)?;
-        Ok(self.mount_points()?.contains(&path))
+        Ok(self.mount_points()?.paths.contains(&path))
     }
 
-    fn mount_points(&self) -> io::Result<&HashSet<PathBuf>> {
+    #[cfg(target_os = "linux")]
+    fn can_quarantine(&self, path: &Path, device: u64) -> io::Result<bool> {
+        let mounts = self.mount_points()?;
+        let device = (libc::major(device), libc::minor(device));
+        Ok(mounts.device_mounts.get(&device) == Some(&1)
+            && !mounts.paths.iter().any(|mount| mount.starts_with(path)))
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn can_quarantine(&self, _path: &Path, _device: u64) -> io::Result<bool> {
+        Ok(false)
+    }
+
+    fn mount_points(&self) -> io::Result<&MountSnapshot> {
         let load_mountinfo = &self.load_mountinfo;
-        match self.mount_points.get_or_init(|| {
-            load_mountinfo().map(|mountinfo| mount_points_from_mountinfo(&mountinfo))
-        }) {
+        match self
+            .mount_points
+            .get_or_init(|| load_mountinfo().map(|mountinfo| MountSnapshot::parse(&mountinfo)))
+        {
             Ok(mount_points) => Ok(mount_points),
             Err(e) => Err(io::Error::new(
                 e.kind(),
@@ -385,11 +454,9 @@ fn absolute_path_without_following_final_symlink(path: &Path) -> io::Result<Path
     Ok(normalize_path(&absolute))
 }
 
+#[cfg(test)]
 fn mount_points_from_mountinfo(mountinfo: &[u8]) -> HashSet<PathBuf> {
-    linux_mountinfo::parse(mountinfo)
-        .filter_map(Result::ok)
-        .map(|mount| PathBuf::from(OsString::from_vec(mount.target)))
-        .collect()
+    MountSnapshot::parse(mountinfo).paths
 }
 
 #[cfg(test)]

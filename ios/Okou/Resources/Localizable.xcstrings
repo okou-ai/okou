@@ -1970,24 +1970,13 @@
         }
       }
     },
-    "Mark all chats for %@ as read": {
+    "Mark all as read": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mark all chats for %@ as read"
-          }
-        }
-      }
-    },
-    "Mark all as read for this agent": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mark all as read for this agent"
+            "value": "Mark all as read"
           }
         }
       }

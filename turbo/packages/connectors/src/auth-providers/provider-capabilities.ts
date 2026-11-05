@@ -382,33 +382,6 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
-    connectorSlug: "deel",
-    authMethodId: "oauth",
-    contract: {
-      client: {
-        kind: "static-confidential-env",
-        clientIdEnv: "DEEL_OAUTH_CLIENT_ID",
-        clientSecretEnv: "DEEL_OAUTH_CLIENT_SECRET",
-      },
-      grant: {
-        kind: "auth-code",
-        callbackOrigin: "web",
-        outputNames: ["accessToken", "refreshToken"],
-        startOptionNames: [],
-      },
-      access: {
-        kind: "refresh-token",
-        inputNames: ["refreshToken"],
-        outputNames: ["accessToken", "refreshToken"],
-        platformSecrets: [],
-      },
-      revoke: {
-        kind: "none",
-        inputNames: [],
-      },
-    },
-  },
-  {
     connectorSlug: "docusign",
     authMethodId: "oauth",
     contract: {
@@ -470,33 +443,6 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
         kind: "static-confidential-env",
         clientIdEnv: "FIGMA_OAUTH_CLIENT_ID",
         clientSecretEnv: "FIGMA_OAUTH_CLIENT_SECRET",
-      },
-      grant: {
-        kind: "auth-code",
-        callbackOrigin: "web",
-        outputNames: ["accessToken", "refreshToken"],
-        startOptionNames: [],
-      },
-      access: {
-        kind: "refresh-token",
-        inputNames: ["refreshToken"],
-        outputNames: ["accessToken", "refreshToken"],
-        platformSecrets: [],
-      },
-      revoke: {
-        kind: "none",
-        inputNames: [],
-      },
-    },
-  },
-  {
-    connectorSlug: "garmin-connect",
-    authMethodId: "oauth",
-    contract: {
-      client: {
-        kind: "static-confidential-env",
-        clientIdEnv: "GARMIN_CONNECT_OAUTH_CLIENT_ID",
-        clientSecretEnv: "GARMIN_CONNECT_OAUTH_CLIENT_SECRET",
       },
       grant: {
         kind: "auth-code",
@@ -1876,33 +1822,6 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
         kind: "auth-code",
         callbackOrigin: "web",
         outputNames: ["accessToken", "livemode", "refreshToken"],
-        startOptionNames: [],
-      },
-      access: {
-        kind: "refresh-token",
-        inputNames: ["refreshToken"],
-        outputNames: ["accessToken", "refreshToken"],
-        platformSecrets: [],
-      },
-      revoke: {
-        kind: "none",
-        inputNames: [],
-      },
-    },
-  },
-  {
-    connectorSlug: "supabase",
-    authMethodId: "oauth",
-    contract: {
-      client: {
-        kind: "static-confidential-env",
-        clientIdEnv: "SUPABASE_OAUTH_CLIENT_ID",
-        clientSecretEnv: "SUPABASE_OAUTH_CLIENT_SECRET",
-      },
-      grant: {
-        kind: "auth-code",
-        callbackOrigin: "web",
-        outputNames: ["accessToken", "refreshToken"],
         startOptionNames: [],
       },
       access: {

@@ -10,39 +10,42 @@ import {
   type ChatThreadVirtualListScrollAlign,
 } from "../okou-page/sidebar-state.ts";
 import {
-  currentChatThreadListIds$,
-  currentChatThreadListSignals$,
-  unreadChatThreads$,
+  currentChatThreadList$,
+  unreadChatThreadListSignals$,
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
+import {
+  listedThreadIds,
+  threadRowKey,
+  type ChatThreadListRow,
+  type ThreadChatThreadListRow,
+} from "./chat-thread-list-rows.ts";
 import {
   sidebarChatThreadItemSignalsRegistry$,
   type SidebarChatThreadItemSignals,
 } from "./sidebar-chat-thread-item.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
+import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
 
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
 
-export const unreadSidebarChatThreadList$ = computed(async (get) => {
-  const threads = await get(unreadChatThreads$);
-  const threadIds = threads.map((thread) => {
-    return thread.id;
-  });
-  return {
-    items: get(sidebarChatThreadItemSignalsRegistry$).reconcile(threadIds),
-  };
-});
+export type SidebarChatThreadRow =
+  | Exclude<ChatThreadListRow, ThreadChatThreadListRow>
+  | (ThreadChatThreadListRow & {
+      readonly signals: SidebarChatThreadItemSignals;
+    });
 
 export interface SidebarChatThreadWindow {
   readonly startIndex: number;
-  readonly items: readonly SidebarChatThreadItemSignals[];
+  readonly rows: readonly SidebarChatThreadRow[];
   readonly showAllChatsRow: boolean;
 }
 
 export interface SidebarChatThreadListSignals {
   readonly count$: Computed<number>;
   readonly rowCount$: Computed<number>;
+  readonly rows$: Computed<readonly SidebarChatThreadRow[]>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly window$: Computed<SidebarChatThreadWindow>;
@@ -53,8 +56,9 @@ interface SidebarChatThreadScrollMetrics {
   readonly clientHeight: number;
 }
 
-export interface ScrollToThreadRequest {
-  readonly threadId: string;
+export interface ScrollToRowRequest {
+  /** The row key of a Project or chat in the list. */
+  readonly key: string;
   readonly align?: ChatThreadVirtualListScrollAlign;
 }
 
@@ -67,9 +71,9 @@ export interface SidebarChatThreadScrollSignals {
     (() => void) | undefined,
     [HTMLElement | null]
   >;
-  readonly scrollToThread$: Command<
+  readonly scrollToRow$: Command<
     Promise<boolean>,
-    [string | ScrollToThreadRequest, AbortSignal]
+    [ScrollToRowRequest, AbortSignal]
   >;
   readonly scrollCurrentChatThreadOnRef$: Command<
     (() => void) | undefined,
@@ -81,22 +85,55 @@ type SidebarChatThreadDomSignals = ReturnType<
   typeof createSidebarChatThreadDomSignals
 >;
 
+function attachItemSignals(
+  rows: readonly ChatThreadListRow[],
+  items: readonly SidebarChatThreadItemSignals[],
+): readonly SidebarChatThreadRow[] {
+  let itemIndex = 0;
+  return rows.map((row): SidebarChatThreadRow => {
+    if (row.kind !== "thread") {
+      return row;
+    }
+    const signals = items[itemIndex];
+    itemIndex += 1;
+    if (signals?.threadId !== row.threadId) {
+      throw new Error("Chat rows and their item signals diverged");
+    }
+    return { ...row, signals };
+  });
+}
+
+// The sidebar's unread list is short and renders every row, so it skips the
+// virtual window and keeps its own loading state.
+export const unreadSidebarChatThreadRows$ = computed(async (get) => {
+  const list = await get(unreadChatThreadListSignals$);
+  return attachItemSignals(
+    get(list.rows$),
+    get(sidebarChatThreadItemSignalsRegistry$).reconcile(
+      listedThreadIds(get(list.rows$)),
+    ),
+  );
+});
+
 function createSidebarChatThreadViewportSignals(
   domSignals: SidebarChatThreadDomSignals,
   list: ChatThreadListSignals,
   showAllChatsRow: boolean,
   rowHeight: number,
 ): SidebarChatThreadListSignals {
-  const itemSignals$ = computed((get) => {
-    return get(sidebarChatThreadItemSignalsRegistry$).reconcile(
-      get(list.threadIds$),
+  const rows$ = computed((get): readonly SidebarChatThreadRow[] => {
+    return attachItemSignals(
+      get(list.rows$),
+      get(sidebarChatThreadItemSignalsRegistry$).reconcile(
+        listedThreadIds(get(list.rows$)),
+      ),
     );
   });
   const rowCount$ = computed((get) => {
-    return get(itemSignals$).length + (showAllChatsRow ? 1 : 0);
+    return get(list.count$) + (showAllChatsRow ? 1 : 0);
   });
   const window$ = computed((get): SidebarChatThreadWindow => {
-    const itemSignals = get(itemSignals$);
+    const rows = get(rows$);
     const rowCount = get(rowCount$);
     const scrollViewport = get(domSignals.scrollViewport$);
     const scrollMetrics = get(domSignals.scrollMetrics$);
@@ -120,24 +157,21 @@ function createSidebarChatThreadViewportSignals(
             startIndex + CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE,
           ),
         );
-    const threadCount = itemSignals.length;
 
     return {
       startIndex,
-      items: itemSignals.slice(
-        startIndex,
-        Math.min(resolvedEndIndex, threadCount),
-      ),
+      rows: rows.slice(startIndex, Math.min(resolvedEndIndex, rows.length)),
       showAllChatsRow:
         showAllChatsRow &&
-        startIndex <= threadCount &&
-        resolvedEndIndex > threadCount,
+        startIndex <= rows.length &&
+        resolvedEndIndex > rows.length,
     };
   });
 
   return {
     count$: list.count$,
     rowCount$,
+    rows$,
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
     window$,
@@ -193,7 +227,7 @@ function createScrollListToIndexCommand(
 }
 
 export function createSidebarChatThreadScrollSignals({
-  source$ = currentChatThreadListSignals$,
+  source$ = currentChatThreadList$,
   rowHeight = CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
   restoreScrollPosition = false,
 }: {
@@ -206,7 +240,9 @@ export function createSidebarChatThreadScrollSignals({
   // adds its own synchronous virtual window over that list.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
     const showAllChatsRow =
-      get(chatThreadOnlyArchived$) || get(chatThreadOnlyMuted$);
+      get(chatThreadOnlyUnread$) ||
+      get(chatThreadOnlyArchived$) ||
+      get(chatThreadOnlyMuted$);
     const list = await get(source$);
     return createSidebarChatThreadViewportSignals(
       domSignals,
@@ -219,18 +255,15 @@ export function createSidebarChatThreadScrollSignals({
     domSignals,
     rowHeight,
   );
-  const scrollToThread$ = command(
-    async (
-      { get, set },
-      request: string | ScrollToThreadRequest,
-      signal: AbortSignal,
-    ) => {
-      const threadId = typeof request === "string" ? request : request.threadId;
-      const align = typeof request === "string" ? "top" : request.align;
-      const threadIds = await get(currentChatThreadListIds$);
+  const scrollToRow$ = command(
+    async ({ get, set }, request: ScrollToRowRequest, signal: AbortSignal) => {
+      const { key, align = "top" } = request;
+      const list = await get(list$);
       signal.throwIfAborted();
 
-      const index = threadIds.indexOf(threadId);
+      const index = get(list.rows$).findIndex((row) => {
+        return row.key === key;
+      });
       if (index === -1) {
         return false;
       }
@@ -244,7 +277,11 @@ export function createSidebarChatThreadScrollSignals({
       if (!threadId) {
         return;
       }
-      await set(scrollToThread$, { threadId, align: "top" }, signal);
+      await set(
+        scrollToRow$,
+        { key: threadRowKey(threadId), align: "top" },
+        signal,
+      );
     }),
   );
 
@@ -254,7 +291,7 @@ export function createSidebarChatThreadScrollSignals({
     setScrollMetrics$: domSignals.setScrollMetrics$,
     setScrollViewport$: domSignals.setScrollViewport$,
     refreshScrollViewport$: domSignals.refreshScrollViewport$,
-    scrollToThread$,
+    scrollToRow$,
     scrollCurrentChatThreadOnRef$,
   };
 }
@@ -285,19 +322,19 @@ export const refreshSidebarChatThreadLayoutOnRef$ = onRef(
   }),
 );
 
-export const scrollToThread$ = command(
+export const scrollToChatListRow$ = command(
   async (
     { set },
-    request: string | ScrollToThreadRequest,
+    request: ScrollToRowRequest,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const responsiveScroll = set(
-      responsiveSidebarChatThreadScrollSignals.scrollToThread$,
+      responsiveSidebarChatThreadScrollSignals.scrollToRow$,
       request,
       signal,
     );
     const threeColumnScroll = set(
-      threeColumnSidebarChatThreadScrollSignals.scrollToThread$,
+      threeColumnSidebarChatThreadScrollSignals.scrollToRow$,
       request,
       signal,
     );
