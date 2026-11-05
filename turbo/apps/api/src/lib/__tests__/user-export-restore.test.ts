@@ -55,6 +55,14 @@ function sources(producer: "guest" | "server" = "guest") {
     ["README.md", Buffer.from("Export fixture")],
     ["restore.py", Buffer.from(USER_EXPORT_RESTORE_SCRIPT)],
     [
+      "instructions/org-a.json",
+      json({
+        orgId: "org-a",
+        userId: "alice",
+        content: "Personal Instructions.",
+      }),
+    ],
+    [
       "chat-threads/thread-a.json",
       json({
         id: "thread-a",
@@ -200,6 +208,9 @@ describe("downloaded export recovery tool", () => {
       await expect(
         readFile(join(output, "memory/org-a/binary.dat")),
       ).resolves.toStrictEqual(fixture.binary);
+      await expect(
+        readFile(join(output, "instructions.jsonl"), "utf8"),
+      ).resolves.toContain("Personal Instructions.");
       await expect(
         readFile(join(output, "agents.jsonl"), "utf8"),
       ).resolves.toContain("Keep these instructions exactly.");

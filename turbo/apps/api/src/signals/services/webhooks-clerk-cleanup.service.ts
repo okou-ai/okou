@@ -1,3 +1,4 @@
+import { deletePersonalInstructions$ } from "./personal-instructions.service";
 import { deleteMarketingContentGrants$ } from "./marketing-handoff.service";
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -239,6 +240,7 @@ export const cleanupClerkDeletedOrg$ = command(
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
     signal.throwIfAborted();
+    await set(deletePersonalInstructions$, owner, signal);
     await set(eraseRemoteOwnerData$, owner, signal);
   },
 );
@@ -260,6 +262,7 @@ export const cleanupClerkDeletedUser$ = command(
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
     signal.throwIfAborted();
+    await set(deletePersonalInstructions$, owner, signal);
     await set(eraseRemoteOwnerData$, owner, signal);
   },
 );

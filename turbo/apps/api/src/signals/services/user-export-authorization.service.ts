@@ -1,3 +1,4 @@
+import { instructions } from "@okouai/db/schema/instructions";
 import { command } from "ccstate";
 import { and, asc, count, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
@@ -71,7 +72,17 @@ export const authorizeUserExportPage$ = command(
     const workflowIds = identifiers(rows, "workflowId");
     const threadIds = identifiers(rows, "threadId");
     const storageIds = identifiers(rows, "storageId");
-    if (agentIds.length > 0 || workflowIds.length > 0) {
+    const instructionOrgIds = identifiers(
+      rows.filter((row) => {
+        return row.metadata.sourceKind === "instructions";
+      }),
+      "orgId",
+    );
+    if (
+      agentIds.length > 0 ||
+      workflowIds.length > 0 ||
+      instructionOrgIds.length > 0
+    ) {
       const memberships = await listAllUserOrganizationMemberships(
         get(clerk$).users,
         userId,
@@ -82,6 +93,20 @@ export const authorizeUserExportPage$ = command(
       const orgIds = memberships.map((membership) => {
         return membership.organization.id;
       });
+      if (instructionOrgIds.length > 0) {
+        const owned = await db
+          .select({ orgId: instructions.orgId })
+          .from(instructions)
+          .where(
+            and(
+              eq(instructions.userId, userId),
+              inArray(instructions.orgId, orgIds),
+              inArray(instructions.orgId, instructionOrgIds),
+            ),
+          );
+        signal.throwIfAborted();
+        requireAll(owned, instructionOrgIds);
+      }
       if (agentIds.length > 0) {
         const visible = await db
           .select({ id: agents.id })
@@ -191,6 +216,29 @@ function userExportPublicationChecks(
 ): readonly { readonly expected: SQL; readonly readable: SQL }[] {
   const db = new QueryBuilder();
   const checks: { readonly expected: SQL; readonly readable: SQL }[] = [];
+  const instructionOrgIds = db
+    .selectDistinct({ id: sql`${userExportEntries.metadata}->>'orgId'` })
+    .from(userExportEntries)
+    .where(
+      and(
+        eq(userExportEntries.jobId, args.jobId),
+        eq(sql`${userExportEntries.metadata}->>'sourceKind'`, "instructions"),
+      ),
+    );
+  checks.push({
+    expected: instructionOrgIds.getSQL(),
+    readable: db
+      .select({ id: instructions.orgId })
+      .from(instructions)
+      .where(
+        and(
+          eq(instructions.userId, args.userId),
+          inArray(instructions.orgId, args.orgIds),
+          inArray(instructions.orgId, instructionOrgIds),
+        ),
+      )
+      .getSQL(),
+  });
   const agentIds = authorityIds(args, ["agent"], "agentId");
   checks.push({
     expected: agentIds.getSQL(),

@@ -1,3 +1,4 @@
+import { singleAgentRuntimeContextSchema } from "@okouai/api-contracts/contracts/single-agent";
 import { createHmac, hkdfSync } from "node:crypto";
 
 import {
@@ -47,6 +48,8 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["instructions:read", FeatureSwitchKey.SingleAgent],
+  ["instructions:write", FeatureSwitchKey.SingleAgent],
   ["connector-account:switch", FeatureSwitchKey.ConnectorChatAccountAccess],
   ["project:read", FeatureSwitchKey.Projects],
   ["project:write", FeatureSwitchKey.Projects],
@@ -102,6 +105,7 @@ const agentCapabilitiesSchema = array(string().min(1))
   .readonly();
 
 const okouTokenPayloadSchema = jwtBaseSchema.extend({
+  ...singleAgentRuntimeContextSchema.shape,
   scope: literal("okou"),
   runId: string().min(1),
   orgId: string().min(1),
@@ -194,6 +198,12 @@ function isCapabilityAvailableToAgent(
   capability: Capability,
   options: OkouTokenOptions | undefined,
 ): boolean {
+  if (
+    capability === "instructions:read" ||
+    capability === "instructions:write"
+  ) {
+    return options?.isDefaultAgent === true;
+  }
   if (capability === "suggestion:read" || capability === "suggestion:write") {
     return options?.isDefaultAgent === true;
   }
@@ -311,6 +321,7 @@ export function verifyOkouToken(token: string): AgentAuth | null {
     runId: parsed.data.runId,
     orgId: parsed.data.orgId,
     capabilities: parsed.data.capabilities,
+    ...singleAgentRuntimeContextSchema.parse(parsed.data),
     ...(parsed.data.computerUseHostId
       ? { computerUseHostId: parsed.data.computerUseHostId }
       : {}),
@@ -409,6 +420,10 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
+    ...(options?.isDefaultAgent === true &&
+    featureEnabled(FeatureSwitchKey.SingleAgent)
+      ? { singleAgent: true as const }
+      : {}),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId
       ? { computerUseHostId: options.computerUseHostId }

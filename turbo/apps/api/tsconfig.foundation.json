@@ -362,7 +362,8 @@
     "src/signals/services/proactive-workflow-definitions.ts",
     "src/signals/services/workflow-attachment-cleanup.service.ts",
     "src/signals/services/background-job-command.service.ts",
-    "src/signals/services/background-job.service.ts"
+    "src/signals/services/background-job.service.ts",
+    "src/signals/services/personal-instructions.service.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

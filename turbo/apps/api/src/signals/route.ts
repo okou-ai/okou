@@ -9,6 +9,7 @@ import {
   projectAgentDraftRoutes,
 } from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
+import { instructionsRoutes } from "./routes/instructions";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -320,6 +321,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentDraftRoutes,
   ...suggestionsRoutes,
   ...agentInstructionsRoutes,
+  ...instructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,
   ...artifactCatalogRoutes,
