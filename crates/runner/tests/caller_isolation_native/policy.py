@@ -42,10 +42,11 @@ TYPES = (
 )
 
 
-def build_policy():
+def base_policy_lines(classes, types, type_attribute):
+    """Build the shared declarations and control access for native fixture policies."""
     lines = ["(handleunknown deny)", "(mls false)"]
-    lines += [f"(class {name} ({perms}))" for name, perms in CLASSES.items()]
-    lines += [f"(classorder ({' '.join(CLASSES)}))"]
+    lines += [f"(class {name} ({perms}))" for name, perms in classes.items()]
+    lines += [f"(classorder ({' '.join(classes)}))"]
     sids = [
         "kernel",
         "security",
@@ -73,23 +74,28 @@ def build_policy():
         "(userrole system_u system_r)",
         "(userrole system_u object_r)",
     ]
-    for name in TYPES:
+    for name in types:
         lines += [
             f"(type {name})",
             f"(roletype system_r {name})",
             f"(roletype object_r {name})",
         ]
     lines += [
-        "(typeattribute fixture_types)",
-        f"(typeattributeset fixture_types ({' '.join(TYPES)}))",
+        f"(typeattribute {type_attribute})",
+        f"(typeattributeset {type_attribute} ({' '.join(types)}))",
     ]
     context = "(system_u system_r control_t ((s0) (s0)))"
     for sid in sids:
         lines.append(f"(sidcontext {sid} {context})")
     lines += [
-        f"(allow control_t fixture_types ({name} ({perms})))"
-        for name, perms in CLASSES.items()
+        f"(allow control_t {type_attribute} ({name} ({perms})))"
+        for name, perms in classes.items()
     ]
+    return lines
+
+
+def build_policy():
+    lines = base_policy_lines(CLASSES, TYPES, "fixture_types")
     lines += ["(fsuse xattr tmpfs (system_u object_r control_t ((s0) (s0))))"]
     lines += ["(allow fixture_types control_t (filesystem (associate)))"]
     for role in ("agent_t", "workload_t", "gateway_t"):

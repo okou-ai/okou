@@ -1,4 +1,4 @@
-from policy import CAP, CLASSES, FILE, SOCKET
+from policy import CAP, CLASSES, FILE, SOCKET, base_policy_lines
 
 
 def build_policy():
@@ -34,45 +34,7 @@ def build_policy():
         "agent_state_t",
         "runtime_state_t",
     ]
-    lines = ["(handleunknown deny)", "(mls false)"]
-    lines += [f"(class {k} ({v}))" for k, v in classes.items()]
-    lines += [f"(classorder ({' '.join(classes)}))"]
-    sids = [
-        "kernel",
-        "security",
-        "unlabeled",
-        "fs",
-        "file",
-        "file_labels",
-        "init",
-        "any_socket",
-        "port",
-        "netif",
-        "netmsg",
-        "node",
-    ]
-    lines += [f"(sid {s})" for s in sids] + [f"(sidorder ({' '.join(sids)}))"]
-    lines += [
-        "(user system_u)",
-        "(role system_r)",
-        "(role object_r)",
-        "(sensitivity s0)",
-        "(sensitivityorder (s0))",
-        "(userlevel system_u (s0))",
-        "(userrange system_u ((s0) (s0)))",
-        "(userrole system_u system_r)",
-        "(userrole system_u object_r)",
-    ]
-    for t in types:
-        lines += [f"(type {t})", f"(roletype system_r {t})", f"(roletype object_r {t})"]
-    lines += [
-        "(typeattribute all_types)",
-        f"(typeattributeset all_types ({' '.join(types)}))",
-    ]
-    for s in sids:
-        lines += [f"(sidcontext {s} (system_u system_r control_t ((s0) (s0))))"]
-    for k, v in classes.items():
-        lines += [f"(allow control_t all_types ({k} ({v})))"]
+    lines = base_policy_lines(classes, types, "all_types")
     lines += [
         "(fsuse xattr ext4 (system_u object_r control_t ((s0) (s0))))",
         "(fsuse trans tmpfs (system_u object_r control_t ((s0) (s0))))",
