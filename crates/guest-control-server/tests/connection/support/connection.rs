@@ -6,6 +6,7 @@ use std::panic;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use cli_test_support::thread::join_until;
 use guest_control_server::{
     handle_connection_with_test_dns_readiness_program,
     handle_connection_with_test_guest_agent_program,
@@ -240,14 +241,10 @@ fn observe_guest_connection_with_timeout(
     let deadline = Instant::now()
         .checked_add(timeout)
         .expect("guest connection teardown timeout overflowed");
-    while !handle.is_finished() {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return GuestConnectionWait::TimedOut;
-        }
-        thread::sleep(std::cmp::min(remaining, GUEST_COMPLETION_POLL_INTERVAL));
+    match join_until(handle, deadline, GUEST_COMPLETION_POLL_INTERVAL) {
+        Some(result) => GuestConnectionWait::Completed(result),
+        None => GuestConnectionWait::TimedOut,
     }
-    GuestConnectionWait::Completed(handle.join())
 }
 
 fn panic_payload_message(payload: &(dyn Any + Send)) -> String {

@@ -1,3 +1,4 @@
+use cli_test_support::thread::join_until;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::{Map, Value, json};
@@ -84,20 +85,17 @@ impl<T: Send + 'static> TcpTestServer<T> {
             .ok_or_else(|| io::Error::other("TCP test server lost its thread"))?;
         let _ = self.stop_tx.send(());
         let deadline = Instant::now() + TCP_SERVER_CLEANUP_TIMEOUT;
-        while !handle.is_finished() {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
+        let joined = match join_until(handle, deadline, TCP_SERVER_JOIN_POLL_INTERVAL) {
+            Some(joined) => joined,
+            None => {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     format!("TCP test server did not stop within {TCP_SERVER_CLEANUP_TIMEOUT:?}"),
                 ));
             }
-            thread::sleep(remaining.min(TCP_SERVER_JOIN_POLL_INTERVAL));
-        }
+        };
 
-        handle
-            .join()
-            .map_err(|_| io::Error::other("TCP test server panicked"))?
+        joined.map_err(|_| io::Error::other("TCP test server panicked"))?
     }
 }
 

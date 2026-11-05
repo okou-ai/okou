@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use cli_test_support::thread::join_until;
 use guest_control_proto::{
     ExecCapturedOutput, ExecControlPolicy, ExecLifecyclePolicy, ExecOutputPolicy, ExecOutputStream,
     ExecStartEncodeRequest, ExecTermination, ExecTimeoutPolicy, MSG_ERROR, MSG_EXEC_CANCEL,
@@ -275,17 +276,12 @@ fn wait_for_guest_connection_with_timeout(
     let deadline = Instant::now()
         .checked_add(timeout)
         .expect("production identity guest teardown timeout overflowed");
-    while !handle.is_finished() {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
+    match join_until(handle, deadline, GUEST_COMPLETION_POLL_INTERVAL) {
+        Some(Ok(result)) => result,
+        Some(Err(payload)) => panic::resume_unwind(payload),
+        None => {
             panic!("production identity guest teardown timed out after {timeout:?}");
         }
-        thread::sleep(std::cmp::min(remaining, GUEST_COMPLETION_POLL_INTERVAL));
-    }
-
-    match handle.join() {
-        Ok(result) => result,
-        Err(payload) => panic::resume_unwind(payload),
     }
 }
 
