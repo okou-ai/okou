@@ -1031,6 +1031,94 @@ test("Thread menu searches and changes Project membership while preserving the o
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });
 
+test("A rejected Project move does not replace a later confirmed move", async () => {
+  const ordinary = continuityThread(124, 1, "Ordinary chat");
+  const reference = continuityThread(124, 2, "Reference notes");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 124,
+    threads: [ordinary, reference],
+  });
+  const secondId = "30000000-0000-4000-8000-000000000072";
+  metadata([{ id: secondId, name: "Research" }]);
+  const events: ChatThreadEvent[] = [];
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
+    });
+  });
+  function membershipEvent(
+    thread: ChatThreadSnapshotProjection,
+    eventId: string,
+    projectId: string | null,
+  ): ChatThreadEvent {
+    return {
+      id: eventId,
+      seqId: events.length + 2,
+      kind: "project_updated",
+      chatThreadId: thread.id,
+      agentId: thread.agentId,
+      title: thread.title,
+      projectId,
+      selectedModel: thread.selectedModel,
+      serviceTier: null,
+      computerUseHostId: null,
+      createdAt: at,
+    };
+  }
+  let rejected = false;
+  context.mocks.api(
+    projectsContract.membership,
+    ({ params, body, respond }) => {
+      if (!rejected) {
+        rejected = true;
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Project state changed" },
+        });
+      }
+      events.push(membershipEvent(ordinary, body.eventId, body.projectId));
+      // Another device files a second chat, marking when the catch-up lands.
+      events.push(membershipEvent(reference, crypto.randomUUID(), secondId));
+      return respond(200, { threadId: params.id, projectId: body.projectId });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  async function moveTo(project: string) {
+    const row = document.querySelector<HTMLElement>(
+      `[data-sidebar-chat-thread-row-id="${ordinary.id}"]`,
+    );
+    if (!row) {
+      throw new Error("Thread row missing");
+    }
+    await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
+    await user.click(await findMenuItem("Move to Project"));
+    await user.click(
+      button(project, await screen.findByRole("dialog", { name: "Move chat" })),
+    );
+  }
+  await moveTo("Launch");
+  await expect(
+    screen.findByText("Project state changed"),
+  ).resolves.toBeInTheDocument();
+
+  await moveTo("Research");
+
+  await waitFor(() => {
+    return expect(
+      namedLink(folder(secondId), "Reference notes"),
+    ).toBeInTheDocument();
+  });
+  expect(namedLink(folder(secondId), "Ordinary chat")).toBeInTheDocument();
+});
+
 test("Dropping over an existing Project chat moves immediately while the request is pending", async () => {
   const confirmation = context.mocks.deferred<void>();
   const canonicalRead = context.mocks.deferred<void>();

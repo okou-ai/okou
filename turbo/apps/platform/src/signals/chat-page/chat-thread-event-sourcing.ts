@@ -188,9 +188,67 @@ function filterUnsettledOptimisticChatThreadEvents(
       return event.id;
     }),
   );
-  return optimistic.filter((event) => {
-    return !persistedEventIds.has(event.id);
+  // A persisted edit also settles earlier local edits of the same thread
+  // field. Replay applies optimistic events last, so one that never persisted
+  // would otherwise override the confirmed value that followed it.
+  const settledThrough = new Map<string, number>();
+  for (const [index, event] of optimistic.entries()) {
+    const field = optimisticThreadField(event);
+    if (field !== null && persistedEventIds.has(event.id)) {
+      settledThrough.set(field, index);
+    }
+  }
+  return optimistic.filter((event, index) => {
+    if (persistedEventIds.has(event.id)) {
+      return false;
+    }
+    const field = optimisticThreadField(event);
+    return field === null || index > (settledThrough.get(field) ?? -1);
   });
+}
+
+/**
+ * The thread field an event sets, keyed by thread. Activity touches, creation
+ * and deletion return null because a later edit does not replace them.
+ */
+function optimisticThreadField(
+  event: OptimisticChatThreadEvent,
+): string | null {
+  const field = threadFieldKind(event);
+  return field === null ? null : `${event.chatThreadId}:${field}`;
+}
+
+function threadFieldKind(event: OptimisticChatThreadEvent): string | null {
+  switch (event.kind) {
+    case "renamed":
+    case "project_updated":
+    case "model_selection_updated":
+    case "service_tier_updated":
+    case "computer_use_host_updated": {
+      return event.kind;
+    }
+    case "pinned":
+    case "unpinned": {
+      return "pinned";
+    }
+    case "archived":
+    case "unarchived": {
+      return "archived";
+    }
+    case "sort_touched": {
+      if (event.hidden !== undefined) {
+        return "hidden";
+      }
+      if (event.muted !== undefined) {
+        return "muted";
+      }
+      return typeof event.pinOrder === "string" ? "pinOrder" : null;
+    }
+    case "created":
+    case "deleted": {
+      return null;
+    }
+  }
 }
 
 const sharedChatThreadEventDataKey$ = computed((): ChatThreadEventDataKey => {
