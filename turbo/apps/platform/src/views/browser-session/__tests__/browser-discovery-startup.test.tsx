@@ -188,6 +188,31 @@ test("Creating a tab during the continuing scan retains unvisited own tabs", asy
   expect(screen.queryByLabelText("Sibling 19")).not.toBeInTheDocument();
 });
 
+test("A pending creation does not hide an initially unvisited survivor from close preservation", async () => {
+  const { browser, start } = viewer();
+  const scan = browser.holdNextMembership("sibling-3");
+  await start();
+  await scan.received;
+  await ready();
+  const creation = browser.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await creation.received;
+  click(screen.getByLabelText("Close First own tab"));
+  await act(scan.release);
+  await waitFor(() => {
+    expect(
+      screen.queryByLabelText("First own tab", { selector: '[role="tab"]' }),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    browser.targets.some((target) => {
+      return target.targetId === "created-2";
+    }),
+  ).toBeFalsy();
+  await act(creation.release);
+  await ready("https://later.example.com");
+});
+
 test("Losing the first proven tab does not admit an empty window before discovery completes", async () => {
   const { browser, start } = viewer();
   const held = browser.holdNextMembership("sibling-3");

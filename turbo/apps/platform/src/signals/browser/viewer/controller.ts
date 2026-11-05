@@ -611,11 +611,9 @@ function createTabOpeningGraph(
   });
   const open$ = command(async ({ get, set }, signal: AbortSignal) => {
     const opening = {};
-    const existing = new Set(
-      get(model.snapshot$).targets.map((target) => {
-        return target.id;
-      }),
-    );
+    // Listed identities predate this opening even before membership settles.
+    // Close decisions still require their current authoritative scope proof.
+    const existing = new Set(get(model.inventoryState$).entries.keys());
     set(openings$, new Map(get(openings$)).set(opening, existing));
     using _opening = {
       [Symbol.dispose]: () => {
