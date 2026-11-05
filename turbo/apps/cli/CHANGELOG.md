@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.17.9](https://github.com/okou-ai/okou/compare/cli-v10.17.8...cli-v10.17.9) (2026-11-05)
+
+
+### Refactoring
+
+* remove proactive planning and tasks ([#45210](https://github.com/okou-ai/okou/issues/45210)) ([222d861](https://github.com/okou-ai/okou/commit/222d8618346194b5af227c5e147a0076181ee3e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.1
+    * @okouai/core bumped to 8.818.1
+    * @okouai/pi-agent-runtime bumped to 1.51.65
+
 ## [10.17.8](https://github.com/okou-ai/okou/compare/cli-v10.17.7...cli-v10.17.8) (2026-11-04)
 
 

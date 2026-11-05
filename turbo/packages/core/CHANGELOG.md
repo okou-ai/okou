@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.818.1](https://github.com/okou-ai/okou/compare/core-v8.818.0...core-v8.818.1) (2026-11-05)
+
+
+### Refactoring
+
+* remove proactive planning and tasks ([#45210](https://github.com/okou-ai/okou/issues/45210)) ([222d861](https://github.com/okou-ai/okou/commit/222d8618346194b5af227c5e147a0076181ee3e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.1
+
 ## [8.818.0](https://github.com/okou-ai/okou/compare/core-v8.817.0...core-v8.818.0) (2026-11-04)
 
 
