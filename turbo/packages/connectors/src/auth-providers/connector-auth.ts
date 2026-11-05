@@ -90,7 +90,6 @@ import { mailchimpProvider } from "./connectors/mailchimp/provider";
 import { mercuryProvider } from "./connectors/mercury/provider";
 import { microsoft365Provider } from "./connectors/microsoft-365/provider";
 import { mondayProvider } from "./connectors/monday/provider";
-import { neonProvider } from "./connectors/neon/provider";
 import { nintendoSwitchParentalControlsProvider } from "./connectors/nintendo-switch-parental-controls/provider";
 import { nintendoStoreProvider } from "./connectors/nintendo-store/provider";
 import { notionProvider } from "./connectors/notion/provider";
@@ -1043,7 +1042,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("mercury", "oauth", mercuryProvider),
   authCodeRefreshProviderEntry("microsoft-365", "oauth", microsoft365Provider),
   authCodeRefreshProviderEntry("monday", "oauth", mondayProvider),
-  authCodeRefreshProviderEntry("neon", "oauth", neonProvider),
   refreshProviderEntry("netsuite", "api-token", netsuiteProvider),
   externalCodeRefreshProviderEntry(
     "nintendo-store",

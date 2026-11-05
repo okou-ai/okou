@@ -287,11 +287,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Mercury banking connector",
     enabled: false,
   },
-  [FeatureSwitchKey.NeonConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Neon serverless Postgres connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.NetSuiteConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Oracle NetSuite ERP connector",

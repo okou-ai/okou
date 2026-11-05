@@ -106,7 +106,7 @@ function mockAuthenticatedSession(): void {
   );
 }
 
-// #30570 pre-stages twenty launch-gated OAuth connectors on the direct Okou App
+// #30570 pre-stages launch-gated OAuth connectors on the direct Okou App
 // callback. Each case pins the provider-specific authorization and token
 // exchange contract that must survive the callback change.
 type LaunchGatedDirectOkouCase = {
@@ -461,29 +461,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
               id: "mercury-org-123",
               legalBusinessName: "Mercury Test Org",
             },
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "neon",
-    label: "Neon",
-    clientEnvPrefix: "NEON",
-    authorizationEndpoint: "https://oauth2.neon.tech/oauth2/auth",
-    tokenUrl: "https://oauth2.neon.tech/oauth2/token",
-    tokenResponse: {
-      access_token: "neon-test-token",
-      refresh_token: "neon-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://console.neon.tech/api/v2/users/me", () => {
-          return HttpResponse.json({
-            id: "neon-user-123",
-            name: "Neon Test User",
-            email: "neon@example.test",
           });
         }),
       );

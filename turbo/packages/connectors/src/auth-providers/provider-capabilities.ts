@@ -1190,33 +1190,6 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
-    connectorSlug: "neon",
-    authMethodId: "oauth",
-    contract: {
-      client: {
-        kind: "static-confidential-env",
-        clientIdEnv: "NEON_OAUTH_CLIENT_ID",
-        clientSecretEnv: "NEON_OAUTH_CLIENT_SECRET",
-      },
-      grant: {
-        kind: "auth-code",
-        callbackOrigin: "web",
-        outputNames: ["accessToken", "refreshToken"],
-        startOptionNames: [],
-      },
-      access: {
-        kind: "refresh-token",
-        inputNames: ["refreshToken"],
-        outputNames: ["accessToken", "refreshToken"],
-        platformSecrets: [],
-      },
-      revoke: {
-        kind: "none",
-        inputNames: [],
-      },
-    },
-  },
-  {
     connectorSlug: "netsuite",
     authMethodId: "api-token",
     contract: {

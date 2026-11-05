@@ -1606,11 +1606,6 @@ const connectors = [
     connectorSlug: "neon",
     label: "Neon",
     authMethods: [
-      standardOauthMethod({
-        connectorSlug: "neon",
-        prefix: "NEON",
-        tokenEnvironmentNames: ["NEON_TOKEN"],
-      }),
       manualMethod({
         fields: [
           manualField({
