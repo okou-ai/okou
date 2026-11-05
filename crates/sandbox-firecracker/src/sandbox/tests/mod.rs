@@ -13,6 +13,7 @@ use tokio::net::UnixStream;
 use tokio::time::Instant;
 use tracing::Level;
 use tracing_subscriber::prelude::*;
+use tracing_test_support::capture_current_thread_events as capture_async_log_events;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
 mod backing_process;
@@ -4839,19 +4840,6 @@ fn patches(reqs: &[MockRequest]) -> Vec<&MockRequest> {
 fn mock_request_body_json(request: &MockRequest) -> serde_json::Value {
     serde_json::from_str(&request.body)
         .unwrap_or_else(|error| panic!("invalid JSON body: {error}; request: {request:?}"))
-}
-
-async fn capture_async_log_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-    let output = future.await;
-    drop(guard);
-    (output, captured.entries())
 }
 
 async fn capture_balloon_timeout_after_sample<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
