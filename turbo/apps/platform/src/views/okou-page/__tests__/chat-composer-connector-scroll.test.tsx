@@ -5,7 +5,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  holdElementAnimations,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   builtinConnector,
@@ -86,6 +91,9 @@ test.each([12, 30])(
     const panel = await openAccountPanel(popup);
     expect(panel.scrollTop).toBe(0);
     expect(panel).toHaveFocus();
+    expect(
+      within(popup).queryByRole("list", { name: "Connectors" }),
+    ).toBeNull();
     panel.scrollTop = 140;
     await user.keyboard("{Tab}{Enter}");
     const restored = await within(popup).findByRole("list", {
@@ -142,6 +150,29 @@ test("Keep search focus and discard the previous result position on a new query 
       within(fresh).getByPlaceholderText("Find connectors..."),
     ).toHaveFocus();
   });
+});
+
+test("Start a fresh overview when reopening before the previous popup finishes closing", async () => {
+  const { popup, trigger } = await setup(30);
+  within(popup).getByRole("list", { name: "Connectors" }).scrollTop = 180;
+  const finish = holdElementAnimations(popup);
+  try {
+    click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(popup).toBeVisible();
+    click(trigger);
+    const reopened = await screen.findByRole("dialog", { name: "Connectors" });
+    expect(
+      within(reopened).getByRole("list", { name: "Connectors" }).scrollTop,
+    ).toBe(0);
+    await waitFor(() => {
+      expect(
+        within(reopened).getByPlaceholderText("Find connectors..."),
+      ).toHaveFocus();
+    });
+  } finally {
+    finish();
+  }
 });
 
 test("Keep a valid overview focus destination if the returning connector was removed", async () => {
