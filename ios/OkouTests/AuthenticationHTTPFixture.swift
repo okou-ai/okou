@@ -15,12 +15,14 @@ final class AuthenticationHTTPFixture: Sendable {
     var sessionID = "sess_startup_" + UUID().uuidString
     var activeWorkspaceID: String? = "org_one"
     var workspaceIDs = ["org_one"]
+    var workspaceImages: [String: String] = [:]
     var pending = false
     var signedOut = false
     var failMemberships = false
     var failActivation = false
   }
 
+  let identityOverride = Mutex<(@Sendable (URLRequest) throws -> ChatHTTPResponse?)?>(nil)
   let state = Mutex(State())
   let memberships = AuthenticationRequestGate()
   let activation = AuthenticationRequestGate()
@@ -246,6 +248,9 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   func response(_ request: URLRequest) async throws -> ChatHTTPResponse {
+    if let override = identityOverride.withLock({ $0 }), let response = try override(request) {
+      return response
+    }
     switch request.url!.path {
     case "/v1/environment":
       var response = try json(Clerk.Environment.mock)
@@ -268,6 +273,8 @@ final class AuthenticationHTTPFixture: Sendable {
         membership.id = "membership_" + id
         membership.organization.id = id
         membership.organization.name = id == "org_one" ? "First workspace" : "Second workspace"
+        membership.organization.hasImage = snapshot.workspaceImages[id] != nil
+        if let image = snapshot.workspaceImages[id] { membership.organization.imageUrl = image }
         return membership
       }
       return try json(

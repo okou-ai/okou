@@ -270,7 +270,7 @@ function serializeAgentMention(agentId: string, name: string): string {
   return `[${escapedName}](/agents/${agentId}/chat)`;
 }
 
-function serializeFeedbackNote(
+export function serializeFeedbackNote(
   parts: readonly FeedbackNotePart[],
   serializeTemplate: (
     part: Extract<FeedbackNotePart, { type: "template" }>,

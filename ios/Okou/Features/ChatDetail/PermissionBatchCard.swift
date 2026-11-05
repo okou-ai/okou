@@ -28,8 +28,7 @@ struct PermissionBatchCard: View {
 
   var body: some View {
     ChatActionCard {
-      ChatCardHeader(title: String(localized: "Permissions requested"), systemImage: "lock.shield")
-      {
+      ChatCardHeader(title: String(localized: "Permissions requested"), icon: "shield-check") {
         Text(
           "\(Set(store.action.items.map(\.connectorSlug)).count) services · \(store.action.items.count) permissions"
         )
@@ -151,8 +150,7 @@ struct PermissionBatchDetails: View {
           .font(.footnote).foregroundStyle(.secondary)
       } else if store.allAllowed && !store.needsContinuation && !store.isSaving {
         Button("Done") { dismiss() }
-          .buttonStyle(.borderedProminent).controlSize(.large)
-          .tint(Color("AccentColor"))
+          .buttonStyle(OkouButtonStyle(isPrimary: true))
       } else {
         if !store.allAllowed && !store.isContinuing {
           HStack {
@@ -179,9 +177,7 @@ struct PermissionBatchDetails: View {
         } label: {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
         }
-        .buttonStyle(.borderedProminent).controlSize(.large)
-        .buttonBorderShape(.roundedRectangle(radius: 12))
-        .tint(Color("AccentColor"))
+        .buttonStyle(OkouButtonStyle(isPrimary: true))
         .disabled(!store.canConfirm)
         .accessibilityIdentifier("permission-batch-confirm")
         if store.action.callbackPrompt != nil {

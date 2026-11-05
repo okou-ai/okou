@@ -227,12 +227,9 @@ function SuggestionFeedbackNotice({
             return $.chat.agentSuggestions.notPlannedRecorded;
           })
         : feedback.kind === "less_like_this"
-          ? t(
-              ($) => {
-                return $.chat.agentSuggestions.lessRecorded;
-              },
-              { scope: entry.item.feedbackScope.label },
-            )
+          ? t(($) => {
+              return $.chat.agentSuggestions.lessRecorded;
+            })
           : t(($) => {
               return $.chat.agentSuggestions.dismissRecorded;
             });

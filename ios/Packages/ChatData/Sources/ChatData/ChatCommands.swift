@@ -8,6 +8,8 @@ public actor ChatCommands {
   public nonisolated let permissions: ChatPermissions
   public nonisolated let batchPermissions: ChatBatchPermissions
   let client: APIClient
+  /// Approval cards (mail drafts, shell access) call the API directly with this client.
+  public nonisolated var approvalClient: APIClient { client }
   public nonisolated let connectorActions: ChatConnectorService
   private let sync: ChatSync
   private var sendingThreads = Set<String>()

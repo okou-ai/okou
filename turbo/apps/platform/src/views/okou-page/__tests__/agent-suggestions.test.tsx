@@ -47,7 +47,6 @@ function makeSuggestion(): Suggestion {
     title: "Review the pending decision",
     rationale: "A response is needed",
     priority: 20,
-    feedbackScope: { key: "project-review", label: "project review" },
     feedbacks: [],
     status: "active",
     selectedOptionId: null,
@@ -1168,9 +1167,7 @@ test("Feedback stays available after the last card, accepts an optional reason, 
       }),
   ).toStrictEqual(actions);
   await userEvent.setup().click(button("Less like this"));
-  await screen.findByText(
-    "You’ll see fewer suggestions like this (project review).",
-  );
+  await screen.findByText("You’ll see fewer suggestions like this.");
   await userEvent.setup().click(button("Add a reason"));
   await userEvent
     .setup()

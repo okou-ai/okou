@@ -8,26 +8,26 @@ struct ChatAttachmentChips: View {
 
   var body: some View {
     ScrollView(.horizontal) {
-      HStack(spacing: 8) {
+      HStack(spacing: OkouSpace.sm) {
         ForEach(draft.items) { item in
-          VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 8) {
+          VStack(alignment: .leading, spacing: OkouSpace.six) {
+            HStack(alignment: .top, spacing: OkouSpace.sm) {
               Button {
                 if item.file.url.isFileURL { previewURL = item.file.url }
               } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: OkouSpace.sm) {
                   if let data = item.file.thumbnail, let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFill()
                       .frame(width: 40, height: 40).clipped()
-                      .clipShape(RoundedRectangle(cornerRadius: 6))
+                      .clipShape(RoundedRectangle(cornerRadius: OkouRadius.thumbnail))
                   } else {
-                    Image(systemName: "doc.fill").font(.title2)
-                      .frame(width: 40, height: 40).foregroundStyle(.secondary)
+                    OkouIcon("file", size: OkouIconSize.standard)
+                      .frame(width: 40, height: 40).foregroundStyle(OkouColor.mutedForeground)
                   }
-                  Text(item.file.filename).font(.caption).lineLimit(2)
+                  Text(item.file.filename).font(.okou(.caption)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 44)
+                .frame(minHeight: OkouControl.minimumTarget)
                 .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
@@ -36,8 +36,8 @@ struct ChatAttachmentChips: View {
               Button {
                 draft.remove(item.id)
               } label: {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                  .frame(width: 44, height: 44)
+                OkouToolbarIcon("circle-x").foregroundStyle(OkouColor.mutedForeground)
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
               }
               .buttonStyle(.plain)
               .disabled(isDisabled)
@@ -45,33 +45,35 @@ struct ChatAttachmentChips: View {
             }
             switch item.state {
             case .waiting:
-              Text("Waiting to upload…").foregroundStyle(.secondary)
+              Text("Waiting to upload…").foregroundStyle(OkouColor.mutedForeground)
             case .uploading(let fraction):
               ProgressView(value: fraction)
                 .accessibilityLabel("Uploading \(item.file.filename)")
             case .checking:
-              Text("Checking uploaded file…").foregroundStyle(.secondary)
+              Text("Checking uploaded file…").foregroundStyle(OkouColor.mutedForeground)
             case .ready:
               Text(
                 ByteCountFormatter.string(fromByteCount: Int64(item.file.size), countStyle: .file)
               )
-              .foregroundStyle(.secondary)
+              .foregroundStyle(OkouColor.mutedForeground)
             case .failed(let message):
-              Text(message).foregroundStyle(.red).lineLimit(2)
+              Text(message).foregroundStyle(OkouColor.destructive).lineLimit(2)
               Button {
                 draft.retry(item.id)
               } label: {
-                Text("Retry attachment").font(.caption.weight(.medium))
-                  .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                Text("Retry attachment").font(.okou(.caption).weight(.medium))
+                  .frame(
+                    maxWidth: .infinity, minHeight: OkouControl.minimumTarget, alignment: .leading
+                  )
                   .contentShape(Rectangle())
               }
               .disabled(isDisabled)
             }
           }
-          .font(.caption2)
-          .padding(10)
+          .font(.okou(.caption2))
+          .padding(OkouSpace.ten)
           .frame(width: 240, alignment: .leading)
-          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+          .background(OkouColor.nestedFill, in: RoundedRectangle(cornerRadius: OkouRadius.control))
         }
       }
     }

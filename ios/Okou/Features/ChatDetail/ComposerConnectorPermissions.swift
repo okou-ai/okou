@@ -29,11 +29,13 @@ struct ComposerConnectorPermissions: View {
             Text("7 days").tag("7d")
             Text("Always").tag("always")
           }
+          .okouValuePicker()
           if let categories = state.metadata.categories {
             Picker("Category", selection: $category) {
               Text("All categories").tag("")
               ForEach(categories.displayOrder, id: \.self) { Text($0).tag($0) }
             }
+            .okouValuePicker()
           }
           Menu("Set listed permissions") {
             Button("Allow all") {
@@ -58,30 +60,41 @@ struct ComposerConnectorPermissions: View {
           Text(
             state.connectorScoped
               ? "These permissions apply to this connector across your chats and accounts."
-              : "These permissions apply to this Agent across its chats.")
+              : "These permissions apply to this Agent across its chats."
+          )
+          .okouSectionNote()
         }
-        Section("Permissions") {
+        Section {
           ForEach(
             filteredPermissions(state.metadata), id: \.name
           ) { permission in
             permissionRow(permission.name, description: permission.description, state: state)
           }
+        } header: {
+          Text("Permissions").okouSectionHeader()
         }
-        Section("Unknown operations") {
+        Section {
           permissionRow(
             "__unknown__", description: "Requests not recognized by the connector", state: state)
+        } header: {
+          Text("Unknown operations").okouSectionHeader()
         }
         Section {
           Button("Reset to defaults", role: .destructive) { confirmsReset = true }.disabled(
             store.isSaving || store.uncertain)
         } footer: {
-          Text(
-            "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
-          )
+          Group {
+            Text(
+              "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
+            )
+
+          }
+          .okouSectionNote()
         }
       }
     }
-    .listSectionSpacing(16)
+    .okouGroupedBackground()
+    .listSectionSpacing(OkouSpace.lg)
     .overlay {
       if loading && state == nil && error == nil {
         ChatSettingsLoadingView(title: "Loading permissions…")
@@ -115,12 +128,16 @@ struct ComposerConnectorPermissions: View {
     let policy = state.metadata.policy(for: name, grants: state.grants, at: .now)
     return HStack(alignment: .top) {
       VStack(alignment: .leading, spacing: 5) {
-        Text(name == "__unknown__" ? "Unknown operations" : name).font(.callout)
-        if let description { Text(description).font(.caption).foregroundStyle(.secondary) }
+        Text(name == "__unknown__" ? "Unknown operations" : name).font(.okou(.callout))
+        if let description {
+          Text(description).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+        }
         if let expiry = state.grants.last(where: { $0.permission == name && $0.isActive(at: .now) }
         )?.expiresAt {
-          Text("Expires \(expiry.formatted(date: .abbreviated, time: .shortened))").font(.caption)
-            .foregroundStyle(.secondary)
+          Text("Expires \(expiry.formatted(date: .abbreviated, time: .shortened))").font(
+            .okou(.caption)
+          )
+          .foregroundStyle(OkouColor.mutedForeground)
         }
       }
       Spacer()
@@ -134,7 +151,7 @@ struct ComposerConnectorPermissions: View {
           Task { await save([ChatPermissionEdit(permission: name, action: "deny")]) }
         }
       } label: {
-        Text(policy.rawValue.capitalized).frame(minHeight: 44)
+        Text(policy.rawValue.capitalized).frame(minHeight: OkouControl.minimumTarget)
       }.disabled(store.isSaving || store.uncertain || loading)
     }
   }

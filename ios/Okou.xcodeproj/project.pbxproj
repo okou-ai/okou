@@ -1,521 +1,659 @@
 // !$*UTF8*$!
 {
-	"archiveVersion" = 1;
-	"classes" = {
+	archiveVersion = 1;
+	classes = {
 	};
-	"objectVersion" = 77;
-	"objects" = {
-		"000000000000000000000070" = {
-			"isa" = "XCRemoteSwiftPackageReference";
-			"repositoryURL" = "https://github.com/lukilabs/beautiful-mermaid-swift";
-			"requirement" = {
-				"kind" = "exactVersion";
-				"version" = "1.0.4";
-			};
-		};
-		"000000000000000000000071" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "000000000000000000000070";
-			"productName" = "BeautifulMermaid";
-		};
-		"000000000000000000000072" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000071";
-		};
-		"000000000000000000000040" = {
-			"isa" = "PBXNativeTarget";
-			"buildConfigurationList" = "000000000000000000000043";
-			"buildPhases" = ("000000000000000000000046", "000000000000000000000047", "000000000000000000000048", );
-			"buildRules" = ();
-			"dependencies" = ();
-			"fileSystemSynchronizedGroups" = ("000000000000000000000044", "000000000000000000000055", );
-			"name" = "OkouNotificationService";
-			"packageProductDependencies" = ("00000000000000000000000E", "00000000000000000000002D", "000000000000000000000061", );
-			"productName" = "OkouNotificationService";
-			"productReference" = "000000000000000000000049";
-			"productType" = "com.apple.product-type.app-extension";
-		};
-		"000000000000000000000043" = {
-			"isa" = "XCConfigurationList";
-			"buildConfigurations" = ("000000000000000000000041", "000000000000000000000042", );
-			"defaultConfigurationIsVisible" = 0;
-			"defaultConfigurationName" = "Release";
-		};
-		"000000000000000000000044" = {
-			"isa" = "PBXFileSystemSynchronizedRootGroup";
-			"exceptions" = ("000000000000000000000045", );
-			"path" = "NotificationExtension";
-			"sourceTree" = "<group>";
-		};
-		"000000000000000000000045" = {
-			"isa" = "PBXFileSystemSynchronizedBuildFileExceptionSet";
-			"membershipExceptions" = ("Info.plist", );
-			"target" = "000000000000000000000040";
-		};
-		"000000000000000000000046" = {
-			"isa" = "PBXSourcesBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ();
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000047" = {
-			"isa" = "PBXFrameworksBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ("000000000000000000000050", "000000000000000000000051", "000000000000000000000063", );
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000048" = {
-			"isa" = "PBXResourcesBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ();
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000049" = {
-			"isa" = "PBXFileReference";
-			"explicitFileType" = "wrapper.app-extension";
-			"includeInIndex" = 0;
-			"path" = "OkouNotificationService.appex";
-			"sourceTree" = "BUILT_PRODUCTS_DIR";
-		};
-		"000000000000000000000050" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "00000000000000000000000E";
-		};
-		"000000000000000000000051" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "00000000000000000000002D";
-		};
-		"000000000000000000000053" = {
-			"isa" = "PBXBuildFile";
-			"fileRef" = "000000000000000000000049";
-			"settings" = {
-				"ATTRIBUTES" = ("RemoveHeadersOnCopy", );
-			};
-		};
-		"000000000000000000000054" = {
-			"isa" = "PBXCopyFilesBuildPhase";
-			"buildActionMask" = 2147483647;
-			"dstPath" = "";
-			"dstSubfolderSpec" = 13;
-			"files" = ("000000000000000000000053", );
-			"name" = "Embed App Extensions";
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000055" = {
-			"isa" = "PBXFileSystemSynchronizedRootGroup";
-			"path" = "Push";
-			"sourceTree" = "<group>";
-		};
-		"00000000000000000000005A" = {
-			"isa" = "PBXContainerItemProxy";
-			"containerPortal" = "000000000000000000000001";
-			"proxyType" = 1;
-			"remoteGlobalIDString" = "000000000000000000000040";
-			"remoteInfo" = "OkouNotificationService";
-		};
-		"00000000000000000000005B" = {
-			"isa" = "PBXTargetDependency";
-			"target" = "000000000000000000000040";
-			"targetProxy" = "00000000000000000000005A";
-		};
-		"000000000000000000000041" = {
-			"isa" = "XCBuildConfiguration";
-			"buildSettings" = {
-				"APPLICATION_EXTENSION_API_ONLY" = "YES";
-				"CODE_SIGN_ENTITLEMENTS" = "NotificationExtension/NotificationExtension.entitlements";
-				"GENERATE_INFOPLIST_FILE" = "NO";
-				"INFOPLIST_FILE" = "NotificationExtension/Info.plist";
-				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
-				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.notifications";
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
-				"SKIP_INSTALL" = "YES";
-				"SWIFT_EMIT_LOC_STRINGS" = "NO";
-			};
-			"name" = "Debug";
-		};
-		"000000000000000000000042" = {
-			"isa" = "XCBuildConfiguration";
-			"buildSettings" = {
-				"APPLICATION_EXTENSION_API_ONLY" = "YES";
-				"CODE_SIGN_ENTITLEMENTS" = "NotificationExtension/NotificationExtension.entitlements";
-				"GENERATE_INFOPLIST_FILE" = "NO";
-				"INFOPLIST_FILE" = "NotificationExtension/Info.plist";
-				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
-				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.notifications";
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
-				"SKIP_INSTALL" = "YES";
-				"SWIFT_EMIT_LOC_STRINGS" = "NO";
-			};
-			"name" = "Release";
-		};
-		"00000000000000000000002C" = {
-			"isa" = "XCLocalSwiftPackageReference";
-			"relativePath" = "Packages/ChatData";
-		};
-		"00000000000000000000002D" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "00000000000000000000002C";
-			"productName" = "ChatData";
-		};
-		"00000000000000000000002E" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "00000000000000000000002C";
-			"productName" = "ChatDataTestSupport";
-		};
-		"00000000000000000000002F" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "00000000000000000000002D";
-		};
-		"000000000000000000000030" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "00000000000000000000002D";
-		};
-		"000000000000000000000031" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "00000000000000000000002E";
-		};
-		"000000000000000000000028" = {
-			"isa" = "XCLocalSwiftPackageReference";
-			"relativePath" = "Packages/ChatDomain";
-		};
-		"000000000000000000000029" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "000000000000000000000028";
-			"productName" = "ChatDomain";
-		};
-		"00000000000000000000002A" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000029";
-		};
-		"00000000000000000000002B" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000029";
-		};
-		"000000000000000000000009" = {
-			"isa" = "PBXFileReference";
-			"explicitFileType" = "wrapper.application";
-			"includeInIndex" = 0;
-			"path" = "Okou.app";
-			"sourceTree" = "BUILT_PRODUCTS_DIR";
-		};
-		"00000000000000000000000A" = {
-			"isa" = "PBXFileReference";
-			"explicitFileType" = "wrapper.cfbundle";
-			"includeInIndex" = 0;
-			"path" = "OkouTests.xctest";
-			"sourceTree" = "BUILT_PRODUCTS_DIR";
-		};
-		"00000000000000000000000B" = {
-			"isa" = "PBXFileSystemSynchronizedBuildFileExceptionSet";
-			"membershipExceptions" = ("Resources/Info.plist",);
-			"target" = "000000000000000000000002";
-		};
-		"000000000000000000000005" = {
-			"isa" = "PBXFileSystemSynchronizedRootGroup";
-			"exceptions" = ("00000000000000000000000B",);
-			"path" = "Okou";
-			"sourceTree" = "<group>";
-		};
-		"000000000000000000000006" = {
-			"isa" = "PBXFileSystemSynchronizedRootGroup";
-			"path" = "OkouTests";
-			"sourceTree" = "<group>";
-		};
-		"000000000000000000000004" = {
-			"isa" = "PBXFileSystemSynchronizedRootGroup";
-			"path" = "Config";
-			"sourceTree" = "<group>";
-		};
-		"000000000000000000000007" = {
-			"isa" = "PBXGroup";
-			"children" = ("000000000000000000000009", "00000000000000000000000A", "000000000000000000000049",);
-			"name" = "Products";
-			"sourceTree" = "<group>";
-		};
-		"000000000000000000000008" = {
-			"isa" = "PBXGroup";
-			"children" = ("000000000000000000000005", "000000000000000000000006", "000000000000000000000004", "000000000000000000000044", "000000000000000000000055", "000000000000000000000007",);
-			"sourceTree" = "<group>";
-		};
-		"00000000000000000000000C" = {
-			"isa" = "XCRemoteSwiftPackageReference";
-			"repositoryURL" = "https://github.com/clerk/clerk-ios.git";
-			"requirement" = {
-				"kind" = "exactVersion";
-				"version" = "1.5.4";
-			};
-		};
-		"00000000000000000000000D" = {
-			"isa" = "XCRemoteSwiftPackageReference";
-			"repositoryURL" = "https://github.com/ably/ably-cocoa.git";
-			"requirement" = {
-				"kind" = "exactVersion";
-				"version" = "1.4.0";
-			};
-		};
-		"00000000000000000000000E" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "00000000000000000000000C";
-			"productName" = "ClerkKit";
-		};
-		"000000000000000000000025" = {
-			"isa" = "XCRemoteSwiftPackageReference";
-			"repositoryURL" = "https://github.com/gonzalezreal/textual.git";
-			"requirement" = {
-				"kind" = "exactVersion";
-				"version" = "0.5.0";
-			};
-		};
-		"000000000000000000000060" = {
-			"isa" = "XCRemoteSwiftPackageReference";
-			"repositoryURL" = "https://github.com/getsentry/sentry-cocoa.git";
-			"requirement" = {
-				"kind" = "exactVersion";
-				"version" = "9.17.1";
-			};
-		};
-		"000000000000000000000061" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "000000000000000000000060";
-			"productName" = "Sentry";
-		};
-		"000000000000000000000062" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000061";
-		};
-		"000000000000000000000063" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000061";
-		};
-		"000000000000000000000026" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "000000000000000000000025";
-			"productName" = "Textual";
-		};
-		"000000000000000000000027" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000026";
-		};
-		"00000000000000000000000F" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "00000000000000000000000E";
-		};
-		"000000000000000000000010" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "00000000000000000000000C";
-			"productName" = "ClerkKitUI";
-		};
-		"000000000000000000000011" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000010";
-		};
-		"000000000000000000000012" = {
-			"isa" = "XCSwiftPackageProductDependency";
-			"package" = "00000000000000000000000D";
-			"productName" = "Ably";
-		};
-		"000000000000000000000013" = {
-			"isa" = "PBXBuildFile";
-			"productRef" = "000000000000000000000012";
-		};
-		"000000000000000000000014" = {
-			"isa" = "PBXSourcesBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ();
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000015" = {
-			"isa" = "PBXFrameworksBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ("00000000000000000000000F", "000000000000000000000011", "000000000000000000000013", "000000000000000000000027", "00000000000000000000002A", "00000000000000000000002F", "000000000000000000000062", "000000000000000000000072",);
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000016" = {
-			"isa" = "PBXResourcesBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ();
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000017" = {
-			"isa" = "PBXSourcesBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ();
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000018" = {
-			"isa" = "PBXFrameworksBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ("00000000000000000000002B", "000000000000000000000030", "000000000000000000000031",);
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"000000000000000000000019" = {
-			"isa" = "PBXResourcesBuildPhase";
-			"buildActionMask" = 2147483647;
-			"files" = ();
-			"runOnlyForDeploymentPostprocessing" = 0;
-		};
-		"00000000000000000000001A" = {
-			"isa" = "PBXContainerItemProxy";
-			"containerPortal" = "000000000000000000000001";
-			"proxyType" = 1;
-			"remoteGlobalIDString" = "000000000000000000000002";
-			"remoteInfo" = "Okou";
-		};
-		"00000000000000000000001B" = {
-			"isa" = "PBXTargetDependency";
-			"target" = "000000000000000000000002";
-			"targetProxy" = "00000000000000000000001A";
-		};
-		"00000000000000000000001C" = {
-			"isa" = "XCBuildConfiguration";
-			"baseConfigurationReferenceAnchor" = "000000000000000000000004";
-			"baseConfigurationReferenceRelativePath" = "Debug.xcconfig";
-			"buildSettings" = {
-				"CLANG_ENABLE_MODULES" = "YES";
-				"CLANG_ENABLE_OBJC_ARC" = "YES";
-				"SDKROOT" = "iphoneos";
-			};
-			"name" = "Debug";
-		};
-		"00000000000000000000001D" = {
-			"isa" = "XCBuildConfiguration";
-			"baseConfigurationReferenceAnchor" = "000000000000000000000004";
-			"baseConfigurationReferenceRelativePath" = "Release.xcconfig";
-			"buildSettings" = {
-				"CLANG_ENABLE_MODULES" = "YES";
-				"CLANG_ENABLE_OBJC_ARC" = "YES";
-				"SDKROOT" = "iphoneos";
-			};
-			"name" = "Release";
-		};
-		"00000000000000000000001E" = {
-			"isa" = "XCConfigurationList";
-			"buildConfigurations" = ("00000000000000000000001C", "00000000000000000000001D",);
-			"defaultConfigurationIsVisible" = 0;
-			"defaultConfigurationName" = "Release";
-		};
-		"00000000000000000000001F" = {
-			"isa" = "XCBuildConfiguration";
-			"buildSettings" = {
-				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
-				"ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME" = "AccentColor";
-				"CODE_SIGN_ENTITLEMENTS" = "Okou/Resources/Okou.entitlements";
-				"GENERATE_INFOPLIST_FILE" = "NO";
-				"INFOPLIST_FILE" = "Okou/Resources/Info.plist";
-				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks",);
-				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios";
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
-				"SWIFT_EMIT_LOC_STRINGS" = "YES";
-			};
-			"name" = "Debug";
-		};
-		"000000000000000000000020" = {
-			"isa" = "XCBuildConfiguration";
-			"buildSettings" = {
-				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
-				"ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME" = "AccentColor";
-				"CODE_SIGN_ENTITLEMENTS" = "Okou/Resources/Okou.entitlements";
-				"GENERATE_INFOPLIST_FILE" = "NO";
-				"INFOPLIST_FILE" = "Okou/Resources/Info.plist";
-				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks",);
-				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios";
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
-				"PROVISIONING_PROFILE_SPECIFIER" = "$(OKOU_RELEASE_PROFILE_UUID)";
-				"SWIFT_EMIT_LOC_STRINGS" = "YES";
-			};
-			"name" = "Release";
-		};
-		"000000000000000000000021" = {
-			"isa" = "XCConfigurationList";
-			"buildConfigurations" = ("00000000000000000000001F", "000000000000000000000020",);
-			"defaultConfigurationIsVisible" = 0;
-			"defaultConfigurationName" = "Release";
-		};
-		"000000000000000000000022" = {
-			"isa" = "XCBuildConfiguration";
-			"buildSettings" = {
-				"BUNDLE_LOADER" = "$(TEST_HOST)";
-				"GENERATE_INFOPLIST_FILE" = "YES";
-				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
-				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.tests";
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
-				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Okou.app/Okou";
-			};
-			"name" = "Debug";
-		};
-		"000000000000000000000023" = {
-			"isa" = "XCBuildConfiguration";
-			"buildSettings" = {
-				"BUNDLE_LOADER" = "$(TEST_HOST)";
-				"GENERATE_INFOPLIST_FILE" = "YES";
-				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
-				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.tests";
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
-				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Okou.app/Okou";
-			};
-			"name" = "Release";
-		};
-		"000000000000000000000024" = {
-			"isa" = "XCConfigurationList";
-			"buildConfigurations" = ("000000000000000000000022", "000000000000000000000023",);
-			"defaultConfigurationIsVisible" = 0;
-			"defaultConfigurationName" = "Release";
-		};
-		"000000000000000000000002" = {
-			"isa" = "PBXNativeTarget";
-			"buildConfigurationList" = "000000000000000000000021";
-			"buildPhases" = ("000000000000000000000014", "000000000000000000000015", "000000000000000000000016", "000000000000000000000054",);
-			"buildRules" = ();
-			"dependencies" = ("00000000000000000000005B",);
-			"fileSystemSynchronizedGroups" = ("000000000000000000000005", "000000000000000000000055",);
-			"name" = "Okou";
-			"packageProductDependencies" = ("00000000000000000000000E", "000000000000000000000010", "000000000000000000000012", "000000000000000000000026", "000000000000000000000029", "00000000000000000000002D", "000000000000000000000061", "000000000000000000000071",);
-			"productName" = "Okou";
-			"productReference" = "000000000000000000000009";
-			"productType" = "com.apple.product-type.application";
-		};
-		"000000000000000000000003" = {
-			"isa" = "PBXNativeTarget";
-			"buildConfigurationList" = "000000000000000000000024";
-			"buildPhases" = ("000000000000000000000017", "000000000000000000000018", "000000000000000000000019",);
-			"buildRules" = ();
-			"dependencies" = ("00000000000000000000001B",);
-			"fileSystemSynchronizedGroups" = ("000000000000000000000006",);
-			"name" = "OkouTests";
-			"packageProductDependencies" = ("000000000000000000000029", "00000000000000000000002D", "00000000000000000000002E",);
-			"productName" = "OkouTests";
-			"productReference" = "00000000000000000000000A";
-			"productType" = "com.apple.product-type.bundle.unit-test";
-		};
-		"000000000000000000000001" = {
-			"isa" = "PBXProject";
-			"attributes" = {
-				"BuildIndependentTargetsInParallel" = "YES";
-				"LastSwiftUpdateCheck" = "2630";
-				"LastUpgradeCheck" = "2630";
-				"TargetAttributes" = {
-					"000000000000000000000002" = {
-						"CreatedOnToolsVersion" = "26.3";
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		00000000000000000000000F /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000000E /* ClerkKit */; };
+		000000000000000000000011 /* ClerkKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000010 /* ClerkKitUI */; };
+		000000000000000000000013 /* Ably in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000012 /* Ably */; };
+		000000000000000000000027 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000026 /* Textual */; };
+		00000000000000000000002A /* ChatDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000029 /* ChatDomain */; };
+		00000000000000000000002B /* ChatDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000029 /* ChatDomain */; };
+		00000000000000000000002F /* ChatData in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000002D /* ChatData */; };
+		000000000000000000000030 /* ChatData in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000002D /* ChatData */; };
+		000000000000000000000031 /* ChatDataTestSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000002E /* ChatDataTestSupport */; };
+		000000000000000000000050 /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000000E /* ClerkKit */; };
+		000000000000000000000051 /* ChatData in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000002D /* ChatData */; };
+		000000000000000000000053 /* OkouNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 000000000000000000000049 /* OkouNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		000000000000000000000062 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000061 /* Sentry */; };
+		000000000000000000000063 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000061 /* Sentry */; };
+		000000000000000000000072 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000071 /* BeautifulMermaid */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		00000000000000000000001A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000000000002;
+			remoteInfo = Okou;
+		};
+		00000000000000000000005A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000000000040;
+			remoteInfo = OkouNotificationService;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		000000000000000000000054 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				000000000000000000000053 /* OkouNotificationService.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		000000000000000000000009 /* Okou.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Okou.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		00000000000000000000000A /* OkouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OkouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000049 /* OkouNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OkouNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		00000000000000000000000B /* Exceptions for "Okou" folder in "Okou" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Resources/Info.plist,
+			);
+			target = 000000000000000000000002 /* Okou */;
+		};
+		000000000000000000000045 /* Exceptions for "NotificationExtension" folder in "OkouNotificationService" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 000000000000000000000040 /* OkouNotificationService */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		000000000000000000000004 /* Config */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Config;
+			sourceTree = "<group>";
+		};
+		000000000000000000000005 /* Okou */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				00000000000000000000000B /* Exceptions for "Okou" folder in "Okou" target */,
+			);
+			path = Okou;
+			sourceTree = "<group>";
+		};
+		000000000000000000000006 /* OkouTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OkouTests;
+			sourceTree = "<group>";
+		};
+		000000000000000000000044 /* NotificationExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				000000000000000000000045 /* Exceptions for "NotificationExtension" folder in "OkouNotificationService" target */,
+			);
+			path = NotificationExtension;
+			sourceTree = "<group>";
+		};
+		000000000000000000000055 /* Push */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Push;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		000000000000000000000015 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00000000000000000000000F /* ClerkKit in Frameworks */,
+				000000000000000000000011 /* ClerkKitUI in Frameworks */,
+				000000000000000000000013 /* Ably in Frameworks */,
+				000000000000000000000027 /* Textual in Frameworks */,
+				00000000000000000000002A /* ChatDomain in Frameworks */,
+				00000000000000000000002F /* ChatData in Frameworks */,
+				000000000000000000000062 /* Sentry in Frameworks */,
+				000000000000000000000072 /* BeautifulMermaid in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000018 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00000000000000000000002B /* ChatDomain in Frameworks */,
+				000000000000000000000030 /* ChatData in Frameworks */,
+				000000000000000000000031 /* ChatDataTestSupport in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000047 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000000050 /* ClerkKit in Frameworks */,
+				000000000000000000000051 /* ChatData in Frameworks */,
+				000000000000000000000063 /* Sentry in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		000000000000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000009 /* Okou.app */,
+				00000000000000000000000A /* OkouTests.xctest */,
+				000000000000000000000049 /* OkouNotificationService.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		000000000000000000000008 = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000005 /* Okou */,
+				000000000000000000000006 /* OkouTests */,
+				000000000000000000000004 /* Config */,
+				000000000000000000000044 /* NotificationExtension */,
+				000000000000000000000055 /* Push */,
+				000000000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		000000000000000000000002 /* Okou */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000021 /* Build configuration list for PBXNativeTarget "Okou" */;
+			buildPhases = (
+				000000000000000000000014 /* Sources */,
+				000000000000000000000015 /* Frameworks */,
+				000000000000000000000016 /* Resources */,
+				000000000000000000000054 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				00000000000000000000005B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				000000000000000000000005 /* Okou */,
+				000000000000000000000055 /* Push */,
+			);
+			name = Okou;
+			packageProductDependencies = (
+				00000000000000000000000E /* ClerkKit */,
+				000000000000000000000010 /* ClerkKitUI */,
+				000000000000000000000012 /* Ably */,
+				000000000000000000000026 /* Textual */,
+				000000000000000000000029 /* ChatDomain */,
+				00000000000000000000002D /* ChatData */,
+				000000000000000000000061 /* Sentry */,
+				000000000000000000000071 /* BeautifulMermaid */,
+			);
+			productName = Okou;
+			productReference = 000000000000000000000009 /* Okou.app */;
+			productType = "com.apple.product-type.application";
+		};
+		000000000000000000000003 /* OkouTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000024 /* Build configuration list for PBXNativeTarget "OkouTests" */;
+			buildPhases = (
+				000000000000000000000017 /* Sources */,
+				000000000000000000000018 /* Frameworks */,
+				000000000000000000000019 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				00000000000000000000001B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				000000000000000000000006 /* OkouTests */,
+			);
+			name = OkouTests;
+			packageProductDependencies = (
+				000000000000000000000029 /* ChatDomain */,
+				00000000000000000000002D /* ChatData */,
+				00000000000000000000002E /* ChatDataTestSupport */,
+			);
+			productName = OkouTests;
+			productReference = 00000000000000000000000A /* OkouTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		000000000000000000000040 /* OkouNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000043 /* Build configuration list for PBXNativeTarget "OkouNotificationService" */;
+			buildPhases = (
+				000000000000000000000046 /* Sources */,
+				000000000000000000000047 /* Frameworks */,
+				000000000000000000000048 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				000000000000000000000044 /* NotificationExtension */,
+				000000000000000000000055 /* Push */,
+			);
+			name = OkouNotificationService;
+			packageProductDependencies = (
+				00000000000000000000000E /* ClerkKit */,
+				00000000000000000000002D /* ChatData */,
+				000000000000000000000061 /* Sentry */,
+			);
+			productName = OkouNotificationService;
+			productReference = 000000000000000000000049 /* OkouNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					000000000000000000000002 = {
+						CreatedOnToolsVersion = 26.3;
 					};
-					"000000000000000000000003" = {
-						"CreatedOnToolsVersion" = "26.3";
-						"TestTargetID" = "000000000000000000000002";
+					000000000000000000000003 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 000000000000000000000002;
 					};
 				};
 			};
-			"buildConfigurationList" = "00000000000000000000001E";
-			"developmentRegion" = "en";
-			"hasScannedForEncodings" = 0;
-			"knownRegions" = ("en", "Base",);
-			"mainGroup" = "000000000000000000000008";
-			"minimizedProjectReferenceProxies" = 1;
-			"packageReferences" = ("00000000000000000000000C", "00000000000000000000000D", "000000000000000000000025", "000000000000000000000028", "00000000000000000000002C", "000000000000000000000060", "000000000000000000000070",);
-			"preferredProjectObjectVersion" = 77;
-			"productRefGroup" = "000000000000000000000007";
-			"projectDirPath" = "";
-			"projectRoot" = "";
-			"targets" = ("000000000000000000000002", "000000000000000000000003", "000000000000000000000040",);
+			buildConfigurationList = 00000000000000000000001E /* Build configuration list for PBXProject "Okou" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+				"zh-Hant",
+				ja,
+				ko,
+				de,
+				es,
+				fr,
+				it,
+				"pt-BR",
+				id,
+				hi,
+			);
+			mainGroup = 000000000000000000000008;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				00000000000000000000000C /* XCRemoteSwiftPackageReference "clerk-ios" */,
+				00000000000000000000000D /* XCRemoteSwiftPackageReference "ably-cocoa" */,
+				000000000000000000000025 /* XCRemoteSwiftPackageReference "textual" */,
+				000000000000000000000028 /* XCLocalSwiftPackageReference "Packages/ChatDomain" */,
+				00000000000000000000002C /* XCLocalSwiftPackageReference "Packages/ChatData" */,
+				000000000000000000000060 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+				000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 000000000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				000000000000000000000002 /* Okou */,
+				000000000000000000000003 /* OkouTests */,
+				000000000000000000000040 /* OkouNotificationService */,
+			);
 		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		000000000000000000000016 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000019 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000048 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		000000000000000000000014 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000017 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000046 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		00000000000000000000001B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000000000002 /* Okou */;
+			targetProxy = 00000000000000000000001A /* PBXContainerItemProxy */;
+		};
+		00000000000000000000005B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000000000040 /* OkouNotificationService */;
+			targetProxy = 00000000000000000000005A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		00000000000000000000001C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 000000000000000000000004 /* Config */;
+			baseConfigurationReferenceRelativePath = Debug.xcconfig;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		00000000000000000000001D /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 000000000000000000000004 /* Config */;
+			baseConfigurationReferenceRelativePath = Release.xcconfig;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+		00000000000000000000001F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Okou/Resources/Okou.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Okou/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		000000000000000000000020 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Okou/Resources/Okou.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Okou/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(OKOU_RELEASE_PROFILE_UUID)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		000000000000000000000022 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Okou.app/Okou";
+			};
+			name = Debug;
+		};
+		000000000000000000000023 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Okou.app/Okou";
+			};
+			name = Release;
+		};
+		000000000000000000000041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NotificationExtension/NotificationExtension.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NotificationExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios.notifications;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		000000000000000000000042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NotificationExtension/NotificationExtension.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NotificationExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios.notifications;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		00000000000000000000001E /* Build configuration list for PBXProject "Okou" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				00000000000000000000001C /* Debug */,
+				00000000000000000000001D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000021 /* Build configuration list for PBXNativeTarget "Okou" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				00000000000000000000001F /* Debug */,
+				000000000000000000000020 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000024 /* Build configuration list for PBXNativeTarget "OkouTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000022 /* Debug */,
+				000000000000000000000023 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000043 /* Build configuration list for PBXNativeTarget "OkouNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000041 /* Debug */,
+				000000000000000000000042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		000000000000000000000028 /* XCLocalSwiftPackageReference "Packages/ChatDomain" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/ChatDomain;
+		};
+		00000000000000000000002C /* XCLocalSwiftPackageReference "Packages/ChatData" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/ChatData;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		00000000000000000000000C /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/clerk/clerk-ios.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.5.4;
+			};
+		};
+		00000000000000000000000D /* XCRemoteSwiftPackageReference "ably-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ably/ably-cocoa.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.4.0;
+			};
+		};
+		000000000000000000000025 /* XCRemoteSwiftPackageReference "textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/textual.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.5.0;
+			};
+		};
+		000000000000000000000060 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa.git";
+			requirement = {
+				kind = exactVersion;
+				version = 9.17.1;
+			};
+		};
+		000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/lukilabs/beautiful-mermaid-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		00000000000000000000000E /* ClerkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00000000000000000000000C /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = ClerkKit;
+		};
+		000000000000000000000010 /* ClerkKitUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00000000000000000000000C /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = ClerkKitUI;
+		};
+		000000000000000000000012 /* Ably */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00000000000000000000000D /* XCRemoteSwiftPackageReference "ably-cocoa" */;
+			productName = Ably;
+		};
+		000000000000000000000026 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000025 /* XCRemoteSwiftPackageReference "textual" */;
+			productName = Textual;
+		};
+		000000000000000000000029 /* ChatDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000028 /* XCLocalSwiftPackageReference "Packages/ChatDomain" */;
+			productName = ChatDomain;
+		};
+		00000000000000000000002D /* ChatData */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00000000000000000000002C /* XCLocalSwiftPackageReference "Packages/ChatData" */;
+			productName = ChatData;
+		};
+		00000000000000000000002E /* ChatDataTestSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00000000000000000000002C /* XCLocalSwiftPackageReference "Packages/ChatData" */;
+			productName = ChatDataTestSupport;
+		};
+		000000000000000000000061 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000060 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+		000000000000000000000071 /* BeautifulMermaid */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */;
+			productName = BeautifulMermaid;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
-	"rootObject" = "000000000000000000000001";
+	rootObject = 000000000000000000000001 /* Project object */;
 }

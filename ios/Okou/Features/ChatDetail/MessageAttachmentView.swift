@@ -38,46 +38,54 @@ struct MessageAttachmentView: View {
     Button {
       viewer.open(attachment)
     } label: {
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: OkouSpace.md) {
         if isMedia {
           ZStack {
-            Rectangle().fill(Color(.tertiarySystemFill))
+            Rectangle().fill(OkouColor.stateHover)
             if let thumbnail {
               Image(uiImage: thumbnail).resizable().scaledToFit()
             } else if thumbnailFailed {
               if !attachment.contentType.hasPrefix("video/") {
-                Image(systemName: "arrow.down.circle").font(.largeTitle).foregroundStyle(.secondary)
+                OkouIcon("circle-arrow-down", size: OkouIconSize.mediaOverlay).foregroundStyle(
+                  OkouColor.mutedForeground)
               }
             } else {
               ProgressView().accessibilityLabel("Loading thumbnail")
             }
             if attachment.contentType.hasPrefix("video/") {
-              Image(systemName: "play.circle.fill").font(.largeTitle)
-                .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.5))
+              OkouIcon("circle-play", size: OkouIconSize.mediaOverlay)
+                .foregroundStyle(OkouMediaColor.foreground)
+                .background(OkouMediaColor.scrim.opacity(0.5), in: Circle())
             }
             if let thumbnailMessage {
               VStack {
                 Spacer()
-                Text(thumbnailMessage).font(.caption).foregroundStyle(.secondary)
-                  .multilineTextAlignment(.center).lineLimit(3).padding(12)
+                Text(thumbnailMessage).font(.okou(.caption)).foregroundStyle(
+                  OkouColor.mutedForeground
+                )
+                .multilineTextAlignment(.center).lineLimit(3).padding(OkouSpace.md)
               }
             }
           }
-          .frame(height: 150).clipped().clipShape(RoundedRectangle(cornerRadius: 10))
+          .frame(height: OkouControl.cardMediaHeight).clipped().clipShape(
+            RoundedRectangle(cornerRadius: OkouRadius.control))
         }
-        HStack(spacing: 10) {
-          if !isMedia { Image(systemName: "doc.fill").font(.title2).foregroundStyle(.secondary) }
-          VStack(alignment: .leading, spacing: 3) {
-            Text(attachment.filename).font(.subheadline.weight(.medium)).lineLimit(2)
-            Text(metadata).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        // The same heading and trailing chevron as a result card: a file in the transcript
+        // reads the same whether the user or the agent added it.
+        HStack(spacing: OkouSpace.sm) {
+          ChatCardHeader(
+            title: attachment.filename, icon: isMedia ? "image" : "file", titleLineLimit: 2
+          ) {
+            Text(metadata).lineLimit(1)
           }
-          Spacer(minLength: 0)
-          Image(systemName: "arrow.up.forward").font(.caption).foregroundStyle(.secondary)
+          OkouIcon("chevron-right", size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground)
         }
       }
-      .padding(10)
+      .padding(.horizontal, OkouSpace.lg)
+      .padding(.vertical, OkouSpace.md)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+      .modifier(ChatCardSurface())
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -123,42 +131,46 @@ struct MessageAttachmentPreview: View {
   var body: some View {
     NavigationStack {
       if let preview = viewer.preview {
-        VStack(spacing: 20) {
+        Group {
           if let file = preview.file {
-            Image(systemName: "doc.fill").font(.system(size: 48)).foregroundStyle(.secondary)
-            Text(preview.attachment.filename).font(.headline)
-            Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
-              .foregroundStyle(.secondary)
-            if QLPreviewController.canPreview(file.url as NSURL) {
-              Button("Open preview") { quickLookURL = file.url }
-                .buttonStyle(NeutralProminentButtonStyle())
-            } else {
-              Text(
-                "Preview is unavailable for this file type. Share it or save it to Files to open it in another app."
-              )
-              .multilineTextAlignment(.center).foregroundStyle(.secondary)
+            let size = ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)
+            let canPreview = QLPreviewController.canPreview(file.url as NSURL)
+            OkouEmptyState(
+              verbatim: preview.attachment.filename, icon: "file",
+              description: canPreview
+                ? Text(verbatim: size)
+                : Text(verbatim: size) + Text(verbatim: " · ")
+                  + Text(
+                    "Preview is unavailable for this file type. Share it or save it to Files to open it in another app."
+                  )
+            ) {
+              if canPreview {
+                Button("Open preview") { quickLookURL = file.url }
+                  .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+              }
+              ShareLink(item: file.url) {
+                Label("Share or save file", okouSymbol: "share")
+              }
+              .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
             }
-            ShareLink(item: file.url) {
-              Label("Share or save file", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.bordered)
           } else if let error = preview.error {
-            Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(
-              .secondary)
-            Text(error).multilineTextAlignment(.center)
-            if preview.canRetry {
-              Button("Retry download") { viewer.open(preview.attachment) }
-                .buttonStyle(NeutralProminentButtonStyle())
+            OkouEmptyState(
+              verbatim: preview.attachment.filename, icon: "file-warning",
+              description: Text(error)
+            ) {
+              if preview.canRetry {
+                Button("Retry download") { viewer.open(preview.attachment) }
+                  .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
+              }
             }
           } else {
-            ProgressView("Downloading attachment…")
-            Text(preview.attachment.filename).font(.subheadline)
+            OkouLoadingRow("Downloading attachment…").fixedSize()
           }
         }
-        .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Attachment").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .cancellationAction) { Button("Done") { viewer.dismiss() } }
+          OkouCloseToolbarItem { viewer.dismiss() }
         }
         .task(id: preview.file?.url) {
           if let file = preview.file, QLPreviewController.canPreview(file.url as NSURL) {

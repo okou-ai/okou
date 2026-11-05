@@ -62,7 +62,7 @@ struct ChatThreadRenameDialog: UIViewControllerRepresentable {
       let alert = UIAlertController(
         title: "Rename chat", message: request.error, preferredStyle: .alert)
       alert.overrideUserInterfaceStyle = overrideUserInterfaceStyle
-      alert.view.tintColor = .label
+      alert.view.tintColor = UIColor(OkouColor.brandText)
       let save = UIAlertAction(title: "Save", style: .default) { [weak self, weak alert] _ in
         guard let self else { return }
         list.renameTitle = alert?.textFields?.first?.text ?? list.renameTitle

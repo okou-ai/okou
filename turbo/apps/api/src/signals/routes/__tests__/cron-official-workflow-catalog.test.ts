@@ -260,7 +260,7 @@ test.each([
         "# Suggestions feedback context",
       );
       expect(claim.appendSystemPrompt).toContain(
-        '"complete":true,"records":[]',
+        '"complete":true,"feedback":[]',
       );
     }
     const bundle = claim.contentBundles.skills.find((skill) => {

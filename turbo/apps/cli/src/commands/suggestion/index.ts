@@ -57,8 +57,6 @@ interface CreateOptions {
   readonly threadId?: string;
   readonly priority?: string;
   readonly json?: boolean;
-  readonly feedbackScope?: string;
-  readonly feedbackLabel?: string;
 }
 function textDraft(text: string) {
   return {
@@ -167,14 +165,6 @@ export function createSuggestionCommand() {
       "Existing conversation; omitted means a new Okou conversation",
     )
     .option("--priority <integer>", "Larger values appear first")
-    .option(
-      "--feedback-scope <key>",
-      "Stable, narrowly scoped suggestion type, such as meeting-preparation",
-    )
-    .option(
-      "--feedback-label <label>",
-      "Readable suggestion type for feedback confirmation",
-    )
     .option("--json", "Output JSON")
     .action(
       withErrorHandler(async (options: CreateOptions) => {
@@ -188,8 +178,6 @@ export function createSuggestionCommand() {
             options.rationale,
             options.threadId,
             options.priority,
-            options.feedbackScope,
-            options.feedbackLabel,
           ].some((value) => {
             return value !== undefined;
           })
@@ -211,10 +199,6 @@ export function createSuggestionCommand() {
                 title: options.title,
                 rationale: options.rationale ?? "",
                 priority: Number(options.priority ?? "0"),
-                feedbackScope: {
-                  key: options.feedbackScope,
-                  label: options.feedbackLabel,
-                },
                 customOption: {
                   id: "custom",
                   threadId: null,

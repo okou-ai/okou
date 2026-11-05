@@ -47,6 +47,7 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
   final class Coordinator: NSObject, UIGestureRecognizerDelegate {
     var parent: SidebarPanGesture
     private var startX: CGFloat = 0
+    private var startsInHorizontalScroller = false
 
     init(parent: SidebarPanGesture) {
       self.parent = parent
@@ -57,8 +58,8 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
       guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
       let velocity = pan.velocity(in: pan.view)
       return SidebarGesturePolicy.canBegin(
-        isOpen: parent.interaction.isOpen, sidebarWidth: parent.sidebarWidth,
-        startX: startX, velocity: velocity)
+        isOpen: parent.interaction.isOpen, startX: startX, velocity: velocity,
+        startsInHorizontalScroller: startsInHorizontalScroller)
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
@@ -67,31 +68,53 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
       let location = touch.location(in: gestureRecognizer.view)
       // Pan translation excludes its recognition threshold; retain the actual touch origin.
       startX = location.x
+      startsInHorizontalScroller = Self.isInHorizontalScroller(touch.view)
       return true
+    }
+
+    /// A code block, table or the pinned agents rail under the finger keeps its own sideways
+    /// scrolling.
+    private static func isInHorizontalScroller(_ view: UIView?) -> Bool {
+      var current = view
+      while let candidate = current {
+        if let scroller = candidate as? UIScrollView, scroller.isScrollEnabled,
+          scroller.contentSize.width > scroller.bounds.width + 1
+        {
+          return true
+        }
+        current = candidate.superview
+      }
+      return false
     }
 
     func gestureRecognizer(
       _ gestureRecognizer: UIGestureRecognizer,
       shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-      // SwiftUI's drag/selection recognizers are not necessarily UIPanGestureRecognizer.
-      // gestureRecognizerShouldBegin rejects unrelated drags by direction and origin.
-      return true
+      // Scroll views keep scrolling alongside (gestureRecognizerShouldBegin rejects vertical
+      // drags). Anything else, such as a chat row's tap, gives way once the page swipe is
+      // recognized, so closing the sidebar over a row does not also open that chat.
+      return otherGestureRecognizer is UIPanGestureRecognizer
     }
   }
 }
 
+/// Swiping moves between the chat and the full-screen sidebar like turning a page: right from
+/// anywhere in the chat opens it, left from anywhere in the sidebar closes it. Only content
+/// that scrolls sideways keeps the finger (a code block or table in the chat, the pinned agents
+/// rail in the sidebar); from there the chat still opens the sidebar from its leading edge.
+/// Chat rows swipe right for their actions, so a left swipe on a row closes the sidebar too.
 enum SidebarGesturePolicy {
+  static let leadingEdge: CGFloat = 28
+
   static func canBegin(
-    isOpen: Bool, sidebarWidth: CGFloat, startX: CGFloat, velocity: CGPoint
+    isOpen: Bool, startX: CGFloat, velocity: CGPoint, startsInHorizontalScroller: Bool
   ) -> Bool {
     guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
     if isOpen {
-      // Keep the sidebar list's archive swipe and horizontal controls available.
-      return startX >= sidebarWidth && velocity.x < 0
+      return velocity.x < 0 && !startsInHorizontalScroller
     }
-    // Leave code blocks and tables free to scroll horizontally outside the leading edge.
-    return startX <= 28 && velocity.x > 0
+    return velocity.x > 0 && (startX <= leadingEdge || !startsInHorizontalScroller)
   }
 
   static func settlesOpen(

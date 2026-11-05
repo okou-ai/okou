@@ -14,13 +14,13 @@ struct UserMessageView: View {
   }
 
   var body: some View {
-    VStack(alignment: .trailing, spacing: 8) {
+    VStack(alignment: .trailing, spacing: OkouSpace.sm) {
       if let annotation = document.annotation {
         UserMessageAnnotation(part: annotation, webURL: webURL)
       }
       if !message.attachments.isEmpty {
         UserMessageBubbleLayout {
-          VStack(alignment: .trailing, spacing: 8) {
+          VStack(alignment: .trailing, spacing: OkouSpace.sm) {
             ForEach(message.attachments) { attachment in
               MessageAttachmentView(
                 attachment: attachment, viewer: viewer, loadsThumbnail: loadsAttachments)
@@ -30,18 +30,19 @@ struct UserMessageView: View {
       }
       if !document.bodyParts.isEmpty || message.inputError != nil {
         UserMessageBubbleLayout {
-          VStack(alignment: .leading, spacing: 10) {
+          VStack(alignment: .leading, spacing: OkouSpace.ten) {
             UserMessageBody(
               parts: document.bodyParts, webURL: webURL,
               sourceTitle: document.annotation?.kind == "agent"
                 ? document.annotation?.titleSnapshot : nil)
             if let error = message.inputError {
-              Label(error, systemImage: "exclamationmark.circle")
-                .font(.subheadline).foregroundStyle(.red).textSelection(.enabled)
+              Label(error, okouSymbol: "circle-alert")
+                .font(.okou(.subheadline)).foregroundStyle(OkouColor.destructive).textSelection(
+                  .enabled)
             }
           }
           .padding(14)
-          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+          .background(OkouColor.gray200, in: RoundedRectangle(cornerRadius: OkouRadius.chat))
           .background {
             SendMotionBubbleAnchor(messageID: message.id, transition: sendTransition)
           }
@@ -80,17 +81,20 @@ private struct UserMessageBody: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: OkouSpace.md) {
       ForEach(groups) { group in
         if group.isFeedback {
-          VStack(alignment: .leading, spacing: 10) {
-            Text(feedbackHeading(group.parts)).font(.caption).foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: OkouSpace.ten) {
+            Text(feedbackHeading(group.parts)).font(.okou(.caption)).foregroundStyle(
+              OkouColor.mutedForeground)
             ForEach(Array(group.parts.enumerated()), id: \.offset) { index, part in
               if index > 0 { Divider() }
               Text(part.quote ?? "")
-                .textSelection(.enabled).foregroundStyle(.secondary)
-                .padding(.leading, 12)
-                .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
+                .textSelection(.enabled).foregroundStyle(OkouColor.mutedForeground)
+                .padding(.leading, OkouSpace.md)
+                .overlay(alignment: .leading) {
+                  Rectangle().fill(OkouColor.borderOnFill).frame(width: 2)
+                }
               UserMessageInlineText(parts: part.note ?? [], webURL: webURL)
             }
           }
@@ -145,9 +149,9 @@ struct UserMessageInlineText: View {
           }
         }
       case "chat_thread", "agent", "project", "template":
-        text.foregroundColor = .accentColor
-        text.font = .body.weight(.medium)
-        text.backgroundColor = Color(uiColor: .tertiarySystemFill)
+        text.foregroundColor = OkouColor.brandText
+        text.font = .okou(.body).weight(.medium)
+        text.backgroundColor = OkouColor.muted
         let path: String?
         if part.type == "chat_thread", let id = part.threadId, UUID(uuidString: id) != nil {
           path = "chats/\(id)"
@@ -199,11 +203,11 @@ private struct UserMessageAnnotation: View {
 
   private var symbol: String {
     switch kind {
-    case "automation": "point.topleft.down.to.point.bottomright.curvepath"
-    case "agent": "person.crop.circle"
-    case "mcp": "puzzlepiece.extension"
-    case "github": "chevron.left.forwardslash.chevron.right"
-    default: "bubble.left.and.bubble.right"
+    case "automation": "workflow"
+    case "agent": "circle-user-round"
+    case "mcp": "puzzle"
+    case "github": "code"
+    default: "messages-square"
     }
   }
 
@@ -253,14 +257,14 @@ private struct UserMessageAnnotation: View {
         }
       }
     }
-    .font(.caption).foregroundStyle(.secondary)
+    .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
     .accessibilityIdentifier("user-message-origin-\(kind)")
   }
 
   private var opensChat: Bool { kind == "automation" || kind == "agent" }
 
   private func label(_ title: String) -> some View {
-    HStack(spacing: 6) {
+    HStack(spacing: OkouSpace.six) {
       if [
         "slack", "discord", "wechat", "feishu", "lark", "teams", "telegram", "github", "agentphone",
       ].contains(kind) {
@@ -268,13 +272,13 @@ private struct UserMessageAnnotation: View {
           .renderingMode(kind == "github" || kind == "slack" ? .template : .original)
           .resizable().scaledToFit().frame(width: 15, height: 15)
       } else {
-        Image(systemName: symbol)
+        OkouIcon(symbol, size: OkouIconSize.reference)
       }
       Text(title).lineLimit(1)
       if destination != nil {
-        Image(systemName: opensChat ? "chevron.right" : "arrow.up.right").font(.caption2)
+        OkouIcon(opensChat ? "chevron-right" : "arrow-up-right", size: OkouIconSize.accessory)
       }
     }
-    .padding(.horizontal, 6).padding(.vertical, 4)
+    .padding(.horizontal, OkouSpace.six).padding(.vertical, OkouSpace.xs)
   }
 }

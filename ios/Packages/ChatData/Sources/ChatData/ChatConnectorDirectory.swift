@@ -7,6 +7,7 @@ public struct ChatCatalogConnector: Decodable, Identifiable, Sendable {
   public let category: String
   public let authMethods: [ChatConnectorMethod]
   public let permissionSummary: PermissionSummary
+  public let icon: ChatConnectorIcon?
   public var id: String { slug }
   public struct PermissionSummary: Decodable, Sendable { public let hasPermissions: Bool }
 }

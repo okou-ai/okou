@@ -1,0 +1,6 @@
+/* Bundle display name */
+"CFBundleDisplayName" = "Okou 알림";
+
+/* Bundle name */
+"CFBundleName" = "OkouNotificationService";
+

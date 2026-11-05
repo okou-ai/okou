@@ -22,14 +22,6 @@ export {
 
 const SUGGESTION_LIMIT = 10;
 export const SUGGESTION_FEEDBACK_RETENTION_MS = 30 * SUGGESTION_RETENTION_MS;
-export const suggestionFeedbackScopeSchema = object({
-  key: string()
-    .trim()
-    .min(1)
-    .max(80)
-    .regex(/^[a-z0-9_.:-]+$/u),
-  label: string().trim().min(1).max(80),
-});
 export const suggestionFeedbackSchema = object({
   id: uuid().toLowerCase(),
   kind: zEnum([
@@ -47,10 +39,10 @@ export const suggestionFeedbackSchema = object({
   learnedAt: iso.datetime().nullable(),
   targetId: uuid().toLowerCase().nullable(),
   note: string().max(512),
+  choice: string().optional(),
   context: object({
     title: string().max(120),
     rationale: string().max(200),
-    scope: suggestionFeedbackScopeSchema,
     optionLabel: string().max(80).nullable(),
   }),
 });
@@ -123,7 +115,6 @@ const suggestionContentSchema = object({
   title: string().trim().min(1).max(120),
   rationale: string().trim().max(200),
   priority: number().int().min(-2147483648).max(2147483647),
-  feedbackScope: suggestionFeedbackScopeSchema,
   options: suggestionOptionsSchema,
   customOption: object({
     id: literal("custom"),

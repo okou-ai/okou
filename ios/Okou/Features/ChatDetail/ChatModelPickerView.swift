@@ -1,6 +1,9 @@
 import ChatData
 import SwiftUI
 
+/// The chat's model, in the header beside the menu as Kimi and ChatGPT place it: a glass
+/// capsule the height of the other header controls with the model's name in the text colour
+/// and its thinking effort (and Fast) in supporting grey. It opens the model sheet.
 struct ChatModelPickerButton: View {
   @Bindable var selection: ChatModelSelectionStore
   @State private var isPresented = false
@@ -25,22 +28,45 @@ struct ChatModelPickerButton: View {
     return parts.joined(separator: " · ")
   }
 
+  /// Effort and Fast after the name, quieter than it ("GPT 6.1 Sol High").
+  private var detail: String? {
+    var parts: [String] = []
+    if let effort = selection.effectiveEffort { parts.append(effortLabel(effort)) }
+    if selection.selection.serviceTier == "priority" { parts.append(String(localized: "Fast")) }
+    if parts.isEmpty { return nil }
+    return parts.joined(separator: " ")
+  }
+
   var body: some View {
-    // Keep the entry mounted before metadata exists so its load task can start.
     Button {
       isPresented = true
     } label: {
-      Image(systemName: "slider.horizontal.3")
-        .font(.system(size: 19))
-        .frame(width: 44, height: 44)
-        .contentShape(Rectangle())
+      HStack(spacing: OkouSpace.six) {
+        Text(
+          models.configuration.map { $0.catalog.name(selection.selection.model) }
+            ?? String(localized: "Model settings")
+        )
+        .font(.okou(.callout).weight(.medium))
+        .foregroundStyle(OkouColor.foreground)
+        if let detail {
+          Text(verbatim: detail)
+            .font(.okou(.callout))
+            .foregroundStyle(OkouColor.mutedForeground)
+        }
+      }
+      .lineLimit(1)
+      .padding(.horizontal, OkouSpace.lg)
+      .modifier(OkouGlassControl(shape: .capsule))
     }
-    .tint(.primary)
+    .buttonStyle(.plain)
+    .tint(OkouColor.foreground)
     .accessibilityIdentifier("chat-model-picker")
     .overlay(alignment: .topTrailing) {
       if hasError {
-        Image(systemName: "exclamationmark.circle.fill").font(.caption2).foregroundStyle(.orange)
-          .accessibilityHidden(true)
+        OkouIcon("circle-alert", size: OkouIconSize.badge).foregroundStyle(
+          OkouStatusColor.warning
+        )
+        .accessibilityHidden(true)
       }
     }
     .accessibilityLabel("Model settings")
@@ -51,9 +77,8 @@ struct ChatModelPickerButton: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
-    .task {
-      await selection.open()
-    }
+    // The composer loads model settings when it mounts (it needs them to send); this capsule
+    // only shows the result and opens the sheet, so the settings are not requested twice.
   }
 }
 
@@ -76,44 +101,80 @@ struct ChatModelPickerView: View {
     NavigationStack {
       List {
         if let configuration = models.configuration {
+          // Thinking effort and Fast mode belong to the selected model, so they sit in that
+          // model's provider card; only when no listed model is selected do they stand alone.
+          if selectedSectionType(configuration) == nil {
+            let options = modelOptions(configuration)
+            if options.hasAny {
+              Section {
+                modelOptionRows(configuration)
+              } footer: {
+                modelOptionsFooter(configuration).okouSectionNote()
+              }
+            }
+          }
+          if configuration.models.contains(where: { $0.selectedModel != nil }) {
+            Section {
+              // An ordinary action row, like Settings' rows: amber is for the primary commit.
+              if selection.savedDefault {
+                HStack {
+                  Text("Default for new chats")
+                  Spacer()
+                  OkouIcon("check", size: OkouIconSize.inline)
+                }
+                .foregroundStyle(OkouColor.mutedForeground)
+              } else {
+                Button {
+                  Task { await save(.futureChats) { await selection.saveForFutureChats() } }
+                } label: {
+                  HStack {
+                    Text("Use for new chats too").foregroundStyle(OkouColor.foreground)
+                    Spacer()
+                    if selection.isSaving && pendingChange == .futureChats {
+                      ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
+                    }
+                  }
+                  .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("save-model-default")
+                .disabled(selection.isBusy || selection.uncertain)
+              }
+            } footer: {
+              Text("Changes apply to this chat right away.").okouSectionNote()
+            }
+          }
           ForEach(["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self) {
             type in
             let rows = configuration.models.filter {
               ($0.selectedModel == nil ? "built-in" : $0.memberEffective.providerType) == type
             }
             if !rows.isEmpty {
+              let holdsSelection = selectedSectionType(configuration) == type
               Section {
                 ForEach(rows) { row in modelRow(row, configuration: configuration) }
                 if rows.contains(where: { $0.memberEffective.availability == "plan_restricted" }) {
                   Link("Manage plan", destination: selection.modelsWebURL)
                 }
               } header: {
+                // Allowance lives on the Subscriptions page; the header only names the provider.
                 if let provider = PersonalSubscriptionType(rawValue: type) {
-                  HStack {
+                  HStack(spacing: OkouSpace.sm) {
                     SubscriptionBrandIcon(type: provider)
                     Text(providerTitle(provider))
-                    Spacer()
-                    if let account = subscriptions.accounts.first(where: {
-                      $0.type == type && $0.isActive != false
-                    }),
-                      let window = account.limitingWindow, let remaining = window.remaining
-                    {
-                      HStack(spacing: 4) {
-                        Text("\(remaining, specifier: "%.0f")% remaining")
-                        Text("·")
-                        Text(
-                          account.limitingUsage?.id == "week"
-                            ? LocalizedStringKey("Week") : LocalizedStringKey("5 hours"))
-                      }
-                      .font(.caption)
-                    }
                   }
-                  .font(.subheadline).fontWeight(.regular)
-                } else {
-                  Text("Okou credits").font(.subheadline).fontWeight(.regular)
+                  .okouSectionHeader()
                 }
               }
-              .textCase(nil)
+              // The selected model's options get their own card right under its list: one
+              // separator style per card, and still next to the models they configure.
+              if holdsSelection && modelOptions(configuration).hasAny {
+                Section {
+                  modelOptionRows(configuration)
+                } footer: {
+                  modelOptionsFooter(configuration).okouSectionNote()
+                }
+                .listSectionSpacing(.compact)
+              }
             }
           }
           if let row = configuration.row(for: selection.selection) {
@@ -139,95 +200,8 @@ struct ChatModelPickerView: View {
           } else {
             Section { Text("This model is unavailable. Choose an available model before sending.") }
           }
-          let efforts = configuration.efforts(for: selection.selection)
-          if !efforts.isEmpty || configuration.canUseFast(selection.selection) {
+          if configuration.canLinkSubscriptions {
             Section {
-              if !efforts.isEmpty, let effectiveEffort = selection.effectiveEffort {
-                Picker(
-                  selection: Binding(
-                    get: { effectiveEffort },
-                    set: { value in
-                      Task { await save(.effort) { await selection.choose(effort: value) } }
-                    })
-                ) {
-                  ForEach(efforts, id: \.self) { Text(effortLabel($0)).tag($0) }
-                } label: {
-                  HStack(spacing: 8) {
-                    Text("Thinking effort")
-                    if selection.isSaving && pendingChange == .effort {
-                      ProgressView().controlSize(.small)
-                    }
-                  }
-                }
-                .pickerStyle(.menu)
-                .accessibilityIdentifier("chat-model-effort")
-                .disabled(selection.isBusy || selection.uncertain)
-              }
-              if configuration.canUseFast(selection.selection) {
-                Toggle(
-                  isOn: Binding(
-                    get: { selection.selection.serviceTier == "priority" },
-                    set: { fast in
-                      Task { await save(.fast) { await selection.setFast(fast) } }
-                    })
-                ) {
-                  HStack(spacing: 8) {
-                    Label("Fast mode", systemImage: "bolt.fill")
-                    if selection.isSaving && pendingChange == .fast {
-                      ProgressView().controlSize(.small)
-                    }
-                  }
-                }
-                .tint(.green)
-                .accessibilityIdentifier("chat-model-fast")
-                .disabled(selection.isBusy || selection.uncertain)
-              }
-            } footer: {
-              VStack(alignment: .leading, spacing: 6) {
-                if !efforts.isEmpty {
-                  HStack {
-                    Text("Faster · lower usage")
-                    Spacer()
-                    Text("Smarter · higher usage")
-                  }
-                }
-                if configuration.canUseFast(selection.selection) {
-                  if let multiplier = configuration.catalog.fastMultiplier(
-                    selection.selection.model),
-                    configuration.row(for: selection.selection)?.memberEffective.runtimeProviderType
-                      == "codex-oauth-token"
-                  {
-                    Text(
-                      "Uses \(multiplier, specifier: "%g")× your ChatGPT subscription allowance.")
-                  } else {
-                    Text("Uses more of your subscription allowance.")
-                  }
-                }
-              }
-            }
-          }
-          Section {
-            if configuration.models.contains(where: { $0.selectedModel != nil }) {
-              Button {
-                Task { await save(.futureChats) { await selection.saveForFutureChats() } }
-              } label: {
-                HStack {
-                  Text(
-                    selection.savedDefault
-                      ? LocalizedStringKey("Default saved")
-                      : LocalizedStringKey("Use for future chats too"))
-                  Spacer()
-                  if selection.isSaving && pendingChange == .futureChats {
-                    ProgressView().controlSize(.small)
-                  } else if selection.savedDefault {
-                    Image(systemName: "checkmark")
-                  }
-                }
-              }
-              .accessibilityIdentifier("save-model-default")
-              .disabled(selection.isBusy || selection.uncertain)
-            }
-            if configuration.canLinkSubscriptions {
               ForEach(PersonalSubscriptionType.allCases) { type in
                 if !configuration.models.contains(where: {
                   $0.selectedModel != nil && $0.memberEffective.providerType == type.rawValue
@@ -250,13 +224,11 @@ struct ChatModelPickerView: View {
               }
               .disabled(selection.isBusy)
             }
-          } footer: {
-            Text("Changes apply to this chat.")
           }
         }
         if let error = selection.error ?? models.error ?? subscriptions.error {
           Section {
-            Text(error).foregroundStyle(.red)
+            Text(error).foregroundStyle(OkouColor.destructive)
             Button("Refresh model settings") {
               Task {
                 await models.refresh()
@@ -267,7 +239,8 @@ struct ChatModelPickerView: View {
           }
         }
       }
-      .listSectionSpacing(16)
+      .okouGroupedBackground()
+      .listSectionSpacing(OkouSpace.lg)
       .overlay {
         if models.configuration == nil && models.error == nil && selection.error == nil {
           ChatSettingsLoadingView(title: "Loading models…")
@@ -275,7 +248,9 @@ struct ChatModelPickerView: View {
       }
       .navigationTitle("Chat models")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+      .toolbar {
+        OkouCloseToolbarItem { dismiss() }
+      }
       .task {
         if !models.isLoading && !selection.isLoading { await selection.open() }
       }
@@ -285,6 +260,100 @@ struct ChatModelPickerView: View {
       }
     }
   }
+  /// The provider section ("built-in" or a subscription type) that lists the selected model.
+  private func selectedSectionType(_ configuration: ChatModelConfiguration) -> String? {
+    guard let row = configuration.row(for: selection.selection) else { return nil }
+    return row.selectedModel == nil ? "built-in" : row.memberEffective.providerType
+  }
+
+  private struct ModelOptions {
+    let efforts: [String]
+    let effort: String?
+    let fast: Bool
+    var hasAny: Bool { (!efforts.isEmpty && effort != nil) || fast }
+  }
+
+  private func modelOptions(_ configuration: ChatModelConfiguration) -> ModelOptions {
+    ModelOptions(
+      efforts: configuration.efforts(for: selection.selection), effort: selection.effectiveEffort,
+      fast: configuration.canUseFast(selection.selection))
+  }
+
+  @ViewBuilder
+  private func modelOptionRows(_ configuration: ChatModelConfiguration) -> some View {
+    let options = modelOptions(configuration)
+    if !options.efforts.isEmpty, let effort = options.effort {
+      Picker(
+        selection: Binding(
+          get: { effort },
+          set: { value in
+            Task { await save(.effort) { await selection.choose(effort: value) } }
+          }
+        )
+      ) {
+        ForEach(options.efforts, id: \.self) { Text(effortLabel($0)).tag($0) }
+      } label: {
+        HStack(spacing: OkouSpace.sm) {
+          Text("Thinking effort")
+          if selection.isSaving && pendingChange == .effort {
+            ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
+          }
+        }
+      }
+      .okouValuePicker()
+      .accessibilityIdentifier("chat-model-effort")
+      .disabled(selection.isBusy || selection.uncertain)
+    }
+    if options.fast {
+      Toggle(
+        isOn: Binding(
+          get: { selection.selection.serviceTier == "priority" },
+          set: { fast in Task { await save(.fast) { await selection.setFast(fast) } } }
+        )
+      ) {
+        HStack(spacing: OkouSpace.sm) {
+          Text("Fast mode")
+          if selection.isSaving && pendingChange == .fast {
+            ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
+          }
+        }
+      }
+      .tint(OkouColor.primary400)
+      .accessibilityIdentifier("chat-model-fast")
+      .disabled(selection.isBusy || selection.uncertain)
+    }
+  }
+
+  /// One explanation under the card, as the system Settings app places it.
+  @ViewBuilder
+  private func modelOptionsFooter(_ configuration: ChatModelConfiguration) -> some View {
+    if let note = modelOptionsNote(configuration) { Text(note) }
+  }
+
+  private func modelOptionsNote(_ configuration: ChatModelConfiguration) -> String? {
+    let options = modelOptions(configuration)
+    var notes: [String] = []
+    if !options.efforts.isEmpty && options.effort != nil {
+      notes.append(
+        String(localized: "Higher effort thinks longer and uses more of your allowance."))
+    }
+    if options.fast {
+      if let multiplier = configuration.catalog.fastMultiplier(selection.selection.model),
+        configuration.row(for: selection.selection)?.memberEffective.runtimeProviderType
+          == "codex-oauth-token"
+      {
+        notes.append(
+          String(
+            localized:
+              "Fast mode uses \(multiplier, specifier: "%g")× your ChatGPT subscription allowance."
+          ))
+      } else {
+        notes.append(String(localized: "Fast mode uses more of your subscription allowance."))
+      }
+    }
+    return notes.isEmpty ? nil : notes.joined(separator: " ")
+  }
+
   private func modelRow(_ row: AvailableRunModels.Model, configuration: ChatModelConfiguration)
     -> some View
   {
@@ -293,27 +362,35 @@ struct ChatModelPickerView: View {
         await save(.model(row.selectedModel)) { await selection.choose(model: row.selectedModel) }
       }
     } label: {
-      HStack(spacing: 10) {
+      HStack(spacing: OkouSpace.ten) {
         VStack(alignment: .leading) {
-          Text(configuration.catalog.name(row.selectedModel))
+          // Built-in models carry their billing source on the row; they have no provider
+          // heading of their own.
+          HStack(alignment: .firstTextBaseline, spacing: OkouSpace.sm) {
+            Text(configuration.catalog.name(row.selectedModel))
+            if PersonalSubscriptionType(rawValue: row.memberEffective.providerType) == nil {
+              Text("Okou credits")
+                .font(.okou(.subheadline))
+                .foregroundStyle(OkouColor.mutedForeground)
+            }
+          }
           if row.memberEffective.availability == "plan_restricted" {
-            Text("Plan restricted").font(.caption).foregroundStyle(.secondary)
+            Text("Plan restricted").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
           }
           if row.memberEffective.availability == "reconnect_required" {
-            Text("Reconnect required").font(.caption).foregroundStyle(.secondary)
+            Text("Reconnect required").font(.okou(.caption)).foregroundStyle(
+              OkouColor.mutedForeground)
           }
         }
         Spacer()
         if selection.isSaving && pendingChange == .model(row.selectedModel) {
-          HStack(spacing: 6) {
-            ProgressView().controlSize(.small)
-            Text("Saving…").font(.caption).foregroundStyle(.secondary)
-          }
+          ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
         } else if row.selectedModel == selection.selection.model {
-          Image(systemName: "checkmark")
+          OkouIcon("check")
         }
-      }.frame(minHeight: 32).contentShape(Rectangle())
-        .foregroundStyle(.primary)
+      }
+      .frame(minHeight: OkouControl.minimumTarget - OkouSpace.md)
+      .contentShape(Rectangle())
     }
     .buttonStyle(ModelChoiceButtonStyle())
     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

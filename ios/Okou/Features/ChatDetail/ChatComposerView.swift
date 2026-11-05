@@ -25,15 +25,26 @@ struct ChatComposerView: View {
   var workflowSource: ComposerWorkflowSource? = nil
   var agentID: String? = nil
   var sendTransition: ConversationSendTransition? = nil
+  /// "Message <agent>", so the field names who will do the work.
+  var placeholder: String? = nil
 
   @State private var isFocused = false
   @State private var showsPhotos = false
   @State private var showsFiles = false
+  @State private var showsConnectors = false
   @State private var selectedPhotos: [PhotosPickerItem] = []
+  @State private var showsCamera = false
+  @State private var showsAddSheet = false
+  /// What "Add to chat" asked for; the composer opens it once the sheet has gone.
+  @State private var pendingAdd: ComposerAddAction?
+  @State private var showsScanner = false
+  @State private var trailingWidth: CGFloat = 106
+  @State private var sendFeedback = 0
+  @State private var stopFeedback = 0
   @State private var mountedVoice: ComposerVoiceInputStore?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private let actionSize: CGFloat = 44
+  private let actionSize = OkouControl.minimumTarget
 
   private var cornerRadius: CGFloat { Self.compactHeight / 2 }
   private var actionInset: CGFloat { cornerRadius - actionSize / 2 }
@@ -42,100 +53,90 @@ struct ChatComposerView: View {
   private var hasContent: Bool {
     hasText || attachments.hasAttachments || draftState?.hasContent == true
   }
+  /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
+  /// one truncated line under the controls. Voice input opens it too.
   private var expandsInput: Bool {
-    isFocused || draftState?.document.hasFeedback == true || draftState?.voice?.phase == .recording
-      || draftState?.voice?.phase == .processing || draftState?.voice?.phase == .saved
+    isFocused || hasText || draftState?.document.hasFeedback == true
+      || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+      || voiceActive
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
     guard let voice = draftState?.voice else { return false }
     return voice.phase == .recording || voice.phase == .processing || voice.phase == .saved
   }
+  /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
   private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
+  private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: OkouSpace.sm) {
       if let voice = draftState?.voice, voice.error != nil || voiceActive {
         ComposerVoiceInputTray(voice: voice)
           .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
       }
+      // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
+      // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
       if let state = draftState {
         if !state.document.isSupported {
-          Text("This draft contains content this app cannot edit. Open it on the web.")
-            .font(.caption).foregroundStyle(.red)
+          OkouBanner(
+            Text("This draft contains content this app cannot edit. Open it on the web."),
+            icon: "file-warning", tone: .problem
+          ) {
+            Link("Open on web", destination: attachmentURL)
+          }
         }
         let contextLabels = ChatDraftDocument(
           parts: state.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
         ).contextLabels
         if !contextLabels.isEmpty {
           Text(contextLabels.joined(separator: " · "))
-            .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(3)
+            .padding(.horizontal, OkouSpace.md)
             .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
         }
         if let draftError = state.error,
           state.document.isSupported || state.hasLocalFailure || state.conflictingRemote != nil
         {
-          Text(draftError).font(.caption).foregroundStyle(.red)
-          if state.conflictingRemote != nil {
-            HStack {
-              Button("Keep this draft") { state.keepLocal() }.frame(minHeight: 44)
-              Button("Use other device's draft") { state.useRemote() }.frame(minHeight: 44)
-            }.font(.caption)
-          } else if state.hasLocalFailure {
-            HStack {
+          OkouBanner(Text(draftError), icon: "circle-alert", tone: .problem) {
+            if state.conflictingRemote != nil {
+              Button("Keep this draft") { state.keepLocal() }
+              Button("Use other device's draft") { state.useRemote() }
+            } else if state.hasLocalFailure {
               Button("Copy draft text") { UIPasteboard.general.string = state.text }
                 .disabled(state.text.isEmpty)
               Button("Save on this device") { state.retryLocalSave() }
                 .disabled(!state.canRetryLocalSave)
-              Link("Open on web", destination: attachmentURL)
-            }.font(.caption)
-          } else {
-            Button("Retry draft sync") { Task { await state.synchronize() } }.font(.caption)
+            } else {
+              Button("Retry draft sync") { Task { await state.synchronize() } }
+            }
           }
         }
       }
       if let state = draftState, let warning = state.syncWarning {
-        DisclosureGroup("Draft sync delayed") {
-          Text(warning).font(.caption).foregroundStyle(.secondary)
-          Button("Sync draft") { Task { await state.synchronize() } }.font(.caption)
+        OkouBanner(Text(warning), icon: "refresh-cw") {
+          Button("Sync draft") { Task { await state.synchronize() } }
         }
-        .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
       }
       if !attachments.items.isEmpty {
         ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
       }
       if attachments.importingCount > 0 {
-        HStack(spacing: 8) {
-          ProgressView().controlSize(.small)
-          Text("Preparing attachments…").font(.caption).foregroundStyle(.secondary)
-        }
+        OkouLoadingRow("Preparing attachments…")
+          .padding(.horizontal, OkouSpace.md)
       }
       if let importError = attachments.error {
-        HStack {
-          Text(importError).font(.caption).foregroundStyle(.red)
-          Spacer()
-          Button {
-            attachments.error = nil
-          } label: {
-            Image(systemName: "xmark")
-              .frame(width: 44, height: 44)
-          }
-          .accessibilityLabel("Dismiss attachment error")
-        }
+        OkouBanner(
+          Text(importError), icon: "circle-alert", tone: .problem,
+          dismiss: { attachments.error = nil })
       }
       if let error {
-        VStack(alignment: .leading, spacing: 6) {
-          Text(error).foregroundStyle(.red)
+        OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
           if let refresh {
-            HStack {
-              Button("Refresh") { Task { await refresh() } }
-              Spacer()
-              Link("Open on web", destination: attachmentURL)
-            }
+            Button("Refresh") { Task { await refresh() } }
+            Link("Open on web", destination: attachmentURL)
           }
         }
-        .font(.caption)
-        .padding(.horizontal, 12)
       }
 
       let inputID = attachments.inputID
@@ -148,7 +149,7 @@ struct ChatComposerView: View {
         if let state = draftState {
           ChatFeedbackComposer(
             state: state, inputID: inputID, isFocused: $isFocused,
-            acceptsImages: !isBusy && !needsUpgrade
+            acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder
           )
           .id(inputID)
           .transition(.identity)
@@ -158,15 +159,18 @@ struct ChatComposerView: View {
             text: $draft, isFocused: $isFocused,
             acceptsImages: !isBusy && !needsUpgrade,
             isCurrent: { attachments.inputID == inputID },
-            pasteImages: attachments.importPastedImages
+            pasteImages: attachments.importPastedImages,
+            placeholder: resolvedPlaceholder
           )
           .id(inputID)
           .transition(.identity)
         }
       }
       .accessibilityIdentifier("message-input")
-      .padding(.leading, expandsInput ? 18 : (connectorSelection == nil ? 58 : 102))
-      .padding(.trailing, expandsInput ? 18 : (modelSelection == nil ? 58 : 106))
+      .padding(
+        .leading, expandsInput ? 18 : 58
+      )
+      .padding(.trailing, expandsInput ? 18 : trailingWidth + actionInset + OkouSpace.sm)
       .padding(.top, expandsInput ? 17 : 10)
       .padding(.bottom, expandsInput ? 62 : 10)
       .frame(
@@ -183,43 +187,42 @@ struct ChatComposerView: View {
       }
       .overlay(alignment: expandsInput ? .bottomLeading : .leading) {
         HStack(spacing: 0) {
-          Menu {
-            Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
-            Button("Choose Files", systemImage: "folder") { showsFiles = true }
-            if let state = draftState, state.hasContent || state.error != nil {
-              Divider()
-              Button("Clear draft", role: .destructive) { state.clear() }
-            }
+          Button {
+            showsAddSheet = true
           } label: {
-            Image(systemName: "plus")
-              .font(.system(size: 22, weight: .regular))
+            OkouToolbarIcon("plus")
               .frame(width: actionSize, height: actionSize)
+              .overlay(alignment: .topTrailing) {
+                if connectorSelection?.uncertain == true {
+                  OkouIcon("circle-alert", size: OkouIconSize.badge)
+                    .foregroundStyle(OkouStatusColor.warning)
+                }
+              }
           }
-          .accessibilityLabel("Attachments")
+          .buttonStyle(.plain)
+          .accessibilityLabel("Add attachments and tools")
+          .accessibilityValue(
+            connectorSelection?.uncertain == true ? "Confirm connector settings before sending" : ""
+          )
           .disabled(isBusy || needsUpgrade)
-          if let connectorSelection {
-            ComposerConnectorButton(store: connectorSelection)
-              .disabled(isBusy || needsUpgrade)
-          }
+          // The model control lives in the header beside the menu (ChatWorkspaceHeader).
         }
         .padding(.leading, actionInset)
         .padding(.bottom, expandsInput ? actionInset : 0)
       }
       .overlay(alignment: expandsInput ? .bottomTrailing : .trailing) {
-        HStack(spacing: 4) {
+        HStack(spacing: OkouSpace.xs) {
+          // The mic sits beside send once there is a draft; on an empty one it takes send's place.
           if let voice = draftState?.voice, expandsInput && !replacesSendWithMic && !voiceActive {
             ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || draftState?.canEditVoice != true)
-          }
-          if let modelSelection {
-            ChatModelPickerButton(selection: modelSelection)
-              .disabled(isBusy || needsUpgrade)
           }
           if replacesSendWithMic, let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
           } else {
             Button {
+              if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
               // The send operation captures native text for motion before ending editing.
               Task { await submit() }
             } label: {
@@ -227,19 +230,22 @@ struct ChatComposerView: View {
                 if showsProgress {
                   ProgressView()
                     .controlSize(.small)
-                    .tint(Color(uiColor: .systemBackground))
+                    .tint(showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
                 } else {
-                  Image(systemName: showsStop ? "stop.fill" : "arrow.up")
+                  if showsStop {
+                    OkouIcon("square", size: OkouIconSize.inline)
+                  } else {
+                    OkouToolbarIcon("arrow-up")
+                  }
                 }
               }
-              .font(.system(size: 16, weight: .semibold))
-              .frame(width: 22, height: 22)
-              .foregroundStyle(Color(uiColor: .systemBackground))
+              .font(.okou(size: 16, weight: .semibold))
+              .foregroundStyle(
+                showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
             }
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.circle)
-            .controlSize(.small)
-            .tint(Color.primary)
+            .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
             .disabled(
               (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
                 || voiceActive
@@ -252,6 +258,12 @@ struct ChatComposerView: View {
             .contentShape(Circle())
           }
         }
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.width
+        } action: {
+          trailingWidth = $0
+        }
+        .padding(.leading, expandsInput ? actionSize + actionInset + OkouSpace.xs : 0)
         .padding(.trailing, actionInset)
         .padding(.bottom, expandsInput ? actionInset : 0)
       }
@@ -265,11 +277,36 @@ struct ChatComposerView: View {
         value: hasText)
     }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
-    .padding(.horizontal, 16)
-    .padding(.top, 8)
+    .padding(.horizontal, OkouSpace.lg)
+    .padding(.top, OkouSpace.sm)
     .padding(.bottom, isFocused ? 8 : 0)
+    .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
+    .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
+    .sensoryFeedback(.error, trigger: error) { _, new in new != nil }
     .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
+      showsConnectors = false
       connectorSelection?.configure(agentID: agentID)
+    }
+    .sheet(isPresented: $showsAddSheet, onDismiss: openPendingAdd) {
+      ComposerAddSheet(
+        attachments: attachments, connectorSelection: connectorSelection,
+        clearDraft: clearDraftAction
+      ) { action in
+        pendingAdd = action
+        showsAddSheet = false
+      }
+    }
+    .sheet(isPresented: $showsConnectors) {
+      if let connectorSelection {
+        ComposerConnectorSheet(store: connectorSelection)
+          .presentationDetents([.medium, .large])
+          .presentationDragIndicator(.visible)
+      }
+    }
+    // Model settings decide whether the draft can be sent, so a mounted composer loads them
+    // while the reader types; the header's model capsule shows what they resolve to.
+    .task(id: modelSelection.map { ObjectIdentifier($0) }) {
+      await modelSelection?.open()
     }
     .onChange(of: mentionSource, initial: true) { _, source in
       draftState?.editor.mentionSource = source
@@ -289,6 +326,14 @@ struct ChatComposerView: View {
       draftState?.editor.workflows.dismiss()
       mountedVoice?.suspend()
     }
+    .fullScreenCover(isPresented: $showsCamera) {
+      ComposerCamera { url in attachments.importFiles([url]) }
+        .ignoresSafeArea()
+    }
+    .fullScreenCover(isPresented: $showsScanner) {
+      ComposerDocumentScanner { url in attachments.importFiles([url]) }
+        .ignoresSafeArea()
+    }
     .photosPicker(
       isPresented: $showsPhotos, selection: $selectedPhotos,
       matching: .any(of: [.images, .videos]), preferredItemEncoding: .current
@@ -305,6 +350,24 @@ struct ChatComposerView: View {
       case .success(let urls): attachments.importFiles(urls)
       case .failure(let error): attachments.report(error)
       }
+    }
+  }
+
+  /// "Clear draft" in Add to chat, only while there is something to clear.
+  private var clearDraftAction: (() -> Void)? {
+    guard let state = draftState, state.hasContent || state.error != nil else { return nil }
+    return { state.clear() }
+  }
+
+  private func openPendingAdd() {
+    guard let action = pendingAdd else { return }
+    pendingAdd = nil
+    switch action {
+    case .camera: showsCamera = true
+    case .photos: showsPhotos = true
+    case .scan: showsScanner = true
+    case .files: showsFiles = true
+    case .connectors: showsConnectors = true
     }
   }
 }

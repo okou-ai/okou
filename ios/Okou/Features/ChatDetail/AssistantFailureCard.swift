@@ -4,57 +4,65 @@ import SwiftUI
 struct AssistantFailureCard: View {
   let state: AssistantFailureState
   @Bindable var conversation: ConversationStore
+  /// The provider's own error line from the same run, shown instead of the generic description.
+  var providerMessage: String? = nil
   @State private var showsModels = false
 
-  private var copy: (title: String, description: String) { AssistantFailureCopy.content(state) }
+  private var copy: (title: String, description: String) {
+    let content = AssistantFailureCopy.content(state)
+    if let providerMessage {
+      return (content.title, providerMessage)
+    }
+    return content
+  }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: OkouSpace.md) {
       ChatCardHeader(
         title: copy.title,
-        systemImage: state.recovery.continues ? "clock" : "exclamationmark.circle"
+        icon: state.recovery.continues ? "clock" : "circle-alert"
       ) {
         if !copy.description.isEmpty {
           Text(copy.description).textSelection(.enabled)
         }
         if let account = state.accountLabel {
-          Text("Personal subscription \(account)").font(.caption).textSelection(.enabled)
+          Text("Personal subscription \(account)").textSelection(.enabled)
         }
         if state.disconnected {
-          Text("Personal subscription disconnected").font(.caption)
+          Text("Personal subscription disconnected")
         }
-        ForEach(state.resetDetails, id: \.self) { Text($0).font(.caption) }
+        ForEach(state.resetDetails, id: \.self) { Text($0) }
       }
       if state.isCurrent {
         actions
         if let error = state.accountError ?? state.billingError {
-          Text(error).font(.caption).foregroundStyle(.red)
-          Button("Refresh recovery options") {
-            Task { await conversation.refreshFailureAccounts() }
-          }
-          .disabled(state.isBusy)
+          OkouLoadErrorRow(
+            message: error, actionTitle: "Refresh recovery options", isRetrying: state.isBusy
+          ) { await conversation.refreshFailureAccounts() }
         }
         if let notice = conversation.modelSelection?.models.subscriptions.notice,
           state.recovery.kind == .usage
         {
-          Text(notice).font(.caption).foregroundStyle(.secondary)
+          Text(notice).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
         if let error = conversation.modelSelection?.models.subscriptions.error,
           state.recovery.kind == .usage, error != state.accountError
         {
-          Text(error).font(.caption).foregroundStyle(.red)
+          OkouLoadErrorRow(message: error)
         }
       }
       if state.failure.error != copy.description && !state.failure.error.isEmpty {
         DisclosureGroup("Details") {
-          Text(state.failure.error).font(.caption).textSelection(.enabled)
+          Text(state.failure.error).font(.okou(.footnote)).textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }.font(.caption)
+        }
+        .font(.okou(.footnote))
+        .foregroundStyle(OkouColor.mutedForeground)
       }
     }
     .buttonStyle(ChatCardButtonStyle())
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
+    .padding(.horizontal, OkouSpace.lg)
+    .padding(.vertical, OkouSpace.md)
     .frame(maxWidth: .infinity, alignment: .leading)
     .modifier(ChatCardSurface())
     .accessibilityIdentifier("assistant-failure-\(state.failure.id)")
@@ -92,12 +100,12 @@ struct AssistantFailureCard: View {
         Button("Check credits") { Task { await conversation.refreshFailureAccounts() } }
           .disabled(state.isBusy)
       } else if state.billingError == nil {
-        ProgressView("Checking billing permissions…").font(.caption)
+        OkouLoadingRow("Checking billing permissions…")
       }
     } else {
       ViewThatFits(in: .horizontal) {
-        HStack(spacing: 12) { recoveryButtons }
-        VStack(alignment: .leading, spacing: 8) { recoveryButtons }
+        HStack(spacing: OkouSpace.md) { recoveryButtons }
+        VStack(alignment: .leading, spacing: OkouSpace.sm) { recoveryButtons }
       }
       .buttonStyle(ChatCardButtonStyle())
       .disabled(state.isBusy)

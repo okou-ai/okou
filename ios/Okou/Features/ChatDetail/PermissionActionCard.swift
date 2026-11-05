@@ -41,7 +41,7 @@ struct PermissionActionCard: View {
     ChatActionCard {
       ChatCardHeader(
         title: String(localized: "\(connectorLabel) permissions"),
-        systemImage: "lock.shield", titleLineLimit: 1
+        icon: "shield-check", titleLineLimit: 1
       ) {
         if store.action.action == .allow {
           Text("Allow \(permission)")
@@ -55,22 +55,22 @@ struct PermissionActionCard: View {
               localized:
                 "For \(store.snapshot?.agentName ?? String(localized: "this Agent")) · \(status)")
         )
-        .font(.caption)
         .lineLimit(1, reservesSpace: true)
-        .foregroundStyle(.secondary)
       }
     } actions: {
       if store.applied && !store.needsContinuation && store.error == nil && !store.isLoading
         && !store.isSaving
       {
-        HStack(spacing: 8) {
+        HStack(spacing: OkouSpace.sm) {
           Label(
             store.action.action == .allow
               ? String(localized: "Allowed") : String(localized: "Denied"),
-            systemImage: store.action.action == .allow ? "checkmark.circle" : "minus.circle"
+            okouSymbol: store.action.action == .allow ? "circle-check" : "circle-minus"
           )
-          .font(.subheadline)
-          .foregroundStyle(store.action.action == .allow ? Color.green : Color.secondary)
+          .font(.okou(.subheadline))
+          .foregroundStyle(
+            store.action.action == .allow ? OkouStatusColor.success : OkouColor.mutedForeground
+          )
           .fixedSize(horizontal: false, vertical: true)
           Spacer(minLength: 0)
           Button("View details") { showsDetails = true }
@@ -106,50 +106,49 @@ struct PermissionActionDetails: View {
   var body: some View {
     NavigationStack {
       ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: OkouSpace.lg) {
           if store.snapshot != nil || store.error != nil {
             requestSummary
             confirmation
           }
         }
-        .padding(16)
+        .padding(OkouSpace.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .background(Color(uiColor: .systemGroupedBackground))
       .overlay {
         if store.snapshot == nil && store.error == nil {
           ChatSettingsLoadingView(title: "Checking permission…")
         }
       }
+      .okouGroupedBackground()
       .navigationTitle("Permission request")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
-      }
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
     }
   }
 
   private var requestSummary: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      HStack(spacing: 12) {
-        Image(systemName: "lock.shield")
-          .font(.title3).foregroundStyle(.secondary)
-          .frame(width: 40, height: 40)
-          .background(Color(uiColor: .tertiarySystemGroupedBackground), in: .rect(cornerRadius: 12))
-          .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 4) {
-          Text(store.metadata?.label ?? store.action.connectorSlug).font(.headline)
+    VStack(alignment: .leading, spacing: OkouSpace.lg) {
+      HStack(spacing: OkouSpace.md) {
+        OkouLogoTile(size: OkouControl.logoTile) {
+          OkouIcon("shield-check", size: OkouIconSize.standard)
+            .foregroundStyle(OkouColor.mutedForeground)
+        }
+        VStack(alignment: .leading, spacing: OkouSpace.xs) {
+          Text(store.metadata?.label ?? store.action.connectorSlug)
+            .font(.okou(.headline)).foregroundStyle(OkouColor.foreground)
           Text("Requested by \(store.snapshot?.agentName ?? String(localized: "this Agent"))")
-            .font(.subheadline).foregroundStyle(.secondary)
+            .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         }
       }
       Divider()
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: OkouSpace.sm) {
         Text(
           store.action.permission == "__unknown__"
             ? String(localized: "Other endpoints") : store.action.permission
         )
-        .font(.subheadline.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+        .font(.okou(.subheadline, design: .monospaced)).foregroundStyle(OkouColor.mutedForeground)
+        .textSelection(.enabled)
         if let description = store.metadata?.permissions.first(where: {
           $0.name == store.action.permission
         })?.description {
@@ -160,41 +159,43 @@ struct PermissionActionDetails: View {
             ? "These permissions apply to this connector across your chats and accounts."
             : "These permissions apply to your account for this Agent."
         )
-        .font(.footnote).foregroundStyle(.secondary)
+        .okouSectionNote()
       }
       if let method = store.action.method, let path = store.action.path {
-        Text("\(method) \(path)").font(.caption.monospaced()).textSelection(.enabled)
+        Text("\(method) \(path)").font(.okou(.caption, design: .monospaced)).textSelection(.enabled)
       }
       if let reason = store.action.reason, !reason.isEmpty {
-        Text(reason).font(.subheadline).textSelection(.enabled)
+        Text(reason).font(.okou(.subheadline)).textSelection(.enabled)
       }
     }
-    .padding(18)
+    .padding(OkouSpace.lg)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 20))
+    .modifier(OkouSurfaceStyle())
   }
 
   @ViewBuilder private var confirmation: some View {
     if let error = store.error {
-      Text(error).foregroundStyle(.red).textSelection(.enabled)
+      // A failed read is quiet, with its retry beside it.
+      if store.snapshot == nil && !store.isLoading {
+        OkouLoadErrorRow(message: error, actionTitle: "Retry loading") { await store.refresh() }
+      } else {
+        OkouLoadErrorRow(message: error)
+      }
     }
-    if store.snapshot == nil && store.error != nil && !store.isLoading {
-      Button("Retry loading") { Task { await store.refresh() } }
-        .frame(minHeight: 44)
-    } else if store.snapshot != nil && !store.hasPermission && !store.isLoading {
+    if store.snapshot != nil && !store.hasPermission && !store.isLoading {
       Text("This permission is no longer available.")
     }
     if store.applied && !store.isSaving {
-      VStack(alignment: .leading, spacing: 4) {
+      VStack(alignment: .leading, spacing: OkouSpace.xs) {
         Label(
           store.action.action == .allow
             ? String(localized: "Allowed") : String(localized: "Denied"),
-          systemImage: "checkmark.circle")
+          okouSymbol: "circle-check")
         if let expiry = store.grant?.expiresAt, expiry > .now {
           Text("Expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
-            .font(.footnote).foregroundStyle(.secondary)
+            .okouSectionNote()
         } else if store.action.action == .allow {
-          Text("No expiration").font(.footnote).foregroundStyle(.secondary)
+          Text("No expiration").okouSectionNote()
         }
       }
     }
@@ -211,29 +212,28 @@ struct PermissionActionDetails: View {
             Text("7 days").tag(ChatPermissionAction.Duration.week)
             Text("Always").tag(ChatPermissionAction.Duration.always)
           }
-          .pickerStyle(.menu).labelsHidden()
+          .okouValuePicker().labelsHidden()
           .disabled(store.isSaving || store.isLoading)
           .accessibilityIdentifier("permission-duration")
         }
-        .frame(minHeight: 44)
-        .padding(.horizontal, 16).padding(.vertical, 4)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 20))
+        .font(.okou(.body))
+        .frame(minHeight: OkouControl.listRow)
+        .padding(.horizontal, OkouSpace.lg)
+        .modifier(OkouSurfaceStyle())
       }
-      VStack(spacing: 10) {
+      VStack(spacing: OkouSpace.ten) {
         Button {
           confirmingContinuation = store.needsContinuation
           Task { await store.confirm() }
         } label: {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
         }
-        .buttonStyle(.borderedProminent).controlSize(.large)
-        .buttonBorderShape(.roundedRectangle(radius: 12))
-        .tint(Color("AccentColor"))
+        .buttonStyle(OkouButtonStyle(isPrimary: true))
         .disabled(!store.canConfirm)
         .accessibilityIdentifier("permission-confirm")
         if store.action.callbackPrompt != nil {
           Text("The chat will continue after confirmation.")
-            .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            .okouSectionNote().multilineTextAlignment(.center)
         }
       }
     }

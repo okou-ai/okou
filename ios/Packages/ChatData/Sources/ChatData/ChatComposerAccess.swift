@@ -51,9 +51,19 @@ public struct ChatComposerConnector: Identifiable, Sendable {
   public let permissionBundleRef: String?
   public let managed: Bool
   public let authorized: Bool
+  /// The partner's own logo; custom connectors have none.
+  public var icon: ChatConnectorIcon? = nil
   public var access: ChatConnectorAccess?
   public var currentAccount: ChatConnectorAccount?
   public var id: String { target.key }
+}
+
+/// A connector logo as the catalog publishes it: an https image, inverted in dark mode
+/// when it is a single-colour mark, optionally scaled inside its square slot.
+public struct ChatConnectorIcon: Decodable, Equatable, Sendable {
+  public let url: URL
+  public let invertInDarkMode: Bool
+  public let scale: Double?
 }
 
 extension ChatConnectorTarget {
@@ -143,6 +153,7 @@ public struct ChatComposerAccess: Sendable {
       let slug: String
       let label: String
       let hasPermissions: Bool
+      let icon: ChatConnectorIcon?
     }
     struct Custom: Decodable, Sendable {
       let id: String
@@ -171,7 +182,7 @@ public struct ChatComposerAccess: Sendable {
         ChatComposerConnector(
           target: .builtin($0.slug), label: $0.label, hasPermissions: $0.hasPermissions,
           permissionBundleRef: nil, managed: false,
-          authorized: grants?.enabledConnectorSlugs.contains($0.slug) == true,
+          authorized: grants?.enabledConnectorSlugs.contains($0.slug) == true, icon: $0.icon,
           access: nil, currentAccount: nil)
       }
       + list.customConnectors.map {

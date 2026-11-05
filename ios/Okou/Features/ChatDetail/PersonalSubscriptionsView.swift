@@ -10,81 +10,50 @@ struct PersonalSubscriptionsView: View {
 
   var body: some View {
     List {
+      if store.isLoading && store.accounts.isEmpty {
+        OkouLoadingRow("Loading accounts…")
+      }
+      if let error = store.error {
+        Section {
+          OkouLoadErrorRow(message: error) { _ = await store.refresh(force: true) }
+        }
+      }
+      // One card per account, grouped by provider; the provider names only its first card.
       ForEach(PersonalSubscriptionType.allCases) { type in
         let accounts = store.accounts.filter { $0.type == type.rawValue }
-        Section {
-          ForEach(accounts) { account in
-            VStack(alignment: .leading, spacing: 10) {
-              HStack(alignment: .top) {
-                SubscriptionBrandIcon(type: type)
-                VStack(alignment: .leading, spacing: 3) {
-                  Text(account.accountEmail ?? account.workspaceName ?? providerTitle(type))
-                    .font(.headline).textSelection(.enabled)
-                  if let workspace = account.workspaceName, workspace != account.accountEmail {
-                    Text(workspace).font(.caption)
-                  }
-                  if let plan = account.planType {
-                    Text(plan).font(.caption).foregroundStyle(.secondary)
-                  }
-                  Text(
-                    account.needsReconnect
-                      ? LocalizedStringKey("Reconnect required") : LocalizedStringKey("Connected")
-                  )
-                  .font(.caption).foregroundStyle(account.needsReconnect ? .orange : .secondary)
-                }
-                Spacer()
-                if account.isActive != false {
-                  Image(systemName: "checkmark.circle.fill").accessibilityLabel("Active account")
-                }
-              }
-              SubscriptionUsageView(account: account)
-              HStack {
-                if account.isActive == false {
-                  Button("Use account") { Task { await store.activate(account) } }
-                }
-                Button("Reconnect") {
-                  store.start(type: type, accountID: account.id)
-                  showsAuth = true
-                }
-                Spacer()
-                Menu {
-                  Button("Disconnect", role: .destructive) { disconnecting = account }
-                } label: {
-                  Image(systemName: "ellipsis").frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Account actions")
-              }.font(.subheadline)
-              if type == .codex, let credits = account.subscriptionResetCredits, credits > 0 {
-                Button("Reset usage (\(credits) credits)") { resetting = account }
-                if let expiry = account.subscriptionResetCreditsNextExpiresAt, expiry > Date() {
-                  Text(
-                    "Credits expire \(expiry.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)))"
-                  )
-                  .font(.caption).foregroundStyle(.secondary)
-                }
-              }
-            }
-            .padding(.vertical, 4)
-          }
-          if accounts.isEmpty && !store.isLoading {
-            Text("No connected accounts").foregroundStyle(.secondary)
-          }
+        ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
+          accountSection(account, type: type, showsProvider: index == 0)
+        }
+      }
+      Section {
+        ForEach(PersonalSubscriptionType.allCases) { type in
           Button {
             store.start(type: type)
             showsAuth = true
           } label: {
-            Label("Connect account", systemImage: "plus")
-          }.disabled(accounts.count >= 10)
-        } header: {
-          Text(providerTitle(type))
+            Text("Connect \(providerTitle(type))")
+              .foregroundStyle(OkouColor.foreground)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .contentShape(Rectangle())
+          }
+          .disabled(store.accounts.filter { $0.type == type.rawValue }.count >= 10)
         }
+      } header: {
+        Text("Add account").okouSectionHeader()
+      } footer: {
+        Group {
+          if let notice = store.notice {
+            Text(notice)
+          } else {
+            Text("Runs use the active account of each provider. Pull down to refresh usage.")
+          }
+        }
+        .okouSectionNote()
       }
-      if store.isLoading { ProgressView("Loading accounts…") }
-      if let error = store.error { Text(error).foregroundStyle(.red) }
-      if let notice = store.notice { Text(notice) }
-      Button("Refresh accounts and usage") { Task { await store.refresh(force: true) } }
     }
     .disabled(store.isMutating)
+    .okouGroupedBackground()
+    .refreshable { await store.refresh(force: true) }
     .navigationTitle("Subscriptions")
     .navigationBarTitleDisplayMode(.inline)
     .task { await store.refresh() }
@@ -120,51 +89,126 @@ struct PersonalSubscriptionsView: View {
       Text("This uses one subscription reset credit. It cannot be undone.")
     }
   }
-}
 
-private struct SubscriptionUsageView: View {
-  let account: PersonalSubscription
-  @Environment(\.locale) private var locale
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      if account.subscriptionUsage?.fiveHour == nil && account.subscriptionUsage?.weekly == nil {
-        Text("Usage unavailable").foregroundStyle(.secondary)
-        if let reset = account.subscriptionNextResetAt {
-          Text(
-            "Resets \(reset.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)))"
-          )
-        }
-        if let period = account.subscriptionResetPeriod { Text(period) }
-      }
-      ForEach(account.usageWindows) { usage in
-        window(usage.window, title: usage.id == "week" ? "Weekly window" : "5-hour window")
-      }
-    }.font(.caption)
-  }
-  @ViewBuilder private func window(
-    _ window: PersonalSubscription.Window?, title: LocalizedStringKey
+  @ViewBuilder
+  private func accountSection(
+    _ account: PersonalSubscription, type: PersonalSubscriptionType, showsProvider: Bool
   ) -> some View {
-    if let window {
-      VStack(alignment: .leading, spacing: 4) {
-        HStack {
-          Text(title)
-          Spacer()
-          if let remaining = window.remaining {
-            Text("\(remaining, specifier: "%.0f")% remaining")
-          } else {
-            Text("Usage unavailable")
+    Section {
+      identityRow(account, type: type)
+      if account.needsReconnect {
+        // Without a valid sign-in there is no usage to show; one row says what to do.
+        HStack(spacing: OkouSpace.md) {
+          Text("Sign-in expired").foregroundStyle(OkouColor.destructive)
+          Spacer(minLength: OkouSpace.sm)
+          Button("Reconnect") {
+            store.start(type: type, accountID: account.id)
+            showsAuth = true
+          }
+          .buttonStyle(.borderless)
+          .foregroundStyle(OkouColor.foreground)
+          .font(.okou(.body).weight(.medium))
+        }
+      } else if account.usageWindows.isEmpty {
+        VStack(alignment: .leading, spacing: OkouSpace.two) {
+          Text("Usage unavailable").foregroundStyle(OkouColor.mutedForeground)
+          if let reset = account.subscriptionNextResetAt, reset > .now {
+            Text(OkouUsageMeter.resetText(reset))
+              .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
           }
         }
-        if let remaining = window.remaining {
-          ProgressView(value: remaining, total: 100).accessibilityLabel(title)
-        }
-        if let date = window.resetAt {
-          Text(
-            "Resets \(date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)))"
-          ).foregroundStyle(
-            .secondary)
+      } else {
+        ForEach(account.usageWindows) { usage in
+          if let remaining = usage.window.remaining {
+            OkouUsageMeter(
+              title: usage.id == "week" ? "Weekly limit" : "5-hour limit", remaining: remaining,
+              resetsAt: usage.window.resetAt)
+          }
         }
       }
+      if type == .codex, let credits = account.subscriptionResetCredits, credits > 0,
+        !account.needsReconnect
+      {
+        Button {
+          resetting = account
+        } label: {
+          OkouValueRow(value: Text("\(credits) left").monospacedDigit()) {
+            Text("Reset usage").foregroundStyle(OkouColor.foreground)
+          }
+        }
+      }
+    } header: {
+      if showsProvider {
+        HStack(spacing: OkouSpace.sm) {
+          SubscriptionBrandIcon(type: type)
+          Text(providerTitle(type))
+        }
+        .okouSectionHeader()
+      }
+    } footer: {
+      Group {
+        if account.needsReconnect {
+          Text("Okou can't read usage or run tasks with this account until you sign in again.")
+        } else if type == .codex, let expiry = account.subscriptionResetCreditsNextExpiresAt,
+          expiry > Date(), (account.subscriptionResetCredits ?? 0) > 0
+        {
+          Text(
+            "Credits expire \(expiry.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)))"
+          )
+        }
+      }
+      .okouSectionNote()
+    }
+    .listSectionSpacing(showsProvider ? .default : .compact)
+  }
+
+  /// Email, plan and state on one row; account actions live in its menu.
+  private func identityRow(_ account: PersonalSubscription, type: PersonalSubscriptionType)
+    -> some View
+  {
+    HStack(spacing: OkouSpace.md) {
+      VStack(alignment: .leading, spacing: OkouSpace.two) {
+        Text(account.accountEmail ?? account.workspaceName ?? providerTitle(type))
+          .font(.okou(.body).weight(.medium))
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .textSelection(.enabled)
+        HStack(spacing: OkouSpace.six) {
+          if let plan = account.planType, !plan.isEmpty {
+            Text(plan.prefix(1).uppercased() + plan.dropFirst())
+              .font(.okou(.caption).weight(.medium))
+              .padding(.horizontal, OkouSpace.six)
+              .padding(.vertical, OkouSpace.one)
+              .background(OkouColor.nestedFill, in: Capsule())
+          }
+          if account.isActive != false {
+            Text("Active").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+          }
+          if let workspace = account.workspaceName, workspace != account.accountEmail,
+            !workspace.hasSuffix("'s Organization")
+          {
+            Text(workspace).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+              .lineLimit(1)
+          }
+        }
+      }
+      Spacer(minLength: OkouSpace.sm)
+      Menu {
+        if account.isActive == false {
+          Button("Use account", okouSymbol: "check") { Task { await store.activate(account) } }
+        }
+        Button("Reconnect", okouSymbol: "refresh-cw") {
+          store.start(type: type, accountID: account.id)
+          showsAuth = true
+        }
+        Button("Disconnect", okouSymbol: "log-out", role: .destructive) { disconnecting = account }
+      } label: {
+        OkouIcon("ellipsis", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.mutedForeground)
+          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel("Account actions")
     }
   }
 }
@@ -180,21 +224,21 @@ struct SubscriptionAuthorizationView: View {
       Form {
         switch store.phase {
         case .idle, .starting:
-          ProgressView("Starting authorization…")
+          OkouLoadingRow("Starting authorization…")
         case .pending, .completing:
           Section {
             Text("1. Open the authorization page in your browser and sign in.")
             if let url = store.browserURL {
-              Button("Open authorization page", systemImage: "safari") { openURL(url) }
+              Button("Open authorization page", okouSymbol: "globe") { openURL(url) }
             }
             if let code = store.verificationCode {
               Text("2. Enter this verification code in your browser.")
-              Text(code).font(.title.monospaced()).textSelection(.enabled)
+              Text(code).font(.okou(.title).monospaced()).textSelection(.enabled)
                 .accessibilityLabel("Verification code: \(code)")
-              Button("Copy verification code", systemImage: "doc.on.doc") {
+              Button("Copy verification code", okouSymbol: "copy") {
                 UIPasteboard.general.string = code
               }
-              Text("Waiting for authorization…").foregroundStyle(.secondary)
+              Text("Waiting for authorization…").foregroundStyle(OkouColor.mutedForeground)
             } else {
               Text("2. Paste the authorization code shown after signing in.")
               TextField("Authorization code", text: $store.authorizationCode, axis: .vertical)
@@ -213,11 +257,11 @@ struct SubscriptionAuthorizationView: View {
               Text(
                 "Authorization expires \(expires.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))"
               )
-              .font(.caption).foregroundStyle(.secondary)
+              .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
             }
           }
         case .complete:
-          Label("Subscription connected", systemImage: "checkmark.circle.fill")
+          Label("Subscription connected", okouSymbol: "circle-check")
           Button("Done") { dismiss() }
         case .expired, .failed:
           Text(
@@ -226,16 +270,15 @@ struct SubscriptionAuthorizationView: View {
               : LocalizedStringKey("Unable to authorize your subscription."))
           Button("Start again") { store.retryAuth() }
         }
-        if let error = store.authError { Text(error).foregroundStyle(.red) }
+        if let error = store.authError { Text(error).foregroundStyle(OkouColor.destructive) }
       }
+      .okouGroupedBackground()
       .navigationTitle(store.authType.map(providerTitle) ?? "Connect subscription")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Close") {
-            store.cancelAuth()
-            dismiss()
-          }
+        OkouCloseToolbarItem {
+          store.cancelAuth()
+          dismiss()
         }
       }
     }

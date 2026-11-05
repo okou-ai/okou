@@ -38,6 +38,8 @@ struct MessageRenderPlan: Sendable {
     case permission(ChatPermissionAction)
     case permissionBatch(ChatPermissionBatchAction)
     case unavailablePermission
+    case mailDraft(String)
+    case shellAuthorization(String)
     case artifact(ChatArtifact, label: String, destination: URL?)
     case diagram(code: String, original: AttributedString)
 
@@ -49,7 +51,8 @@ struct MessageRenderPlan: Sendable {
       case .artifact:
         // Artifact cards reserve the preview and information sizes before loading metadata.
         true
-      case .connector, .permission, .permissionBatch, .unavailablePermission, .diagram:
+      case .connector, .permission, .permissionBatch, .unavailablePermission, .mailDraft,
+        .shellAuthorization, .diagram:
         false
       }
     }
@@ -98,6 +101,8 @@ struct MessageRenderPlan: Sendable {
         case .permission(let action): return .permission(action)
         case .permissionBatch(let action): return .permissionBatch(action)
         case .unavailablePermission: return .unavailablePermission
+        case .mailDraft(let id): return .mailDraft(id)
+        case .shellAuthorization(let id): return .shellAuthorization(id)
         }
       }
       root = .group(units, spacing: 12)

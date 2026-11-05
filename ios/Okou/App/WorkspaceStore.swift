@@ -213,6 +213,9 @@ final class WorkspaceStore {
       didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) },
       readRetrySleep: readRetrySleep)
     conversation.composer.setForeground(isForeground)
+    conversation.runOutput = { [weak self] runID, handler in
+      self?.realtime?.subscribeRunOutput(runID: runID, handler: handler)
+    }
     conversations[id] = conversation
     return conversation
   }

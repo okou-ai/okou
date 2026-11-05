@@ -43,15 +43,11 @@ export function suggestionRow(row: typeof agentSuggestions.$inferSelect) {
     : suggestionSchema.parse(value);
 }
 export function suggestionContent(
-  item: Pick<
-    Suggestion,
-    "title" | "rationale" | "feedbackScope" | "options" | "customOption"
-  >,
+  item: Pick<Suggestion, "title" | "rationale" | "options" | "customOption">,
 ) {
   return {
     title: item.title,
     rationale: item.rationale,
-    feedbackScope: item.feedbackScope,
     options: item.options,
     customOption: item.customOption,
   };
