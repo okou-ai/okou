@@ -34,10 +34,10 @@ export const immutableCatalogHash$ = command(
   },
 );
 
-// Entry existence is the preparation receipt: every writer must finish storage
-// registration before publishing an entry. An interrupted preparer leaves an
-// unreferenced partial generation that a retry at the same hash reuses; entries
-// of hashes already captured by readers are never rewritten or deleted.
+// Legacy Storage registration precedes entry publication. Bundle preparation
+// fills only additive metadata, before pointer publication or on an unchanged
+// sync. Interrupted preparation leaves a partial generation that a retry at the
+// same hash reuses; immutable catalog fields captured by readers never change.
 export const prepareImmutableCatalogEntries$ = command(
   async (
     { set },

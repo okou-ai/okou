@@ -357,7 +357,9 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
     const key = typeof input.Key === "string" ? input.Key : undefined;
     const bytes = key ? objects.get(key) : undefined;
     if (!bytes) {
-      return Promise.reject(new Error("Object unavailable"));
+      return Promise.reject(
+        Object.assign(new Error("Object unavailable"), { name: "NoSuchKey" }),
+      );
     }
     return Promise.resolve({
       ContentLength: bytes.length,

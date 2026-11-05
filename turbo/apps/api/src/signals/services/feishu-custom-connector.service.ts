@@ -1,7 +1,7 @@
-import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { preparedVolumePublicationPlan } from "./storage-volume-publication-sql";
+import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -45,7 +45,10 @@ import { secrets } from "@okouai/db/schema/secret";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
-import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
+import {
+  prepareCustomConnectorSkillVolume$,
+  type PreparedCustomConnectorSkill,
+} from "./custom-connector-skill-volume.service";
 import {
   FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA,
   getFeishuCustomConnectorSlug,
@@ -216,9 +219,9 @@ function desiredOAuthConfig(installation: FeishuConnectorInstallation) {
 }
 
 function connectorDefinitionMatches(
-  connector: CustomConnectorDefinitionRow,
+  connector: FeishuCustomConnectorDefinitionRow,
   installation: FeishuConnectorInstallation,
-  skillStorageVersionId: string,
+  skill: PreparedCustomConnectorSkill,
 ): boolean {
   const desired = desiredConnectorDefinition(installation);
   return (
@@ -231,7 +234,9 @@ function connectorDefinitionMatches(
     connector.enabled === desired.enabled &&
     connector.permissionBundleRef === desired.permissionBundleRef &&
     connector.skillMarkdown === desired.skillMarkdown &&
-    connector.skillStorageVersionId === skillStorageVersionId
+    connector.skillStorageVersionId === skill.version.versionId &&
+    connector.skillContentBundleSourceVersionId === skill.version.versionId &&
+    isDeepStrictEqual(connector.skillContentBundle, skill.contentBundle)
   );
 }
 
@@ -272,14 +277,20 @@ function feishuCustomConnectorIdCondition(
   );
 }
 
+type FeishuCustomConnectorDefinitionRow = CustomConnectorDefinitionRow &
+  Pick<
+    typeof orgCustomConnectorSkillBundles.$inferSelect,
+    "skillContentBundle" | "skillContentBundleSourceVersionId"
+  >;
+
 interface ExistingFeishuCustomConnector {
-  readonly connector: CustomConnectorDefinitionRow;
+  readonly connector: FeishuCustomConnectorDefinitionRow;
   readonly oauthConfig:
     typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
 }
 interface PreparedFeishuCustomConnectorSkill {
   readonly connectorId: string;
-  readonly volume: PreparedServerSideVolume;
+  readonly volume: PreparedCustomConnectorSkill;
 }
 const loadFeishuConnectorConfig$ = command(
   async ({ get }, args: EnsureFeishuCustomConnectorArgs) => {
@@ -362,7 +373,12 @@ function feishuExistingConnectorPlan(
   return {
     from: orgCustomConnectors,
     columns: {
-      connector: customConnectorDefinitionSelection(),
+      connector: {
+        ...customConnectorDefinitionSelection(),
+        skillContentBundle: orgCustomConnectorSkillBundles.skillContentBundle,
+        skillContentBundleSourceVersionId:
+          orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
+      },
       oauthConfig: orgCustomConnectorOauthConfigs,
     },
     join: and(
@@ -397,6 +413,8 @@ function feishuConnectorMutation(
         ),
         ...desiredConnectorDefinition(installation),
         skillStorageVersionId,
+        skillContentBundle: prepared.volume.contentBundle,
+        skillContentBundleSourceVersionId: skillStorageVersionId,
         createdBy: installation.ownerUserId ?? args.userId,
       },
     } as const;
@@ -405,7 +423,7 @@ function feishuConnectorMutation(
     !connectorDefinitionMatches(
       existing.connector,
       installation,
-      skillStorageVersionId,
+      prepared.volume,
     ) || !oauthConfigMatches(existing.oauthConfig, installation);
   if (!needsRepair) {
     return { kind: "unchanged" } as const;
@@ -419,6 +437,8 @@ function feishuConnectorMutation(
     values: {
       ...desiredConnectorDefinition(installation),
       skillStorageVersionId,
+      skillContentBundle: prepared.volume.contentBundle,
+      skillContentBundleSourceVersionId: skillStorageVersionId,
       storageVersion: changed
         ? existing.connector.storageVersion + 1
         : existing.connector.storageVersion,

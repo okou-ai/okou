@@ -1,4 +1,5 @@
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -3011,6 +3012,21 @@ export function registerFeishuIntegrationTests(
           orgRole: "org:member",
         });
         authOrgApi.acceptAgentStorageWrites();
+        context.mocks.s3.send.mockImplementation((command: unknown) => {
+          if (
+            command instanceof HeadObjectCommand &&
+            command.input.Key?.startsWith("bundles/v1/")
+          ) {
+            return Promise.reject(
+              Object.assign(new Error("Object missing"), { name: "NotFound" }),
+            );
+          }
+          return Promise.resolve({
+            ContentLength: 1024,
+            UploadId: randomUUID(),
+            ETag: "fixture-etag",
+          });
+        });
         await own(() => {
           return enableFeishuIntegration(platform, admin);
         });
@@ -3119,6 +3135,21 @@ export function registerFeishuIntegrationTests(
           `okou ${platform} message`,
         );
         const skillMarkdown = uploadedSkillMarkdown();
+        const bundledSkills = context.mocks.s3.send.mock.calls.flatMap(
+          ([command]) => {
+            const input = commandInput(command);
+            if (
+              typeof input.Key !== "string" ||
+              !input.Key.startsWith("bundles/v1/") ||
+              !Buffer.isBuffer(input.Body)
+            ) {
+              return [];
+            }
+            const skill = extractFileFromTarGz(input.Body, "SKILL.md");
+            return skill === null ? [] : [skill];
+          },
+        );
+        expect(new Set(bundledSkills)).toStrictEqual(new Set([skillMarkdown]));
         expect(skillMarkdown).toContain(`---\nname: ${platform}\n`);
         expect(skillMarkdown).toContain(
           `description: ${provider.name} OpenAPI for user-authorized people search, cloud documents,`,
