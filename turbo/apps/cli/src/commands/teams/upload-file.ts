@@ -120,6 +120,7 @@ Notes:
         console.warn(`Upload operation: ${operationId}`);
         const prepared = await initTeamsFileUpload({
           canonical: {
+            version: 2,
             operationId,
             checksumSha256: createHash("sha256")
               .update(fileContent)
@@ -132,9 +133,15 @@ Notes:
           length: fileSize,
         });
 
-        // Non-Run responses and retained API targets can omit canonical fields.
-        // Remove this handling only after the caller and rollout gates in #43729.
-        if (prepared.uploadRequired !== false) {
+        if (
+          prepared.operationId !== operationId ||
+          typeof prepared.uploadRequired !== "boolean"
+        ) {
+          throw new Error(
+            "The Teams upload API did not acknowledge this operation. Check the API deployment before retrying with the same --operation-id.",
+          );
+        }
+        if (prepared.uploadRequired) {
           const uploadResponse = await fetch(prepared.uploadUrl, {
             method: "PUT",
             headers: {
@@ -151,9 +158,7 @@ Notes:
           }
         }
         const result = await completeTeamsFileUpload({
-          ...(prepared.operationId
-            ? { operationId: prepared.operationId }
-            : {}),
+          operationId: prepared.operationId,
           uploadId: prepared.uploadId,
           ...destination,
           contentType: prepared.contentType,

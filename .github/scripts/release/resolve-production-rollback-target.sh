@@ -15,6 +15,7 @@ readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
 # Project lifecycle events require the CLI reader installed by #44617.
 readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
 readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
+readonly TEAMS_IDENTITY_PREPARATION_PATH=.github/rollback-floors/teams-identity-retirement-preparation
 # #40206 migrates encrypted Link grants before requiring their metadata. Old
 # writers must never recreate the retired shape after the migration.
 readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
@@ -824,6 +825,17 @@ if [[ ! "$project_wire_contracts_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$project_wire_contracts_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Project wire contract activation: ${project_wire_contracts_commit}."
+fi
+
+# The v2 CLI needs the prepared non-Run reader and writer. Keep the application
+# mapping that omits the discriminator eligible for the later DB contraction.
+teams_identity_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$TEAMS_IDENTITY_PREPARATION_PATH" | sed -n '1p')
+if [[ ! "$teams_identity_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Teams identity preparation on main."
+fi
+if ! git merge-base --is-ancestor "$teams_identity_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Teams identity preparation: ${teams_identity_preparation_commit}."
 fi
 
 # Pi memory's private tables no longer exist. Earlier APIs still name them
