@@ -1,4 +1,4 @@
-import { ProjectSidebar } from "../projects/project-sidebar.tsx";
+import { ProjectCreateButton } from "../projects/project-row.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, Search, SquarePen } from "lucide-react";
@@ -27,7 +27,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { PwaAgentSwitcher } from "./pwa-agent-switcher.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
-import { ChatThreadItem, ChatThreadsListMenu } from "./sidebar-threads.tsx";
+import { ChatThreadListRows, ChatThreadsListMenu } from "./sidebar-threads.tsx";
 
 function useSelectFilter() {
   const selectFilter = useSet(selectChatThreadFilter$);
@@ -73,6 +73,7 @@ function PwaChatListHeader() {
         >
           <Search aria-hidden="true" />
         </Button>
+        <ProjectCreateButton touch />
         <Button
           variant="quiet"
           size="icon"
@@ -215,29 +216,14 @@ function PwaChatThreads({
         return $.chat.sidebar.chatThreads;
       })}
     >
-      <div
-        className="relative w-full"
-        style={{ height: rowCount * PWA_CHAT_THREAD_ROW_HEIGHT }}
+      <ChatThreadListRows
+        listSignals={listSignals}
+        rowHeight={PWA_CHAT_THREAD_ROW_HEIGHT}
+        touch
+        layout="list"
+        shortcuts={false}
+        height={rowCount * PWA_CHAT_THREAD_ROW_HEIGHT}
       >
-        {window.items.map((signals, offset) => {
-          const index = window.startIndex + offset;
-          return (
-            <div
-              key={signals.threadId}
-              className="absolute left-0 top-0 w-full pb-1"
-              style={{
-                transform: `translateY(${index * PWA_CHAT_THREAD_ROW_HEIGHT}px)`,
-              }}
-            >
-              <ChatThreadItem
-                signals={signals}
-                rowIndex={index}
-                shortcutNumber={undefined}
-                touch
-              />
-            </div>
-          );
-        })}
         {window.showAllChatsRow ? (
           <div
             className="absolute left-0 top-0 flex h-14 w-full items-center"
@@ -248,7 +234,7 @@ function PwaChatThreads({
             <ShowAllChatsButton />
           </div>
         ) : null}
-      </div>
+      </ChatThreadListRows>
     </OverlayScrollArea>
   );
 }
@@ -285,7 +271,6 @@ export function PwaChatListPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PwaChatListHeader />
-      <ProjectSidebar touch layout="list" />
       <InstatusStatusNotice placement="list" />
       <PwaChatListContent />
     </div>

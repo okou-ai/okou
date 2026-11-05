@@ -1,5 +1,31 @@
 # Changelog
 
+## [10.17.14](https://github.com/okou-ai/okou/compare/cli-v10.17.13...cli-v10.17.14) (2026-11-05)
+
+
+### Bug Fixes
+
+* **cli:** allow otp and mfa codes in browser chat guidance ([#45425](https://github.com/okou-ai/okou/issues/45425)) ([e7f2b30](https://github.com/okou-ai/okou/commit/e7f2b3033088ef8cf63d46f02729152df6d1484b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.818.6
+    * @okouai/pi-agent-runtime bumped to 1.51.70
+
+## [10.17.13](https://github.com/okou-ai/okou/compare/cli-v10.17.12...cli-v10.17.13) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.4
+    * @okouai/core bumped to 8.818.5
+    * @okouai/pi-agent-runtime bumped to 1.51.69
+
 ## [10.17.12](https://github.com/okou-ai/okou/compare/cli-v10.17.11...cli-v10.17.12) (2026-11-05)
 
 

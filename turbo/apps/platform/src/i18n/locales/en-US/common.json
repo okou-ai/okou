@@ -4946,8 +4946,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -4958,7 +4956,6 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -4977,6 +4974,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {
@@ -5370,10 +5368,8 @@
         "credits": "Credits",
         "fiveHourLimit": "5-hour limit",
         "label": "Subscription usage",
-        "leftSide": "Left side",
         "lowUsage": "Subscription usage: less than 20% remaining",
         "resetTimeUnavailable": "Reset time unavailable",
-        "rightSide": "Right side",
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
         "weeklyLimit": "Weekly limit"

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.66](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.65...runner-lifecycle-v0.17.66) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
 ## [0.17.65](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.64...runner-lifecycle-v0.17.65) (2026-11-05)
 
 ## [0.17.64](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.63...runner-lifecycle-v0.17.64) (2026-11-05)

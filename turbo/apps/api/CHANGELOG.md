@@ -10,6 +10,41 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.48.9](https://github.com/okou-ai/okou/compare/api-v2.48.8...api-v2.48.9) (2026-11-05)
+
+
+### Refactoring
+
+* remove bill connector feature switch ([#45424](https://github.com/okou-ai/okou/issues/45424)) ([96a631a](https://github.com/okou-ai/okou/commit/96a631a4b162fc73d2107781900d888f140738a7))
+* remove netsuite connector feature switch ([#45428](https://github.com/okou-ai/okou/issues/45428)) ([b4e2b13](https://github.com/okou-ai/okou/commit/b4e2b13a0b1406c5d743c07d85846e8dc32b3414))
+* remove workday connector feature switch ([#45437](https://github.com/okou-ai/okou/issues/45437)) ([cdabb63](https://github.com/okou-ai/okou/commit/cdabb63e8d24c30353cb01fe84cfd620d3091ffd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.818.6
+    * @okouai/db bumped to 2.22.7
+    * @okouai/pi-agent-runtime bumped to 1.51.70
+
+## [2.48.8](https://github.com/okou-ai/okou/compare/api-v2.48.7...api-v2.48.8) (2026-11-05)
+
+
+### Refactoring
+
+* **teams:** retire v1 upload protocol independently of account ownership ([#45413](https://github.com/okou-ai/okou/issues/45413)) ([a63d7c1](https://github.com/okou-ai/okou/commit/a63d7c10b05eda93f6ba0cd1b719f988796fb1c3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.4
+    * @okouai/core bumped to 8.818.5
+    * @okouai/db bumped to 2.22.6
+    * @okouai/pi-agent-runtime bumped to 1.51.69
+
 ## [2.48.7](https://github.com/okou-ai/okou/compare/api-v2.48.6...api-v2.48.7) (2026-11-05)
 
 

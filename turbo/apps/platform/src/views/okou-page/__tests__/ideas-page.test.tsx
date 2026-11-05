@@ -173,6 +173,30 @@ test("The ideas catalog still offers connector-free use cases", async () => {
   ).resolves.toBeVisible();
 });
 
+test("The breadcrumb links back to the Agent chat", async () => {
+  configureAgent();
+  mockCatalog([]);
+
+  await setupPage({ context, path: IDEAS_PATH });
+  await screen.findByText("Browser screenshots");
+  const breadcrumb = screen.getAllByRole("navigation").find((nav) => {
+    return nav.textContent === "Chat/Ideas & Use Cases";
+  });
+  if (!breadcrumb) {
+    throw new Error("Expected the ideas page breadcrumb");
+  }
+  const back = queryAllByRoleFast("link", breadcrumb).find((link) => {
+    return link.textContent === "Chat";
+  });
+  if (!back) {
+    throw new Error("Expected the breadcrumb link back to the chat");
+  }
+  click(back);
+
+  await findComposer();
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+});
+
 function configureWorkspaceAgents(): void {
   context.mocks.data.agents([
     {
@@ -346,4 +370,22 @@ test("Search for a use case and start it with the agent", async () => {
 
   const composer = await findComposer();
   expect(composer.textContent).toBe(REVENUECAT_PROMPT);
+});
+
+test("Start the Zapier migration idea from the available connector catalog", async () => {
+  configureAgent();
+  mockCatalog([
+    catalogItem("zapier", "Zapier"),
+    catalogItem("slack", "Slack"),
+    catalogItem("notion", "Notion"),
+  ]);
+
+  await setupPage({ context, path: IDEAS_PATH });
+  await fill(await screen.findByLabelText("Search use cases"), "Zapier");
+  click(await screen.findByText("Zapier → Okou migration"));
+
+  const composer = await findComposer();
+  expect(composer.textContent).toBe(
+    "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
+  );
 });

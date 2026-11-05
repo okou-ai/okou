@@ -6,7 +6,7 @@ import { projects$, renameProject$ } from "./projects.ts";
 
 export interface ProjectInlineRename {
   readonly projectId: string;
-  readonly folderId: string;
+  readonly rowId: string;
 }
 
 const renameState$ = computed((get) => {
@@ -20,8 +20,8 @@ export const projectInlineRename$ = computed((get) => {
 });
 
 export const startProjectInlineRename$ = command(
-  ({ get, set }, projectId: string, folderId: string) => {
-    set(get(renameState$), { projectId, folderId });
+  ({ get, set }, projectId: string, rowId: string) => {
+    set(get(renameState$), { projectId, rowId });
   },
 );
 
@@ -41,7 +41,7 @@ export const commitProjectInlineRename$ = command(
     signal: AbortSignal,
   ) => {
     // Escape clears the edit before blur, and unmount can follow blur. Only
-    // the active edit owns the save, including when another folder is edited.
+    // the active edit owns the save, including when another Project is edited.
     if (get(projectInlineRename$) !== edit) {
       return;
     }

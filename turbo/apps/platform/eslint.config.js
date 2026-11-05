@@ -64,6 +64,30 @@ const runtimeImportRestrictions = Object.freeze([
   }),
 ]);
 
+const runtimeSyntaxRestrictions = Object.freeze([
+  {
+    // KaTeX is the sole optional runtime JavaScript boundary.
+    selector: "ImportExpression:not([source.value='katex'])",
+    message:
+      'Dynamic JavaScript imports other than import("katex") are not allowed. Keep application code in the single bundle; locale resources remain separate JSON assets.',
+  },
+  {
+    selector: "CallExpression[callee.property.name='then']",
+    message:
+      "Promise.then is not allowed. Use await and derive UI from loadables; see docs/app/platform-ccstate.md.",
+  },
+  {
+    selector: "CallExpression[callee.property.name='catch']",
+    message:
+      "Promise.catch is not allowed. Let accept errors propagate and derive UI from loadables. See docs/app/signals/onRejection.md for infrastructure exceptions and docs/app/signals/tapError.md for swallowing misuses.",
+  },
+  {
+    selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+    message:
+      "Use nowDate() from src/lib/time instead of new Date() so tests can control the platform clock.",
+  },
+]);
+
 /** @type {import("eslint").Linter.Config[]} */
 export default [
   ...baseConfig,
@@ -380,28 +404,7 @@ export default [
           message:
             "try statements are not allowed. Use accept() for API errors, useLoadableSet for loading states.",
         },
-        {
-          // KaTeX is the sole optional runtime boundary. The production build
-          // separately enforces that it remains the only lazy JavaScript chunk.
-          selector: "ImportExpression:not([source.value='katex'])",
-          message:
-            'Dynamic JavaScript imports other than import("katex") are not allowed. Keep application code in the single bundle; locale resources remain separate JSON assets.',
-        },
-        {
-          selector: "CallExpression[callee.property.name='then']",
-          message:
-            "Promise.then is not allowed. Use await and derive UI from loadables; see docs/app/platform-ccstate.md.",
-        },
-        {
-          selector: "CallExpression[callee.property.name='catch']",
-          message:
-            "Promise.catch is not allowed. Let accept errors propagate and derive UI from loadables. See docs/app/signals/onRejection.md for infrastructure exceptions and docs/app/signals/tapError.md for swallowing misuses.",
-        },
-        {
-          selector: "NewExpression[callee.name='Date'][arguments.length=0]",
-          message:
-            "Use nowDate() from src/lib/time instead of new Date() so tests can control the platform clock.",
-        },
+        ...runtimeSyntaxRestrictions,
       ],
     },
   },
@@ -437,6 +440,15 @@ export default [
     ignores: ["src/**/__tests__/**", "src/mocks/**", "src/signals/utils.ts"],
     rules: {
       "ccstate/no-catch-abort": "error",
+    },
+  },
+  // URL.canParse adapts a throwing synchronous native parser, which cannot
+  // produce cancellation. Keep other production syntax restrictions here.
+  {
+    files: ["src/polyfill.ts"],
+    rules: {
+      "no-restricted-syntax": ["error", ...runtimeSyntaxRestrictions],
+      "ccstate/no-catch-abort": "off",
     },
   },
   {

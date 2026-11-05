@@ -383,17 +383,14 @@ runs:
           MICROSOFT
           LINEAR
           FIGMA
-          DEEL
           DOCUSIGN
           BOX
           DROPBOX
-          NEON
           STRAVA
           X
           VERCEL
           SENTRY
           INTERVALS_ICU
-          SUPABASE
           XERO
           MONDAY
           WEBFLOW
@@ -406,7 +403,6 @@ runs:
           META_ADS
           TIKTOK_ADS
           TIKTOK
-          AHREFS
           AIRTABLE
           CALENDLY
           CAL_COM

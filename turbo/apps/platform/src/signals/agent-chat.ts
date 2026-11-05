@@ -14,6 +14,18 @@ import {
   chatThreadMetaMap$,
   eventDrivenChatThreads$,
 } from "./chat-page/chat-thread-event-sourcing.ts";
+import {
+  buildChatThreadListRows,
+  buildChatThreadNavigationList,
+  threadRowKey,
+  type ChatThreadListRow,
+  type ChatThreadNavigationList,
+} from "./chat-page/chat-thread-list-rows.ts";
+import { projects$ } from "./projects/projects.ts";
+import {
+  expandedProjectIds$,
+  projectThreadLimits$,
+} from "./projects/project-expansion.ts";
 
 const internalChatAgentId$ = state<string | null>(null);
 
@@ -94,9 +106,11 @@ export const currentChatAgentDisplayName$ = computed(async (get) => {
 });
 
 export interface ChatThreadListSignals {
+  /** Listed chats outside Projects, which own number shortcuts and pins. */
   readonly threads$: Computed<EventDrivenChatThread[]>;
-  readonly allThreadIds$: Computed<readonly string[]>;
   readonly threadIds$: Computed<readonly string[]>;
+  readonly rows$: Computed<readonly ChatThreadListRow[]>;
+  readonly navigation$: Computed<ChatThreadNavigationList>;
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
@@ -120,6 +134,83 @@ function sortChatThreads(threads: EventDrivenChatThread[]) {
   });
 }
 
+function threadIdsOf(threads: readonly EventDrivenChatThread[]) {
+  return threads.map((thread) => {
+    return thread.id;
+  });
+}
+
+const projectsListed$ = computed((get): boolean => {
+  return get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
+});
+
+// Projects collect chats across Agents, so every Agent list shows them.
+const allProjectThreads$ = computed((get): EventDrivenChatThread[] => {
+  if (!get(projectsListed$)) {
+    return [];
+  }
+  return sortChatThreads(
+    get(eventDrivenChatThreads$).filter((thread) => {
+      return thread.projectId !== null;
+    }),
+  );
+});
+
+function createChatThreadListView({
+  threads$,
+  allThreadIds$,
+  projectThreads$,
+  allProjectThreads$: allProjectThreadsSource$,
+  hideEmptyProjects,
+  hasHiddenArchivedThreads$,
+}: {
+  threads$: Computed<EventDrivenChatThread[]>;
+  allThreadIds$: Computed<readonly string[]>;
+  projectThreads$: Computed<readonly EventDrivenChatThread[]>;
+  allProjectThreads$: Computed<readonly EventDrivenChatThread[]>;
+  hideEmptyProjects: boolean;
+  hasHiddenArchivedThreads$: Computed<boolean>;
+}): ChatThreadListSignals {
+  const threadIds$ = computed((get): readonly string[] => {
+    return threadIdsOf(get(threads$));
+  });
+  const rows$ = computed((get): readonly ChatThreadListRow[] => {
+    return buildChatThreadListRows({
+      projects: get(projects$),
+      expandedProjectIds: get(expandedProjectIds$),
+      projectThreadLimits: get(projectThreadLimits$),
+      projectThreads: get(projectThreads$),
+      threadIds: get(threadIds$),
+      hideEmptyProjects,
+    });
+  });
+  const navigation$ = computed((get): ChatThreadNavigationList => {
+    return buildChatThreadNavigationList({
+      projects: get(projects$),
+      rows: get(rows$),
+      allProjectThreads: get(allProjectThreadsSource$),
+      allThreadIds: get(allThreadIds$),
+    });
+  });
+
+  return {
+    threads$,
+    threadIds$,
+    rows$,
+    navigation$,
+    count$: computed((get): number => {
+      return get(rows$).length;
+    }),
+    currentThreadListed$: computed((get): boolean => {
+      const threadId = get(currentChatThreadId$);
+      return threadId
+        ? get(navigation$).listedKeys.includes(threadRowKey(threadId))
+        : false;
+    }),
+    hasHiddenArchivedThreads$,
+  };
+}
+
 function createChatThreadListSignals(
   agentId: string | null,
   filter: ChatThreadListFilter,
@@ -128,48 +219,39 @@ function createChatThreadListSignals(
     if (!agentId) {
       return [];
     }
-    const enabled = get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
+    const projectsListed = get(projectsListed$);
     return sortChatThreads(
       get(eventDrivenChatThreads$).filter((thread) => {
         return (
-          thread.agentId === agentId && (!enabled || thread.projectId === null)
+          thread.agentId === agentId &&
+          (!projectsListed || thread.projectId === null)
         );
       }),
     );
   });
-  const allThreadIds$ = computed((get): readonly string[] => {
-    return get(allThreads$).map((thread) => {
-      return thread.id;
-    });
-  });
-  const threads$ = computed((get): EventDrivenChatThread[] => {
-    return get(allThreads$).filter((thread) => {
-      if (filter.onlyMuted) {
-        return thread.muted;
-      }
-      if (!filter.archiveEnabled) {
-        return true;
-      }
-      return filter.onlyArchived ? thread.archived : !thread.archived;
-    });
-  });
-  const threadIds$ = computed((get): readonly string[] => {
-    return get(threads$).map((thread) => {
-      return thread.id;
-    });
-  });
+  const listed = (thread: EventDrivenChatThread) => {
+    if (filter.onlyMuted) {
+      return thread.muted;
+    }
+    if (!filter.archiveEnabled) {
+      return true;
+    }
+    return filter.onlyArchived ? thread.archived : !thread.archived;
+  };
 
-  return {
-    threads$,
-    allThreadIds$,
-    threadIds$,
-    count$: computed((get): number => {
-      return get(threadIds$).length;
+  return createChatThreadListView({
+    threads$: computed((get): EventDrivenChatThread[] => {
+      return get(allThreads$).filter(listed);
     }),
-    currentThreadListed$: computed((get): boolean => {
-      const threadId = get(currentChatThreadId$);
-      return threadId ? get(threadIds$).includes(threadId) : false;
+    allThreadIds$: computed((get): readonly string[] => {
+      return threadIdsOf(get(allThreads$));
     }),
+    // A filter applies to the chats inside Projects as it does to the rest.
+    projectThreads$: computed((get): readonly EventDrivenChatThread[] => {
+      return get(allProjectThreads$).filter(listed);
+    }),
+    allProjectThreads$,
+    hideEmptyProjects: filter.onlyArchived || filter.onlyMuted,
     hasHiddenArchivedThreads$: computed((get): boolean => {
       if (!filter.archiveEnabled || filter.onlyArchived || filter.onlyMuted) {
         return false;
@@ -178,12 +260,12 @@ function createChatThreadListSignals(
         return thread.archived;
       });
     }),
-  };
+  });
 }
 
 // Resolve the agent/filter query once, then keep event projection synchronous.
 // Thread events can update the returned signals without replacing this Promise.
-export const currentChatThreadListSignals$ = computed(
+const currentChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
     const archiveEnabled =
       get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] ?? false;
@@ -199,70 +281,87 @@ export const currentChatThreadListSignals$ = computed(
   },
 );
 
+const noHiddenArchivedThreads$ = computed(() => {
+  return false;
+});
+
 // Indicators bound the unread list. Keep their asynchronous dependency out of
 // the all-chats projection and its synchronous virtual window.
 // The Unread filter always includes archived threads, so an archived thread
 // never hides an unread message.
-export const unreadChatThreads$ = computed(
-  async (get): Promise<EventDrivenChatThread[]> => {
+export const unreadChatThreadListSignals$ = computed(
+  async (get): Promise<ChatThreadListSignals> => {
     const agentId = await get(currentChatAgentId$);
-    if (!agentId) {
-      return [];
-    }
     const indicators = await get(chatThreadIndicatorsFromWorker$);
-    const projectsEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
-    const threads = get(eventDrivenChatThreads$).filter((thread) => {
-      return (
-        thread.agentId === agentId &&
-        indicators.threads[thread.id] === "unread" &&
-        (!projectsEnabled || thread.projectId === null)
-      );
+    const projectsListed = get(projectsListed$);
+    const unread = get(eventDrivenChatThreads$).filter((thread) => {
+      return indicators.threads[thread.id] === "unread";
     });
-    return sortChatThreads(threads);
+    const threads = agentId
+      ? sortChatThreads(
+          unread.filter((thread) => {
+            return (
+              thread.agentId === agentId &&
+              (!projectsListed || thread.projectId === null)
+            );
+          }),
+        )
+      : [];
+    const projectThreads = projectsListed
+      ? sortChatThreads(
+          unread.filter((thread) => {
+            return thread.projectId !== null;
+          }),
+        )
+      : [];
+    const threadIds = threadIdsOf(threads);
+    const projectThreads$ = computed(() => {
+      return projectThreads;
+    });
+
+    // Unread navigation keeps this snapshot for both ordering and eligibility.
+    return createChatThreadListView({
+      threads$: computed(() => {
+        return threads;
+      }),
+      allThreadIds$: computed(() => {
+        return threadIds;
+      }),
+      projectThreads$,
+      allProjectThreads$: projectThreads$,
+      hideEmptyProjects: true,
+      hasHiddenArchivedThreads$: noHiddenArchivedThreads$,
+    });
+  },
+);
+
+export const currentChatThreadList$ = computed(
+  async (get): Promise<ChatThreadListSignals> => {
+    if (get(chatThreadOnlyUnread$)) {
+      return await get(unreadChatThreadListSignals$);
+    }
+    return await get(currentChatThreadListSignals$);
   },
 );
 
 export const chatThreads$ = computed(
   async (get): Promise<EventDrivenChatThread[]> => {
-    if (get(chatThreadOnlyUnread$)) {
-      return await get(unreadChatThreads$);
-    }
-    const list = await get(currentChatThreadListSignals$);
+    const list = await get(currentChatThreadList$);
     return get(list.threads$);
   },
 );
 
 export const currentChatThreadListIds$ = computed(
   async (get): Promise<readonly string[]> => {
-    return (await get(chatThreads$)).map((thread) => {
-      return thread.id;
-    });
+    return threadIdsOf(await get(chatThreads$));
   },
 );
 
-export interface ChatThreadNavigationList {
-  readonly orderedThreadIds: readonly string[];
-  readonly listedThreadIds: readonly string[];
-}
-
 // A filtered current chat still needs its position in the complete ordering so
-// adjacent navigation can skip hidden chats. Unread navigation intentionally
-// keeps using its independently computed list for both ordering and eligibility.
+// adjacent navigation can skip hidden chats.
 export const currentChatThreadNavigationList$ = computed(
   async (get): Promise<ChatThreadNavigationList> => {
-    if (get(chatThreadOnlyUnread$)) {
-      const listedThreadIds = await get(currentChatThreadListIds$);
-      return {
-        orderedThreadIds: listedThreadIds,
-        listedThreadIds,
-      };
-    }
-
-    const list = await get(currentChatThreadListSignals$);
-    return {
-      orderedThreadIds: get(list.allThreadIds$),
-      listedThreadIds: get(list.threadIds$),
-    };
+    const list = await get(currentChatThreadList$);
+    return get(list.navigation$);
   },
 );

@@ -4948,8 +4948,6 @@
     }
   },
   "projects": {
-    "active": "Active chats",
-    "archived": "Archived chats",
     "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
@@ -4960,7 +4958,6 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
-    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -4979,6 +4976,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {
@@ -5372,10 +5370,8 @@
         "credits": "क्रेडिट",
         "fiveHourLimit": "5 घंटे की सीमा",
         "label": "सदस्यता का उपयोग",
-        "leftSide": "बाईं ओर",
         "lowUsage": "सदस्यता का उपयोग: 20% से कम शेष",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
-        "rightSide": "दाईं ओर",
         "usage": "{{provider}} उपयोग",
         "usageRemaining": "{{provider}} {{window}} शेष",
         "weeklyLimit": "साप्ताहिक सीमा"

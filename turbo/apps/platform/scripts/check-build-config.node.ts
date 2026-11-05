@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { URL } from "node:url";
+import { runInNewContext } from "node:vm";
 
 import { build, loadConfigFromFile } from "vite";
 
@@ -32,6 +33,113 @@ const productionConfigPromise = loadConfigFromFile(
   { command: "build", mode: "production" },
   new URL("../vite.config.ts", import.meta.url).pathname,
 );
+
+await test("built runtime supports resource scopes and URLs with missing or native capabilities", async () => {
+  const entryId = new URL("./browser-resource-fixture.ts", import.meta.url)
+    .pathname;
+  const polyfillPath = new URL("../src/polyfill.ts", import.meta.url).pathname;
+  const result = await build({
+    configFile: false,
+    logLevel: "silent",
+    plugins: [
+      {
+        name: "browser-resource-fixture",
+        resolveId(id) {
+          return id === entryId ? entryId : undefined;
+        },
+        load(id) {
+          if (id !== entryId) {
+            return undefined;
+          }
+          return `
+            import ${JSON.stringify(polyfillPath)};
+            export async function initialize(report) {
+              using observer = {
+                [Symbol.dispose]() { report("observer disconnected"); },
+              };
+              await using connection = {
+                async [Symbol.asyncDispose]() {
+                  await Promise.resolve();
+                  report("connection closed");
+                },
+              };
+              report("resources ready");
+            }
+          `;
+        },
+      },
+    ],
+    build: {
+      write: false,
+      lib: {
+        entry: entryId,
+        formats: ["iife"],
+        name: "BrowserResourceFixture",
+      },
+    },
+  });
+  const bundle = Array.isArray(result) ? result[0] : result;
+  assert.ok(bundle && "output" in bundle);
+  const entry = bundle.output.find((output) => {
+    return output.type === "chunk" && output.isEntry;
+  });
+  assert.ok(entry?.type === "chunk");
+
+  // Use an isolated Symbol constructor: native well-known symbols cannot be
+  // deleted from Node's global constructor to model older Safari runtimes.
+  const missingSymbols = Object.assign(
+    (description?: string) => {
+      return Symbol(description);
+    },
+    { for: Symbol.for },
+  );
+  class MissingCanParseURL extends URL {}
+  Object.defineProperty(MissingCanParseURL, "canParse", {
+    value: undefined,
+    writable: true,
+    configurable: true,
+  });
+  for (const [symbol, url] of [
+    [missingSymbols, MissingCanParseURL],
+    [Symbol, URL],
+  ] as const) {
+    const events: string[] = [];
+    const nativeDispose = Reflect.get(symbol, "dispose");
+    const nativeAsyncDispose = Reflect.get(symbol, "asyncDispose");
+    const nativeCanParse = url.canParse;
+    await runInNewContext(
+      `${entry.code}\nBrowserResourceFixture.initialize(report);`,
+      {
+        Symbol: symbol,
+        URL: url,
+        AbortSignal,
+        report: (event: string) => {
+          events.push(event);
+        },
+      },
+    );
+    assert.deepEqual(events, [
+      "resources ready",
+      "connection closed",
+      "observer disconnected",
+    ]);
+    if (nativeDispose) {
+      assert.equal(Reflect.get(symbol, "dispose"), nativeDispose);
+    }
+    if (nativeAsyncDispose) {
+      assert.equal(Reflect.get(symbol, "asyncDispose"), nativeAsyncDispose);
+    }
+    if (nativeCanParse) {
+      assert.equal(url.canParse, nativeCanParse);
+    }
+    assert.equal(url.canParse("wss://browser.example/debugger"), true);
+    assert.equal(url.canParse("/page", "https://example.com"), true);
+    assert.equal(url.canParse("https://exa%mple.com"), false);
+    assert.equal(url.canParse("https://example.com:65536"), false);
+    assert.equal(url.canParse("/page"), false);
+    assert.equal(url.canParse("https://example.com", "invalid base"), false);
+  }
+});
 
 await test("production build isolates the configured lazy dependency", async () => {
   const loaded = await productionConfigPromise;

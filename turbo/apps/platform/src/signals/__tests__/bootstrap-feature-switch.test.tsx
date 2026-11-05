@@ -13,8 +13,8 @@ test("A signed-out page does not load workspace features", async () => {
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     workspaceFeatureRequested = true;
     return respond(200, {
-      switches: { [FeatureSwitchKey.AhrefsConnector]: true },
-      effectiveSwitches: { [FeatureSwitchKey.AhrefsConnector]: true },
+      switches: { [FeatureSwitchKey.Banking]: true },
+      effectiveSwitches: { [FeatureSwitchKey.Banking]: true },
     });
   });
 

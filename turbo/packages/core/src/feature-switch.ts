@@ -252,29 +252,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Test-only feature switch for flag system validation",
     enabled: true,
   },
-  [FeatureSwitchKey.AhrefsConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Ahrefs SEO connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.BillConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BILL Spend & Expense connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.BentomlConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BentoML model serving connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.CanvaConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Canva design connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.DeelConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Deel HR connector",
     enabled: false,
   },
   [FeatureSwitchKey.DocuSignConnector]: {
@@ -285,26 +265,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.MercuryConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Mercury banking connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.NeonConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Neon serverless Postgres connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.NetSuiteConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Oracle NetSuite ERP connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.GarminConnectConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Garmin Connect wellness connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.SupabaseConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Supabase database connector integration",
     enabled: false,
   },
   [FeatureSwitchKey.PayPalConnector]: {
@@ -353,11 +313,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable the Zoom connector (OAuth 2.0) for meetings, past participants, and cloud recordings access",
     enabled: false,
   },
-  [FeatureSwitchKey.WorkdayConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Workday HCM and finance connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.RealAgentInPreview]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -369,12 +324,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Codex execution (test only)",
     description:
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
-    enabled: false,
-  },
-  [FeatureSwitchKey.ZapierConnector]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Enable the Zapier connector. When disabled, Zapier is hidden from the connectors list and cannot be connected.",
     enabled: false,
   },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {

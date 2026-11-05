@@ -42,7 +42,7 @@ import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-// A rename keeps its folder trigger; deleting a folder returns to the section's
+// A rename keeps its Project menu; deleting a Project returns to the list's
 // create control. Creating from a chat returns to that chat's surviving row.
 function projectDialogFocusTarget(dialog: ProjectDialog) {
   const threadId =
@@ -79,7 +79,7 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const pending = creation.state === "loading" || renaming.state === "loading";
   const error = creation.state === "hasError" || renaming.state === "hasError";
   async function submit() {
-    // A newly visible folder can be used while its creation is still in flight.
+    // A newly visible Project can be used while its creation is still in flight.
     const completion = dialog.projectId
       ? rename(dialog.projectId, name, signal)
       : create(name, dialog.fromThreadId, creationSignal);
