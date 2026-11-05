@@ -144,6 +144,25 @@ transitions. One property's terminal event cannot finish another property's or
 sibling's transition. Only the fully settled host explicitly unlocks admission.
 No duration timer, observer, or frame-by-frame DOM measurement is involved.
 
+Direct divider manipulation is a shared workspace transaction: a ccstate
+`computed` derives whether either divider is active. Both width owners,
+including a list remounted during a gesture, explicitly use `transition-none`.
+Removing only the transition-property utility is insufficient: a remaining
+nonzero duration uses CSS's default `all`. Opening/closing buttons retain their
+own transitions; the passive transcript flex child does not animate separately.
+The list folds as soon as its minimum usable width is exhausted and restores
+after 16px of reverse travel, rather than holding the divider for 72px.
+
+Chat-workspace commit acknowledgements compare the committed owner elements and
+their semantic keys, exact thread identities, and scroll containers. Identical
+sibling acknowledgements share geometry measurement and scroll restoration;
+distinct commits are never delayed behind an earlier restore. Native viewport
+and actual owner transition events remain unconditional motion refreshes, not
+cache hits. Content/composer commits and the independent artifact catalog keep
+their own restoration lifetimes. Decorator width transitions are not geometry
+owners. Final pointerup coordinates are applied before release/persistence;
+cancel, blur, and unmount discard later callbacks without adding a scheduler.
+
 Toolbar focus has a separate mount lifetime from CDP. User actions and focused
 controls issue tokenized intent; narrowly keyed destination commit
 acknowledgements consume it once. Use the shared UI `LayoutCommit` and

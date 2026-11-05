@@ -2,11 +2,12 @@ import { command, computed, state } from "ccstate";
 
 import { localStorageSignals } from "../external/local-storage.ts";
 import {
-  CHAT_LIST_FOLD_DISTANCE,
+  CHAT_LIST_RESTORE_DISTANCE,
   CHAT_LIST_MIN_WIDTH,
   chatListWidth$,
   commitChatListWidth$,
   createResizeMask,
+  resizePointerClientX,
   setLiveChatListWidth$,
   setStoredChatListHidden$,
   storedChatListHidden$,
@@ -114,6 +115,7 @@ interface UnifiedDragResult {
 function unifiedDragLayout(
   geometry: UnifiedDragGeometry,
   pointerX: number,
+  listFolded: boolean,
 ): UnifiedDragResult {
   const desired = geometry.containerRight - pointerX;
   const maxWithList =
@@ -134,6 +136,16 @@ function unifiedDragLayout(
       atMax: width >= foldedMax,
     };
   };
+  const foldWidth = maxWithList + geometry.listWidth - CHAT_LIST_MIN_WIDTH;
+  const foldThreshold =
+    foldWidth - (listFolded ? CHAT_LIST_RESTORE_DISTANCE : 0);
+  if (!geometry.listHidden && desired > foldThreshold) {
+    return result(
+      Math.max(CHAT_THREAD_SIDEBAR_MIN_WIDTH, Math.min(desired, foldedMax)),
+      geometry.listWidth,
+      true,
+    );
+  }
   if (desired <= maxWithList || geometry.listHidden) {
     return result(
       Math.max(
@@ -144,19 +156,28 @@ function unifiedDragLayout(
       geometry.listHidden,
     );
   }
-  const listWidth = geometry.listWidth - (desired - maxWithList);
-  if (listWidth >= CHAT_LIST_MIN_WIDTH) {
-    return result(desired, listWidth, false);
-  }
-  if (CHAT_LIST_MIN_WIDTH - listWidth > CHAT_LIST_FOLD_DISTANCE) {
-    return result(Math.min(desired, foldedMax), geometry.listWidth, true);
-  }
-  return result(
-    maxWithList + geometry.listWidth - CHAT_LIST_MIN_WIDTH,
-    CHAT_LIST_MIN_WIDTH,
-    false,
-  );
+  return result(desired, geometry.listWidth - (desired - maxWithList), false);
 }
+
+const resizeUnifiedSidebar$ = command(
+  (
+    { get, set },
+    key: string,
+    next: UnifiedDragResult,
+    initialListWidth: number,
+  ) => {
+    set(setStoredChatListHidden$, next.listHidden);
+    set(
+      setLiveChatListWidth$,
+      next.listWidth === initialListWidth ? null : next.listWidth,
+    );
+    const width = Math.round(next.width);
+    const live = get(internalLiveSidebarWidth$);
+    if (!live || live.key !== key || live.width !== width) {
+      set(internalLiveSidebarWidth$, { key, width });
+    }
+  },
+);
 
 /** Width the panel renders at before any resize, as the shell's CSS does. */
 function unifiedDefaultWidth(containerWidth: number): number {
@@ -176,6 +197,15 @@ export const chatThreadSidebarResizing$ = computed((get) => {
 
 const resetChatThreadSidebarResize$ = resetSignal();
 
+const finishChatThreadSidebarResize$ = command(({ set }, unified: boolean) => {
+  // The final coordinate is already live; release before persisting it.
+  set(resetChatThreadSidebarResize$);
+  if (unified) {
+    set(commitLiveSidebarWidth$);
+    set(commitChatListWidth$);
+  }
+});
+
 const chatThreadSidebarDragMaskEl$ = computed(() => {
   return createResizeMask("data-chat-thread-sidebar-resize-mask", "col-resize");
 });
@@ -185,7 +215,10 @@ const startChatThreadSidebarResize$ = command(
     { get, set },
     container: HTMLElement,
     handle: HTMLDivElement,
-    pointerId: number,
+    {
+      pointerId,
+      startX,
+    }: { readonly pointerId: number; readonly startX: number },
     ownerSignal: AbortSignal,
   ): void => {
     ownerSignal.throwIfAborted();
@@ -204,6 +237,14 @@ const startChatThreadSidebarResize$ = command(
       listWidth: get(chatListWidth$),
       listHidden: get(storedChatListHidden$),
     };
+    let listFolded = unifiedGeometry.listHidden;
+    const handleRect = handle.getBoundingClientRect();
+    // Keep the distance from the seam's centre instead of snapping a wide hit
+    // target to the pointer. Non-rendered synthetic handles have no geometry.
+    const grabOffset =
+      unifiedKey !== null && handleRect.width > 0
+        ? startX - (handleRect.left + handleRect.width / 2)
+        : 0;
     const dragSignal = set(resetChatThreadSidebarResize$, ownerSignal);
     // Capture before mounting the mask so a failed capture cannot leave it
     // blocking the page. Events stay on this owner across embedded frames.
@@ -211,54 +252,63 @@ const startChatThreadSidebarResize$ = command(
     const dragMaskEl = get(chatThreadSidebarDragMaskEl$);
 
     function resetResize(): void {
-      if (unifiedKey !== null) {
-        set(commitLiveSidebarWidth$);
-        set(commitChatListWidth$);
+      if (!dragSignal.aborted) {
+        set(finishChatThreadSidebarResize$, unifiedKey !== null);
       }
-      set(resetChatThreadSidebarResize$);
     }
 
-    function moveUnified(key: string, pointerX: number): void {
-      const next = unifiedDragLayout(unifiedGeometry, pointerX);
+    function moveResize(pointerX: number): void {
+      if (dragSignal.aborted || !Number.isFinite(pointerX)) {
+        return;
+      }
+      if (unifiedKey === null) {
+        set(
+          setChatThreadSidebarWidth$,
+          Math.min(
+            Math.max(rect.right - pointerX, CHAT_THREAD_SIDEBAR_MIN_WIDTH),
+            maxWidth,
+          ),
+        );
+        return;
+      }
+      const next = unifiedDragLayout(
+        unifiedGeometry,
+        pointerX - grabOffset,
+        listFolded,
+      );
+      listFolded = next.listHidden;
       // At a limit the cursor points the only way the divider can still go.
       dragMaskEl.style.cursor = next.atMax
         ? "e-resize"
         : next.atMin
           ? "w-resize"
           : "col-resize";
-      set(setStoredChatListHidden$, next.listHidden);
-      set(
-        setLiveChatListWidth$,
-        next.listWidth === unifiedGeometry.listWidth ? null : next.listWidth,
-      );
-      set(internalLiveSidebarWidth$, { key, width: Math.round(next.width) });
+      set(resizeUnifiedSidebar$, unifiedKey, next, unifiedGeometry.listWidth);
     }
 
     function endPointerResize(event: PointerEvent): void {
-      if (event.pointerId === pointerId) {
-        resetResize();
+      if (event.pointerId !== pointerId || dragSignal.aborted) {
+        return;
       }
+      const pointerX =
+        event.type === "pointerup" ? resizePointerClientX(event) : null;
+      if (pointerX !== null) {
+        moveResize(pointerX);
+      }
+      resetResize();
     }
 
     handle.addEventListener(
       "pointermove",
       (event) => {
-        if (event.pointerId !== pointerId) {
+        if (event.pointerId !== pointerId || dragSignal.aborted) {
           return;
         }
         if (event.buttons === 0) {
           resetResize();
           return;
         }
-        if (unifiedKey === null) {
-          const nextWidth = Math.min(
-            Math.max(rect.right - event.clientX, CHAT_THREAD_SIDEBAR_MIN_WIDTH),
-            maxWidth,
-          );
-          set(setChatThreadSidebarWidth$, nextWidth);
-        } else {
-          moveUnified(unifiedKey, event.clientX);
-        }
+        moveResize(event.clientX);
       },
       { signal: dragSignal },
     );
@@ -313,7 +363,7 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
           startChatThreadSidebarResize$,
           container,
           handle,
-          event.pointerId,
+          { pointerId: event.pointerId, startX: event.clientX },
           ownerSignal,
         );
       },

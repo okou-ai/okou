@@ -5,7 +5,7 @@ import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
-  syncActiveSidebarLayout$,
+  commitWorkspaceLayout$,
   threadSidebarLayoutRootRef$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
@@ -426,7 +426,7 @@ function ChatWorkspace({
 }) {
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
-  const syncSidebarLayout = useSet(syncActiveSidebarLayout$);
+  const syncSidebarLayout = useSet(commitWorkspaceLayout$);
   const joinedToChatList =
     useGet(unifiedChatWorkspace$) && beside === "chat-list";
   return (
@@ -434,7 +434,7 @@ function ChatWorkspace({
       layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
-      onSidebarLayoutCommit={syncSidebarLayout}
+      onWorkspaceLayoutCommit={syncSidebarLayout}
       ownerKey={active ? `${active.thread.threadId}:${active.target.type}` : ""}
       sidebar={<ChatThreadSidebarPane />}
       // The browser scales a 1440px screen into the panel and wants room;

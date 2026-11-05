@@ -114,43 +114,59 @@ test("Double-clicking the side panel divider restores its default width", async 
   const { handle, shell } = await openUnifiedWorkspace();
   fireEvent.pointerDown(handle, { ...POINTER, clientX: 700 });
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 900 });
-  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0 });
+  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 900 });
   expect(sidebarWidth(shell)).toBe("clamp(400px, 540px, calc(100% - 420px))");
 
   fireEvent.doubleClick(handle);
   expect(sidebarWidth(shell)).toBe("clamp(400px, 55%, calc(100% - 420px))");
 });
 
-test("Widening the side panel past the chat's minimum narrows the chat list, then folds it", async () => {
-  const { handle, shell } = await openUnifiedWorkspace({
-    containerWidth: 1000,
-  });
+test("Panel borrowing folds immediately after the list minimum and restores only after 16px of reversal", async () => {
+  const { handle } = await openUnifiedWorkspace({ containerWidth: 1000 });
   const listSeam = await chatListSeam();
   expect(listSeam).toHaveAttribute("aria-valuenow", "300");
 
-  fireEvent.pointerDown(handle, { ...POINTER, clientX: 500 });
+  fireEvent.pointerDown(handle, { ...POINTER, clientX: 450 });
   // 620px leaves the chat 380px; the list gives up the missing 40px.
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 380 });
-  await waitFor(() => {
-    expect(listSeam).toHaveAttribute("aria-valuenow", "260");
-  });
-  expect(sidebarWidth(shell)).toBe("clamp(400px, 620px, calc(100% - 420px))");
+  expect(listSeam).toHaveAttribute("aria-valuenow", "260");
+  expect(handle).toHaveAttribute("aria-valuenow", "620");
 
-  // Past the list's minimum by more than the fold distance, the list folds.
-  fireEvent.pointerMove(handle, { ...POINTER, clientX: 100 });
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 360 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "240");
+  expect(handle).toHaveAttribute("aria-valuenow", "640");
+  // The very next pixel folds: there is no held-geometry plateau.
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 359 });
   await waitFor(() => {
     expect(screen.queryByTestId("chat-list-column")).toBeNull();
   });
+  expect(handle).toHaveAttribute("aria-valuenow", "641");
+  expect(handle.hasPointerCapture(POINTER.pointerId)).toBeTruthy();
 
-  // Dragging back within the same gesture brings the list back.
-  fireEvent.pointerMove(handle, { ...POINTER, clientX: 380 });
-  await expect(chatListSeam()).resolves.toHaveAttribute("aria-valuenow", "260");
-  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0 });
-  // The pushed width is kept once the gesture ends.
-  await expect(chatListSeam()).resolves.toHaveAttribute("aria-valuenow", "260");
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 360 });
+  expect(handle).toHaveAttribute("aria-valuenow", "640");
+  expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 375 });
+  expect(handle).toHaveAttribute("aria-valuenow", "625");
+  expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 376 });
+  await screen.findByTestId("chat-list-column");
+  expect(listSeam).toHaveAttribute("aria-valuenow", "256");
+  expect(handle).toHaveAttribute("aria-valuenow", "624");
+
+  // After restoring, approaching the minimum does not fold early either.
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 360 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "240");
+  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 380 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "260");
+  expect(handle).toHaveAttribute("aria-valuenow", "620");
+  expect(handle.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
+  expect(
+    document.querySelector("[data-chat-thread-sidebar-resize-mask]"),
+  ).toBeNull();
 });
 
-test("The chat list resizes from its divider and folds when dragged past its minimum", async () => {
+test("The chat list folds at its minimum and keeps capture for a hysteretic same-gesture restore", async () => {
   await openUnifiedWorkspace();
   const listSeam = await chatListSeam();
 
@@ -163,27 +179,54 @@ test("The chat list resizes from its divider and folds when dragged past its min
   fireEvent.pointerDown(listSeam, { ...POINTER, clientX: 300 });
   fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 500 });
   expect(listSeam).toHaveAttribute("aria-valuenow", "420");
-  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 120 });
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 240 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "240");
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 239 });
   await waitFor(() => {
     expect(screen.queryByTestId("chat-list-column")).toBeNull();
   });
-  expect(document.querySelector("[data-chat-list-resize-mask]")).toBeNull();
+  expect(
+    document.querySelector("[data-chat-list-resize-mask]"),
+  ).toBeInTheDocument();
+  expect(listSeam.hasPointerCapture(POINTER.pointerId)).toBeTruthy();
   expect(buttonNamed("Show chat list")).toBeInTheDocument();
+
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 255 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "0");
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 256 });
+  await screen.findByTestId("chat-list-column");
+  expect(listSeam).toHaveAttribute("aria-valuenow", "256");
+  fireEvent.pointerUp(listSeam, { ...POINTER, buttons: 0, clientX: 264 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "264");
+  expect(document.querySelector("[data-chat-list-resize-mask]")).toBeNull();
+  expect(listSeam.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
 });
 
-test("The workspace remembers the chat list and the panel width after a reload", async () => {
+test("The workspace preserves the grab offset and remembers final pointerup widths after a reload", async () => {
   const resetFirstPage$ = resetSignal();
   const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
   const { handle } = await openUnifiedWorkspace({
     pageContext: { ...context, signal: firstPageSignal },
   });
   const listSeam = await chatListSeam();
-  listSeam.focus();
-  fireEvent.keyDown(listSeam, { key: "ArrowRight" });
-  expect(listSeam).toHaveAttribute("aria-valuenow", "316");
-  handle.focus();
-  fireEvent.keyDown(handle, { key: "ArrowLeft" });
-  expect(handle).toHaveAttribute("aria-valuenow", "808");
+  // The list uses displacement from the initial grab, not the hit target edge.
+  fireEvent.pointerDown(listSeam, { ...POINTER, clientX: 304 });
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 324 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "320");
+  fireEvent.pointerUp(listSeam, { ...POINTER, buttons: 0, clientX: 352 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "348");
+
+  // The panel starts at 792px, with a 12px hit target centred at x=648.
+  vi.spyOn(handle, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(642, 0, 12, 900),
+  );
+  fireEvent.pointerDown(handle, { ...POINTER, clientX: 652 });
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 652 });
+  expect(handle).toHaveAttribute("aria-valuenow", "792");
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 852 });
+  expect(handle).toHaveAttribute("aria-valuenow", "592");
+  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 812 });
+  expect(handle).toHaveAttribute("aria-valuenow", "632");
   click(buttonNamed("Hide chat list"));
   await waitFor(() => {
     expect(screen.queryByTestId("chat-list-column")).toBeNull();
@@ -191,16 +234,72 @@ test("The workspace remembers the chat list and the panel width after a reload",
 
   context.store.set(resetFirstPage$);
   releasePageDom();
-  const { shell } = await openUnifiedWorkspace({
+  const { handle: reloadedHandle } = await openUnifiedWorkspace({
     pageContext: reloadedContext,
   });
   await waitFor(() => {
     expect(screen.queryByTestId("chat-list-column")).toBeNull();
   });
-  expect(sidebarWidth(shell)).toBe("clamp(400px, 808px, calc(100% - 420px))");
+  expect(reloadedHandle).toHaveAttribute("aria-valuenow", "632");
 
   click(buttonNamed("Show chat list"));
-  await expect(chatListSeam()).resolves.toHaveAttribute("aria-valuenow", "316");
+  await expect(chatListSeam()).resolves.toHaveAttribute("aria-valuenow", "348");
+});
+
+test("Cancellation and blur preserve the last valid widths and discard stale gesture callbacks", async () => {
+  const resetFirstPage$ = resetSignal();
+  const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
+  const { handle } = await openUnifiedWorkspace({
+    pageContext: { ...context, signal: firstPageSignal },
+  });
+  const listSeam = await chatListSeam();
+  fireEvent.pointerDown(listSeam, { ...POINTER, clientX: 304 });
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 344 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "340");
+  // A cancelled event's coordinate is not another resize sample.
+  fireEvent.pointerCancel(listSeam, { ...POINTER, buttons: 0, clientX: 1000 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "340");
+  expect(document.querySelector("[data-chat-list-resize-mask]")).toBeNull();
+  expect(listSeam.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 400 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "340");
+
+  fireEvent.pointerDown(handle, { ...POINTER, clientX: 700 });
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 840 });
+  expect(handle).toHaveAttribute("aria-valuenow", "600");
+  fireEvent(window, new Event("blur"));
+  expect(
+    document.querySelector("[data-chat-thread-sidebar-resize-mask]"),
+  ).toBeNull();
+  expect(handle.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
+  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 500 });
+  expect(handle).toHaveAttribute("aria-valuenow", "600");
+
+  context.store.set(resetFirstPage$);
+  releasePageDom();
+  const { handle: reloadedHandle } = await openUnifiedWorkspace({
+    pageContext: reloadedContext,
+  });
+  expect(reloadedHandle).toHaveAttribute("aria-valuenow", "600");
+  await expect(chatListSeam()).resolves.toHaveAttribute("aria-valuenow", "340");
+});
+
+test("Releasing at the viewport origin applies the final coordinate before cleanup", async () => {
+  const { handle } = await openUnifiedWorkspace();
+  const listSeam = await chatListSeam();
+  fireEvent.pointerDown(listSeam, { ...POINTER, clientX: 300 });
+  fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 340 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "340");
+  fireEvent.pointerUp(listSeam, { ...POINTER, buttons: 0, clientX: 0 });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "0");
+  expect(listSeam.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
+
+  fireEvent.pointerDown(handle, { ...POINTER, clientX: 700 });
+  fireEvent.pointerMove(handle, { ...POINTER, clientX: 840 });
+  expect(handle).toHaveAttribute("aria-valuenow", "600");
+  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 0 });
+  expect(handle).toHaveAttribute("aria-valuenow", "1020");
+  expect(handle.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
 });
 
 test("A folded chat list can be dragged open from its persistent divider", async () => {

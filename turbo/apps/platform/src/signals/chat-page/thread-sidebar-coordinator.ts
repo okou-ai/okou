@@ -15,6 +15,7 @@ import { onRef } from "../utils.ts";
 import { shellDocumentAttributesRef$ } from "../theme.ts";
 import type { TabStripMotion } from "../browser/tab-strip.ts";
 import { createThreadSidebarLayoutMotion } from "./thread-sidebar-layout-motion.ts";
+import { createWorkspaceLayoutCommit } from "./workspace-layout-commit.ts";
 import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
@@ -84,16 +85,24 @@ const syncSidebarViewport$ = command(
   },
 );
 const sidebarMotion = createThreadSidebarLayoutMotion(syncSidebarViewport$);
-export const syncActiveSidebarLayout$ = sidebarMotion.commit$;
+const workspaceLayout = createWorkspaceLayoutCommit(
+  sidebarMotion.commit$,
+  sidebarMotion.root$,
+);
+export const commitWorkspaceLayout$ = workspaceLayout.commit$;
 
 /** The shared shell owns the sibling list and utility-panel transition listeners. */
 export const threadSidebarLayoutRootRef$ = onRef(
-  command(({ set }, root: HTMLDivElement, signal: AbortSignal): void => {
+  command(({ get, set }, root: HTMLDivElement, signal: AbortSignal): void => {
+    set(workspaceLayout.reset$);
     const releaseAttributes = set(shellDocumentAttributesRef$, root);
     signal.addEventListener(
       "abort",
       () => {
         releaseAttributes?.();
+        if (get(sidebarMotion.root$) === root) {
+          set(workspaceLayout.reset$);
+        }
       },
       { once: true },
     );

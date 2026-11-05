@@ -18,9 +18,9 @@ export const unifiedChatWorkspace$ = computed((get) => {
 const CHAT_LIST_DEFAULT_WIDTH = 300;
 export const CHAT_LIST_MIN_WIDTH = 240;
 export const CHAT_LIST_MAX_WIDTH = 420;
-// Dragging this far past the minimum folds the list away, the same state as
-// the Hide chat list button.
-export const CHAT_LIST_FOLD_DISTANCE = 72;
+// Once folded, reverse this far past the fold boundary before restoring the
+// list, so a small pointer wobble cannot toggle it repeatedly.
+export const CHAT_LIST_RESTORE_DISTANCE = 16;
 const KEYBOARD_STEP = 16;
 const KEYBOARD_LARGE_STEP = 64;
 
@@ -114,6 +114,31 @@ export function createResizeMask(
   return element;
 }
 
+/** Release coordinates are valid resize samples, including the viewport origin. */
+export function resizePointerClientX(event: PointerEvent): number | null {
+  return Number.isFinite(event.clientX) ? event.clientX : null;
+}
+
+const resizeChatList$ = command(
+  ({ get, set }, desired: number, startedHidden: boolean) => {
+    // A gesture from the collapsed seam starts at zero; a visible list folds
+    // as soon as its usable minimum is exhausted.
+    const foldWidth = startedHidden ? 0 : CHAT_LIST_MIN_WIDTH;
+    const threshold =
+      foldWidth + (get(storedChatListHidden$) ? CHAT_LIST_RESTORE_DISTANCE : 0);
+    const hidden = desired < threshold;
+    set(setLiveChatListWidth$, hidden ? null : desired);
+    set(setStoredChatListHidden$, hidden);
+    return hidden;
+  },
+);
+
+const finishChatListResize$ = command(({ set }) => {
+  // Release capture and the blocking mask before persistence can fail.
+  set(resetChatListResize$);
+  set(commitChatListWidth$);
+});
+
 const startChatListResize$ = command(
   (
     { get, set },
@@ -129,40 +154,42 @@ const startChatListResize$ = command(
     handle.setPointerCapture(pointerId);
     const mask = createResizeMask("data-chat-list-resize-mask", "col-resize");
 
-    function endResize(event: PointerEvent): void {
-      if (event.pointerId === pointerId) {
-        set(commitChatListWidth$);
-        set(resetChatListResize$);
+    function moveResize(pointerX: number): void {
+      if (dragSignal.aborted || !Number.isFinite(pointerX)) {
+        return;
       }
+      const desired = startWidth + pointerX - startX;
+      const hidden = set(resizeChatList$, desired, startedHidden);
+      mask.style.cursor = hidden
+        ? "e-resize"
+        : desired >= CHAT_LIST_MAX_WIDTH
+          ? "w-resize"
+          : "col-resize";
+    }
+
+    function endResize(event: PointerEvent): void {
+      if (event.pointerId !== pointerId || dragSignal.aborted) {
+        return;
+      }
+      const pointerX =
+        event.type === "pointerup" ? resizePointerClientX(event) : null;
+      if (pointerX !== null) {
+        moveResize(pointerX);
+      }
+      set(finishChatListResize$);
     }
 
     handle.addEventListener(
       "pointermove",
       (event) => {
-        if (event.pointerId !== pointerId) {
+        if (event.pointerId !== pointerId || dragSignal.aborted) {
           return;
         }
         if (event.buttons === 0) {
-          endResize(event);
+          set(finishChatListResize$);
           return;
         }
-        const desired = startWidth + event.clientX - startX;
-        const foldThreshold = startedHidden
-          ? CHAT_LIST_FOLD_DISTANCE
-          : CHAT_LIST_MIN_WIDTH - CHAT_LIST_FOLD_DISTANCE;
-        if (desired < foldThreshold) {
-          if (!get(storedChatListHidden$)) {
-            // End the gesture before the list animates closed.
-            set(setLiveChatListWidth$, null);
-            set(setStoredChatListHidden$, true);
-            set(resetChatListResize$);
-          }
-          return;
-        }
-        set(setStoredChatListHidden$, false);
-        mask.style.cursor =
-          desired >= CHAT_LIST_MAX_WIDTH ? "w-resize" : "col-resize";
-        set(setLiveChatListWidth$, desired);
+        moveResize(event.clientX);
       },
       { signal: dragSignal },
     );
@@ -174,8 +201,9 @@ const startChatListResize$ = command(
     window.addEventListener(
       "blur",
       () => {
-        set(commitChatListWidth$);
-        set(resetChatListResize$);
+        if (!dragSignal.aborted) {
+          set(finishChatListResize$);
+        }
       },
       { signal: dragSignal },
     );
@@ -183,7 +211,7 @@ const startChatListResize$ = command(
     dragSignal.addEventListener(
       "abort",
       () => {
-        if (handle.isConnected && handle.hasPointerCapture(pointerId)) {
+        if (handle.hasPointerCapture(pointerId)) {
           handle.releasePointerCapture(pointerId);
         }
         mask.remove();

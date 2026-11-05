@@ -84,7 +84,10 @@ test.each(["pointerup", "pointercancel", "lostpointercapture"] as const)(
         "clamp(400px, 600px, calc(100% - 420px))",
       );
     });
-    fireEvent(handle, new PointerEvent(endEvent, { ...POINTER, buttons: 0 }));
+    fireEvent(
+      handle,
+      new PointerEvent(endEvent, { ...POINTER, buttons: 0, clientX: 840 }),
+    );
     expect(resizeMask()).toBeNull();
     expect(handle.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
 
