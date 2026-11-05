@@ -83,9 +83,7 @@ def validate(directory):
             raise ValueError("later parking changed original owner")
         blocked, pool, tail, waiting, complete, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if (not isinstance(path, str) or not pathlib.PurePosixPath(path).is_absolute()
-                or str(pathlib.PurePosixPath(path)) != path or ".." in pathlib.PurePosixPath(path).parts
-                or pathlib.PurePosixPath(path).name != "status.json" or path in paths):
+        if not failure.valid_status_path(path) or path in paths:
             raise ValueError("private status path changed")
         paths.add(path)
         initial = blocked.get("published_status")

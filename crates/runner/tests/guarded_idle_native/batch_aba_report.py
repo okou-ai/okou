@@ -71,9 +71,7 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
                 raise ValueError("old refusal and new physical recovery ordering changed")
         blocked, pool, admission, waiting, refused, tail, complete, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if (not isinstance(path, str) or not pathlib.PurePosixPath(path).is_absolute()
-                or str(pathlib.PurePosixPath(path)) != path or ".." in pathlib.PurePosixPath(path).parts
-                or pathlib.PurePosixPath(path).name != "status.json" or path in paths):
+        if not failure.valid_status_path(path) or path in paths:
             raise ValueError("batch ABA private status path changed")
         paths.add(path)
         initial = blocked.get("published_status")

@@ -51,9 +51,7 @@ def validate(directory):
         initial, captured, accepted, lost, progress, joined, ready = [event["evidence"] for event in events[:7]]
         mode = case.rsplit("-", 1)[0]
         path = initial.get("status_path")
-        if (not isinstance(path, str) or not pathlib.PurePosixPath(path).is_absolute()
-                or str(pathlib.PurePosixPath(path)) != path or ".." in pathlib.PurePosixPath(path).parts
-                or pathlib.PurePosixPath(path).name != "status.json" or path in paths):
+        if not failure.valid_status_path(path) or path in paths:
             raise ValueError("invalid or replayed native physical pause status path")
         paths.add(path)
         baseline = initial.get("published_status")
