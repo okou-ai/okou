@@ -1899,22 +1899,26 @@ function createAttachmentInitialization(
       sessionId: string,
       signal: AbortSignal,
     ): Promise<void> => {
-      await client.request(
-        "Inspector.enable",
-        undefined,
-        sessionId,
-        undefined,
-        signal,
-      );
+      // Both domains use the admitted session independently. Settle both native
+      // requests before publication or the attachment owner's failure cleanup.
+      const [inspector, page] = await Promise.allSettled([
+        client.request(
+          "Inspector.enable",
+          undefined,
+          sessionId,
+          undefined,
+          signal,
+        ),
+        client.request("Page.enable", undefined, sessionId, undefined, signal),
+      ]);
+      signal.throwIfAborted();
       set(assertCurrent$, owner, signal);
-      await client.request(
-        "Page.enable",
-        undefined,
-        sessionId,
-        undefined,
-        signal,
-      );
-      set(assertCurrent$, owner, signal);
+      if (inspector.status === "rejected") {
+        throw inspector.reason;
+      }
+      if (page.status === "rejected") {
+        throw page.reason;
+      }
     },
   );
   const initialize$ = command(
