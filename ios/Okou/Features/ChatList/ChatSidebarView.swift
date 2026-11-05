@@ -49,8 +49,10 @@ struct ChatSidebarView: View {
   /// The agent doing an active chat's work, drawn in the row's status column.
   private func agentAvatar(_ id: String) -> some View {
     let agent = store.list.agents.first(where: { $0.agentId == id })
+    let personal = store.list.singleAgentEnabled && agent?.isDefaultAgent == true
     return OkouAgentAvatar(
-      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Okou",
+      avatarURL: personal ? nil : agent?.avatarUrl,
+      name: personal ? "Okou" : agent?.displayName ?? "Okou",
       isDefault: agent?.isDefaultAgent ?? false, size: rowAvatar)
   }
 

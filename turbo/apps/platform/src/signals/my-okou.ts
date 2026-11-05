@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import type { BrowserClerk } from "@clerk/shared/types";
 import { object, string } from "zod";
 import { instructionsContract } from "@okouai/api-contracts/client/instructions";
 import type { InstructionsResponse } from "@okouai/api-contracts/contracts/instructions";
@@ -21,7 +22,8 @@ const draftSchema = object({
 function createMyOkouSignals(
   orgId: string,
   userId: string,
-  sessionKey: string | null,
+  clerk: Pick<BrowserClerk, "organization" | "user" | "session">,
+  sessionId: string,
 ) {
   const storage = sessionStorageSignals(
     `instructions-draft:${orgId}:${userId}`,
@@ -41,7 +43,11 @@ function createMyOkouSignals(
     return get(apiClient$)(instructionsContract, {
       getTokenGuard: () => {
         const check = () => {
-          if (get(authenticatedSessionKey$) !== sessionKey) {
+          if (
+            clerk.organization?.id !== orgId ||
+            clerk.user?.id !== userId ||
+            clerk.session?.id !== sessionId
+          ) {
             throw new Error("Instructions workspace changed");
           }
         };
@@ -140,10 +146,11 @@ export const myOkouSignals$ = computed(async (get) => {
   const clerk = await get(clerk$);
   const orgId = clerk.organization?.id;
   const userId = clerk.user?.id;
-  if (!sessionKey || !orgId || !userId) {
+  const sessionId = clerk.session?.id;
+  if (!sessionKey || !orgId || !userId || !sessionId) {
     throw new Error("Instructions require an active workspace and member");
   }
-  return createMyOkouSignals(orgId, userId, sessionKey);
+  return createMyOkouSignals(orgId, userId, clerk, sessionId);
 });
 
 export type MyOkouSignals = ReturnType<typeof createMyOkouSignals>;

@@ -14,9 +14,6 @@ import { refreshSsh$ } from "../ssh.ts";
 
 export const setupAgentDetailPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(refreshSsh$);
-    set(updatePage$, createElement(JobDetailPage), "sidebar");
-
     const agentId = get(currentAgentId$);
     if (!agentId) {
       throw new Error(
@@ -34,6 +31,8 @@ export const setupAgentDetailPage$ = command(
       );
       return;
     }
+    set(refreshSsh$);
+    set(updatePage$, createElement(JobDetailPage), "sidebar");
     const agents = await get(agents$);
     signal.throwIfAborted();
 
