@@ -16,24 +16,17 @@ const MAX_PAGES = 10;
 const MAX_CONTEXT_BYTES = 65_536;
 const DAY = 86_400_000;
 
-type FeedbackEvidence = {
-  readonly id: string;
-  readonly suggestionId: string;
+type FeedbackRecord = {
   readonly kind: Exclude<
     SuggestionFeedback["kind"],
     "undo" | "reason" | "dismissed"
   >;
-  readonly observedAt: string;
-  readonly expiresAt: string;
-  readonly note: string;
-  readonly optionLabel: string | null;
-};
-type FeedbackRecord = {
-  readonly id: string;
   readonly title: string;
   readonly rationale: string;
-  readonly scope: SuggestionFeedback["context"]["scope"];
-  readonly evidence: readonly FeedbackEvidence[];
+  readonly reason?: string;
+  readonly choice?: string;
+  readonly at: string;
+  readonly until: string;
 };
 
 function effectiveCardFeedback(
@@ -62,59 +55,32 @@ function effectiveCardFeedback(
   return effective.values();
 }
 
-function mergeCardFeedback(
-  records: Map<string, FeedbackRecord>,
-  suggestionId: string,
-  feedbacks: readonly SuggestionFeedback[],
+function feedbackRecord(
+  feedback: SuggestionFeedback,
   at: number,
-) {
-  for (const feedback of effectiveCardFeedback(feedbacks, at)) {
-    const kind = feedback.kind;
-    if (kind === "undo" || kind === "reason" || kind === "dismissed") {
-      continue;
-    }
-    const expiresAt =
-      Date.parse(feedback.createdAt) +
-      (kind === "less_like_this" ? 30 : 7) * DAY;
-    if (expiresAt <= at) {
-      continue;
-    }
-    const id =
-      kind === "less_like_this"
-        ? `preference:${feedback.context.scope.key}`
-        : `${kind === "option_selected" || kind === "custom_sent" ? "direction" : "action"}:${suggestionId}`;
-    const evidence = [
-      ...(records.get(id)?.evidence ?? []),
-      {
-        id: feedback.id,
-        suggestionId,
-        kind,
-        observedAt: feedback.createdAt,
-        expiresAt: new Date(expiresAt).toISOString(),
-        note: feedback.note,
-        optionLabel: feedback.context.optionLabel,
-      },
-    ]
-      .sort((a, b) => {
-        return (
-          b.observedAt.localeCompare(a.observedAt) || b.id.localeCompare(a.id)
-        );
-      })
-      .slice(0, 5);
-    // Choose the newest canonical context independently of UUID scan order.
-    const previous = records.get(id);
-    const usePrevious =
-      previous &&
-      (evidence[0]?.id !== feedback.id ||
-        evidence[0]?.suggestionId !== suggestionId);
-    records.set(id, {
-      id,
-      title: usePrevious ? previous.title : feedback.context.title,
-      rationale: usePrevious ? previous.rationale : feedback.context.rationale,
-      scope: usePrevious ? previous.scope : feedback.context.scope,
-      evidence,
-    });
+): FeedbackRecord[] {
+  const kind = feedback.kind;
+  if (kind === "undo" || kind === "reason" || kind === "dismissed") {
+    return [];
   }
+  const until =
+    Date.parse(feedback.createdAt) + (kind === "less_like_this" ? 30 : 7) * DAY;
+  if (until <= at) {
+    return [];
+  }
+  const choice =
+    kind === "custom_sent" ? feedback.choice : feedback.context.optionLabel;
+  return [
+    {
+      kind,
+      title: feedback.context.title,
+      rationale: feedback.context.rationale,
+      ...(feedback.note ? { reason: feedback.note } : {}),
+      ...(choice ? { choice } : {}),
+      at: feedback.createdAt,
+      until: new Date(until).toISOString(),
+    },
+  ];
 }
 
 /** A fresh, read-only projection for one prepared Run; never a Memory store. */
@@ -126,7 +92,7 @@ export function createSuggestionFeedbackContext(
     // A bootstrap can prepare several queued inputs; each needs fresh feedback.
     await get(pickedEvent$);
     const at = nowDate();
-    const records = new Map<string, FeedbackRecord>();
+    const feedbacks: SuggestionFeedback[] = [];
     let after: string | undefined;
     let complete = false;
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -148,11 +114,11 @@ export function createSuggestionFeedbackContext(
         .limit(PAGE_SIZE + 1);
       const selected = rows.slice(0, PAGE_SIZE);
       for (const row of selected) {
-        mergeCardFeedback(
-          records,
-          row.id,
-          array(suggestionFeedbackSchema).max(100).parse(row.feedbacks),
-          at.getTime(),
+        feedbacks.push(
+          ...effectiveCardFeedback(
+            array(suggestionFeedbackSchema).max(100).parse(row.feedbacks),
+            at.getTime(),
+          ),
         );
       }
       if (rows.length <= PAGE_SIZE) {
@@ -161,23 +127,25 @@ export function createSuggestionFeedbackContext(
       }
       after = selected.at(-1)?.id;
     }
-    const all = [...records.values()].sort((a, b) => {
-      return (
-        (b.evidence[0]?.observedAt ?? "").localeCompare(
-          a.evidence[0]?.observedAt ?? "",
-        ) || a.id.localeCompare(b.id)
-      );
-    });
+    const all = feedbacks
+      .sort((a, b) => {
+        return (
+          b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)
+        );
+      })
+      .flatMap((feedback) => {
+        return feedbackRecord(feedback, at.getTime());
+      });
     const context = {
       asOf: at.toISOString(),
       complete: complete && all.length <= 100,
-      records: all.slice(0, 100),
+      feedback: all.slice(0, 100),
     };
     while (
       new TextEncoder().encode(JSON.stringify(context)).length >
       MAX_CONTEXT_BYTES
     ) {
-      context.records.pop();
+      context.feedback.pop();
       context.complete = false;
     }
     return context;
