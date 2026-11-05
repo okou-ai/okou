@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { and, eq } from "drizzle-orm";
+import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import {
   getCustomConnectorSkillName,
   getCustomConnectorSkillStorageName,
@@ -6,6 +8,7 @@ import {
 import { synthesizeSkillMd } from "@okouai/core/skill-document";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { publishContentBundle$ } from "./content-bundle.service";
+import { db$ } from "../external/db";
 
 import {
   prepareVolumeServerSide$,
@@ -49,7 +52,7 @@ function buildCustomConnectorSkillFiles(
 
 export const prepareCustomConnectorSkillVolume$ = command(
   async (
-    { set },
+    { get, set },
     args: PrepareCustomConnectorSkillVolumeInput,
     signal: AbortSignal,
   ): Promise<PreparedCustomConnectorSkill> => {
@@ -65,6 +68,29 @@ export const prepareCustomConnectorSkillVolume$ = command(
       signal,
     );
     signal.throwIfAborted();
+    const [registered] = await get(db$)
+      .select({
+        contentBundle: orgCustomConnectorSkillBundles.skillContentBundle,
+        sourceVersionId:
+          orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
+      })
+      .from(orgCustomConnectorSkillBundles)
+      .where(
+        and(
+          eq(orgCustomConnectorSkillBundles.id, args.connectorId),
+          eq(orgCustomConnectorSkillBundles.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    // A successful owner publication already attested to these shared bytes.
+    // Reuse only its exact source; older writers can leave a stale reference.
+    if (
+      registered?.contentBundle &&
+      registered.sourceVersionId === volume.version.versionId
+    ) {
+      return { ...volume, contentBundle: registered.contentBundle };
+    }
     const contentBundle = await set(
       publishContentBundle$,
       files.map((file) => {

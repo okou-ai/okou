@@ -167,17 +167,14 @@ describe("Custom connector authentication modes", () => {
       acceptSkillUploads();
       const skillMarkdown =
         "Use the connected account.\n保留空白和 Unicode。\n";
+      const input = {
+        ...definition("none", `https://${randomUUID()}.example.test/`, kind),
+        skillMarkdown,
+      };
       const created = await accept(
         api.collection.create({
           headers,
-          body: {
-            ...definition(
-              "none",
-              `https://${randomUUID()}.example.test/`,
-              kind,
-            ),
-            skillMarkdown,
-          },
+          body: input,
         }),
         [201],
       );
@@ -206,6 +203,18 @@ describe("Custom connector authentication modes", () => {
       expect(archiveFiles(prepared.archive)[0]?.content.toString()).toContain(
         skillMarkdown,
       );
+      context.mocks.s3.send.mockRejectedValue(
+        new Error("Object store unavailable"),
+      );
+      const retried = await accept(
+        api.connector.update({
+          headers,
+          params: { id: created.body.id },
+          body: input,
+        }),
+        [200],
+      );
+      expect(retried.body.skillMarkdown).toBe(skillMarkdown);
     },
   );
 
