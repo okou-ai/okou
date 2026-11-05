@@ -2,7 +2,6 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   createDeferredPromise,
-  detach,
   isAbortError,
   onRef,
   Reason,
@@ -10,6 +9,7 @@ import {
   setLoop,
   type DeferredPromise,
 } from "../utils.ts";
+import { detachBrowser } from "./reporting.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { logger } from "../log.ts";
@@ -536,7 +536,7 @@ function createNativeObservations(context: RuntimeState, graph: RuntimeGraph) {
     if (!get(retiring$).has(lease)) {
       set(retiring$, new Set(get(retiring$)).add(lease));
       const retirement = set(lease.resetRetirement$);
-      detach(
+      detachBrowser(
         set(finishRetirement$, lease, retirement),
         Reason.DomCallback,
         "browser native retirement",
@@ -1113,7 +1113,7 @@ function createRootObservation(
         document.addEventListener(
           "visibilitychange",
           () => {
-            detach(
+            detachBrowser(
               set(updatePause$, "document", !document.hidden, signal),
               Reason.DomCallback,
               "browser visibility",
@@ -1129,7 +1129,7 @@ function createRootObservation(
             })
             .at(-1);
           if (entry) {
-            detach(
+            detachBrowser(
               set(updatePause$, "viewport", entry.isIntersecting, signal),
               Reason.DomCallback,
               "browser viewport",
@@ -1161,7 +1161,7 @@ function createRootObservation(
           },
           { once: true },
         );
-        detach(
+        detachBrowser(
           set(watchRecovery$, signal),
           Reason.Daemon,
           "browser recovery owner",
@@ -1199,9 +1199,10 @@ function createRootObservation(
             ]);
             signal.throwIfAborted();
             if (result.status === "rejected" && !isAbortError(result.reason)) {
-              // Reconciliation already published its current failure. A future actual
-              // notification, not an automatic retry, owns the next attempt.
-              L.error("Browser viewer startup failed", result.reason);
+              // The coordinator reports only when the current episode stops retrying.
+              if (!get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner]) {
+                L.error("Browser viewer startup failed", result.reason);
+              }
               set(observer$, null);
             }
           }

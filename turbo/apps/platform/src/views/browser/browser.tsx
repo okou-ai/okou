@@ -49,7 +49,8 @@ import type {
   WindowSizeSync,
 } from "../../signals/browser/viewer/types.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { Reason } from "../../signals/utils.ts";
+import { detachBrowser as detach } from "../../signals/browser/reporting.ts";
 
 function BrowserOperationError({
   occurrences,
