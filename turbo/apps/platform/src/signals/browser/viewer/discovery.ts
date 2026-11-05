@@ -47,14 +47,16 @@ function createDiscoveryState(model: DiscoveryModel) {
       get(epoch$) === get(model.inventoryState$).epoch
     );
   });
-  const ready$ = computed((get) => {
+  const admitted$ = computed((get) => {
     return (
-      get(active$) && get(model.inventoryState$).ready && !get(validating$)
+      get(active$) &&
+      get(model.inventoryState$).coverage !== "pending" &&
+      !get(validating$)
     );
   });
   const selectedTargetId$ = computed((get) => {
     const id = get(model.snapshot$).selectedTargetId;
-    return get(ready$) &&
+    return get(admitted$) &&
       id &&
       get(model.inventoryState$).entries.get(id)?.membership?.member
       ? id
@@ -72,7 +74,7 @@ function createDiscoveryState(model: DiscoveryModel) {
     unwatchAbort$,
     listeners$,
     active$,
-    ready$,
+    admitted$,
     selectedTargetId$,
   };
 }
@@ -90,7 +92,7 @@ function createDiscoveryLifecycle(
     fullWanted$,
     epoch$,
     active$,
-    ready$,
+    admitted$,
     validating$,
   } = nodes;
   const close$ = command(({ get, set }) => {
@@ -112,6 +114,7 @@ function createDiscoveryLifecycle(
     }
     if (isRecoverableReadFailure(error)) {
       // Failed proof revokes admission, not the healthy transport or epoch.
+      set(model.inventory$, { type: "invalidate-round" });
       set(validating$, true);
     } else {
       set(close$);
@@ -121,7 +124,7 @@ function createDiscoveryLifecycle(
   const commit$ = command(
     ({ get, set }, event: InventoryEvent, signal: AbortSignal) => {
       set(model.inventory$, event);
-      if (get(ready$)) {
+      if (get(admitted$)) {
         set(options.changed$, signal);
       }
     },
@@ -290,7 +293,7 @@ function createMembershipReads(
         }
         const inventory = get(model.inventoryState$);
         if (
-          !inventory.ready &&
+          inventory.coverage === "pending" &&
           batch.some((id) => {
             const entry = inventory.entries.get(id);
             return (
@@ -484,6 +487,31 @@ function createDiscoveryStart(
   });
 }
 
+function createCompleteInventoryRead(
+  nodes: DiscoveryState,
+  model: DiscoveryModel,
+  start$: Command<Promise<void>, [AbortSignal]>,
+  waitForDrain$: Command<Promise<void>, [AbortSignal]>,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    await set(start$, signal);
+    // A concurrent invalidation can start another drain before an observer resumes.
+    while (get(nodes.running$)) {
+      await set(waitForDrain$, signal);
+    }
+    signal.throwIfAborted();
+    const snapshot = get(model.snapshot$);
+    const inventory = snapshot.inventory;
+    if (!get(nodes.admitted$) || inventory.status !== "complete") {
+      throw new CdpFault(
+        "protocol",
+        "Browser target inventory is not complete.",
+      );
+    }
+    return { ...snapshot, inventory };
+  });
+}
+
 function createDiscoveryTargets(
   nodes: DiscoveryState,
   model: DiscoveryModel,
@@ -623,6 +651,12 @@ export function createTargetDiscovery(
     refresh$,
     waitForDrain$,
   );
+  const readComplete$ = createCompleteInventoryRead(
+    nodes,
+    model,
+    start$,
+    waitForDrain$,
+  );
   const targets = createDiscoveryTargets(nodes, model, lifecycle);
   const event$ = createDiscoveryEvents(
     nodes,
@@ -633,9 +667,10 @@ export function createTargetDiscovery(
   );
   return {
     active$: nodes.active$,
-    ready$: nodes.ready$,
+    admitted$: nodes.admitted$,
     selectedTargetId$: nodes.selectedTargetId$,
     start$,
+    readComplete$,
     refresh$,
     ...targets,
     event$,

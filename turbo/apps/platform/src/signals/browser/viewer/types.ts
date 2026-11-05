@@ -45,9 +45,20 @@ export interface ViewerTarget {
   readonly blank: boolean;
 }
 
+/** Targets have positive scope proof; only complete inventory supports absence decisions. */
+export type ViewerInventory =
+  | {
+      readonly status: "pending" | "partial";
+      readonly targets: readonly ViewerTarget[];
+    }
+  | {
+      readonly status: "complete";
+      readonly targets: readonly ViewerTarget[];
+    };
+
 export interface ViewerSnapshot {
   readonly status: ViewerStatus;
-  readonly targets: readonly ViewerTarget[];
+  readonly inventory: ViewerInventory;
   readonly selectedTargetId: string | null;
   readonly error: ViewerError | null;
 }

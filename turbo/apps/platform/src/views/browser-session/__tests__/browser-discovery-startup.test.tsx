@@ -213,26 +213,81 @@ test("A pending creation does not hide an initially unvisited survivor from clos
   await ready("https://later.example.com");
 });
 
-test("Losing the first proven tab does not admit an empty window before discovery completes", async () => {
-  const { browser, start } = viewer();
-  const held = browser.holdNextMembership("sibling-3");
-  await start();
-  await held.received;
-  await ready();
-  act(() => {
-    browser.event("Target.targetDestroyed", { targetId: "own-first" });
-  });
-  await screen.findByText("No tabs open");
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(
-    screen.getByLabelText("New tab", { selector: "button" }),
-  ).toBeDisabled();
-  await act(held.release);
-  await ready("https://later.example.com");
-  expect(
-    screen.getByLabelText("Later own tab", { selector: '[role="tab"]' }),
-  ).toHaveAttribute("aria-selected", "true");
-});
+test.each([true, false])(
+  "Losing the first proven tab waits for a complete inventory (survivor: %s)",
+  async (survivor) => {
+    const { browser, start } = viewer();
+    const held = browser.holdNextMembership("sibling-3");
+    await start();
+    await held.received;
+    await ready();
+    act(() => {
+      if (!survivor) {
+        browser.event("Target.targetDestroyed", { targetId: "own-later" });
+      }
+      browser.event("Target.targetDestroyed", { targetId: "own-first" });
+    });
+    await screen.findByText("Connecting to browser…");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+    await act(held.release);
+    if (survivor) {
+      await ready("https://later.example.com");
+    } else {
+      await screen.findByText("No tabs open");
+      click(screen.getByLabelText("New tab", { selector: "button" }));
+      await ready("");
+    }
+    expect(
+      screen.getByLabelText(survivor ? "Later own tab" : "New tab", {
+        selector: '[role="tab"]',
+      }),
+    ).toHaveAttribute("aria-selected", "true");
+  },
+);
+
+test.each([true, false])(
+  "A newly observed page prevents an empty conclusion until its proof settles (owned: %s)",
+  async (owned) => {
+    const { browser, start } = viewer();
+    await start();
+    await ready();
+    await screen.findByLabelText("Later own tab");
+    const target = {
+      targetId: "new-page",
+      title: "New page",
+      url: "https://new.example.com",
+      windowId: owned ? 101 : 202,
+    };
+    browser.targets.push(target);
+    const held = browser.holdNextMembership(target.targetId);
+    act(() => {
+      browser.event("Target.targetCreated", {
+        targetInfo: { ...target, type: "page" },
+      });
+    });
+    await held.received;
+    act(() => {
+      browser.event("Target.targetDestroyed", { targetId: "own-later" });
+      browser.event("Target.targetDestroyed", { targetId: "own-first" });
+    });
+    await screen.findByText("Connecting to browser…");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+    await act(held.release);
+    if (owned) {
+      await ready(target.url);
+    } else {
+      await screen.findByText("No tabs open");
+      click(screen.getByLabelText("New tab", { selector: "button" }));
+      await ready("");
+    }
+  },
+);
 
 test("Closing the initially visible tab preserves the undiscovered survivor without an extra blank tab", async () => {
   const { browser, start } = viewer();
