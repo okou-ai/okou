@@ -2076,7 +2076,6 @@
       "partsHeading_other": "आपके उत्तर से {{count}} भाग उद्धृत",
       "placeholder": "इस उद्धरण पर सवाल पूछें या टिप्पणी करें",
       "quote": "उद्धृत करें",
-      "quoteEmail": "{{email}} उद्धृत करें",
       "remove": "प्रतिक्रिया हटाएँ",
       "sentEmailDescription": "एक भेजा गया ईमेल",
       "sourcePartHeading": "{{description}} से उद्धृत",

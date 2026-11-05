@@ -43,7 +43,6 @@ export enum FeatureSwitchKey {
   MarkdownCjkEmphasis = "markdownCjkEmphasis",
   MarkdownTableExport = "markdownTableExport",
   ChatMessagePdf = "chatMessagePdf",
-  ChatEmailQuote = "chatEmailQuote",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",

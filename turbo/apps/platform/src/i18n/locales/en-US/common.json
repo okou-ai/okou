@@ -2076,7 +2076,6 @@
       "partsHeading_other": "Quoted {{count}} parts of your reply",
       "placeholder": "Ask or comment on this quote",
       "quote": "Quote",
-      "quoteEmail": "Quote {{email}}",
       "remove": "Remove feedback",
       "sentEmailDescription": "a sent email",
       "sourcePartHeading": "Quoted from {{description}}",
