@@ -16,7 +16,7 @@ struct MyOkouView: View {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: OkouSpace.xs) {
               Text("Your instructions for Okou in this workspace").font(.okou(.subheadline))
-              Text(workspaceName).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+              Text(workspaceName).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
             }
           }
           if store.isLoading {
@@ -57,6 +57,7 @@ struct MyOkouView: View {
             .font(.okou(.footnote))
             Button("Reload saved instructions") { Task { await store.discard() } }
               .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
+              .disabled(store.isSaving || store.isLoading)
           }
           if store.saved != nil && !store.isDirty && !store.isLoading && !store.isSaving
             && store.error == nil
@@ -79,7 +80,7 @@ struct MyOkouView: View {
             HStack {
               Button("Discard", role: .destructive) { Task { await store.discard() } }
                 .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-                .disabled(store.isSaving)
+                .disabled(store.isSaving || store.isLoading)
               Button(store.isSaving ? "Saving…" : "Save") { Task { await store.save() } }
                 .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
                 .disabled(store.isSaving || store.isLoading || store.conflict)
