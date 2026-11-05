@@ -126,8 +126,8 @@ import {
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
 import {
   connectorCatalogCurrentWhere,
-  connectorRuntimeSlugSelectionReadPlan,
-  connectorRuntimeSlugSelectionFromRows,
+  connectorRuntimeAuthSelectionReadPlan,
+  connectorRuntimeAuthSelectionFromRows,
 } from "../services/connector-catalog-slug-source.service";
 import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
@@ -1488,8 +1488,9 @@ const readClaimCurrentNetworkPolicyRefreshes$ = command(
     Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
   > => {
     const { scope, builtinConnectorSlugs } = args;
-    const plan = connectorRuntimeSlugSelectionReadPlan({
+    const plan = connectorRuntimeAuthSelectionReadPlan({
       connectorSlugs: builtinConnectorSlugs,
+      firewallConnectorSlugs: builtinConnectorSlugs,
     });
     const catalogReadStartedAt = monotonicNow();
     const rows = await get(db$)
@@ -1499,9 +1500,10 @@ const readClaimCurrentNetworkPolicyRefreshes$ = command(
       .where(connectorCatalogCurrentWhere());
     const catalogReadMs = monotonicNow() - catalogReadStartedAt;
     const catalogMaterializeStartedAt = monotonicNow();
-    const snapshot = connectorRuntimeSlugSelectionFromRows(
-      plan.selection,
+    const snapshot = connectorRuntimeAuthSelectionFromRows(
       rows,
+      plan.requestedConnectorSlugs,
+      plan.firewallConnectorSlugs,
     );
     const checkedAt = nowDate();
     const catalogMaterializeMs = monotonicNow() - catalogMaterializeStartedAt;
