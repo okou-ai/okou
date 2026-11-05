@@ -4,6 +4,7 @@ import UIKit
 /// Extend the rendered text's native edit menu through its public responder chain.
 final class MessageSelectionCell: UICollectionViewCell {
   private var prefetchedContent: UIView?
+  private var recycleContent: ((UIView) -> Void)?
   var representedRowID: String?
   var message: ChatMessage?
   var quote: ((ChatFeedbackSelection) -> Void)?
@@ -14,24 +15,32 @@ final class MessageSelectionCell: UICollectionViewCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
-    prefetchedContent?.removeFromSuperview()
-    prefetchedContent = nil
+    releaseContent()
     representedRowID = nil
     message = nil
     quote = nil
   }
 
   func setMessageConfiguration(_ configuration: some UIContentConfiguration) {
-    prefetchedContent?.removeFromSuperview()
-    prefetchedContent = nil
+    releaseContent()
     contentConfiguration = configuration
   }
 
-  func showPrefetchedContent(_ view: UIView) {
+  func showPrefetchedContent(_ view: UIView, recycle: ((UIView) -> Void)? = nil) {
+    releaseContent()
     contentConfiguration = nil
-    prefetchedContent?.removeFromSuperview()
     prefetchedContent = view
+    recycleContent = recycle
     attachPrefetchedContent()
+  }
+
+  private func releaseContent() {
+    guard let view = prefetchedContent else { return }
+    let recycle = recycleContent
+    prefetchedContent = nil
+    recycleContent = nil
+    view.endEditing(true)
+    if let recycle { recycle(view) } else { view.removeFromSuperview() }
   }
 
   override func didMoveToWindow() {
