@@ -62,7 +62,6 @@ import { canvaProvider } from "./connectors/canva/provider";
 import { closeProvider } from "./connectors/close/provider";
 import { copperProvider } from "./connectors/copper/provider";
 import { cloudflareProvider } from "./connectors/cloudflare/provider";
-import { deelProvider } from "./connectors/deel/provider";
 import { datadogProvider } from "./connectors/datadog/provider";
 import { docusignProvider } from "./connectors/docusign/provider";
 import { dropboxProvider } from "./connectors/dropbox/provider";
@@ -994,7 +993,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
     "oauth",
     cloudflareProvider,
   ),
-  authCodeRefreshProviderEntry("deel", "oauth", deelProvider),
   authCodeRefreshProviderEntry("datadog", "oauth", datadogProvider),
   authCodeRefreshProviderEntry("docusign", "oauth", docusignProvider),
   authCodeRefreshProviderEntry("dropbox", "oauth", dropboxProvider),

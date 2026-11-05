@@ -106,7 +106,7 @@ function mockAuthenticatedSession(): void {
   );
 }
 
-// #30570 pre-stages twenty launch-gated OAuth connectors on the direct Okou App
+// #30570 pre-stages launch-gated OAuth connectors on the direct Okou App
 // callback. Each case pins the provider-specific authorization and token
 // exchange contract that must survive the callback change.
 type LaunchGatedDirectOkouCase = {
@@ -292,30 +292,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
       access_token: "datadog-test-token",
       refresh_token: "datadog-refresh-token",
       expires_in: 3600,
-    },
-  },
-  {
-    connectorSlug: "deel",
-    label: "Deel",
-    clientEnvPrefix: "DEEL",
-    authorizationEndpoint: "https://app.deel.com/oauth2/authorize",
-    tokenUrl: "https://app.deel.com/oauth2/tokens",
-    pkce: true,
-    tokenResponse: {
-      access_token: "deel-test-token",
-      refresh_token: "deel-refresh-token",
-      expires_in: 2_592_000,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.letsdeel.com/rest/people/me", () => {
-          return HttpResponse.json({
-            id: "deel-user-123",
-            full_name: "Deel Test User",
-            email: "deel@example.test",
-          });
-        }),
-      );
     },
   },
   {

@@ -997,10 +997,16 @@ const connectors = [
     connectorSlug: "deel",
     label: "Deel",
     authMethods: [
-      standardOauthMethod({
-        connectorSlug: "deel",
-        prefix: "DEEL",
-        tokenEnvironmentNames: ["DEEL_TOKEN"],
+      manualMethod({
+        fields: [
+          manualField({
+            privateName: "DEEL_TOKEN",
+            publicId: "apiToken",
+            label: "API Token",
+            storage: "secret",
+          }),
+        ],
+        envBindings: { DEEL_TOKEN: secret("DEEL_TOKEN") },
       }),
     ],
   }),
