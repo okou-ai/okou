@@ -636,8 +636,13 @@ async fn gc_workspace_orphans_skips_when_process_discovery_incomplete() {
     assert!(lock_path.exists(), "lock must remain for a later retry");
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn gc_workspace_orphans_cleans_when_incomplete_firecracker_is_live_runner_owned() {
+    use std::process::{Command, Stdio};
+
+    use cli_test_support::child::KillAndWaitChild;
+
     let dir = tempfile::tempdir().unwrap();
     let home = test_home(dir.path());
     let locks_dir = home.locks_dir();
@@ -650,13 +655,23 @@ async fn gc_workspace_orphans_cleans_when_incomplete_firecracker_is_live_runner_
     set_mtime(&workspace, old_gc_time());
     let lock_path = write_base_dir_lock(&home, &base_dir);
 
+    // Retain stdin so the owned child stays alive until cleanup, without a sleep.
+    let child = KillAndWaitChild(
+        Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let candidates = discover_base_dir_lock_candidates(&home);
-    let firecrackers = [incomplete_firecracker(1234)];
+    let firecrackers = [incomplete_firecracker(child.0.id())];
+    let uncertain =
+        workspace_firecracker_discovery_uncertain(&firecrackers, &[std::process::id()]).await;
     let summary = gc_workspace_orphans_with_candidates(
         candidates,
         &firecrackers,
         &HashSet::new(),
-        false,
+        uncertain,
         SystemTime::now(),
         false,
     )
