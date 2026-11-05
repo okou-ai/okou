@@ -15,6 +15,21 @@ export async function validateConnectorSkillBundleSchema(
   const hash = `sha256:${source}`;
   const bundle = { sha256: "c".repeat(64), archiveBytes: 100 };
   try {
+    const constraints = await client.query(`SELECT conname, convalidated
+      FROM pg_constraint WHERE conname IN (
+        'connector_catalog_entries_skill_content_bundle_check',
+        'org_custom_connectors_skill_content_bundle_check'
+      ) ORDER BY conname`);
+    assert.deepEqual(constraints.rows, [
+      {
+        conname: "connector_catalog_entries_skill_content_bundle_check",
+        convalidated: true,
+      },
+      {
+        conname: "org_custom_connectors_skill_content_bundle_check",
+        convalidated: true,
+      },
+    ]);
     await client.query(
       "INSERT INTO storages(id,user_id,org_id,name,s3_prefix) VALUES($1,'schema-user',$2,'schema-connector',$3)",
       [storageId, orgId, `${orgId}/schema`],

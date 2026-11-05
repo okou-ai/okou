@@ -16,6 +16,23 @@ export const NON_TRANSACTIONAL_MIGRATION_MARKER = "-- okou:non-transactional";
 export const UUID_BATCH_MIGRATION_MARKER = "-- okou:batch-by-uuid";
 const EXPLAIN_ON_TIMEOUT_MIGRATION_MARKER = "-- okou:explain-on-timeout";
 
+const canonicalMigrationReplays = new Map([
+  [
+    "1462_browser_owner_windows.sql",
+    new URL(
+      "./migration-replays/1462_browser_owner_windows.sql",
+      import.meta.url,
+    ),
+  ],
+  [
+    "1524_connector_skill_bundle_preparation.sql",
+    new URL(
+      "./migration-replays/1524_connector_skill_bundle_preparation.sql",
+      import.meta.url,
+    ),
+  ],
+]);
+
 const batchCursorSchema = tuple([object({ next_cursor: guid().nullable() })]);
 
 export interface ApplyPendingMigrationsOptions {
@@ -138,19 +155,12 @@ export async function applyPendingMigrations(
     }
 
     const file = requiredMigrationFile(migrationFiles, migration.folderMillis);
-    // Keep shipped 1462 bytes/journal identity, but execute its canonical,
-    // replayable DDL outside the migration transaction. Retire with 1462 in a
-    // future history squash.
-    const statements =
-      file === "1462_browser_owner_windows.sql"
-        ? readFileSync(
-            new URL(
-              "./migration-replays/1462_browser_owner_windows.sql",
-              import.meta.url,
-            ),
-            "utf8",
-          ).split("--> statement-breakpoint")
-        : migration.sql;
+    // Preserve shipped SQL hashes and journal identities. Canonical execution
+    // repairs retire with their historical migration in a future squash.
+    const replay = canonicalMigrationReplays.get(file);
+    const statements = replay
+      ? readFileSync(replay, "utf8").split("--> statement-breakpoint")
+      : migration.sql;
     const startedAt = performance.now();
     const nonTransactional = statements.some((statement) => {
       return statement.includes(NON_TRANSACTIONAL_MIGRATION_MARKER);

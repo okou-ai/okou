@@ -3123,6 +3123,13 @@
       "when": 1793847220353,
       "tag": "1524_connector_skill_bundle_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 1525,
+      "version": "7",
+      "when": 1793860311549,
+      "tag": "1525_validate_connector_skill_bundles",
+      "breakpoints": true
     }
   ]
 }

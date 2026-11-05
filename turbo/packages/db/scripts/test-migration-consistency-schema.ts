@@ -51,6 +51,7 @@ import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-sn
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
+import { validateConnectorSkillBundleDdlReplay } from "./test-connector-skill-bundle-ddl-replay";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
@@ -3105,6 +3106,7 @@ async function main(): Promise<void> {
     await validateLatestSnapshotAccuracy();
 
     await validateBrowserOwnerDdlReplay(dbUrl.href);
+    await validateConnectorSkillBundleDdlReplay(dbUrl.href);
 
     // Step 1: Test with existing migrations
     console.log("=== Phase 2: Test existing migrations ===\n");
