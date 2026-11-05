@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-run cold/warm simulator comparison; process snapshots omit argv and env."""
+"""One-run simulator load intervention; process snapshots omit argv and env."""
 
 import datetime
 import json
@@ -55,6 +55,10 @@ def snapshot(label):
 
 
 execute("hardware", ["sysctl", "hw.ncpu", "hw.memsize", "vm.swapusage"])
+execute("before-boot-xcode-version", ["xcodebuild", "-version"], required=True)
+execute(
+    "cache-command-help", ["xcrun", "simctl", "runtime", "dyld_shared_cache", "--help"]
+)
 snapshot("before-cold-boot")
 inventory = json.loads(
     execute(
@@ -73,17 +77,33 @@ devices = [
     d for d in inventory["devices"].get(runtime, []) if d["name"] == destination["name"]
 ]
 if len(devices) != 1 or devices[0]["state"] != "Shutdown":
-    raise ValueError(
-        "Cold/warm comparison requires the exact configured shutdown simulator"
-    )
+    raise ValueError("Load comparison requires the exact configured shutdown simulator")
 device = devices[0]["udid"]
 boot = [sys.executable, "ios/scripts/preboot-simulator.py"]
 execute("cold-boot", boot, timeout=600, required=True)
 snapshot("after-cold-boot")
-execute("cold-xcode-version", ["xcodebuild", "-version"], timeout=420, required=True)
+execute(
+    "cold-xcode-version",
+    [
+        sys.executable,
+        "ios/scripts/sample-xcode-startup.py",
+        "--delay",
+        "1",
+        "--window",
+        "180",
+        "--privileged-sample",
+        str(output / "cold-version-stack"),
+        "--",
+        "xcodebuild",
+        "-version",
+    ],
+    # The observer owns its child process group and handles cancellation. Let
+    # the existing job deadline bound the command instead of SIGKILLing that
+    # observer and bypassing its child cleanup on a subprocess.run timeout.
+    timeout=None,
+    required=True,
+)
 snapshot("after-cold-version")
 execute("shutdown", ["xcrun", "simctl", "shutdown", device], timeout=120, required=True)
-execute("warm-boot", boot, timeout=600, required=True)
-snapshot("after-warm-boot")
-execute("warm-xcode-version", ["xcodebuild", "-version"], timeout=420, required=True)
-snapshot("after-warm-version")
+snapshot("after-shutdown")
+execute("after-shutdown-xcode-version", ["xcodebuild", "-version"], required=True)
