@@ -746,7 +746,7 @@ const resolveSharedWindow$ = command(
     { set },
     args: AdmitSharedWindow & { readonly window: Window | null },
     signal: AbortSignal,
-  ): Promise<Result<Window>> => {
+  ): Promise<Result<Window> | null> => {
     let window = args.window;
     if (window) {
       if (
@@ -757,7 +757,7 @@ const resolveSharedWindow$ = command(
           signal,
         ))
       ) {
-        return unavailable();
+        return null;
       }
     } else {
       const admitted = await set(admitSharedWindow$, args, signal);
@@ -791,10 +791,77 @@ const resolveSharedWindow$ = command(
   },
 );
 
+const connectSharedBrowser$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: BrowserPublicAuthority;
+      readonly input: SharedBrowserInput;
+      readonly profile: Profile;
+      readonly window: Window | null;
+      readonly initial: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<Result<Connection> | null> => {
+    const { owner, input, profile } = args;
+    if (
+      profile.status !== "active" ||
+      !profile.providerSessionId ||
+      profile.timeoutAt <= nowDate()
+    ) {
+      return null;
+    }
+    const session = await provider(
+      findBrowserUseSession(profile.providerSessionId, signal),
+      signal,
+    );
+    if (!session || session.status !== "active" || !session.cdpUrl) {
+      return null;
+    }
+    const connection = browserUseNativeConnection(session);
+    const resolved = await set(
+      resolveSharedWindow$,
+      {
+        owner,
+        profile,
+        ...connection,
+        initial: args.initial,
+        initialDisplay: input.initialDisplay,
+        window: args.window,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!resolved || resolved.kind === "error") {
+      return resolved;
+    }
+    const window = resolved.value;
+    const meta = await set(
+      publishSharedMetadata$,
+      { owner, input, profile, window },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (meta.kind === "error") {
+      return meta;
+    }
+    return {
+      kind: "ok",
+      value: {
+        browser: presentation(meta.value, profile, window, session, null),
+        cdpUrl: session.cdpUrl,
+        extension: connection.extension,
+      },
+    };
+  },
+);
+
 function sharedBrowserOpen(
   context$: ReturnType<typeof sharedBrowserContext>,
   view$: ReturnType<typeof sharedBrowserView>,
 ) {
+  // Reclamation can replace the binding captured by the initial computed read.
+  const reconciledView$ = sharedBrowserView(context$);
   return command(
     async (
       { get, set },
@@ -805,10 +872,40 @@ function sharedBrowserOpen(
       if (!ctx || ctx.kind === "error") {
         return ctx;
       }
+      const current = await get(view$);
+      signal.throwIfAborted();
+      if (
+        current?.window?.state === "active" &&
+        current.window.instanceId === current.profile.instanceId &&
+        current.window.expiresAt > nowDate()
+      ) {
+        // Validate once, immediately before the exact atomic renewal. Only a
+        // definitively unready Browser needs reclamation; failures are not retried.
+        const reused = await settleIncludingAbort(
+          set(
+            connectSharedBrowser$,
+            {
+              owner: ctx.owner,
+              input: ctx.mode.input,
+              profile: current.profile,
+              window: current.window,
+              initial: false,
+            },
+            signal,
+          ),
+        );
+        signal.throwIfAborted();
+        if (!reused.ok) {
+          return errorResult(reused.error);
+        }
+        if (reused.value) {
+          return reused.value;
+        }
+      }
       // Reclaim expired lifetimes before the graph captures its current rows.
       await set(reconcileSharedBrowsers$, ctx.owner, signal);
       signal.throwIfAborted();
-      const view = await get(view$);
+      const view = await get(reconciledView$);
       signal.throwIfAborted();
       const operation = await settleIncludingAbort(
         (async (): Promise<Result<Connection>> => {
@@ -826,29 +923,13 @@ function sharedBrowserOpen(
             return provisioned;
           }
           const { profile, created } = provisioned.value;
-          if (
-            profile.status !== "active" ||
-            !profile.providerSessionId ||
-            profile.timeoutAt <= nowDate()
-          ) {
-            return unavailable();
-          }
-          const session = await provider(
-            findBrowserUseSession(profile.providerSessionId, signal),
-            signal,
-          );
-          if (!session || session.status !== "active" || !session.cdpUrl) {
-            return unavailable();
-          }
-          const connection = browserUseNativeConnection(session);
-          const resolved = await set(
-            resolveSharedWindow$,
+          const connected = await set(
+            connectSharedBrowser$,
             {
               owner: ctx.owner,
+              input: ctx.mode.input,
               profile,
-              ...connection,
               initial: created,
-              initialDisplay: ctx.mode.input.initialDisplay,
               window:
                 view?.profile.instanceId === profile.instanceId
                   ? view.window
@@ -857,32 +938,7 @@ function sharedBrowserOpen(
             signal,
           );
           signal.throwIfAborted();
-          if (resolved.kind === "error") {
-            return resolved;
-          }
-          const window = resolved.value;
-          const meta = await set(
-            publishSharedMetadata$,
-            {
-              owner: ctx.owner,
-              input: ctx.mode.input,
-              profile,
-              window,
-            },
-            signal,
-          );
-          signal.throwIfAborted();
-          if (meta.kind === "error") {
-            return meta;
-          }
-          return {
-            kind: "ok",
-            value: {
-              browser: presentation(meta.value, profile, window, session, null),
-              cdpUrl: session.cdpUrl,
-              extension: connection.extension,
-            },
-          };
+          return connected ?? unavailable();
         })(),
       );
       signal.throwIfAborted();
