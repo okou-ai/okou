@@ -35,7 +35,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import type { TFunction } from "i18next";
-import { equalArrays, equalSets } from "../../lib/equality.ts";
+import { equalArrays } from "../../lib/equality.ts";
 import {
   chatThreadDateDividers,
   type ChatDateDivider,
@@ -3162,52 +3162,21 @@ const DEFAULT_THINKING_INDICATORS: ThinkingIndicators = Object.freeze({
   messages: [],
 });
 
-function equalThinkingMessages(
-  previous: ThinkingMessage,
-  next: ThinkingMessage,
-): boolean {
-  return previous.id === next.id && previous.text === next.text;
-}
-
-// Every summary refresh resolves a new object, even when nothing changed. This
-// component renders the whole message list, so only a changed indicator should
-// render it again.
-function equalThinkingIndicators(
-  previous: ThinkingIndicators | null,
-  next: ThinkingIndicators | null,
-): boolean {
-  if (previous === null || next === null) {
-    return previous === next;
-  }
-  if (previous.kind === "queued" || next.kind === "queued") {
-    return previous.kind === next.kind;
-  }
-  return (
-    previous.runId === next.runId &&
-    equalArrays(previous.messages, next.messages, equalThinkingMessages)
-  );
-}
-
-type RunStatusRow =
-  | {
-      readonly kind: "thinking-indicators";
-      readonly indicators: ThinkingIndicators;
-    }
-  | { readonly kind: "finished" };
+type RunStatusRow = "thinking-indicators" | "finished";
 
 // A status tail event (such as a run error) replaces the status row.
 function runStatusRow(
   runWorkFolding: RunWorkFolding | null,
-  thinkingIndicators: ThinkingIndicators | null,
+  thinkingIndicatorsShown: boolean,
   runFinished: boolean,
 ): RunStatusRow | undefined {
   if (runWorkFolding?.statusTail?.events.length) {
     return undefined;
   }
-  if (thinkingIndicators !== null) {
-    return { kind: "thinking-indicators", indicators: thinkingIndicators };
+  if (thinkingIndicatorsShown) {
+    return "thinking-indicators";
   }
-  return runFinished ? { kind: "finished" } : undefined;
+  return runFinished ? "finished" : undefined;
 }
 
 // The status row belongs to the run's work anchor group, otherwise to the
@@ -3238,7 +3207,6 @@ function ChatThreadRenderedEventGroups({
 }) {
   const resolvedRenderedGroups = useLastResolved(
     thread.visibleRenderedChatGroups$,
-    { equalityFn: equalArrays },
   );
   const renderedGroups = resolvedRenderedGroups ?? [];
   const { activeGroups: renderedActiveGroups } =
@@ -3256,19 +3224,13 @@ function ChatThreadRenderedEventGroups({
   const toggleRunWorkExpanded = useSet(toggleRunWorkExpanded$);
   const visibleGroups = runWorkFolding?.visibleGroups ?? renderedActiveGroups;
   // Before the first result, or when the summary request fails, show the
-  // default thinking label. A resolved null means the thread is idle.
-  const resolvedThinkingIndicators = useLastResolved(
-    thread.thinkingIndicators$,
-    { equalityFn: equalThinkingIndicators },
-  );
-  const thinkingIndicators =
-    resolvedThinkingIndicators === undefined
-      ? DEFAULT_THINKING_INDICATORS
-      : resolvedThinkingIndicators;
+  // default thinking row. A resolved false means the thread is idle.
+  const thinkingIndicatorsShown =
+    useLastResolved(thread.thinkingIndicatorsShown$) ?? true;
   const runFinished = useLastResolved(thread.runFinished$) ?? false;
   const statusRow = runStatusRow(
     runWorkFolding,
-    thinkingIndicators,
+    thinkingIndicatorsShown,
     runFinished,
   );
   const statusRowGroupId =
@@ -4628,21 +4590,19 @@ function RunStatusRowContent({
   thread: ChatPanelSignals;
   statusRow: RunStatusRow;
 }) {
-  return statusRow.kind === "finished" ? (
+  return statusRow === "finished" ? (
     <FinishedStatusRow thread={thread} />
   ) : (
-    <ThinkingIndicatorRow thread={thread} indicators={statusRow.indicators} />
+    <ThinkingIndicatorRow thread={thread} />
   );
 }
 
-function ThinkingIndicatorRow({
-  thread,
-  indicators,
-}: {
-  thread: ChatPanelSignals;
-  indicators: ThinkingIndicators;
-}) {
+function ThinkingIndicatorRow({ thread }: { thread: ChatPanelSignals }) {
   const thinkingLabel = useGet(thread.thinkingPhrase$);
+  // Before the first result, or when the summary request fails, show the
+  // default thinking label.
+  const indicators =
+    useLastResolved(thread.thinkingIndicators$) ?? DEFAULT_THINKING_INDICATORS;
   const isQueued = indicators.kind === "queued";
   const serverThinkingLabel =
     indicators.kind === "thinking" && indicators.messages.length > 0
@@ -4665,9 +4625,7 @@ function ThinkingIndicatorRow({
 
 function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
   const recommendedFollowupSource =
-    useLastResolved(thread.recommendedFollowupSource$, {
-      equalityFn: equalRecommendedFollowupSources,
-    }) ?? null;
+    useLastResolved(thread.recommendedFollowupSource$) ?? null;
   return (
     // Completed content also mounts when reopening a historical thread. Keep it
     // opaque so the PWA page-transition snapshot and the live page agree.
@@ -4729,19 +4687,6 @@ function CompletedResultUpgrade({ thread }: { thread: ChatPanelSignals }) {
     <div className="@container w-full max-w-2xl">
       <FirstTaskUpgradeCard />
     </div>
-  );
-}
-
-function equalRecommendedFollowupSources(
-  previous: RecommendedFollowupSource | null,
-  next: RecommendedFollowupSource | null,
-): boolean {
-  return (
-    previous === next ||
-    (previous !== null &&
-      next !== null &&
-      previous.eventId === next.eventId &&
-      previous.followups === next.followups)
   );
 }
 
@@ -7949,11 +7894,7 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
  * message row re-render on every optimistic change.
  */
 function OptimisticSpinner({ eventId }: { eventId: string }) {
-  // Streaming deltas rebuild the optimistic buffer, so compare the ids instead
-  // of the set identity: a pending message keeps every other spinner idle.
-  const optimisticEventIds = useGet(optimisticEventIds$, {
-    equalityFn: equalSets,
-  });
+  const optimisticEventIds = useGet(optimisticEventIds$);
   // The slot repeats the bubble's own padding and line metrics so the spinner
   // centers on the first line of text however many lines the message wraps to.
   // It stays reserved when the message is confirmed, so the bubble never
@@ -8322,7 +8263,7 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         mainActions={mainActions}
       />
-      {statusRow?.kind === "finished" ? (
+      {statusRow === "finished" ? (
         <CompletedResultUpgrade thread={thread} />
       ) : null}
       {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (

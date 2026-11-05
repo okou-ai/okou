@@ -112,7 +112,7 @@ import {
   selectChatThreadFilter$,
   type ChatThreadFilter,
 } from "../../signals/okou-page/chat-thread-filter-selection.ts";
-import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
+import { currentChatAgentHasUnread$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
   closeRenameChatThreadDialog$,
@@ -134,7 +134,7 @@ import { Link } from "../router/link.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
 import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
-import { equalArrays, equalSets } from "../../lib/equality.ts";
+import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -1264,9 +1264,8 @@ function useNewChatAction() {
 
 function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
-  const unreadAgentIds = useLastResolved(unreadAgentIds$, {
-    equalityFn: equalSets,
-  });
+  const currentAgentHasUnread =
+    useLastResolved(currentChatAgentHasUnread$) ?? false;
   const [markReadLoadable, markAgentThreadsRead] = useLoadableSet(
     markAgentThreadsRead$,
   );
@@ -1275,9 +1274,7 @@ function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   const visible = showMarkAllRead && currentChatAgentId !== null;
   // Keep the item mounted and toggle availability so the menu layout does
   // not jump when the unread state changes.
-  const hasUnread =
-    currentChatAgentId !== null &&
-    (unreadAgentIds?.has(currentChatAgentId) ?? false);
+  const hasUnread = currentChatAgentId !== null && currentAgentHasUnread;
 
   function onSelect() {
     if (!currentChatAgentId) {

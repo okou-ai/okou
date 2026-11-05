@@ -18,6 +18,7 @@ import type {
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
 import type { HeaderAutomationSignals } from "./header-automation-menu.ts";
 import type { ThreadSidebarSignals } from "./thread-sidebar.ts";
+import type { ThreadImageNavigationSignals } from "./event-image-navigation.ts";
 import type { BrowserSessionSignals } from "./browser-session-block.ts";
 import type { BrowserPresenceSignals } from "./browser-presence.ts";
 import type { EditorDocumentSnapshot } from "../okou-page/user-message-document-codec.ts";
@@ -96,11 +97,12 @@ export interface MessageListSignals {
     Promise<boolean>,
     [AbortSignal]
   >;
-  readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
+  readonly imageNavigation: ThreadImageNavigationSignals;
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly subscribeBrowserSessions$: Command<void, [AbortSignal]>;
   readonly hasEvents$: Computed<Promise<boolean>>;
   readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
+  readonly thinkingIndicatorsShown$: Computed<Promise<boolean>>;
   readonly runFinished$: Computed<Promise<boolean>>;
   readonly recommendedFollowupSource$: Computed<
     Promise<RecommendedFollowupSource | null>
@@ -219,11 +221,12 @@ export interface ChatPanelSignals {
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly visibleRenderedChatGroupsReady$: Computed<Promise<boolean>>;
   readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
-  readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
+  readonly imageNavigation: ThreadImageNavigationSignals;
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly browserPresence: BrowserPresenceSignals;
   readonly hasEvents$: Computed<Promise<boolean>>;
   readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
+  readonly thinkingIndicatorsShown$: Computed<Promise<boolean>>;
   readonly runFinished$: Computed<Promise<boolean>>;
   readonly recommendedFollowupSource$: Computed<
     Promise<RecommendedFollowupSource | null>

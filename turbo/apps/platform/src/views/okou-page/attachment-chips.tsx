@@ -103,11 +103,8 @@ import {
   artifactTitleSubtitle,
 } from "./artifact-display.ts";
 import { ArtifactTitle } from "./artifact-title.tsx";
-import {
-  currentEventImageArtifactNavigation,
-  equalEventImageGroups,
-  type ImageArtifactNavigationItem,
-} from "./artifact-image-navigation.ts";
+import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
+import type { EventImageNavigationDirection } from "../../signals/chat-page/event-image-navigation.ts";
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
 import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
@@ -1281,26 +1278,19 @@ function ArtifactPreviewDialogThreadResolver({
 }) {
   const loadable = useLastLoadable(thread.artifacts$);
   const agentId = thread.agentId;
-  const eventGroups = useLastResolved(thread.eventImageGroups$, {
-    equalityFn: equalEventImageGroups,
-  });
+  const imageNavigation = thread.imageNavigation.lightbox;
+  const imageRole = useGet(imageNavigation.role$);
+  const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
+  const hasNextImage = useGet(imageNavigation.hasNext$);
+  const resolveImageNavigationTarget = useSet(imageNavigation.target$);
   const navigateImageLightbox = useSet(navigateImageLightbox$);
   const item =
     loadable.state === "hasData"
       ? findArtifactDialogItemForUrl(loadable.data, preview.url)
       : undefined;
-  const resolvedImageNavigation =
-    preview.kind === "image"
-      ? currentEventImageArtifactNavigation(
-          loadable.state === "hasData" ? loadable.data : [],
-          eventGroups ?? [],
-          preview.url,
-        )
-      : {};
-  const imageNavigation =
-    resolvedImageNavigation.role === "assistant" || loadable.state === "hasData"
-      ? resolvedImageNavigation
-      : {};
+  const imageNavigationAvailable =
+    preview.kind === "image" &&
+    (imageRole === "assistant" || loadable.state === "hasData");
   const openImageNavigationItem = (
     navigationItem: ImageArtifactNavigationItem,
   ) => {
@@ -1316,19 +1306,26 @@ function ArtifactPreviewDialogThreadResolver({
       preview: navigationItem.preview,
       // Navigation never leaves the event group it started in, so a user
       // message's images stay attachments as the viewer steps through them.
-      shareAvailable: imageNavigation.role !== "user",
+      shareAvailable: imageRole !== "user",
       threadId: thread.threadId,
       url: navigationItem.url,
     });
   };
   const imageNavigationAction = (
-    navigationItem: ImageArtifactNavigationItem | undefined,
+    direction: EventImageNavigationDirection,
+    available: boolean,
   ) => {
-    if (!navigationItem) {
+    if (!imageNavigationAvailable || !available) {
       return undefined;
     }
     return () => {
-      openImageNavigationItem(navigationItem);
+      const navigationItem = resolveImageNavigationTarget(
+        direction,
+        loadable.state === "hasData" ? loadable.data : [],
+      );
+      if (navigationItem) {
+        openImageNavigationItem(navigationItem);
+      }
     };
   };
 
@@ -1341,8 +1338,8 @@ function ArtifactPreviewDialogThreadResolver({
           threadId: thread.threadId,
         })}
         imageNavigation={{
-          onNext: imageNavigationAction(imageNavigation.next),
-          onPrevious: imageNavigationAction(imageNavigation.previous),
+          onNext: imageNavigationAction("next", hasNextImage),
+          onPrevious: imageNavigationAction("previous", hasPreviousImage),
         }}
         preview={preview}
       />
@@ -1365,8 +1362,8 @@ function ArtifactPreviewDialogThreadResolver({
     <ArtifactPreviewDialogContent
       artifact={preview.artifact}
       imageNavigation={{
-        onNext: imageNavigationAction(imageNavigation.next),
-        onPrevious: imageNavigationAction(imageNavigation.previous),
+        onNext: imageNavigationAction("next", hasNextImage),
+        onPrevious: imageNavigationAction("previous", hasPreviousImage),
       }}
       preview={preview}
     />

@@ -724,23 +724,29 @@ keeps the previous resolved value during refetch, whereas `useLoadableState`
 returns `loading` for a replacement Promise. Confirm that the UI should expose
 that transition before changing the hook.
 
-#### 3. Use Hook Equality for Equivalent Collections
+#### 3. Reserve Hook Equality for Lists of Stable Items
 
-`useGet`, `useLastResolved`, and `useLastLoadable` use `Object.is` by default.
-When a computed produces a new array or set with the same semantic contents,
-pass an explicit equality function at the React boundary:
+`useGet`, `useLastResolved`, and `useLastLoadable` use `Object.is` by default,
+so primitives need no equality function. An `equalityFn` must not compensate
+for a subscription that is too wide or a projection that rebuilds unchanged
+objects. Before adding one:
+
+- expose the primitive the component renders (rule 1);
+- move a membership check such as `ids.has(rowId)` into the row that renders
+  it, or give the row its own signal;
+- keep a container subscription to the presence or kind of a child and let the
+  child subscribe to its own payload;
+- never use `equalityFn` to retain a previous value; it must compare values.
+
+Hook equality fits a list boundary whose items are stable references, such as
+per-row signal objects reconciled by identity, where only order or membership
+should render the list again:
 
 ```ts
-const unreadIds = useLastResolved(unreadThreadIds$, {
-  equalityFn: equalSets,
-});
-
-const groups = useLastLoadable(renderedGroups$, {
+const items = useLastLoadable(pinnedAgentItems$, {
   equalityFn: equalArrays,
 });
 ```
-
-Keep collection comparators small and predictable:
 
 ```ts
 export function equalArrays<T>(
@@ -754,23 +760,13 @@ export function equalArrays<T>(
       previous.every((item, index) => equalItem(item, next[index]!)))
   );
 }
-
-export function equalSets<T>(
-  previous: ReadonlySet<T>,
-  next: ReadonlySet<T>,
-): boolean {
-  return (
-    previous === next ||
-    (previous.size === next.size &&
-      Array.from(previous).every((item) => next.has(item)))
-  );
-}
 ```
 
-For arrays of objects, use a domain comparator that includes every field that
-can affect rendering or ordering. Equality is incorrect if it hides a visible
-change. Avoid general recursive deep equality in a hot path unless measurement
-shows that its comparison cost is lower than the work it prevents.
+An element-wise `Object.is` comparison never matches when the projection
+creates new item objects on every recompute, so it only adds cost. For rows
+that carry stable signals plus a few primitives, compare exactly the fields
+that affect rendering or ordering. Equality is incorrect if it hides a visible
+change. Avoid general recursive deep equality in a hot path.
 
 #### 4. Separate Presence from Payload
 
@@ -795,9 +791,7 @@ const hasQueued = useLastResolved(thread.hasQueuedUserMessages$) ?? false;
 const messages$ = hasQueued
   ? thread.queuedUserMessages$
   : thread.emptyQueuedUserMessages$;
-const messages = useLastResolved(messages$, {
-  equalityFn: equalArrays,
-});
+const messages = useLastResolved(messages$);
 ```
 
 #### 5. Remove Duplicate Subscriptions
@@ -805,8 +799,7 @@ const messages = useLastResolved(messages$, {
 Do not subscribe to both a source collection and a rendered projection unless
 the component actually uses both semantic values. A composer that only needs
 `hasMessages` should not subscribe to `groupedChatMessages$`. A message window
-may legitimately need both the full group list and the rendered slice; use
-equality to suppress equivalent arrays in that case.
+may legitimately need both the full group list and the rendered slice.
 
 #### 6. Keep Subscriptions Close to Their Consumers
 

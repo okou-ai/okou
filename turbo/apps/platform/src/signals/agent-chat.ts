@@ -101,9 +101,12 @@ export const currentChatAgent$ = computed(async (get) => {
   return await get(agentById(agentId));
 });
 
-export const currentChatAgentDisplayName$ = computed(async (get) => {
-  return (await get(currentChatAgent$))?.displayName;
-});
+export const currentChatAgentDisplayName$ = computed(
+  async (get): Promise<string | null> => {
+    // A missing agent and a missing name both mean "no display name".
+    return (await get(currentChatAgent$))?.displayName ?? null;
+  },
+);
 
 export interface ChatThreadListSignals {
   /** Listed chats outside Projects, which own number shortcuts and pins. */

@@ -215,49 +215,6 @@ function scopedEventImages(events: readonly EventImageSource[]): EventImage[] {
   return images;
 }
 
-type EventImageScope = {
-  readonly images: readonly EventImage[];
-  readonly role: EventImageGroup["role"];
-};
-
-function imageScopes(groups: readonly EventImageGroup[]): EventImageScope[] {
-  return groups.flatMap((group) => {
-    const images = scopedEventImages(group.events);
-    return images.length > 0 ? [{ images, role: group.role }] : [];
-  });
-}
-
-export function equalEventImageGroups(
-  previous: readonly EventImageGroup[],
-  next: readonly EventImageGroup[],
-): boolean {
-  if (previous === next) {
-    return true;
-  }
-  const previousScopes = imageScopes(previous);
-  const nextScopes = imageScopes(next);
-  return (
-    previousScopes.length === nextScopes.length &&
-    previousScopes.every((scope, scopeIndex) => {
-      const nextScope = nextScopes[scopeIndex];
-      return (
-        nextScope !== undefined &&
-        scope.role === nextScope.role &&
-        scope.images.length === nextScope.images.length &&
-        scope.images.every((image, imageIndex) => {
-          const nextImage = nextScope.images[imageIndex];
-          return (
-            nextImage !== undefined &&
-            image.url === nextImage.url &&
-            image.filename === nextImage.filename &&
-            image.preview === nextImage.preview
-          );
-        })
-      );
-    })
-  );
-}
-
 function artifactMetadataForUrl(
   artifacts: readonly ArtifactImageMetadata[],
   url: string,

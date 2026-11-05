@@ -1,5 +1,6 @@
 import { computed } from "ccstate";
 
+import { currentChatAgentId$ } from "../agent-chat.ts";
 import { chatThreadIndicatorsFromWorker$ } from "../shared-database.ts";
 import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 
@@ -42,6 +43,18 @@ export const unreadAgentIds$ = computed(
         return indicator === "unread" && !suppressed ? [agentId] : [];
       }),
     );
+  },
+);
+
+export const currentChatAgentHasUnread$ = computed(
+  async (get): Promise<boolean> => {
+    // Read both sources together so a rejected indicator load always has a
+    // consumer, even when the agent lookup settles first.
+    const [agentId, unreadAgentIds] = await Promise.all([
+      get(currentChatAgentId$),
+      get(unreadAgentIds$),
+    ]);
+    return agentId !== null && unreadAgentIds.has(agentId);
   },
 );
 

@@ -27,9 +27,22 @@ import {
   setPwaAgentQuery$,
   setPwaAgentSwitcherOpen$,
 } from "../../signals/okou-page/pwa-chat-list.ts";
-import { equalSets } from "../../lib/equality.ts";
 import { AgentUnreadIndicator } from "./sidebar-agent-row-actions.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
+
+// Each row subscribes on its own, so an unread change repaints only the dot
+// instead of the whole option list.
+function AgentOptionUnreadIndicator({ agentId }: { agentId: string }) {
+  const unread = useLastResolved(unreadAgentIds$)?.has(agentId) ?? false;
+  if (!unread) {
+    return null;
+  }
+  return (
+    <span className="absolute -right-0.5 -top-0.5 flex">
+      <AgentUnreadIndicator />
+    </span>
+  );
+}
 
 function AgentOptions() {
   const { t } = useTranslation();
@@ -37,9 +50,6 @@ function AgentOptions() {
   const options = useLoadable(pwaAgentOptions$);
   const currentAgentId = useLastResolved(currentChatAgentId$);
   const selectAgent = useSet(selectPwaAgent$);
-  const unreadAgentIds = useLastResolved(unreadAgentIds$, {
-    equalityFn: equalSets,
-  });
 
   if (options.state === "loading") {
     return <Skeleton className="m-2 h-11" />;
@@ -84,11 +94,7 @@ function AgentOptions() {
             alt=""
             className="size-8 rounded-lg object-cover object-top"
           />
-          {unreadAgentIds?.has(agent.agentId) && (
-            <span className="absolute -right-0.5 -top-0.5 flex">
-              <AgentUnreadIndicator />
-            </span>
-          )}
+          <AgentOptionUnreadIndicator agentId={agent.agentId} />
         </span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {selected ? <Check size={16} aria-hidden="true" /> : null}
