@@ -71,7 +71,10 @@ import {
   prepareUserMessageFromDraft$,
 } from "./resolve-draft-attachments.ts";
 import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
-import { createThreadSidebarSignals } from "./thread-sidebar.ts";
+import {
+  createThreadSidebarSignals,
+  type ThreadSidebarSignals,
+} from "./thread-sidebar.ts";
 import { createThreadImageNavigationSignals } from "./event-image-navigation.ts";
 
 import {
@@ -639,9 +642,15 @@ function createComputerUseHostSelection(
   };
 }
 
-function createThreadOwnedSignals(threadId: string) {
+function createThreadOwnedSignals(
+  threadId: string,
+  sidebar: Pick<
+    ThreadSidebarSignals,
+    "editingAutomation$" | "closeEditingAutomation$"
+  >,
+) {
   return {
-    headerAutomations: createHeaderAutomationSignals(threadId),
+    headerAutomations: createHeaderAutomationSignals(threadId, sidebar),
     copyEvent$,
   };
 }
@@ -3900,7 +3909,6 @@ export function createChatPanelSignals(
     threadMeta$,
   );
   const container = createChatThreadContainerSignals();
-  const threadOwned = createThreadOwnedSignals(threadId);
   const cancellationRecovery = createCancellationRecoverySignals(threadId);
   const composer = createThreadComposerSignalsWithContext(
     threadId,
@@ -3931,6 +3939,7 @@ export function createChatPanelSignals(
     sendEvent$: chatEvents.sendEvent$,
   });
   const messages: MessageListSignals = { ...messagePipeline, ...artifact };
+  const threadOwned = createThreadOwnedSignals(threadId, messages.sidebar);
   const feedback = createChatThreadFeedbackSignals(
     threadId,
     composer.feedback,
