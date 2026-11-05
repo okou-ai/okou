@@ -431,75 +431,8 @@ def _set_body_fields(
     log_entry[f"{side}_body_encoding"] = encoding
 
 
-def add_capture_fields(
-    flow: http.HTTPFlow,
-    log_entry: dict,
-    *,
-    response_incomplete: bool = False,
-) -> None:
-    """Add capture-mode request/response fields to ``log_entry`` in place.
-
-    # [NETWORK_LOG_FIELDS] — capture-only fields in the shared network log schema.
-    # Fields: request_headers, request_headers_truncated, request_body,
-    #         request_body_encoding, request_body_truncated, response_headers,
-    #         response_headers_truncated, response_body, response_body_encoding,
-    #         response_body_truncated
-
-    Capture is an opt-in persistent-log boundary. Header values are redacted by
-    default; only constrained protocol metadata is preserved: normalized
-    allowlisted ``content-type`` media types (with parameters removed), valid
-    ``accept-encoding`` and ``content-encoding`` codings, decimal
-    ``content-length``, and valid IMF-fixdate ``date`` values. Unsafe,
-    malformed, or overlong values are represented as ``***``. Header names
-    must be HTTP field-name-shaped and at most 256 characters; invalid or
-    overlong names are represented as ``[redacted-header-name]``. Only the
-    first case-insensitive occurrence of each captured name is retained.
-
-    Each serialized header map is a prefix bounded to 512 fields and 32 KiB of
-    raw name/value bytes. ``*_headers_truncated`` means that this serialized
-    prefix did not contain every header field; it does not describe body
-    capture. Total inspection is capped at 2,048 raw fields per side, including
-    unrelated fields. Body dependencies require a complete scan within that
-    limit and retain their separate 512-field and 32-KiB value budgets. Dependency
-    discovery is skipped when no body bytes need capture or the raw field count
-    exceeds the limit; a partial scan must not imply absent metadata. Within
-    the limit, dependencies after the serialized prefix still apply to body
-    capture. Multiple ``content-type`` values are ambiguous, while repeated
-    ``content-encoding`` fields are folded
-    and validated. Malformed, unsafe, or over-budget dependency metadata fails
-    body capture closed.
-
-    Bodies are bounded by ``BODY_CAPTURE_LIMIT`` (currently 64 KiB) after
-    decoding. Empty bodies have no body or encoding field. Text-like bodies are
-    emitted as UTF-8 when valid, or as base64 when invalid bytes must be
-    preserved. Non-text bodies, failed decoding, and invalid body dependencies
-    omit the body and use ``binary`` when a non-empty body was observed.
-    ``*_body_truncated`` records incomplete, suppressed, stream-truncated, or
-    body-size-limited capture and is independent of whether a body string is
-    emitted. A terminal incomplete UTF-8 sequence caused by the size limit is
-    removed so the bounded prefix can remain UTF-8; other invalid prefixes use
-    base64.
-
-    Request bodies prefer request streaming metadata when requestheaders()
-    installed a safe capped stream before mitmproxy buffered the body.
-
-    ``response_incomplete`` marks response capture as semantically incomplete
-    when a terminal error interrupts delivery. It is separate from the stream
-    buffer's size-limit truncation state so an arbitrary interrupted UTF-8
-    prefix preserves its exact bytes.
-
-    Response bodies prefer streaming metadata from
-    ``response_streaming.configure_response_stream()`` because that path keeps a
-    bounded raw wire-byte buffer and records whether it was truncated. Bounded
-    ``flow.response.raw_content`` decoding is used only when no stream
-    buffer metadata exists. These sources intentionally use different decode
-    policies: retained stream buffers use best-effort ``decompress_body()``,
-    which can preserve original wire bytes or partial decoded output after a
-    decode problem, while buffered ``raw_content`` uses the strict
-    ``decode_response_body_for_network_log_capture()`` helper. A strict
-    ``None`` result omits a non-empty buffered body and marks it ``binary``;
-    ``b""`` remains a successful empty result with no body field.
-    """
+def _add_request_capture_fields(flow: http.HTTPFlow, log_entry: dict) -> None:
+    """Capture request headers/body under suppression and upload-completeness policy."""
     request_body_suppressed = bool(flow.metadata.get(metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE))
     request_stream_body = (
         None if request_body_suppressed else request_streaming.captured_request_stream_body(flow)
@@ -574,6 +507,14 @@ def add_capture_fields(
                 else:
                     _set_body_fields(log_entry, "request", request_body, req_ct)
 
+
+def _add_response_capture_fields(
+    flow: http.HTTPFlow,
+    log_entry: dict,
+    *,
+    response_incomplete: bool,
+) -> None:
+    """Capture response headers/body with source-specific decoding and interruption state."""
     # Response headers
     if flow.response:
         stream_body = stream_capture.captured_response_stream_body(flow)
@@ -632,3 +573,76 @@ def add_capture_fields(
             already_truncated=response_incomplete,
             truncated_at_limit=stream_truncated,
         )
+
+
+def add_capture_fields(
+    flow: http.HTTPFlow,
+    log_entry: dict,
+    *,
+    response_incomplete: bool = False,
+) -> None:
+    """Add capture-mode request/response fields to ``log_entry`` in place.
+
+    # [NETWORK_LOG_FIELDS] — capture-only fields in the shared network log schema.
+    # Fields: request_headers, request_headers_truncated, request_body,
+    #         request_body_encoding, request_body_truncated, response_headers,
+    #         response_headers_truncated, response_body, response_body_encoding,
+    #         response_body_truncated
+
+    Capture is an opt-in persistent-log boundary. Header values are redacted by
+    default; only constrained protocol metadata is preserved: normalized
+    allowlisted ``content-type`` media types (with parameters removed), valid
+    ``accept-encoding`` and ``content-encoding`` codings, decimal
+    ``content-length``, and valid IMF-fixdate ``date`` values. Unsafe,
+    malformed, or overlong values are represented as ``***``. Header names
+    must be HTTP field-name-shaped and at most 256 characters; invalid or
+    overlong names are represented as ``[redacted-header-name]``. Only the
+    first case-insensitive occurrence of each captured name is retained.
+
+    Each serialized header map is a prefix bounded to 512 fields and 32 KiB of
+    raw name/value bytes. ``*_headers_truncated`` means that this serialized
+    prefix did not contain every header field; it does not describe body
+    capture. Total inspection is capped at 2,048 raw fields per side, including
+    unrelated fields. Body dependencies require a complete scan within that
+    limit and retain their separate 512-field and 32-KiB value budgets. Dependency
+    discovery is skipped when no body bytes need capture or the raw field count
+    exceeds the limit; a partial scan must not imply absent metadata. Within
+    the limit, dependencies after the serialized prefix still apply to body
+    capture. Multiple ``content-type`` values are ambiguous, while repeated
+    ``content-encoding`` fields are folded
+    and validated. Malformed, unsafe, or over-budget dependency metadata fails
+    body capture closed.
+
+    Bodies are bounded by ``BODY_CAPTURE_LIMIT`` (currently 64 KiB) after
+    decoding. Empty bodies have no body or encoding field. Text-like bodies are
+    emitted as UTF-8 when valid, or as base64 when invalid bytes must be
+    preserved. Non-text bodies, failed decoding, and invalid body dependencies
+    omit the body and use ``binary`` when a non-empty body was observed.
+    ``*_body_truncated`` records incomplete, suppressed, stream-truncated, or
+    body-size-limited capture and is independent of whether a body string is
+    emitted. A terminal incomplete UTF-8 sequence caused by the size limit is
+    removed so the bounded prefix can remain UTF-8; other invalid prefixes use
+    base64.
+
+    Request bodies prefer request streaming metadata when requestheaders()
+    installed a safe capped stream before mitmproxy buffered the body.
+
+    ``response_incomplete`` marks response capture as semantically incomplete
+    when a terminal error interrupts delivery. It is separate from the stream
+    buffer's size-limit truncation state so an arbitrary interrupted UTF-8
+    prefix preserves its exact bytes.
+
+    Response bodies prefer streaming metadata from
+    ``response_streaming.configure_response_stream()`` because that path keeps a
+    bounded raw wire-byte buffer and records whether it was truncated. Bounded
+    ``flow.response.raw_content`` decoding is used only when no stream
+    buffer metadata exists. These sources intentionally use different decode
+    policies: retained stream buffers use best-effort ``decompress_body()``,
+    which can preserve original wire bytes or partial decoded output after a
+    decode problem, while buffered ``raw_content`` uses the strict
+    ``decode_response_body_for_network_log_capture()`` helper. A strict
+    ``None`` result omits a non-empty buffered body and marks it ``binary``;
+    ``b""`` remains a successful empty result with no body field.
+    """
+    _add_request_capture_fields(flow, log_entry)
+    _add_response_capture_fields(flow, log_entry, response_incomplete=response_incomplete)
