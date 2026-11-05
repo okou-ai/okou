@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.78](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.77...guest-control-server-v0.24.78) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize bounded fixture thread joins ([#45519](https://github.com/okou-ai/okou/issues/45519)) ([070ef09](https://github.com/okou-ai/okou/commit/070ef09720702e0d83026a8054b449014d30d835))
+
 ## [0.24.77](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.76...guest-control-server-v0.24.77) (2026-11-05)
 
 

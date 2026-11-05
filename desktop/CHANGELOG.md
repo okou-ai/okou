@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.0](https://github.com/okou-ai/okou/compare/desktop-v0.55.10...desktop-v0.56.0) (2026-11-05)
+
+
+### Features
+
+* add personal my okou across web and ios ([#45501](https://github.com/okou-ai/okou/issues/45501)) ([0b7757b](https://github.com/okou-ai/okou/commit/0b7757b586be66bb28c08b014868b1d7159aa9bc))
+
 ## [0.55.10](https://github.com/okou-ai/okou/compare/desktop-v0.55.9...desktop-v0.55.10) (2026-11-05)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.3...guest-storage-apply-v0.29.4) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize bounded fixture thread joins ([#45519](https://github.com/okou-ai/okou/issues/45519)) ([070ef09](https://github.com/okou-ai/okou/commit/070ef09720702e0d83026a8054b449014d30d835))
+
 ## [0.29.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.2...guest-storage-apply-v0.29.3) (2026-11-05)
 
 

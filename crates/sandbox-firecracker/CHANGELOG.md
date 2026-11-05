@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.71](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.70...sandbox-firecracker-v0.53.71) (2026-11-05)
+
+
+### Performance Improvements
+
+* **sandbox:** overlap home validation and dns readiness ([#45505](https://github.com/okou-ai/okou/issues/45505)) ([3c39a9b](https://github.com/okou-ai/okou/commit/3c39a9b29e440695f9c522db5e88153631bb4b5a))
+
 ## [0.53.70](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.69...sandbox-firecracker-v0.53.70) (2026-11-05)
 
 

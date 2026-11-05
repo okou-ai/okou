@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.77](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.76...guest-control-client-v0.23.77) (2026-11-05)
+
+
+### Refactoring
+
+* **guest-control-client:** isolate exec-control request ownership ([#45492](https://github.com/okou-ai/okou/issues/45492)) ([a087857](https://github.com/okou-ai/okou/commit/a0878572c9e800485fd5a3a7380a5fd57a5a91ee))
+
 ## [0.23.76](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.75...guest-control-client-v0.23.76) (2026-11-05)
 
 ## [0.23.75](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.74...guest-control-client-v0.23.75) (2026-11-05)

@@ -10,6 +10,43 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.49.0](https://github.com/okou-ai/okou/compare/api-v2.48.10...api-v2.49.0) (2026-11-05)
+
+
+### Features
+
+* **api:** add personal instructions and captured run source ([#45498](https://github.com/okou-ai/okou/issues/45498)) ([b309bcb](https://github.com/okou-ai/okou/commit/b309bcbfa7f2245d6c3909f44c59e6ab763a2d83))
+* **cli:** add personal instructions and captured my okou guidance ([#45499](https://github.com/okou-ai/okou/issues/45499)) ([392b08d](https://github.com/okou-ai/okou/commit/392b08d79f8d257cdcb0f78ddf22b962013d298c))
+* **workflow:** support personal workspace workflows in single-agent mode ([#45497](https://github.com/okou-ai/okou/issues/45497)) ([b74dd61](https://github.com/okou-ai/okou/commit/b74dd614ea04401617b27c9d07ce5562eae3743b))
+
+
+### Bug Fixes
+
+* **api:** preserve workflow mode after runner claim ([#45511](https://github.com/okou-ai/okou/issues/45511)) ([402b9fe](https://github.com/okou-ai/okou/commit/402b9fe279e8c7e608bff33cc0d49dcecd88054f))
+
+
+### Refactoring
+
+* retire reddit oauth and remove feature switch ([#45441](https://github.com/okou-ai/okou/issues/45441)) ([eb71c77](https://github.com/okou-ai/okou/commit/eb71c779eeb2aab3a9caf02e67a6f63715b68589))
+* simplify suggestion feedback context ([#45493](https://github.com/okou-ai/okou/issues/45493)) ([f52030e](https://github.com/okou-ai/okou/commit/f52030ec40ee282a9f7de9d270ba4282639c26ab))
+
+
+### Performance Improvements
+
+* **api:** cache content bundle signed urls across claims ([#45507](https://github.com/okou-ai/okou/issues/45507)) ([093a9ac](https://github.com/okou-ai/okou/commit/093a9ac15a2fa5d2f3acf1d46de8c070d28c5227))
+* **browser:** skip discovery for native window health ([#45520](https://github.com/okou-ai/okou/issues/45520)) ([cb89c0e](https://github.com/okou-ai/okou/commit/cb89c0e6b03f6bc7d29d891d190034bfff861b86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.0
+    * @okouai/connectors bumped to 3.21.5
+    * @okouai/core bumped to 8.819.0
+    * @okouai/db bumped to 2.23.0
+    * @okouai/pi-agent-runtime bumped to 1.51.72
+
 ## [2.48.10](https://github.com/okou-ai/okou/compare/api-v2.48.9...api-v2.48.10) (2026-11-05)
 
 

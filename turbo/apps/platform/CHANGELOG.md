@@ -13,6 +13,45 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1097.0](https://github.com/okou-ai/okou/compare/app-v0.1096.1...app-v0.1097.0) (2026-11-05)
+
+
+### Features
+
+* add personal my okou across web and ios ([#45501](https://github.com/okou-ai/okou/issues/45501)) ([0b7757b](https://github.com/okou-ai/okou/commit/0b7757b586be66bb28c08b014868b1d7159aa9bc))
+* **app:** always show chat header actions with empty states ([#45469](https://github.com/okou-ai/okou/issues/45469)) ([6f351f4](https://github.com/okou-ai/okou/commit/6f351f4381e178a0b61f64d256726583d59e89a3))
+* **app:** simplify shell access authorization cards ([#45502](https://github.com/okou-ai/okou/issues/45502)) ([ebbbacd](https://github.com/okou-ai/okou/commit/ebbbacdc7b75ea90e441560a2edcb558db9793e0))
+* **workflow:** support personal workspace workflows in single-agent mode ([#45497](https://github.com/okou-ai/okou/issues/45497)) ([b74dd61](https://github.com/okou-ai/okou/commit/b74dd614ea04401617b27c9d07ce5562eae3743b))
+
+
+### Bug Fixes
+
+* **app:** keep rejected optimistic edits from overriding later confirmed ones ([#45463](https://github.com/okou-ai/okou/issues/45463)) ([bd65483](https://github.com/okou-ai/okou/commit/bd65483ccf3c56544af58e398fdb048b3801be5c))
+* **app:** preserve shell authorization cards during refresh ([#45494](https://github.com/okou-ai/okou/issues/45494)) ([63c7a09](https://github.com/okou-ai/okou/commit/63c7a0998d5d5e75fb9e7291854f67ca07e2ccac))
+* **app:** restore connector menu scroll positions ([#45393](https://github.com/okou-ai/okou/issues/45393)) ([9270811](https://github.com/okou-ai/okou/commit/92708118cf2b4806873660c3b3b3d38d69f37836))
+* **app:** retain connector permission scope in my okou ([#45512](https://github.com/okou-ai/okou/issues/45512)) ([f857b02](https://github.com/okou-ai/okou/commit/f857b02ad3f732588219369613812441eb05a2ec))
+
+
+### Refactoring
+
+* **platform:** replace hook equality functions with primitive subscriptions ([#45477](https://github.com/okou-ai/okou/issues/45477)) ([eaeede1](https://github.com/okou-ai/okou/commit/eaeede19085ef0fc422c191877ed2740ee479b45))
+* remove markdown table export feature switch ([#45503](https://github.com/okou-ai/okou/issues/45503)) ([6133b12](https://github.com/okou-ai/okou/commit/6133b128f347589a60882de7c14edb4f61436c8d))
+* simplify suggestion feedback context ([#45493](https://github.com/okou-ai/okou/issues/45493)) ([f52030e](https://github.com/okou-ai/okou/commit/f52030ec40ee282a9f7de9d270ba4282639c26ab))
+
+
+### Performance Improvements
+
+* **browser:** overlap independent viewer domain enables ([#45486](https://github.com/okou-ai/okou/issues/45486)) ([421561e](https://github.com/okou-ai/okou/commit/421561e98fa7cb0e58fddc457987c6ec59ce1783))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.0
+    * @okouai/connectors bumped to 3.21.5
+    * @okouai/core bumped to 8.819.0
+
 ## [0.1096.1](https://github.com/okou-ai/okou/compare/app-v0.1096.0...app-v0.1096.1) (2026-11-05)
 
 

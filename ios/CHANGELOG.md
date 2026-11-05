@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.26.0](https://github.com/okou-ai/okou/compare/ios-v0.25.5...ios-v0.26.0) (2026-11-05)
+
+
+### Features
+
+* add personal my okou across web and ios ([#45501](https://github.com/okou-ai/okou/issues/45501)) ([0b7757b](https://github.com/okou-ai/okou/commit/0b7757b586be66bb28c08b014868b1d7159aa9bc))
+* **ios:** redesign the app on a shared mobile design system ([#45447](https://github.com/okou-ai/okou/issues/45447)) ([65b91f4](https://github.com/okou-ai/okou/commit/65b91f42cf460d00ae698da512e157b0f1563607))
+
+
+### Bug Fixes
+
+* **ios:** fade chat feedback in and out ([#45500](https://github.com/okou-ai/okou/issues/45500)) ([1cd112c](https://github.com/okou-ai/okou/commit/1cd112c5763f4bc1792bdb13f5c848013f1ccd8f))
+
 ## [0.25.5](https://github.com/okou-ai/okou/compare/ios-v0.25.4...ios-v0.25.5) (2026-11-05)
 
 
