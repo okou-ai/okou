@@ -159,8 +159,8 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
             if let Some(extra) = overflow {
                 assert_eq!(expected.len(), LIMIT + extra);
             }
-            let expected_json =
-                (overflow == Some(1)).then(|| serde_json::from_str::<Value>(&expected).unwrap());
+            let expected_json = (collaboration && overflow == Some(1))
+                .then(|| serde_json::from_str::<Value>(&expected).unwrap());
             let server = MockServer::start_async().await;
             let request = server.mock(|when, then| {
                 when.method(POST)
@@ -169,7 +169,6 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
                         if overflow != Some(1) {
                             return request.body_ref() == expected.as_bytes();
                         }
-                        let expected_json = expected_json.as_ref().unwrap();
                         let mut payload: Value =
                             serde_json::from_slice(request.body_ref()).unwrap();
                         request.body_ref().len() <= LIMIT
@@ -177,6 +176,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
                                 .contains("bytes truncated for delivery")
                             && payload["events"][0]["sequenceNumber"] == 19
                             && (!collaboration || {
+                                let expected_json = expected_json.as_ref().unwrap();
                                 let mut restored = std::mem::take(&mut payload["events"][0]);
                                 restored["item"]["agents_states"]["status"]["message"] =
                                         expected_json["events"][0]["item"]["agents_states"]
