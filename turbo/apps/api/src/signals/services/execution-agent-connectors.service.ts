@@ -1,6 +1,8 @@
-import type { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import type { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
+import type {
+  CustomConnectorDefinitionRow,
+  CustomConnectorExecutionDefinition,
+} from "./custom-connector-definition-selection";
 import { normaliseCustomConnectorRow } from "./custom-connector.service";
 
 export interface AgentConnectorSelectionScope {
@@ -58,7 +60,7 @@ export function agentConnectorSelectionFromRows(
 }
 
 type SelectedDefinitionRow = {
-  readonly connector: typeof orgCustomConnectors.$inferSelect;
+  readonly connector: CustomConnectorDefinitionRow;
   readonly oauthConfig:
     typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
 };

@@ -4,12 +4,18 @@ import {
   getCustomConnectorSkillStorageName,
 } from "@okouai/core/storage-names";
 import { synthesizeSkillMd } from "@okouai/core/skill-document";
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import { publishContentBundle$ } from "./content-bundle.service";
 
 import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "./storage-volume-publication.service";
 const SKILL_FILENAME = "SKILL.md";
+
+export interface PreparedCustomConnectorSkill extends PreparedServerSideVolume {
+  readonly contentBundle: ContentBundle;
+}
 
 interface CustomConnectorSkillContentInput {
   readonly connectorId: string;
@@ -46,18 +52,30 @@ export const prepareCustomConnectorSkillVolume$ = command(
     { set },
     args: PrepareCustomConnectorSkillVolumeInput,
     signal: AbortSignal,
-  ): Promise<PreparedServerSideVolume> => {
+  ): Promise<PreparedCustomConnectorSkill> => {
+    const files = buildCustomConnectorSkillFiles(args);
     const volume = await set(
       prepareVolumeServerSide$,
       {
         orgId: args.orgId,
         storageName: getCustomConnectorSkillStorageName(args.connectorId),
-        files: buildCustomConnectorSkillFiles(args),
+        files,
         piResourceIndex: true,
       },
       signal,
     );
     signal.throwIfAborted();
-    return volume;
+    const contentBundle = await set(
+      publishContentBundle$,
+      files.map((file) => {
+        return {
+          path: file.path,
+          content: Buffer.from(file.content, "utf8"),
+          mode: 0o644 as const,
+        };
+      }),
+      signal,
+    );
+    return { ...volume, contentBundle };
   },
 );

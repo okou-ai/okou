@@ -51,6 +51,13 @@ function serve(artifact: ConnectorCatalogArtifact) {
     if (!(command instanceof GetObjectCommand)) {
       throw new Error("Unexpected catalog storage request");
     }
+    if (command.input.Key?.startsWith("connectors/skill-bundles/v1/")) {
+      return Promise.reject(
+        Object.assign(new Error("Preparation receipt is absent"), {
+          name: "NoSuchKey",
+        }),
+      );
+    }
     const bytes =
       command.input.Key === CONNECTOR_CATALOG_ACTIVE_KEY
         ? pointer

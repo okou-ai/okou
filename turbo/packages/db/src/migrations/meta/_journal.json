@@ -3116,6 +3116,13 @@
       "when": 1793779523098,
       "tag": "1523_retire_proactive_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 1524,
+      "version": "7",
+      "when": 1793847220353,
+      "tag": "1524_connector_skill_bundle_preparation",
+      "breakpoints": true
     }
   ]
 }
