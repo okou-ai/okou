@@ -20,6 +20,7 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
@@ -721,6 +722,68 @@ test("A sent suggestion moves below the waiting cards and opens its new thread",
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${sentThreadId}`);
   });
+});
+test("A choice that sends nothing returns its card to its place", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  mockChatLifecycle(context);
+  // No model, not even Auto, can run, so the send never publishes a thread.
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+    return respond(200, { models: [] });
+  });
+  await openFeed();
+  click(
+    button(
+      makeOption().label,
+      "button",
+      await screen.findByRole("article", { name: items[0].title }),
+    ),
+  );
+  await screen.findByText("The selected model is not available");
+  await screen.findByRole("article", { name: items[0].title });
+  expect(feedItemLabels()).toStrictEqual(
+    items.map((item) => {
+      return item.title;
+    }),
+  );
+});
+
+test("A send that fails before its thread is published shows the failure in its row", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  mockChatLifecycle(context);
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    runModelsMainContract.list,
+    async ({ respond, withSignal }) => {
+      requested.resolve();
+      await withSignal(release.promise);
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Model routing unavailable",
+        },
+      });
+    },
+  );
+  await openFeed();
+  click(
+    button(
+      makeOption().label,
+      "button",
+      await screen.findByRole("article", { name: items[0].title }),
+    ),
+  );
+  await requested.promise;
+  await screen.findByText("Sending…");
+  expect(feedItemLabels()).toStrictEqual([items[1].title, "Sending…"]);
+  release.resolve();
+  const failure = await within(
+    screen.getByRole("region", { name: "Suggestions" }),
+  ).findByRole("alert");
+  expect(failure).toHaveTextContent("Model routing unavailable");
+  expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
 });
 test("Dismissing a suggestion moves only its card below the waiting cards and keeps the rest available", async () => {
   const pool = mockPool(numberedSuggestions(2));
