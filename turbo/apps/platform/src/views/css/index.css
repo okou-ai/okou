@@ -333,6 +333,12 @@
     hsl(var(--muted-foreground) / 0.8) 65%,
     hsl(var(--muted-foreground) / 0.8) 100%
   );
+
+  /* A paused endpoint selector, not motion. Inline resolves the delay against
+     each pager's boundary input rather than :root. Keep it active under
+     reduced motion: hidden controls must stay out of pointer and Tab order. */
+  --animate-rail-pager-visibility: okou-rail-pager-visibility 1s steps(1, end)
+    calc(-1s * var(--rail-can-travel)) 1 both paused;
 }
 
 /* Safe area insets as CSS custom properties — more reliable than direct env() in inline
@@ -710,6 +716,15 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes okou-rail-pager-visibility {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
   }
 }
 

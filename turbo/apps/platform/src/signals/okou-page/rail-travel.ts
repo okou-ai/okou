@@ -1,65 +1,130 @@
-/** What a row reports after laying out: whether either pager has anywhere to go. */
-export interface RailTravel {
-  readonly canScrollBack: boolean;
-  readonly canScrollForward: boolean;
+import { command, state } from "ccstate";
+import { onRef } from "../utils.ts";
+
+interface MountedRail {
+  readonly track: HTMLElement;
+  readonly root: HTMLElement;
+  readonly identity: object;
+  readonly contentRevision: string;
 }
 
-/** How far the rail can still travel in each direction, right now. */
-export function measureRail(element: HTMLElement): RailTravel {
-  // A scroll position is fractional under zoom, so a whole pixel of slack
-  // keeps a rail that is visually at its end from claiming otherwise.
-  const remaining =
-    element.scrollWidth - element.clientWidth - element.scrollLeft;
-  return {
-    canScrollBack: element.scrollLeft > 1,
-    canScrollForward: remaining > 1,
-  };
+// Physical scrollports, not business rail names, isolate composers and dialogs.
+// The registry belongs to each Store; immutable entries retain a mount identity
+// so even a late cleanup cannot unregister a replacement owner of that element.
+const mountedRails$ = state<ReadonlyMap<HTMLElement, MountedRail>>(new Map());
+
+function publishRailOffset(element: HTMLElement, root: HTMLElement): void {
+  root.style.setProperty(
+    "--rail-scroll-offset",
+    `${String(element.scrollLeft)}px`,
+  );
 }
+
+const refreshRailContent$ = command(({ get }, element: HTMLElement) => {
+  const rail = get(mountedRails$).get(element);
+  if (!rail) {
+    return;
+  }
+  // The max-content track includes its own padding, even when it fits or the
+  // viewport is temporarily zero-width. The viewport has no horizontal padding
+  // or border, so its client box matches the root's query-container width.
+  const width = rail.track.scrollWidth;
+  rail.root.style.setProperty("--rail-content-width", `${String(width)}px`);
+  // The committed extent can clamp/resnap the browser's position. Publish that
+  // actual position now as well; do not wait for a later native scroll event.
+  publishRailOffset(element, rail.root);
+});
 
 /**
- * A page is one visible width less an item's worth of overlap, so whatever sat
- * at the edge stays on screen and tells the reader where they landed.
+ * Receipts an explicit content request after its DOM commit. Unrelated renders
+ * and duplicate acknowledgements do not read geometry. The revision describes
+ * actual rendered content, never a pending catalog request, so retained data
+ * cannot acknowledge a response that has not been rendered yet.
  */
+export const commitRailContent$ = command(
+  ({ get, set }, element: HTMLElement, contentRevision: string) => {
+    const rails = get(mountedRails$);
+    const rail = rails.get(element);
+    if (
+      !rail ||
+      element.dataset.railContentRevision !== contentRevision ||
+      rail.contentRevision === contentRevision
+    ) {
+      return;
+    }
+    set(
+      mountedRails$,
+      new Map(rails).set(element, { ...rail, contentRevision }),
+    );
+    set(refreshRailContent$, element);
+  },
+);
+
+/** Owns native events and the mount's initial content measurement. */
+export const bindRail$ = onRef(
+  command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+    const contentRevision = element.dataset.railContentRevision;
+    const root = element.closest<HTMLElement>("[data-rail-root]");
+    const track = element.querySelector<HTMLElement>("[data-rail-track]");
+    if (contentRevision === undefined || !root || !track) {
+      throw new Error("A rail requires a content revision, root and track");
+    }
+    const identity = {};
+    set(
+      mountedRails$,
+      new Map(get(mountedRails$)).set(element, {
+        track,
+        root,
+        identity,
+        contentRevision,
+      }),
+    );
+    element.addEventListener(
+      "scroll",
+      () => {
+        publishRailOffset(element, root);
+      },
+      { passive: true, signal },
+    );
+    // Explicit external metric boundaries: fonts can change auto-width labels;
+    // browser viewport/zoom changes can change used rem/gap rounding even on a
+    // fixed-frame track. Read only content extent, never the viewport width.
+    // Local sidebar transitions need neither this event nor frame sampling.
+    const refreshExternalMetrics = () => {
+      set(refreshRailContent$, element);
+    };
+    for (const event of ["loadingdone", "loadingerror"] as const) {
+      element.ownerDocument.fonts.addEventListener(
+        event,
+        refreshExternalMetrics,
+        { signal },
+      );
+    }
+    element.ownerDocument.defaultView?.addEventListener(
+      "resize",
+      refreshExternalMetrics,
+      { signal },
+    );
+    signal.addEventListener(
+      "abort",
+      () => {
+        const rails = get(mountedRails$);
+        if (rails.get(element)?.identity === identity) {
+          const remaining = new Map(rails);
+          remaining.delete(element);
+          set(mountedRails$, remaining);
+        }
+      },
+      { once: true },
+    );
+    set(refreshRailContent$, element);
+  }),
+);
+
+/** A page retains 64px of overlap, using the viewport at click time. */
 const RAIL_PAGE_OVERLAP = 64;
 
-/** Moves a rail by one page in `side`. */
 export function pageRail(element: HTMLElement, side: "back" | "forward"): void {
   const step = Math.max(element.clientWidth - RAIL_PAGE_OVERLAP, 1);
   element.scrollBy({ left: side === "back" ? -step : step });
-}
-
-/**
- * Watches everything that can move a row's ends and calls `report` when it
- * does. Whether a row can still travel is a layout outcome rather than a
- * constant: the rail's width and its items' widths both move the end, and
- * neither is settled until the browser has laid them out. The size observer
- * covers a resized column and an item that changes width; the child observer
- * covers a catalog that finishes loading after the row mounted.
- *
- * Each surface keeps its own travel state — two composers side by side would
- * otherwise collide on a shared rail id — so only this wiring is shared.
- */
-export function observeRail(
-  element: HTMLElement,
-  signal: AbortSignal,
-  report: (travel: RailTravel) => void,
-): void {
-  const size = new ResizeObserver(() => {
-    report(measureRail(element));
-  });
-  const observeAll = () => {
-    size.disconnect();
-    size.observe(element);
-    for (const child of element.children) {
-      size.observe(child);
-    }
-    report(measureRail(element));
-  };
-  observeAll();
-  const children = new MutationObserver(observeAll);
-  children.observe(element, { childList: true });
-  signal.addEventListener("abort", () => {
-    size.disconnect();
-    children.disconnect();
-  });
 }

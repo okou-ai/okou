@@ -7,6 +7,8 @@ already owns, or as a generic loop that repairs layout and scrolling afterward.
 This guide complements [effects and commands](../react.md#effects-and-ownership),
 [ccstate lifecycle ownership](../../.claude/skills/ccstate/SKILL.md),
 [styles](styles.md), and [stable chat cards](../chat.md#fixed-height-and-stable-layout).
+For horizontal shelves and filter/category rows, see the concrete
+[rail geometry and content-commit contract](rail-travel.md).
 
 ## Recognize the Anti-Pattern
 
