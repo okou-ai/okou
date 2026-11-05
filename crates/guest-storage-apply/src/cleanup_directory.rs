@@ -108,11 +108,14 @@ impl CleanupDirectory {
         };
         let name = basename(name)?;
         let destination_name = basename(destination_name)?;
+        // Use the syscall directly because supported musl toolchains do not
+        // export the libc renameat2 wrapper.
         // SAFETY: both parents own live directory descriptors and both names
         // are validated NUL-terminated basenames. NOREPLACE never overwrites
         // another runtime child, including after a destination-name race.
         let result = unsafe {
-            libc::renameat2(
+            libc::syscall(
+                libc::SYS_renameat2,
                 self.0.as_raw_fd(),
                 name.as_ptr(),
                 destination.0.as_raw_fd(),
