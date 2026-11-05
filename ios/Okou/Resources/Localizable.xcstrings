@@ -26107,6 +26107,29 @@
           "stringUnit": { "state": "translated", "value": "These permissions apply to your account for Okou across chats in this workspace." }
         }
       }
+    },
+    "Switches apply to Okou across chats in this workspace. Account choices apply to this chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switches apply to Okou across chats in this workspace. Account choices apply to this chat."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开关应用于此工作区内 Okou 的所有聊天。账号选择仅应用于当前聊天。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開關套用於此工作區內 Okou 的所有聊天。帳號選擇僅套用於目前聊天。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

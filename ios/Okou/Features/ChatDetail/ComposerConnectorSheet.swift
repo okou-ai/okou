@@ -63,7 +63,10 @@ struct ComposerConnectorSheet: View {
               if store.chatAccountAccess {
                 Text("Account choices apply to this chat.")
               } else {
-                Text("Switches apply to this Agent. Account choices apply to this chat.")
+                Text(
+                  singleAgent
+                    ? "Switches apply to Okou across chats in this workspace. Account choices apply to this chat."
+                    : "Switches apply to this Agent. Account choices apply to this chat.")
               }
             }
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
