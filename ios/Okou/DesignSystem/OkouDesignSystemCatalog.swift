@@ -78,7 +78,7 @@
               Button {
               } label: {
                 OkouToolbarIcon("square-pen")
-                  .modifier(OkouGlassControl(shape: .circle, isProminent: true))
+                  .modifier(OkouGlassControl(shape: .circle))
               }
               .buttonStyle(.plain)
               .accessibilityLabel("New chat")

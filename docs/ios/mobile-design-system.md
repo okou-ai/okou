@@ -181,8 +181,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Glass controls** use `OkouGlassControl`: native `.glassEffect(.regular.interactive())`
   drawn on an exact 44 pt shape — `.circle` for a single glyph (menu, back to chat),
   `.capsule` at the same 44 pt height for a labeled control (the sidebar's search
-  field). `isProminent` is a bar's one primary action (the sidebar's new chat): the
-  same shape tinted `foreground` with a `background` glyph. `.buttonStyle(.glass)`
+  field). Every bar control is the same clear glass, the sidebar's new chat included —
+  no dark-tinted "prominent" circle. `.buttonStyle(.glass)`
   drew a ~35 pt circle inside its 44 pt frame and looked smaller than the UIKit glass
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`.
   Paired controls in one bar are the same size.
@@ -276,7 +276,9 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 
 ### Surfaces
 
-- **Page** canvas is `background`; the **sidebar** is `sidebar`.
+- **Page** canvas is `background`, pure white (`#FFFFFF`) as on the web, where the canvas
+  carries no tint; cards and sheets in the page are white too. The **sidebar** is
+  `sidebar` (gray-50), the web's warm chrome.
 - **Grouped sheets** (Settings, models, connectors, search, agent, subscriptions,
   usage) all use `okouGroupedBackground()`, which owns everything a grouped sheet
   shares, so no sheet can drift:
@@ -535,7 +537,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouCloseButton`, `OkouLabeledValue`                                         | Native toolbar dismissal and width-adaptive label/value information                                                                                                              |
 | `OkouProviderButtonStyle`                                                     | Full-width provider action with a branded icon and explicit provider name; neutral resting/pressed/disabled states                                                               |
 | `OkouAuthTheme`                                                               | Public Clerk integration; retains SDK-owned authentication behavior                                                                                                              |
-| `OkouGlassControl`                                                            | Glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; `isProminent` for a bar's one primary action; pairs and bars read at one size                    |
+| `OkouGlassControl`                                                            | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size                                                            |
 | `OkouFloatingPanelStyle`                                                      | Card surface plus the floating shadow for suggestion panels over the transcript                                                                                                  |
 | `okouGroupedBackground()`                                                     | The one ground for grouped List/Form sheets                                                                                                                                      |
 | `OkouRunningIndicator`                                                        | Web's breathing running dot; `phaseOffset` staggers list rows into a wave                                                                                                        |

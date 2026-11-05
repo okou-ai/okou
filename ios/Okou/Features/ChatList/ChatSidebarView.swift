@@ -514,7 +514,7 @@ struct ChatSidebarView: View {
         newChat(store.selectedAgentID)
       } label: {
         OkouToolbarIcon("square-pen")
-          .modifier(OkouGlassControl(shape: .circle, isProminent: true))
+          .modifier(OkouGlassControl(shape: .circle))
       }
       .accessibilityLabel("New chat")
       .accessibilityIdentifier("new-chat")
