@@ -1,5 +1,4 @@
 import { Collapsible } from "@base-ui/react/collapsible";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type {
   ComponentProps,
   CSSProperties,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  RequestCommit,
   SheetClose,
   SheetContent,
   ShortcutTooltipGroup,
@@ -81,6 +81,9 @@ import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { suggestionFeedEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { commitWorkspaceLayout$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { workspaceLayoutThreads$ } from "../../signals/chat-page/workspace-layout-commit.ts";
+import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
@@ -1005,10 +1008,12 @@ function ChatListColumn() {
 
 function ThreeColumnNav() {
   const hidden = useGet(sidebarOff$);
+  const syncLayout = useSet(commitWorkspaceLayout$);
+  const workspaceThreads = useGet(workspaceLayoutThreads$);
   const unified = useGet(unifiedChatWorkspace$);
   const width = useGet(chatListWidth$);
-  const resizing = useGet(chatListResizing$);
-  return withChatScrollLayout(
+  const resizing = useGet(workspaceResizing$);
+  return (
     <>
       <LabeledNavRail />
       <Collapsible.Root
@@ -1016,11 +1021,38 @@ function ThreeColumnNav() {
         className="relative hidden shrink-0 md:flex"
       >
         <Collapsible.Panel
+          render={(props, state) => {
+            const layoutKey = JSON.stringify([
+              state.open,
+              state.transitionStatus,
+              unified,
+              unified ? width : 300,
+              resizing,
+            ]);
+            return (
+              <RequestCommit
+                onCommit={syncLayout}
+                request={workspaceThreads}
+                commitKey={layoutKey}
+              >
+                <div
+                  {...props}
+                  data-sidebar-layout-owner="chat-list"
+                  data-sidebar-layout-key={layoutKey}
+                  data-sidebar-layout-resizing={resizing ? "true" : undefined}
+                  data-sidebar-layout-starting={
+                    state.transitionStatus === "starting" ? "" : undefined
+                  }
+                />
+              </RequestCommit>
+            );
+          }}
           inert={hidden}
           className={cn(
             "flex overflow-hidden w-[var(--chat-list-width)] data-[starting-style]:w-0 data-[ending-style]:w-0",
-            !resizing &&
-              "motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
+            resizing
+              ? "transition-none"
+              : "motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
           )}
           style={
             {
@@ -1032,8 +1064,7 @@ function ThreeColumnNav() {
         </Collapsible.Panel>
         {unified && <ChatListResizeSeam />}
       </Collapsible.Root>
-    </>,
-    { measureWidth: true },
+    </>
   );
 }
 

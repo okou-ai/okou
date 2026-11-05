@@ -5,7 +5,8 @@ import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
-  syncActiveSidebarLayout$,
+  commitWorkspaceLayout$,
+  threadSidebarLayoutRootRef$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import type { ReactNode } from "react";
@@ -61,10 +62,7 @@ import { AttachmentLightbox } from "./attachment-chips.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
-import {
-  paletteColorTheme$,
-  shellDocumentAttributesRef$,
-} from "../../signals/theme.ts";
+import { paletteColorTheme$ } from "../../signals/theme.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
@@ -428,7 +426,7 @@ function ChatWorkspace({
 }) {
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
-  const syncSidebarLayout = useSet(syncActiveSidebarLayout$);
+  const syncSidebarLayout = useSet(commitWorkspaceLayout$);
   const joinedToChatList =
     useGet(unifiedChatWorkspace$) && beside === "chat-list";
   return (
@@ -436,7 +434,8 @@ function ChatWorkspace({
       layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
-      onSidebarLayoutCommit={syncSidebarLayout}
+      onWorkspaceLayoutCommit={syncSidebarLayout}
+      ownerKey={active ? `${active.thread.threadId}:${active.target.type}` : ""}
       sidebar={<ChatThreadSidebarPane />}
       // The browser scales a 1440px screen into the panel and wants room;
       // every other panel shares one remembered width.
@@ -547,13 +546,13 @@ function SidebarWorkspace({
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
-  const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
+  const shellRef = useSet(threadSidebarLayoutRootRef$);
   const pwaNavigation = useGet(pwaNavigationEnabled$);
   const unified = useGet(unifiedChatWorkspace$);
 
   return withChatScrollLayout(
     <div
-      ref={shellDocumentAttributesRef}
+      ref={shellRef}
       data-slot="app-shell"
       className={cn(
         "box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0",

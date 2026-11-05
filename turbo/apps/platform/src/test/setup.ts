@@ -47,13 +47,16 @@ Object.defineProperty(document, "fonts", {
   value: new EventTarget(),
 });
 
-// Base UI Scroll Area requires Web Animations, which happy-dom does not
-// implement. Scope the shim to Scroll Area viewports so dialogs and menus retain
-// their synchronous no-animation behavior unless a test supplies animations.
+// Scroll Area and explicit sidebar layout commits use Web Animations, which
+// happy-dom does not implement. Keep other dialogs/menus synchronous unless a
+// test supplies its own animations.
 Object.defineProperty(HTMLElement.prototype, "getAnimations", {
   configurable: true,
   get(this: HTMLElement): (() => Animation[]) | undefined {
-    if (this.dataset.slot !== "scroll-area-viewport") {
+    if (
+      this.dataset.slot !== "scroll-area-viewport" &&
+      this.dataset.sidebarLayoutOwner === undefined
+    ) {
       return undefined;
     }
     return () => {
@@ -61,6 +64,15 @@ Object.defineProperty(HTMLElement.prototype, "getAnimations", {
     };
   },
 });
+
+// happy-dom has no layout engine. Browser page fixtures start with an
+// established toolbar budget; geometry-specific tests override this boundary.
+const getRect = HTMLElement.prototype.getBoundingClientRect;
+HTMLElement.prototype.getBoundingClientRect = function () {
+  return Object.hasOwn(this.dataset, "browserTabBudget")
+    ? new DOMRect(0, 0, 800, 36)
+    : getRect.call(this);
+};
 
 type HappyDomAttributeCallback = (
   this: HTMLIFrameElement,

@@ -79,6 +79,7 @@ interface BrowserApiControl {
 
 function mockBrowserApi(
   initialSession: BrowserSession | null,
+  targets?: NonNullable<Parameters<typeof mockBrowserCdp>[2]>["targets"],
 ): BrowserApiControl {
   let currentSession = initialSession;
   let closeRequestCount = 0;
@@ -133,6 +134,7 @@ function mockBrowserApi(
           ],
         }
       : {}),
+    ...(targets ? { targets } : {}),
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     if (!currentSession) {
@@ -183,8 +185,8 @@ function completedConversationEvents(): MockChatEventInput[] {
   ];
 }
 
-function mockWideScreen(): void {
-  context.mocks.browser.matchMedia((query) => {
+function mockWideScreen() {
+  return context.mocks.browser.matchMedia((query) => {
     return (
       query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
     );
@@ -683,6 +685,454 @@ async function openViewerSizingMenu(viewer: HTMLElement): Promise<HTMLElement> {
   click(within(menu).getByText("Window size"));
   return visibleViewerMenu(viewer, "Window size");
 }
+
+type SidebarWidthOwner = "panel" | "chat-list";
+type SidebarWidthProperty = "width" | "flex-basis";
+
+function sidebarWidthOwner(owner: SidebarWidthOwner): HTMLElement {
+  const element = document.querySelector<HTMLElement>(
+    `[data-sidebar-layout-owner="${owner}"]`,
+  );
+  if (!element) {
+    throw new Error(`Missing sidebar width owner: ${owner}`);
+  }
+  return element;
+}
+
+function nativeWidthEvent(
+  owner: SidebarWidthOwner,
+  type: "transitionrun" | "transitionend" | "transitioncancel",
+  property: SidebarWidthProperty,
+): void {
+  const event = new Event(type, { bubbles: true });
+  Object.defineProperty(event, "propertyName", { value: property });
+  fireEvent(sidebarWidthOwner(owner), event);
+}
+
+/** Native layout/CSSTransition boundaries absent from happy-dom. */
+function mockTabAdmissionGeometry(budget: number, panel = budget + 200) {
+  const geometry = { budget, panel, canvas: 900, widthTransitions: false };
+  const animations: Record<SidebarWidthOwner, Animation[]> = {
+    panel: [],
+    "chat-list": [],
+  };
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (Object.hasOwn(this.dataset, "browserTabBudget")) {
+        return new DOMRect(0, 0, geometry.budget, 36);
+      }
+      if (this.dataset.sidebarLayoutOwner === "panel") {
+        return new DOMRect(0, 0, geometry.panel, 700);
+      }
+      if (this.getAttribute("role") === "tablist") {
+        // The list changes when its picker appears; its enclosing budget does not.
+        const picker = this.parentElement?.querySelector(
+          "[data-browser-tab-picker]",
+        );
+        return new DOMRect(0, 0, geometry.budget - (picker ? 36 : 0), 36);
+      }
+      if (this instanceof HTMLCanvasElement) {
+        return new DOMRect(0, 0, geometry.canvas, 600);
+      }
+      return originalRect.call(this);
+    },
+  );
+  const originalScrollWidth = Object.getOwnPropertyDescriptor(
+    Element.prototype,
+    "scrollWidth",
+  )?.get;
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement): number {
+      return this.dataset.sidebarLayoutOwner === "chat-list"
+        ? 300
+        : (originalScrollWidth?.call(this) ?? 0);
+    },
+  );
+  const originalStyle = window.getComputedStyle.bind(window);
+  vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) => {
+    const style = originalStyle(element, pseudo);
+    if (!(element instanceof HTMLElement)) {
+      return style;
+    }
+    const widthOwner = Object.hasOwn(element.dataset, "sidebarLayoutOwner");
+    const panel = element.dataset.sidebarLayoutOwner === "panel";
+    const tabs =
+      Object.hasOwn(element.dataset, "browserTabBudget") ||
+      element.getAttribute("role") === "tablist";
+    return new Proxy(style, {
+      get(target, property) {
+        if (panel && property === "flexGrow") {
+          return "0";
+        }
+        if (tabs && property === "columnGap") {
+          return "4px";
+        }
+        if (widthOwner && geometry.widthTransitions) {
+          if (property === "transitionProperty") {
+            return panel ? "width, flex-basis" : "width";
+          }
+          if (property === "transitionDuration") {
+            return "0.2s";
+          }
+        }
+        return Reflect.get(target, property);
+      },
+    });
+  });
+  const originalAnimations = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "getAnimations",
+  );
+  if (!originalAnimations) {
+    throw new Error("Expected the shared native Web Animations shim");
+  }
+  Object.defineProperty(HTMLElement.prototype, "getAnimations", {
+    configurable: true,
+    get(this: HTMLElement): (() => Animation[]) | undefined {
+      const owner = this.dataset.sidebarLayoutOwner;
+      return owner === "panel" || owner === "chat-list"
+        ? () => {
+            return animations[owner];
+          }
+        : originalAnimations.get?.call(this);
+    },
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "getAnimations",
+        originalAnimations,
+      );
+    },
+    { once: true },
+  );
+  return {
+    geometry,
+    transition(owner: SidebarWidthOwner, property: SidebarWidthProperty) {
+      geometry.widthTransitions = true;
+      const finished = context.mocks.deferred<Animation>();
+      const record = {
+        transitionProperty: property,
+        playState: "running" as AnimationPlayState,
+        finished: finished.promise,
+      };
+      // Supply the native fields used by the host and Base UI, not their callbacks.
+      const animation = record as CSSTransition;
+      animations[owner].push(animation);
+      return {
+        run() {
+          nativeWidthEvent(owner, "transitionrun", property);
+        },
+        end() {
+          record.playState = "finished";
+          nativeWidthEvent(owner, "transitionend", property);
+          finished.resolve(animation);
+        },
+        cancel() {
+          record.playState = "idle";
+          nativeWidthEvent(owner, "transitioncancel", property);
+          finished.resolve(animation);
+        },
+      };
+    },
+  };
+}
+
+async function openManyTabBrowser() {
+  const browser = mockBrowserApi(
+    liveBrowserSession(),
+    Array.from({ length: 12 }, (_, index) => {
+      return {
+        targetId: index === 0 ? "example-page" : `admission-page-${index + 1}`,
+        title: index === 0 ? "Example" : `Page ${index + 1}`,
+        url:
+          index === 0
+            ? "https://example.com"
+            : `https://page-${index + 1}.example.com`,
+      };
+    }),
+  );
+  await openConversation([], true);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  return { browser, sidebar };
+}
+
+function admittedTabNames(sidebar: HTMLElement): (string | null)[] {
+  return queryAllByRoleFast("tab", sidebar).map((tab) => {
+    return tab.getAttribute("aria-label");
+  });
+}
+
+async function selectLastBrowserTab(sidebar: HTMLElement): Promise<void> {
+  const selected = within(sidebar).queryByLabelText("Page 12", {
+    selector: '[role="tab"]',
+  });
+  if (selected) {
+    click(selected);
+  } else {
+    click(buttonByName("All tabs", sidebar));
+    const menu = await screen.findByRole("menu");
+    const last = queryAllByRoleFast("menuitem", menu).find((item) => {
+      return item.textContent?.trim() === "Page 12";
+    });
+    if (!last) {
+      throw new Error("Missing last browser tab in the overflow picker");
+    }
+    click(last);
+  }
+  await waitFor(() => {
+    expect(within(sidebar).getByLabelText("Address")).toHaveValue(
+      "https://page-12.example.com",
+    );
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  expect(
+    within(sidebar).getByLabelText("Page 12", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+}
+
+const FIRST_FIVE_TABS = [
+  "Example",
+  "Page 2",
+  "Page 3",
+  "Page 4",
+  "Page 5",
+] as const;
+const FOUR_WITH_LAST_SELECTED = [
+  "Example",
+  "Page 2",
+  "Page 3",
+  "Page 12",
+] as const;
+
+// These regressions drive the real Router, host layout and CDP viewer together.
+test("Browser tab admission uses a stable picker-independent budget and protects the actual selection", async () => {
+  mockWideScreen();
+  const { geometry } = mockTabAdmissionGeometry(240);
+  const { sidebar } = await openManyTabBrowser();
+  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_FIVE_TABS);
+  expect(buttonByName("All tabs", sidebar)).toBeEnabled();
+  await selectLastBrowserTab(sidebar);
+  expect(admittedTabNames(sidebar)).toStrictEqual([
+    "Example",
+    "Page 2",
+    "Page 3",
+    "Page 4",
+    "Page 12",
+  ]);
+
+  fireEvent.resize(window);
+  expect(admittedTabNames(sidebar)).toStrictEqual([
+    "Example",
+    "Page 2",
+    "Page 3",
+    "Page 4",
+    "Page 12",
+  ]);
+  Object.assign(geometry, { budget: 444, panel: 644 });
+  fireEvent.resize(window);
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toHaveLength(12);
+  });
+  expect(queryButtonByName("All tabs", sidebar)).not.toBeInTheDocument();
+  fireEvent.resize(window);
+  expect(admittedTabNames(sidebar)).toHaveLength(12);
+});
+
+test("Browser tab admission keeps a zero first-open budget until the native panel motion settles", async () => {
+  mockWideScreen();
+  const native = mockTabAdmissionGeometry(0, 0);
+  const panel = native.transition("panel", "flex-basis");
+  const { sidebar } = await openManyTabBrowser();
+  expect(admittedTabNames(sidebar)).toStrictEqual([]);
+  expect(buttonByName("All tabs", sidebar)).toBeEnabled();
+
+  Object.assign(native.geometry, { budget: 600, panel: 800 });
+  panel.run();
+  fireEvent.resize(window);
+  expect(admittedTabNames(sidebar)).toStrictEqual([]);
+  panel.end();
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toHaveLength(12);
+  });
+  expect(
+    within(sidebar).getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+});
+
+test("Browser tab admission narrows conservatively on the chat-list action before transitionrun", async () => {
+  mockWideScreen();
+  const native = mockTabAdmissionGeometry(600, 800);
+  const { sidebar } = await openManyTabBrowser();
+  await selectLastBrowserTab(sidebar);
+  click(buttonByName("Hide chat list"));
+  await waitFor(() => {
+    expect(buttonByName("Show chat list")).toBeInTheDocument();
+  });
+  native.geometry.widthTransitions = true;
+  click(buttonByName("Show chat list"));
+  // Base UI has staged the list at zero, before any native animation exists.
+  // This is still the pre-motion 800px panel: admission must use its 400px floor.
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+
+  const panel = native.transition("panel", "flex-basis");
+  const list = native.transition("chat-list", "width");
+  panel.run();
+  list.run();
+  Object.assign(native.geometry, { budget: 500, panel: 700 });
+  fireEvent.resize(window);
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  Object.assign(native.geometry, { budget: 200, panel: 400 });
+  panel.end();
+  list.end();
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+});
+
+test.each(["panel", "chat-list"] as const)(
+  "Browser tab admission holds widening when %s finishes before the other width owner",
+  async (first) => {
+    mockWideScreen();
+    const native = mockTabAdmissionGeometry(200, 400);
+    const { sidebar } = await openManyTabBrowser();
+    await selectLastBrowserTab(sidebar);
+    const panel = native.transition("panel", "flex-basis");
+    const list = native.transition("chat-list", "width");
+    click(buttonByName("Hide chat list"));
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+    panel.run();
+    list.run();
+    Object.assign(native.geometry, { budget: 600, panel: 800 });
+    fireEvent.resize(window);
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+
+    const motions = { panel, "chat-list": list };
+    motions[first].end();
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+    fireEvent.resize(window);
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+    motions[first === "panel" ? "chat-list" : "panel"].end();
+    await waitFor(() => {
+      expect(admittedTabNames(sidebar)).toHaveLength(12);
+    });
+    expect(
+      within(sidebar).getByLabelText("Page 12", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  },
+);
+
+test("Browser tab admission cannot unlock an old wide budget after native cancellation and reversal", async () => {
+  mockWideScreen();
+  const native = mockTabAdmissionGeometry(600, 800);
+  const { sidebar } = await openManyTabBrowser();
+  await selectLastBrowserTab(sidebar);
+  click(buttonByName("Hide chat list"));
+  await waitFor(() => {
+    expect(buttonByName("Show chat list")).toBeInTheDocument();
+  });
+  const oldPanel = native.transition("panel", "flex-basis");
+  const oldList = native.transition("chat-list", "width");
+  click(buttonByName("Show chat list"));
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  const newPanel = native.transition("panel", "flex-basis");
+  const newList = native.transition("chat-list", "width");
+  click(buttonByName("Hide chat list"));
+  oldPanel.cancel();
+  oldList.cancel();
+  newPanel.run();
+  newList.run();
+  // A late end from the superseded transition is not a completion of the row.
+  nativeWidthEvent("panel", "transitionend", "flex-basis");
+  nativeWidthEvent("chat-list", "transitionend", "width");
+  fireEvent.resize(window);
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  newPanel.end();
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  newList.end();
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toHaveLength(12);
+  });
+});
+
+test("Browser tab admission commits direct, no-motion and reduced-motion geometry without transition events", async () => {
+  const media = mockWideScreen();
+  const { geometry } = mockTabAdmissionGeometry(240);
+  const { sidebar } = await openManyTabBrowser();
+  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_FIVE_TABS);
+  const handle = await screen.findByRole("separator", {
+    name: "Resize chat list",
+  });
+  Object.assign(geometry, { budget: 340, panel: 540 });
+  handle.focus();
+  await userEvent.keyboard("{ArrowLeft}");
+  expect(admittedTabNames(sidebar)).toHaveLength(8);
+
+  Object.assign(geometry, { budget: 600, panel: 800 });
+  click(buttonByName("Hide chat list"));
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toHaveLength(12);
+  });
+  act(() => {
+    media.setMatches((query) => {
+      return (
+        query === SIDEBAR_DESKTOP_MEDIA_QUERY ||
+        query === "(min-width: 1280px)" ||
+        query === "(prefers-reduced-motion: reduce)"
+      );
+    });
+  });
+  Object.assign(geometry, { budget: 200, panel: 400 });
+  click(buttonByName("Show chat list"));
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toStrictEqual([
+      "Example",
+      "Page 2",
+      "Page 3",
+      "Page 4",
+    ]);
+  });
+});
+
+test("Browser tab admission uses native viewport changes made while disconnected on manual reconnect", async () => {
+  mockWideScreen();
+  const { geometry } = mockTabAdmissionGeometry(600, 800);
+  const { browser, sidebar } = await openManyTabBrowser();
+  act(() => {
+    browser.native.disconnect({ code: 1006, wasClean: false });
+  });
+  await within(sidebar).findByText("Browser disconnected");
+  Object.assign(geometry, { budget: 240, panel: 440, canvas: 916 });
+  fireEvent.resize(window);
+  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
+  expect(within(sidebar).getByText("Browser disconnected")).toBeInTheDocument();
+  click(buttonByName("Reconnect", sidebar));
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+    expect(browser.native.viewport).toStrictEqual({ width: 916, height: 600 });
+  });
+  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_FIVE_TABS);
+  Object.assign(geometry, { budget: 600, panel: 800 });
+  fireEvent.resize(window);
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toHaveLength(12);
+  });
+  expect(
+    within(sidebar).getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+});
 
 test("The embedded Okou viewer retains its sizing preference when the menu reopens", async () => {
   mockWideScreen();
