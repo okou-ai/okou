@@ -255,11 +255,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Mercury banking connector",
     enabled: false,
   },
-  [FeatureSwitchKey.RedditConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Reddit connector integration",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",

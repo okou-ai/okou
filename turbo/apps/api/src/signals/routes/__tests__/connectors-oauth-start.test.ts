@@ -389,28 +389,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
     },
   },
   {
-    connectorSlug: "reddit",
-    label: "Reddit",
-    clientEnvPrefix: "REDDIT",
-    authorizationEndpoint: "https://www.reddit.com/api/v1/authorize",
-    tokenUrl: "https://www.reddit.com/api/v1/access_token",
-    tokenResponse: {
-      access_token: "reddit-test-token",
-      refresh_token: "reddit-refresh-token",
-      expires_in: 86_400,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://oauth.reddit.com/api/v1/me", () => {
-          return HttpResponse.json({
-            id: "reddit-user-123",
-            name: "reddit-test-user",
-          });
-        }),
-      );
-    },
-  },
-  {
     connectorSlug: "spotify",
     label: "Spotify",
     clientEnvPrefix: "SPOTIFY",

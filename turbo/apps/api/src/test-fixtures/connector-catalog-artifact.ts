@@ -1906,17 +1906,6 @@ const connectors = [
     ]),
   }),
   connector({
-    connectorSlug: "reddit",
-    label: "Reddit",
-    authMethods: [
-      standardOauthMethod({
-        connectorSlug: "reddit",
-        prefix: "REDDIT",
-        tokenEnvironmentNames: ["REDDIT_TOKEN"],
-      }),
-    ],
-  }),
-  connector({
     connectorSlug: "runtime",
     label: "Runtime",
     authMethods: [
