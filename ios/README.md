@@ -38,8 +38,8 @@ the thread is created when the first message is sent. New chats use the selected
 agent and the existing saved model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
 Workspace setup remains on the web. Settings shows the profile, workspace,
-notifications, appearance, language, support and version, and offers sign-out and
-account deletion (Clerk self-deletion when the instance allows it, otherwise the web).
+notifications, appearance, language, support and version, and offers sign-out.
+Account deletion is available only on the web.
 The new-chat screen greets with the agent and the description of a custom one; the
 greeting's avatar opens the agent's profile and saved workflows.
 

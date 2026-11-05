@@ -1276,43 +1276,6 @@
         }
       }
     },
-    "Account deletion is finished in your account settings on the Okou website.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Die Kontolöschung schließen Sie in Ihren Kontoeinstellungen auf der Okou-Website ab." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "La eliminación de la cuenta se completa en la configuración de tu cuenta en el sitio web de Okou." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "La suppression du compte se finalise dans les paramètres de votre compte sur le site Okou." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "खाता हटाने की प्रक्रिया Okou वेबसाइट पर आपकी खाता सेटिंग्स में पूरी होती है।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Penghapusan akun diselesaikan di pengaturan akun Anda di situs web Okou." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "L'eliminazione dell'account si completa nelle impostazioni dell'account sul sito web di Okou." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "アカウントの削除は、Okou ウェブサイトのアカウント設定で完了します。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "계정 삭제는 Okou 웹사이트의 계정 설정에서 완료됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "A exclusão da conta é concluída nas configurações da sua conta no site do Okou." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "请在 Okou 网站的账号设置中完成账号删除。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "請在 Okou 網站的帳號設定中完成刪除帳號。" }
-        }
-      }
-    },
     "Account for %@": {
       "localizations": {
         "de": {
@@ -6045,43 +6008,6 @@
         }
       }
     },
-    "Continue on the web": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Im Web fortfahren" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Continuar en la web" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Continuer sur le Web" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "वेब पर जारी रखें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Lanjutkan di web" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Continua sul web" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "ウェブで続ける" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "웹에서 계속하기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Continuar na web" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在网页版继续" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在網頁版繼續" }
-        }
-      }
-    },
     "Continue securely": {
       "localizations": {
         "de": {
@@ -7370,80 +7296,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "已儲存預設值" }
-        }
-      }
-    },
-    "Delete account": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Konto löschen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Eliminar cuenta" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Supprimer le compte" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "खाता हटाएँ" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Hapus akun" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Elimina account" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "アカウントを削除" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "계정 삭제" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Excluir conta" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "删除账号" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "刪除帳號" }
-        }
-      }
-    },
-    "Delete your Okou account?": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Ihr Okou-Konto löschen?" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "¿Eliminar tu cuenta de Okou?" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Supprimer votre compte Okou ?" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "अपना Okou खाता हटाएँ?" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Hapus akun Okou Anda?" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Eliminare il tuo account Okou?" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "Okou アカウントを削除しますか？" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "Okou 계정을 삭제하시겠습니까?" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Excluir sua conta do Okou?" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "要删除你的 Okou 账号吗？" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "要刪除你的 Okou 帳號嗎？" }
         }
       }
     },
@@ -25457,43 +25309,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "你在 %@ 中的權限" }
-        }
-      }
-    },
-    "Your profile and sign-in are removed permanently. Workspaces you own keep their chats until they are deleted separately.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Ihr Profil und Ihre Anmeldedaten werden dauerhaft entfernt. Arbeitsbereiche, die Ihnen gehören, behalten ihre Chats, bis sie separat gelöscht werden." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Tu perfil y tu inicio de sesión se eliminan de forma permanente. Los espacios de trabajo de tu propiedad conservan sus chats hasta que se eliminen por separado." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Votre profil et vos identifiants de connexion sont définitivement supprimés. Les espaces de travail dont vous êtes propriétaire conservent leurs discussions jusqu’à leur suppression séparée." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "आपकी प्रोफ़ाइल और साइन-इन हमेशा के लिए हटा दिए जाते हैं। आपके स्वामित्व वाले वर्कस्पेस की चैट तब तक बनी रहती हैं, जब तक उन्हें अलग से हटाया न जाए।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Profil dan info masuk Anda dihapus secara permanen. Ruang kerja milik Anda tetap menyimpan chat-nya sampai dihapus secara terpisah." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Il tuo profilo e i dati di accesso vengono rimossi in modo permanente. Le aree di lavoro di tua proprietà mantengono le chat finché non vengono eliminate separatamente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "プロフィールとサインイン情報は完全に削除されます。あなたが所有するワークスペースのチャットは、ワークスペースを個別に削除するまで残ります。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "프로필과 로그인 정보가 영구적으로 삭제됩니다. 내가 소유한 워크스페이스의 채팅은 워크스페이스를 별도로 삭제할 때까지 유지됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Seu perfil e seu login são removidos permanentemente. Os espaços de trabalho que você possui mantêm as conversas até serem excluídos separadamente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "你的个人资料和登录信息将被永久删除。你拥有的工作区会保留其中的聊天，直到这些工作区被单独删除。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "你的個人資料和登入資訊將被永久刪除。你擁有的工作區會保留其中的聊天，直到這些工作區另外被刪除為止。" }
         }
       }
     },
