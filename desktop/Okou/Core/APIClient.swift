@@ -147,7 +147,27 @@ public actor APIClient {
     let started = now()
     let awakeStarted = awakeNow()
     do {
-      let token = try await provider(forceRefresh)
+      try Task.checkCancellation()
+      // SDK token reads can await a shared task that ignores caller cancellation.
+      // Terminate this waiter promptly; only cancel its provider task, not the
+      // SDK's shared refresh. Late results cannot update this trace or send HTTP.
+      let (tokens, completion) = AsyncThrowingStream<String, Error>.makeStream(
+        bufferingPolicy: .bufferingNewest(1))
+      let read = Task {
+        do {
+          try Task.checkCancellation()
+          let token = try await provider(forceRefresh)
+          try Task.checkCancellation()
+          completion.yield(token)
+          completion.finish()
+        } catch {
+          completion.finish(throwing: error)
+        }
+      }
+      completion.onTermination = { _ in read.cancel() }
+      var iterator = tokens.makeAsyncIterator()
+      guard let token = try await iterator.next() else { throw CancellationError() }
+      try Task.checkCancellation()
       await trace?.recordAuthentication(
         APIAuthenticationDiagnostic(phase: phase, timing: timing(started, awakeStarted)))
       return token
