@@ -11,8 +11,8 @@
  * Flagged:
  * - `<a>` with no `href` attribute (a spread does not count: the destination
  *   must be visible where the anchor is written);
- * - an `href` that is empty, a bare `#`, or a `javascript:` URL, including as a
- *   branch of a conditional;
+ * - an `href` that is empty, a bare `#`, or a `javascript:`, `vbscript:` or
+ *   `data:` URL, including as a branch of a conditional;
  * - `role="button"` on an anchor.
  *
  * Fragment links such as `href="#pricing"` stay valid: they navigate.
@@ -37,12 +37,21 @@ function attribute(
   return null;
 }
 
+/**
+ * Schemes that do not navigate from an anchor: `javascript:` and `vbscript:`
+ * run code, and browsers block top-level navigation to `data:` URLs. A
+ * generated download uses an object URL, as the message PDF link does.
+ */
+const NON_NAVIGATING_SCHEMES = ["javascript:", "vbscript:", "data:"];
+
 function isPlaceholderHref(value: string): boolean {
-  const trimmed = value.trim();
+  const normalized = value.trim().toLowerCase();
   return (
-    trimmed === "" ||
-    trimmed === "#" ||
-    trimmed.toLowerCase().startsWith("javascript:")
+    normalized === "" ||
+    normalized === "#" ||
+    NON_NAVIGATING_SCHEMES.some((scheme) => {
+      return normalized.startsWith(scheme);
+    })
   );
 }
 

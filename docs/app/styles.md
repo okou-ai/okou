@@ -751,7 +751,7 @@ cursors and `cursor-zoom-in`, are outside this rule.
 
 An anchor carries a real destination where it is written.
 `ccstate/require-anchor-href` rejects an `<a>` without `href`, with an empty,
-`#` or `javascript:` href, or with `role="button"`. An anchor whose plain click
+`#`, `javascript:`, `vbscript:` or `data:` href, or with `role="button"`. An anchor whose plain click
 performs something other than navigation, such as copying its URL, is a button.
 Client-side routing and in-app previews remain links when modified clicks keep
 the real destination. The PDF download link, whose object URL is attached in

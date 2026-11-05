@@ -54,6 +54,18 @@ ruleTester.run("require-anchor-href", rule, {
       errors: [{ messageId: "placeholderHref" }],
     },
     {
+      code: `<a href="  JavaScript:alert(1)">Copy</a>`,
+      errors: [{ messageId: "placeholderHref" }],
+    },
+    {
+      code: `<a href="vbscript:msgbox(1)">Copy</a>`,
+      errors: [{ messageId: "placeholderHref" }],
+    },
+    {
+      code: `<a href="data:text/html,<p>hi</p>">Open</a>`,
+      errors: [{ messageId: "placeholderHref" }],
+    },
+    {
       code: `<a href={"#"}>Copy</a>`,
       errors: [{ messageId: "placeholderHref" }],
     },
