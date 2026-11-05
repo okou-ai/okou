@@ -7,7 +7,7 @@ use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 
 use super::run_cancellable_blocking;
-use crate::test_fixtures::blocking_worker::BlockingWorkerRelease;
+use crate::test_fixtures::blocking_worker::occupy_blocking_worker;
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -18,14 +18,7 @@ fn queued_worker_observes_cancellation_after_awaiter_drop() {
         .max_blocking_threads(1)
         .build()
         .unwrap();
-    let (release, wait) = mpsc::channel();
-    let gate = BlockingWorkerRelease::new(release);
-    let (started, ready) = mpsc::sync_channel(0);
-    let blocker = runtime.spawn_blocking(move || {
-        started.send(()).unwrap();
-        wait.recv().unwrap();
-    });
-    ready.recv_timeout(WAIT).unwrap();
+    let (gate, blocker) = occupy_blocking_worker(&runtime, WAIT);
 
     let cancel = CancellationToken::new();
     let (observed, observation) = mpsc::channel();

@@ -1,27 +1,10 @@
 use std::future::{Future, poll_fn};
-use std::sync::mpsc;
 use std::task::Poll;
 use std::time::Duration;
 
-use runner_host::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseBlockingWorker;
+use runner_host::test_fixtures::blocking_worker::occupy_blocking_worker_async;
 
 use super::*;
-
-async fn occupy_blocking_worker() -> (ReleaseBlockingWorker, tokio::task::JoinHandle<()>) {
-    let (entered, started) = tokio::sync::oneshot::channel();
-    let (release, wait) = mpsc::channel();
-    let release = ReleaseBlockingWorker::new(release);
-    let task = tokio::task::spawn_blocking(move || {
-        entered.send(()).unwrap();
-        wait.recv_timeout(Duration::from_secs(5))
-            .expect("test did not release its blocking worker");
-    });
-    tokio::time::timeout(Duration::from_secs(2), started)
-        .await
-        .expect("blocking worker did not start")
-        .unwrap();
-    (release, task)
-}
 
 async fn wait_for_publication_lock(path: &Path) -> Flock<File> {
     tokio::time::timeout(Duration::from_secs(2), async {
@@ -63,7 +46,7 @@ fn cancelled_registry_publication_keeps_successor_serialized() {
         registry.sandboxes.remove(old_ip).unwrap();
         registry.updated_at += 1;
         let expected = serde_json::to_vec(&registry).unwrap();
-        let (release, task) = occupy_blocking_worker().await;
+        let (release, task) = occupy_blocking_worker_async().await;
         let mut publication = Box::pin(write_locked_registry(
             harness.registry_path(),
             &registry,

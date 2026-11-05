@@ -1,25 +1,8 @@
 use std::os::unix::fs::PermissionsExt;
-use std::sync::mpsc;
 
-use runner_host::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseBlockingWorker;
+use runner_host::test_fixtures::blocking_worker::occupy_blocking_worker_async;
 
 use super::*;
-
-async fn occupy_blocking_worker() -> (ReleaseBlockingWorker, tokio::task::JoinHandle<()>) {
-    let (entered, started) = tokio::sync::oneshot::channel();
-    let (release, wait) = mpsc::channel();
-    let release = ReleaseBlockingWorker::new(release);
-    let worker = tokio::task::spawn_blocking(move || {
-        entered.send(()).unwrap();
-        wait.recv_timeout(Duration::from_secs(5))
-            .expect("test did not release its blocking worker");
-    });
-    tokio::time::timeout(Duration::from_secs(2), started)
-        .await
-        .expect("blocking worker did not start")
-        .unwrap();
-    (release, worker)
-}
 
 fn acquire(lock_path: &Path) -> Flock<File> {
     match lock::try_acquire_or_busy_blocking(lock_path).unwrap() {
@@ -56,7 +39,7 @@ fn cancelled_publication_retains_lock_until_queued_file_work_finishes() {
         .unwrap();
 
     runtime.block_on(async {
-        let (release, worker) = occupy_blocking_worker().await;
+        let (release, worker) = occupy_blocking_worker_async().await;
         let mut publication = Box::pin(publish_catalog_cache(
             cache_path.clone(),
             expected.clone(),

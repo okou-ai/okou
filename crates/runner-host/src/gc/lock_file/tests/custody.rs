@@ -1,31 +1,17 @@
 use std::future::Future;
 use std::path::Path;
-use std::sync::mpsc;
 use std::task::{Context, Waker};
 use std::time::Duration;
 
-use tokio::runtime::{Builder, Runtime};
-use tokio::task::JoinHandle;
+use tokio::runtime::Builder;
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 
-use crate::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseWorkerOnDrop;
+use crate::test_fixtures::blocking_worker::occupy_blocking_worker;
 
 use super::super::*;
 
 const WAIT: Duration = Duration::from_secs(5);
-
-fn occupy_blocking_worker(runtime: &Runtime) -> (ReleaseWorkerOnDrop, JoinHandle<()>) {
-    let (started, started_rx) = mpsc::sync_channel(0);
-    let (release, release_rx) = mpsc::channel();
-    let gate = ReleaseWorkerOnDrop::new(release);
-    let worker = runtime.spawn_blocking(move || {
-        started.send(()).unwrap();
-        release_rx.recv().unwrap();
-    });
-    started_rx.recv_timeout(WAIT).unwrap();
-    (gate, worker)
-}
 
 fn acquire(path: &Path) -> Flock<std::fs::File> {
     match probe_lock(path) {
@@ -45,7 +31,7 @@ fn cancelled_lock_removal_retains_authority_until_physical_unlink() {
         .max_blocking_threads(1)
         .build()
         .unwrap();
-    let (gate, worker) = occupy_blocking_worker(&runtime);
+    let (gate, worker) = occupy_blocking_worker(&runtime, WAIT);
     let mut removal = Box::pin(remove_unused_lock_after_probe(
         &path,
         lock,
@@ -102,7 +88,7 @@ fn queued_lock_removal_preserves_replacement_inode() {
         .max_blocking_threads(1)
         .build()
         .unwrap();
-    let (gate, worker) = occupy_blocking_worker(&runtime);
+    let (gate, worker) = occupy_blocking_worker(&runtime, WAIT);
     let mut removal = Box::pin(remove_unused_lock_after_probe(
         &path,
         lock,
