@@ -129,32 +129,6 @@ type LaunchGatedDirectOkouCase = {
 
 const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
   {
-    connectorSlug: "ahrefs",
-    label: "Ahrefs",
-    clientEnvPrefix: "AHREFS",
-    authorizationEndpoint: "https://app.ahrefs.com/api/auth",
-    tokenUrl: "https://app.ahrefs.com/api/token",
-    tokenResponse: {
-      access_token: "ahrefs-test-token",
-      refresh_token: "ahrefs-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get(
-          "https://api.ahrefs.com/v3/subscription-info/limits-and-usage",
-          () => {
-            return HttpResponse.json({
-              subscription: { usage_type: "Enterprise" },
-              rows_limit: 1000,
-              rows_left: 900,
-            });
-          },
-        ),
-      );
-    },
-  },
-  {
     connectorSlug: "cal-com",
     label: "Cal.com",
     clientEnvPrefix: "CAL_COM",

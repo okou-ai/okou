@@ -50,7 +50,6 @@ import {
   type ConnectorAuthProviderClientContract,
   type ConnectorAuthProviderMethodContract,
 } from "./provider-capabilities";
-import { ahrefsProvider } from "./connectors/ahrefs/provider";
 import { airtableProvider } from "./connectors/airtable/provider";
 import { asanaProvider } from "./connectors/asana/provider";
 import { awsProvider } from "./connectors/aws/provider";
@@ -971,7 +970,6 @@ function assertDeclaredProviderInputs(args: {
 }
 
 const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
-  authCodeRefreshProviderEntry("ahrefs", "oauth", ahrefsProvider),
   authCodeRefreshProviderEntry("airtable", "oauth", airtableProvider),
   authCodeRefreshProviderEntry("asana", "oauth", asanaProvider),
   externalCodeRefreshProviderEntry("aws", "cli", awsProvider),

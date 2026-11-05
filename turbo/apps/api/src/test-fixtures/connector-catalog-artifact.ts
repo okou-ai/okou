@@ -639,10 +639,16 @@ const connectors = [
     connectorSlug: "ahrefs",
     label: "Ahrefs",
     authMethods: [
-      standardOauthMethod({
-        connectorSlug: "ahrefs",
-        prefix: "AHREFS",
-        tokenEnvironmentNames: ["AHREFS_TOKEN"],
+      manualMethod({
+        fields: [
+          manualField({
+            privateName: "AHREFS_TOKEN",
+            publicId: "apiToken",
+            label: "API Token",
+            storage: "secret",
+          }),
+        ],
+        envBindings: { AHREFS_TOKEN: secret("AHREFS_TOKEN") },
       }),
     ],
   }),

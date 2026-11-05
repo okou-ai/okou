@@ -49,33 +49,6 @@ interface ConnectorAuthProviderMethodRegistration {
 // Keep it limited to facts required to select and validate provider handlers.
 export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
   {
-    connectorSlug: "ahrefs",
-    authMethodId: "oauth",
-    contract: {
-      client: {
-        kind: "static-confidential-env",
-        clientIdEnv: "AHREFS_OAUTH_CLIENT_ID",
-        clientSecretEnv: "AHREFS_OAUTH_CLIENT_SECRET",
-      },
-      grant: {
-        kind: "auth-code",
-        callbackOrigin: "web",
-        outputNames: ["accessToken", "refreshToken"],
-        startOptionNames: [],
-      },
-      access: {
-        kind: "refresh-token",
-        inputNames: ["refreshToken"],
-        outputNames: ["accessToken", "refreshToken"],
-        platformSecrets: [],
-      },
-      revoke: {
-        kind: "none",
-        inputNames: [],
-      },
-    },
-  },
-  {
     connectorSlug: "airtable",
     authMethodId: "oauth",
     contract: {
