@@ -23,7 +23,7 @@ final class MessageSelectionCell: UICollectionViewCell {
 
   func quoteAction() -> UIAction? {
     guard quote != nil, let (input, selection) = selectedPassage() else { return nil }
-    return UIAction(title: "Quote", image: UIImage(systemName: "text.quote")) {
+    return UIAction(title: String(localized: "Quote"), image: OkouIcon.uiImage("quote")) {
       [weak self, weak input] _ in
       guard let self, let input, input.window != nil,
         let (currentInput, current) = selectedPassage(), currentInput === input,

@@ -23,12 +23,12 @@ enum ComposerAttributedDocument {
     attributes(for: font)
   }
   static func attributes(for font: UIFont) -> [NSAttributedString.Key: Any] {
-    [.font: font, .foregroundColor: UIColor.label]
+    [.font: font, .foregroundColor: UIColor(OkouColor.foreground)]
   }
   static var font: UIFont { scaledFont(for: nil) }
   static func scaledFont(for traits: UITraitCollection?) -> UIFont {
     UIFontMetrics(forTextStyle: .body).scaledFont(
-      for: .systemFont(ofSize: 16), compatibleWith: traits)
+      for: OkouTypography.font(ofSize: 17), compatibleWith: traits)
   }
 
   static func isInline(_ part: MessageJSON) -> Bool {
@@ -172,9 +172,9 @@ final class ComposerReferenceAttachment: NSTextAttachment {
   var title: String { part["nameSnapshot"]?.string ?? part["titleSnapshot"]?.string ?? "" }
   var symbol: String {
     switch part["type"]?.string {
-    case "agent": "person.crop.circle"
-    case "chat_thread": "bubble.left"
-    default: "doc"
+    case "agent": "circle-user-round"
+    case "chat_thread": "message-circle"
+    default: "file"
     }
   }
 
@@ -226,13 +226,15 @@ final class ComposerReferenceAttachment: NSTextAttachment {
   ) -> UIImage? {
     let font = referenceFont
     return UIGraphicsImageRenderer(size: imageBounds.size).image { _ in
-      UIColor.tertiarySystemFill.setFill()
-      UIBezierPath(roundedRect: CGRect(origin: .zero, size: imageBounds.size), cornerRadius: 6)
-        .fill()
+      UIColor(OkouColor.muted).setFill()
+      UIBezierPath(
+        roundedRect: CGRect(origin: .zero, size: imageBounds.size),
+        cornerRadius: OkouRadius.thumbnail
+      )
+      .fill()
       let iconSize = font.pointSize
-      UIImage(
-        systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: iconSize))?
-        .withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
+      OkouIcon.uiImage(symbol)?
+        .withTintColor(UIColor(OkouColor.mutedForeground), renderingMode: .alwaysOriginal)
         .draw(
           in: CGRect(
             x: 5, y: (imageBounds.height - iconSize) / 2, width: iconSize, height: iconSize))
@@ -242,7 +244,9 @@ final class ComposerReferenceAttachment: NSTextAttachment {
         in: CGRect(
           x: iconSize + 10, y: 2, width: max(0, imageBounds.width - iconSize - 15),
           height: font.lineHeight),
-        withAttributes: [.font: font, .foregroundColor: UIColor.label, .paragraphStyle: paragraph])
+        withAttributes: [
+          .font: font, .foregroundColor: UIColor(OkouColor.foreground), .paragraphStyle: paragraph,
+        ])
     }
   }
 }

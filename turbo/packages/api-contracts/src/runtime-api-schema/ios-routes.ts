@@ -47,6 +47,12 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "../contracts/custom-connectors";
+import { desktopShellAuthorizationContract } from "../contracts/desktop-shell-authorization";
+import { mailContract } from "../contracts/mail";
+import { sharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
+import { voiceIoPolishSegmentsContract } from "../contracts/voice-io-polish";
+import { voiceIoQuotaContract } from "../contracts/voice-io-quota";
+import { voiceIoTranscribeContract } from "../contracts/voice-io-transcribe";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { hostContract } from "../contracts/host";
 import { iosNotificationsContract } from "../contracts/ios-notifications";
@@ -407,6 +413,38 @@ const iosContracts: readonly {
     route: workflowsCollectionContract.composer,
   },
   { id: "ios.workflowsDetailContract.get", route: workflowsDetailContract.get },
+  {
+    id: "ios.desktopShellAuthorizationContract.get",
+    route: desktopShellAuthorizationContract.get,
+  },
+  {
+    id: "ios.desktopShellAuthorizationContract.approve",
+    route: desktopShellAuthorizationContract.approve,
+  },
+  {
+    id: "ios.desktopShellAuthorizationContract.deny",
+    route: desktopShellAuthorizationContract.deny,
+  },
+  {
+    id: "ios.desktopShellAuthorizationContract.revoke",
+    route: desktopShellAuthorizationContract.revoke,
+  },
+  { id: "ios.mailContract.getDraft", route: mailContract.getDraft },
+  { id: "ios.mailContract.sendDraft", route: mailContract.sendDraft },
+  { id: "ios.mailContract.deleteDraft", route: mailContract.deleteDraft },
+  {
+    id: "ios.sharedThreadVisibilityContract.create",
+    route: sharedThreadVisibilityContract.create,
+  },
+  {
+    id: "ios.voiceIoPolishSegmentsContract.post",
+    route: voiceIoPolishSegmentsContract.post,
+  },
+  { id: "ios.voiceIoQuotaContract.get", route: voiceIoQuotaContract.get },
+  {
+    id: "ios.voiceIoTranscribeContract.segment",
+    route: voiceIoTranscribeContract.segment,
+  },
 ];
 
 export const iosRouteBindings: readonly RuntimeApiRouteBinding[] =

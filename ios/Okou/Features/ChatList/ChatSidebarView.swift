@@ -12,85 +12,125 @@ struct ChatSidebarView: View {
   let close: () -> Void
   let newChat: (String?) -> Void
 
+  /// The web's chat filters: Inbox (or All chats without archiving), Unread, Archived, Muted.
   private enum ThreadFilter {
-    case recent, unread, archived
+    case recent, unread, archived, muted
+  }
 
-    var title: LocalizedStringKey {
-      switch self {
-      case .recent: "Recent"
-      case .unread: "Unread"
-      case .archived: "Archived"
-      }
+  private func filterTitle(_ filter: ThreadFilter) -> LocalizedStringKey {
+    switch filter {
+    case .recent: store.list.canArchiveChats ? "Inbox" : "All chats"
+    case .unread: "Unread"
+    case .archived: "Archived"
+    case .muted: "Muted"
     }
   }
 
   @State private var showArchived = false
+  @State private var showMuted = false
+  @State private var showsSettings = false
 
   private var workspaceName: String {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
   }
 
+  @ScaledMetric(relativeTo: .body) private var statusColumnWidth = OkouControl.statusColumn
+  /// One caption line of Geist under each pinned agent's avatar.
+  /// One caption2 line of Geist under each pinned agent's avatar.
+  @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
+  /// One leading edge for the header, every heading, row content and the footer buttons.
+  private let rowInset = OkouControl.pageInset
+
+  /// A section shows a status column only when one of its own chats has a status emoji;
+  /// a section without any keeps its titles flush.
+  private func usesStatusColumn(_ threads: [ChatThread]) -> Bool {
+    threads.contains { $0.titleParts.emoji != nil }
+  }
+
+  private func agentName(_ id: String) -> String {
+    store.list.agents.first(where: { $0.agentId == id })?.displayName ?? "Okou"
+  }
+
   private var visibleThreads: [ChatThread] {
-    store.list.threads(agentID: store.selectedAgentID, archived: showArchived)
+    if showMuted {
+      return store.list.threads.filter { $0.agentID == store.selectedAgentID && $0.isMuted }
+    }
+    return store.list.threads(agentID: store.selectedAgentID, archived: showArchived)
   }
 
   private var threadFilter: Binding<ThreadFilter> {
     Binding(
       get: {
-        store.list.onlyUnread
-          ? .unread : (store.list.canArchiveChats && showArchived ? .archived : .recent)
+        if store.list.onlyUnread { return .unread }
+        if showMuted { return .muted }
+        if store.list.canArchiveChats && showArchived { return .archived }
+        return .recent
       },
       set: {
         store.list.onlyUnread = $0 == .unread
         showArchived = $0 == .archived
+        showMuted = $0 == .muted
       })
-  }
-
-  private var markAgentReadTitle: LocalizedStringKey {
-    if let name = store.list.agents.first(where: { $0.agentId == store.selectedAgentID })?
-      .displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty
-    {
-      return "Mark all chats for \(name) as read"
-    }
-    return "Mark all as read for this agent"
   }
 
   var body: some View {
     List {
+      if threadFilter.wrappedValue == .recent && !activeThreads.isEmpty {
+        activeSection
+      }
       pinnedAgentsSection
       if store.list.isLoading && !store.list.hasLoadedThreads {
-        ProgressView("Loading chats…")
-          .frame(maxWidth: .infinity)
+        OkouLoadingRow("Loading chats…")
+          .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
+          .listRowSeparator(.hidden)
+          .listRowBackground(Color.clear)
       } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
         Text("Your chats could not be loaded. Try updating again.")
-          .font(.footnote).foregroundStyle(.secondary)
+          .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
       } else {
         threadSection
         if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
           Text("Your chats will appear here.")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .font(.okou(.subheadline))
+            .foregroundStyle(OkouColor.mutedForeground)
         }
       }
     }
+    .foregroundStyle(OkouColor.sidebarForeground)
     .listStyle(.plain)
     .listSectionSpacing(.compact)
     .listRowSpacing(0)
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    .scrollEdgeEffectStyle(.soft, for: .top)
-    .scrollEdgeEffectHidden(true, for: .bottom)
+    // The workspace title sits directly over chat titles: soft let them read through it, and
+    // the system's hard edge draws a white band on the warm sidebar. The header instead takes
+    // the sidebar's own colour, with a short fade where rows pass under it.
+    .scrollEdgeEffectHidden(true, for: .top)
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
       VStack(spacing: 0) {
-        header.padding(.horizontal, 16)
+        header.padding(.horizontal, rowInset)
         ChatSyncStatusView(state: showsSynchronizationStatus ? store.synchronizationState : nil) {
           await store.retrySynchronization()
         }
       }
+      .background {
+        OkouColor.sidebar
+          .ignoresSafeArea(edges: .top)
+          .overlay(alignment: .bottom) {
+            LinearGradient(
+              colors: [OkouColor.sidebar, OkouColor.sidebar.opacity(0)], startPoint: .top,
+              endPoint: .bottom
+            )
+            .frame(height: OkouSpace.lg)
+            .offset(y: OkouSpace.lg)
+            .allowsHitTesting(false)
+          }
+      }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
-    .background(Color(uiColor: .systemBackground))
+    .background(OkouColor.sidebar)
     .sheet(
       isPresented: Binding(
         get: { store.search.isPresented },
@@ -101,13 +141,16 @@ struct ChatSidebarView: View {
     }
   }
 
+  /// The workspace on the left; on the right the way back to the chat the sidebar covers.
   private var header: some View {
     HStack {
       workspaceSwitcher.frame(maxWidth: .infinity, alignment: .leading)
-      Button("Search", systemImage: "magnifyingglass") { store.search.present() }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.glass)
-        .accessibilityIdentifier("search-chats")
+      Button(action: close) {
+        OkouToolbarIcon("chevrons-right").modifier(OkouGlassControl(shape: .circle))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Back to chat")
+      .accessibilityIdentifier("back-to-chat")
     }
     .frame(minHeight: headerHeight)
   }
@@ -123,20 +166,25 @@ struct ChatSidebarView: View {
           }
         } label: {
           if workspace.id == workspaceID {
-            Label(workspace.name, systemImage: "checkmark")
+            Label(workspace.name, okouSymbol: "check")
           } else {
             Text(workspace.name)
           }
         }
       }
     } label: {
-      HStack(spacing: 9) {
+      HStack(spacing: OkouSpace.sm) {
+        let workspace = authentication.workspaces.first(where: { $0.id == workspaceID })
+        OkouWorkspaceLogo(
+          workspaceID: workspaceID, name: workspaceName,
+          imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false
+        )
+        .accessibilityHidden(true)
         Text(workspaceName)
-          .font(.system(size: 22, weight: .semibold))
+          .font(.okou(.headline))
           .lineLimit(1)
-        Image(systemName: "chevron.down")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.secondary)
+        OkouIcon("chevron-down", size: OkouIconSize.inline)
+          .foregroundStyle(OkouColor.mutedForeground)
       }
       .contentShape(Rectangle())
     }
@@ -145,156 +193,261 @@ struct ChatSidebarView: View {
     .accessibilityLabel("Workspace: \(workspaceName)")
   }
 
+  /// Pinned agents as one sideways row of avatars, so pinning many never pushes the chats
+  /// down; the first avatar sits on the list's text edge.
   private var pinnedAgentsSection: some View {
-    Section {
+    let agents = store.list.visiblePinnedAgents
+    return Section {
       scrollingSectionHeading("Pinned Agents")
-      ForEach(store.list.visiblePinnedAgents, id: \.agentId) { agent in
-        Button {
-          newChat(agent.agentId)
-        } label: {
-          HStack(spacing: 10) {
-            if agent.isDefaultAgent {
-              Image("AssistantAvatar")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 26, height: 26)
-            } else {
-              Text(String((agent.displayName ?? "A").prefix(1)))
-                .font(.system(size: 15, weight: .medium))
-                .frame(width: 26, height: 26)
-                .background(
-                  Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 7))
-            }
-            Text(agent.displayName ?? "Okou")
-              .font(.system(size: 18))
-              .lineLimit(1)
-            Spacer(minLength: 0)
+      OkouChipRail(inset: rowInset - (OkouControl.agentTile - OkouAvatarSize.rail) / 2) {
+        ForEach(agents, id: \.agentId) { agent in
+          Button {
+            newChat(agent.agentId)
+          } label: {
+            OkouAgentTile(
+              avatarURL: agent.avatarUrl, name: agent.displayName ?? "Okou",
+              isDefault: agent.isDefaultAgent,
+              isSelected: store.selectedThreadID == nil
+                && store.selectedAgentID == agent.agentId,
+              hasUnread: store.list.unreadAgentIDs.contains(agent.agentId))
           }
-          .frame(height: 50)
-          .contentShape(Rectangle())
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("agent-\(agent.agentId)")
         }
-        .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 0, leading: 24, bottom: 0, trailing: 24))
-        .listRowSeparator(.hidden)
-        .listRowBackground(
-          RoundedRectangle(cornerRadius: 12)
-            .fill(
-              store.selectedThreadID == nil && store.selectedAgentID == agent.agentId
-                ? Color(uiColor: .secondarySystemBackground) : .clear
-            )
-            .padding(.horizontal, 12)
-        )
-        .accessibilityIdentifier("agent-\(agent.agentId)")
       }
+      // A List row does not size a sideways scroll view to its content; give it the tile's.
+      .frame(
+        height: OkouSpace.sm * 2 + OkouAvatarSize.rail + OkouSpace.six + agentNameLine
+      )
+      .listRowInsets(EdgeInsets())
+      .listRowSeparator(.hidden)
+      .listRowBackground(Color.clear)
     }
   }
 
   private var threadSection: some View {
     Section {
       threadMenu
-      ForEach(visibleThreads) { thread in
-        Button {
-          store.selectChat(thread.id)
-          close()
-        } label: {
-          HStack(spacing: 10) {
-            Text(thread.displayTitle)
-              .font(.system(size: 17, weight: .regular))
-              .lineLimit(1)
-            Spacer(minLength: 0)
-            if thread.indicator == .active {
-              ProgressView()
-                .controlSize(.small)
-                .accessibilityLabel("Working")
-            } else if thread.indicator == .unread {
-              Circle()
-                .fill(Color.accentColor)
-                .frame(width: 7, height: 7)
-                .accessibilityLabel("Unread")
-            } else if thread.pinnedAt != nil {
-              Image(systemName: "pin.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            }
-          }
-          .frame(height: 48)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 0, leading: 24, bottom: 0, trailing: 24))
-        .listRowSeparator(.hidden)
-        .listRowBackground(
-          RoundedRectangle(cornerRadius: 12)
-            .fill(
-              store.selectedThreadID == thread.id
-                ? Color(uiColor: .secondarySystemBackground) : .clear
-            )
-            .padding(.horizontal, 12)
-        )
-        .accessibilityIdentifier("chat-\(thread.id)")
-        .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
-        .accessibilityValue(thread.pinnedAt != nil ? "Pinned" : "")
-        .contextMenu {
-          if !thread.isMuted {
-            readAction(thread, read: true)
-            readAction(thread, read: false)
-          }
-          Button(
-            thread.pinnedAt == nil ? "Pin" : "Unpin",
-            systemImage: thread.pinnedAt == nil ? "pin" : "pin.slash"
-          ) {
-            Task { await store.list.togglePinned(thread.id) }
-          }
-          .disabled(!store.list.canPin(thread.id) || store.needsUpgrade)
-          Button("Rename", systemImage: "pencil") {
-            store.list.beginRename(thread.id)
-          }
-          .disabled(
-            !store.list.canUpdate(thread.id) || store.list.isSavingRename || store.needsUpgrade)
-          if store.list.canArchiveChats {
-            Button(
-              thread.isArchived ? "Unarchive" : "Archive",
-              systemImage: thread.isArchived ? "archivebox.fill" : "archivebox"
-            ) {
-              Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
-            }
-            .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      if threadFilter.wrappedValue == .recent {
+        ForEach(recentGroups) { group in
+          groupHeading(group.title)
+          ForEach(Array(group.threads.enumerated()), id: \.element.id) { index, thread in
+            threadRow(
+              thread, waveIndex: index, showsStatusColumn: usesStatusColumn(visibleThreads))
           }
         }
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-          if !thread.isMuted {
-            readAction(thread, read: thread.isUnread).tint(.blue)
-          }
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-          if store.list.canArchiveChats {
-            Button {
-              Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
-            } label: {
-              Label(thread.isArchived ? "Unarchive" : "Archive", systemImage: "archivebox")
-            }
-            .tint(.orange)
-            .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
-          }
+      } else {
+        ForEach(visibleThreads) { thread in
+          threadRow(thread, showsStatusColumn: usesStatusColumn(visibleThreads))
         }
       }
     }
   }
 
+  /// Running and unread chats from every agent, so parallel work is visible without
+  /// switching agents one by one.
+  private var activeSection: some View {
+    Section {
+      scrollingSectionHeading("Active · \(activeThreads.count)")
+      ForEach(Array(activeThreads.enumerated()), id: \.element.id) { index, thread in
+        threadRow(
+          thread, showsAgent: true, waveIndex: index,
+          showsStatusColumn: usesStatusColumn(activeThreads))
+      }
+    }
+  }
+
+  private var activeThreads: [ChatThread] {
+    let threads = store.list.threads.filter { thread in
+      if thread.isArchived { return false }
+      if thread.indicator == .active { return true }
+      return thread.indicator == .unread && !thread.isMuted
+    }
+    return Array(threads.sorted { $0.sortAt > $1.sortAt }.prefix(6))
+  }
+
+  private struct ThreadGroup: Identifiable {
+    let id: String
+    let title: LocalizedStringKey
+    let threads: [ChatThread]
+  }
+
+  /// Pinned chats first, then by last activity, so the list reads like a timeline.
+  private var recentGroups: [ThreadGroup] {
+    let calendar = Calendar.current
+    let weekAgo = calendar.date(byAdding: .day, value: -7, to: .now) ?? .now
+    var pinned: [ChatThread] = []
+    var today: [ChatThread] = []
+    var yesterday: [ChatThread] = []
+    var week: [ChatThread] = []
+    var earlier: [ChatThread] = []
+    for thread in visibleThreads {
+      if thread.pinnedAt != nil {
+        pinned.append(thread)
+      } else if calendar.isDateInToday(thread.sortAt) {
+        today.append(thread)
+      } else if calendar.isDateInYesterday(thread.sortAt) {
+        yesterday.append(thread)
+      } else if thread.sortAt >= weekAgo {
+        week.append(thread)
+      } else {
+        earlier.append(thread)
+      }
+    }
+    let groups = [
+      ThreadGroup(id: "pinned", title: "Pinned", threads: pinned),
+      ThreadGroup(id: "today", title: "Today", threads: today),
+      ThreadGroup(id: "yesterday", title: "Yesterday", threads: yesterday),
+      ThreadGroup(id: "week", title: "Previous 7 days", threads: week),
+      ThreadGroup(id: "earlier", title: "Earlier", threads: earlier),
+    ]
+    return groups.filter { !$0.threads.isEmpty }
+  }
+
+  private func groupHeading(_ title: LocalizedStringKey) -> some View {
+    Text(title)
+      .font(.okou(.footnote).weight(.medium))
+      .foregroundStyle(OkouColor.mutedForeground)
+      .lineLimit(1)
+      .accessibilityAddTraits(.isHeader)
+      .listRowInsets(EdgeInsets(top: 12, leading: rowInset, bottom: 4, trailing: rowInset))
+      .listRowSeparator(.hidden)
+      .listRowBackground(Color.clear)
+  }
+
+  private func threadRow(
+    _ thread: ChatThread, showsAgent: Bool = false, waveIndex: Int = 0,
+    showsStatusColumn: Bool = false
+  ) -> some View {
+    Button {
+      store.selectChat(thread.id)
+      close()
+    } label: {
+      HStack(spacing: OkouSpace.ten) {
+        let parts = thread.titleParts
+        if showsStatusColumn {
+          // Every row in the section fills the slot, so titles share one left edge without a
+          // blank gap: the chat's status emoji, or a quiet chat glyph when it has none.
+          Group {
+            if let emoji = parts.emoji {
+              Text(emoji).font(.okou(.body))
+            } else {
+              OkouIcon("message-circle", size: OkouIconSize.inline)
+                .foregroundStyle(OkouColor.mutedForeground)
+                .accessibilityHidden(true)
+            }
+          }
+          .frame(width: statusColumnWidth, alignment: .leading)
+        }
+        VStack(alignment: .leading, spacing: OkouSpace.one) {
+          Text(parts.text)
+            .font(.okou(.body))
+            .lineLimit(1)
+          // Active chats come from every agent; name the one doing the work.
+          if showsAgent {
+            Text(agentName(thread.agentID))
+              .font(.okou(.caption))
+              .foregroundStyle(OkouColor.mutedForeground)
+              .lineLimit(1)
+          }
+        }
+        Spacer(minLength: 0)
+        if thread.indicator == .active {
+          OkouRunningIndicator(phaseOffset: Double(waveIndex) / OkouMotion.runningWaveRows)
+            .frame(width: 20)
+            .accessibilityElement()
+            .accessibilityLabel("Working")
+        } else if thread.indicator == .unread {
+          // Web: an 8 px sky-600 dot. Amber stays for a primary commit.
+          Circle()
+            .fill(OkouStatusColor.running)
+            .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
+            .accessibilityLabel("Unread")
+        } else if thread.pinnedAt != nil && threadFilter.wrappedValue != .recent {
+          OkouIcon("pin", size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground)
+            .accessibilityHidden(true)
+        }
+      }
+      .frame(minHeight: OkouControl.listRow)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
+    .listRowSeparator(.hidden)
+    .listRowBackground(
+      RoundedRectangle(cornerRadius: OkouRadius.control)
+        .fill(
+          store.selectedThreadID == thread.id
+            ? OkouColor.stateSelected : .clear
+        )
+        .padding(.horizontal, OkouSpace.md)
+    )
+    .accessibilityIdentifier("chat-\(thread.id)")
+    .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
+    .accessibilityValue(thread.pinnedAt != nil ? "Pinned" : "")
+    .contextMenu {
+      if !thread.isMuted {
+        readAction(thread, read: true)
+        readAction(thread, read: false)
+      }
+      Button(
+        thread.pinnedAt == nil ? "Pin" : "Unpin",
+        okouSymbol: thread.pinnedAt == nil ? "pin" : "pin-off"
+      ) {
+        Task { await store.list.togglePinned(thread.id) }
+      }
+      .disabled(!store.list.canPin(thread.id) || store.needsUpgrade)
+      Button("Rename", okouSymbol: "pencil") {
+        store.list.beginRename(thread.id)
+      }
+      .disabled(
+        !store.list.canUpdate(thread.id) || store.list.isSavingRename || store.needsUpgrade)
+      if store.list.canArchiveChats {
+        Button(
+          thread.isArchived ? "Unarchive" : "Archive",
+          okouSymbol: thread.isArchived ? "archive-restore" : "archive"
+        ) {
+          Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
+        }
+        .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      }
+    }
+    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+      if !thread.isMuted {
+        readAction(thread, read: thread.isUnread).tint(OkouColor.link)
+      }
+    }
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if store.list.canArchiveChats {
+        Button {
+          Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
+        } label: {
+          Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
+        }
+        .tint(OkouStatusColor.warning)
+        .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      }
+    }
+
+  }
+
   private var threadMenu: some View {
     Menu {
       Picker("Chats", selection: threadFilter) {
-        Text("Recent").tag(ThreadFilter.recent)
-        Text("Unread").tag(ThreadFilter.unread)
+        Text(filterTitle(.recent)).tag(ThreadFilter.recent)
+        Text(filterTitle(.unread)).tag(ThreadFilter.unread)
         if store.list.canArchiveChats {
-          Text("Archived").tag(ThreadFilter.archived)
+          Text(filterTitle(.archived)).tag(ThreadFilter.archived)
+        }
+        if store.list.canMuteChats {
+          Text(filterTitle(.muted)).tag(ThreadFilter.muted)
         }
       }
       .pickerStyle(.inline)
       if let agentID = store.selectedAgentID {
         Divider()
-        Button(markAgentReadTitle, systemImage: "checkmark.message") {
+        Button("Mark all read", okouSymbol: "check-check") {
           Task { await store.list.markAgentRead(agentID) }
         }
         .disabled(
@@ -303,23 +456,22 @@ struct ChatSidebarView: View {
       }
     } label: {
       HStack(spacing: 5) {
-        Text(threadFilter.wrappedValue.title)
+        Text(filterTitle(threadFilter.wrappedValue))
           .lineLimit(1)
-        Image(systemName: "chevron.down")
-          .font(.caption2.weight(.semibold))
+        OkouIcon("chevron-down", size: OkouIconSize.inline)
           .accessibilityHidden(true)
       }
-      .font(.subheadline.weight(.semibold))
-      .foregroundStyle(.secondary)
-      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+      .font(.okou(.subheadline).weight(.semibold))
+      .foregroundStyle(OkouColor.mutedForeground)
+      .frame(maxWidth: .infinity, minHeight: OkouControl.minimumTarget, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel("Chat list")
-    .accessibilityValue(Text(threadFilter.wrappedValue.title))
+    .accessibilityValue(Text(filterTitle(threadFilter.wrappedValue)))
     .accessibilityAddTraits(.isHeader)
     .accessibilityIdentifier("chat-list-filter")
-    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 0, trailing: 16))
+    .listRowInsets(EdgeInsets(top: 2, leading: rowInset, bottom: 0, trailing: rowInset))
     .listRowSeparator(.hidden)
     .listRowBackground(Color.clear)
   }
@@ -327,70 +479,70 @@ struct ChatSidebarView: View {
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {
     Button(
       read ? "Mark as read" : "Mark as unread",
-      systemImage: read ? "envelope.open" : "envelope.badge"
+      okouSymbol: read ? "mail-open" : "mail"
     ) { Task { await store.setRead(thread, read: read) } }
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)
   }
 
-  private func scrollingSectionHeading(_ title: String) -> some View {
+  private func scrollingSectionHeading(_ title: LocalizedStringKey) -> some View {
     Text(title)
-      .font(.subheadline.weight(.semibold))
-      .foregroundStyle(.secondary)
+      .font(.okou(.subheadline).weight(.semibold))
+      .foregroundStyle(OkouColor.mutedForeground)
       .lineLimit(1)
       .accessibilityAddTraits(.isHeader)
-      .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 8, trailing: 16))
+      .listRowInsets(EdgeInsets(top: 14, leading: rowInset, bottom: 8, trailing: rowInset))
       .listRowSeparator(.hidden)
       .listRowBackground(Color.clear)
   }
 
+  /// Thumb-reach bar: the account (settings) on the left, search in the middle, and the one
+  /// primary action, a new chat, on the right.
   private var footer: some View {
-    HStack {
+    HStack(spacing: OkouSpace.md) {
+      Button {
+        showsSettings = true
+      } label: {
+        let profile = authentication.profile
+        OkouProfileAvatar(
+          imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
+          size: OkouControl.minimumTarget)
+      }
+      .accessibilityLabel("Settings")
+      .accessibilityIdentifier("settings")
+      .sheet(isPresented: $showsSettings) {
+        ChatSettingsView(
+          store: store, authentication: authentication, notifications: notifications,
+          accountError: $accountError)
+      }
+      Button {
+        store.search.present()
+      } label: {
+        HStack(spacing: OkouSpace.sm) {
+          OkouIcon("search", size: OkouIconSize.standard)
+          Text("Search chats").lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        .font(.okou(.body))
+        // A search field's hint, the same colour as the composer's placeholder.
+        .foregroundStyle(OkouColor.placeholder)
+        .padding(.horizontal, OkouSpace.lg)
+        .frame(maxWidth: .infinity)
+        .modifier(OkouGlassControl(shape: .capsule))
+      }
+      .accessibilityLabel("Search chats")
+      .accessibilityIdentifier("search-chats")
       Button {
         newChat(store.selectedAgentID)
       } label: {
-        Label("Chat", systemImage: "square.and.pencil")
-          .font(.system(size: 17, weight: .semibold))
-          .foregroundStyle(.primary)
+        OkouToolbarIcon("square-pen")
+          .modifier(OkouGlassControl(shape: .circle, isProminent: true))
       }
-      .buttonStyle(.glass)
-      .buttonBorderShape(.capsule)
-      .controlSize(.large)
       .accessibilityLabel("New chat")
       .accessibilityIdentifier("new-chat")
-      Spacer()
-      Menu {
-        Link("Open Okou on web", destination: store.webURL)
-        if notifications.registrationError != nil {
-          Button("Retry notification setup", systemImage: "bell.badge") {
-            Task { await notifications.retryRegistration() }
-          }
-        }
-        Button(
-          notifications.status == .authorized ? "Notifications enabled" : "Enable notifications",
-          systemImage: "bell"
-        ) {
-          Task { await notifications.enable() }
-        }
-        Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-          Task {
-            do {
-              try await notifications.signOut(authentication: authentication)
-            } catch {
-              accountError = error.localizedDescription
-            }
-          }
-        }
-      } label: {
-        Image(systemName: "gearshape")
-          .font(.system(size: 21))
-          .frame(width: 32, height: 32)
-      }
-      .buttonStyle(.glass)
-      .accessibilityLabel("Account")
     }
     .buttonStyle(.plain)
     .frame(height: ChatComposerView.compactHeight)
-    .padding(.horizontal, 16)
-    .padding(.top, 8)
+    .padding(.horizontal, rowInset)
+    .padding(.top, OkouSpace.sm)
   }
 }

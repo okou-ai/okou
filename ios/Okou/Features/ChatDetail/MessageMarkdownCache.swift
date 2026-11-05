@@ -112,12 +112,41 @@ private actor MarkdownWorker {
       }
     }
     if !tracksDiagrams { content.markdownSourcePosition = nil }
+    shortenCommitHashes(in: &content)
     return content
+  }
+
+  /// A full commit hash in inline code is wider than a phone line and breaks mid-hash.
+  /// Show the 7-character short form Git and GitHub use; Copy still yields the full source.
+  private func shortenCommitHashes(in content: inout AttributedString) {
+    var ranges: [Range<AttributedString.Index>] = []
+    for run in content.runs where run.inlinePresentationIntent?.contains(.code) == true {
+      let value = content[run.range].characters
+      if value.count >= 20 && value.count <= 64
+        && value.allSatisfy({ $0.isHexDigit && !$0.isUppercase })
+      {
+        ranges.append(run.range)
+      }
+    }
+    for range in ranges.reversed() {
+      let value = String(content[range].characters)
+      let attributes = content[range].runs.first?.attributes ?? AttributeContainer()
+      content.replaceSubrange(
+        range, with: AttributedString(String(value.prefix(7)), attributes: attributes))
+    }
   }
 }
 
 struct PreparedMessageParser: MarkupParser {
   let content: AttributedString
+  /// Short inline code drawn as web-style chips. Off under VoiceOver, which would read the
+  /// chip's attachment as an image instead of its code.
+  var drawsInlineCode = false
 
-  func attributedString(for input: String) throws -> AttributedString { content }
+  func attributedString(for input: String) throws -> AttributedString {
+    if drawsInlineCode {
+      return content.withInlineCodeChips()
+    }
+    return content
+  }
 }

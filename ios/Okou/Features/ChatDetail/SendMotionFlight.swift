@@ -20,8 +20,8 @@ import UIKit
     self.source = source
     self.window = window
     originalText = source.attributedText
-    originFont = source.font ?? .systemFont(ofSize: 16)
-    targetFont = .preferredFont(forTextStyle: .body, compatibleWith: source.traitCollection)
+    originFont = source.font ?? OkouTypography.font(ofSize: 17)
+    targetFont = OkouTypography.font(forTextStyle: .body, compatibleWith: source.traitCollection)
     let insets = source.textContainerInset
     let maxWidth = source.bounds.width - insets.left - insets.right
     let measured = source.attributedText.boundingRect(
@@ -34,7 +34,7 @@ import UIKit
     origin = source.convert(glyphs, to: window).insetBy(dx: -14, dy: -14)
     bubble.frame = origin
     bubble.backgroundColor = .clear
-    bubble.layer.cornerRadius = 16
+    bubble.layer.cornerRadius = OkouRadius.chat
     bubble.layer.cornerCurve = .continuous
     bubble.isUserInteractionEnabled = false
     bubble.isAccessibilityElement = false
@@ -89,7 +89,8 @@ import UIKit
       y: origin.minY + (target.minY - origin.minY) * p,
       width: origin.width + (target.width - origin.width) * p,
       height: origin.height + (target.height - origin.height) * p)
-    bubble.backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(min(1, p * 2))
+    bubble.backgroundColor = UIColor(OkouColor.gray200).withAlphaComponent(
+      min(1, p * 2))
     text.frame = bubble.bounds.insetBy(dx: 14, dy: 14)
   }
 

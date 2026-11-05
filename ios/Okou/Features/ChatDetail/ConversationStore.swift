@@ -63,6 +63,27 @@ final class ConversationStore {
     service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
     didFail: didFail)
   private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
+
+  /// Text of the running run's messages as it streams, before the durable events arrive.
+  struct StreamedOutput: Equatable {
+    let eventID: String
+    let runID: String
+    var text: String
+    let createdAt: Date
+  }
+
+  private(set) var streamedOutputs: [StreamedOutput] = []
+  /// Subscribes to a run's live output; set by the workspace, which owns the realtime client.
+  @ObservationIgnored var runOutput:
+    (
+      (String, @escaping @MainActor @Sendable (RealtimeService.RunOutputDelta) -> Void) ->
+        (@MainActor () -> Void)?
+    )?
+  @ObservationIgnored private var streamRunID: String?
+  @ObservationIgnored private var streamStop: (@MainActor () -> Void)?
+  @ObservationIgnored private var streamBuffer: [String: StreamedOutput] = [:]
+  @ObservationIgnored private var streamOrder: [String] = []
+  @ObservationIgnored private var streamFlush: Task<Void, Never>?
   private(set) var pending: [PendingMessage] = [] {
     didSet { persistPending() }
   }
@@ -115,6 +136,32 @@ final class ConversationStore {
 
   private let sync: ChatSync
   private let commands: ChatCommands
+  /// Shares one answer together with the request that led to it, as the web does for a
+  /// single message: the answer's event plus the user's prompts directly before its turn.
+  func shareAnswer(_ messageID: String, audience: ChatShareAudience) async throws -> String {
+    guard let index = items.firstIndex(where: { $0.id == messageID }) else {
+      throw ChatError.invalidContract("This message is no longer available.")
+    }
+    var prompts: [String] = []
+    var cursor = index - 1
+    while cursor >= 0 {
+      if let message = items[cursor].message, message.role == .user {
+        if !pending.contains(where: { $0.id == message.id }) { prompts.insert(message.id, at: 0) }
+      } else if !prompts.isEmpty {
+        break
+      }
+      cursor -= 1
+    }
+    return try await commands.approvalClient.shareThread(
+      threadID: thread.id, eventIDs: prompts + [messageID], audience: audience)
+  }
+
+  @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
+    client: commands.approvalClient,
+    didContinue: { [weak self] in
+      guard let self, !closed else { return }
+      await refresh()
+    })
   @ObservationIgnored lazy var permissionActions = PermissionActionRegistry(
     commands: commands, sync: sync, didFail: didFail,
     didContinue: { [weak self] in
@@ -601,10 +648,72 @@ final class ConversationStore {
       !closed && !needsUpgrade && detailOwner != nil && isVisible()
         && !isStopping
         && history?.executionState == .running ? history?.activityRunID : nil)
+    reconcileStreaming()
+  }
+
+  /// Follows the visible chat's running run; like the web, a chunk 0 starts a message,
+  /// later chunks append, and the persisted event with the same id always wins.
+  private func reconcileStreaming() {
+    let runID =
+      !closed && !needsUpgrade && detailOwner != nil && isVisible()
+        && history?.executionState == .running ? history?.activityRunID?.lowercased() : nil
+    // Retry on the next history change when realtime was not connected yet.
+    if runID != streamRunID || (runID != nil && streamStop == nil) {
+      streamStop?()
+      streamStop = nil
+      streamBuffer = [:]
+      streamOrder = []
+      if let runID {
+        streamStop = runOutput?(runID) { [weak self] delta in self?.receiveStream(delta) }
+      }
+      streamRunID = streamStop == nil ? nil : runID
+    }
+    publishStream()
+  }
+
+  private func receiveStream(_ delta: RealtimeService.RunOutputDelta) {
+    // Only the Pi framework (Auto, on Okou credits) streams; other frameworks deliver
+    // whole messages as durable events, which already render.
+    guard !closed, delta.runID == streamRunID, delta.threadID == thread.id.lowercased(),
+      !isPersisted(delta.eventID)
+    else { return }
+    if delta.chunkIndex == 0 {
+      if streamBuffer[delta.eventID] == nil { streamOrder.append(delta.eventID) }
+      streamBuffer[delta.eventID] = StreamedOutput(
+        eventID: delta.eventID, runID: delta.runID, text: delta.delta, createdAt: .now)
+    } else if var output = streamBuffer[delta.eventID] {
+      output.text += delta.delta
+      streamBuffer[delta.eventID] = output
+    } else {
+      return
+    }
+    // About eight layouts a second: every chunk would re-measure the row each time.
+    guard streamFlush == nil else { return }
+    streamFlush = Task { [weak self] in
+      try? await Task.sleep(for: OkouMotion.streamFlush)
+      guard let self, !Task.isCancelled else { return }
+      self.streamFlush = nil
+      self.publishStream()
+    }
+  }
+
+  private func isPersisted(_ eventID: String) -> Bool {
+    history?.persistedEventIDs.contains(eventID) == true
+      || history?.messages.contains(where: { $0.id.lowercased() == eventID }) == true
+  }
+
+  private func publishStream() {
+    let next = streamOrder.compactMap { streamBuffer[$0] }.filter {
+      !$0.text.isEmpty && !isPersisted($0.eventID)
+    }
+    if next != streamedOutputs { streamedOutputs = next }
   }
 
   func close() {
     closed = true
+    streamStop?()
+    streamStop = nil
+    streamFlush?.cancel()
     activitySummary.stop()
     runUsage.close()
     modelSelection?.close()

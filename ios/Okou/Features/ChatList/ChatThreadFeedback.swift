@@ -28,34 +28,20 @@ struct ChatThreadFeedbackView: View {
   let feedback: ChatThreadFeedback
 
   var body: some View {
-    HStack(spacing: 12) {
-      Text(feedback.message)
-        .font(.subheadline)
-        .fixedSize(horizontal: false, vertical: true)
+    OkouToast(feedback.message, dismiss: { store.dismissThreadFeedback(feedback.id) }) {
       if let title = feedback.actionTitle {
         Button(title) {
           store.dismissThreadFeedback(feedback.id)
           Task { await feedback.action() }
         }
-        .font(.subheadline.weight(.semibold))
-        .frame(minWidth: 44, minHeight: 44)
+        .frame(minWidth: OkouControl.minimumTarget)
         .accessibilityIdentifier("chat-feedback-action")
         .disabled(
           !store.list.canUpdate(feedback.threadID) || store.needsUpgrade
             || (feedback.requiresNavigation && store.isCreating))
       }
-      Button {
-        store.dismissThreadFeedback(feedback.id)
-      } label: {
-        Image(systemName: "xmark").frame(width: 44, height: 44)
-      }
-      .accessibilityLabel("Dismiss chat feedback")
     }
-    .padding(.leading, 16)
-    .padding(.trailing, 4)
-    .padding(.vertical, 8)
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-    .padding(.horizontal, 16)
+    .padding(.horizontal, OkouSpace.lg)
     .accessibilityElement(children: .contain)
     .task(id: feedback.id) {
       UIAccessibility.post(notification: .announcement, argument: feedback.message)

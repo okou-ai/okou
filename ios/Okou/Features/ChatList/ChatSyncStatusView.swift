@@ -4,36 +4,25 @@ import SwiftUI
 struct ChatSyncStatusView: View {
   let state: ChatSynchronizationState?
   let retry: @MainActor () async -> Void
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var displayed: ChatSynchronizationState?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if let displayed {
-        Group {
-          if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 4) {
-              statusLabel(displayed)
-              retryButton(displayed)
-            }
-          } else {
-            HStack(spacing: 12) {
-              statusLabel(displayed)
-                .frame(maxWidth: .infinity, alignment: .leading)
-              retryButton(displayed)
-            }
+        // A slow or failed sync is status, not an alarm: the shared quiet banner.
+        OkouBanner(
+          Text(displayed.label),
+          icon: displayed == .unavailable ? "circle-alert" : "refresh-cw",
+          tone: displayed == .unavailable ? .problem : .status
+        ) {
+          if displayed == .unavailable {
+            Button("Try again") { Task { await retry() } }
+              .disabled(state != .unavailable)
           }
         }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 2)
-        .background(
-          Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16)
-        )
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .accessibilityElement(children: .contain)
+        .padding(.horizontal, OkouSpace.lg)
+        .padding(.top, OkouSpace.md)
+        .padding(.bottom, OkouSpace.sm)
       }
     }
     .task(id: state) {
@@ -41,28 +30,12 @@ struct ChatSyncStatusView: View {
         displayed = nil
         return
       }
-      do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+      // Routine catch-up usually finishes within a second, and screens show their own
+      // loading state meanwhile; only a slow sync or a failure earns the banner.
+      let delay = state == .unavailable ? Duration.milliseconds(300) : OkouMotion.syncBannerDelay
+      do { try await Task.sleep(for: delay) } catch { return }
       guard !Task.isCancelled else { return }
       displayed = state
-    }
-  }
-
-  private func statusLabel(_ state: ChatSynchronizationState) -> some View {
-    Label(
-      state.label,
-      systemImage: state == .unavailable ? "exclamationmark.circle" : "arrow.triangle.2.circlepath"
-    )
-    .font(.footnote)
-    .foregroundStyle(.secondary)
-    .fixedSize(horizontal: false, vertical: true)
-  }
-
-  @ViewBuilder private func retryButton(_ displayed: ChatSynchronizationState) -> some View {
-    if displayed == .unavailable {
-      Button("Try again") { Task { await retry() } }
-        .buttonStyle(ChatCardButtonStyle(emphasis: .detail))
-        .fixedSize(horizontal: true, vertical: false)
-        .disabled(state != .unavailable)
     }
   }
 }

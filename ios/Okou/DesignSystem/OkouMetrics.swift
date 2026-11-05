@@ -1,0 +1,141 @@
+import SwiftUI
+
+/// Native geometry is intentionally independent of the Web's pixel/rem scale.
+enum OkouSpace {
+  static let hairline: CGFloat = 0.5
+  static let one: CGFloat = 1
+  static let two: CGFloat = 2
+  static let three: CGFloat = 3
+  static let xs: CGFloat = 4
+  static let six: CGFloat = 6
+  static let sm: CGFloat = 8
+  static let ten: CGFloat = 10
+  static let md: CGFloat = 12
+  static let lg: CGFloat = 16
+  static let xl: CGFloat = 20
+  static let xxl: CGFloat = 24
+  static let xxxl: CGFloat = 32
+  static let section: CGFloat = 40
+  static let hero: CGFloat = 48
+}
+
+enum OkouRadius {
+  /// Web inline code (`.wmde-markdown code`, 4 px).
+  static let inline: CGFloat = 4
+  static let thumbnail: CGFloat = 6
+  static let small: CGFloat = 8
+  static let control: CGFloat = 14
+  static let chat: CGFloat = 16
+  static let card: CGFloat = 20
+  static let sheet: CGFloat = 28
+}
+
+enum OkouControl {
+  /// Minimum interactive area; small artwork may sit inside this area.
+  static let minimumTarget: CGFloat = 44
+  static let largeHeight: CGFloat = 52
+  static let pageInset: CGFloat = 24
+  static let readableWidth: CGFloat = 440
+  /// Chat rows in the sidebar; agent rows add room for their avatar.
+  static let listRow: CGFloat = 48
+  static let agentRow: CGFloat = 50
+  /// Quiet icon actions inside content (message actions, row shortcuts); still a 44 pt wide target.
+  static let inlineActionHeight: CGFloat = 36
+  /// The slim header of a code block (language and copy).
+  static let codeHeaderHeight: CGFloat = 32
+  /// Centre-to-centre spacing of the icon actions under an answer (web: 28 px buttons, 4 px gap;
+  /// ChatGPT: 31 pt).
+  static let messageActionPitch: CGFloat = 32
+  /// One agent in a sideways rail: avatar and a one-line name of about eleven characters at
+  /// 11 pt (Instagram's tray shows about ten), so about four and a half fit across the sidebar.
+  static let agentTile: CGFloat = 76
+  /// Unread marker on a chat row (web: 8 px `sky-600`).
+  static let unreadDot: CGFloat = 8
+  /// The leading slot that holds a chat's status emoji in a list section.
+  static let statusColumn: CGFloat = 22
+  /// The leading slot of a grouped-list row (`OkouRowLabel`): icons, logos and avatars all
+  /// centre in it, so every row's text starts on the same edge.
+  static let rowLeadingSlot: CGFloat = 28
+  /// Capacity bars (usage allowances).
+  static let meterHeight: CGFloat = 6
+  /// Live dictation waveform: bar width, gap between bars, and the strip's height.
+  static let waveformBar: CGFloat = 3
+  static let waveformGap: CGFloat = 2
+  static let waveformHeight: CGFloat = 28
+  /// The soft circle behind an empty state's glyph, and the empty state's text width.
+  static let emptyStateMark: CGFloat = 52
+  static let emptyStateWidth: CGFloat = 300
+  /// Filter chips in a sideways row.
+  static let chipHeight: CGFloat = 36
+  /// Catalog logo tiles: on a card, and at the top of an item's detail.
+  static let logoTile: CGFloat = 44
+  static let logoTileLarge: CGFloat = 64
+  /// The image or video preview at the top of a file or result card in the transcript.
+  static let cardMediaHeight: CGFloat = 180
+  /// The "+" / check on a catalog card, inside a 44 pt target.
+  static let addControl: CGFloat = 32
+}
+
+enum OkouIconSize {
+  static let inline: CGFloat = 16
+  static let menu: CGFloat = 20
+  static let standard: CGFloat = 20
+  static let large: CGFloat = 24
+  static let toolbar: CGFloat = 20
+  static let badge: CGFloat = 14
+  static let accessory: CGFloat = 16
+  static let reference: CGFloat = 16
+  static let mediaOverlay: CGFloat = 32
+  static let filePreview: CGFloat = 48
+  static let emptyState: CGFloat = 24
+  /// The breathing running dot; it scales with Dynamic Type from this base.
+  static let runningIndicator: CGFloat = 14
+  /// Partner logos (connector catalog) in a square slot.
+  static let partnerLogo: CGFloat = 24
+  static let partnerLogoLarge: CGFloat = 36
+}
+
+enum OkouAvatarSize {
+  static let workspace: CGFloat = 32
+  static let message: CGFloat = 28
+  static let sidebar: CGFloat = 32
+  static let greeting: CGFloat = 56
+  /// An agent in the sidebar's sideways rail of pinned agents.
+  static let rail: CGFloat = 56
+  /// The agent at the top of its profile sheet.
+  static let profile: CGFloat = 64
+}
+
+enum OkouMotion {
+  static let press = Animation.easeOut(duration: 0.15)
+  static let transition = Animation.easeInOut(duration: 0.25)
+
+  /// Web `chat-greeting-token`: each word fades in from an 8 pt blur and a 14 pt rise.
+  static let greetingWord = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.72)
+  static let greetingWordStep: Double = 0.07
+  static let greetingWordRise: CGFloat = 14
+  static let greetingWordBlur: CGFloat = 8
+  /// One dictation level sample; the waveform scrolls one bar per sample.
+  static let waveformSample: TimeInterval = 0.05
+  /// How far left the sidebar starts as it slides in, as a share of its width.
+  static let sidebarParallax: CGFloat = 0.25
+  /// Web `--duration-running-indicator`; list rows trail by 1/12 of a cycle each.
+  static let runningCycle: Double = 2.4
+  static let runningWaveRows: Double = 12
+  /// Streamed text is published at most this often so a row is not re-measured per chunk.
+  static let streamFlush = Duration.milliseconds(120)
+  /// Routine sync finishes sooner; only a slow sync shows its banner.
+  static let syncBannerDelay = Duration.milliseconds(2500)
+  /// How long a "Copied" check replaces the copy glyph.
+  static let confirmation = Duration.seconds(1.5)
+}
+
+/// Shadows are reserved for surfaces that float over content.
+enum OkouElevation {
+  /// The chat behind the open sidebar blurs to this radius as the list slides in.
+  static let sidebarBlur: CGFloat = 12
+  /// Suggestion panels above the composer (slash workflows, @mentions).
+  static let floatingRadius: CGFloat = 16
+  static let floatingY: CGFloat = 6
+  static let floatingOpacity: Double = 0.08
+}

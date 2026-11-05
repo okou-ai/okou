@@ -4,6 +4,8 @@ import SwiftUI
 struct ConversationWorkHeader: View {
   let section: ChatWorkSection
   let expanded: Bool
+  /// The run ended in a failure; the header must not read like a finished run.
+  var failed = false
   let toggle: () -> Void
 
   var body: some View {
@@ -16,8 +18,8 @@ struct ConversationWorkHeader: View {
         }
       }
     }
-    .font(.subheadline)
-    .foregroundStyle(.secondary)
+    .font(.okou(.subheadline))
+    .foregroundStyle(OkouColor.mutedForeground)
   }
 
   @ViewBuilder
@@ -27,7 +29,9 @@ struct ConversationWorkHeader: View {
         .buttonStyle(.plain)
         .accessibilityLabel(expanded ? "Collapse work history" : "Expand work history")
         .accessibilityValue(
-          "\(timeLabel(at: date)), \(section.stepCount) \(section.stepCount == 1 ? "step" : "steps"), \(expanded ? "Expanded" : "Collapsed")"
+          Text(
+            "\(timeLabel(at: date)), \(section.stepCount) steps, \(expanded ? String(localized: "Expanded") : String(localized: "Collapsed"))"
+          )
         )
         .accessibilityIdentifier(section.id)
     } else {
@@ -36,40 +40,44 @@ struct ConversationWorkHeader: View {
   }
 
   private func label(at date: Date) -> some View {
-    HStack(spacing: 8) {
-      Image(systemName: "hourglass").frame(width: 16).accessibilityHidden(true)
+    HStack(spacing: OkouSpace.sm) {
+      OkouIcon(failed ? "circle-alert" : "hourglass", size: OkouIconSize.inline)
+        .foregroundStyle(OkouColor.mutedForeground)
+        .accessibilityHidden(true)
       Text(timeLabel(at: date))
       if section.stepCount > 0 {
-        Text("·")
-        Text("\(section.stepCount) \(section.stepCount == 1 ? "step" : "steps")")
+        Text(verbatim: "·")
+        Text("\(section.stepCount) steps")
       }
       if section.isCollapsible {
-        Image(systemName: "chevron.right")
-          .font(.caption)
+        OkouIcon("chevron-right", size: OkouIconSize.inline)
           .rotationEffect(.degrees(expanded ? 90 : 0))
           .accessibilityHidden(true)
       }
     }
     .lineLimit(1)
-    .padding(.vertical, 10)
-    .frame(minHeight: 44)
+    .padding(.vertical, OkouSpace.ten)
+    .frame(minHeight: OkouControl.minimumTarget)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
   }
 
   private func timeLabel(at date: Date) -> String {
-    "\(section.endTime == nil ? "Working" : "Worked") for \(duration(until: date))"
+    let duration = duration(until: date)
+    if section.endTime == nil { return String(localized: "Working for \(duration)") }
+    if failed { return String(localized: "Stopped after \(duration)") }
+    return String(localized: "Worked for \(duration)")
   }
 
   private func duration(until date: Date) -> String {
-    let seconds = max(1, Int(date.timeIntervalSince(section.startTime).rounded()))
-    if seconds < 60 { return "\(seconds) sec" }
-    let minutes = Int((Double(seconds) / 60).rounded())
-    if minutes >= 60 {
-      let remainder = minutes % 60
-      return "\(minutes / 60) hr" + (remainder > 0 ? " \(remainder) min" : "")
-    }
-    return "\(minutes) min"
+    let seconds = max(1, date.timeIntervalSince(section.startTime).rounded())
+    let formatter = DateComponentsFormatter()
+    formatter.unitsStyle = .short
+    formatter.allowedUnits =
+      seconds < 60 ? [.second] : (seconds < 3600 ? [.minute] : [.hour, .minute])
+    formatter.maximumUnitCount = 2
+    return formatter.string(from: seconds < 60 ? seconds : (seconds / 60).rounded() * 60)
+      ?? "\(Int(seconds)) sec"
   }
 }
 

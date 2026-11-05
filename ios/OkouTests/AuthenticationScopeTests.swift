@@ -5,6 +5,21 @@ import XCTest
 
 @MainActor
 final class AuthenticationScopeTests: XCTestCase {
+  func testWorkspaceLogoMetadataKeepsUploadedImagesDistinctFromGeneratedPlaceholders() async throws
+  {
+    let (_, authentication) = try await session {
+      $0.workspaceIDs = ["org_one", "org_two"]
+      $0.workspaceImages = ["org_one": "https://example.invalid/uploaded-logo.png"]
+    }
+    await authentication.refresh()
+    let uploaded = try XCTUnwrap(authentication.workspaces.first(where: { $0.id == "org_one" }))
+    let generated = try XCTUnwrap(authentication.workspaces.first(where: { $0.id == "org_two" }))
+    XCTAssertTrue(uploaded.hasImage)
+    XCTAssertEqual(uploaded.imageURL?.absoluteString, "https://example.invalid/uploaded-logo.png")
+    XCTAssertFalse(generated.hasImage)
+    try await assertToken(authentication)
+  }
+
   func testSinglePendingWorkspaceMustBeVerifiedAndActivatedBeforeIssuingTokens() async throws {
     let (provider, authentication) = try await session {
       $0.activeWorkspaceID = nil

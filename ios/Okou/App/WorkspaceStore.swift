@@ -8,6 +8,8 @@ import Observation
 @MainActor @Observable
 final class WorkspaceStore {
   private let client: APIClient
+  /// One dictation session per workspace; whichever composer is visible drives it.
+  let voice: VoiceInputStore
   private let sync: ChatSync
   private let commands: ChatCommands
   private let conversationLimit: Int
@@ -118,6 +120,7 @@ final class WorkspaceStore {
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     self.client = client
+    voice = VoiceInputStore(client: client)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
@@ -209,6 +212,9 @@ final class WorkspaceStore {
       didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) },
       readRetrySleep: readRetrySleep)
     conversation.composer.setForeground(isForeground)
+    conversation.runOutput = { [weak self] runID, handler in
+      self?.realtime?.subscribeRunOutput(runID: runID, handler: handler)
+    }
     conversations[id] = conversation
     return conversation
   }

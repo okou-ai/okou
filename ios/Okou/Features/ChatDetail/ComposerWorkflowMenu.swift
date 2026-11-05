@@ -9,17 +9,25 @@ struct ComposerWorkflowMenu: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
-        Text("Workflows").font(.subheadline.bold())
+        Text("Workflows")
+          .font(.okou(.footnote).weight(.medium))
+          .foregroundStyle(OkouColor.mutedForeground)
+          .accessibilityAddTraits(.isHeader)
         Spacer()
         Button {
           suggestions.dismiss()
         } label: {
-          Image(systemName: "xmark").frame(width: 44, height: 44)
+          OkouIcon("x", size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground)
+            .frame(width: OkouControl.minimumTarget, height: OkouControl.inlineActionHeight)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Dismiss Workflow suggestions")
         .accessibilityIdentifier("dismiss-workflows")
       }
-      .padding(.leading, 16)
+      .padding(.leading, OkouSpace.lg)
+      .padding(.top, OkouSpace.xs)
       .fixedSize(horizontal: false, vertical: true)
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
@@ -32,26 +40,25 @@ struct ComposerWorkflowMenu: View {
     }
     .frame(maxHeight: availableHeight, alignment: .top)
     .fixedSize(horizontal: false, vertical: true)
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-    .clipShape(RoundedRectangle(cornerRadius: 16))
+    .modifier(OkouFloatingPanelStyle())
     .accessibilityIdentifier("workflow-menu")
   }
 
   @ViewBuilder
   private var content: some View {
     if suggestions.isLoading {
-      HStack {
-        ProgressView()
-        Text("Loading Workflows…").font(.subheadline)
-      }.padding(16)
+      OkouLoadingRow("Loading Workflows…").padding(.horizontal, OkouSpace.lg)
     } else if let error = suggestions.error {
-      VStack(alignment: .leading, spacing: 8) {
-        Text(error).font(.caption).foregroundStyle(.secondary)
-        Button("Retry Workflows") { suggestions.reload() }.frame(minHeight: 44)
-      }.padding(.horizontal, 16)
+      VStack(alignment: .leading, spacing: OkouSpace.sm) {
+        Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+        Button("Retry Workflows") { suggestions.reload() }.frame(
+          minHeight: OkouControl.minimumTarget)
+      }.padding(.horizontal, OkouSpace.lg)
     } else if suggestions.matches.isEmpty {
-      Text("No matching Workflows").font(.subheadline).foregroundStyle(.secondary)
-        .padding(16)
+      Text("No matching Workflows").font(.okou(.subheadline)).foregroundStyle(
+        OkouColor.mutedForeground
+      )
+      .padding(OkouSpace.lg)
     } else {
       ComposerWorkflowTable(
         suggestions: suggestions, values: suggestions.matches,
@@ -59,7 +66,10 @@ struct ComposerWorkflowMenu: View {
       )
       .frame(
         height: max(
-          0, min(240, availableHeight - headerHeight, CGFloat(suggestions.matches.count) * 68)))
+          0,
+          min(
+            264, availableHeight - headerHeight,
+            CGFloat(suggestions.matches.count) * 60 + OkouSpace.sm)))
     }
   }
 }
@@ -76,7 +86,8 @@ private struct ComposerWorkflowTable: UIViewRepresentable {
     table.separatorStyle = .none
     table.keyboardDismissMode = .none
     table.rowHeight = UITableView.automaticDimension
-    table.estimatedRowHeight = 68
+    table.estimatedRowHeight = 60
+    table.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: OkouSpace.sm, right: 0)
     table.register(WorkflowCell.self, forCellReuseIdentifier: "workflow")
     table.dataSource = context.coordinator
     table.delegate = context.coordinator
@@ -143,24 +154,65 @@ private final class WorkflowCell: UITableViewCell {
 
   func configure(_ workflow: ComposerWorkflow, activate: @escaping () -> Void) {
     self.activate = activate
-    var content = defaultContentConfiguration()
-    content.text = "/" + workflow.name
-    content.secondaryText = workflow.description
-    content.textProperties.font = .preferredFont(forTextStyle: .subheadline)
-    content.secondaryTextProperties.font = .preferredFont(forTextStyle: .caption1)
-    content.textProperties.adjustsFontForContentSizeCategory = true
-    content.secondaryTextProperties.adjustsFontForContentSizeCategory = true
-    content.textProperties.numberOfLines = 2
-    content.secondaryTextProperties.numberOfLines = 2
-    contentConfiguration = content
-    accessibilityLabel = [workflow.name, workflow.description].compactMap { $0 }.joined(
-      separator: ", ")
-    accessibilityHint = "Inserts this Workflow into your message"
+    // People pick a workflow by its name; the slash command is what gets inserted.
+    contentConfiguration = UIHostingConfiguration {
+      WorkflowSuggestionRow(workflow: workflow)
+    }
+    .margins(.horizontal, OkouSpace.lg)
+    .margins(.vertical, OkouSpace.sm)
+    configurationUpdateHandler = { cell, state in
+      var background = UIBackgroundConfiguration.clear()
+      background.backgroundColor =
+        state.isSelected || state.isHighlighted ? UIColor(OkouColor.stateSelected) : .clear
+      background.cornerRadius = OkouRadius.control
+      background.backgroundInsets = NSDirectionalEdgeInsets(
+        top: 1, leading: OkouSpace.six, bottom: 1, trailing: OkouSpace.six)
+      cell.backgroundConfiguration = background
+    }
+    accessibilityLabel = [workflow.displayName ?? workflow.name, workflow.description]
+      .compactMap { $0 }.joined(separator: ", ")
+    accessibilityHint = String(localized: "Inserts this Workflow into your message")
     accessibilityIdentifier = "workflow-" + workflow.id
   }
 
   override func accessibilityActivate() -> Bool {
     activate?()
     return true
+  }
+}
+
+private struct WorkflowSuggestionRow: View {
+  let workflow: ComposerWorkflow
+
+  var body: some View {
+    HStack(spacing: OkouSpace.md) {
+      OkouIcon("workflow", size: OkouIconSize.standard)
+        .foregroundStyle(OkouColor.mutedForeground)
+        .frame(width: 32, height: 32)
+        .background(OkouColor.stateHover, in: RoundedRectangle(cornerRadius: OkouRadius.small))
+      VStack(alignment: .leading, spacing: OkouSpace.two) {
+        HStack(spacing: OkouSpace.sm) {
+          Text(workflow.displayName ?? workflow.name)
+            .font(.okou(.subheadline).weight(.medium))
+            .foregroundStyle(OkouColor.foreground)
+            .lineLimit(1)
+          if workflow.displayName != nil {
+            Text(verbatim: "/" + workflow.name)
+              .font(.okou(.caption, design: .monospaced))
+              .foregroundStyle(OkouColor.mutedForeground)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
+        }
+        if let description = workflow.description, !description.isEmpty {
+          Text(description)
+            .font(.okou(.caption))
+            .foregroundStyle(OkouColor.mutedForeground)
+            .lineLimit(1)
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .accessibilityHidden(true)
   }
 }

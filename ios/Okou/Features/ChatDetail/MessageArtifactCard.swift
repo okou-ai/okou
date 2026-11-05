@@ -47,34 +47,37 @@ struct MessageArtifactCard: View {
           viewer.open(artifact, images: images, imageSources: imageSources)
         }
       } label: {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: OkouSpace.md) {
           if isMedia {
             ZStack {
-              Rectangle().fill(Color(.tertiarySystemFill))
+              Rectangle().fill(OkouColor.stateHover)
               if let data = card?.thumbnail, let image = UIImage(data: data) {
                 Image(uiImage: image).resizable().scaledToFit()
               } else if error == nil, loadsContent, card == nil {
                 ProgressView().accessibilityLabel("Loading result thumbnail")
               } else {
-                Image(systemName: artifact.symbol).font(.largeTitle).foregroundStyle(.secondary)
+                OkouIcon(artifact.symbol, size: OkouIconSize.mediaOverlay).foregroundStyle(
+                  OkouColor.mutedForeground)
               }
               if artifact.kind == .video {
-                Image(systemName: "play.circle.fill").font(.system(size: 42))
-                  .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.55))
+                OkouIcon("circle-play", size: OkouIconSize.mediaOverlay)
+                  .foregroundStyle(OkouMediaColor.foreground)
+                  .background(OkouMediaColor.scrim.opacity(0.55), in: Circle())
               }
             }
-            .frame(height: 180).clipped().clipShape(RoundedRectangle(cornerRadius: 10))
+            .frame(height: OkouControl.cardMediaHeight).clipped().clipShape(
+              RoundedRectangle(cornerRadius: OkouRadius.control))
           }
-          HStack(spacing: 8) {
-            ChatCardHeader(title: title, systemImage: artifact.symbol, titleLineLimit: 2) {
-              Text(error ?? artifact.subtitle).font(.caption).lineLimit(1, reservesSpace: true)
+          HStack(spacing: OkouSpace.sm) {
+            ChatCardHeader(title: title, icon: artifact.symbol, titleLineLimit: 2) {
+              Text(error ?? artifact.subtitle).lineLimit(1, reservesSpace: true)
             }
             .frame(height: informationHeight)
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(
-              .tertiary)
+            OkouIcon("chevron-right", size: OkouIconSize.inline)
+              .foregroundStyle(OkouColor.mutedForeground)
           }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.md)
         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -108,19 +111,19 @@ struct MessageArtifactCard: View {
 
 extension ChatArtifact {
   var symbol: String {
-    if isHTMLPresentation { return "rectangle.stack" }
+    if isHTMLPresentation { return "layers" }
     switch kind {
-    case .image: return "photo"
+    case .image: return "image"
     case .video: return "video"
-    case .audio: return "waveform"
+    case .audio: return "audio-lines"
     case .html: return "globe"
-    case .csv, .json: return "tablecells"
-    case .pdf, .markdown, .text: return "doc.text"
+    case .csv, .json: return "table"
+    case .pdf, .markdown, .text: return "file-text"
     case .file:
       switch (filename as NSString).pathExtension.lowercased() {
-      case "ppt", "pptx", "key", "odp": return "rectangle.stack"
-      case "xls", "xlsx", "numbers", "ods": return "tablecells"
-      default: return "doc.text"
+      case "ppt", "pptx", "key", "odp": return "layers"
+      case "xls", "xlsx", "numbers", "ods": return "table"
+      default: return "file-text"
       }
     }
   }

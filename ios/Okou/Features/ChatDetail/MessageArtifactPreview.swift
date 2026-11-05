@@ -16,33 +16,34 @@ struct MessageArtifactPreview: View {
         VStack(spacing: 0) {
           content(preview).frame(maxWidth: .infinity, maxHeight: .infinity)
           if let error = preview.downloadError {
-            Text(error).font(.caption).foregroundStyle(.secondary).padding(12)
+            Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(
+              OkouSpace.md)
           }
           if let warning = viewer.catalogWarning {
             DisclosureGroup("File details unavailable") {
-              Text(warning).font(.caption)
+              Text(warning).font(.okou(.caption))
               Button("Refresh file details") { Task { await viewer.refreshDetails() } }
-            }.font(.caption).foregroundStyle(.secondary).padding(12)
+            }.font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(OkouSpace.md)
           }
         }
         .navigationTitle(preview.artifact.filename)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
-            Button("Done") { viewer.dismiss() }
+            OkouCloseButton { viewer.dismiss() }
           }
           ToolbarItemGroup(placement: .primaryAction) {
             if preview.artifact.kind == .image {
               Button {
                 viewer.navigateImage(-1)
               } label: {
-                Image(systemName: "chevron.left")
+                OkouToolbarIcon("chevron-left")
               }
               .disabled(!viewer.canNavigateImage(-1)).accessibilityLabel("Previous image")
               Button {
                 viewer.navigateImage(1)
               } label: {
-                Image(systemName: "chevron.right")
+                OkouToolbarIcon("chevron-right")
               }
               .disabled(!viewer.canNavigateImage(1)).accessibilityLabel("Next image")
             }
@@ -50,7 +51,7 @@ struct MessageArtifactPreview: View {
               Button {
                 UIPasteboard.general.string = text.text
               } label: {
-                Image(systemName: "doc.on.doc")
+                OkouToolbarIcon("copy")
               }
               .accessibilityLabel("Copy content")
             }
@@ -58,7 +59,7 @@ struct MessageArtifactPreview: View {
               Button {
                 viewer.share()
               } label: {
-                Image(systemName: "square.and.arrow.up")
+                OkouToolbarIcon("share")
               }
               .accessibilityLabel("Share or save to Files")
             } else if preview.isDownloading {
@@ -67,7 +68,7 @@ struct MessageArtifactPreview: View {
               Button {
                 viewer.downloadForSharing()
               } label: {
-                Image(systemName: "arrow.down.to.line")
+                OkouToolbarIcon("download")
               }
               .accessibilityLabel("Download file to share or save")
             }
@@ -88,33 +89,24 @@ struct MessageArtifactPreview: View {
 
   @ViewBuilder private func content(_ preview: MessageArtifactStore.Preview) -> some View {
     if let error = preview.error {
-      ContentUnavailableView {
-        Label("Unable to open result", systemImage: "doc.badge.ellipsis")
-      } description: {
-        Text(error)
-      } actions: {
+      OkouEmptyState("Unable to open result", icon: "file-warning", description: Text(error)) {
         if preview.canRetry {
-          Button("Retry") { viewer.retry() }.buttonStyle(NeutralProminentButtonStyle())
+          Button("Retry") { viewer.retry() }
+            .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         }
         if case .hostedSite(let url) = preview.artifact.source {
           Link("Open in browser", destination: url)
+            .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         }
       }
     } else if let url = preview.contentURL {
       VStack(spacing: 0) {
         if let webError {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(webError).font(.caption)
-            HStack {
-              Button("Retry") {
-                self.webError = nil
-                viewer.retry()
-              }
-              if case .hostedSite(let url) = preview.artifact.source {
-                Link("Open in browser", destination: url)
-              }
-            }
-          }.padding(12)
+          OkouLoadErrorRow(message: webError, actionTitle: "Retry") {
+            self.webError = nil
+            viewer.retry()
+          }
+          .padding(.horizontal, OkouSpace.lg)
         }
         ZStack {
           ArtifactWebView(
@@ -130,8 +122,10 @@ struct MessageArtifactPreview: View {
           )
           .id(preview.id)
           if webLoading {
-            ProgressView("Loading page…").padding(16).background(
-              .regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            OkouLoadingRow("Loading page…")
+              .fixedSize()
+              .padding(.horizontal, OkouSpace.lg)
+              .modifier(OkouFloatingPanelStyle(radius: OkouRadius.control))
           }
         }
       }
@@ -156,16 +150,16 @@ struct MessageArtifactPreview: View {
         }
       }
     } else {
-      ProgressView("Loading result…").frame(maxWidth: .infinity, maxHeight: .infinity)
+      OkouLoadingRow("Loading result…")
+        .fixedSize()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
   private func unsupported(_ preview: MessageArtifactStore.Preview) -> some View {
-    ContentUnavailableView {
-      Label("Preview unavailable", systemImage: preview.artifact.symbol)
-    } description: {
-      Text("Share this file or save it to Files to open it in another app.")
-    }
+    OkouEmptyState(
+      "Preview unavailable", icon: preview.artifact.symbol,
+      description: Text("Share this file or save it to Files to open it in another app."))
   }
 }
 
@@ -223,13 +217,13 @@ private struct ArtifactTextView: View {
               ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
                 Text(cell).font(index == 0 ? .subheadline.weight(.semibold) : .subheadline)
                   .textSelection(.enabled).frame(width: 180, alignment: .leading)
-                  .padding(12)
+                  .padding(OkouSpace.md)
               }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(index.isMultiple(of: 2) ? Color(.secondarySystemBackground) : Color.clear)
+            .background(index.isMultiple(of: 2) ? OkouColor.stateHover : Color.clear)
           }
-        }.padding(16)
+        }.padding(OkouSpace.lg)
       }
       .accessibilityIdentifier("artifact-csv-table")
     } else {
@@ -238,10 +232,10 @@ private struct ArtifactTextView: View {
           MessageBodyView(
             text: content.text, baseURL: baseURL, markdown: markdown
           )
-          .padding(20)
+          .padding(OkouSpace.xl)
         } else {
-          Text(content.text).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+          Text(content.text).font(.okou(.body, design: .monospaced)).textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(OkouSpace.xl)
         }
       }
       .accessibilityIdentifier("artifact-text-reader")

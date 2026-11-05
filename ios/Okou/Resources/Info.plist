@@ -11,6 +11,8 @@
     <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>UIAppFonts</key>
+    <array><string>Geist.ttf</string><string>GeistMono.ttf</string></array>
     <key>UIBackgroundModes</key><array><string>remote-notification</string></array>
     <key>APNsEnvironment</key><string>$(APS_ENVIRONMENT)</string>
     <key>NotificationAppGroup</key><string>group.ai.okou.ios</string>
@@ -24,6 +26,8 @@
         <key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
         <key>CFBundleURLSchemes</key><array><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string></array>
     </dict></array>
+    <key>NSMicrophoneUsageDescription</key><string>Okou uses the microphone when you dictate a message.</string>
+    <key>NSCameraUsageDescription</key><string>Okou uses the camera when you take a photo or scan a document to attach to a message.</string>
     <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>LSRequiresIPhoneOS</key><true/>
     <key>UIApplicationSceneManifest</key>

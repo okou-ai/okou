@@ -178,6 +178,10 @@ public struct AgentRecord: Codable, Equatable, Sendable {
   public let isDefaultAgent: Bool
   public let displayName: String?
   public let avatarUrl: String?
+  /// The agent's responsibility, as written on its profile.
+  public var description: String? = nil
+  /// "public" (shared with the workspace) or "private".
+  public var visibility: String? = nil
 }
 
 public struct SidebarPreferences: Codable, Sendable {

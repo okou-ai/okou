@@ -18,7 +18,7 @@ struct ComposerMentionSource: Equatable {
     let agentSuggestions = (query.isEmpty ? Array(matchingAgents.prefix(3)) : matchingAgents).map {
       ComposerMentionSuggestion(
         kind: .agent, referenceID: $0.agentId, title: $0.displayName ?? $0.agentId,
-        avatarURL: $0.avatarUrl)
+        avatarURL: $0.isDefaultAgent ? OkouAgentAvatar.defaultURL : $0.avatarUrl)
     }
     // The PWA reducer orders pinned chats first, then activity and ID; it does
     // not apply the sidebar's fractional pin ranking to mention suggestions.
@@ -27,7 +27,10 @@ struct ComposerMentionSource: Equatable {
     }.prefix(25).map { thread in
       ComposerMentionSuggestion(
         kind: .chat, referenceID: thread.id, title: thread.title,
-        avatarURL: agents.first(where: { $0.agentId == thread.agentID })?.avatarUrl)
+        avatarURL: {
+          let agent = agents.first(where: { $0.agentId == thread.agentID })
+          return agent?.isDefaultAgent == true ? OkouAgentAvatar.defaultURL : agent?.avatarUrl
+        }())
     }
     return agentSuggestions + chats
   }
@@ -66,8 +69,7 @@ struct ComposerMentionMenu: View {
       editor: editor, suggestions: suggestions, selectedIndex: editor.selectedMentionIndex
     )
     .frame(height: min(260, CGFloat(suggestions.count) * 48 + 64))
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-    .clipShape(RoundedRectangle(cornerRadius: 16))
+    .modifier(OkouFloatingPanelStyle())
   }
 }
 
@@ -154,46 +156,27 @@ private struct ComposerMentionTable: UIViewRepresentable {
 
   private final class MentionCell: UITableViewCell {
     private var activate: () -> Void = {}
-    private var avatarTask: Task<Void, Never>?
     func configure(_ value: ComposerMentionSuggestion, activate: @escaping () -> Void) {
       self.activate = activate
-      avatarTask?.cancel()
-      var content = defaultContentConfiguration()
-      content.text = value.title
-      content.textProperties.font = .preferredFont(forTextStyle: .body)
-      content.textProperties.numberOfLines = 2
-      content.image = UIImage(
-        systemName: value.kind == .agent ? "person.crop.circle" : "bubble.left")
-      content.imageProperties.maximumSize = CGSize(width: 24, height: 24)
-      content.imageProperties.cornerRadius = 12
-      contentConfiguration = content
+      contentConfiguration = UIHostingConfiguration {
+        HStack(spacing: OkouSpace.md) {
+          OkouAgentAvatar(
+            avatarURL: value.avatarURL, name: value.title, size: OkouAvatarSize.message)
+          Text(value.title).font(.okou(.body)).foregroundStyle(OkouColor.foreground)
+            .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(minHeight: OkouControl.minimumTarget)
+      }.margins(.all, OkouSpace.sm)
       backgroundColor = .clear
       isAccessibilityElement = true
       accessibilityLabel = (value.kind == .agent ? "Agent: " : "Chat: ") + value.title
       accessibilityTraits = .button
       accessibilityIdentifier = "mention-" + value.id
-      guard let url = value.avatarURL.flatMap(URL.init(string:)),
-        ["https", "http"].contains(url.scheme)
-      else { return }
-      avatarTask = Task { [weak self] in
-        do {
-          let (data, _) = try await URLSession.shared.data(from: url)
-          try Task.checkCancellation()
-          guard let self, let image = UIImage(data: data) else { return }
-          var content = self.contentConfiguration as? UIListContentConfiguration
-          content?.image = image
-          self.contentConfiguration = content
-        } catch {
-          // Keep the native placeholder for unavailable artwork.
-        }
-      }
     }
     override func prepareForReuse() {
       super.prepareForReuse()
-      avatarTask?.cancel()
+      contentConfiguration = nil
       activate = {}
     }
-    deinit { avatarTask?.cancel() }
     override func accessibilityActivate() -> Bool {
       activate()
       return true

@@ -1,36 +1,25 @@
 import ClerkKit
-import ClerkKitUI
 import SwiftUI
 
 struct SignInView: View {
   let authentication: AuthenticationService
   let webURL: URL
-  @State private var theme = SignInStyle.makeTheme()
-
   var body: some View {
-    SignInPage(webURL: webURL) {
-      if let clerk = authentication.clerk {
-        if authentication.isLoading {
-          ProgressView("Restoring your session…")
-        } else if authentication.needsWorkspaceSelection {
-          WorkspaceSignInView(authentication: authentication, webURL: webURL)
-        } else if clerk.environment == nil {
-          unavailableView
-        } else {
-          AuthView(mode: .signIn, isDismissible: false) {
-            Task { await authentication.refreshWorkspaces() }
-          }
-          .environment(clerk)
-          .environment(\.clerkTheme, theme)
-          .clerkAppIconView {
-            SignInWordmark(width: 76)
-              .padding(.top, 16)
-              .padding(.bottom, 24)
-          }
-          .frame(maxHeight: 620)
-        }
+    Group {
+      if let clerk = authentication.clerk, !authentication.isLoading,
+        !authentication.needsWorkspaceSelection, clerk.environment != nil
+      {
+        NativeAuthView(clerk: clerk) { await authentication.refreshWorkspaces() }
       } else {
-        unavailableView
+        SignInPage(webURL: webURL) {
+          if authentication.isLoading {
+            ProgressView("Restoring your session…")
+          } else if authentication.needsWorkspaceSelection {
+            WorkspaceSignInView(authentication: authentication, webURL: webURL)
+          } else {
+            unavailableView
+          }
+        }
       }
     }
     .environment(\.locale, Locale(identifier: "en"))
@@ -45,41 +34,30 @@ struct SignInView: View {
   }
 
   private var unavailableContent: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      Image(systemName: "person.crop.circle.badge.exclamationmark")
-        .font(.system(size: 28))
-        .foregroundStyle(SignInStyle.primary)
+    VStack(alignment: .leading, spacing: OkouSpace.xl) {
+      OkouIcon("user-round-x", size: OkouIconSize.emptyState)
+        .foregroundStyle(OkouColor.mutedForeground)
+        .frame(width: OkouControl.emptyStateMark, height: OkouControl.emptyStateMark)
+        .background(OkouColor.stateHover, in: Circle())
         .accessibilityHidden(true)
       Text("Unable to sign in")
-        .font(.title2.weight(.semibold))
+        .font(.okou(.title2).weight(.semibold))
         .accessibilityAddTraits(.isHeader)
       Text(
         authentication.errorMessage
           ?? String(localized: "Sign-in could not be loaded. Please try again.")
       )
-      .font(.subheadline)
-      .foregroundStyle(.secondary)
+      .font(.okou(.subheadline))
+      .foregroundStyle(OkouColor.mutedForeground)
       .fixedSize(horizontal: false, vertical: true)
-      Button {
-        Task { await authentication.refresh() }
-      } label: {
-        Text("Try again")
-          .frame(maxWidth: .infinity)
-          .foregroundStyle(Color(uiColor: .systemBackground))
+      // The same filled and outline buttons as the rest of sign-in (NativeAuthView).
+      VStack(spacing: OkouSpace.md) {
+        Button("Try again") { Task { await authentication.refresh() } }
+          .buttonStyle(OkouButtonStyle(isPrimary: true))
+        Link("Open Okou on the web", destination: webURL)
+          .buttonStyle(OkouButtonStyle(isPrimary: false))
       }
-      .buttonStyle(.borderedProminent)
-      .buttonBorderShape(.roundedRectangle(radius: 10))
-      .tint(SignInStyle.primary)
-      .controlSize(.large)
-      Link(destination: webURL) {
-        Text("Open Okou on the web").frame(maxWidth: .infinity)
-      }
-      .buttonStyle(.bordered)
-      .buttonBorderShape(.roundedRectangle(radius: 10))
-      .tint(SignInStyle.primary)
-      .controlSize(.large)
     }
-    .padding(28)
   }
 }
 
@@ -96,28 +74,30 @@ private struct WorkspaceSignInView: View {
       ScrollView { content }
     }
     .scrollBounceBehavior(.basedOnSize)
-    .tint(SignInStyle.primary)
+    .tint(OkouAuthTheme.primary)
   }
 
   private var content: some View {
-    VStack(alignment: .leading, spacing: 20) {
+    VStack(alignment: .leading, spacing: OkouSpace.xl) {
       Text("Choose a workspace")
-        .font(.title2.weight(.semibold))
+        .font(.okou(.title2).weight(.semibold))
         .accessibilityAddTraits(.isHeader)
       Text("Continue with one of your workspaces.")
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
+        .font(.okou(.subheadline))
+        .foregroundStyle(OkouColor.mutedForeground)
       if authentication.isLoadingWorkspaces && authentication.workspaces.isEmpty {
-        ProgressView("Loading workspaces…")
+        OkouLoadingRow("Loading workspaces…")
       } else if authentication.workspaces.isEmpty && authentication.errorMessage == nil {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: OkouSpace.lg) {
           Text("Finish setting up your workspace on the web, then return here.")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(OkouColor.mutedForeground)
           Link("Open Okou on the web", destination: webURL)
+            .buttonStyle(OkouButtonStyle(isPrimary: false))
           Button("Refresh workspaces") { Task { await authentication.refresh() } }
+            .buttonStyle(OkouButtonStyle(isPrimary: false))
         }
       } else {
-        VStack(spacing: 12) {
+        VStack(spacing: OkouSpace.md) {
           ForEach(authentication.workspaces) { workspace in
             Button {
               Task {
@@ -128,54 +108,44 @@ private struct WorkspaceSignInView: View {
                 }
               }
             } label: {
-              HStack(spacing: 12) {
-                Image(systemName: "building.2")
-                  .foregroundStyle(SignInStyle.primary)
-                  .accessibilityHidden(true)
+              HStack(spacing: OkouSpace.md) {
+                OkouWorkspaceLogo(
+                  workspaceID: workspace.id, name: workspace.name,
+                  imageURL: workspace.imageURL, hasImage: workspace.hasImage
+                )
+                .accessibilityHidden(true)
                 Text(workspace.name)
-                  .font(.body.weight(.medium))
+                  .font(.okou(.body).weight(.medium))
                   .multilineTextAlignment(.leading)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                  .font(.caption.weight(.semibold))
-                  .foregroundStyle(.secondary)
+                Spacer(minLength: OkouSpace.sm)
+                OkouIcon("chevron-right", size: OkouIconSize.accessory)
+                  .foregroundStyle(OkouColor.mutedForeground)
                   .accessibilityHidden(true)
               }
-              .padding(16)
-              .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+              .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
-            .background(
-              Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12)
-            )
+            .buttonStyle(OkouProviderButtonStyle())
             .disabled(authentication.isSwitchingWorkspace)
           }
         }
       }
       if let error = actionError ?? authentication.errorMessage {
-        VStack(alignment: .leading, spacing: 12) {
-          Text(error).foregroundStyle(.red)
-          Button("Try again") {
-            actionError = nil
-            Task { await authentication.refresh() }
+        OkouLoadErrorRow(message: error) {
+          actionError = nil
+          await authentication.refresh()
+        }
+      }
+      Button("Sign out") {
+        Task {
+          do {
+            try await authentication.signOut()
+          } catch {
+            actionError = error.localizedDescription
           }
         }
       }
-      Divider()
-      HStack {
-        Button("Sign out", role: .destructive) {
-          Task {
-            do {
-              try await authentication.signOut()
-            } catch {
-              actionError = error.localizedDescription
-            }
-          }
-        }
-        Spacer()
-      }
+      .buttonStyle(OkouButtonStyle(isPrimary: false))
     }
-    .padding(28)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

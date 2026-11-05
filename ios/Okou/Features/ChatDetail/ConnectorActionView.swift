@@ -16,7 +16,7 @@ struct ConnectorActionCard: View {
     Group {
       if action.kind == .unavailable {
         information
-          .padding(.horizontal, 16).padding(.vertical, 12)
+          .padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.md)
           .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
           .modifier(ChatCardSurface())
       } else {
@@ -26,7 +26,8 @@ struct ConnectorActionCard: View {
         } actions: {
           switch state {
           case .loading:
-            ProgressView("Loading connector…").font(.caption).frame(minHeight: 44)
+            // The heading already says "Loading connector…"; the action slot keeps its height.
+            Color.clear.frame(height: OkouControl.minimumTarget).accessibilityHidden(true)
           case .unavailable:
             Color.clear.frame(height: 44).accessibilityHidden(true).allowsHitTesting(false)
           case .failed:
@@ -36,7 +37,7 @@ struct ConnectorActionCard: View {
               Button(button(status)) { store.activate(action) }
                 .disabled(complete(status) || store.active != nil)
               if complete(status) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                OkouIcon("circle-check").foregroundStyle(OkouStatusColor.success)
               }
             }
           }
@@ -51,13 +52,13 @@ struct ConnectorActionCard: View {
     switch state {
     case .loading:
       ChatCardHeader(
-        title: String(localized: "Loading connector…"), systemImage: "link", titleLineLimit: 1
+        title: String(localized: "Loading connector…"), icon: "link", titleLineLimit: 1
       ) {
         EmptyView()
       }
     case .unavailable:
       ChatCardHeader(
-        title: String(localized: "Action unavailable"), systemImage: "link.badge.plus",
+        title: String(localized: "Action unavailable"), icon: "link",
         titleLineLimit: 1
       ) {
         Text("This action no longer matches an available connector in this chat.")
@@ -65,17 +66,17 @@ struct ConnectorActionCard: View {
       }
     case .failed:
       ChatCardHeader(
-        title: String(localized: "Connection details unavailable"), systemImage: "link",
+        title: String(localized: "Connection details unavailable"), icon: "link",
         titleLineLimit: 1
       ) {
-        Text("Open this connection to try again.").font(.caption).lineLimit(2, reservesSpace: true)
+        Text("Open this connection to try again.").lineLimit(2, reservesSpace: true)
       }
     case .ready(let status):
-      ChatCardHeader(title: status.label, systemImage: "link", titleLineLimit: 1) {
+      ChatCardHeader(title: status.label, icon: "link", titleLineLimit: 1) {
         Text(status.account?.label ?? String(localized: "Connect an account for this Agent"))
           .lineLimit(1, reservesSpace: true).textSelection(.enabled)
         (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
-          .font(.caption).lineLimit(2, reservesSpace: true)
+          .lineLimit(2, reservesSpace: true)
       }
     }
   }
@@ -126,7 +127,7 @@ struct ConnectorAuthorizationSheet: View {
     NavigationStack {
       Form {
         Section {
-          Text(flow.status.label).font(.headline)
+          Text(flow.status.label).font(.okou(.headline))
           if let account = flow.status.account {
             LabeledContent("Account", value: account.label).textSelection(.enabled)
             if let identity = account.externalEmail ?? account.externalUsername
@@ -136,11 +137,11 @@ struct ConnectorAuthorizationSheet: View {
             }
           }
           Text("Authorization applies to the Agent in this chat.")
-            .font(.footnote).foregroundStyle(.secondary)
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
         if flow.needsConnection {
           if flow.status.builtin != nil {
-            Section("Connection method") {
+            Section {
               Picker("Method", selection: $flow.methodID) {
                 ForEach(
                   flow.status.builtin?.authMethods.filter { method in
@@ -151,8 +152,11 @@ struct ConnectorAuthorizationSheet: View {
                 ) { method in
                   Text(method.label).tag(method.id)
                 }
-              }.disabled(flow.busy || flow.waiting)
-              if let description = flow.method?.description { Text(description).font(.footnote) }
+              }
+              .okouValuePicker().disabled(flow.busy || flow.waiting)
+              if let description = flow.method?.description {
+                Text(description).font(.okou(.footnote))
+              }
               ForEach(flow.method?.manualFields ?? []) { field in
                 credential(field.label, key: field.id, secret: field.inputType == "password")
                   .disabled(flow.busy || flow.waiting)
@@ -165,27 +169,33 @@ struct ConnectorAuthorizationSheet: View {
                     set: { flow.options[option.id] = $0 })
                 ) {
                   ForEach(option.options, id: \.value) { Text($0.label).tag($0.value) }
-                }.disabled(flow.busy || flow.waiting)
+                }
+                .okouValuePicker()
+                .disabled(flow.busy || flow.waiting)
               }
               if flow.status.builtin?.connectNotice == "google-security-warning" {
                 Text(
                   "Google may show a security warning for this connection. Review the requested access before continuing."
                 )
-                .font(.footnote)
+                .font(.okou(.footnote))
               }
+            } header: {
+              Text("Connection method").okouSectionHeader()
             }
           } else if flow.status.custom?.usesBrowserAuthorization != true {
-            Section("Connection details") {
+            Section {
               ForEach(flow.status.custom?.fields ?? []) { field in
                 credential(field.label, key: field.key, secret: field.kind == "secret")
                   .disabled(flow.busy || flow.waiting)
-                if let description = field.description { Text(description).font(.footnote) }
+                if let description = field.description { Text(description).font(.okou(.footnote)) }
               }
+            } header: {
+              Text("Connection details").okouSectionHeader()
             }
           }
         }
         if flow.waiting {
-          Section("Finish authorization") {
+          Section {
             if let code = flow.session?.userCode {
               LabeledContent("Verification code", value: code).textSelection(.enabled)
             }
@@ -193,19 +203,23 @@ struct ConnectorAuthorizationSheet: View {
               SecureField("Authorization code", text: $flow.code)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
             } else {
-              Label("Waiting for authorization…", systemImage: "clock")
+              Label("Waiting for authorization…", okouSymbol: "clock")
             }
             if let url = flow.session?.authorizationUrl ?? flow.session?.verificationUriComplete
               ?? flow.session?.verificationUri
             {
               Button("Open authorization page") { flow.browserURL = url }
             }
+          } header: {
+            Text("Finish authorization").okouSectionHeader()
           }
         }
         if let error = flow.error {
-          Section { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+          Section { Text(error).foregroundStyle(OkouColor.destructive).textSelection(.enabled) }
         }
-        if let notice = flow.notice { Section { Text(notice).foregroundStyle(.secondary) } }
+        if let notice = flow.notice {
+          Section { Text(notice).foregroundStyle(OkouColor.mutedForeground) }
+        }
         Section {
           Button {
             store.submit()
@@ -225,6 +239,7 @@ struct ConnectorAuthorizationSheet: View {
           .accessibilityIdentifier("connector-confirm")
         }
       }
+      .okouGroupedBackground()
       .navigationTitle("Connect service")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

@@ -13,16 +13,16 @@ struct ConversationRunUsageView: View {
       } else {
         Button(action: showDetails) {
           HStack(spacing: 5) {
-            Image(systemName: "circle.grid.2x2").accessibilityHidden(true)
+            OkouIcon("layout-grid", size: OkouIconSize.inline).accessibilityHidden(true)
             if case .available(let usage) = state {
               Text(CreditUsageDisplay.credits(usage.totalCredits)).monospacedDigit()
             } else {
               Text("Usage unavailable")
             }
           }
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+          .font(.okou(.caption))
+          .foregroundStyle(OkouColor.mutedForeground)
+          .frame(minWidth: 44, minHeight: OkouControl.minimumTarget, alignment: .leading)
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -58,16 +58,18 @@ struct ConversationRunUsageDetails: View {
         case .loading:
           ProgressView().accessibilityLabel("Loading credit usage")
         case .unavailable:
-          Text("Settled usage is not available for this run.").foregroundStyle(.secondary)
+          Text("Settled usage is not available for this run.").foregroundStyle(
+            OkouColor.mutedForeground)
           Button("Try again", action: retry)
         case .failed(let message):
-          Text(message).foregroundStyle(.secondary)
+          Text(message).foregroundStyle(OkouColor.mutedForeground)
           Button("Try again", action: retry)
         }
       }
+      .okouGroupedBackground()
       .navigationTitle("Credit usage")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+      .toolbar { ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } } }
     }
   }
 }

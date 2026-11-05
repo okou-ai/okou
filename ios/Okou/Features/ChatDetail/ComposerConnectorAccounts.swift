@@ -30,7 +30,7 @@ struct ComposerConnectorAccounts: View {
             checked: selection == nil)
         }.disabled(store.isSaving || store.uncertain || loading)
         ForEach(accounts) { account in
-          VStack(alignment: .leading, spacing: 6) {
+          VStack(alignment: .leading, spacing: OkouSpace.six) {
             Button {
               Task { await choose(account.id) }
             } label: {
@@ -43,17 +43,17 @@ struct ComposerConnectorAccounts: View {
               Button("Reconnect this account") {
                 store.connect(target: connector.target, accountID: account.id)
               }
-              .font(.footnote).disabled(store.isSaving)
+              .font(.okou(.footnote)).disabled(store.isSaving)
             }
           }
         }
-        if loading { ProgressView("Loading accounts…") }
+        if loading { OkouLoadingRow("Loading accounts…") }
         if !loading, selection != nil, !accounts.contains(where: { $0.id == selection }) {
           Text("The selected account is unavailable. Choose an account or use default.")
-            .font(.footnote).foregroundStyle(.secondary)
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
         if !loading, accounts.isEmpty, !search.isEmpty {
-          Text("No accounts found").foregroundStyle(.secondary)
+          Text("No accounts found").foregroundStyle(OkouColor.mutedForeground)
         }
         if let cursor {
           Button("Load more") { Task { await load(cursor: cursor) } }.disabled(
@@ -61,10 +61,15 @@ struct ComposerConnectorAccounts: View {
         }
         Button("Add account") { store.connect(target: connector.target) }.disabled(store.isSaving)
       } footer: {
-        Text("This account choice applies to this chat. The default account stays unchanged.")
+        Group {
+          Text("This account choice applies to this chat. The default account stays unchanged.")
+
+        }
+        .okouSectionNote()
       }
     }
     .searchable(text: $search, prompt: "Find accounts")
+    .okouGroupedBackground()
     .navigationTitle(connector.label)
     .navigationBarTitleDisplayMode(.inline)
     .task(id: search) { await load() }
@@ -76,12 +81,12 @@ struct ComposerConnectorAccounts: View {
 
   private func accountLabel(_ label: String, detail: String, checked: Bool) -> some View {
     HStack {
-      VStack(alignment: .leading, spacing: 3) {
-        Text(label).foregroundStyle(.primary)
-        Text(detail).font(.caption).foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: OkouSpace.three) {
+        Text(label).foregroundStyle(OkouColor.foreground)
+        Text(detail).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
       }
       Spacer()
-      if checked { Image(systemName: "checkmark").foregroundStyle(.tint) }
+      if checked { OkouIcon("check").foregroundStyle(.tint) }
     }.contentShape(Rectangle())
   }
 

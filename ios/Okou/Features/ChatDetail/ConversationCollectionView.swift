@@ -6,28 +6,30 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   case earlier
   case message(
     ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
-    isWorkHistory: Bool = false)
-  case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
+    isWorkHistory: Bool = false, showsActions: Bool = false)
+  case work(
+    ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat, failed: Bool = false)
   case footer(ChatExecutionState, showsAvatar: Bool)
-  case failure(ChatMessage, AssistantFailureState, topSpacing: CGFloat)
+  case failure(
+    ChatMessage, AssistantFailureState, topSpacing: CGFloat, providerMessage: String? = nil)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
   case usage(runID: String, state: ConversationRunUsageState)
 
   var id: String {
     switch self {
     case .earlier: "conversation-earlier"
-    case .message(let message, _, _, _, _, _): message.id
-    case .work(let section, _, _, _): section.id
+    case .message(let message, _, _, _, _, _, _): message.id
+    case .work(let section, _, _, _, _): section.id
     case .footer: "conversation-bottom"
-    case .failure(let message, _, _): message.id
+    case .failure(let message, _, _, _): message.id
     case .followups: "conversation-followups"
     case .usage(let runID, _): "usage:\(runID)"
     }
   }
 
   var message: ChatMessage? {
-    if case .message(let message, _, _, _, _, _) = self { return message }
-    if case .failure(let message, _, _) = self { return message }
+    if case .message(let message, _, _, _, _, _, _) = self { return message }
+    if case .failure(let message, _, _, _) = self { return message }
     return nil
   }
 
@@ -40,8 +42,8 @@ enum ConversationCollectionRow: Equatable, Identifiable {
 
   var readingContentTopSpacing: CGFloat? {
     switch self {
-    case .message(_, _, let spacing, _, _, _), .work(_, _, _, let spacing),
-      .failure(_, _, let spacing):
+    case .message(_, _, let spacing, _, _, _, _), .work(_, _, _, let spacing, _),
+      .failure(_, _, let spacing, _):
       spacing
     case .usage: 0
     case .earlier, .footer, .followups: nil
@@ -196,8 +198,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
+    // The header and composer insets are safe-area insets (see updateContentInsets), so the
+    // native edge effects cover the whole bar instead of only the status bar band. The header
+    // has only glass controls and no title, so the soft blur is enough at both edges.
+    collection.contentInsetAdjustmentBehavior = .always
     collection.topEdgeEffect.style = .soft
-    collection.bottomEdgeEffect.isHidden = true
+    collection.bottomEdgeEffect.style = .soft
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled
     collection.register(MessageSelectionCell.self, forCellWithReuseIdentifier: "message")
@@ -272,7 +278,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     loading.hidesWhenStopped = true
     loading.isUserInteractionEnabled = false
     loading.isAccessibilityElement = true
-    loading.accessibilityLabel = "Loading chat"
+    loading.accessibilityLabel = String(localized: "Loading chat")
     view.addSubview(loading)
     source.sidebar?.attach(self)
     registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
@@ -326,12 +332,17 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private func updateContentInsets() {
-    let insets = UIEdgeInsets(
-      top: source.contentInsets.top, left: source.contentInsets.leading,
-      bottom: source.contentInsets.bottom, right: source.contentInsets.trailing)
-    guard collection.contentInset != insets else { return }
-    collection.contentInset = insets
-    collection.verticalScrollIndicatorInsets = insets
+    // Header and composer heights extend the safe area rather than the content inset:
+    // adjustedContentInset stays the same, and UIKit's scroll edge effects follow the
+    // safe area, so they now reach under both bars.
+    let bars = UIEdgeInsets(
+      top: source.contentInsets.top, left: 0, bottom: source.contentInsets.bottom, right: 0)
+    let horizontal = UIEdgeInsets(
+      top: 0, left: source.contentInsets.leading, bottom: 0, right: source.contentInsets.trailing)
+    guard additionalSafeAreaInsets != bars || collection.contentInset != horizontal else { return }
+    additionalSafeAreaInsets = bars
+    collection.contentInset = horizontal
+    view.layoutIfNeeded()
     source.sendTransition?.layoutDidChange()
     publishViewportChange()
     publishMetrics()
@@ -447,7 +458,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       source.sendTransition?.hidesBubbleID != nil
       && missing.allSatisfy { row in
         switch row {
-        case .message(let message, _, _, _, _, _):
+        case .message(let message, _, _, _, _, _, _):
           message.id == source.sendTransition?.messageID
             && message.role == .user && message.attachments.isEmpty && message.modelChange == nil
             && message.inputError == nil
@@ -563,8 +574,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   {
     rows.map { row in
       switch row {
-      case .message(let message, _, let topSpacing, let pendingRetry, _, _):
-        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
+      case .message(let message, _, let topSpacing, let pendingRetry, _, _, _):
+        let font = OkouTypography.font(forTextStyle: .body, compatibleWith: traitCollection)
         let text = NSAttributedString(string: message.text, attributes: [.font: font])
         let size = text.boundingRect(
           with: CGSize(width: (width - 40) * 0.85 - 28, height: .greatestFiniteMagnitude),
@@ -573,7 +584,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
           pendingRetry == nil
           ? 0
           : 8
-            + UIFont.preferredFont(
+            + OkouTypography.font(
               forTextStyle: .caption1, compatibleWith: traitCollection
             ).lineHeight
         return pixelHeight(size.height + 28 + topSpacing + status)

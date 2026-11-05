@@ -41,7 +41,7 @@ struct PermissionActionCard: View {
     ChatActionCard {
       ChatCardHeader(
         title: String(localized: "\(connectorLabel) permissions"),
-        systemImage: "lock.shield", titleLineLimit: 1
+        icon: "shield-check", titleLineLimit: 1
       ) {
         if store.action.action == .allow {
           Text("Allow \(permission)")
@@ -51,22 +51,22 @@ struct PermissionActionCard: View {
         Text(
           "For \(store.snapshot?.agentName ?? String(localized: "this Agent")) · \(status)"
         )
-        .font(.caption)
         .lineLimit(1, reservesSpace: true)
-        .foregroundStyle(.secondary)
       }
     } actions: {
       if store.applied && !store.needsContinuation && store.error == nil && !store.isLoading
         && !store.isSaving
       {
-        HStack(spacing: 8) {
+        HStack(spacing: OkouSpace.sm) {
           Label(
             store.action.action == .allow
               ? String(localized: "Allowed") : String(localized: "Denied"),
-            systemImage: store.action.action == .allow ? "checkmark.circle" : "minus.circle"
+            okouSymbol: store.action.action == .allow ? "circle-check" : "circle-minus"
           )
-          .font(.subheadline)
-          .foregroundStyle(store.action.action == .allow ? Color.green : Color.secondary)
+          .font(.okou(.subheadline))
+          .foregroundStyle(
+            store.action.action == .allow ? OkouStatusColor.success : OkouColor.mutedForeground
+          )
           .fixedSize(horizontal: false, vertical: true)
           Spacer(minLength: 0)
           Button("View details") { showsDetails = true }
@@ -106,7 +106,7 @@ struct PermissionActionDetails: View {
           LabeledContent(
             "Agent", value: store.snapshot?.agentName ?? store.action.agentID)
           Text("These permissions apply to your account for this Agent.")
-            .font(.caption).foregroundStyle(.secondary)
+            .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
           LabeledContent(
             "Permission",
             value: store.action.permission == "__unknown__"
@@ -117,7 +117,7 @@ struct PermissionActionDetails: View {
             Text(description).textSelection(.enabled)
           }
           if let method = store.action.method, let path = store.action.path {
-            Text("\(method) \(path)").font(.caption.monospaced()).textSelection(.enabled)
+            Text("\(method) \(path)").font(.okou(.caption).monospaced()).textSelection(.enabled)
           }
           if let reason = store.action.reason, !reason.isEmpty {
             Text(reason).textSelection(.enabled)
@@ -125,9 +125,11 @@ struct PermissionActionDetails: View {
         }
         Section {
           if store.isLoading || (store.snapshot == nil && store.error == nil) {
-            ProgressView("Checking permission…")
+            OkouLoadingRow("Checking permission…")
           }
-          if let error = store.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+          if let error = store.error {
+            OkouLoadErrorRow(message: error)
+          }
           if store.snapshot == nil && store.error != nil && !store.isLoading {
             Button("Retry loading") { Task { await store.refresh() } }
           } else if store.snapshot != nil && !store.hasPermission && !store.isLoading {
@@ -151,11 +153,12 @@ struct PermissionActionDetails: View {
                 Text("7 days").tag(ChatPermissionAction.Duration.week)
                 Text("Always").tag(ChatPermissionAction.Duration.always)
               }
+              .okouValuePicker()
               .disabled(store.isSaving || store.isLoading)
               .accessibilityIdentifier("permission-duration")
             }
             if store.action.callbackPrompt != nil {
-              Text("The chat will continue after confirmation.").font(.caption)
+              Text("The chat will continue after confirmation.").font(.okou(.caption))
             }
             Button {
               Task { await store.confirm() }
@@ -171,14 +174,13 @@ struct PermissionActionDetails: View {
             .disabled(!store.canConfirm)
             .accessibilityIdentifier("permission-confirm")
           }
-          if store.isSaving { ProgressView("Saving permission…") }
+          if store.isSaving { OkouLoadingRow("Saving permission…") }
         }
       }
+      .okouGroupedBackground()
       .navigationTitle("Permission request")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
-      }
+      .toolbar { ToolbarItem(placement: .topBarTrailing) { OkouCloseButton { dismiss() } } }
     }
   }
 }

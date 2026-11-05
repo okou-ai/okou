@@ -8,11 +8,19 @@ struct OkouApp: App {
   @State private var authentication: AuthenticationService?
   private let configuration = Result { try AppConfiguration() }
 
+  private static var isDesignPreview: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("--mobile-design-system")
+    #else
+      false
+    #endif
+  }
+
   init() {
-    CrashReporting.start()
+    if !Self.isDesignPreview { CrashReporting.start() }
     // The XCTest host runs real services with isolated HTTP fixtures, never production auth.
     let isTestHost = NSClassFromString("XCTestCase") != nil
-    let authentication = isTestHost ? nil : AuthenticationService()
+    let authentication = isTestHost || Self.isDesignPreview ? nil : AuthenticationService()
     _authentication = State(initialValue: authentication)
     if let authentication, case .success(let configuration) = configuration {
       delegate.notifications.configure(authentication: authentication, configuration: configuration)
@@ -22,24 +30,38 @@ struct OkouApp: App {
   var body: some Scene {
     WindowGroup {
       Group {
-        if let authentication {
-          switch configuration {
-          case .success(let configuration):
-            AppRootView(
-              authentication: authentication, configuration: configuration,
-              notifications: delegate.notifications)
-          case .failure(let error):
-            ContentUnavailableView(
-              "Unable to start Okou", systemImage: "exclamationmark.triangle",
-              description: Text(error.localizedDescription))
+        #if DEBUG
+          if Self.isDesignPreview {
+            NavigationStack { OkouDesignSystemCatalog() }
+          } else {
+            productRoot
           }
-        } else {
-          Color.clear
-        }
+        #else
+          productRoot
+        #endif
       }
       .modifier(OkouAppearance())
       .task { await authentication?.start() }
       .onOpenURL { url in Task { await authentication?.handleURL(url) } }
+    }
+  }
+
+  private var productRoot: some View {
+    Group {
+      if let authentication {
+        switch configuration {
+        case .success(let configuration):
+          AppRootView(
+            authentication: authentication, configuration: configuration,
+            notifications: delegate.notifications)
+        case .failure(let error):
+          OkouEmptyState(
+            "Unable to start Okou", icon: "triangle-alert",
+            description: Text(error.localizedDescription))
+        }
+      } else {
+        Color.clear
+      }
     }
   }
 }
@@ -147,6 +169,8 @@ private struct WorkspaceRootView: View {
   @State private var store: WorkspaceStore
   @State private var sidebar = SidebarInteraction()
   @State private var topContentHeight: CGFloat = 0
+  @State private var showsAgent = false
+  @State private var taglineIndex = Int.random(in: 0..<64)
   @Binding private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -173,7 +197,9 @@ private struct WorkspaceRootView: View {
 
   var body: some View {
     GeometryReader { geometry in
-      let sidebarWidth = min(300, geometry.size.width - 56)
+      // Full width: chat titles are long. The chat slides out to the right and blurs away while
+      // the list slides in from the left and comes into focus.
+      let sidebarWidth = geometry.size.width
       let topInset = geometry.safeAreaInsets.top
       let screenHeight = geometry.size.height + topInset + geometry.safeAreaInsets.bottom
       let sidebarOffset = min(
@@ -181,7 +207,7 @@ private struct WorkspaceRootView: View {
       let sidebarProgress = sidebarOffset / sidebarWidth
       let panelCornerRadius = 30 * sidebarProgress
       ZStack(alignment: .leading) {
-        Color(uiColor: .systemBackground).ignoresSafeArea()
+        OkouColor.background.ignoresSafeArea()
 
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
@@ -192,13 +218,20 @@ private struct WorkspaceRootView: View {
           newChat: startNewChat
         )
         .frame(width: sidebarWidth, height: geometry.size.height)
+        .blur(radius: OkouElevation.sidebarBlur * (1 - sidebarProgress))
+        .opacity(sidebarProgress)
+        .offset(x: -sidebarWidth * OkouMotion.sidebarParallax * (1 - sidebarProgress))
         .allowsHitTesting(sidebar.isOpen)
         .accessibilityHidden(!sidebar.isOpen)
 
         Group {
           if let conversation = store.selectedConversation {
             ChatDetailView(
-              conversation: conversation, topContentInset: topContentHeight, sidebar: sidebar,
+              conversation: conversation,
+              agents: store.list,
+              voice: store.voice,
+              didSend: { await notifications.requestAfterSend() },
+              topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
                 agentID: conversation.thread.agentID, agents: store.list.agents,
                 threads: store.list.threads),
@@ -219,6 +252,7 @@ private struct WorkspaceRootView: View {
                   submit: {
                     await store.sendNewChat(
                       sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+                    await notifications.requestAfterSend()
                   },
                   refresh: nil,
                   modelSelection: store.newModelSelection,
@@ -226,23 +260,35 @@ private struct WorkspaceRootView: View {
                   mentionSource: ComposerMentionSource(
                     agentID: store.selectedAgentID, agents: store.list.agents,
                     threads: store.list.threads),
-                  workflowSource: store.composerWorkflows, agentID: store.selectedAgentID)
+                  workflowSource: store.composerWorkflows, agentID: store.selectedAgentID,
+                  voice: store.voice,
+                  placeholder: String(localized: "Message \(store.currentAgentName)"))
               }
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
         .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
+        // Owned by the container so the header can open it from a chat and from home.
+        .sheet(isPresented: $showsAgent) {
+          AgentProfileSheet(
+            store: store,
+            agentID: store.list.threads.first(where: { $0.id == store.selectedThreadID })?.agentID
+              ?? store.selectedAgentID ?? "",
+            newChat: { startNewChat($0) })
+        }
         .overlay {
           if let submission = store.newChatSubmission, submission.isPresenting {
             NewChatSubmissionView(submission: submission, webURL: store.webURL)
               .id(submission.message.id)
-              .background { Color(uiColor: .systemBackground).ignoresSafeArea() }
+              .background { OkouColor.background.ignoresSafeArea() }
           }
         }
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
-            ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
+            ChatWorkspaceHeader(
+              store: store, height: headerHeight, openSidebar: openSidebar,
+              openAgent: { showsAgent = true })
             ChatSyncStatusView(state: sidebar.isOpen ? nil : store.synchronizationState) {
               await store.retrySynchronization()
             }
@@ -255,18 +301,21 @@ private struct WorkspaceRootView: View {
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
         .accessibilityHidden(sidebar.isOpen)
+        .sensoryFeedback(.selection, trigger: sidebar.isOpen)
+        .blur(radius: OkouElevation.sidebarBlur * sidebarProgress)
         .background(alignment: .top) {
           RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-            .fill(Color(uiColor: .systemBackground))
+            .fill(OkouColor.background)
             .frame(width: geometry.size.width, height: screenHeight)
             .offset(y: -topInset)
         }
         .overlay(alignment: .top) {
+          // The chat dissolves into the sidebar's own ground as it slides away.
           Button(action: closeSidebar) {
-            Color(uiColor: .secondarySystemBackground)
+            OkouColor.sidebar
               .frame(width: geometry.size.width, height: screenHeight)
               .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-              .opacity(0.82 * sidebarProgress)
+              .opacity(0.5 * sidebarProgress)
               .offset(y: -topInset)
           }
           .buttonStyle(.plain)
@@ -280,8 +329,6 @@ private struct WorkspaceRootView: View {
             .frame(width: geometry.size.width, height: screenHeight)
             .offset(y: -topInset)
         }
-        .compositingGroup()
-        .shadow(color: .black.opacity(0.3 * sidebarProgress), radius: 18, x: -5)
         .offset(x: sidebarOffset)
       }
       .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
@@ -328,6 +375,15 @@ private struct WorkspaceRootView: View {
     .task(id: notifications.pendingDestination) {
       await openPendingNotification()
     }
+    // Siri / Shortcuts "Ask Okou": a new chat with the request in the composer, unsent.
+    .task(id: PendingAppRequest.shared.prompt) {
+      guard let prompt = PendingAppRequest.shared.prompt else { return }
+      PendingAppRequest.shared.prompt = nil
+      startNewChat()
+      guard !prompt.isEmpty else { return }
+      try? await Task.sleep(for: .milliseconds(400))
+      store.newComposer.editor.appendText(prompt)
+    }
     .onDisappear {
       sidebar.cancelDrag()
       store.close()
@@ -356,56 +412,57 @@ private struct WorkspaceRootView: View {
       Text(store.list.actionError ?? "")
     }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
-      ContentUnavailableView {
-        Label("Update required", systemImage: "arrow.down.app")
-      } description: {
-        Text(
+      OkouEmptyState(
+        "Update required", icon: "download",
+        description: Text(
           "This build no longer supports the current API. Install the latest Okou build to continue."
         )
-      } actions: {
+      ) {
         Link("Open TestFlight", destination: URL(string: "itms-beta://")!)
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
       }
+      .background(OkouColor.background)
       .interactiveDismissDisabled()
     }
   }
 
   private var newChatHome: some View {
-    VStack {
+    let agent = store.list.agents.first(where: { $0.agentId == store.selectedAgentID })
+    return VStack(spacing: OkouSpace.xxl) {
       Spacer(minLength: 24)
-      HStack(spacing: 16) {
-        if let agent = store.list.agents.first(where: { $0.agentId == store.selectedAgentID }),
-          !agent.isDefaultAgent
-        {
-          Text(String((agent.displayName ?? "A").prefix(1)))
-            .font(.system(size: 28, weight: .medium))
-            .frame(width: 56, height: 56)
-            .background(
-              Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-        } else {
-          Image("AssistantAvatar")
-            .resizable()
-            .scaledToFit()
-            .frame(width: 56, height: 56)
-            .background(
-              Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-        }
-        Text(greetingText)
-          .font(.system(size: 24, weight: .semibold))
-          .fixedSize(horizontal: false, vertical: true)
+      // Restarts the web's word-by-word entrance for each agent and each return home.
+      NewChatGreeting(
+        avatarURL: agent?.avatarUrl, agentName: agent?.displayName ?? "Okou",
+        isDefaultAgent: agent?.isDefaultAgent ?? true, text: greetingText,
+        openAgent: { showsAgent = true }
+      )
+      .id("\(store.selectedAgentID ?? "")-\(taglineIndex)")
+      // A custom agent says what it is for under its greeting.
+      if agent?.isDefaultAgent == false,
+        let description = agent?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !description.isEmpty
+      {
+        Text(description)
+          .font(.okou(.subheadline))
+          .foregroundStyle(OkouColor.mutedForeground)
+          .multilineTextAlignment(.center)
+          .lineLimit(4)
       }
-      .frame(maxWidth: .infinity)
-      .padding(.horizontal, 24)
-      .accessibilityElement(children: .combine)
       Spacer(minLength: 24)
+    }
+    .frame(maxWidth: 440)
+    .padding(.horizontal, OkouSpace.xxl)
+    .frame(maxWidth: .infinity)
+    .onChange(of: store.selectedAgentID) { _, _ in taglineIndex = Int.random(in: 0..<64) }
+    .onChange(of: store.selectedThreadID) { _, id in
+      if id == nil { taglineIndex = Int.random(in: 0..<64) }
     }
   }
 
   private var greetingText: String {
-    let name = authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let name, !name.isEmpty {
-      return "What are we working on, \(name)?"
-    }
-    return "What are we working on?"
+    NewChatTagline.text(
+      index: taglineIndex,
+      name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
   private func openPendingNotification() async {
