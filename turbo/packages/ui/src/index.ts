@@ -10,6 +10,10 @@ export {
 } from "./components/ui/button";
 export { LoadErrorRow, LoadErrorSection } from "./components/ui/load-error";
 export {
+  TransientAlert,
+  type TransientAlertProps,
+} from "./components/ui/transient-alert";
+export {
   surfaceVariants,
   Card,
   CardHeader,
