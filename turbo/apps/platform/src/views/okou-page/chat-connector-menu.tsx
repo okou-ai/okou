@@ -500,7 +500,7 @@ export function ChatConnectorMenu({
       onSearchChange={searchConnectors}
       onOpenAddDialog={onOpenAddDialog}
       footer={footer}
-      contentKey={`${ui.popoverOpen}:${ui.popoverSearch}`}
+      contentKey={ui.popoverSearch}
       contentRef={setViewport}
       detail={
         target
