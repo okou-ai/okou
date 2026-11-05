@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.28](https://github.com/okou-ai/okou/compare/runner-host-v0.10.27...runner-host-v0.10.28) (2026-11-05)
+
+
+### Refactoring
+
+* **runner-host:** centralize cancellable blocking scan ownership ([#45451](https://github.com/okou-ai/okou/issues/45451)) ([72a076d](https://github.com/okou-ai/okou/commit/72a076d975ca6b91c41c7e67188ab0c82a21de97))
+
 ## [0.10.27](https://github.com/okou-ai/okou/compare/runner-host-v0.10.26...runner-host-v0.10.27) (2026-11-05)
 
 ## [0.10.26](https://github.com/okou-ai/okou/compare/runner-host-v0.10.25...runner-host-v0.10.26) (2026-11-05)

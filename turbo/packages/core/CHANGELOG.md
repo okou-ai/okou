@@ -1,5 +1,22 @@
 # Changelog
 
+## [8.818.7](https://github.com/okou-ai/okou/compare/core-v8.818.6...core-v8.818.7) (2026-11-05)
+
+
+### Refactoring
+
+* remove zapier connector feature switch ([#45434](https://github.com/okou-ai/okou/issues/45434)) ([a0dffed](https://github.com/okou-ai/okou/commit/a0dffedcad6d1a71682fc099d55b9877156857b6))
+* retire ahrefs oauth and remove feature switch ([#45430](https://github.com/okou-ai/okou/issues/45430)) ([385da3e](https://github.com/okou-ai/okou/commit/385da3e75b353bf977474131072c27ca2f1840c9))
+* retire deel oauth and remove feature switch ([#45438](https://github.com/okou-ai/okou/issues/45438)) ([e9a395b](https://github.com/okou-ai/okou/commit/e9a395b39628a6859a1eb92e21d1368c215f0fa0))
+* retire neon oauth and remove feature switch ([#45440](https://github.com/okou-ai/okou/issues/45440)) ([a65332c](https://github.com/okou-ai/okou/commit/a65332c2b52eaa01436a08f5fa2eda241530b0df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.5
+
 ## [8.818.6](https://github.com/okou-ai/okou/compare/core-v8.818.5...core-v8.818.6) (2026-11-05)
 
 
