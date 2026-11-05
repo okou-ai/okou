@@ -257,6 +257,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     "Pin chat",
     "Rename chat",
     "Archive chat",
+    "Automations",
     "Open browser",
   ]);
   click(menuItemNamed("Rename chat"));
@@ -390,6 +391,7 @@ test("Mute from the mobile header and unmute from the desktop header", async () 
     "Rename chat",
     "Mute chat",
     "Archive chat",
+    "Automations",
     "Open browser",
   ]);
   click(menuItemNamed("Mute chat"));
@@ -441,6 +443,7 @@ test("Hide header archiving when the archive switch is off", async () => {
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Automations",
     "Open browser",
   ]);
 });
@@ -472,6 +475,7 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
     "Pin chat",
     "Rename chat",
     "Unarchive chat",
+    "Automations",
     "Open browser",
   ]);
   click(menuItemNamed("Unarchive chat"));

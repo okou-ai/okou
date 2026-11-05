@@ -68,11 +68,7 @@ import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
-import {
-  type ChatHeaderActionsState,
-  useChatHeaderActions,
-} from "./chat-header-actions.ts";
-import { authenticatedSessionKey$ } from "../../signals/auth.ts";
+import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import {
   pwaChatListVisible$,
   pwaNavigationEnabled$,
@@ -149,7 +145,6 @@ function MobileResourcesButtonLeaf() {
 function MobileAutomationButtonLeaf() {
   const thread = useCurrentThread();
   const { t } = useTranslation();
-  const header = useChatHeaderActions(thread);
 
   if (!thread) {
     return null;
@@ -158,7 +153,6 @@ function MobileAutomationButtonLeaf() {
   return (
     <AutomationMenuButton
       thread={thread}
-      header={header}
       ariaLabel={t(($) => {
         return $.appShell.sidebar.mobile.openAutomations;
       })}
@@ -177,7 +171,7 @@ function MobileShareButtonInner({
   const phase = useGet(thread.sharing.phase$);
   const start = useSet(thread.sharing.start$);
   const pageSignal = useGet(pageSignal$);
-  const { transitioning } = useChatHeaderActions(thread);
+  const transitioning = useChatHeaderTransitioning(thread);
   if (phase !== "idle") {
     return null;
   }
@@ -255,13 +249,7 @@ function MobileSharingOverlayLeaf() {
   return thread ? <MobileSharingOverlayInner thread={thread} /> : null;
 }
 
-function MobileChatThreadActions({
-  thread,
-  header,
-}: {
-  thread: ChatPanelSignals;
-  header: ChatHeaderActionsState;
-}) {
+function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
   const phase = useGet(thread.sharing.phase$);
   if (phase !== "idle") {
     return null;
@@ -269,7 +257,7 @@ function MobileChatThreadActions({
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
-      <ThreadMailButton thread={thread} header={header} />
+      <ThreadMailButton thread={thread} />
       <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
@@ -278,11 +266,10 @@ function MobileChatThreadActions({
 
 function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
   const thread = useCurrentThread();
-  const header = useChatHeaderActions(thread);
   if (activeId === "chat" && thread) {
     return (
       <SettledChatThreadActions thread={thread}>
-        <MobileChatThreadActions thread={thread} header={header} />
+        <MobileChatThreadActions thread={thread} />
       </SettledChatThreadActions>
     );
   }
@@ -304,7 +291,6 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
 
 function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
   const { t } = useTranslation();
-  const sessionKey = useGet(authenticatedSessionKey$);
 
   const breadcrumbLoadable = useLastLoadable(mobileBreadcrumb$);
   const breadcrumb =
@@ -375,7 +361,7 @@ function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
       ) : (
         <div className="flex-1" />
       )}
-      <MobileTopBarActions key={sessionKey} activeId={activeId} />
+      <MobileTopBarActions activeId={activeId} />
     </div>
   );
 }

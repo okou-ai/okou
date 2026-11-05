@@ -1663,7 +1663,8 @@
       "displaysIn": "Displays in {{timezone}}",
       "edit": "Edit automation",
       "editDescription": "Update this workflow automation.",
-      "empty": "No automations yet.",
+      "emptyDescription": "Automations that run in this chat will show up here.",
+      "emptyTitle": "No automations yet",
       "event": "Event",
       "events": {
         "githubDeploymentStatus": "GitHub deployment status created",
@@ -1709,6 +1710,7 @@
         "to": "To"
       },
       "lastRun": "Last run",
+      "loadFailed": "Could not load automations",
       "match": "Match",
       "matchSummary": {
         "allInboundMessages": "All inbound messages",
@@ -2112,7 +2114,8 @@
         "draft": "Draft",
         "draftOnly": "Actions apply to selected drafts",
         "drafts": "Drafts",
-        "empty": "No emails in this thread",
+        "emptyDescription": "Email drafts and sent emails from this chat will show up here.",
+        "emptyTitle": "No emails yet",
         "loadError": "Unable to load emails",
         "loading": "Loading emails",
         "noMatches": "No matching emails",

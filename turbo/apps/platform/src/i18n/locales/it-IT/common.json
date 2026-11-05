@@ -1687,7 +1687,8 @@
       "displaysIn": "Visualizza in {{timezone}}",
       "edit": "Modifica l'automazione",
       "editDescription": "Aggiorna questa automazione del flusso di lavoro.",
-      "empty": "Nessuna automazione ancora.",
+      "emptyDescription": "Le automazioni eseguite in questa chat compariranno qui.",
+      "emptyTitle": "Ancora nessuna automazione",
       "event": "Evento",
       "events": {
         "githubDeploymentStatus": "Stato del deployment GitHub creato",
@@ -1736,6 +1737,7 @@
         "to": "A"
       },
       "lastRun": "Ultima esecuzione",
+      "loadFailed": "Impossibile caricare le automazioni",
       "match": "Corrispondenza",
       "matchSummary": {
         "allInboundMessages": "Tutti i messaggi in entrata",
@@ -2146,7 +2148,8 @@
         "draft": "Bozza",
         "draftOnly": "Le azioni si applicano alle bozze selezionate",
         "drafts": "Bozze",
-        "empty": "Nessuna email in questa conversazione",
+        "emptyDescription": "Le bozze e le email inviate da questa chat compariranno qui.",
+        "emptyTitle": "Ancora nessuna email",
         "loadError": "Impossibile caricare le email",
         "loading": "Caricamento email",
         "noMatches": "Nessuna email corrispondente",

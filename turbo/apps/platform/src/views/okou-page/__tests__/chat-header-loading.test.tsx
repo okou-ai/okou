@@ -1,5 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
@@ -21,9 +20,8 @@ const context = testContext();
 const threads = [
   continuityThread(76, 1, "Previous header"),
   continuityThread(76, 2, "Destination header"),
-  continuityThread(76, 3, "Latest header"),
 ] as const;
-const [previous, destination, latest] = threads;
+const [previous, destination] = threads;
 
 function pane(threadId: string) {
   const element = document.querySelector<HTMLElement>(
@@ -35,10 +33,14 @@ function pane(threadId: string) {
   return element;
 }
 
-function entry(name: string, container: ParentNode = document.body) {
-  return queryAllByRoleFast("button", container).find((button) => {
-    return button.getAttribute("aria-label") === name;
+function menuItem(name: string, container: ParentNode) {
+  const item = queryAllByRoleFast("menuitem", container).find((candidate) => {
+    return candidate.textContent?.trim() === name;
   });
+  if (!item) {
+    throw new Error(`Missing menu item ${name}`);
+  }
+  return item;
 }
 
 async function navigate(threadId: string, desktop = true) {
@@ -61,6 +63,23 @@ async function navigate(threadId: string, desktop = true) {
   });
 }
 
+async function closeMailList(list: HTMLElement) {
+  click(fastButton("Close emails", list));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Emails" })).toBeNull();
+  });
+}
+
+async function openAutomations(desktop: boolean, container: ParentNode) {
+  if (desktop) {
+    click(fastButton("Automations", container));
+  } else {
+    click(fastButton("More actions"));
+    click(menuItem("Automations", await screen.findByRole("menu")));
+  }
+  return await screen.findByRole("complementary", { name: "Automations" });
+}
+
 async function setupHeaders({
   desktop = true,
   mailThreads = [previous.id],
@@ -68,6 +87,7 @@ async function setupHeaders({
   mailGates = new Map<string, Promise<void>>(),
   automationGates = new Map<string, Promise<void>>(),
   mailFailures = new Set<string>(),
+  automationFailures = new Set<string>(),
   path = `/chats/${previous.id}`,
 } = {}) {
   context.mocks.browser.matchMedia(desktop);
@@ -104,6 +124,14 @@ async function setupHeaders({
     workflowAutomationsContract.listForChatThread,
     async ({ params, respond }) => {
       await automationGates.get(params.threadId);
+      if (automationFailures.has(params.threadId)) {
+        return respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Header automation request failed",
+          },
+        });
+      }
       return respond(
         200,
         automationThreads.includes(params.threadId)
@@ -141,66 +169,117 @@ async function setupHeaders({
   });
 }
 
+test("Keep every desktop header action for a chat without mail or automations", async () => {
+  await setupHeaders({ mailThreads: [], automationThreads: [] });
+  const group = fastButton("Share messages", pane(previous.id)).parentElement;
+  if (!group) {
+    throw new Error("Header action group is missing");
+  }
+  expect(
+    queryAllByRoleFast("button", group).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Share messages",
+    "Automations",
+    "Manage emails",
+    "Open browser",
+    "Artifacts and chats",
+  ]);
+});
+
 test.each([true, false])(
-  "Keep the preceding mail layout until an unvisited destination settles (desktop=%s)",
+  "Open mail and automation empty states in a chat with neither (desktop=%s)",
   async (desktop) => {
-    const mail = context.mocks.deferred<void>();
-    const automations = context.mocks.deferred<void>();
-    await setupHeaders({
-      desktop,
-      mailGates: new Map([[destination.id, mail.promise]]),
-      automationGates: new Map([[destination.id, automations.promise]]),
-    });
-    expect(entry("Manage emails")).toBeInTheDocument();
-    await navigate(destination.id, desktop);
-    const user = userEvent.setup({ delay: null });
-    for (const label of desktop
-      ? ["Share messages", "Open browser"]
-      : ["Share messages"]) {
-      const retainedAction = fastButton(label);
-      expect(retainedAction).toHaveAttribute("aria-disabled", "true");
-      expect(retainedAction).not.toBeDisabled();
-      click(retainedAction);
-      retainedAction.focus();
-      await user.keyboard("{Enter} ");
-      expect(retainedAction).toHaveFocus();
-    }
-    expect(screen.queryByText("0 selected")).toBeNull();
+    await setupHeaders({ desktop, mailThreads: [], automationThreads: [] });
+    const header = desktop ? pane(previous.id) : document;
+
+    click(fastButton("Manage emails", header));
+    const list = await screen.findByRole("dialog", { name: "Emails" });
+    await expect(
+      within(list).findByText("No emails yet"),
+    ).resolves.toBeInTheDocument();
     expect(
-      screen.queryByRole("complementary", { name: "Cloud browser" }),
-    ).toBeNull();
-    const retainedMail = fastButton("Manage emails");
-    expect(retainedMail).toHaveAttribute("aria-busy", "true");
-    expect(retainedMail).toHaveAttribute("aria-disabled", "true");
-    click(retainedMail);
-    retainedMail.focus();
-    await user.keyboard("{Enter} ");
-    expect(screen.queryByRole("dialog", { name: "Emails" })).toBeNull();
-    await act(async () => {
-      mail.resolve();
-      await mail.promise;
-    });
-    expect(entry("Manage emails")).toBeInTheDocument();
-    automations.resolve();
-    await waitFor(() => {
-      expect(entry("Manage emails")).toBeUndefined();
-      expect(entry("Automations")).toBeUndefined();
-    });
-    expect(screen.queryByRole("dialog", { name: "Emails" })).toBeNull();
-    expect(screen.queryByText("0 selected")).toBeNull();
+      within(list).getByText(
+        "Email drafts and sent emails from this chat will show up here.",
+      ),
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole("complementary", { name: "Cloud browser" }),
+      within(list).queryByRole("textbox", {
+        name: "Search by subject or sender",
+      }),
     ).toBeNull();
-    expect(entry("Artifacts and chats")).toBeInTheDocument();
-    await navigate(previous.id, desktop);
-    await waitFor(() => {
-      expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "false");
-    });
+    await closeMailList(list);
+
+    const sidebar = await openAutomations(desktop, header);
+    await expect(
+      within(sidebar).findByText("No automations yet"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      within(sidebar).getByText(
+        "Automations that run in this chat will show up here.",
+      ),
+    ).toBeInTheDocument();
   },
 );
 
-test("Disable the mobile Browser menu during navigation and open the settled destination", async () => {
+test("Open the destination's loading lists as soon as its pane replaces the previous chat", async () => {
   const mail = context.mocks.deferred<void>();
+  const automations = context.mocks.deferred<void>();
+  await setupHeaders({
+    mailThreads: [destination.id],
+    automationThreads: [destination.id],
+    mailGates: new Map([[destination.id, mail.promise]]),
+    automationGates: new Map([[destination.id, automations.promise]]),
+  });
+  await navigate(destination.id);
+  const header = pane(destination.id);
+  const mailEntry = fastButton("Manage emails", header);
+  expect(mailEntry).toHaveAttribute("aria-busy", "false");
+  expect(fastButton("Automations", header)).toHaveAttribute(
+    "aria-disabled",
+    "false",
+  );
+
+  click(mailEntry);
+  const list = await screen.findByRole("dialog", { name: "Emails" });
+  await within(list).findByRole("status", { name: "Loading emails" });
+  mail.resolve();
+  await expect(
+    within(list).findByText("Current header mail"),
+  ).resolves.toBeInTheDocument();
+  await closeMailList(list);
+
+  const sidebar = await openAutomations(true, header);
+  automations.resolve();
+  await expect(
+    within(sidebar).findByText("Header schedule"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Show failed first mail and automation reads instead of empty states", async () => {
+  await setupHeaders({
+    mailFailures: new Set([previous.id]),
+    automationFailures: new Set([previous.id]),
+  });
+  const header = pane(previous.id);
+
+  click(fastButton("Manage emails", header));
+  const list = await screen.findByRole("dialog", { name: "Emails" });
+  await expect(
+    within(list).findByText("Unable to load emails"),
+  ).resolves.toBeInTheDocument();
+  expect(within(list).queryByText("No emails yet")).toBeNull();
+  await closeMailList(list);
+
+  const sidebar = await openAutomations(true, header);
+  await expect(
+    within(sidebar).findByText("Could not load automations"),
+  ).resolves.toBeInTheDocument();
+  expect(within(sidebar).queryByText("No automations yet")).toBeNull();
+});
+
+test("Open the destination's browser from the mobile menu after navigating", async () => {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(404, {
       error: {
@@ -209,46 +288,12 @@ test("Disable the mobile Browser menu during navigation and open the settled des
       },
     });
   });
-  await setupHeaders({
-    desktop: false,
-    mailGates: new Map([[destination.id, mail.promise]]),
-  });
+  await setupHeaders({ desktop: false });
   await navigate(destination.id, false);
   click(fastButton("More actions"));
-  const menu = await screen.findByRole("menu");
-  const browserItem = queryAllByRoleFast("menuitem", menu).find((item) => {
-    return item.textContent?.trim() === "Open browser";
-  });
-  expect(browserItem).toHaveAttribute("aria-disabled", "true");
-  if (!browserItem) {
-    throw new Error("Browser menu item is missing");
-  }
+  const browserItem = menuItem("Open browser", await screen.findByRole("menu"));
+  expect(browserItem).not.toHaveAttribute("aria-disabled", "true");
   click(browserItem);
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}");
-  expect(
-    screen.queryByRole("complementary", { name: "Cloud browser" }),
-  ).toBeNull();
-
-  mail.resolve();
-  await waitFor(() => {
-    expect(fastButton("Share messages")).toHaveAttribute(
-      "aria-disabled",
-      "false",
-    );
-  });
-  click(fastButton("More actions"));
-  const currentMenu = await screen.findByRole("menu");
-  const currentBrowser = queryAllByRoleFast("menuitem", currentMenu).find(
-    (item) => {
-      return item.textContent?.trim() === "Open browser";
-    },
-  );
-  expect(currentBrowser).not.toHaveAttribute("aria-disabled", "true");
-  if (!currentBrowser) {
-    throw new Error("Browser menu item is missing");
-  }
-  click(currentBrowser);
   const sidebar = await screen.findByRole("complementary", {
     name: "Cloud browser",
   });
@@ -260,151 +305,29 @@ test("Disable the mobile Browser menu during navigation and open the settled des
   expect(pageLink).toHaveAttribute("href", `/browsers/${destination.id}`);
 });
 
-test("Keep preceding hidden entries until current mail is ready, then open the current list", async () => {
-  const mail = context.mocks.deferred<void>();
+test("Let each pane open its own chat's mail", async () => {
   await setupHeaders({
     mailThreads: [destination.id],
     automationThreads: [],
-    mailGates: new Map([[destination.id, mail.promise]]),
-  });
-  expect(entry("Manage emails")).toBeUndefined();
-  await navigate(destination.id);
-  expect(entry("Manage emails")).toBeUndefined();
-  mail.resolve();
-  await waitFor(() => {
-    expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "false");
-  });
-  click(fastButton("Manage emails"));
-  const list = await screen.findByRole("dialog", { name: "Emails" });
-  await expect(
-    within(list).findByText("Current header mail"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Retain automation presence and suppress activation until both current sources settle", async () => {
-  const mail = context.mocks.deferred<void>();
-  const automations = context.mocks.deferred<void>();
-  await setupHeaders({
-    mailGates: new Map([[destination.id, mail.promise]]),
-    automationGates: new Map([[destination.id, automations.promise]]),
-  });
-  expect(fastButton("Automations")).toHaveAttribute("aria-disabled", "false");
-  await navigate(destination.id);
-  const retained = fastButton("Automations");
-  expect(retained).toHaveAttribute("aria-disabled", "true");
-  expect(retained).not.toBeDisabled();
-  click(retained);
-  retained.focus();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Enter} ");
-  expect(retained).toHaveFocus();
-  expect(screen.queryByTestId("automation-sidebar")).toBeNull();
-  await act(async () => {
-    automations.resolve();
-    await automations.promise;
-  });
-  expect(fastButton("Automations")).toHaveAttribute("aria-disabled", "true");
-  expect(entry("Manage emails")).toBeInTheDocument();
-  mail.resolve();
-  await waitFor(() => {
-    expect(entry("Automations")).toBeUndefined();
-    expect(entry("Manage emails")).toBeUndefined();
-  });
-  expect(screen.queryByTestId("automation-sidebar")).toBeNull();
-});
-
-test("End pending state after a failed destination request and keep its mail error accessible", async () => {
-  const mail = context.mocks.deferred<void>();
-  await setupHeaders({
-    mailGates: new Map([[destination.id, mail.promise]]),
-    mailFailures: new Set([destination.id]),
-  });
-  await navigate(destination.id);
-  expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "true");
-  mail.resolve();
-  await waitFor(() => {
-    expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "false");
-  });
-  click(fastButton("Manage emails"));
-  const list = await screen.findByRole("dialog", { name: "Emails" });
-  await expect(
-    within(list).findByText("Unable to load emails"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Ignore the destination's late result after navigating to another chat", async () => {
-  const mail = context.mocks.deferred<void>();
-  await setupHeaders({
-    mailThreads: [previous.id, latest.id],
-    mailGates: new Map([[destination.id, mail.promise]]),
-  });
-  await navigate(destination.id);
-  expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "true");
-  await navigate(latest.id);
-  await waitFor(() => {
-    expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "false");
-  });
-  await act(async () => {
-    mail.resolve();
-    await mail.promise;
-  });
-  expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "false");
-  expect(pane(latest.id)).toBeInTheDocument();
-  expect(entry("Automations")).toBeUndefined();
-});
-
-test.each([true, false])(
-  "Release the preceding workspace's header while an organization changes (desktop=%s)",
-  async (desktop) => {
-    const mail = context.mocks.deferred<void>();
-    await setupHeaders({
-      desktop,
-      mailGates: new Map([[destination.id, mail.promise]]),
-    });
-    await navigate(destination.id, desktop);
-    expect(fastButton("Manage emails")).toHaveAttribute("aria-busy", "true");
-    act(() => {
-      context.mocks.clerk().organization({
-        activeOrg: { id: "org_header_changed", name: "Changed workspace" },
-      });
-      context.mocks.clerk().stateChanged();
-    });
-    await waitFor(() => {
-      expect(entry("Manage emails")).toBeUndefined();
-    });
-    expect(pane(destination.id)).toBeInTheDocument();
-    mail.resolve();
-    await waitFor(() => {
-      expect(fastButton("Share messages")).toHaveAttribute(
-        "aria-disabled",
-        "false",
-      );
-    });
-  },
-);
-
-test("Let the primary header settle independently of a pending secondary pane", async () => {
-  const mail = context.mocks.deferred<void>();
-  await setupHeaders({
-    mailThreads: [previous.id, destination.id],
-    automationThreads: [],
-    mailGates: new Map([[destination.id, mail.promise]]),
     path: `/chats/${previous.id}?sidebar=${destination.id}`,
   });
-  expect(fastButton("Manage emails", pane(previous.id))).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
-  expect(entry("Manage emails", pane(destination.id))).toBeUndefined();
-  mail.resolve();
   await waitFor(() => {
-    expect(fastButton("Manage emails", pane(destination.id))).toHaveAttribute(
-      "aria-busy",
+    expect(fastButton("Share messages", pane(destination.id))).toHaveAttribute(
+      "aria-disabled",
       "false",
     );
   });
-  expect(fastButton("Manage emails", pane(previous.id))).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+
+  click(fastButton("Manage emails", pane(previous.id)));
+  const primaryList = await screen.findByRole("dialog", { name: "Emails" });
+  await expect(
+    within(primaryList).findByText("No emails yet"),
+  ).resolves.toBeInTheDocument();
+  await closeMailList(primaryList);
+
+  click(fastButton("Manage emails", pane(destination.id)));
+  const secondaryList = await screen.findByRole("dialog", { name: "Emails" });
+  await expect(
+    within(secondaryList).findByText("Current header mail"),
+  ).resolves.toBeInTheDocument();
 });

@@ -1,4 +1,4 @@
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -28,7 +28,7 @@ import {
   openThreadAutomations$,
   openThreadBrowserSession$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
-import { useChatHeaderActions } from "./chat-header-actions.ts";
+import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { setChatThreadMutedWithFeedback$ } from "../../signals/chat-page/chat-thread-mute.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -116,7 +116,7 @@ function MobileBrowserMenuItem({
 }) {
   const { t } = useTranslation();
   const openBrowser = useSet(openThreadBrowserSession$);
-  const { transitioning } = useChatHeaderActions(thread);
+  const transitioning = useChatHeaderTransitioning(thread);
   return (
     <DropdownMenuItem
       className="min-h-11"
@@ -151,9 +151,9 @@ export function MobileChatThreadMoreMenu({
     setChatThreadArchivedWithFeedback$,
   );
   const archiving = archiveLoadable.state === "loading";
-  const automations = useLastResolved(thread.headerAutomations.automations$);
   const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
   const openAutomations = useSet(openThreadAutomations$);
+  const transitioning = useChatHeaderTransitioning(thread);
 
   return (
     <DropdownMenu>
@@ -232,20 +232,19 @@ export function MobileChatThreadMoreMenu({
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        {automations && automations.length > 0 && (
-          <DropdownMenuItem
-            className="min-h-11"
-            onClick={() => {
-              reloadAutomations();
-              openAutomations(thread);
-            }}
-          >
-            <Clock size={16} />
-            {t(($) => {
-              return $.chat.automations.title;
-            })}
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem
+          className="min-h-11"
+          disabled={transitioning}
+          onClick={() => {
+            reloadAutomations();
+            openAutomations(thread);
+          }}
+        >
+          <Clock size={16} />
+          {t(($) => {
+            return $.chat.automations.title;
+          })}
+        </DropdownMenuItem>
         <MobileBrowserMenuItem thread={thread} />
       </DropdownMenuContent>
     </DropdownMenu>

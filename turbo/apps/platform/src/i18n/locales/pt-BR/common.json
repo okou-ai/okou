@@ -1687,7 +1687,8 @@
       "displaysIn": "Exibido em {{timezone}}",
       "edit": "Editar automação",
       "editDescription": "Atualize esta automação de fluxo de trabalho.",
-      "empty": "Ainda não há automações.",
+      "emptyDescription": "Automações executadas nesta conversa aparecerão aqui.",
+      "emptyTitle": "Nenhuma automação ainda",
       "event": "Evento",
       "events": {
         "githubDeploymentStatus": "Status de implantação do GitHub criado",
@@ -1736,6 +1737,7 @@
         "to": "Para"
       },
       "lastRun": "Última execução",
+      "loadFailed": "Não foi possível carregar as automações",
       "match": "Correspondência",
       "matchSummary": {
         "allInboundMessages": "Todas as mensagens recebidas",
@@ -2146,7 +2148,8 @@
         "draft": "Rascunho",
         "draftOnly": "As ações se aplicam aos rascunhos selecionados",
         "drafts": "Rascunhos",
-        "empty": "Nenhum e-mail nesta conversa",
+        "emptyDescription": "Rascunhos e e-mails enviados desta conversa aparecerão aqui.",
+        "emptyTitle": "Nenhum e-mail ainda",
         "loadError": "Não foi possível carregar os e-mails",
         "loading": "Carregando e-mails",
         "noMatches": "Nenhum e-mail correspondente",

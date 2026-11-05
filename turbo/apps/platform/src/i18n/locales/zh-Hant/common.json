@@ -1660,7 +1660,8 @@
       "displaysIn": "按 {{timezone}} 顯示",
       "edit": "編輯自動化",
       "editDescription": "更新這個工作流自動化。",
-      "empty": "還沒有自動化。",
+      "emptyDescription": "在這個對話裡執行的自動化會顯示在這裡。",
+      "emptyTitle": "還沒有自動化",
       "event": "事件",
       "events": {
         "githubDeploymentStatus": "GitHub 部署狀態已建立",
@@ -1706,6 +1707,7 @@
         "to": "收件人"
       },
       "lastRun": "上次執行",
+      "loadFailed": "無法載入自動化",
       "match": "匹配條件",
       "matchSummary": {
         "allInboundMessages": "所有收到的郵件",
@@ -2105,7 +2107,8 @@
         "draft": "草稿",
         "draftOnly": "僅對選取的草稿執行操作",
         "drafts": "草稿",
-        "empty": "此對話中尚無郵件",
+        "emptyDescription": "這個對話裡的郵件草稿和已傳送郵件會顯示在這裡。",
+        "emptyTitle": "還沒有郵件",
         "loadError": "無法載入郵件",
         "loading": "正在載入郵件",
         "noMatches": "沒有符合的郵件",

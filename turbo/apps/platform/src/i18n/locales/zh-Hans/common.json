@@ -1660,7 +1660,8 @@
       "displaysIn": "按 {{timezone}} 显示",
       "edit": "编辑自动化",
       "editDescription": "更新这个工作流自动化。",
-      "empty": "还没有自动化。",
+      "emptyDescription": "在这个对话里运行的自动化会显示在这里。",
+      "emptyTitle": "还没有自动化",
       "event": "事件",
       "events": {
         "githubDeploymentStatus": "GitHub 部署状态已创建",
@@ -1706,6 +1707,7 @@
         "to": "收件人"
       },
       "lastRun": "上次运行",
+      "loadFailed": "无法加载自动化",
       "match": "匹配条件",
       "matchSummary": {
         "allInboundMessages": "所有收到的邮件",
@@ -2105,7 +2107,8 @@
         "draft": "草稿",
         "draftOnly": "仅对选中的草稿执行操作",
         "drafts": "草稿",
-        "empty": "此对话中暂无邮件",
+        "emptyDescription": "这个对话里的邮件草稿和已发送邮件会显示在这里。",
+        "emptyTitle": "还没有邮件",
         "loadError": "无法加载邮件",
         "loading": "正在加载邮件",
         "noMatches": "没有匹配的邮件",
