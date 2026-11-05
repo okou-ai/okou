@@ -2,6 +2,7 @@ import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { HttpResponse, http } from "msw";
 import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -132,13 +133,14 @@ test("recovers a confirmed stopped provider without reusing its old instance", a
   });
 });
 
-test.each(["provider", "native"] as const)(
+test.each(["provider", "native", "connection"] as const)(
   "returns a %s failure without retrying or reclaiming the live binding",
   async (failure) => {
     const f = await fixture();
     await f.owned.run(async () => {
       const a = await f.start();
       const first = await open(a);
+      const [providerId] = f.provider.sessionIds;
       mockNow(START + MINUTE);
       let reads = 0;
       let failing = true;
@@ -148,6 +150,18 @@ test.each(["provider", "native"] as const)(
           if (failure === "provider" && failing) {
             return HttpResponse.json({}, { status: 503 });
           }
+          if (failure === "connection" && failing) {
+            return HttpResponse.json({
+              id: providerId,
+              status: "active",
+              startedAt: new Date(START).toISOString(),
+              timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+              finishedAt: null,
+              cdpUrl: null,
+              extensions: [TEST_BROWSER_EXTENSION],
+              liveUrl: "https://live.browser-use.com/owned-fixture",
+            });
+          }
         }),
       );
       if (failure === "native") {
@@ -156,7 +170,9 @@ test.each(["provider", "native"] as const)(
           message: "Native health unavailable",
         };
       }
-      expect((await request(a)).status).toBe(502);
+      expect((await request(a)).status).toBe(
+        failure === "connection" ? 409 : 502,
+      );
       expect(reads).toBe(1);
       expect(f.provider.sessionRequests).toHaveLength(1);
       expect(f.provider.stoppedSessionIds.size).toBe(0);

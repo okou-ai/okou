@@ -815,8 +815,11 @@ const connectSharedBrowser$ = command(
       findBrowserUseSession(profile.providerSessionId, signal),
       signal,
     );
-    if (!session || session.status !== "active" || !session.cdpUrl) {
+    if (!session || session.status !== "active") {
       return null;
+    }
+    if (!session.cdpUrl) {
+      return unavailable();
     }
     const connection = browserUseNativeConnection(session);
     const resolved = await set(
