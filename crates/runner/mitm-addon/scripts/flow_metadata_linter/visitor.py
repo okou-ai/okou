@@ -14,6 +14,7 @@ from flow_metadata_linter.ast_helpers import (
     _argument_names,
     _comparison_operator_may_raise,
     _expression_bound_names,
+    _expression_branches,
     _is_modeled_implicit_exception_operation,
     _iterable_is_statically_empty,
     _iteration_may_raise,
@@ -312,12 +313,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
     def _is_metadata_alias_value(self, node: ast.AST) -> bool:
         if self._is_metadata_reference(node) or self._is_metadata_merge_value(node):
             return True
-        if isinstance(node, ast.IfExp):
-            return self._is_metadata_alias_value(node.body) or self._is_metadata_alias_value(
-                node.orelse
-            )
-        if isinstance(node, ast.BoolOp):
-            return any(self._is_metadata_alias_value(value) for value in node.values)
+        branches = _expression_branches(node)
+        if branches is not None:
+            return any(self._is_metadata_alias_value(value) for value in branches)
         if isinstance(node, ast.Await):
             return self._is_metadata_alias_value(node.value)
         if isinstance(node, ast.UnaryOp) and not isinstance(node.op, ast.Not):
@@ -357,16 +355,13 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
     def _metadata_merge_key_violations(self, node: ast.AST) -> list[str]:
         if self._is_metadata_merge_value(node):
             return _metadata_dict_key_violations(self.path, node)
-        if isinstance(node, ast.IfExp):
+        branches = _expression_branches(node)
+        if branches is not None:
             return [
-                *self._metadata_merge_key_violations(node.body),
-                *self._metadata_merge_key_violations(node.orelse),
+                violation
+                for value in branches
+                for violation in self._metadata_merge_key_violations(value)
             ]
-        if isinstance(node, ast.BoolOp):
-            violations: list[str] = []
-            for value in node.values:
-                violations.extend(self._metadata_merge_key_violations(value))
-            return violations
         return []
 
     def _record_metadata_merge_key_violations(self, node: ast.AST | None) -> None:
