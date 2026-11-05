@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.17.10](https://github.com/okou-ai/okou/compare/cli-v10.17.9...cli-v10.17.10) (2026-11-05)
+
+
+### Refactoring
+
+* **teams:** switch upload cli to the v2 contract ([#45183](https://github.com/okou-ai/okou/issues/45183)) ([33b9a03](https://github.com/okou-ai/okou/commit/33b9a0319a0c877c77a0a7bb6c82a0c731af767e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.42.2
+    * @okouai/core bumped to 8.818.2
+    * @okouai/pi-agent-runtime bumped to 1.51.66
+
 ## [10.17.9](https://github.com/okou-ai/okou/compare/cli-v10.17.8...cli-v10.17.9) (2026-11-05)
 
 

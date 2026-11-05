@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.8](https://github.com/okou-ai/okou/compare/desktop-v0.55.7...desktop-v0.55.8) (2026-11-05)
+
+
+### Bug Fixes
+
+* **desktop:** cancel token waits without blocking request deadlines ([#45330](https://github.com/okou-ai/okou/issues/45330)) ([5ea40da](https://github.com/okou-ai/okou/commit/5ea40da064699d0e27507c40aa51d2f8790e3318))
+
 ## [0.55.7](https://github.com/okou-ai/okou/compare/desktop-v0.55.6...desktop-v0.55.7) (2026-11-05)
 
 
