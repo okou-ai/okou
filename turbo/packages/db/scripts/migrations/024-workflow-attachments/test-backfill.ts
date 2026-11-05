@@ -28,6 +28,7 @@ import {
 } from "@okouai/core/workflow-attachment-bundle";
 import { workflowAttachmentsSchema } from "@okouai/api-contracts/contracts/workflow-attachments";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
+import { parseMigrationCliStderr } from "../../migration-cli-stderr";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("A disposable DATABASE_URL is required");
@@ -836,9 +837,10 @@ try {
       );
       return (
         failed.success &&
-        zObject({ classification: literal("ZodError") }).safeParse(
-          JSON.parse(failed.data.stderr),
-        ).success
+        zObject({
+          result: literal("failed"),
+          classification: literal("ZodError"),
+        }).safeParse(parseMigrationCliStderr(failed.data.stderr)).success
       );
     },
   );

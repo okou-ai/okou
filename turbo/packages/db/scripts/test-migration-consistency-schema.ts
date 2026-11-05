@@ -3088,6 +3088,12 @@ async function main(): Promise<void> {
   let migrationsBackedUp = false;
 
   try {
+    console.log(
+      execCommand("tsx scripts/test-migration-cli-stderr.ts", {
+        cwd: PACKAGE_DIR,
+      }),
+    );
+
     // Step 0: Validate snapshot files
     await validateSnapshotFiles();
 
