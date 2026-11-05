@@ -709,7 +709,7 @@ describe("shared Browser public consumers", () => {
       const b = await f.start();
       const first = await use(a);
       expect(first.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
-      expect(first.cdpUrl).toBe(f.provider.native.url);
+      expect(first.cdpUrl).toBe(f.provider.cdpUrl);
       const current = await accept(
         client().current({ headers: runHeaders(a) }),
         [200],

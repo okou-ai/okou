@@ -24,8 +24,16 @@ export const PROVIDER_URL = "https://api.browser-use.com/api/v3";
 export function createSharedBrowserFixtures(context: TestContext) {
   const runs = createRunsApi(context);
 
-  function profileProvider(beforeResponse?: () => Promise<void>) {
+  function profileProvider(
+    beforeResponse?: () => Promise<void>,
+    cdpProtocol: "https:" | "wss:" = "https:",
+  ) {
     const native = createNativeWindowProvider(context);
+    const cdpUrl = new URL(native.url);
+    cdpUrl.protocol = cdpProtocol;
+    const versionUrl = new URL(native.url);
+    versionUrl.protocol = "https:";
+    versionUrl.pathname += "/json/version";
     const sessionIds = new Set<string>();
     const stoppedSessionIds = new Set<string>();
     const sessionMetadata = new Map<string, Record<string, string>>();
@@ -47,6 +55,9 @@ export function createSharedBrowserFixtures(context: TestContext) {
     }
     const handlers = [
       native.handler,
+      http.get(versionUrl.href, () => {
+        return HttpResponse.json({ webSocketDebuggerUrl: native.url });
+      }),
       http.post(`${PROVIDER_URL}/browsers`, async ({ request }) => {
         const input: unknown = await request.json();
         sessionRequests.push(input);
@@ -75,7 +86,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
             timeoutAt: new Date(startedAt + 240 * MINUTE).toISOString(),
             finishedAt: null,
             liveUrl: "https://live.browser-use.com/owned-fixture",
-            cdpUrl: native.url,
+            cdpUrl: cdpUrl.href,
             extensions: [{ ...TEST_BROWSER_EXTENSION, id: extensionIds[0] }],
           },
           { status: 201 },
@@ -132,7 +143,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
           timeoutAt: new Date(startedAt + 240 * MINUTE).toISOString(),
           finishedAt: active ? null : new Date(START).toISOString(),
           liveUrl: active ? "https://live.browser-use.com/owned-fixture" : null,
-          cdpUrl: active ? native.url : null,
+          cdpUrl: active ? cdpUrl.href : null,
           extensions: [
             {
               ...TEST_BROWSER_EXTENSION,
@@ -164,6 +175,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
     ];
     return {
       handlers,
+      cdpUrl: cdpUrl.href,
       createdIds,
       profile,
       native,

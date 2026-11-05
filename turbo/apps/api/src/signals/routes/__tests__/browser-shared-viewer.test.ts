@@ -11,31 +11,35 @@ import {
 } from "./helpers/browser-shared-fixture";
 
 const context = testContext();
-const { fixture, open, view } = createSharedBrowserFixtures(context);
+const { fixture, profileProvider, open, view } =
+  createSharedBrowserFixtures(context);
 
-test("a mounted viewer renews only its current chat window without input evidence", async () => {
-  const f = await fixture();
-  await f.owned.run(async () => {
-    const a = await f.start();
-    const b = await f.start();
-    const first = await open(a);
-    const sibling = await open(b);
-    mockNow(START + 2 * MINUTE);
-    const result = await accept(
-      setupApp({ context, routes: browserRoutes })(
-        browserContract,
-      ).leaseByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: a.threadId },
-        body: {},
-      }),
-      [200],
-    );
-    expect(result.body.browser.threadId).toBe(a.threadId);
-    expect(result.body.browser.window).toStrictEqual(first.window);
-    expect((await view(a)).idleExpiresAt).toBe(
-      new Date(START + 12 * MINUTE).toISOString(),
-    );
-    expect((await view(b)).idleExpiresAt).toBe(sibling.idleExpiresAt);
-  });
-});
+test.each(["https:", "wss:"] as const)(
+  "a mounted viewer renews only its current chat window through %s without input evidence",
+  async (cdpProtocol) => {
+    const f = await fixture(true, profileProvider(undefined, cdpProtocol));
+    await f.owned.run(async () => {
+      const a = await f.start();
+      const b = await f.start();
+      const first = await open(a);
+      const sibling = await open(b);
+      mockNow(START + 2 * MINUTE);
+      const result = await accept(
+        setupApp({ context, routes: browserRoutes })(
+          browserContract,
+        ).leaseByThread({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: a.threadId },
+          body: {},
+        }),
+        [200],
+      );
+      expect(result.body.browser.threadId).toBe(a.threadId);
+      expect(result.body.browser.window).toStrictEqual(first.window);
+      expect((await view(a)).idleExpiresAt).toBe(
+        new Date(START + 12 * MINUTE).toISOString(),
+      );
+      expect((await view(b)).idleExpiresAt).toBe(sibling.idleExpiresAt);
+    });
+  },
+);

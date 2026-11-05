@@ -999,8 +999,12 @@ export async function browserUseWindowExists(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    // Browser Use's HTTPS CDP gateway accepts WSS at the same URL. Native
+    // window health does not need an additional /json/version round trip.
+    const endpoint = new URL(browserUseCdpUrlSchema.parse(connection.cdpUrl));
+    endpoint.protocol = "wss:";
     return await withBrowserUseCdpSocket(
-      connection.cdpUrl,
+      endpoint.href,
       deadline,
       async (socket) => {
         const result = await settle(
