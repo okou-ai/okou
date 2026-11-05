@@ -14,7 +14,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "canva\0oauth": FeatureSwitchKey.CanvaConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
-  "neon\0oauth": FeatureSwitchKey.NeonConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "reddit\0oauth": FeatureSwitchKey.RedditConnector,

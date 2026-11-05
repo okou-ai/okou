@@ -865,9 +865,6 @@ describe("GET /api/connector-catalog", () => {
   it("returns every visible connector detail without private metadata", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    await enableConnectorFeatureSwitches(orgId, userId, {
-      [FeatureSwitchKey.NeonConnector]: true,
-    });
     mocks.clerk.session(userId, orgId);
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -955,7 +952,7 @@ describe("GET /api/connector-catalog", () => {
     ]);
   });
 
-  it("hides feature-gated auth methods from connector detail", async () => {
+  it("returns the Neon API key method in connector detail", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
     mocks.clerk.session(userId, orgId);
@@ -977,33 +974,6 @@ describe("GET /api/connector-catalog", () => {
         return authMethod.id;
       }),
     ).toStrictEqual(["api-token"]);
-  });
-
-  it("shows feature-gated auth methods when their connector feature is enabled", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await enableConnectorFeatureSwitches(orgId, userId, {
-      [FeatureSwitchKey.NeonConnector]: true,
-    });
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "neon" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    expect(
-      response.body.connector.authMethods.map((authMethod) => {
-        return authMethod.id;
-      }),
-    ).toStrictEqual(["oauth", "api-token"]);
   });
 
   it("shows only the Mercury API token method while Mercury OAuth is disabled", async () => {

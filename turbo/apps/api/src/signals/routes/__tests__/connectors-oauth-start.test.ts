@@ -389,29 +389,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
     },
   },
   {
-    connectorSlug: "neon",
-    label: "Neon",
-    clientEnvPrefix: "NEON",
-    authorizationEndpoint: "https://oauth2.neon.tech/oauth2/auth",
-    tokenUrl: "https://oauth2.neon.tech/oauth2/token",
-    tokenResponse: {
-      access_token: "neon-test-token",
-      refresh_token: "neon-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://console.neon.tech/api/v2/users/me", () => {
-          return HttpResponse.json({
-            id: "neon-user-123",
-            name: "Neon Test User",
-            email: "neon@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
     connectorSlug: "posthog",
     label: "PostHog",
     publicClientId: "https://app.okou.ai/connectors/posthog/metadata.json",

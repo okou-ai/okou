@@ -267,11 +267,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Mercury banking connector",
     enabled: false,
   },
-  [FeatureSwitchKey.NeonConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Neon serverless Postgres connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Reddit connector integration",
