@@ -91,9 +91,9 @@ function showSuggestionSent(): void {
 }
 
 interface SuggestionComposerSession {
-  readonly item: Suggestion;
+  readonly entry: AgentSuggestionEntry;
   readonly agentId: string;
-  /** Supplied by the Feed view, which owns the dialog's completion. */
+  /** Ends this dialog once the composer's send is accepted. */
   readonly onOptimisticSend: (threadId: string) => void;
 }
 
@@ -124,7 +124,7 @@ const suggestionComposerGraph$ = computed((get) => {
 
 /** The card whose custom direction is being written in the Feed dialog. */
 export const agentSuggestionComposerItem$ = computed((get) => {
-  return get(internalSuggestionComposer$)?.item ?? null;
+  return get(internalSuggestionComposer$)?.entry.item ?? null;
 });
 
 export const closeAgentSuggestionComposer$ = command(({ set }) => {
@@ -133,14 +133,39 @@ export const closeAgentSuggestionComposer$ = command(({ set }) => {
 });
 
 /**
+ * The API consumes the card when it accepts the custom follow-up, before the
+ * optimistic thread is published; the Feed then moves the card below the
+ * waiting ones as a link to that thread.
+ */
+const finishAgentSuggestionComposer$ = command(
+  (
+    { get, set },
+    session: SuggestionComposerSession,
+    threadId: string,
+    pageSignal: AbortSignal,
+  ): void => {
+    if (get(internalSuggestionComposer$) === session) {
+      set(closeAgentSuggestionComposer$);
+    }
+    showSuggestionSent();
+    set(
+      settleAgentSuggestion$,
+      session.entry,
+      { type: "sent", threadId },
+      pageSignal,
+    );
+  },
+);
+
+/**
  * Opens the custom direction composer for the default Agent over the Feed and
- * installs the card's background before the composer mounts.
+ * installs the card's background before the composer mounts. The session owns
+ * its completion: an accepted send closes the dialog and settles the card.
  */
 export const openAgentSuggestionComposer$ = command(
   async (
     { get, set },
-    item: Suggestion,
-    onOptimisticSend: (threadId: string) => void,
+    suggestionId: string,
     pageSignal: AbortSignal,
   ): Promise<ComposerSignals> => {
     const signal = set(resetSuggestionComposer$, pageSignal);
@@ -149,12 +174,13 @@ export const openAgentSuggestionComposer$ = command(
       get(agentSuggestionEntries$),
     ]);
     signal.throwIfAborted();
-    const visible = entries.some((card) => {
-      return card.item.id === item.id && !get(card.hidden$);
+    const entry = entries.find((card) => {
+      return card.item.id === suggestionId && !get(card.hidden$);
     });
-    if (!agentId || !visible) {
+    if (!agentId || !entry) {
       throw new Error("Suggestion target is unavailable");
     }
+    const item = entry.item;
     const contextVersion = await suggestionDraftVersion(
       item.customOption.draft,
     );
@@ -171,7 +197,13 @@ export const openAgentSuggestionComposer$ = command(
     if (content === null) {
       throw new Error("Invalid suggestion background");
     }
-    const session = { item, agentId, onOptimisticSend };
+    const session: SuggestionComposerSession = {
+      entry,
+      agentId,
+      onOptimisticSend: (threadId) => {
+        set(finishAgentSuggestionComposer$, session, threadId, pageSignal);
+      },
+    };
     set(internalSuggestionComposer$, session);
     // Leaving the Feed or opening another card's dialog ends this session.
     signal.addEventListener(
@@ -200,37 +232,6 @@ export const openAgentSuggestionComposer$ = command(
     );
     signal.throwIfAborted();
     return graph.composer;
-  },
-);
-
-/**
- * The API consumes the card when it accepts the custom follow-up, before the
- * optimistic thread is published; the Feed then moves the card below the
- * waiting ones as a link to that thread.
- */
-export const finishAgentSuggestionComposer$ = command(
-  async (
-    { get, set },
-    item: Suggestion,
-    threadId: string,
-    pageSignal: AbortSignal,
-  ): Promise<void> => {
-    if (get(internalSuggestionComposer$)?.item === item) {
-      set(closeAgentSuggestionComposer$);
-    }
-    showSuggestionSent();
-    const entries = await get(agentSuggestionEntries$);
-    pageSignal.throwIfAborted();
-    for (const entry of entries) {
-      if (entry.item.id === item.id) {
-        set(
-          settleAgentSuggestion$,
-          entry,
-          { type: "sent", threadId },
-          pageSignal,
-        );
-      }
-    }
   },
 );
 
@@ -331,7 +332,7 @@ const openAgentSuggestionThread$ = command(
 export const startAgentSuggestion$ = command(
   async (
     { get, set },
-    item: Suggestion,
+    suggestionId: string,
     optionId: string,
     pageSignal: AbortSignal,
   ): Promise<void> => {
@@ -341,12 +342,12 @@ export const startAgentSuggestion$ = command(
     ]);
     pageSignal.throwIfAborted();
     const entry = entries.find((candidate) => {
-      return candidate.item.id === item.id;
+      return candidate.item.id === suggestionId;
     });
     if (!entry || get(entry.hidden$)) {
       return;
     }
-    const option = item.options.find((candidate) => {
+    const option = entry.item.options.find((candidate) => {
       return candidate.id === optionId;
     });
     if (!option) {
