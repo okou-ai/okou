@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
+import { serializeFeedbackNote } from "./chat-user-message.service";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { isDeepStrictEqual } from "node:util";
@@ -92,7 +93,7 @@ function feedbackInput(
 function storedFeedback(feedback: NewFeedback, optionId?: string | null) {
   const context =
     feedback.targetId === null
-      ? sql`jsonb_build_object('title', ${agentSuggestions.content}->'title', 'rationale', ${agentSuggestions.content}->'rationale', 'scope', ${agentSuggestions.content}->'feedbackScope', 'optionLabel', (SELECT choice->'label' FROM jsonb_array_elements(${agentSuggestions.content}->'options') AS choice WHERE choice->>'id' = ${optionId ?? ""} LIMIT 1))`
+      ? sql`jsonb_build_object('title', ${agentSuggestions.content}->'title', 'rationale', ${agentSuggestions.content}->'rationale', 'optionLabel', (SELECT choice->'label' FROM jsonb_array_elements(${agentSuggestions.content}->'options') AS choice WHERE choice->>'id' = ${optionId ?? ""} LIMIT 1))`
       : sql`(SELECT previous->'context' FROM jsonb_array_elements(${agentSuggestions.feedbacks}) AS previous WHERE previous->>'id' = ${feedback.targetId} LIMIT 1)`;
   return sql`(${sql.param(JSON.stringify(feedback))}::jsonb || jsonb_build_object('context', ${context}))`;
 }
@@ -292,7 +293,6 @@ export const createSuggestion$ = command(
       existing.title === input.title &&
       existing.rationale === input.rationale &&
       existing.priority === input.priority &&
-      isDeepStrictEqual(existing.feedbackScope, input.feedbackScope) &&
       isDeepStrictEqual(existing.options, input.options) &&
       isDeepStrictEqual(existing.customOption, input.customOption)
     ) {
@@ -352,12 +352,6 @@ const changeSuggestion$ = command(
       .where(
         and(
           scope(owner, id),
-          patch.feedbackScope
-            ? eq(
-                sql`${agentSuggestions.content}->'feedbackScope'->>'key'`,
-                patch.feedbackScope.key,
-              )
-            : undefined,
           feedback
             ? and(
                 sql`jsonb_array_length(${agentSuggestions.feedbacks}) < 100`,
@@ -449,7 +443,6 @@ const consumeCachedSuggestion$ = command(
           context: {
             title: snapshot.title,
             rationale: snapshot.rationale,
-            scope: snapshot.feedbackScope,
             optionLabel:
               snapshot.options.find((option) => {
                 return option.id === optionId;
@@ -876,7 +869,7 @@ export const recordAcceptedSuggestionFollowup$ = command(
     if (!document) {
       throw new Error("Accepted suggestion input is unavailable");
     }
-    for (const { context } of suggestionFeedbacks(document)) {
+    for (const { context, part } of suggestionFeedbacks(document)) {
       await set(
         changeSuggestion$,
         owner,
@@ -884,7 +877,12 @@ export const recordAcceptedSuggestionFollowup$ = command(
         {
           status: "consumed",
           selectedOptionId: "custom",
-          feedback: feedbackInput("custom_sent", eventId),
+          feedback: {
+            ...feedbackInput("custom_sent", eventId),
+            choice: serializeFeedbackNote(part.note, (template) => {
+              return template.titleSnapshot;
+            }),
+          },
         },
         signal,
       );

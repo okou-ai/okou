@@ -1629,7 +1629,7 @@
       "editReason": "修改原因",
       "label": "建议",
       "lessLikeThis": "少推荐这类内容",
-      "lessRecorded": "会少推荐类似的建议（{{scope}}）",
+      "lessRecorded": "会少推荐类似的建议",
       "messageSent": "消息已发送",
       "notPlanned": "暂无计划",
       "notPlannedRecorded": "已记下，这件事暂无计划",

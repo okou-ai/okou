@@ -48,7 +48,6 @@ function input(priority = 0): SuggestionCreate {
     title: "Review the project update",
     rationale: "A decision needs your input",
     priority,
-    feedbackScope: { key: "project-review", label: "project review" },
     customOption: {
       id: "custom",
       threadId: null,
@@ -151,22 +150,16 @@ async function primaryRun(
 const feedbackContextSchema = object({
   asOf: string(),
   complete: boolean(),
-  records: array(
+  feedback: array(
     object({
-      id: string(),
+      kind: string(),
       title: string(),
-      scope: object({ key: string(), label: string() }),
-      evidence: array(
-        object({
-          id: string(),
-          suggestionId: string(),
-          kind: string(),
-          observedAt: string(),
-          expiresAt: string(),
-          note: string(),
-        }),
-      ),
-    }),
+      rationale: string(),
+      reason: string().optional(),
+      choice: string().optional(),
+      at: string(),
+      until: string(),
+    }).strict(),
   ),
 });
 async function feedbackContext(
@@ -255,15 +248,18 @@ describe("Agent suggestions", () => {
     );
     expect(responses).toHaveLength(2);
     const feedback = await feedbackContext(fixture);
-    expect(
-      feedback.records
-        .flatMap((record) => {
-          return record.evidence.map((item) => {
-            return item.suggestionId;
+    expect(feedback.feedback).toHaveLength(2);
+    expect(feedback.feedback).toStrictEqual(
+      expect.arrayContaining(
+        [one, two].map((item) => {
+          return expect.objectContaining({
+            kind: "not_planned",
+            title: item.title,
+            rationale: item.rationale,
           });
-        })
-        .sort(),
-    ).toStrictEqual([one.id, two.id].sort());
+        }),
+      ),
+    );
     const remaining = await accept(
       client().list({ headers: humanHeaders }),
       [200],
@@ -1251,6 +1247,14 @@ describe("Suggestion custom follow-ups", () => {
     );
     await accept(events.send({ headers: humanHeaders, body: complete }), [201]);
     await accept(events.send({ headers: humanHeaders, body: complete }), [201]);
+    expect((await feedbackContext(fixture)).feedback).toStrictEqual([
+      expect.objectContaining({
+        kind: "custom_sent",
+        title: value.title,
+        rationale: value.rationale,
+        choice: "Assess the risks before choosing what to do",
+      }),
+    ]);
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(pool.body.suggestions).toStrictEqual([]);
     expect(pool.body.receipts).toContainEqual(
@@ -1608,7 +1612,7 @@ describe("Suggestion feedback context", () => {
         learnedAt: null,
         context: expect.objectContaining({
           title: created.body.title,
-          scope: created.body.feedbackScope,
+          rationale: created.body.rationale,
         }),
       }),
     ]);
@@ -1658,13 +1662,14 @@ describe("Suggestion feedback context", () => {
     const after = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(after.body.receipts).toStrictEqual(before.body.receipts);
     expect(first.complete).toBeTruthy();
-    expect(first.records).toStrictEqual([
-      expect.objectContaining({
-        id: "preference:project-review",
-        evidence: [
-          expect.objectContaining({ id, kind: "less_like_this", note: "" }),
-        ],
-      }),
+    expect(first.feedback).toStrictEqual([
+      {
+        kind: "less_like_this",
+        title: created.body.title,
+        rationale: created.body.rationale,
+        at: before.body.receipts?.[0]?.feedbacks[0]?.createdAt,
+        until: expect.any(String),
+      },
     ]);
     await accept(
       client().feedback({
@@ -1680,13 +1685,10 @@ describe("Suggestion feedback context", () => {
       [200],
     );
     const revised = await feedbackContext(fixture);
-    expect(revised.records[0]?.evidence[0]).toStrictEqual(
-      expect.objectContaining({
-        id,
-        note: "A teammate owns these reviews",
-        expiresAt: first.records[0]?.evidence[0]?.expiresAt,
-      }),
-    );
+    expect(revised.feedback[0]).toStrictEqual({
+      ...first.feedback[0],
+      reason: "A teammate owns these reviews",
+    });
     await accept(
       client().feedback({
         headers: humanHeaders,
@@ -1701,7 +1703,7 @@ describe("Suggestion feedback context", () => {
       }),
       [200],
     );
-    expect((await feedbackContext(fixture)).records).toStrictEqual([]);
+    expect((await feedbackContext(fixture)).feedback).toStrictEqual([]);
   });
 
   it("keeps one member's feedback out of another member's Run context", async () => {
@@ -1725,8 +1727,8 @@ describe("Suggestion feedback context", () => {
     );
     const member = createBddApi(context).user({ orgId: fixture.actor.orgId });
     const other = await primaryRun(true, false, member);
-    expect((await feedbackContext(other)).records).toStrictEqual([]);
-    expect((await feedbackContext(fixture)).records[0]?.evidence[0]?.note).toBe(
+    expect((await feedbackContext(other)).feedback).toStrictEqual([]);
+    expect((await feedbackContext(fixture)).feedback[0]?.reason).toBe(
       "Private review preference",
     );
   });
@@ -1769,7 +1771,7 @@ describe("Suggestion feedback context", () => {
         [200],
       );
     }
-    expect((await feedbackContext(fixture)).records[0]?.title).toBe(
+    expect((await feedbackContext(fixture)).feedback[0]?.title).toBe(
       "Newer review",
     );
     await accept(
@@ -1786,15 +1788,14 @@ describe("Suggestion feedback context", () => {
       }),
       [200],
     );
-    expect((await feedbackContext(fixture)).records[0]?.evidence).toStrictEqual(
-      [
-        expect.objectContaining({
-          id,
-          suggestionId: second.body.id,
-          note: second.body.id,
-        }),
-      ],
-    );
+    expect((await feedbackContext(fixture)).feedback).toStrictEqual([
+      expect.objectContaining({
+        kind: "less_like_this",
+        title: second.body.title,
+        rationale: second.body.rationale,
+        reason: second.body.id,
+      }),
+    ]);
   });
 
   it("carries a selected direction without treating dismissal as a preference", async () => {
@@ -1823,10 +1824,12 @@ describe("Suggestion feedback context", () => {
       }),
       [200],
     );
-    expect((await feedbackContext(fixture)).records).toStrictEqual([
+    expect((await feedbackContext(fixture)).feedback).toStrictEqual([
       expect.objectContaining({
-        id: `direction:${selected.body.id}`,
-        evidence: [expect.objectContaining({ kind: "option_selected" })],
+        kind: "option_selected",
+        title: selected.body.title,
+        rationale: selected.body.rationale,
+        choice: "Review update",
       }),
     ]);
   });
@@ -1858,36 +1861,39 @@ describe("Suggestion feedback context", () => {
       }),
       [200],
     );
-    expect((await feedbackContext(fixture)).records).toHaveLength(2);
+    expect((await feedbackContext(fixture)).feedback).toHaveLength(2);
     mockNow(start + 7 * day);
     const week = await feedbackContext(fixture);
-    expect(week.records).toStrictEqual([
-      expect.objectContaining({ id: "preference:project-review" }),
+    expect(week.feedback).toStrictEqual([
+      expect.objectContaining({ kind: "less_like_this" }),
     ]);
     mockNow(start + 30 * day);
-    expect((await feedbackContext(fixture)).records).toStrictEqual([]);
+    expect((await feedbackContext(fixture)).feedback).toStrictEqual([]);
   });
 
-  it("reads beyond the first feedback page before merging scoped preferences", async () => {
+  it("keeps each suggestion's original context across feedback pages", async () => {
     const start = Date.parse("2026-10-01T00:00:00.000Z");
     mockNow(start);
     const fixture = await primaryRun();
-    for (let index = 0; index < 102; index++) {
+    for (let index = 0; index < 101; index++) {
       const value = {
         ...input(),
         id: `a0000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
+        title: `Review ${index}`,
+        rationale: `Decision ${index}`,
       };
       const created = await accept(
         client().create({ headers: fixture.headers, body: value }),
         [200],
       );
       mockNow(start + index);
+      const id = randomUUID();
       await accept(
         client().feedback({
           headers: humanHeaders,
           params: { id: created.body.id },
           body: {
-            id: randomUUID(),
+            id,
             kind: "less_like_this",
             targetId: null,
             note: `Feedback ${index}`,
@@ -1895,12 +1901,33 @@ describe("Suggestion feedback context", () => {
         }),
         [200],
       );
+      if (index === 50) {
+        await accept(
+          client().feedback({
+            headers: humanHeaders,
+            params: { id: created.body.id },
+            body: { id: randomUUID(), kind: "undo", targetId: id, note: "" },
+          }),
+          [200],
+        );
+      }
     }
-    const feedback = await feedbackContext(fixture);
-    expect(feedback.complete).toBeTruthy();
-    expect(feedback.records).toHaveLength(1);
-    expect(feedback.records[0]?.evidence).toHaveLength(5);
-    expect(feedback.records[0]?.evidence[0]?.note).toBe("Feedback 101");
+    const result = await feedbackContext(fixture);
+    expect(result.complete).toBeTruthy();
+    expect(result.feedback).toHaveLength(100);
+    expect(result.feedback[0]).toStrictEqual({
+      kind: "less_like_this",
+      title: "Review 100",
+      rationale: "Decision 100",
+      reason: "Feedback 100",
+      at: new Date(start + 100).toISOString(),
+      until: new Date(start + 100 + 30 * 86_400_000).toISOString(),
+    });
+    expect(result.feedback.at(-1)).toMatchObject({
+      title: "Review 0",
+      rationale: "Decision 0",
+      reason: "Feedback 0",
+    });
   });
 
   it("marks a bounded snapshot incomplete instead of presenting omitted actions as no feedback", async () => {
@@ -1926,6 +1953,6 @@ describe("Suggestion feedback context", () => {
     }
     const feedback = await feedbackContext(fixture);
     expect(feedback.complete).toBeFalsy();
-    expect(feedback.records).toHaveLength(100);
+    expect(feedback.feedback).toHaveLength(100);
   });
 });
