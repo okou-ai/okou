@@ -245,11 +245,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Test-only feature switch for flag system validation",
     enabled: true,
   },
-  [FeatureSwitchKey.CanvaConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Canva design connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",

@@ -11,7 +11,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   Record<string, FeatureSwitchKey | undefined>
 >({
-  "canva\0oauth": FeatureSwitchKey.CanvaConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,

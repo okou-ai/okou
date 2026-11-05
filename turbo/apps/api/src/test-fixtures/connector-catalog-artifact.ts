@@ -853,17 +853,6 @@ const connectors = [
     ],
   }),
   connector({
-    connectorSlug: "canva",
-    label: "Canva",
-    authMethods: [
-      standardOauthMethod({
-        connectorSlug: "canva",
-        prefix: "CANVA",
-        tokenEnvironmentNames: ["CANVA_TOKEN"],
-      }),
-    ],
-  }),
-  connector({
     connectorSlug: "close",
     label: "Close",
     authMethods: [

@@ -14,7 +14,6 @@ export enum FeatureSwitchKey {
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",
-  CanvaConnector = "canvaConnector",
   DocuSignConnector = "docusignConnector",
   MercuryConnector = "mercuryConnector",
   RedditConnector = "redditConnector",

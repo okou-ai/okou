@@ -183,33 +183,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
     },
   },
   {
-    connectorSlug: "canva",
-    label: "Canva",
-    clientEnvPrefix: "CANVA",
-    authorizationEndpoint: "https://www.canva.com/api/oauth/authorize",
-    tokenUrl: "https://api.canva.com/rest/v1/oauth/token",
-    pkce: true,
-    tokenResponse: {
-      access_token: "canva-test-token",
-      refresh_token: "canva-refresh-token",
-      expires_in: 14_400,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.canva.com/rest/v1/users/me", () => {
-          return HttpResponse.json({
-            team_user: { user_id: "canva-user-123", team_id: "canva-team-123" },
-          });
-        }),
-        http.get("https://api.canva.com/rest/v1/users/me/profile", () => {
-          return HttpResponse.json({
-            profile: { display_name: "Canva Test User" },
-          });
-        }),
-      );
-    },
-  },
-  {
     connectorSlug: "close",
     label: "Close",
     clientEnvPrefix: "CLOSE",
