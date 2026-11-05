@@ -1,7 +1,13 @@
 import { command } from "ccstate";
 import { expect, test } from "vitest";
 import { mockNow } from "../../lib/time.ts";
-import { debounceCommand, resetSignal, throttleCommand } from "../utils.ts";
+import {
+  debounceCommand,
+  resetSignal,
+  setLoop,
+  throttleCommand,
+  waitLoopUntil,
+} from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
 
 const context = testContext();
@@ -175,3 +181,36 @@ test.each([
     expect(executions).toStrictEqual(["first", "second"]);
   },
 );
+
+test("A background loop drops a failed round and runs the next one", async () => {
+  const rounds: string[] = [];
+  const finished = context.mocks.deferred<void>();
+  setLoop(
+    () => {
+      if (rounds.length === 0) {
+        rounds.push("failed");
+        throw new Error("Transient failure");
+      }
+      rounds.push("succeeded");
+      finished.resolve();
+      return true;
+    },
+    1000,
+    context.signal,
+  );
+
+  await finished.promise;
+  expect(rounds).toStrictEqual(["failed", "succeeded"]);
+});
+
+test("Waiting on a loop still surfaces its failed round", async () => {
+  await expect(
+    waitLoopUntil(
+      () => {
+        throw new Error("Round failed");
+      },
+      0,
+      context.signal,
+    ),
+  ).rejects.toThrow("Round failed");
+});

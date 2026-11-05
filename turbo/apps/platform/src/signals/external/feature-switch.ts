@@ -14,7 +14,6 @@ import {
   featureSwitchState$,
   setFeatureSwitchState$,
 } from "./feature-switch-state.ts";
-import { refreshChatListLayout$ } from "../chat-page/chat-list-layout.ts";
 
 type FeatureSwitchClerk = Pick<Clerk, "organization" | "session" | "user">;
 
@@ -98,17 +97,8 @@ export const featureSwitch$ = computed((get) => {
 });
 
 export const applyFeatureSwitches$ = command(
-  ({ get, set }, switches: Record<FeatureSwitchKey, boolean>) => {
-    const previous = get(featureSwitchState$);
+  ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);
-    // Switches add sidebar entries and change the chat list's frame, so a
-    // changed value can change the chat list's available height.
-    const changed = Object.values(FeatureSwitchKey).some((key) => {
-      return previous[key] !== switches[key];
-    });
-    if (changed) {
-      set(refreshChatListLayout$);
-    }
   },
 );
 

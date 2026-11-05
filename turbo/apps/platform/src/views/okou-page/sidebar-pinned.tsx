@@ -31,7 +31,7 @@ import {
   setSidebarAgentPinned$,
   type SidebarPinnedAgentSignals,
 } from "../../signals/okou-page/sidebar-pinned-agent.ts";
-import { refreshSidebarChatThreadLayoutOnRef$ } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
+import { refreshSidebarChatThreadLayoutOnRef$ } from "../../signals/chat-page/chat-list-layout.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { equalArrays } from "../../lib/equality.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";

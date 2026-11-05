@@ -57,8 +57,10 @@ export const closeIosInstallModal$ = command(({ set }) => {
   set(iosModalOpen$, false);
 });
 
-export const dismissInstallBanner$ = command(({ set }) => {
-  set(setDismissed$, "1");
-  // The banner sits above the mobile chat list.
-  set(refreshChatListLayout$);
-});
+export const dismissInstallBanner$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    set(setDismissed$, "1");
+    // The banner sits above the mobile chat list.
+    await set(refreshChatListLayout$, signal);
+  },
+);

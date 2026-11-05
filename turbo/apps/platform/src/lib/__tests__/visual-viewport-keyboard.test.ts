@@ -148,7 +148,9 @@ async function resizeAndSettle(
 }
 
 function startViewportKeyboardState(
-  onKeyboardOpenChange: () => void = () => {},
+  onKeyboardOpenChange: () => Promise<void> = () => {
+    return Promise.resolve();
+  },
 ): ControlledViewportClock {
   const resetSettled$ = resetSignal();
   const { store, signal } = context;
@@ -238,6 +240,7 @@ test("Report each keyboard open and close once to the layout beside it", async (
 
   const clock = startViewportKeyboardState(() => {
     openStates.push(document.documentElement.dataset.keyboardOpen);
+    return Promise.resolve();
   });
   await resizeAndSettle(viewport, clock, 520, 100);
   expect(openStates).toStrictEqual(["true"]);

@@ -1,5 +1,5 @@
 import { ArrowUpRight, TriangleAlert, Wrench, X } from "lucide-react";
-import { useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { useMediaQuery } from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
@@ -10,21 +10,24 @@ import {
   type InstatusIssue,
   visibleInstatusIssues$,
 } from "../../signals/instatus-status.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { resolvePlatformServiceStatusConfig } from "../../lib/platform-host.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../okou-page/sidebar-breakpoint.ts";
 
 function InstatusIssueNotice({
   issue,
-  onDismiss,
   compact,
   pageBaseUrl,
 }: {
   readonly issue: InstatusIssue;
-  readonly onDismiss: (issueId: string) => void;
   readonly compact: boolean;
   readonly pageBaseUrl: string;
 }) {
   const { t } = useTranslation();
+  const dismissIssue = useSet(dismissInstatusIssue$);
+  // Notices are app-wide and also render outside any page.
+  const rootSignal = useGet(rootSignal$);
   let statusLabel: string;
   switch (issue.status.toUpperCase()) {
     case "INVESTIGATING": {
@@ -116,7 +119,7 @@ function InstatusIssueNotice({
             })}
             className="-mr-1 -mt-1 shrink-0"
             onClick={() => {
-              onDismiss(issue.id);
+              detach(dismissIssue(issue.id, rootSignal), Reason.DomCallback);
             }}
           >
             <X aria-hidden="true" />
@@ -154,7 +157,6 @@ export function InstatusStatusNotice({
 }) {
   const { t } = useTranslation();
   const issues = useLastResolved(visibleInstatusIssues$) ?? [];
-  const dismissIssue = useSet(dismissInstatusIssue$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const config = resolvePlatformServiceStatusConfig(window.location.hostname);
   const placementMatchesViewport =
@@ -177,7 +179,6 @@ export function InstatusStatusNotice({
           <div key={issue.id} className="pointer-events-auto">
             <InstatusIssueNotice
               issue={issue}
-              onDismiss={dismissIssue}
               compact={placement !== "floating"}
               pageBaseUrl={config.pageBaseUrl}
             />

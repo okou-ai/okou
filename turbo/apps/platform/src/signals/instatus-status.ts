@@ -1,9 +1,8 @@
 import { fetchResource } from "../lib/resource-fetch.ts";
 import { command, computed, state } from "ccstate";
-import { delay } from "signal-timers";
 
 import { localStorageSignals } from "./external/local-storage.ts";
-import { detach, isRecord, jsonParseOr, Reason, setLoop } from "./utils.ts";
+import { isRecord, jsonParseOr, setLoop } from "./utils.ts";
 import { resolvePlatformServiceStatusConfig } from "../lib/platform-host.ts";
 import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 
@@ -117,7 +116,7 @@ export const visibleInstatusIssues$ = computed(
 );
 
 export const dismissInstatusIssue$ = command(
-  ({ get, set }, issueId: string) => {
+  async ({ get, set }, issueId: string, signal: AbortSignal) => {
     const nextDismissedIssueIds = new Set(get(dismissedIssueIds$));
     nextDismissedIssueIds.add(issueId);
     set(
@@ -125,42 +124,36 @@ export const dismissInstatusIssue$ = command(
       JSON.stringify(Array.from(nextDismissedIssueIds)),
     );
     // Mobile notices sit above the chat list.
-    set(refreshChatListLayout$);
-  },
-);
-
-// Mobile notices sit above the chat list, so each fetched result can change
-// its height. A failed fetch leaves the previous notices, and the height, as
-// they were; it fails only this round's refresh, not the polling loop.
-const refreshChatListLayoutAfterIssues$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    await get(visibleInstatusIssues$);
-    signal.throwIfAborted();
-    set(refreshChatListLayout$);
+    await set(refreshChatListLayout$, signal);
   },
 );
 
 export const pollInstatusIssues$ = command(
-  ({ set }, signal: AbortSignal): void => {
+  ({ get, set }, signal: AbortSignal): void => {
     if (!resolvePlatformServiceStatusConfig(window.location.hostname)) {
       return;
     }
 
+    // The first round reads the notices' initial fetch; each later round
+    // refetches them. A failed fetch drops only its round.
+    let refetch = false;
     setLoop(
       async (loopSignal) => {
-        detach(
-          set(refreshChatListLayoutAfterIssues$, loopSignal),
-          Reason.Daemon,
-          "service notice layout",
-        );
-        await delay(STATUS_REFRESH_INTERVAL_MS, { signal: loopSignal });
-        set(refreshVersion$, (version) => {
-          return version + 1;
-        });
+        if (refetch) {
+          set(refreshVersion$, (version) => {
+            return version + 1;
+          });
+        }
+        refetch = true;
+        await get(visibleInstatusIssues$);
+        loopSignal.throwIfAborted();
+        // Mobile notices sit above the chat list.
+        await set(refreshChatListLayout$, loopSignal);
         return false;
       },
-      0,
+      STATUS_REFRESH_INTERVAL_MS,
       signal,
+      { testIntervalMs: STATUS_REFRESH_INTERVAL_MS },
     );
   },
 );

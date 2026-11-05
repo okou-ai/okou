@@ -2,7 +2,6 @@ import { command, computed, state } from "ccstate";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { debounceCommand, onRef, resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
-import { refreshChatListLayout$ } from "../chat-page/chat-list-layout.ts";
 import { openCreateAgentDialog$ } from "./jobs-page.ts";
 
 // ---------------------------------------------------------------------------
@@ -150,23 +149,6 @@ export const sessionListCollapsed$ = computed((get) => {
 export const setSessionListCollapsed$ = command(
   ({ set }, collapsed: boolean) => {
     set(sessionListCollapsedStorage.set$, String(collapsed));
-  },
-);
-
-// ---------------------------------------------------------------------------
-// Manage section collapse state (Sidebar)
-// ---------------------------------------------------------------------------
-const manageSectionCollapsedStorage = localStorageSignals(
-  "sidebar-manage-section-collapsed",
-);
-export const manageSectionCollapsed$ = computed((get) => {
-  return get(manageSectionCollapsedStorage.get$) === "true";
-});
-export const setManageSectionCollapsed$ = command(
-  ({ set }, collapsed: boolean) => {
-    set(manageSectionCollapsedStorage.set$, String(collapsed));
-    // The section sits above the mobile drawer's chat list.
-    set(refreshChatListLayout$);
   },
 );
 

@@ -688,7 +688,7 @@ export const bootstrap$ = command(
       },
       () => {
         // The mobile tab bar hides while the keyboard is open.
-        set(refreshChatListLayout$);
+        return set(refreshChatListLayout$, signal);
       },
     );
     set(captureDiscordApprovalFragment$, signal);

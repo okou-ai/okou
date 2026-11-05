@@ -45,12 +45,16 @@ import { ROUTES, type RouteKey } from "../../signals/route-paths.ts";
 import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
-  manageSectionCollapsed$,
-  setManageSectionCollapsed$,
   openThreeColumnSearchDialog$,
   setThreeColumnSearchOpen$,
   threeColumnSearchOpen$,
 } from "../../signals/okou-page/sidebar-state.ts";
+import {
+  manageSectionCollapsed$,
+  setManageSectionCollapsed$,
+} from "../../signals/okou-page/sidebar-manage-section.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { OrgSwitcher, OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
@@ -386,6 +390,7 @@ function ExpandedManageSection() {
   const { manageNav } = useResolvedNavItems();
   const manageCollapsed = useGet(manageSectionCollapsed$);
   const setManageCollapsed = useSet(setManageSectionCollapsed$);
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   return (
     <div className="shrink-0">
@@ -397,7 +402,10 @@ function ExpandedManageSection() {
         aria-controls={MANAGE_CONTENT_ID}
         className="group flex h-8 w-full shrink-0 items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
         onClick={() => {
-          return setManageCollapsed(!manageCollapsed);
+          detach(
+            setManageCollapsed(!manageCollapsed, pageSignal),
+            Reason.DomCallback,
+          );
         }}
       >
         <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_50%,transparent))] group-hover:text-nav-copy group-focus-visible:text-nav-copy transition-colors">
