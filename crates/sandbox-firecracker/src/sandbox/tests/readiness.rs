@@ -224,7 +224,7 @@ async fn disconnected_guest_cannot_complete_readiness_with_one_successful_gate()
     }
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn readiness_retains_existing_request_deadlines_and_discards_unproven_connection() {
     let (guest, mut peer) = readiness_peer().await;
     let mut observer = ReadinessObserver::default();
@@ -235,7 +235,11 @@ async fn readiness_retains_existing_request_deadlines_and_discards_unproven_conn
             result = &mut wait => panic!("readiness finished before both requests: {result:?}"),
             requests = requests(&mut peer) => requests,
         };
+        // Keep real socket setup and cleanup on running time. Only advance the
+        // already armed operation deadlines while the startup wait is unpolled.
+        tokio::time::pause();
         tokio::time::advance(HOME_DRIVE_MOUNT_REQUEST_DEADLINE).await;
+        tokio::time::resume();
         assert!(matches!(wait.await, Err(GuestReadinessError::Home(_))));
     }
     assert!(guest.try_fence_normal_operations().is_err());
