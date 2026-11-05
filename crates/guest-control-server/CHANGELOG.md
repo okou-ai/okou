@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.75](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.74...guest-control-server-v0.24.75) (2026-11-05)
+
+
+### Refactoring
+
+* **guest-control:** share exec wait-result projection ([#45296](https://github.com/okou-ai/okou/issues/45296)) ([97bb9ef](https://github.com/okou-ai/okou/commit/97bb9ef3ce34518d2fd7747b02637572dd9691a8))
+
 ## [0.24.74](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.73...guest-control-server-v0.24.74) (2026-11-04)
 
 

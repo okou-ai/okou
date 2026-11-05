@@ -13,6 +13,18 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1095.1](https://github.com/okou-ai/okou/compare/app-v0.1095.0...app-v0.1095.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** add browser to the mobile chat more menu ([#45268](https://github.com/okou-ai/okou/issues/45268)) ([382b830](https://github.com/okou-ai/okou/commit/382b83068b0b91b0ca432d078504bf953c8cacf8))
+
+
+### Refactoring
+
+* **app:** reveal clipped titles without resize observers ([#45241](https://github.com/okou-ai/okou/issues/45241)) ([2b9d0ce](https://github.com/okou-ai/okou/commit/2b9d0ce4c3dc028403abb485f0f94106510d75b8))
+
 ## [0.1095.0](https://github.com/okou-ai/okou/compare/app-v0.1094.0...app-v0.1095.0) (2026-11-04)
 
 

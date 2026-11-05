@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.244.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.12...runner-rs-v0.244.13) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** centralize ordered outcome continuation ([#45298](https://github.com/okou-ai/okou/issues/45298)) ([c23ec55](https://github.com/okou-ai/okou/commit/c23ec55d648370474d0417daa103f3acd7e25af1))
+* **python:** centralize the response finalization precondition ([#45263](https://github.com/okou-ai/okou/issues/45263)) ([ae88103](https://github.com/okou-ai/okou/commit/ae881035e26bdeeba923b1f9e9280a9a7773c6b7))
+* **python:** isolate response inspector construction ([#45293](https://github.com/okou-ai/okou/issues/45293)) ([bbfdedf](https://github.com/okou-ai/okou/commit/bbfdedfc6e95dc9380db7af06f2f5fd9cea5e8b5))
+* **python:** reuse empty branch transfer semantics ([#45304](https://github.com/okou-ai/okou/issues/45304)) ([a1330ac](https://github.com/okou-ai/okou/commit/a1330acb461a5d685e9f6cdd337c6feb9a16810d))
+* **python:** share the trickling fixture thread owner ([#45270](https://github.com/okou-ai/okou/issues/45270)) ([f3ffb1f](https://github.com/okou-ai/okou/commit/f3ffb1f262f6ca6ff2d0c97a9622ae1906b11adb))
+
+
+### Performance Improvements
+
+* **python:** avoid irrelevant callable metadata analysis ([#45284](https://github.com/okou-ai/okou/issues/45284)) ([64c22b4](https://github.com/okou-ai/okou/commit/64c22b425ff31232d90e6d2cd1dc9eff482c1b95))
+
 ## [0.244.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.11...runner-rs-v0.244.12) (2026-11-04)
 
 
