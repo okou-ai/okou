@@ -1,7 +1,7 @@
 import { command, computed, type Computed } from "ccstate";
 import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { and, eq, exists, inArray, isNull, isNotNull, or } from "drizzle-orm";
+import { and, eq, isNotNull, or } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -11,18 +11,11 @@ interface TeamsAccountOwner {
   readonly userId: string;
 }
 
-/** Persisted installation-owned connections have a null orgId. Retire this
- * ownership lookup only after the row and rollback gates in #43729. */
+/** Account authority belongs to its persisted organization and user. */
 export function teamsAccountOwnerCondition(identity: TeamsAccountOwner) {
   return and(
     eq(teamsOrgConnections.userId, identity.userId),
-    or(
-      eq(teamsOrgConnections.orgId, identity.orgId),
-      and(
-        isNull(teamsOrgConnections.orgId),
-        eq(teamsOrgInstallations.orgId, identity.orgId),
-      ),
-    ),
+    eq(teamsOrgConnections.orgId, identity.orgId),
   );
 }
 
@@ -64,18 +57,8 @@ export const connectTeamsAccount$ = command(
   ) => {
     const db = set(writeDb$);
     const current = await db
-      .select({
-        connection: teamsOrgConnections,
-        installationOrgId: teamsOrgInstallations.orgId,
-      })
+      .select()
       .from(teamsOrgConnections)
-      .leftJoin(
-        teamsOrgInstallations,
-        eq(
-          teamsOrgInstallations.teamsTenantId,
-          teamsOrgConnections.teamsTenantId,
-        ),
-      )
       .where(
         or(
           and(
@@ -89,10 +72,10 @@ export const connectTeamsAccount$ = command(
     const message =
       "Disconnect your current Teams account before connecting another identity or organization.";
     if (
-      current.some(({ connection: row, installationOrgId }) => {
+      current.some((row) => {
         return (
           row.userId !== args.userId ||
-          (row.orgId ?? installationOrgId) !== args.orgId ||
+          row.orgId !== args.orgId ||
           row.teamsTenantId !== args.tenantId ||
           row.teamsAadObjectId !== args.aadObjectId
         );
@@ -122,29 +105,7 @@ export const connectTeamsAccount$ = command(
             teamsUserDisplayName: args.displayName,
             teamsUserPrincipalName: args.principalName,
           },
-          setWhere: and(
-            eq(teamsOrgConnections.userId, args.userId),
-            or(
-              eq(teamsOrgConnections.orgId, args.orgId),
-              and(
-                isNull(teamsOrgConnections.orgId),
-                exists(
-                  db
-                    .select({ tenantId: teamsOrgInstallations.teamsTenantId })
-                    .from(teamsOrgInstallations)
-                    .where(
-                      and(
-                        eq(
-                          teamsOrgInstallations.teamsTenantId,
-                          teamsOrgConnections.teamsTenantId,
-                        ),
-                        eq(teamsOrgInstallations.orgId, args.orgId),
-                      ),
-                    ),
-                ),
-              ),
-            ),
-          ),
+          setWhere: teamsAccountOwnerCondition(args),
         })
         .returning(),
       signal,
@@ -166,76 +127,7 @@ export const connectTeamsAccount$ = command(
 /** Account-owned connections survive installation removal. */
 export const removeTeamsInstallation$ = command(
   async ({ set }, tenantId: string, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const [installation] = await db
-      .select()
-      .from(teamsOrgInstallations)
-      .where(eq(teamsOrgInstallations.teamsTenantId, tenantId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (installation?.orgId) {
-      const legacy = await db
-        .select()
-        .from(teamsOrgConnections)
-        .where(
-          and(
-            eq(teamsOrgConnections.teamsTenantId, tenantId),
-            isNull(teamsOrgConnections.orgId),
-          ),
-        );
-      signal.throwIfAborted();
-      for (const connection of legacy) {
-        const accounts = await db
-          .select({ id: teamsOrgConnections.id })
-          .from(teamsOrgConnections)
-          .leftJoin(
-            teamsOrgInstallations,
-            eq(
-              teamsOrgInstallations.teamsTenantId,
-              teamsOrgConnections.teamsTenantId,
-            ),
-          )
-          .where(
-            teamsAccountOwnerCondition({
-              orgId: installation.orgId,
-              userId: connection.userId,
-            }),
-          )
-          .limit(2);
-        signal.throwIfAborted();
-        if (accounts.length !== 1 || accounts[0]?.id !== connection.id) {
-          continue;
-        }
-        const promoted = await settle(
-          db
-            .update(teamsOrgConnections)
-            .set({ orgId: installation.orgId })
-            .where(
-              and(
-                eq(teamsOrgConnections.id, connection.id),
-                isNull(teamsOrgConnections.orgId),
-              ),
-            ),
-          signal,
-        );
-        if (
-          !promoted.ok &&
-          !isUniqueViolation(promoted.error, "idx_teams_org_connections_owner")
-        ) {
-          throw promoted.error;
-        }
-      }
-    }
-    await db
-      .delete(teamsOrgConnections)
-      .where(
-        and(
-          eq(teamsOrgConnections.teamsTenantId, tenantId),
-          isNull(teamsOrgConnections.orgId),
-        ),
-      );
-    signal.throwIfAborted();
-    await db
+    await set(writeDb$)
       .delete(teamsOrgInstallations)
       .where(eq(teamsOrgInstallations.teamsTenantId, tenantId));
     signal.throwIfAborted();
@@ -266,19 +158,7 @@ export const deleteTeamsOwnerAccounts$ = command(
               owner.kind === "owner"
                 ? eq(teamsOrgConnections.userId, owner.userId)
                 : undefined,
-              or(
-                eq(teamsOrgConnections.orgId, owner.orgId),
-                and(
-                  isNull(teamsOrgConnections.orgId),
-                  inArray(
-                    teamsOrgConnections.teamsTenantId,
-                    db
-                      .select({ tenantId: teamsOrgInstallations.teamsTenantId })
-                      .from(teamsOrgInstallations)
-                      .where(eq(teamsOrgInstallations.orgId, owner.orgId)),
-                  ),
-                ),
-              ),
+              eq(teamsOrgConnections.orgId, owner.orgId),
             ),
       );
     signal.throwIfAborted();
