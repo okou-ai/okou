@@ -348,7 +348,7 @@ export function threadMeta(threadId: string) {
   });
 }
 
-/** Grants can be confirmed by an event or already included in a new snapshot. */
+/** Canonical and optimistic access changes independently own Browser reads. */
 export function threadComputerAccessVersion(threadId: string) {
   return computed((get): string | null => {
     const snapshot = get(chatThreadEventState$).snapshot;
@@ -359,18 +359,26 @@ export function threadComputerAccessVersion(threadId: string) {
     })
       ? `snapshot:${snapshot.latestSeqId ?? "empty"}`
       : null;
-    let version = baseline;
+    let serverVersion = baseline;
+    let optimisticVersion: string | null = null;
     for (const event of get(allChatThreadsEvents$)) {
       if (
         event.chatThreadId === threadId &&
         (event.kind === "computer_use_host_updated" || event.kind === "created")
       ) {
-        // A server acknowledgement keeps the optimistic UUID. Its sequence
-        // must still revalidate a denial received before the grant committed.
-        version = `${baseline ?? "initial"}:${event.id}:${event.seqId ?? "optimistic"}`;
+        if (event.seqId === undefined) {
+          optimisticVersion = event.id;
+        } else {
+          // A server acknowledgement keeps the optimistic UUID. Its sequence
+          // still revalidates a denial received before the grant committed.
+          serverVersion = `${baseline ?? "initial"}:${event.id}:${event.seqId}`;
+        }
       }
     }
-    return version;
+    // A retained optimistic event cannot hide later canonical access changes.
+    return optimisticVersion === null
+      ? serverVersion
+      : `${serverVersion ?? "initial"}:${optimisticVersion}:optimistic`;
   });
 }
 

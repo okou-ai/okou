@@ -291,7 +291,7 @@ test("An unauthorized Browser keeps its card and sidebar with an authorization p
 });
 
 test.each(["event", "snapshot"] as const)(
-  "A committed Browser grant via %s revalidates a denial from its optimistic update",
+  "A committed Browser grant via %s revalidates a denial and observes later revocation",
   async (confirmation) => {
     const user = userEvent.setup({ delay: null });
     mockWideScreen();
@@ -333,7 +333,9 @@ test.each(["event", "snapshot"] as const)(
     });
     const commit = context.mocks.deferred<void>();
     const deniedRead = context.mocks.deferred<void>();
+    const events: ReturnType<typeof chatListEvent>[] = [];
     let committed = false;
+    let revoked = false;
     let enabling = false;
     if (confirmation === "snapshot") {
       context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
@@ -366,12 +368,17 @@ test.each(["event", "snapshot"] as const)(
                 message: "Chat thread events cursor has expired",
               },
             })
-          : respond(200, { events: [], hasMore: false });
+          : respond(200, {
+              events: events.filter((event) => {
+                return event.seqId > (query.sinceSeqId ?? 0);
+              }),
+              hasMore: false,
+            });
       });
     }
     context.mocks.api(browserContract.get, ({ respond }) => {
-      if (!committed) {
-        if (enabling) {
+      if (!committed || revoked) {
+        if (enabling && !committed) {
           deniedRead.resolve();
         }
         return respond(403, {
@@ -391,13 +398,14 @@ test.each(["event", "snapshot"] as const)(
         }
         await commit.promise;
         committed = true;
-        stream.setEvents([
+        events.push(
           chatListEvent(5313, 2, "computer_use_host_updated", THREAD_ID, {
             id: body.eventId,
             agentId,
             cloudBrowserEnabled: true,
           }),
-        ]);
+        );
+        stream.setEvents(events);
         context.mocks.ably.trigger("threadListChanged");
         return respond(204);
       },
@@ -446,6 +454,21 @@ test.each(["event", "snapshot"] as const)(
     });
     expect(
       within(sidebar).queryByText("Cloud browser is not enabled for this chat"),
+    ).not.toBeInTheDocument();
+    revoked = true;
+    events.push(
+      chatListEvent(5313, 3, "computer_use_host_updated", THREAD_ID, {
+        agentId,
+        cloudBrowserEnabled: false,
+      }),
+    );
+    stream.setEvents(events);
+    context.mocks.ably.trigger("threadListChanged");
+    await within(sidebar).findByText(
+      "Cloud browser is not enabled for this chat",
+    );
+    expect(
+      within(sidebar).queryByLabelText("Remote browser input"),
     ).not.toBeInTheDocument();
   },
 );
