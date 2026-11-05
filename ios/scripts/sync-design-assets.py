@@ -4,7 +4,6 @@
 import argparse
 import base64
 import hashlib
-import http.client
 import io
 import json
 import re
@@ -39,15 +38,12 @@ def main():
     else:
         if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
             parser.error("Lucide version must be an exact stable release")
-        connection = http.client.HTTPSConnection("registry.npmjs.org", timeout=30)
-        try:
-            connection.request("GET", f"/lucide-static/-/lucide-static-{version}.tgz")
-            response = connection.getresponse()
-            if response.status != 200:
-                parser.error(f"Lucide archive download failed: HTTP {response.status}")
-            data = response.read()
-        finally:
-            connection.close()
+        url = f"https://registry.npmjs.org/lucide-static/-/lucide-static-{version}.tgz"
+        # Use the build host's curl with HTTPS-only transport and certificate verification.
+        # Do not follow redirects: only the pinned npm registry may serve the archive.
+        data = subprocess.run(
+            ["curl", "--fail", "--silent", "--show-error", "--proto", "=https",
+             "--max-time", "30", url], capture_output=True, check=True).stdout
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
     if integrity != manifest["integrity"]:
         parser.error("Lucide archive integrity mismatch")
