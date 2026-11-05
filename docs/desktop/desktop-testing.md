@@ -8,9 +8,13 @@ transport real.
 ## Automated Checks
 
 ```bash
-swift test --package-path desktop -j 4
+swift test --package-path desktop -j 4 --parallel --num-workers 2
 swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 ```
+
+The root XCTest suite uses two workers, each running a case in a separate
+process to isolate SDK and fixture globals. `-j 4` limits compilation jobs
+independently. CI uses the same commands for ordinary and canonical validation.
 
 Core tests exercise existing Electron preferences, service-origin compatibility,
 server claim deadlines, stdio protocol retirement, and the host HTTP lifecycle.

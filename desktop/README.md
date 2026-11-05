@@ -13,12 +13,15 @@ transport, command executor, host lifecycle, and preferences. `ComputerUse/`
 contains the existing native Accessibility and ScreenCaptureKit backend.
 
 ```bash
-swift test --package-path desktop -j 4
+swift test --package-path desktop -j 4 --parallel --num-workers 2
 swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 CLERK_PUBLISHABLE_KEY=pk_test_example \
   OKOU_DESKTOP_PLATFORM_URL=https://staging-app.omby.ai \
   python3 desktop/scripts/build.py --development --package zip
 ```
+
+The root package runs XCTest cases in separate processes with two workers, as
+in CI. `-j 4` separately limits compilation jobs.
 
 Use the real staging publishable key. Development packages use `Okou Dev`,
 `ai.okou.desktop.dev`, and a separate Application Support directory. Production
