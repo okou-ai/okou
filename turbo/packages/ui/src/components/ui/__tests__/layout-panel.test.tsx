@@ -1,6 +1,38 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { expect, test } from "vitest";
-import { LayoutCommit, RequestCommit } from "../layout-panel";
+import {
+  commitLayoutUpdate,
+  LayoutCommit,
+  RequestCommit,
+} from "../layout-panel";
+
+test("a final gesture sample reaches the DOM before its ownership is released", () => {
+  function Panel() {
+    const [width, setWidth] = useState(400);
+    const [committed, setCommitted] = useState("idle");
+    return (
+      <>
+        <input aria-label="Width" value={width} readOnly />
+        <button
+          type="button"
+          onClick={() => {
+            commitLayoutUpdate(() => {
+              setWidth(682);
+            });
+            setCommitted(screen.getByRole<HTMLInputElement>("textbox").value);
+          }}
+        >
+          Finish
+        </button>
+        <output aria-label="Committed width">{committed}</output>
+      </>
+    );
+  }
+  render(<Panel />);
+  fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+  expect(screen.getByLabelText("Committed width")).toHaveTextContent("682");
+});
 
 test("a layout acknowledgement follows its semantic key, not unrelated rendering", () => {
   const commit = () => {

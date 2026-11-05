@@ -187,4 +187,5 @@ export {
   LayoutPanel,
   LayoutCommit,
   RequestCommit,
+  commitLayoutUpdate,
 } from "./components/ui/layout-panel";

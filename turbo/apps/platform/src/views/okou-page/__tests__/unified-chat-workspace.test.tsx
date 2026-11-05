@@ -221,6 +221,7 @@ test("The workspace preserves the grab offset and remembers final pointerup widt
     new DOMRect(642, 0, 12, 900),
   );
   fireEvent.pointerDown(handle, { ...POINTER, clientX: 652 });
+  expect(handle).toHaveAttribute("aria-valuenow", "792");
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 652 });
   expect(handle).toHaveAttribute("aria-valuenow", "792");
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 852 });

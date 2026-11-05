@@ -4,6 +4,13 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
+
+/** Commit a final gesture sample before releasing its direct-layout ownership. */
+export function commitLayoutUpdate(update: () => void): void {
+  // This discrete completion boundary is not a per-move render scheduler.
+  flushSync(update);
+}
 
 /** A semantic host commit without introducing another layout element. */
 export function LayoutCommit({

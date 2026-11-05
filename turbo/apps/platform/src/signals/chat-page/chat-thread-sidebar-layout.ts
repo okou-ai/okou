@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { commitLayoutUpdate } from "@okouai/ui";
 
 import { localStorageSignals } from "../external/local-storage.ts";
 import {
@@ -293,7 +294,9 @@ const startChatThreadSidebarResize$ = command(
       const pointerX =
         event.type === "pointerup" ? resizePointerClientX(event) : null;
       if (pointerX !== null) {
-        moveResize(pointerX);
+        commitLayoutUpdate(() => {
+          moveResize(pointerX);
+        });
       }
       resetResize();
     }
@@ -338,6 +341,10 @@ const startChatThreadSidebarResize$ = command(
 
     document.body.append(dragMaskEl);
     set(internalChatThreadSidebarResizing$, true);
+    // Freeze a measurable seam before cancelling an in-flight width animation.
+    if (unifiedKey !== null && handleRect.width > 0) {
+      moveResize(startX);
+    }
   },
 );
 

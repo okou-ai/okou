@@ -1,5 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
+import { commitLayoutUpdate } from "@okouai/ui";
 
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
@@ -174,7 +175,9 @@ const startChatListResize$ = command(
       const pointerX =
         event.type === "pointerup" ? resizePointerClientX(event) : null;
       if (pointerX !== null) {
-        moveResize(pointerX);
+        commitLayoutUpdate(() => {
+          moveResize(pointerX);
+        });
       }
       set(finishChatListResize$);
     }

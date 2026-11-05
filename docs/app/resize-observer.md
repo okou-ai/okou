@@ -160,8 +160,12 @@ distinct commits are never delayed behind an earlier restore. Native viewport
 and actual owner transition events remain unconditional motion refreshes, not
 cache hits. Content/composer commits and the independent artifact catalog keep
 their own restoration lifetimes. Decorator width transitions are not geometry
-owners. Final pointerup coordinates are applied before release/persistence;
-cancel, blur, and unmount discard later callbacks without adding a scheduler.
+owners. Final pointerup coordinates cross the shared UI's synchronous DOM commit
+boundary before release/persistence, so a final-only fold/restore cannot regain
+button animations in the same React batch. This boundary runs only at gesture
+completion, never per move. A measurable panel grip seeds its displayed width
+before cancelling an in-flight animation, subject to the existing hard minima.
+Cancel, blur, and unmount discard later callbacks without adding a scheduler.
 
 Toolbar focus has a separate mount lifetime from CDP. User actions and focused
 controls issue tokenized intent; narrowly keyed destination commit
