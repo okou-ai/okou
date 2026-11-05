@@ -3,6 +3,7 @@ use ably_subscriber::protocol::{ProtocolMessage, action, encode_msg, error_code}
 use ably_subscriber::{Error, Event, SubscribeConfig, Subscription, TimingConfig, subscribe};
 use futures_util::SinkExt;
 use httpmock::prelude::*;
+use raw_http_test_support::clock::advance_timer_phase;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite;
@@ -455,7 +456,11 @@ async fn repeated_short_lived_tokens_are_spaced_without_starving_messages() {
     )
     .await;
 
-    tokio::time::timeout(PRE_EXPIRY_RENEWAL_TIMEOUT, second_renewal_rx)
+    // The observed message follows AUTH and token commit. Keep the original
+    // deadline inclusive of the timer phase, with real I/O on running time.
+    let renewal_deadline = tokio::time::Instant::now() + PRE_EXPIRY_RENEWAL_TIMEOUT;
+    advance_timer_phase(Duration::from_secs(2)).await;
+    tokio::time::timeout_at(renewal_deadline, second_renewal_rx)
         .await
         .expect("short-lived replacement token should renew before expiry")
         .unwrap();
