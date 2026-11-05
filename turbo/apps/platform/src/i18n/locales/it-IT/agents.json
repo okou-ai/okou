@@ -162,6 +162,10 @@
           "vercel-deploy-digest": {
             "description": "Collega ciascuna distribuzione al relativo commit e avvisa Slack quando una distribuzione fallisce",
             "title": "Riepilogo dei deployment Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Ricrea i tuoi flussi di lavoro Zapier come agenti {{brandName}}",
+            "title": "Zapier → Migrazione {{brandName}}"
           }
         },
         "title": "Ingegneria"

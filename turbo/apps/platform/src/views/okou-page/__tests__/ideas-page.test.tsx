@@ -347,3 +347,21 @@ test("Search for a use case and start it with the agent", async () => {
   const composer = await findComposer();
   expect(composer.textContent).toBe(REVENUECAT_PROMPT);
 });
+
+test("Start the Zapier migration idea from the available connector catalog", async () => {
+  configureAgent();
+  mockCatalog([
+    catalogItem("zapier", "Zapier"),
+    catalogItem("slack", "Slack"),
+    catalogItem("notion", "Notion"),
+  ]);
+
+  await setupPage({ context, path: IDEAS_PATH });
+  await fill(await screen.findByLabelText("Search use cases"), "Zapier");
+  click(await screen.findByText("Zapier → Okou migration"));
+
+  const composer = await findComposer();
+  expect(composer.textContent).toBe(
+    "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
+  );
+});

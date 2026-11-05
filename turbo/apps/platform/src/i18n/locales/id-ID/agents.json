@@ -162,6 +162,10 @@
           "vercel-deploy-digest": {
             "description": "Menghubungkan setiap deployment ke commit-nya dan memberi peringatan ke Slack saat deployment gagal",
             "title": "Ringkasan deployment Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Ubah workflow Zapier Anda menjadi agen {{brandName}}",
+            "title": "Migrasi Zapier → {{brandName}}"
           }
         },
         "title": "Teknik"

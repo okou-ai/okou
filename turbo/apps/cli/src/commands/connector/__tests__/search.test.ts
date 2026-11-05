@@ -1166,7 +1166,7 @@ describe("okou connector search command", () => {
     });
   });
 
-  describe("server-visible connector catalog", () => {
+  describe("auth method feature flag filtering", () => {
     it("includes connectors with ungated api-token auth even when oauth is feature-gated", async () => {
       server.use(
         stubConnectors([]),

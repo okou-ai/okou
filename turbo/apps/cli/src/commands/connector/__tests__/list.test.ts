@@ -364,7 +364,7 @@ describe("okou connector list command", () => {
     expect(mockExit).toHaveBeenCalledWith(1);
   });
 
-  describe("server-visible connector catalog", () => {
+  describe("auth method feature flag filtering", () => {
     it("includes connectors with ungated api-token auth even when oauth is feature-gated", async () => {
       server.use(
         stubConnectors(["github"]),

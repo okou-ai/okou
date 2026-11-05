@@ -5830,6 +5830,28 @@
     "versionFileCount": 1
   },
   {
+    "url": "https://github.com/okou-ai/okou-skills/tree/main/zapier",
+    "name": "zapier",
+    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/zapier/bcbc27545ca186f13eacdd64458d72dff1bec03ac20b6a53f843387d6ed90f79",
+    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
+    "fullPath": "okou-ai/okou-skills/tree/main/zapier",
+    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/zapier",
+    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
+    "skillSize": 3967,
+    "storageId": "68dd1393-18c3-4bab-9da9-e39600ca7106",
+    "frontmatter": {
+      "name": "zapier",
+      "description": "Zapier API for workflow automation. Use when user mentions \"Zapier\", \"zap\", \"automation\", or asks about connecting apps."
+    },
+    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/zapier",
+    "storageSize": 1651,
+    "versionHash": "bcbc27545ca186f13eacdd64458d72dff1bec03ac20b6a53f843387d6ed90f79",
+    "versionSize": 1651,
+    "skillFileCount": 1,
+    "storageFileCount": 1,
+    "versionFileCount": 1
+  },
+  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/zapsign",
     "name": "zapsign",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/zapsign/cc6bfa7e6fe359c66db3cea83a077a5f46b6a7a9e1cab2ba876a9969f33f3cf8",
