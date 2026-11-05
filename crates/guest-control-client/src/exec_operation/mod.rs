@@ -1,6 +1,7 @@
 use std::io;
 use std::time::Duration;
 
+mod control;
 mod diagnostics;
 mod dispatch;
 mod frame;
@@ -9,9 +10,8 @@ mod start;
 mod state;
 mod types;
 
-pub use handle::{
-    ExecControlHandle, ExecOperationHandle, SupervisedExecCancelHandle, SupervisedExecHandle,
-};
+pub use control::ExecControlHandle;
+pub use handle::{ExecOperationHandle, SupervisedExecCancelHandle, SupervisedExecHandle};
 pub use types::{
     ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus, ExecControlOutcome,
     ExecOperationRequest, ExecOperationResult, ExecOutputEvent, ExecOwnedCapturedOutput,

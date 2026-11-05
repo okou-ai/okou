@@ -16,12 +16,13 @@ use crate::{
     CompositeNormalOperation, FrameWriteObserver, RequestTimeoutError, RequestTimeoutStage, Shared,
 };
 
+use super::control::ExecControlHandle;
 use super::frame::{
     ExecStartWriteAdmission, admit_exec_cancel_frame, write_exec_start_frame, write_frame,
 };
 use super::handle::{
-    ExecControlHandle, ExecOperationCancelOnDropGuard, ExecOperationHandle,
-    ExecOperationWaitOutcome, ExecWaitCore, SupervisedExecHandle,
+    ExecOperationCancelOnDropGuard, ExecOperationHandle, ExecOperationWaitOutcome, ExecWaitCore,
+    SupervisedExecHandle,
 };
 use super::state::{
     ExecOperationLifecycle, ExecOperationRegistration, ExecOperationRegistrationInput,
