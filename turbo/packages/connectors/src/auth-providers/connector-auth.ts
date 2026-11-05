@@ -123,7 +123,6 @@ import { quickbooksProvider } from "./connectors/quickbooks/provider";
 import { rampProvider } from "./connectors/ramp/provider";
 import { reckonProvider } from "./connectors/reckon/provider";
 import { playstationProvider } from "./connectors/playstation/provider";
-import { spotifyProvider } from "./connectors/spotify/provider";
 import { steamProvider } from "./connectors/steam/provider";
 import { tiktokProvider } from "./connectors/tiktok/provider";
 import { tiktokAdsProvider } from "./connectors/tiktok-ads/provider";
@@ -1081,7 +1080,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("sentry", "oauth", sentryProvider),
   authCodeTokenRevokeProviderEntry("slack", "oauth", slackProvider),
   deviceAuthRefreshProviderEntry("slock", "oauth", slockProvider),
-  authCodeRefreshProviderEntry("spotify", "oauth", spotifyProvider),
   openIdAuthProviderEntry("steam", "openid", steamProvider),
   authCodeRefreshProviderEntry("strava", "oauth", stravaProvider),
   authCodeRefreshProviderEntry("stripe", "oauth", stripeProvider),

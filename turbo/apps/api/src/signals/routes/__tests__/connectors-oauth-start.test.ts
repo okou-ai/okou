@@ -106,7 +106,7 @@ function mockAuthenticatedSession(): void {
   );
 }
 
-// #30570 pre-stages twenty launch-gated OAuth connectors on the direct Okou App
+// #30570 pre-stages launch-gated OAuth connectors on the direct Okou App
 // callback. Each case pins the provider-specific authorization and token
 // exchange contract that must survive the callback change.
 type LaunchGatedDirectOkouCase = {
@@ -533,29 +533,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
           return HttpResponse.json({
             id: "reddit-user-123",
             name: "reddit-test-user",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "spotify",
-    label: "Spotify",
-    clientEnvPrefix: "SPOTIFY",
-    authorizationEndpoint: "https://accounts.spotify.com/authorize",
-    tokenUrl: "https://accounts.spotify.com/api/token",
-    tokenResponse: {
-      access_token: "spotify-test-token",
-      refresh_token: "spotify-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.spotify.com/v1/me", () => {
-          return HttpResponse.json({
-            account_id: "spotify-user-123",
-            display_name: "Spotify Test User",
-            email: "spotify@example.test",
           });
         }),
       );

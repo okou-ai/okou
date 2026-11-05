@@ -28,7 +28,6 @@ export enum FeatureSwitchKey {
   SupabaseConnector = "supabaseConnector",
   PayPalConnector = "payPalConnector",
   RampConnector = "rampConnector",
-  SpotifyConnector = "spotifyConnector",
   OkouDebug = "_debug",
   Banking = "banking",
   Lab = "_lab",

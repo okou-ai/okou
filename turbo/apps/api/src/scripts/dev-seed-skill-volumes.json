@@ -5038,28 +5038,6 @@
     "versionFileCount": 1
   },
   {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/spotify",
-    "name": "spotify",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/spotify/a903ad5281ff6ca952cfbc65c506e863d620ac6d9b56f9091ca0cda7b7f0bb56",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/spotify",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/spotify",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 7951,
-    "storageId": "f4949e64-738b-4809-9aa6-32eb035c255f",
-    "frontmatter": {
-      "name": "spotify",
-      "description": "Spotify Web API for music streaming. Use when user mentions \"Spotify\", \"play music\", \"Spotify playlist\", \"top tracks\", \"now playing\", \"Spotify artist\", or asks about music playback or library."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/spotify",
-    "storageSize": 2185,
-    "versionHash": "a903ad5281ff6ca952cfbc65c506e863d620ac6d9b56f9091ca0cda7b7f0bb56",
-    "versionSize": 2185,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/sproutgigs",
     "name": "sproutgigs",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/sproutgigs/6760ffe777fe028ed1fc73ba5dd0f03df34bca4cf9e67f0d8237a993c08a20ca",

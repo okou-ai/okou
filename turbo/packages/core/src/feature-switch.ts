@@ -322,11 +322,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ramp spend management connector",
     enabled: false,
   },
-  [FeatureSwitchKey.SpotifyConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Spotify connector integration",
-    enabled: false,
-  },
   [FeatureSwitchKey.OkouDebug]: {
     maintainer: "ethan@okou.ai",
     description:

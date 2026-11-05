@@ -2030,17 +2030,6 @@ const connectors = [
     ],
   }),
   connector({
-    connectorSlug: "spotify",
-    label: "Spotify",
-    authMethods: [
-      standardOauthMethod({
-        connectorSlug: "spotify",
-        prefix: "SPOTIFY",
-        tokenEnvironmentNames: ["SPOTIFY_TOKEN"],
-      }),
-    ],
-  }),
-  connector({
     connectorSlug: "steam",
     label: "Steam",
     authMethods: [
