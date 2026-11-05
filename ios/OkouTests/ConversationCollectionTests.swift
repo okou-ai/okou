@@ -8,50 +8,43 @@ import XCTest
 final class ConversationCollectionTests: XCTestCase {
   func testInitialInsetsAllowAnEmptyTranscriptToPresentItsFirstMessage() async throws {
     let measurements = ConversationMeasurementCache()
-    let emptyPresented = expectation(description: "The empty transcript is ready")
+    var emptyPresented = false
     let host = UIHostingController(
       rootView: transcript(rows: [], measurements: measurements) { id in
-        XCTAssertNil(id)
-        emptyPresented.fulfill()
+        emptyPresented = id == nil
       })
-    let window = try await mountNativeHost(host)
+    let window = try await mountNativeHost(host) { _ in emptyPresented }
     defer { unmount(window) }
-    await fulfillment(of: [emptyPresented], timeout: 3)
 
     let message = message()
-    let messagePresented = expectation(description: "The first message is presented")
+    var presentedID: String?
     host.rootView = transcript(rows: [row(message)], measurements: measurements) { id in
-      XCTAssertEqual(id, message.id)
-      messagePresented.fulfill()
+      presentedID = id
     }
-    await fulfillment(of: [messagePresented], timeout: 3)
+    try await eventually { presentedID == message.id }
   }
 
   func testReopeningAMeasuredTranscriptWithInsetsPresentsItsMessage() async throws {
     let measurements = ConversationMeasurementCache()
     let message = message()
     let rows = [row(message)]
-    let initiallyPresented = expectation(description: "The message is initially presented")
+    var presentedID: String?
     let original = UIHostingController(
       rootView: transcript(rows: rows, measurements: measurements) { id in
-        XCTAssertEqual(id, message.id)
-        initiallyPresented.fulfill()
+        presentedID = id
       })
-    let originalWindow = try await mountNativeHost(original)
+    let originalWindow = try await mountNativeHost(original) { _ in presentedID == message.id }
     defer { unmount(originalWindow) }
-    await fulfillment(of: [initiallyPresented], timeout: 3)
     unmount(originalWindow)
 
     // Real presentation populates the conversation-owned measurements reused by a new list.
-    let reopenedPresented = expectation(description: "The reopened message is presented")
+    var reopenedID: String?
     let reopened = UIHostingController(
       rootView: transcript(rows: rows, measurements: measurements) { id in
-        XCTAssertEqual(id, message.id)
-        reopenedPresented.fulfill()
+        reopenedID = id
       })
-    let reopenedWindow = try await mountNativeHost(reopened)
+    let reopenedWindow = try await mountNativeHost(reopened) { _ in reopenedID == message.id }
     defer { unmount(reopenedWindow) }
-    await fulfillment(of: [reopenedPresented], timeout: 3)
   }
 
   private func transcript(
