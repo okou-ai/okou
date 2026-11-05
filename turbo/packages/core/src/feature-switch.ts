@@ -348,11 +348,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable the Zoom connector (OAuth 2.0) for meetings, past participants, and cloud recordings access",
     enabled: false,
   },
-  [FeatureSwitchKey.WorkdayConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Workday HCM and finance connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.RealAgentInPreview]: {
     maintainer: "ethan@okou.ai",
     description:
