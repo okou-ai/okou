@@ -2116,10 +2116,16 @@ const connectors = [
     connectorSlug: "supabase",
     label: "Supabase",
     authMethods: [
-      standardOauthMethod({
-        connectorSlug: "supabase",
-        prefix: "SUPABASE",
-        tokenEnvironmentNames: ["SUPABASE_TOKEN"],
+      manualMethod({
+        fields: [
+          manualField({
+            privateName: "SUPABASE_TOKEN",
+            publicId: "serviceRoleKey",
+            label: "Service Role Key",
+            storage: "secret",
+          }),
+        ],
+        envBindings: { SUPABASE_TOKEN: secret("SUPABASE_TOKEN") },
       }),
     ],
   }),

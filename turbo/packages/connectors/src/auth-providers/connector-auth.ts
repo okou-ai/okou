@@ -113,7 +113,6 @@ import {
 import { todoistProvider } from "./connectors/todoist/provider";
 import { vercelProvider } from "./connectors/vercel/provider";
 import { webflowProvider } from "./connectors/webflow/provider";
-import { supabaseProvider } from "./connectors/supabase/provider";
 import { metaAdsProvider } from "./connectors/meta-ads/provider";
 import { posthogProvider } from "./connectors/posthog/provider";
 import { paypalProvider } from "./connectors/paypal/provider";
@@ -1080,7 +1079,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("strava", "oauth", stravaProvider),
   authCodeRefreshProviderEntry("stripe", "oauth", stripeProvider),
   deviceAuthProviderEntry("stripe", "cli", stripeCliProvider),
-  authCodeRefreshProviderEntry("supabase", "oauth", supabaseProvider),
   authCodeRefreshProviderEntry("test-oauth", "oauth", testOauthProvider),
   refreshProviderEntry("test-oauth", "api-token", testOauthApiTokenProvider),
   authCodeRefreshProviderEntry("test-oauth", "api", testOauthApiProvider),
