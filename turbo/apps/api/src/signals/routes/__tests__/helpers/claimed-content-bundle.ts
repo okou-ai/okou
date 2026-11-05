@@ -12,7 +12,11 @@ export function readClaimedContentBundle(
   const key = `bundles/v1/${reference.sha256}.tar.gz`;
   const url = new URL(reference.downloadUrl);
   expect(url.protocol).toBe("https:");
-  expect(url.searchParams.get("object")?.endsWith(`/${key}`)).toBeTruthy();
+  // A cached URL can come from a different valid external signer fixture.
+  // The object identity is stable; the fixture's query-only URL shape is not.
+  const objectPath =
+    url.searchParams.get("object") ?? decodeURIComponent(url.pathname);
+  expect(objectPath.endsWith(`/${key}`)).toBeTruthy();
   const archive = objects.get(key) ?? seededSkillBundleArchive(key);
   if (!archive) {
     throw new Error("Claimed content bundle was not published to S3");

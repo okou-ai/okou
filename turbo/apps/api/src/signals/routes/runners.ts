@@ -85,7 +85,20 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import { signClaimedContentBundle$ } from "../services/content-bundle-claim";
+import {
+  signClaimedContentBundle$,
+  type ClaimedContentBundleSignature,
+} from "../services/content-bundle-claim";
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import {
+  contentBundleUrlCacheContext$,
+  type ContentBundleUrlCacheContext,
+} from "../services/content-bundle-presigned-url-cache";
+import {
+  persistStoragePresignedUrls$,
+  type StoragePresignedUrlCacheWrite,
+  type StoragePresignedUrlCachePublication,
+} from "../services/system-storage-presigned-url-cache.service";
 import {
   workflowClaimInput,
   type WorkflowClaimInput,
@@ -217,7 +230,8 @@ interface ClaimFailedSideEffectArgs {
   readonly releasedSlots: readonly ReleasedRunSlot[];
 }
 
-type ClaimRouteTimingSpanKind = "parent" | "top_level" | "nested";
+type ClaimRouteTimingSpanKind =
+  "parent" | "top_level" | "nested" | "background";
 type ClaimNetworkPolicyRefreshPath = "current_catalog" | "no_builtin_targets";
 type ClaimRouteTimingActionType =
   | "claim_route_request_to_transition_start"
@@ -236,6 +250,7 @@ type ClaimRouteTimingActionType =
   | "claim_route_content_bundle_instructions_sign"
   | "claim_route_content_bundle_skills_sign"
   | "claim_route_content_bundle_response_assembly"
+  | "claim_route_content_bundle_cache_write"
   | "claim_route_policy_catalog_read"
   | "claim_route_policy_catalog_materialize"
   | "claim_route_policy_permission_read"
@@ -254,6 +269,7 @@ interface ClaimRouteTimingRecord {
   readonly fallbackReason?: "invalid_keys";
   readonly policyRefreshPath?: ClaimNetworkPolicyRefreshPath;
   readonly dimensions?: Readonly<Record<string, string>>;
+  readonly success?: boolean;
 }
 
 class ClaimRouteTimingCollector {
@@ -365,6 +381,19 @@ class ClaimRouteTimingCollector {
     });
   }
 
+  recordBundleCachePublication(
+    result: StoragePresignedUrlCachePublication,
+  ): void {
+    this.records.push({
+      actionType: "claim_route_content_bundle_cache_write",
+      spanKind: "background",
+      success: result.status !== "error",
+      durationMs: result.durationMs,
+      timestamp: nowDate().toISOString(),
+      dimensions: { cache_write_status: result.status },
+    });
+  }
+
   recordPolicyRefreshPhases(args: {
     readonly catalogReadMs: number;
     readonly catalogMaterializeMs: number;
@@ -459,14 +488,14 @@ class ClaimRouteTimingCollector {
           sandboxType: "runner",
           actionType: record.actionType,
           durationMs: record.durationMs,
-          success: true,
+          success: record.success ?? true,
           runId: args.runId,
           timestamp: record.timestamp,
           dimensions: {
             ...dimensions,
             ...record.dimensions,
             span_kind: record.spanKind,
-            ...(record.spanKind === "nested"
+            ...(record.spanKind === "nested" || record.spanKind === "background"
               ? runnerClaimAttributionDimensions(args.runnerAttribution)
               : {}),
             ...(record.fallbackReason
@@ -1140,6 +1169,31 @@ type ClaimedTransitionResult = Extract<
 >;
 type BaseClaimResponse = Omit<ExecutionContext, "contentBundles">;
 
+function withContentBundleMounts(
+  responseBody: BaseClaimResponse,
+  contentBundles: ExecutionContext["contentBundles"],
+): ExecutionContext {
+  const bundledMountPaths = new Set(
+    contentBundles.skills.map((skill) => {
+      return skill.mountPath;
+    }),
+  );
+  return {
+    ...responseBody,
+    contentBundles,
+    storageManifest: {
+      storageMounts: (responseBody.storageManifest?.storageMounts ?? []).filter(
+        (mount) => {
+          return (
+            !mount.name.startsWith("custom-skill@") &&
+            !bundledMountPaths.has(mount.mountPath)
+          );
+        },
+      ),
+    },
+  };
+}
+
 const withClaimedContentBundles$ = command(
   async (
     { set },
@@ -1149,20 +1203,49 @@ const withClaimedContentBundles$ = command(
       readonly workflowInput: WorkflowClaimInput;
       readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
       readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+      readonly bundleUrlCache: ContentBundleUrlCacheContext;
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
-  ): Promise<ExecutionContext> => {
+  ): Promise<{
+    readonly responseBody: ExecutionContext;
+    readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+  }> => {
     const startedAt = monotonicNow();
+    const cachedUrls = new Map(
+      args.claim.cachedBundleUrls.map((row) => {
+        return [row.sha256, row];
+      }),
+    );
+    const signatures = new Map<
+      string,
+      Promise<ClaimedContentBundleSignature>
+    >();
+    const signBundle = (
+      reference: ContentBundle,
+    ): Promise<ClaimedContentBundleSignature> => {
+      const pending = signatures.get(reference.sha256);
+      if (pending) {
+        return pending;
+      }
+      const signed = set(
+        signClaimedContentBundle$,
+        {
+          reference,
+          cache: args.bundleUrlCache,
+          cached: cachedUrls.get(reference.sha256),
+        },
+        signal,
+      );
+      signatures.set(reference.sha256, signed);
+      return signed;
+    };
     const instructionsStartedAt = monotonicNow();
-    const instructions =
+    const signedInstructions =
       args.claim.instructionsBundle === null
         ? undefined
-        : await set(
-            signClaimedContentBundle$,
-            args.claim.instructionsBundle,
-            signal,
-          );
+        : await signBundle(args.claim.instructionsBundle);
+    const instructions = signedInstructions?.bundle;
     if (instructions !== undefined) {
       args.timing.recordDuration(
         "claim_route_content_bundle_instructions_sign",
@@ -1190,11 +1273,7 @@ const withClaimedContentBundles$ = command(
         }),
       ].map(async (bundle) => {
         return {
-          ...(await set(
-            signClaimedContentBundle$,
-            bundle.contentBundle,
-            signal,
-          )),
+          ...(await signBundle(bundle.contentBundle)).bundle,
           mountPath: bundle.mountPath,
         };
       }),
@@ -1204,54 +1283,40 @@ const withClaimedContentBundles$ = command(
       "claim_route_content_bundle_skills_sign",
       monotonicNow() - skillsStartedAt,
     );
+    const signingResults = await Promise.all(signatures.values());
+    signal.throwIfAborted();
+    const cacheWrites = signingResults.flatMap((result) => {
+      return result.cacheWrite ? [result.cacheWrite] : [];
+    });
     const assemblyStartedAt = monotonicNow();
-    const bundledMountPaths = new Set(
-      skills.map((skill) => {
-        return skill.mountPath;
-      }),
-    );
-    const responseBody: ExecutionContext = {
-      ...args.responseBody,
-      contentBundles: { format: "tar-gzip-v1", instructions, skills },
-      storageManifest: {
-        storageMounts: (
-          args.responseBody.storageManifest?.storageMounts ?? []
-        ).filter((mount) => {
-          return (
-            !mount.name.startsWith("custom-skill@") &&
-            !bundledMountPaths.has(mount.mountPath)
-          );
-        }),
-      },
-    };
+    const responseBody = withContentBundleMounts(args.responseBody, {
+      format: "tar-gzip-v1",
+      instructions,
+      skills,
+    });
     args.timing.recordDuration(
       "claim_route_content_bundle_response_assembly",
       monotonicNow() - assemblyStartedAt,
     );
     // Only aggregate counts escape this request; no hash, mount or URL is logged.
-    const uniqueBundles = new Set(
-      skills.map((skill) => {
-        return skill.sha256;
-      }),
-    );
-    if (instructions) {
-      uniqueBundles.add(instructions.sha256);
-    }
     args.timing.recordDuration(
       "claim_route_content_bundles",
       monotonicNow() - startedAt,
       {
         bundle_count: String(skills.length + (instructions ? 1 : 0)),
-        unique_bundle_count: String(uniqueBundles.size),
+        unique_bundle_count: String(signatures.size),
         instruction_bundle_count: instructions ? "1" : "0",
         workflow_bundle_count: String(args.claim.workflows.length),
         official_workflow_bundle_count: String(
           args.officialWorkflowBundles?.length ?? 0,
         ),
         seed_skill_bundle_count: String(args.seedSkillBundles.length),
+        cache_hit_count: String(signingResults.length - cacheWrites.length),
+        cache_miss_count: String(cacheWrites.length),
+        cache_write_path: "background",
       },
     );
-    return responseBody;
+    return { responseBody, cacheWrites };
   },
 );
 
@@ -1284,6 +1349,10 @@ const transitionClaimedJobToRunning$ = command(
       readonly workflowInput: WorkflowClaimInput;
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly timing: ClaimRouteTimingCollector;
+      readonly bundleUrlCache: {
+        readonly context: ContentBundleUrlCacheContext;
+        readonly additionalHashes: readonly string[];
+      };
     },
     signal: AbortSignal,
   ): Promise<ClaimTransitionResult> => {
@@ -1300,6 +1369,7 @@ const transitionClaimedJobToRunning$ = command(
           version: runnerAttribution?.runnerVersion ?? null,
         },
         workflowInput,
+        args.bundleUrlCache,
       );
       const startedAt = now();
       const result = await (async () => {
@@ -1750,6 +1820,7 @@ function scheduleSuccessfulClaimSideEffects(args: {
   readonly telemetry: ClaimTimingTelemetry | undefined;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
+  readonly cachePublication: Promise<StoragePresignedUrlCachePublication>;
 }): void {
   const { job, run } = args.jobWithRun;
   const queueCreatedAtMs = job.createdAt.getTime();
@@ -1804,6 +1875,7 @@ function scheduleSuccessfulClaimSideEffects(args: {
     reuseKey: job.reuseKey,
     runnerAttribution: args.runnerAttribution,
     claimRouteTiming: args.claimRouteTiming,
+    cachePublication: args.cachePublication,
   });
 }
 
@@ -1833,10 +1905,19 @@ function scheduleClaimSucceededSideEffects(args: {
   readonly reuseKey: string | null;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
+  readonly cachePublication: Promise<StoragePresignedUrlCachePublication>;
 }): void {
   waitUntil(
     tapError(recordClaimTimingMetrics(args), (error) => {
       L.warn("recordSandboxOperation failed", { runId: args.runId, error });
+    }),
+  );
+  waitUntil(
+    tapError(recordClaimCachePublication(args), () => {
+      // Do not log a driver error that could contain signed write parameters.
+      L.warn("Content Bundle cache publication telemetry failed", {
+        runId: args.runId,
+      });
     }),
   );
 }
@@ -1867,6 +1948,7 @@ interface ClaimTimingMetricArgs {
   readonly reuseKey: string | null;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
+  readonly cachePublication: Promise<StoragePresignedUrlCachePublication>;
 }
 
 type ClaimTimingMetricValueKey =
@@ -1945,6 +2027,15 @@ async function recordClaimTimingMetrics(
     pollReason: args.pollReason,
     runnerAttribution: args.runnerAttribution,
   });
+}
+
+async function recordClaimCachePublication(
+  args: ClaimTimingMetricArgs,
+): Promise<void> {
+  const publication = await args.cachePublication;
+  const timing = new ClaimRouteTimingCollector();
+  timing.recordBundleCachePublication(publication);
+  timing.flush(args);
 }
 
 function claimTimingDimensions(
@@ -2156,7 +2247,7 @@ const resolveStoredExecutionContextForClaim$ = command(
 
 const claimAuthorizedJob$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly runId: string;
       readonly authType: RunnerAuthContext["type"];
@@ -2201,6 +2292,7 @@ const claimAuthorizedJob$ = command(
     );
     signal.throwIfAborted();
 
+    const bundleUrlCache = get(contentBundleUrlCacheContext$);
     claimRouteTiming.recordElapsed(
       "claim_route_request_to_transition_start",
       "parent",
@@ -2215,6 +2307,15 @@ const claimAuthorizedJob$ = command(
           workflowInput,
           runnerAttribution: args.runnerAttribution,
           timing: claimRouteTiming,
+          bundleUrlCache: {
+            context: bundleUrlCache,
+            additionalHashes: [
+              ...(storedContext.officialWorkflowBundles ?? []),
+              ...storedContext.seedSkillBundles,
+            ].map((bundle) => {
+              return bundle.sha256;
+            }),
+          },
         },
         signal,
       );
@@ -2235,7 +2336,7 @@ const claimAuthorizedJob$ = command(
       return claimTransitionErrorResponse(claimResult);
     }
 
-    const responseBody = await set(
+    const { responseBody, cacheWrites } = await set(
       withClaimedContentBundles$,
       {
         responseBody: baseResponseBody,
@@ -2243,6 +2344,7 @@ const claimAuthorizedJob$ = command(
         workflowInput,
         officialWorkflowBundles: storedContext.officialWorkflowBundles,
         seedSkillBundles: storedContext.seedSkillBundles,
+        bundleUrlCache,
         timing: claimRouteTiming,
       },
       signal,
@@ -2266,6 +2368,7 @@ const claimAuthorizedJob$ = command(
       telemetry: args.telemetry,
       runnerAttribution: args.runnerAttribution,
       claimRouteTiming,
+      cachePublication: set(persistStoragePresignedUrls$, cacheWrites, signal),
     });
 
     return response;

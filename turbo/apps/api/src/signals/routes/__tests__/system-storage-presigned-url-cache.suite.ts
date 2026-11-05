@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { closeS3Clients } from "../../../lib/s3-client";
 import { nowDate } from "../../../lib/time";
 import { cronPruneStoragePresignedUrlsRoutes } from "../cron-prune-storage-presigned-urls";
 
@@ -172,6 +173,8 @@ describe("system storage presigned URL cache", () => {
 
   beforeEach(() => {
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
+    closeS3Clients();
+    mockEnv("R2_SECRET_ACCESS_KEY", `storage-cache-${randomUUID()}`);
   });
 
   it.each([undefined, "Bearer wrong"])(

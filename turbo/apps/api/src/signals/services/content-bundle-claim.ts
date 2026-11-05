@@ -1,9 +1,15 @@
 import { between, eq, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { command } from "ccstate";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
-import { contentBundleKey } from "@okouai/core/content-bundle";
-import { env } from "../../lib/env";
-import { signPresignedGetUrl$ } from "../external/s3";
+import { presignedGetUrlSignerForBucket } from "../external/s3";
+import {
+  contentBundleUrlCacheRequest,
+  type ContentBundleUrlCacheContext,
+} from "./content-bundle-presigned-url-cache";
+import {
+  signStoragePresignedUrls,
+  type StoragePresignedUrlCacheWrite,
+} from "./system-storage-presigned-url-cache.service";
 
 /** Match contentBundleSchema before the atomic claim consumes its queued Run. */
 export function contentBundleAvailableCondition(reference: SQLWrapper): SQL {
@@ -19,16 +25,49 @@ export function contentBundleAvailableCondition(reference: SQLWrapper): SQL {
   ELSE false END`;
 }
 
-/** Fresh local signatures do not read or publish R2 content during claim. */
+export interface ClaimedContentBundleSignature {
+  readonly bundle: ContentBundle & { readonly downloadUrl: string };
+  readonly cacheWrite: StoragePresignedUrlCacheWrite | undefined;
+}
+
+/** Reuse only the successful claim's snapshot; sign misses without R2 I/O. */
 export const signClaimedContentBundle$ = command(
-  async ({ set }, reference: ContentBundle, signal: AbortSignal) => {
+  async (
+    { get },
+    args: {
+      readonly reference: ContentBundle;
+      readonly cache: ContentBundleUrlCacheContext;
+      readonly cached:
+        { readonly url: string; readonly expiresAtMs: number } | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<ClaimedContentBundleSignature> => {
     signal.throwIfAborted();
-    const downloadUrl = await set(signPresignedGetUrl$, {
-      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-      key: contentBundleKey(reference.sha256),
-      publicEndpoint: false,
+    const request = contentBundleUrlCacheRequest(
+      args.cache,
+      args.reference.sha256,
+    );
+    const signed = await signStoragePresignedUrls({
+      requests: [request],
+      rows: args.cached
+        ? [
+            {
+              cacheKey: request.cacheKey,
+              presignedUrl: args.cached.url,
+              expiresAt: new Date(args.cached.expiresAtMs),
+            },
+          ]
+        : [],
+      sign: get(presignedGetUrlSignerForBucket(args.cache.bucket, false)),
     });
     signal.throwIfAborted();
-    return { ...reference, downloadUrl };
+    const result = signed.results.get(request.cacheKey);
+    if (!result) {
+      throw new Error("Claimed Content Bundle URL is missing");
+    }
+    return {
+      bundle: { ...args.reference, downloadUrl: result.url },
+      cacheWrite: signed.freshValues[0],
+    };
   },
 );
