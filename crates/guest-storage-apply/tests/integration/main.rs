@@ -9,6 +9,7 @@ mod gzip_integrity;
 mod instruction_cleanup;
 mod preparation_failure;
 mod process;
+mod quarantine;
 mod rooted_extraction;
 mod scheduling;
 
