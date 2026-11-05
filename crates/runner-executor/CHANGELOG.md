@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.17...runner-executor-v0.19.18) (2026-11-05)
+
+
+### Performance Improvements
+
+* **sandbox:** overlap home validation and dns readiness ([#45505](https://github.com/okou-ai/okou/issues/45505)) ([3c39a9b](https://github.com/okou-ai/okou/commit/3c39a9b29e440695f9c522db5e88153631bb4b5a))
+
 ## [0.19.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.16...runner-executor-v0.19.17) (2026-11-05)
 
 ## [0.19.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.15...runner-executor-v0.19.16) (2026-11-05)

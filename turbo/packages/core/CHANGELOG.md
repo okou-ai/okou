@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.819.0](https://github.com/okou-ai/okou/compare/core-v8.818.7...core-v8.819.0) (2026-11-05)
+
+
+### Features
+
+* **core:** establish the single-agent shared contract ([#45485](https://github.com/okou-ai/okou/issues/45485)) ([76b872b](https://github.com/okou-ai/okou/commit/76b872bfd9e8280662ccbc6036e1067397f2b978))
+
+
+### Refactoring
+
+* remove markdown table export feature switch ([#45503](https://github.com/okou-ai/okou/issues/45503)) ([6133b12](https://github.com/okou-ai/okou/commit/6133b128f347589a60882de7c14edb4f61436c8d))
+* retire reddit oauth and remove feature switch ([#45441](https://github.com/okou-ai/okou/issues/45441)) ([eb71c77](https://github.com/okou-ai/okou/commit/eb71c779eeb2aab3a9caf02e67a6f63715b68589))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.0
+
 ## [8.818.7](https://github.com/okou-ai/okou/compare/core-v8.818.6...core-v8.818.7) (2026-11-05)
 
 

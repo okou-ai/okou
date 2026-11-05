@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.244.22](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.21...runner-rs-v0.244.22) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** centralize buffered allowed-body rejection ([#45517](https://github.com/okou-ai/okou/issues/45517)) ([f2e2231](https://github.com/okou-ai/okou/commit/f2e223148ea2990add158a3647ba775cd6aa9f88))
+* **python:** centralize rejected header-response handoff ([#45484](https://github.com/okou-ai/okou/issues/45484)) ([1b05faa](https://github.com/okou-ai/okou/commit/1b05faa2c562031535423d0b7c07060bf3bfe824))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.20...runner-rs-v0.244.21) (2026-11-05)
 
 

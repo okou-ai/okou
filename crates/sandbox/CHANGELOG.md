@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.11](https://github.com/okou-ai/okou/compare/sandbox-v0.28.10...sandbox-v0.28.11) (2026-11-05)
+
+
+### Performance Improvements
+
+* **sandbox:** overlap home validation and dns readiness ([#45505](https://github.com/okou-ai/okou/issues/45505)) ([3c39a9b](https://github.com/okou-ai/okou/commit/3c39a9b29e440695f9c522db5e88153631bb4b5a))
+
 ## [0.28.10](https://github.com/okou-ai/okou/compare/sandbox-v0.28.9...sandbox-v0.28.10) (2026-11-04)
 
 

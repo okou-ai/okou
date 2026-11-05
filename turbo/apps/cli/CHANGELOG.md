@@ -1,5 +1,29 @@
 # Changelog
 
+## [10.18.0](https://github.com/okou-ai/okou/compare/cli-v10.17.15...cli-v10.18.0) (2026-11-05)
+
+
+### Features
+
+* **cli:** add personal instructions and captured my okou guidance ([#45499](https://github.com/okou-ai/okou/issues/45499)) ([392b08d](https://github.com/okou-ai/okou/commit/392b08d79f8d257cdcb0f78ddf22b962013d298c))
+* **core:** establish the single-agent shared contract ([#45485](https://github.com/okou-ai/okou/issues/45485)) ([76b872b](https://github.com/okou-ai/okou/commit/76b872bfd9e8280662ccbc6036e1067397f2b978))
+* **workflow:** support personal workspace workflows in single-agent mode ([#45497](https://github.com/okou-ai/okou/issues/45497)) ([b74dd61](https://github.com/okou-ai/okou/commit/b74dd614ea04401617b27c9d07ce5562eae3743b))
+
+
+### Refactoring
+
+* simplify suggestion feedback context ([#45493](https://github.com/okou-ai/okou/issues/45493)) ([f52030e](https://github.com/okou-ai/okou/commit/f52030ec40ee282a9f7de9d270ba4282639c26ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.43.0
+    * @okouai/connectors bumped to 3.21.5
+    * @okouai/core bumped to 8.819.0
+    * @okouai/pi-agent-runtime bumped to 1.51.72
+
 ## [10.17.15](https://github.com/okou-ai/okou/compare/cli-v10.17.14...cli-v10.17.15) (2026-11-05)
 
 
