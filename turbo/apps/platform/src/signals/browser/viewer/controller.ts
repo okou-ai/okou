@@ -867,6 +867,36 @@ function createDiscoveryInvalidation(
   );
 }
 
+function createDiscoveryInputCleanup(
+  context: DiscoveryContext,
+  links$: ControllerDependencies<"retireCurrent$" | "selectedSession$">,
+) {
+  return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const selected = get(get(links$).selectedSession$);
+    if (!selected) {
+      return;
+    }
+    const [result] = await Promise.allSettled([
+      set(selected.input.suspend$, signal),
+    ]);
+    signal.throwIfAborted();
+    if (
+      result.status === "rejected" &&
+      get(context.attachedState$) === selected.attached &&
+      get(context.selectedOwner$) === selected.attached.owner
+    ) {
+      // Failed original releases cannot admit input or poison another selection.
+      set(context.readinessFailure$, result.reason);
+      set(get(links$).retireCurrent$, "target-replaced", false, true);
+      set(context.model.transition$, {
+        type: "failed",
+        error: diagnostic(result.reason),
+      });
+      set(context.wake$);
+    }
+  });
+}
+
 function createDiscoveryGraph(
   context: DiscoveryContext,
   links$: ControllerDependencies<
@@ -963,6 +993,7 @@ function createDiscoveryGraph(
     },
   );
   const invalidated$ = createDiscoveryInvalidation(context, links$);
+  const settleInput$ = createDiscoveryInputCleanup(context, links$);
   const discovery$ = computed((get) => {
     const directory = get(directory$);
     return directory
@@ -977,6 +1008,7 @@ function createDiscoveryGraph(
           {
             preferredTargetId: context.preferredTargetId,
             invalidated$,
+            settleInput$,
             changed$: discoveryChanged$,
             failed$: discoveryFailed$,
           },

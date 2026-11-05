@@ -23,6 +23,7 @@ interface DiscoveryModel {
 interface DiscoveryOptions {
   readonly preferredTargetId: string | null;
   readonly invalidated$: Command<void, [boolean, AbortSignal]>;
+  readonly settleInput$: Command<Promise<void>, [AbortSignal]>;
   readonly changed$: Command<void, [AbortSignal]>;
   readonly failed$: Command<void, [unknown, AbortSignal]>;
 }
@@ -266,6 +267,13 @@ function createMembershipReads(
       signal.throwIfAborted();
       if (!set(roundCurrent$, round)) {
         return;
+      }
+      if (scope === "members") {
+        await set(options.settleInput$, signal);
+        signal.throwIfAborted();
+        if (!set(roundCurrent$, round)) {
+          return;
+        }
       }
       if (!get(initialized$)) {
         const pages = await set(directory.read$, signal);
