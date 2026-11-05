@@ -153,7 +153,7 @@ test.each(domains)(
 );
 
 test.each(domains)(
-  "A failed %s waits for its peer before retiring the attachment",
+  "A failed %s retires its attachment before a late peer can revive it",
   async (method) => {
     const { browser, start } = viewer();
     const peer = browser.holdNext(
@@ -165,13 +165,12 @@ test.each(domains)(
     await Promise.all([peer.received, failed.received]);
     const original = browser.pageSession("first");
     await act(failed.release);
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(browser.detached).not.toContain(original);
-    await act(peer.release);
     await screen.findByText("Browser view unavailable");
     await waitFor(() => {
       expect(browser.detached).toContain(original);
     });
+    await act(peer.release);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(browser.input).toHaveLength(0);
   },
 );
@@ -308,5 +307,26 @@ test.each(domains)(
     await ready();
     expect(browser.connections()).toBe(2);
     await typeOnce(browser, "deadline recovery");
+  },
+);
+
+test.each(domains)(
+  "A terminal %s failure is retained when its peer never replies",
+  async (method) => {
+    const { browser, start, advance } = viewer();
+    const failure = browser.holdNext(method);
+    browser.holdNext(
+      method === "Inspector.enable" ? "Page.enable" : "Inspector.enable",
+    );
+    browser.failNext(method, "Unavailable method", -32_601);
+    await start();
+    await failure.received;
+    const original = browser.pageSession("first");
+    await act(failure.release);
+    await screen.findByText("Browser view unavailable");
+    expect(browser.detached).toContain(original);
+    advance(31_000);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(browser.connections()).toBe(1);
   },
 );
