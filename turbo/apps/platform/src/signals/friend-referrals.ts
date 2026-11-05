@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { friendReferralCodeSchema } from "@okouai/api-contracts/validators/friend-referrals";
 import { friendReferralsContract } from "@okouai/api-contracts/client/friend-referrals";
 import { apiClient$ } from "./api-client.ts";
@@ -10,19 +9,10 @@ import { accept } from "../lib/accept.ts";
 import { writeToClipboard } from "./okou-page/clipboard.ts";
 import { resetSignal } from "./utils.ts";
 import { historyState$, replaceSearchParams$ } from "./route.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 
 const pendingReferral = localStorageSignals("friend_referral_visit");
 const pendingReferralCode = localStorageSignals("friend_referral_code");
 const resetReferralVisit$ = resetSignal();
-export const signupFriendReferralEnabled$ = computed((get) => {
-  // Anonymous invitees have no workspace identity. The visit API only issues
-  // their receipt after checking the inviter's server-side rollout audience.
-  return (
-    get(featureSwitch$)[FeatureSwitchKey.FriendReferrals] ||
-    !!get(pendingReferral.get$)
-  );
-});
 export const signupFriendReferralCode$ = computed((get) => {
   return get(pendingReferralCode.get$) ?? "";
 });

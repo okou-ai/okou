@@ -56,7 +56,9 @@ test("Leaving hosted auth restores the existing app zoom policy", async () => {
     window.history.pushState(null, "", "/sign-up");
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
-  await expect(screen.findByTestId("clerk-sign-up")).resolves.toBeVisible();
+  await expect(
+    screen.findByLabelText("Invitation code (optional)"),
+  ).resolves.toBeVisible();
   expect(viewport.content).toBe(ACCESSIBLE_VIEWPORT);
   expectPinchPrevented(false);
 

@@ -2,8 +2,9 @@ import { buildPublishableKey } from "@clerk/shared/keys";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { signupControl } from "./signup-test-helpers.ts";
 
 const context = testContext();
 const previewApp = "https://app.vm7.ai";
@@ -55,7 +56,7 @@ test.each([
   },
 );
 
-test.each(["sign-in", "sign-up"])(
+test.each(["sign-in", "sign-up"] as const)(
   "%s preserves the consent query when Clerk moves the return into its hash",
   async (mode) => {
     const target = consentUrl();
@@ -67,14 +68,25 @@ test.each(["sign-in", "sign-up"])(
       env: clerkEnvironment(),
     });
 
-    const form = screen.getByTestId(`clerk-${mode}`);
-    expect(form).toHaveAttribute("data-clerk-force-redirect-url", target);
-    const switchUrl = new URL(
-      (mode === "sign-in"
-        ? form.dataset.clerkSignUpUrl
-        : form.dataset.clerkSignInUrl) ?? "",
-      location.origin,
-    );
+    let modeSwitchUrl: string | null | undefined;
+    if (mode === "sign-in") {
+      const form = screen.getByTestId("clerk-sign-in");
+      expect(form).toHaveAttribute("data-clerk-force-redirect-url", target);
+      modeSwitchUrl = form.dataset.clerkSignUpUrl;
+    } else {
+      modeSwitchUrl = signupControl("link", "Sign in").getAttribute("href");
+      click(signupControl("button", "Google"));
+      await waitFor(() => {
+        expect(
+          mockedClerk.client.signUp.authenticateWithRedirect,
+        ).toHaveBeenCalledWith({
+          strategy: "oauth_google",
+          redirectUrl: `${previewApp}/sign-up/sso-callback?redirect_url=${encodeURIComponent(target)}`,
+          redirectUrlComplete: target,
+        });
+      });
+    }
+    const switchUrl = new URL(modeSwitchUrl ?? "", location.origin);
     expect(
       new URLSearchParams(switchUrl.hash.slice(3)).get("redirect_url"),
     ).toBe(target);

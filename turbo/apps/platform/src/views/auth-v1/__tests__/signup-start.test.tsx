@@ -1,7 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -11,41 +10,41 @@ import { signupControl } from "./signup-test-helpers.ts";
 const context = testContext();
 const target = "https://app.okou.ai/onboarding?source=signup-test";
 
-test("Ordinary signup keeps the hosted form while referral signup is not rolled out", async () => {
+test("Ordinary signup offers an optional invitation code without a referral link", async () => {
   await setupPage({
     context,
     host: "app.okou.ai",
     path: "/sign-up",
     auth: null,
   });
-  expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
-  expect(
-    screen.queryByLabelText("Invitation code (optional)"),
-  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue("");
+  expect(signupControl("button", "Continue")).toBeEnabled();
 });
 
-test("Returning to an active signup keeps Clerk's hosted attempt and edit flow", async () => {
-  mockedClerk.client.signUp.status = "missing_requirements";
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/sign-up",
-    auth: null,
-  });
-  await screen.findByTestId("clerk-sign-up");
-  expect(
-    screen.queryByLabelText("Invitation code (optional)"),
-  ).not.toBeInTheDocument();
-});
+test.each([
+  { path: "/sign-up", status: "missing_requirements" },
+  { path: "/sign-up?__clerk_ticket=invitation", status: null },
+] as const)(
+  "Clerk owns the existing attempt or invitation at $path",
+  async ({ path, status }) => {
+    mockedClerk.client.signUp.status = status;
+    await setupPage({
+      context,
+      host: "app.okou.ai",
+      path,
+      auth: null,
+    });
+    await expect(
+      screen.findByTestId("clerk-sign-up"),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 async function openSignup() {
-  context.mocks.api(friendReferralsContract.visit, ({ respond }) => {
-    return respond(200, { token: "staff-inviter-signed-visit" });
-  });
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: `/sign-up?friend_referral=a7k2p9&redirect_url=${encodeURIComponent(target)}`,
+    path: `/sign-up?redirect_url=${encodeURIComponent(target)}`,
     auth: null,
   });
   await screen.findByRole("heading", { name: "Create your account" });
@@ -83,7 +82,6 @@ test("The optional invitation code is inside the form, after the password and be
 
 test("Email registration hands the attempt to Clerk's verification page without referral metadata", async () => {
   await openSignup();
-  await fill(screen.getByLabelText("Invitation code (optional)"), "");
   const user = await fillEmailSignup();
   await user.click(signupControl("button", "Continue"));
   await screen.findByTestId("clerk-sign-up");
