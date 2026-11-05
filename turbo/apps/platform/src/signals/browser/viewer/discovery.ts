@@ -21,6 +21,7 @@ interface DiscoveryModel {
   readonly inventory$: Command<TargetInventory, [InventoryEvent]>;
 }
 interface DiscoveryOptions {
+  readonly preferredTargetId: string | null;
   readonly invalidated$: Command<void, [AbortSignal]>;
   readonly changed$: Command<void, [AbortSignal]>;
   readonly failed$: Command<void, [unknown, AbortSignal]>;
@@ -263,15 +264,17 @@ function createMembershipReads(
         set(commit$, { type: "listed", round, targets: pages }, signal);
         set(initialized$, true);
       }
-      const selected = get(model.snapshot$).selectedTargetId;
+      const selected =
+        get(model.snapshot$).selectedTargetId ?? options.preferredTargetId;
       const ids = [...get(model.inventoryState$).entries.keys()].sort(
         (a, b) => {
           return Number(b === selected) - Number(a === selected);
         },
       );
       for (let offset = 0; offset < ids.length; offset += 4) {
+        const batch = ids.slice(offset, offset + 4);
         const results = await Promise.allSettled(
-          ids.slice(offset, offset + 4).map((id) => {
+          batch.map((id) => {
             return set(readMembership$, id, round, signal);
           }),
         );
@@ -284,6 +287,23 @@ function createMembershipReads(
         });
         if (rejected?.status === "rejected") {
           throw rejected.reason;
+        }
+        const inventory = get(model.inventoryState$);
+        if (
+          !inventory.ready &&
+          batch.some((id) => {
+            const entry = inventory.entries.get(id);
+            return (
+              entry?.target &&
+              entry.membership?.member &&
+              entry.membership.order >= round.order
+            );
+          })
+        ) {
+          // Admit only proven pages; the same bounded scan fills the remaining tabs.
+          set(model.inventory$, { type: "admit-round", round });
+          set(validating$, false);
+          set(options.changed$, signal);
         }
       }
       if (!set(roundCurrent$, round)) {
@@ -510,8 +530,9 @@ function createDiscoveryTargets(
       const dirty = new Set(get(dirty$));
       dirty.delete(target.id);
       set(dirty$, dirty);
+      const scanning = get(model.inventoryState$).round !== null;
       set(lifecycle.commit$, { type: "created", target, observation }, signal);
-      if (get(validating$)) {
+      if (get(validating$) || scanning) {
         set(fullWanted$, true);
       }
       return (

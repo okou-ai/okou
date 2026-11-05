@@ -36,6 +36,7 @@ export interface TargetInventory {
   readonly epoch: number;
   readonly entries: ReadonlyMap<string, InventoryEntry>;
   readonly round: InventoryRound | null;
+  /** Initial admission can precede the end of its membership round. */
   readonly ready: boolean;
 }
 
@@ -46,7 +47,10 @@ export type InventoryEvent =
       readonly round: InventoryRound;
       readonly targets: readonly ViewerTarget[];
     }
-  | { readonly type: "complete-round"; readonly round: InventoryRound }
+  | {
+      readonly type: "admit-round" | "complete-round";
+      readonly round: InventoryRound;
+    }
   | {
       readonly type: "metadata";
       readonly target: ViewerTarget;
@@ -184,12 +188,13 @@ export function transitionInventory(
     case "listed": {
       return listInventory(state, event);
     }
+    case "admit-round":
     case "complete-round": {
       return currentRound(state, event.round)
         ? {
             ...state,
             sequence: order,
-            round: null,
+            round: event.type === "complete-round" ? null : state.round,
             ready: true,
           }
         : state;

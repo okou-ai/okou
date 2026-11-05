@@ -813,7 +813,9 @@ type DiscoveryContext = ControllerContext<
   | "directory$"
   | "model"
   | "nativeHost"
+  | "preferredTargetId"
   | "readinessFailure$"
+  | "selectedOwner$"
   | "wake$"
 >;
 
@@ -844,7 +846,7 @@ function createDiscoveryRetry(
 function createDiscoveryGraph(
   context: DiscoveryContext,
   links$: ControllerDependencies<
-    "beginClosing$" | "retireCurrent$" | "selectTab$" | "selectedSession$"
+    "beginClosing$" | "retireCurrent$" | "selectTab$"
   >,
 ): Pick<
   ControllerLinks,
@@ -902,7 +904,7 @@ function createDiscoveryGraph(
       }
       if (
         selected &&
-        !get(get(links$).selectedSession$) &&
+        !get(context.selectedOwner$) &&
         !get(hasSelectionRecovery$) &&
         !get(context.creationOwner$) &&
         get(available$)
@@ -955,6 +957,7 @@ function createDiscoveryGraph(
             inventory$: model.inventoryUpdate$,
           },
           {
+            preferredTargetId: context.preferredTargetId,
             invalidated$,
             changed$: discoveryChanged$,
             failed$: discoveryFailed$,
@@ -3270,22 +3273,35 @@ function createFramesConnectionGraph(
 }
 
 /** Temporary admission loss parks startup; actual failure or owner end rejects. */
-function createAdmissionWait(
+function createInitialDiscovery(
   context: ControllerContext<"available$" | "readinessFailure$" | "waitEvent$">,
+  links$: ControllerDependencies<"discovery$">,
 ) {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    while (true) {
-      signal.throwIfAborted();
-      const failure = get(context.readinessFailure$);
-      if (failure) {
-        throw failure;
+  return command(
+    async ({ get, set }, signal: AbortSignal, lifetime: AbortSignal) => {
+      // Discovery publishes failures and readiness; remaining native work belongs
+      // to the transport after the first proven batch is admitted.
+      detach(
+        Promise.allSettled([
+          set(get(get(links$).discovery$)!.start$, lifetime),
+        ]),
+        Reason.Daemon,
+        "browser initial target discovery",
+      );
+      while (true) {
+        signal.throwIfAborted();
+        const failure = get(context.readinessFailure$);
+        if (failure) {
+          throw failure;
+        }
+        const discovery = get(get(links$).discovery$);
+        if (get(context.available$) && discovery && get(discovery.ready$)) {
+          return;
+        }
+        await set(context.waitEvent$, signal);
       }
-      if (get(context.available$)) {
-        return;
-      }
-      await set(context.waitEvent$, signal);
-    }
-  });
+    },
+  );
 }
 
 function initialTarget(
@@ -3340,7 +3356,7 @@ function createConnectionBootstrap(
     bootstrapping$,
     displaySize$,
   } = context;
-  const waitAvailable$ = createAdmissionWait(context);
+  const startDiscovery$ = createInitialDiscovery(context, links$);
   return command(async ({ get, set }, signal: AbortSignal) => {
     validateConfiguration(connection.cdpUrl, connection.windowId ?? undefined);
     const transport = get(model.transport$);
@@ -3413,9 +3429,7 @@ function createConnectionBootstrap(
     set(display.measure$, get(displaySize$));
     set(display.setSuspended$, !get(authority$) || get(model.intent$).paused);
     set(display.start$, client.signal);
-    await set(get(get(links$).discovery$)!.start$, client.signal);
-    signal.throwIfAborted();
-    await set(waitAvailable$, signal);
+    await set(startDiscovery$, signal, client.signal);
     set(bootstrapping$, false);
     const targets = get(model.snapshot$).targets;
     const first = initialTarget(targets, context.preferredTargetId);
