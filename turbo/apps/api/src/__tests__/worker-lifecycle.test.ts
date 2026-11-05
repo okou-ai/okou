@@ -415,4 +415,30 @@ test("uses the certificate binding to call Vertex through the Worker HTTP entryp
   });
   await expect(client.settle()).resolves.toStrictEqual([]);
   expect(certificateExchanges).toBe(1);
+
+  const repeated = await client.request("/api/voice-io/polish/segments", {
+    method: "POST",
+    body: JSON.stringify({ segments: ["Reuse the Worker credential."] }),
+  });
+  expect(repeated.status).toBe(200);
+  await repeated.json();
+  await expect(client.settle()).resolves.toStrictEqual([]);
+  expect(certificateExchanges).toBe(1);
+
+  const missingBinding = caller();
+  const unavailable = await missingBinding.request(
+    "/api/voice-io/polish/segments",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        segments: ["A cached token cannot replace the binding."],
+      }),
+    },
+  );
+  expect(unavailable.status).toBe(503);
+  await expect(unavailable.json()).resolves.toMatchObject({
+    error: { code: "NOT_CONFIGURED" },
+  });
+  await expect(missingBinding.settle()).resolves.toStrictEqual([]);
+  expect(certificateExchanges).toBe(1);
 });

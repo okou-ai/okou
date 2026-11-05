@@ -510,8 +510,18 @@ Runner claim chain reaches exhaustion in a few hops instead of 32. Test context
 restores the default after every case. Keep this control: it is not a private
 state driver, and it must not be cleaned up as one.
 
-Environment overrides use `mockEnv` from `src/lib/env`. Credential signers are
-listed only so the frozen consumers below keep compiling; they are governed by
+Environment overrides use `mockEnv` or `mockOptionalEnv` from `src/lib/env`.
+Production API configuration is fixed per instance. These test controls replace
+the env-derived `envSingleton()` scope along with the overridden value, and
+shared teardown clears it after owned work settles. Configure the environment
+before starting the scenario; do not use live `process.env` changes, random
+configuration keys or service-specific reset hooks to isolate credential caches.
+Token reuse and expiry tests keep the same configuration for their lifetime.
+Cross-deployment cache tests explicitly model replacement instances and retain
+their persistent-cache isolation requirements.
+
+Credential signers are listed only so the frozen consumers below keep compiling;
+they are governed by
 the credential ratchet, not by this allowlist.
 
 ### Credentials From Real Flows

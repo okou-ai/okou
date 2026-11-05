@@ -11,11 +11,10 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { env, optionalEnv } from "../../lib/env";
+import { envSingleton, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { currentRequestRuntime } from "../../lib/request-runtime";
 import { now } from "../../lib/time";
-import { singleton } from "../../lib/singleton";
 import {
   gcpLlmTransportReason,
   type GcpLlmTransportReason,
@@ -61,31 +60,41 @@ type Configuration = zInfer<typeof configurationSchema> &
       }
   );
 
-/** Validate only when a Google LLM operation needs this optional configuration. */
-export function gcpLlmConfiguration(): Configuration | undefined {
+const fixedConfiguration = envSingleton(() => {
   const result = configurationSchema.safeParse({
     project: optionalEnv("GCP_LLM_PROJECT_ID"),
     provider: optionalEnv("GCP_LLM_WORKLOAD_IDENTITY_PROVIDER"),
     serviceAccount: optionalEnv("GCP_LLM_SERVICE_ACCOUNT_EMAIL"),
   });
-  if (!result.success) {
+  return result.success ? result.data : undefined;
+});
+
+const fixedCertificateChain = envSingleton(() => {
+  const chain = optionalEnv("GCP_MTLS_CERTIFICATE_CHAIN");
+  const result = certificateChainSchema.safeParse(
+    chain ? safeJsonParse(chain) : undefined,
+  );
+  return result.success ? result.data : undefined;
+});
+
+/** Decode fixed env lazily; request identity and bindings retain their owner. */
+export function gcpLlmConfiguration(): Configuration | undefined {
+  const configuration = fixedConfiguration();
+  if (!configuration) {
     return undefined;
   }
   const runtime = currentRequestRuntime();
   if (!runtime) {
-    return { ...result.data, identity: "oidc" };
+    return { ...configuration, identity: "oidc" };
   }
-  const chain = optionalEnv("GCP_MTLS_CERTIFICATE_CHAIN");
-  const certificates = certificateChainSchema.safeParse(
-    chain ? safeJsonParse(chain) : undefined,
-  );
-  if (!runtime.gcpMtls || !certificates.success) {
+  const certificates = fixedCertificateChain();
+  if (!runtime.gcpMtls || !certificates) {
     return undefined;
   }
   return {
-    ...result.data,
+    ...configuration,
     identity: "mtls",
-    certificateChain: certificates.data,
+    certificateChain: certificates,
   };
 }
 
@@ -112,9 +121,11 @@ interface Credential {
 }
 
 // Cache completed credentials only; each request owns its token exchange.
-const credentials = singleton(() => {
-  return new Map<string, Credential>();
-});
+const credentials = envSingleton(
+  (): Partial<Record<Configuration["identity"], Credential>> => {
+    return {};
+  },
+);
 
 const stsResponseSchema = object({
   access_token: string().trim().min(1),
@@ -334,13 +345,13 @@ export async function gcpLlmAccessToken(
   signal: AbortSignal,
 ): Promise<string> {
   signal.throwIfAborted();
-  const key = JSON.stringify([configuration, env("ENV"), SCOPE]);
-  const cached = credentials().get(key);
+  const cache = credentials();
+  const cached = cache[configuration.identity];
   if (cached && cached.expiresAt > now() + REFRESH_SKEW_MS) {
     return cached.accessToken;
   }
   const credential = await refreshCredential(configuration, signal);
   signal.throwIfAborted();
-  credentials().set(key, credential);
+  cache[configuration.identity] = credential;
   return credential.accessToken;
 }
