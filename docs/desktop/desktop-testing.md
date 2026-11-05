@@ -9,8 +9,15 @@ transport real.
 
 ```bash
 swift test --package-path desktop -j 4 --disable-automatic-resolution
-swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
+swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution --scratch-path "$PWD/desktop/.build"
 ```
+
+Run these commands serially from the repository root. They share the transient
+`desktop/.build` scratch directory so SwiftPM can reuse materialized dependencies
+and compatible native module work. Each package keeps its own manifest and lock;
+SwiftPM still validates the selected graph and compilation inputs. Packaged helper
+builds and their bin-path lookup use the same scratch root, with separate native
+debug/release outputs. No build state is restored from another CI job.
 
 Core tests exercise existing Electron preferences, service-origin compatibility,
 server claim deadlines, stdio protocol retirement, and the host HTTP lifecycle.

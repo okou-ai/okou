@@ -21,6 +21,16 @@ def storage(path):
     resolved = path.resolve()
     size = int(command("du", "-sk", str(resolved)).split()[0]) * 1024
     result = {"path": str(path), "resolved": str(resolved), "bytes": size}
+    if path.name == "workspace-state.json":
+        state = json.loads(path.read_text())["object"]
+        result["dependencies"] = [
+            {
+                "identity": dependency["packageRef"]["identity"],
+                "state": dependency["state"],
+            }
+            for dependency in state["dependencies"]
+        ]
+        result["artifactPaths"] = [artifact["path"] for artifact in state["artifacts"]]
     if (
         path.parent == Path.home() / "Library/Caches/org.swift.swiftpm"
         and path.name
