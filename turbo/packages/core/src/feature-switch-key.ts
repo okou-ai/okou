@@ -27,7 +27,6 @@ export enum FeatureSwitchKey {
   GarminConnectConnector = "garminConnectConnector",
   RedditConnector = "redditConnector",
   SupabaseConnector = "supabaseConnector",
-  WebflowConnector = "webflowConnector",
   PayPalConnector = "payPalConnector",
   RampConnector = "rampConnector",
   ResendConnector = "resendConnector",

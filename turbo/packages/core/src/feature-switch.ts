@@ -317,11 +317,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Supabase database connector integration",
     enabled: false,
   },
-  [FeatureSwitchKey.WebflowConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Webflow site management connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",
