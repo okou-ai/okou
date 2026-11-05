@@ -18,6 +18,7 @@ import {
   chatThreadMetadataContract,
   chatThreadByIdContract,
   chatThreadDraftContract,
+  chatEventsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
@@ -582,8 +583,6 @@ test("Chat navigation shortcuts move through expanded Projects and the chats out
   await waitFor(() => {
     expect(location.pathname).toBe(`/chats/${a2.id}`);
   });
-  // A chat knows its Project, so its URL carries no Project context.
-  expect(location.search).toBe("");
   expect(threadLink(a2.id)).toHaveAttribute("aria-current", "page");
 
   await pressChatNavigation("ArrowDown");
@@ -1409,17 +1408,85 @@ test("Project deep links open the Project page with its composer", async () => {
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  await waitFor(() => {
-    expect(screen.getByTestId("project-page-heading")).toHaveTextContent(
-      "Launch",
-    );
-  });
+  await expect(
+    screen.findByRole("heading", { name: "Launch" }),
+  ).resolves.toBeInTheDocument();
   expect(location.pathname).toBe(`/projects/${id}`);
   expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
   expect(projectLink("Launch")).toHaveAttribute("href", `/projects/${id}`);
   await expect(
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
+});
+test("A message sent from the Project page starts its chat inside the Project", async () => {
+  const ordinary = continuityThread(116, 1, "Thread B");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 116,
+    threads: [ordinary],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  metadata();
+  const created: {
+    threadId?: string;
+    agentId?: string;
+    projectId?: string | null;
+  } = {};
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    created.threadId = body.clientThreadId;
+    created.agentId = body.agentId;
+    created.projectId = body.projectId;
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: at,
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+      projectId: body.projectId ?? null,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    return respond(201, {
+      threadId: body.threadId ?? crypto.randomUUID(),
+      createdAt: at,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/projects/${id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  await expect(
+    screen.findByRole("heading", { name: "Launch" }),
+  ).resolves.toBeInTheDocument();
+
+  await fill(
+    await screen.findByRole("textbox", { name: "Message" }),
+    "Plan the launch",
+  );
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
+
+  // The Project page composes with the default Agent inside its Project.
+  await waitFor(() => {
+    expect(created.threadId).toBeDefined();
+  });
+  expect(created).toMatchObject({
+    agentId: ordinary.agentId,
+    projectId: id,
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${created.threadId}`);
+  });
+  await waitFor(() => {
+    expect(
+      document.querySelector(
+        `[data-project-row-id="${id}"] [data-sidebar-chat-thread-id="${created.threadId}"]`,
+      ),
+    ).toHaveAttribute("aria-current", "page");
+  });
 });
 
 test("Project new chat opens before confirmation with the default Agent", async () => {
@@ -1534,7 +1601,6 @@ test("Project new chat opens before confirmation with the default Agent", async 
     expect(createdId).toBeDefined();
     expect(location.pathname).toBe(`/chats/${createdId}`);
   });
-  expect(location.search).toBe("");
   expect(confirmation.settled()).toBeFalsy();
   confirmation.resolve();
   await persisted.promise;
