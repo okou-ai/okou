@@ -77,25 +77,14 @@ impl DownloadTask {
         self,
         quarantine: Option<&crate::quarantine::Quarantine>,
     ) -> Result<PreparedDownloadTask, String> {
-        let create = || fs::create_dir_all(&self.mount_path);
-        create()
-            .or_else(|error| {
-                if crate::error::is_space_exhausted(&error)
-                    && quarantine.is_some_and(|quarantine| {
-                        quarantine.reclaim_for(Path::new(&self.mount_path))
-                    })
-                {
-                    create()
-                } else {
-                    Err(error)
-                }
-            })
-            .map_err(|e| {
+        crate::quarantine::prepare_directory(Path::new(&self.mount_path), quarantine).map_err(
+            |e| {
                 format!(
                     "{} target preparation failed: failed to create directory {}: {e}",
                     self.label, self.mount_path
                 )
-            })?;
+            },
+        )?;
         let effective_mount_path = Path::new(&self.mount_path).canonicalize().map_err(|e| {
             format!(
                 "{} target preparation failed: failed to resolve directory {}: {e}",

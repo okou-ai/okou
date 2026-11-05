@@ -78,7 +78,6 @@ use guest_contracts::storage_manifest::Manifest;
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use manifest::ManifestLoadError;
 use plan::{EmptyArtifactPreparation, RunPlan};
-use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
@@ -307,7 +306,7 @@ fn run_manifest_with_files_in_runtime(
                 return false;
             }
         };
-    if !prepare_empty_artifacts(&empty_artifacts) {
+    if !prepare_empty_artifacts(&empty_artifacts, quarantine.as_deref()) {
         return false;
     }
 
@@ -325,10 +324,13 @@ fn run_manifest_with_files_in_runtime(
     success
 }
 
-fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
+fn prepare_empty_artifacts(
+    entries: &[EmptyArtifactPreparation],
+    quarantine: Option<&quarantine::Quarantine>,
+) -> bool {
     for entry in entries {
         let start = Instant::now();
-        match fs::create_dir_all(&entry.mount_path) {
+        match quarantine::prepare_directory(Path::new(&entry.mount_path), quarantine) {
             Ok(()) => {
                 record_sandbox_op("artifact_empty_prepare", start.elapsed(), true, None);
                 log_info!(

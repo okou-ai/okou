@@ -249,3 +249,17 @@ impl Quarantine {
 fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
+
+/// Both download roots and empty Artifacts allocate directory inodes before
+/// materialization. They share the same bounded, disjoint-target recovery.
+pub(crate) fn prepare_directory(path: &Path, quarantine: Option<&Quarantine>) -> io::Result<()> {
+    fs::create_dir_all(path).or_else(|error| {
+        if crate::error::is_space_exhausted(&error)
+            && quarantine.is_some_and(|quarantine| quarantine.reclaim_for(path))
+        {
+            fs::create_dir_all(path)
+        } else {
+            Err(error)
+        }
+    })
+}
