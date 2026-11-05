@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1095.4](https://github.com/okou-ai/okou/compare/app-v0.1095.3...app-v0.1095.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* **browser:** report recovery failures only after retries stop ([#45323](https://github.com/okou-ai/okou/issues/45323)) ([00ee1b8](https://github.com/okou-ai/okou/commit/00ee1b83a64c5cbe9c8fd597848c6f8246580cf0))
+
 ## [0.1095.3](https://github.com/okou-ai/okou/compare/app-v0.1095.2...app-v0.1095.3) (2026-11-05)
 
 
