@@ -339,7 +339,10 @@ fn sequenced_log_content(
         }
     }
     suffix.extend_from_slice(b"}\n");
-    let mut content = Vec::new();
+    let sequences = sequences.into_iter();
+    let capacity =
+        sequences.size_hint().0 * (prefix.len() + suffix.len() + usize::MAX.ilog10() as usize + 1);
+    let mut content = Vec::with_capacity(capacity);
     for sequence in sequences {
         content.extend_from_slice(&prefix);
         serde_json::to_writer(&mut content, &sequence).unwrap();
