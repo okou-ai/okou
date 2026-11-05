@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.9.58](https://github.com/okou-ai/okou/compare/host-worker-v1.9.57...host-worker-v1.9.58) (2026-11-05)
+
+
+### Bug Fixes
+
+* **platform:** make text selection visible under colour palettes ([#45422](https://github.com/okou-ai/okou/issues/45422)) ([b0259ff](https://github.com/okou-ai/okou/commit/b0259ffa77afae2c9b6388f661fc2c1fd4a4af70))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.5
+    * @okouai/core bumped to 8.818.7
+    * @okouai/ui bumped to 1.19.4
+
 ## [1.9.57](https://github.com/okou-ai/okou/compare/host-worker-v1.9.56...host-worker-v1.9.57) (2026-11-05)
 
 

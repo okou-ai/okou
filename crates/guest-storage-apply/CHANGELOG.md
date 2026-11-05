@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.2...guest-storage-apply-v0.29.3) (2026-11-05)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** defer discarded input directory reclamation ([#45365](https://github.com/okou-ai/okou/issues/45365)) ([3d1789c](https://github.com/okou-ai/okou/commit/3d1789ca735e0cc2c7ac6663b7025991db68dead))
+
 ## [0.29.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.1...guest-storage-apply-v0.29.2) (2026-11-05)
 
 ## [0.29.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.0...guest-storage-apply-v0.29.1) (2026-11-04)
