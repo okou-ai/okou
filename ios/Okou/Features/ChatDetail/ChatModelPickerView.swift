@@ -1,9 +1,11 @@
 import ChatData
 import SwiftUI
 
+/// The chat's model, in the header beside the menu as Kimi and ChatGPT place it: a glass
+/// capsule the height of the other header controls with the model's name in the text colour
+/// and its thinking effort (and Fast) in supporting grey. It opens the model sheet.
 struct ChatModelPickerButton: View {
   @Bindable var selection: ChatModelSelectionStore
-  var showsName = false
   @State private var isPresented = false
   private var models: ChatModelStore { selection.models }
   private var isLoading: Bool { models.isLoading || selection.isBusy }
@@ -26,30 +28,35 @@ struct ChatModelPickerButton: View {
     return parts.joined(separator: " · ")
   }
 
+  /// Effort and Fast after the name, quieter than it ("GPT 6.1 Sol High").
+  private var detail: String? {
+    var parts: [String] = []
+    if let effort = selection.effectiveEffort { parts.append(effortLabel(effort)) }
+    if selection.selection.serviceTier == "priority" { parts.append(String(localized: "Fast")) }
+    if parts.isEmpty { return nil }
+    return parts.joined(separator: " ")
+  }
+
   var body: some View {
-    // Keep the entry mounted before metadata exists so its load task can start.
     Button {
       isPresented = true
     } label: {
-      Group {
-        if showsName {
-          HStack(spacing: OkouSpace.xs) {
-            Text(
-              models.configuration.map { $0.catalog.name(selection.selection.model) }
-                ?? String(localized: "Model settings")
-            )
-            // One step under the 17 pt message text: readable, still clearly a control.
+      HStack(spacing: OkouSpace.six) {
+        Text(
+          models.configuration.map { $0.catalog.name(selection.selection.model) }
+            ?? String(localized: "Model settings")
+        )
+        .font(.okou(.callout).weight(.medium))
+        .foregroundStyle(OkouColor.foreground)
+        if let detail {
+          Text(verbatim: detail)
             .font(.okou(.callout))
-            .lineLimit(1)
-            OkouIcon("chevron-down", size: OkouIconSize.accessory)
-          }
-          .padding(.horizontal, OkouSpace.sm)
-          .frame(minHeight: OkouControl.minimumTarget)
-        } else {
-          OkouToolbarIcon("sliders-horizontal")
-            .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+            .foregroundStyle(OkouColor.mutedForeground)
         }
-      }.contentShape(Rectangle())
+      }
+      .lineLimit(1)
+      .padding(.horizontal, OkouSpace.lg)
+      .modifier(OkouGlassControl(shape: .capsule))
     }
     .buttonStyle(.plain)
     .tint(OkouColor.foreground)
@@ -70,9 +77,8 @@ struct ChatModelPickerButton: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
-    .task {
-      await selection.open()
-    }
+    // The composer loads model settings when it mounts (it needs them to send); this capsule
+    // only shows the result and opens the sheet, so the settings are not requested twice.
   }
 }
 

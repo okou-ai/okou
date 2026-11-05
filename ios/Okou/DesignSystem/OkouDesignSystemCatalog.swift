@@ -55,6 +55,14 @@
                 .accessibilityLabel(icon)
               }
             }
+            // The header's model control: name in the text colour, effort in grey.
+            HStack(spacing: OkouSpace.six) {
+              Text(verbatim: "GPT 6.1 Sol").font(.okou(.callout).weight(.medium))
+              Text(verbatim: "High").font(.okou(.callout))
+                .foregroundStyle(OkouColor.mutedForeground)
+            }
+            .padding(.horizontal, OkouSpace.lg)
+            .modifier(OkouGlassControl(shape: .capsule))
             // The sidebar's bottom bar: account, search capsule, prominent new chat.
             HStack(spacing: OkouSpace.md) {
               OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouControl.minimumTarget)
@@ -83,11 +91,6 @@
               .buttonStyle(.plain).accessibilityLabel("Add attachments and tools")
               Text("Ask Okou").font(.okou(.body)).foregroundStyle(OkouColor.mutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
-              Button {
-              } label: {
-                OkouToolbarIcon("sliders-horizontal")
-              }
-              .buttonStyle(.plain).accessibilityLabel("Model settings")
               Button {
               } label: {
                 OkouToolbarIcon("arrow-up").foregroundStyle(OkouColor.primaryForeground)

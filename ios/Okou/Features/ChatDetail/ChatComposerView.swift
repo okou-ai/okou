@@ -171,7 +171,7 @@ struct ChatComposerView: View {
       .opacity(isDictating ? 0 : 1)
       .allowsHitTesting(!isDictating)
       .padding(
-        .leading, expandsInput ? 18 : (modelSelection == nil ? 58 : 58 + actionSize)
+        .leading, expandsInput ? 18 : 58
       )
       .padding(.trailing, expandsInput ? 18 : trailingWidth + actionInset + OkouSpace.sm)
       .padding(.top, expandsInput ? 17 : 10)
@@ -229,13 +229,7 @@ struct ChatComposerView: View {
             connectorSelection?.uncertain == true ? "Confirm connector settings before sending" : ""
           )
           .disabled(isBusy || needsUpgrade)
-          // The model control always follows "+": a settings glyph at rest, the model's
-          // name once the composer opens. It stays mounted so model settings load early.
-          if let modelSelection {
-            ChatModelPickerButton(selection: modelSelection, showsName: expandsInput)
-              .frame(maxWidth: expandsInput ? 200 : nil, alignment: .leading)
-              .disabled(isBusy || needsUpgrade)
-          }
+          // The model control lives in the header beside the menu (ChatWorkspaceHeader).
         }
         .padding(.leading, actionInset)
         .padding(.bottom, expandsInput ? actionInset : 0)
@@ -343,6 +337,11 @@ struct ChatComposerView: View {
           .presentationDetents([.medium, .large])
           .presentationDragIndicator(.visible)
       }
+    }
+    // Model settings decide whether the draft can be sent, so a mounted composer loads them
+    // while the reader types; the header's model capsule shows what they resolve to.
+    .task(id: modelSelection.map { ObjectIdentifier($0) }) {
+      await modelSelection?.open()
     }
     .onChange(of: mentionSource, initial: true) { _, source in
       draftState?.editor.mentionSource = source

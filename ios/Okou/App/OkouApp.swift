@@ -288,7 +288,9 @@ private struct WorkspaceRootView: View {
           VStack(spacing: 0) {
             ChatWorkspaceHeader(
               store: store, height: headerHeight, openSidebar: openSidebar,
-              openAgent: { showsAgent = true })
+              openAgent: { showsAgent = true },
+              modelSelection: store.selectedConversation.map { $0.modelSelection }
+                ?? store.newModelSelection)
             ChatSyncStatusView(state: sidebar.isOpen ? nil : store.synchronizationState) {
               await store.retrySynchronization()
             }

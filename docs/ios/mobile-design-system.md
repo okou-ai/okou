@@ -208,12 +208,14 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Buttons**: `OkouButtonStyle(isPrimary:)` is a filled primary or the web's outline
   button. `isCompact` (15 pt, 44 pt tall, one line) fits two actions side by side on a
   card; the default size is for one full-width action.
-- **Composer leading controls** are `+` then the model control. The model control is
-  a settings glyph at rest and the model name in `callout` once the editor expands;
-  it always sits right of `+`, never floats in the middle. The `+` menu holds Take
-  Photo, Scan Document (only where the device has a camera), Photo Library, Choose
-  Files, and Connectors. A connector uncertainty badge stays on `+`; opening the
-  menu never enables service access.
+- **The model control is in the header**, beside the menu, as Kimi and ChatGPT place it:
+  `ChatModelPickerButton`, a 44 pt glass capsule with the model's name in callout medium
+  `foreground` and its thinking effort and Fast in callout `muted-foreground` ("GPT 6.1 Sol
+  High"). On the home screen it is the next new chat's model; in a chat, that chat's. It
+  opens the model sheet. The composer's only leading control is `+`, whose menu holds Take
+  Photo, Scan Document (only where the device has a camera), Photo Library, Choose Files and
+  Connectors. A connector uncertainty badge stays on `+`; opening the menu never enables
+  service access.
 - **Card actions** use `ChatCardButtonStyle`: the web's small outline button (`gray-400`
   hairline on the background fill, 8 pt corner, the pressed state laid over the fill),
   `.primary` for the card's single committing action, `.detail` for a bare text action. A
@@ -350,8 +352,8 @@ single floating line, and colour is a small accent for status only.
 - **Trailing state** is the running indicator, an unread dot (8 pt `running` sky blue, as on
   the web; amber is kept for a primary commit), or nothing. Status is
   never a system spinner.
-- **Chat header** has no title: the menu glass circle on the left and the chat's "…"
-  menu on the right, over a soft blur. The selected row in the sidebar says which chat
+- **Chat header** has no title: the menu glass circle and the model capsule on the left, the
+  chat's "…" menu on the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with the agent (its name,
   "Agent profile"); on the new-chat screen the greeting's avatar opens the profile.
 - Provider headings separate identity from allowance (`OkouLabeledValue`); do not
