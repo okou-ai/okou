@@ -520,6 +520,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         return all(self.visit(statement) for statement in body)
 
     def _visit_branch_body(self, body: list[ast.stmt], aliases: set[str]) -> tuple[set[str], bool]:
+        """Analyze a reachable branch; an empty body preserves aliases and falls through."""
         self._metadata_alias_scopes.append(set(aliases))
         falls_through = self._visit_current_scope_body(body)
         result = set(self._metadata_aliases)
@@ -1121,16 +1122,13 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             body_aliases, body_falls_through = self._visit_branch_body(node.body, base_aliases)
         else:
             body_falls_through = False
-        if test_truth is not True and node.orelse:
-            orelse_aliases, orelse_falls_through = self._visit_branch_body(
-                node.orelse, base_aliases
-            )
-        elif test_truth is True:
+        if test_truth is True:
             orelse_aliases = set()
             orelse_falls_through = False
         else:
-            orelse_aliases = base_aliases
-            orelse_falls_through = True
+            orelse_aliases, orelse_falls_through = self._visit_branch_body(
+                node.orelse, base_aliases
+            )
         exit_aliases: set[str] = set()
         if body_falls_through:
             exit_aliases.update(body_aliases)
@@ -1158,13 +1156,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         exhaustion_aliases: set[str],
         loop_control_state: _LoopControlAliasState,
     ) -> bool:
-        if orelse:
-            orelse_aliases, orelse_falls_through = self._visit_branch_body(
-                orelse, exhaustion_aliases
-            )
-        else:
-            orelse_aliases = exhaustion_aliases
-            orelse_falls_through = True
+        orelse_aliases, orelse_falls_through = self._visit_branch_body(orelse, exhaustion_aliases)
         loop_exit_aliases = set(loop_control_state.break_aliases)
         if orelse_falls_through:
             loop_exit_aliases.update(orelse_aliases)
@@ -1181,13 +1173,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self._record_implicit_exception_aliases()
         base_aliases = set(self._metadata_aliases)
         if isinstance(node, ast.For) and _iterable_is_statically_empty(node.iter):
-            if node.orelse:
-                orelse_aliases, orelse_falls_through = self._visit_branch_body(
-                    node.orelse, base_aliases
-                )
-            else:
-                orelse_aliases = base_aliases
-                orelse_falls_through = True
+            orelse_aliases, orelse_falls_through = self._visit_branch_body(
+                node.orelse, base_aliases
+            )
             self._replace_current_aliases(orelse_aliases)
             return orelse_falls_through
         entry_aliases = set(base_aliases)
@@ -1225,13 +1213,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._record_truth_test_exception(node.test)
         base_aliases = set(self._metadata_aliases)
         if _static_truth_value(node.test) is False:
-            if node.orelse:
-                orelse_aliases, orelse_falls_through = self._visit_branch_body(
-                    node.orelse, base_aliases
-                )
-            else:
-                orelse_aliases = base_aliases
-                orelse_falls_through = True
+            orelse_aliases, orelse_falls_through = self._visit_branch_body(
+                node.orelse, base_aliases
+            )
             self._replace_current_aliases(orelse_aliases)
             return orelse_falls_through
         entry_aliases = set(base_aliases)
