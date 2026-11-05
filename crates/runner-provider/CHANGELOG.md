@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.9...runner-provider-v0.16.10) (2026-11-05)
+
+
+### Bug Fixes
+
+* **runner:** retain packet provenance in local transport faults ([#45368](https://github.com/okou-ai/okou/issues/45368)) ([b186aad](https://github.com/okou-ai/okou/commit/b186aadf3dad0754db84c7d6256567b82b684cdb))
+
 ## [0.16.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.8...runner-provider-v0.16.9) (2026-11-05)
 
 ## [0.16.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.7...runner-provider-v0.16.8) (2026-11-05)

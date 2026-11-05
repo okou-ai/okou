@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.17...runner-rs-v0.244.18) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** isolate request and response capture policies ([#45380](https://github.com/okou-ai/okou/issues/45380)) ([c1117ae](https://github.com/okou-ai/okou/commit/c1117aec4d6b8363247f0ff61f9cbe834130c032))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.16...runner-rs-v0.244.17) (2026-11-05)
 
 ### Release Dependencies

@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.48.7](https://github.com/okou-ai/okou/compare/api-v2.48.6...api-v2.48.7) (2026-11-05)
+
+
+### Refactoring
+
+* remove close connector feature switch ([#45384](https://github.com/okou-ai/okou/issues/45384)) ([50e1913](https://github.com/okou-ai/okou/commit/50e1913bdce011ced6e184c0806bf389e61052e4))
+* remove expensify connector feature switch ([#45387](https://github.com/okou-ai/okou/issues/45387)) ([5c434bc](https://github.com/okou-ai/okou/commit/5c434bc83fddc0ba7dbfdead87154c73eb28d154))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.818.4
+    * @okouai/db bumped to 2.22.5
+    * @okouai/pi-agent-runtime bumped to 1.51.68
+
 ## [2.48.6](https://github.com/okou-ai/okou/compare/api-v2.48.5...api-v2.48.6) (2026-11-05)
 
 
