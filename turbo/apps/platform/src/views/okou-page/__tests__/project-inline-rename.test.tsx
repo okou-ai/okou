@@ -59,7 +59,8 @@ function projectToggle(name: string, id = projectId) {
 
 async function setupProjects({
   confirmedName,
-}: { confirmedName?: string } = {}) {
+  rejectedRenames = 0,
+}: { confirmedName?: string; rejectedRenames?: number } = {}) {
   const current = {
     ...continuityThread(171, 1, "Launch planning"),
     projectId,
@@ -92,7 +93,14 @@ async function setupProjects({
       hasMore: false,
     });
   });
+  let rejections = rejectedRenames;
   context.mocks.api(projectsContract.update, ({ params, body, respond }) => {
+    if (rejections > 0) {
+      rejections -= 1;
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Project state changed" },
+      });
+    }
     events.push({
       id: body.eventId,
       seqId: events.length + 2,
@@ -194,6 +202,29 @@ test("Leaving a Project's name to open another conversation still saves it", asy
     expect(projectName("Launch confirmed")).toBeInTheDocument();
   });
   expect(within(projectRow()).queryByRole("textbox")).not.toBeInTheDocument();
+});
+
+test("A rejected Project name does not replace the confirmed name of a later save", async () => {
+  const user = userEvent.setup();
+  await setupProjects({
+    rejectedRenames: 1,
+    confirmedName: "Launch confirmed",
+  });
+  await user.dblClick(projectName("Launch"));
+  await findNameField();
+  await user.keyboard("Launch draft{Enter}");
+  await expect(
+    screen.findByText("Project state changed"),
+  ).resolves.toBeInTheDocument();
+
+  // The rejected name stays visible until reload; the next save supersedes it.
+  await user.dblClick(projectName("Launch draft"));
+  await findNameField();
+  await user.keyboard("Launch plan{Enter}");
+
+  await waitFor(() => {
+    expect(projectName("Launch confirmed")).toBeInTheDocument();
+  });
 });
 
 test("Hiding the chat list from the name field saves it without reopening the editor", async () => {

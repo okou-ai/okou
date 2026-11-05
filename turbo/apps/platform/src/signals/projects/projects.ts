@@ -30,6 +30,12 @@ import {
 export const projectsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.Projects] ?? false;
 });
+type OptimisticProjectRename = Pick<
+  ProjectEvent,
+  "id" | "projectId" | "createdAt"
+> & {
+  readonly name: string;
+};
 const projectState$ = computed((get) => {
   get(authenticatedSessionKey$);
   get(rootVersion$);
@@ -42,13 +48,25 @@ const projectState$ = computed((get) => {
         readonly confirmation: Promise<unknown>;
       }[]
     >([]),
-    optimisticRenames$: state<
-      readonly (Pick<ProjectEvent, "id" | "projectId" | "createdAt"> & {
-        readonly name: string;
-      })[]
-    >([]),
+    optimisticRenames$: state<readonly OptimisticProjectRename[]>([]),
   };
 });
+// A persisted rename also settles earlier local renames of its Project. One
+// that never persisted must not override the confirmed name that followed it.
+function unsettledRenames(
+  renames: readonly OptimisticProjectRename[],
+  persistedIds: ReadonlySet<string>,
+) {
+  const settledThrough = new Map<string, number>();
+  for (const [index, rename] of renames.entries()) {
+    if (persistedIds.has(rename.id)) {
+      settledThrough.set(rename.projectId, index);
+    }
+  }
+  return renames.filter((rename, index) => {
+    return index > (settledThrough.get(rename.projectId) ?? -1);
+  });
+}
 export const projects$ = computed((get) => {
   if (!get(projectsEnabled$)) {
     return [];
@@ -68,13 +86,11 @@ export const projects$ = computed((get) => {
       return event.project;
     });
   const pending = new Map(
-    get(owner.optimisticRenames$)
-      .filter((event) => {
-        return !persistedIds.has(event.id);
-      })
-      .map((event) => {
+    unsettledRenames(get(owner.optimisticRenames$), persistedIds).map(
+      (event) => {
         return [event.projectId, event];
-      }),
+      },
+    ),
   );
   return replayProjectEvents(
     [...creations, ...(value?.snapshot?.projects ?? [])],
@@ -114,9 +130,7 @@ export const syncProjects$ = command(
       });
     });
     set(owner.optimisticRenames$, (events) => {
-      return events.filter((event) => {
-        return !persistedIds.has(event.id);
-      });
+      return unsettledRenames(events, persistedIds);
     });
   },
 );

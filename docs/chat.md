@@ -54,6 +54,10 @@ event arrives through the normal event stream:
    event with the same ID.
 2. Reconciliation removes that matching optimistic event from the page-local
    buffer.
+3. The match also settles earlier optimistic events in the same buffer that set
+   the same field of the same entity. The later local edit is confirmed, so an
+   earlier one that never persisted must not override it when the projection
+   replays optimistic events after persistent ones.
 
 This persistent-event match is the only in-session cleanup path for optimistic
 events. The persistent event remains authoritative even if it arrives through a
@@ -103,7 +107,8 @@ publication does not depend on frontend subscriptions.
   insertion.
 - Persistent and optimistic projections deduplicate by that shared event ID.
 - Persistent events are the only normal trigger for removing matching
-  optimistic events.
+  optimistic events and the earlier optimistic edits of the same field they
+  supersede.
 - Failure, cancellation, timeout, and missing-event paths do not imperatively
   remove optimistic events.
 - A page refresh remains the recovery path for rare exceptional inconsistency.
