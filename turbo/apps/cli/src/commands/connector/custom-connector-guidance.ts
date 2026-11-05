@@ -39,9 +39,9 @@ export function customConnectorSettingsGuidance(
   const url = new URL("/connectors", platformOrigin).toString();
   const steps =
     permission === undefined
-      ? "Review its accounts and agent access. Reconnect or select an available account as needed."
+      ? "Review its accounts and Okou access. Reconnect or select an available account as needed."
       : permission === "__unknown__"
         ? "There is no custom unknown-endpoint approval control. Use okou connector check to inspect policy.outcome. Only deny/ask outcomes need an administrator to review the connector's routing and permission definition. An allow outcome needs no additional permission approval; unavailable means the permission status could not be determined."
-        : "Open the custom connector's agent access management, select the affected agent, and review Permissions.";
+        : "Open the custom connector's access settings and review Permissions for your Okou.";
   return `Custom connector ${customConnectorId} uses the existing connector settings flow, not a builtin permission approval link.\nOpen [Connectors](${url}) and select this custom connector. ${steps}`;
 }

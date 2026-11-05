@@ -1,3 +1,8 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
+import {
+  personalCommandMode,
+  personalExecutorId,
+} from "../../lib/command/single-agent";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -33,6 +38,13 @@ interface CreateOptions {
 async function resolveAgentId(
   flagAgentId: string | undefined,
 ): Promise<string> {
+  if (await singleAgentEnabled()) {
+    if (flagAgentId !== undefined)
+      throw new Error(
+        "Agent selection is unavailable in My Okou. Remove --agent.",
+      );
+    return personalExecutorId();
+  }
   const agentId = flagAgentId?.trim();
   if (agentId) {
     return agentId;
@@ -78,9 +90,18 @@ export const createCommand = new Command()
   )
   .option("--project-id <id>", "Create inside this Project")
   .option("--json", "Print machine-readable JSON")
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", ({ command }) => {
+    return personalCommandMode(command)
+      ? `
+Examples:
+  okou chat create "Launch plan"
+  okou chat create "Launch plan" --project-id <id> --model auto --json
+
+Creates an empty personal chat in this workspace. Send a self-contained first message
+with okou chat send; this does not start work or inherit conversation history.
+Model, effort and priority use your existing preferences unless specified.
+`
+      : `
 Examples:
   Create a chat:     okou chat create "Launch plan"
   Pick the model:    okou chat create "Launch plan" --model claude-sonnet-5
@@ -100,8 +121,8 @@ Notes:
   - Pass --model to choose a different model for the new thread
   - Defaults priority to your initial model preference
   - The new thread never inherits this chat's history, so the first message must be self-contained
-  - Authenticates via OKOU_TOKEN (requires chat-thread:write, and chat-thread:read to default --agent or show effective effort)`,
-  )
+  - Authenticates via OKOU_TOKEN (requires chat-thread:write, and chat-thread:read to default --agent or show effective effort)`;
+  })
   .action(
     withErrorHandler(async (titleParts: string[], options: CreateOptions) => {
       const title = titleParts.join(" ").trim();
@@ -183,7 +204,8 @@ Notes:
       const priority =
         thread.serviceTier === "priority" ? "enabled" : "disabled";
       console.log(chalk.dim(`  Priority: ${priority}`));
-      console.log(chalk.dim(`  Agent:  ${agentId}`));
+      if (!(await singleAgentEnabled()))
+        console.log(chalk.dim(`  Agent:  ${agentId}`));
       console.log();
       console.log("Send the first message:");
       console.log(

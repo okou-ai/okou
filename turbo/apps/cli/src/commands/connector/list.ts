@@ -1,3 +1,5 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { modeHelp } from "../../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import {
@@ -73,7 +75,8 @@ export const listCommand = new Command()
   .option("--json", "Output connector status as JSON")
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Scope:
   Inside a run, lists builtin and custom HTTP/MCP targets from the current run's
   account context, with the exact selected account or its unavailable state.
@@ -88,10 +91,18 @@ Scope:
 Examples:
   okou connector list --json
   okou connector search github`,
+      `
+Lists your connector accounts and effective Okou access in this workspace.
+Inside a Run, account identity comes from the accounts admitted to that Run.
+Missing/deleted account metadata does not select a replacement or grant access.
+Use --json for the existing machine-readable account and authorization fields.
+Inspect connector status <selector> for setup or permission guidance.
+`,
+    ),
   )
   .action(
     withErrorHandler(async (options: { agent?: string; json?: boolean }) => {
-      const agentId = resolveConnectorAgentId(options.agent);
+      const agentId = await resolveConnectorAgentId(options.agent);
       if (isRunBoundConnectorContext()) {
         await printRunConnectorList(options.json ?? false);
         return;
@@ -153,7 +164,9 @@ Examples:
       );
 
       const authorizedHeader = agentCtx
-        ? `AUTHORIZED FOR ${agentCtx.displayName}`
+        ? (await singleAgentEnabled())
+          ? "YOUR OKOU ACCESS"
+          : `AUTHORIZED FOR ${agentCtx.displayName}`
         : null;
 
       // Print header

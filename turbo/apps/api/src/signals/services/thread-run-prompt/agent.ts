@@ -30,6 +30,7 @@ export function createAgentPrompt(
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
   cloudBrowserEnabled$: Computed<Promise<boolean>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
+  singleAgent$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
     const [
@@ -37,18 +38,23 @@ export function createAgentPrompt(
       featureSwitchContext,
       cloudBrowserEnabled,
       disabledPaidTools,
+      singleAgent,
     ] = await Promise.all([
       get(agent$),
       get(featureSwitches$),
       get(cloudBrowserEnabled$),
       get(disabledPaidTools$),
+      get(singleAgent$),
     ]);
     return {
       systemPromptVariables: {
-        agentIdentity: agent ? (buildAgentIdentityPrompt(agent) ?? "") : "",
+        agentIdentity: agent
+          ? (buildAgentIdentityPrompt(agent, singleAgent) ?? "")
+          : "",
         executionLimit: buildExecutionTimeLimitPrompt(),
         tools: buildAgentToolsPrompt(
           buildAgentToolsPromptInputs({
+            singleAgent,
             featureSwitchContext,
             cloudBrowserEnabled,
             disabledPaidTools,

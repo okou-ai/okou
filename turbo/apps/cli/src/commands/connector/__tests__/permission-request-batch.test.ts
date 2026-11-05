@@ -237,7 +237,7 @@ describe("okou connector permission-request --batch-file", () => {
     expect(errors()).toContain("conflicts with the current run");
     vi.stubEnv("OKOU_AGENT_ID", "");
     await expect(run([slack])).rejects.toThrow("exit");
-    expect(errors()).toContain("require a current Agent");
+    expect(errors()).toContain("require a current workspace execution context");
     expect(output()).not.toContain("action=allow");
   });
 

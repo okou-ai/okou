@@ -675,7 +675,7 @@ export function connectorCheckDiagnosticError(
         "not-admitted":
           "was not admitted to this run. Select it for the thread, then start a new run",
         "connector-unavailable":
-          "is unavailable. Review its definition, agent access, and the account selected for this run",
+          "is unavailable. Review its definition, Okou access, and the account selected for this run",
         "permission-bundle-unavailable":
           "has unavailable permission metadata. Ask an administrator to review its permission definition",
         "runtime-configuration-unavailable":

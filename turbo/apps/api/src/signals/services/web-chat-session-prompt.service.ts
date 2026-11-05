@@ -5,6 +5,7 @@ import type {
 } from "./chat-user-message.service";
 
 export interface WebChatSessionPromptContext {
+  readonly singleAgent: boolean;
   readonly projectContext: string;
   readonly generationTemplatePrompt: string;
   readonly computerUseHostDisplayName: string | null;
@@ -50,22 +51,31 @@ function buildCurrentThreadContext(threadId: string): string {
  * only carry IDs, so this states that delegated work does not report back and
  * points at the event-driven alternative to polling for its result.
  */
-function buildReferencesContext(references: UserMessageReferences): string {
+function buildReferencesContext(
+  references: UserMessageReferences,
+  singleAgent: boolean,
+): string {
   if (references.agents.length === 0 && references.chatThreads.length === 0) {
     return "";
   }
   return [
-    "# Referenced Agents and Threads",
+    singleAgent
+      ? "# Referenced conversations"
+      : "# Referenced Agents and Threads",
     "",
     "The current message links:",
     ...references.agents.map((agent) => {
-      return `- Agent ${JSON.stringify(agent.nameSnapshot)}: AGENT_ID=${agent.agentId}`;
+      return singleAgent
+        ? `- Retained configuration reference ${JSON.stringify(agent.nameSnapshot)}: ${agent.agentId}. This reference does not select an executor or authorize shared configuration changes.`
+        : `- Agent ${JSON.stringify(agent.nameSnapshot)}: AGENT_ID=${agent.agentId}`;
     }),
     ...references.chatThreads.map((thread) => {
       return `- Chat thread ${JSON.stringify(thread.titleSnapshot)}: CHAT_THREAD_ID=${thread.threadId}`;
     }),
     "",
-    "Work sent to another agent or thread with `okou chat send` runs on its own and does not report back to this run. If you need its result, consider a `chat-run-finished` automation on that thread instead of polling. Automations of a workflow created from this chat run here when the watched run finishes.",
+    singleAgent
+      ? "Work sent to another chat with `okou chat send` runs independently and does not report back here. Use an authorized chat-run-finished Workflow automation when completion notifications are needed."
+      : "Work sent to another agent or thread with `okou chat send` runs on its own and does not report back to this run. If you need its result, consider a `chat-run-finished` automation on that thread instead of polling. Automations of a workflow created from this chat run here when the watched run finishes.",
   ].join("\n");
 }
 
@@ -81,6 +91,7 @@ function buildReferencesContext(references: UserMessageReferences): string {
 function buildAgentRunSourceContext(
   source: ChatAgentRunSourceAnnotation,
   triggerSource: "web" | "agent",
+  singleAgent: boolean,
 ): string {
   const triggerDescription =
     triggerSource === "web"
@@ -104,7 +115,7 @@ function buildAgentRunSourceContext(
     "",
     "Reading the source, each through OKOU_TOKEN:",
     `- \`okou chat messages --thread-id ${source.threadId} --output-dir threads\` synchronizes the source thread's raw snapshot and hot events into \`threads/${source.threadId}/\`; use \`rg -n '"seqId":<SEQ_ID>' threads/${source.threadId}/\` to inspect an event (chat-event:read)`,
-    `- \`okou chat get --thread-id ${source.threadId}\` prints its title, agent, and model (chat-thread:read)`,
+    `- \`okou chat get --thread-id ${source.threadId}\` prints its title, ${singleAgent ? "" : "agent, and "}model (chat-thread:read)`,
     `- \`okou search "${source.runId}" --source agent-session\` prints both the Claude Code and Codex session-file locations so you can analyze those files directly`,
     "",
     `This run's output is appended to this thread, where the user reads it. Nothing carries it back to the source run. \`okou chat send --thread-id ${source.threadId}\` posts a new message into the source thread, which starts a run there.`,
@@ -130,11 +141,12 @@ export function buildWebChatAppendSystemPrompt(args: {
     buildWebChatPrompt(args.context.integrationNote),
     buildCurrentThreadContext(args.threadId),
     args.context.projectContext,
-    buildReferencesContext(args.context.references),
+    buildReferencesContext(args.context.references, args.context.singleAgent),
     args.context.agentRunSource
       ? buildAgentRunSourceContext(
           args.context.agentRunSource,
           args.context.triggerSource,
+          args.context.singleAgent,
         )
       : "",
     args.priorContext,

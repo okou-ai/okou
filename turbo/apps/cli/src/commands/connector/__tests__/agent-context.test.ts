@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -87,7 +88,10 @@ describe("run-bound connector Agent selectors", () => {
 
   beforeEach(() => {
     chalk.level = 0;
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      capturedRunToken(["connector:read", "connector:write"]),
+    );
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_AGENT_ID", RUN_AGENT_ID);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-1");

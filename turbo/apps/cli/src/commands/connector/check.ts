@@ -1,3 +1,6 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { resolveConnectorAgentId } from "./agent-context";
+import { modeHelp } from "../../lib/command/single-agent";
 import { Command, Option } from "commander";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -40,7 +43,6 @@ import {
   listRunConnectorAccounts,
 } from "../../lib/api/domains/run-connector-accounts";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { getOkouAgentId } from "../../lib/okou-env";
 import { toPlatformUrl } from "../../lib/platform-url";
 import {
   computerUsePermissionGuidance,
@@ -65,6 +67,7 @@ import {
 } from "./member-status";
 
 interface DiagContext {
+  readonly singleAgent: boolean;
   readonly environmentNames: readonly string[] | null;
   readonly label: string;
   readonly connectorAvailable: boolean;
@@ -208,18 +211,22 @@ function printAgentAuthorizationStatus(
   hasPermission: boolean,
 ): void {
   if (!ctx.agentId) {
-    console.log("OKOU_AGENT_ID is not set — cannot check agent authorization.");
+    console.log(
+      ctx.singleAgent
+        ? "Workspace execution context is unavailable — cannot check your access."
+        : "OKOU_AGENT_ID is not set — cannot check agent authorization.",
+    );
   } else if (status.needsReconnect) {
     console.log(
-      `Skipped — agent authorization can only be checked once the ${ctx.label} connector is reconnected (see 2a).`,
+      `Skipped — ${ctx.singleAgent ? "your Okou access" : "agent authorization"} can only be checked once the ${ctx.label} connector is reconnected (see 2a).`,
     );
   } else if (hasPermission) {
     console.log(
       status.isConnected
-        ? `The ${ctx.label} connector is authorized for this agent.`
+        ? `The ${ctx.label} connector is authorized for ${ctx.singleAgent ? "your Okou" : "this agent"}.`
         : ctx.runBound
-          ? `The ${ctx.label} connector is authorized for this agent, but an account is not available for this run.`
-          : `The ${ctx.label} connector is authorized for this agent, but it is not connected.`,
+          ? `The ${ctx.label} connector is authorized for ${ctx.singleAgent ? "your Okou" : "this agent"}, but an account is not available for this run.`
+          : `The ${ctx.label} connector is authorized for ${ctx.singleAgent ? "your Okou" : "this agent"}, but it is not connected.`,
     );
   } else {
     const url = connectorActionUrl({
@@ -229,10 +236,10 @@ function printAgentAuthorizationStatus(
     });
     console.log(
       status.isConnected
-        ? `The ${ctx.label} connector is not authorized for this agent (${ctx.agentId}).`
+        ? `The ${ctx.label} connector is not authorized for ${ctx.singleAgent ? "your Okou" : `this agent (${ctx.agentId})`}.`
         : ctx.runBound
-          ? `The ${ctx.label} connector is not authorized for this agent (${ctx.agentId}), and an account is not available for this run.`
-          : `The ${ctx.label} connector needs to be connected and authorized for this agent (${ctx.agentId}).`,
+          ? `The ${ctx.label} connector is not authorized for ${ctx.singleAgent ? "your Okou" : `this agent (${ctx.agentId})`}, and an account is not available for this run.`
+          : `The ${ctx.label} connector needs to be connected and authorized for ${ctx.singleAgent ? "your Okou" : `this agent (${ctx.agentId})`}.`,
     );
     console.log(`Authorize it at: [Authorize ${ctx.label}](${url})`);
     printCallbackActionUrlExample(url, ctx.agentId);
@@ -258,7 +265,9 @@ function printConnectorAuthorizationStatus(
     return;
   }
   console.log(
-    "### 2b: Agent authorization (user must authorize agent to use this connector)",
+    ctx.singleAgent
+      ? "### 2b: Your Okou access (authorization is required to use this connector)"
+      : "### 2b: Agent authorization (user must authorize agent to use this connector)",
   );
   console.log("");
   if (!ctx.connectorAvailable) {
@@ -269,7 +278,7 @@ function printConnectorAuthorizationStatus(
     printAgentAuthorizationStatus(ctx, status, hasPermission);
   }
   console.log(
-    `This run uses agent-scoped connector authorization for ${ctx.label} access.`,
+    `This run uses ${ctx.singleAgent ? "your existing workspace connector authorization" : "agent-scoped connector authorization"} for ${ctx.label} access.`,
   );
   console.log("");
 }
@@ -750,7 +759,8 @@ export const checkConnectorCommand = addAwsDiagnosticOptions(
 )
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Scope:
   --env-name diagnoses a builtin environment binding; --check-permission can
   select a permission in this mode. Custom HTTP/MCP routes use --url; this checks
@@ -807,6 +817,25 @@ Permission recovery:
   for its current Agent. When multiple access actions are needed, use ordinary
   links and wait for all confirmations. Return every action URL verbatim. Custom
   settings guidance has no callback approval flow.`,
+      `
+Diagnose the exact failed URL and method, or a builtin environment name.
+Examples:
+  okou connector check --url https://api.example.com/items --method GET
+  okou connector check --env-name GITHUB_TOKEN
+  okou connector check --connector custom:<uuid> --url https://api.example.com/items
+
+Your current workspace execution context supplies accounts and grants automatically.
+A connection is not a permission grant. Missing admitted accounts remain unavailable.
+For AWS SigV4, include the observed non-secret service/action/target/query/header
+selectors required by the diagnostic; URL and method alone can be insufficient.
+Use only a permission-request command printed for a deny/ask outcome. Provider OAuth
+scopes are not Okou permissions. Custom permissions use Connectors settings.
+For a single supported access action, use the printed callback command/URL; keep
+its prompt concise and free of secrets. Return every action URL verbatim and end
+the turn. Multiple access actions require ordinary links and no callback.
+Use --json for the existing structured diagnostic result.
+`,
+    ),
   )
   .action(
     withErrorHandler(async (opts: CheckConnectorOptions, command: Command) => {
@@ -873,7 +902,8 @@ Permission recovery:
         credentialResolution: result.connector.credentialResolution,
         run: result.run,
         platformOrigin: platformUrl.origin,
-        agentId: getOkouAgentId(),
+        agentId: await resolveConnectorAgentId(undefined),
+        singleAgent: await singleAgentEnabled(),
         runBound: isRunBoundConnectorContext(),
       };
 
@@ -892,7 +922,7 @@ Permission recovery:
 
       if (configuredForRun === false) {
         console.log(
-          `Steps 1-2 summary: The ${ctx.label} connector is not configured for this run. Check the agent authorization settings, then start a new run after updating them.`,
+          `Steps 1-2 summary: The ${ctx.label} connector is not configured for this run. Check ${ctx.singleAgent ? "your Okou access in Connectors settings" : "the agent authorization settings"}, then start a new run after updating them.`,
         );
       } else if (
         status?.isConnected &&

@@ -1,3 +1,6 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { resolveConnectorAgentId } from "./agent-context";
+import { modeHelp } from "../../lib/command/single-agent";
 import chalk from "chalk";
 import { Command, Option } from "commander";
 import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
@@ -68,7 +71,8 @@ export const unauthorizeCommand = new Command()
   .option("--json", "Print the result as JSON")
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Examples:
   okou connector unauthorize querit
   okou connector unauthorize custom:<uuid> --json
@@ -88,6 +92,16 @@ Notes:
   - To restore access, re-enable the connector in Connectors > agent access.
   - To disconnect a saved account for every Agent, use connector account disconnect
     --connection-id <uuid> instead. Reconnecting may require signing in again.`,
+      `
+Remove your own connector grant for Okou in this workspace without approval.
+This only narrows access. The saved account and other members remain unchanged.
+Runs already started may retain admitted access; new Runs no longer receive it.
+To restore access, review your Okou access in Connectors settings.
+Where Chat-specific account access is enabled, manage the Chat allowance instead;
+this command cannot change that capability's authorization model.
+To remove a saved account, use connector account disconnect --connection-id <uuid>.
+`,
+    ),
   )
   .action(
     withErrorHandler(
@@ -96,7 +110,10 @@ Notes:
           throw new Error(
             "Chat account access is enabled. Agent grants do not control this Run; manage this Chat's connector account allowance instead.",
           );
-        const agentId = opts.agent ?? getOkouAgentId();
+        const personal = await singleAgentEnabled();
+        const agentId = personal
+          ? await resolveConnectorAgentId(opts.agent)
+          : (opts.agent ?? getOkouAgentId());
         if (!agentId) {
           throw new Error(
             "Specify the Agent with --agent <id>. Run: okou agent list",
@@ -119,11 +136,15 @@ Notes:
         const authorized = await isAuthorized(agentId, target);
         if (authorized && !(await removeAuthorization(agentId, target))) {
           throw new Error(
-            `${target.label} is still authorized for Agent ${agentId}. Inspect its access in Connectors > agent access.`,
+            personal
+              ? `${target.label} is still authorized for your Okou. Inspect your access in Connectors settings.`
+              : `${target.label} is still authorized for Agent ${agentId}. Inspect its access in Connectors > agent access.`,
           );
         }
 
-        const agentLabel = agent.displayName ?? agentId;
+        const agentLabel = personal
+          ? "your Okou"
+          : `Agent ${agent.displayName ?? agentId}`;
         if (opts.json) {
           console.log(
             JSON.stringify(
@@ -147,13 +168,13 @@ Notes:
         }
         if (!authorized) {
           console.log(
-            `${target.label} (${target.slug}) is not authorized for Agent ${agentLabel}. Nothing changed.`,
+            `${target.label} (${target.slug}) is not authorized for ${agentLabel}. Nothing changed.`,
           );
           return;
         }
         console.log(
           chalk.green(
-            `✓ Unauthorized ${target.label} (${target.slug}) for Agent ${agentLabel}`,
+            `✓ Unauthorized ${target.label} (${target.slug}) for ${agentLabel}`,
           ),
         );
         console.log(
@@ -163,7 +184,9 @@ Notes:
         );
         console.log(
           chalk.dim(
-            "  To restore access, re-enable it in Connectors > agent access.",
+            personal
+              ? "  To restore access, review your Okou access in Connectors settings."
+              : "  To restore access, re-enable it in Connectors > agent access.",
           ),
         );
       },

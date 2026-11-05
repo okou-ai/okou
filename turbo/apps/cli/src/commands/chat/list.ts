@@ -1,3 +1,8 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
+import {
+  personalCommandMode,
+  personalExecutorId,
+} from "../../lib/command/single-agent";
 import { listProjectThreads } from "../../lib/api/domains/projects";
 import chalk from "chalk";
 import { Command } from "commander";
@@ -66,7 +71,16 @@ function compareUnreadThreads(
   );
 }
 
-function listScope(options: ListOptions) {
+async function listScope(options: ListOptions) {
+  const personal = await singleAgentEnabled();
+  if (
+    personal &&
+    (options.agent !== undefined || options.allAgents !== undefined)
+  ) {
+    throw new Error(
+      "Agent selection is unavailable in My Okou. Remove --agent/--all-agents.",
+    );
+  }
   if (options.allAgents && options.agent !== undefined) {
     printUsageError(
       "--all-agents and --agent are mutually exclusive",
@@ -80,10 +94,12 @@ function listScope(options: ListOptions) {
     throw new Error("Use a valid --project-id without --no-project");
   }
   const agentId =
-    options.allAgents ||
-    (options.projectId !== undefined && options.agent === undefined)
-      ? undefined
-      : resolveAgentId(options.agent);
+    personal && options.projectId === undefined
+      ? await personalExecutorId()
+      : options.allAgents ||
+          (options.projectId !== undefined && options.agent === undefined)
+        ? undefined
+        : resolveAgentId(options.agent);
   const limit =
     options.limit === "all"
       ? Infinity
@@ -99,10 +115,7 @@ export const listCommand = new Command()
   .description("List web chat threads")
   .option("--agent <id>", "Filter by agent ID (defaults to OKOU_AGENT_ID)")
   .option("--all-agents", "List threads across all agents in the current org")
-  .option(
-    "--project-id <id>",
-    "List Project chats across agents; --agent intersects",
-  )
+  .option("--project-id <id>", "List chats in this Project")
   .option("--no-project", "List only chats without a Project")
   .option("--unread", "List the latest 50 unread threads from the past 7 days")
   .option("--archived", "List only archived threads")
@@ -111,9 +124,19 @@ export const listCommand = new Command()
     `Maximum number of threads to print (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT})`,
   )
   .option("--json", "Print machine-readable JSON")
-  .addHelpText(
-    "after",
-    `
+  .addHelpText("after", ({ command }) => {
+    return personalCommandMode(command)
+      ? `
+Examples:
+  okou chat list
+  okou chat list --unread
+  okou chat list --project-id <id> --limit all --json
+
+Lists your chats in the current workspace executor scope. Supports archived,
+unread, Project and pagination filters. Existing historical chats remain available
+by their authorized thread IDs; this command does not reassign them.
+`
+      : `
 Examples:
   List this agent's chats:  okou chat list
   List another agent:       okou chat list --agent <agent-id>
@@ -129,11 +152,11 @@ Notes:
   - Listing and --unread require chat-thread:read
   - Reading a selected thread with okou chat messages requires chat-event:read
   - Authenticates via OKOU_TOKEN
-  - Replays cached snapshot and incremental chat thread events`,
-  )
+  - Replays cached snapshot and incremental chat thread events`;
+  })
   .action(
     withErrorHandler(async (options: ListOptions) => {
-      const { agentId, limit } = listScope(options);
+      const { agentId, limit } = await listScope(options);
       const allThreads = options.projectId
         ? await listProjectThreads(options.projectId)
         : await syncCachedChatThreads();

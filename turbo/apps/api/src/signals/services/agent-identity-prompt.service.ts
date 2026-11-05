@@ -1,3 +1,4 @@
+import { SINGLE_AGENT_IDENTITY_PROMPT } from "./single-agent-scope-prompt";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
 const TONE_INSTRUCTIONS: Readonly<Record<string, string>> = {
@@ -21,7 +22,11 @@ interface AgentIdentityPromptInput {
 
 export function buildAgentIdentityPrompt(
   agent: AgentIdentityPromptInput,
+  singleAgent: boolean,
 ): string | null {
+  if (singleAgent) {
+    return SINGLE_AGENT_IDENTITY_PROMPT;
+  }
   const parts: string[] = [];
 
   const displayName = agentDisplayName({

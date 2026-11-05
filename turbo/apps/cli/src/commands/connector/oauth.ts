@@ -1,3 +1,4 @@
+import { modeHelp } from "../../lib/command/single-agent";
 import { Command } from "commander";
 import {
   startBuiltinConnectorAuthorization,
@@ -36,7 +37,15 @@ export const connectorOAuthStartCommand = addAccountMutationOptions(
   )
   .addHelpText(
     "after",
-    "\nRequires --add or --reconnect <connection-id>. Starts only existing backend flows; does not grant Agent access, complete OAuth, poll tokens, or operate a browser. Return the authorization URL verbatim to the user. Device/external-code/managed flows are not supported by this command.",
+    modeHelp(
+      "\nRequires --add or --reconnect <connection-id>. Starts only existing backend flows; does not grant Agent access, complete OAuth, poll tokens, or operate a browser. Return the authorization URL verbatim to the user. Device/external-code/managed flows are not supported by this command.",
+      `
+Requires --add or --reconnect <connection-id>. Starts only existing backend flows;
+it does not grant Okou access, complete OAuth, poll tokens, or operate a browser.
+Return the authorization URL verbatim to the user. Device/external-code/managed
+flows are not supported by this command. Consent and permissions remain separate.
+`,
+    ),
   )
   .action(
     withErrorHandler(async (selector: string, options: Options) => {

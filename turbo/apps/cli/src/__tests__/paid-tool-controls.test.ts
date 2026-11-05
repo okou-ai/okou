@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../test/fixtures/captured-run-token";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     requests = [];
     output = "";
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-okou-token");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, undefined);
     vi.spyOn(console, "log").mockImplementation((...values: unknown[]) => {
       output += values.join(" ") + "\n";

@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -157,7 +158,10 @@ test.each(["headers", "body", "websocket"] as const)(
       {
         env: {
           ...process.env,
-          OKOU_TOKEN: "test-token",
+          OKOU_TOKEN: capturedRunToken([
+            "computer-use:read",
+            "computer-use:write",
+          ]),
           OKOU_API_BACKEND_URL: origin,
           SENTRY_DSN: "",
           VERCEL_AUTOMATION_BYPASS_SECRET: "",
