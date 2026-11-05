@@ -38,8 +38,12 @@ async function cli(args: string[]) {
   await registerRequestedCommand(command, ["node", "okou", ...args]);
   return {
     command,
-    help: () => {
-      command.outputHelp();
+    help: async () => {
+      await expect(
+        command.parseAsync(["--help"], { from: "user" }),
+      ).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+      });
       return output;
     },
   };
@@ -53,7 +57,7 @@ describe("captured personal CLI help and dispatch", () => {
   it("hides product Agent management and advertises personal Instructions at the root", async () => {
     vi.stubEnv("OKOU_TOKEN", token());
     const { help } = await cli(["--help"]);
-    const text = help();
+    const text = await help();
     expect(text).toContain("instructions");
     expect(text).toContain("okou instructions view");
     expect(text).not.toContain("View or manage agents");
@@ -64,10 +68,13 @@ describe("captured personal CLI help and dispatch", () => {
   it.each([
     ["chat", "create"],
     ["chat", "list"],
+    ["chat", "move"],
     ["connector"],
     ["connector", "status"],
     ["connector", "permission-request"],
     ["connector", "custom", "list"],
+    ["connector", "custom", "status"],
+    ["connector", "custom", "create"],
     ["whoami"],
     ["search"],
   ])("keeps enabled help free of Agent selection: %s %s", async (...path) => {
@@ -84,11 +91,27 @@ describe("captured personal CLI help and dispatch", () => {
         text += line;
       },
     });
-    selected.outputHelp();
+    selected.exitOverride();
+    await expect(
+      selected.parseAsync(["--help"], { from: "user" }),
+    ).rejects.toMatchObject({
+      code: "commander.helpDisplayed",
+    });
     expect(text).not.toContain("--agent");
     expect(text).not.toContain("--all-agents");
     expect(text).not.toContain("agent access");
     if (path[0] === "search") expect(text).toContain("agent-session");
+    if (path[1] === "custom" && path[2] === "create") {
+      expect(text).toContain('"authMode": "automatic"');
+      expect(text).toContain('"oauthConfig": {');
+      expect(text).toContain('"valueTemplate": "Bearer {{secrets.secret}}"');
+      expect(text).toContain("Requires an organization admin");
+    }
+    if (path[1] === "custom" && path[2] !== "create") {
+      expect(text).toContain("including");
+      expect(text).toContain("admitted to");
+      expect(text).toContain("connector " + path[2]);
+    }
   });
 
   it("rejects stale Agent mutations without requesting any Agent or Instructions write", async () => {
@@ -245,8 +268,8 @@ describe("captured personal CLI help and dispatch", () => {
   it("preserves legacy help when the Run snapshot has no marker", async () => {
     vi.stubEnv("OKOU_TOKEN", token(false));
     const { help } = await cli(["--help"]);
-    expect(help()).toContain("okou agent --help");
-    expect(help()).not.toContain("Personal Instructions?");
+    expect(await help()).toContain("okou agent --help");
+    expect(await help()).not.toContain("Personal Instructions?");
     const { command } = await cli(["chat", "create"]);
     expect(
       command.commands[0]!.commands.find((child) => {
@@ -267,7 +290,7 @@ describe("captured personal CLI help and dispatch", () => {
       }),
     );
     const { help } = await cli(["--help"]);
-    expect(help()).toContain("okou instructions view");
-    expect(help()).not.toContain("okou agent --help");
+    expect(await help()).toContain("okou instructions view");
+    expect(await help()).not.toContain("okou agent --help");
   });
 });

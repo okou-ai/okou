@@ -1,4 +1,4 @@
-import { modeHelp } from "../../../lib/command/single-agent";
+import { personalCommandMode } from "../../../lib/command/single-agent";
 import { readManagementInput } from "../../../lib/management-input";
 import { customConnectorMetadata } from "../management";
 
@@ -31,7 +31,7 @@ function requireCustomConnectorWriteCapability(): void {
   const payload = decodeSandboxTokenPayload();
   if (payload && !payload.capabilities.includes("connector:write")) {
     throw new Error(
-      "Custom connector creation is not enabled for this agent run",
+      `Custom connector creation is not enabled for this ${payload.singleAgent ? "Run" : "agent run"}`,
     );
   }
 }
@@ -83,10 +83,9 @@ export const createCustomConnectorCommand = new Command()
     "--callback-prompt <prompt>",
     `Start the next web chat round with this prompt after connection (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
   )
-  .addHelpText(
-    "after",
-    modeHelp(
-      `
+  .addHelpText("after", ({ command }) => {
+    const personal = personalCommandMode(command);
+    return `
 Types and authentication:
   HTTP uses prefixTemplates and supports authMode: none, manual, oauth.
   HTTP API prefixes accept http:// or https://.
@@ -108,7 +107,7 @@ Definition file:
   end-user OAuth token, or values array. Creating the definition is separate
   from connecting a member account, including for none and automatic modes.
 
-Agent workflow:
+${personal ? "Okou setup sequence" : "Agent workflow"}:
   1. For manual connectors, ask only for missing metadata: name, HTTP or HTTPS
      API prefix for HTTP or HTTPS endpoint for MCP, and the Header or Query
      injection template. Do not ask the user for the actual API token.
@@ -126,7 +125,7 @@ Agent workflow:
      none and automatic modes.
   6. When this connection is the only access action needed, add --callback-prompt
      with a brief task and next step. Share connectUrl and end the turn; Okou
-     continues after the user completes the connection and Agent authorization.
+     continues after the user completes the connection and ${personal ? "Okou access" : "Agent"} authorization.
 
 No-auth HTTP connector example:
   {
@@ -235,30 +234,19 @@ Examples:
 
 Notes:
   - This command only creates the connector definition; it does not store a
-    manual API token, start OAuth authorization, or authorize an agent.
+    manual API token, start OAuth authorization, or authorize ${personal ? "your Okou" : "an agent"}.
   - Manual credentials and end-user OAuth grants are supplied later through
     the Connect dialog.
-  - Connected accounts still need Agent access and any fine-grained permissions.
+  - Connected accounts still need ${personal ? "Okou" : "Agent"} access and any fine-grained permissions.
   - In the current web chat, a callback link example is printed when the action
-    targets the current Agent. Use it only for a single connector/permission
+    targets the ${personal ? "current execution context" : "current Agent"}. Use it only for a single connector/permission
     action, keeping the callback prompt free of secrets.
-  - --callback-prompt requires the current web chat and Agent context.
+  - --callback-prompt requires the current web chat and ${personal ? "execution" : "Agent"} context.
     ${CALLBACK_PROMPT_GUIDANCE}
   - OAuth app client secrets are definition-time configuration, matching UI
     creation, and should be kept in a temporary file that is never committed.
-  - Requires an organization admin.`,
-      `
-Create a custom connector definition in the current workspace using the documented
-file/options. Definition creation remains subject to your existing permissions.
-A definition does not connect an account, complete OAuth, or grant Okou access.
-Use connector connect for manual/no-auth credentials or connector oauth start for
-supported authorization flows, then review fine-grained permissions in settings.
-A supported --callback-prompt requires this web chat's execution context and must
-be the sole access action in the turn. Return the exact URL and end the turn.
-Do not include secrets in callback prompts or chat.
-`,
-    ),
-  )
+  - Requires an organization admin.`;
+  })
   .action(
     withErrorHandler(async (options: CreateOptions) => {
       requireCustomConnectorWriteCapability();

@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -90,7 +91,7 @@ async function launch(
         NODE_OPTIONS: `--import=${preload}`,
         NODE_NO_WARNINGS: "1",
         SENTRY_DSN: "",
-        OKOU_TOKEN: "test-token",
+        OKOU_TOKEN: capturedRunToken(["browser:read", "browser:write"]),
         OKOU_API_BACKEND_URL: "http://browser-api.test",
         OKOU_CHAT_THREAD_ID: "c0000000-0000-4000-a000-000000000010",
         OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE: "",

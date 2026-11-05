@@ -119,13 +119,11 @@ status/update and custom:<uuid> diagnostic selectors.
 Saved-account presence does not establish health, defaults, or runtime availability.
 Omit --agent inside a run to inspect the current Agent's access.`,
       `
-Inspect custom connector definitions, your saved accounts and effective Okou access.
-These are distinct states: a definition alone does not connect or authorize anything.
-Use the documented create/update inputs for definitions, connector connect for
-member credentials and connector oauth start for existing authorization flows.
-Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
-Inside a Run, account identity comes only from its admitted context. Missing details
-grant nothing and never select another member's account. JSON fields remain stable.
+Lists workspace definitions and your current saved-account directory, including
+inside a Run. This view is separate from the accounts admitted to the current Run;
+use connector list for that view. UUIDs identify custom status/update targets and
+custom:<uuid> diagnostic selectors. Saved-account presence does not establish
+health, defaults or runtime availability. Okou access still requires authorization.
 `,
     ),
   )
@@ -246,13 +244,11 @@ Shows current org definition/member status, including inside a run. For the
 account admitted to a run, use connector status with its connector selector.
 Omit --agent inside a run to inspect the current Agent's access.`,
       `
-Inspect custom connector definitions, your saved accounts and effective Okou access.
-These are distinct states: a definition alone does not connect or authorize anything.
-Use the documented create/update inputs for definitions, connector connect for
-member credentials and connector oauth start for existing authorization flows.
-Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
-Inside a Run, account identity comes only from its admitted context. Missing details
-grant nothing and never select another member's account. JSON fields remain stable.
+Accepts a custom connector full slug, UUID, or exact unique display name,
+optionally prefixed with custom:. Use UUIDs for stable automation.
+Shows the current workspace definition and your saved-account status, including
+inside a Run. For the account admitted to a Run, use connector status with its
+connector selector. A saved account alone does not grant Okou access.
 `,
     ),
   )
@@ -408,13 +404,28 @@ Definitions and access:
 To add a custom connector:
   Run "okou connector custom create -h" and follow the definition-only creation workflow.`,
       `
-Inspect custom connector definitions, your saved accounts and effective Okou access.
-These are distinct states: a definition alone does not connect or authorize anything.
-Use the documented create/update inputs for definitions, connector connect for
-member credentials and connector oauth start for existing authorization flows.
-Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
-Inside a Run, account identity comes only from its admitted context. Missing details
-grant nothing and never select another member's account. JSON fields remain stable.
+Types and authentication:
+  HTTP: none, manual, oauth.
+  MCP over Streamable HTTP: none, manual, oauth, automatic.
+  The definition's authMode is required. Automatic is MCP-only and discovers
+  the server's authentication requirements when you connect.
+
+Definitions and access:
+  create/update manage workspace definitions; list/status show your current
+  saved-account metadata, including inside a Run. These commands do not report
+  only the accounts admitted to that Run; use connector list/status for that view.
+  List JSON hasSavedAccounts reports directory membership only.
+  Status/show JSON accountSummary/memberStatus report account details and local
+  status separately from definition metadata and Okou access authorization.
+  A definition does not connect an account, complete OAuth or grant Okou access.
+  Connect an account, then authorize access under the current permission model.
+  Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
+  Chat allowances apply only when that capability is enabled; this command does
+  not enable it. Switching accounts does not reset shared firewall permissions.
+  Builtin permission-request approval links do not apply to custom connectors.
+
+To add a custom connector:
+  Run "okou connector custom create -h" for definition schemas and examples.
 `,
     ),
   );

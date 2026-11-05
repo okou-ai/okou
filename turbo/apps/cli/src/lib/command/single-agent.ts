@@ -70,6 +70,12 @@ export function configureCommandMode(command: Command, enabled: boolean): void {
   // Workflow-specific argument handling belongs to the Workflow command owner.
   if (["chat", "search", "connector"].includes(command.name())) {
     const visit = (node: Command) => {
+      if (command.name() === "chat" && node.name() === "move")
+        node.description(
+          enabled
+            ? "Join, move, or leave a Project without changing execution context or history"
+            : "Join, move, or leave a Project without changing Agent or history",
+        );
       for (const option of node.options) {
         if (["agent", "allAgents"].includes(option.attributeName()))
           option.hideHelp(enabled);

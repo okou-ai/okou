@@ -166,11 +166,20 @@ Examples:
   okou connector account list <selector> --json`,
       `
 Connect your own builtin manual or custom manual/no-auth account.
-Use --add for a new account or --reconnect <connection-id> for an existing one.
-Read secret fields from the supported input file; never print credentials or put
-them in chat. OAuth/OpenID/automatic flows use connector oauth start instead.
+Input is a JSON object: {"apiKey":"..."}. Use a protected temporary file or stdin;
+never print credentials or put them in chat. Custom connections require --add for
+a new account or --reconnect <connection-id> for an existing one. none accepts an
+empty object; HTTP non-secret variables use declared field names. Builtin connect
+without either option reconnects the current default, or adds if absent.
+OAuth/OpenID/automatic flows use connector oauth start instead.
 A connection does not grant Okou access or change fine-grained permissions.
 Inspect connector account list/status after completion. Return action URLs verbatim.
+
+Examples:
+  okou connector connect openai --add --input ./credentials.json
+  okou connector connect custom:<uuid> --reconnect <connection-id> --input -
+  okou connector connect custom:<uuid> --add
+  okou connector account list <selector> --json
 `,
     ),
   )
